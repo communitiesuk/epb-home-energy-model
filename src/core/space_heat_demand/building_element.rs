@@ -890,21 +890,17 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                         init_slab_on_ground_floor_edge_insulated(edge_insulation)
                     }
                     FloorData::SuspendedFloor {
-                        height_upper_surface,
                         thermal_transmission_walls,
                         area_per_perimeter_vent,
-                        shield_fact_location,
                         thermal_resistance_of_insulation,
+                        height_upper_surface,
+                        shield_fact_location,
                     } => init_suspended_floor(
                         *height_upper_surface,
-                        thermal_transmission_walls.ok_or_else(|| {
-                            anyhow!("thermal_transmission_walls value expected to be set")
-                        })?,
+                        *thermal_transmission_walls,
                         *area_per_perimeter_vent,
                         *shield_fact_location,
-                        thermal_resistance_of_insulation.ok_or_else(|| {
-                            anyhow!("thermal_resistance_of_insulation value expected to be set")
-                        })?,
+                        *thermal_resistance_of_insulation,
                     )?,
                     FloorData::HeatedBasement {
                         depth_basement_floor,
@@ -2074,7 +2070,7 @@ impl BuildingElementGround {
     /// * `edge_insulation`
     ///         - horizontal edge insulation
     ///         - vertical or external edge insulation
-    /// * `h_upper` - height of the floor upper surface, in m
+    /// * `height_upper_surface` - height of the floor upper surface, in m
     ///     average value is used if h varies
     /// * `u_w` - thermal transmittance of walls above ground, in W/(m2·K)
     ///     in accordance with ISO 6946
@@ -3685,10 +3681,10 @@ mod tests {
     ) -> [BuildingElementGround; 5] {
         let be_i_floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,
-            thermal_transmission_walls: Some(0.5),
+            thermal_transmission_walls: 0.5,
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered,
-            thermal_resistance_of_insulation: Some(7.),
+            thermal_resistance_of_insulation: 7.,
         };
         let be_i = BuildingElementGround::new(
             20.0,
@@ -3752,9 +3748,6 @@ mod tests {
         let be_d_floor_data = FloorData::HeatedBasement {
             depth_basement_floor: 2.3,
             thermal_resistance_of_basement_walls: 6.,
-            thermal_transmission_walls: None,
-            height_basement_walls: None,
-            thermal_transmittance_of_floor_above_basement: None,
         };
         let be_d = BuildingElementGround::new(
             27.5,
@@ -3886,10 +3879,10 @@ mod tests {
     fn create_suspended_floor(wind_shield_location: WindShieldLocation) -> FloorData {
         FloorData::SuspendedFloor {
             height_upper_surface: 1.,
-            thermal_transmission_walls: Some(0.5),
+            thermal_transmission_walls: 0.5,
             area_per_perimeter_vent: 1.,
             shield_fact_location: wind_shield_location,
-            thermal_resistance_of_insulation: Some(1.),
+            thermal_resistance_of_insulation: 1.,
         }
     }
 

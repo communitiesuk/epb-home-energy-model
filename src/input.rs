@@ -6,7 +6,7 @@ use crate::core::units::calculate_thermal_resistance_of_virtual_layer;
 use crate::corpus::Corpus;
 use crate::external_conditions::{ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
-use crate::HEM_VERSION;
+use crate::{HEM_VERSION, HOURS_TO_END_DEC};
 use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -148,10 +148,10 @@ fn validate_shower_waste_water_heat_recovery_systems(
         if let (
             Shower::MixerShower {
                 wwhrs_config:
-                    MixerShowerWwhrsConfiguration {
-                        waste_water_heat_recovery_system: Some(wwhrs),
+                    Some(MixerShowerWwhrsConfiguration {
+                        waste_water_heat_recovery_system: wwhrs,
                         ..
-                    },
+                    }),
                 ..
             },
             Some(wwhrs_systems),
@@ -284,14 +284,20 @@ pub struct ExternalConditionsInput {
 
     /// Data splitting the ground plane into segments (8-36) and giving height and distance to shading objects surrounding the building
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) shading_segments: Option<Vec<ShadingSegment>>,
 
     /// List of ground reflectivity values, 0 to 1, one entry per hour
+    /// Each item represents the fraction of solar radiation incident on the ground that is reflected. Also called the albedo.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(custom = validate_all_items_in_option_non_negative)]
+    #[validate(custom = |v| validate_all_items_in_option_at_most_n(v, 1.))]
     pub(crate) solar_reflectivity_of_ground: Option<Vec<f64>>,
 
     /// List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: ˚)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(custom = validate_all_items_in_option_non_negative)]
+    #[validate(custom = |v| validate_all_items_in_option_at_most_n(v, 360.))]
     pub(crate) wind_directions: Option<Vec<f64>>,
 
     /// List of wind speeds, one entry per hour (unit: m/s)
@@ -316,6 +322,29 @@ impl ExternalConditionsInput {
         ]
         .iter()
         .all(|whether| *whether)
+            && if let Self {
+                air_temperatures: Some(air_temperatures),
+                diffuse_horizontal_radiation: Some(diffuse_horizontal_radiation),
+                direct_beam_radiation: Some(direct_beam_radiation),
+                solar_reflectivity_of_ground: Some(solar_reflectivity_of_ground),
+                wind_directions: Some(wind_directions),
+                wind_speeds: Some(wind_speeds),
+                ..
+            } = self
+            {
+                [
+                    air_temperatures,
+                    diffuse_horizontal_radiation,
+                    direct_beam_radiation,
+                    solar_reflectivity_of_ground,
+                    wind_directions,
+                    wind_speeds,
+                ]
+                .iter()
+                .all(|items| items.len() >= HOURS_TO_END_DEC as usize)
+            } else {
+                false
+            }
     }
 }
 
@@ -367,6 +396,8 @@ pub(crate) struct InternalGainsDetails {
     #[validate(minimum = 0)]
     #[validate(maximum = 365)]
     pub(crate) start_day: u32,
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 24.)]
     pub(crate) time_series_step: f64,
     pub(crate) schedule: NumericSchedule,
 }
@@ -415,6 +446,8 @@ pub(crate) struct ApplianceGainsDetails {
     pub(crate) start_day: u32,
 
     /// Timestep of the time series data (unit: hours)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 24.)]
     pub(crate) time_series_step: f64,
 }
 
@@ -753,7 +786,7 @@ pub struct CustomEnergySourceFactor {
     pub primary_energy_factor_k_wh_k_wh_delivered: f64,
 }
 
-pub(crate) type ColdWaterSourceInput = IndexMap<ColdWaterSourceType, ColdWaterSourceDetails>;
+pub(crate) type ColdWaterSourceInput = IndexMap<std::string::String, ColdWaterSourceDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -766,12 +799,23 @@ pub struct ColdWaterSourceDetails {
     pub(crate) start_day: u32,
 
     /// List of cold water temperatures, one entry per hour (unit: ˚C)
+    #[validate(custom = validate_running_water_temperatures)]
     pub(crate) temperatures: Vec<f64>,
 
     /// Duration in hours (must be within 24-hour period)
     #[validate(minimum = 0.)]
     #[validate(maximum = 24.)]
     pub(crate) time_series_step: f64,
+}
+
+fn validate_running_water_temperatures(
+    temps: &[f64],
+) -> Result<(), serde_valid::validation::Error> {
+    if !temps.iter().all(|&t| t >= 0. && t <= 100.) {
+        custom_validation_error("Some cold water temperatures contained numbers that were not within the range 0 to 100 inclusive.".into())
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) type ExtraControls = IndexMap<std::string::String, ControlDetails>;
@@ -820,6 +864,8 @@ pub(crate) enum ControlDetails {
         #[validate(maximum = 365)]
         start_day: u32,
 
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 24.)]
         time_series_step: f64,
 
         /// List of boolean values where true means on, one entry per hour
@@ -833,10 +879,12 @@ pub(crate) enum ControlDetails {
         start_day: u32,
 
         /// Timestep of the time series data (unit: hours)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 24.)]
         time_series_step: f64,
 
         /// Number of 'on' hours to be set per day
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         #[validate(maximum = 24.)]
         time_on_daily: f64,
 
@@ -851,6 +899,8 @@ pub(crate) enum ControlDetails {
         start_day: u32,
 
         /// Timestep of the time series data (unit: hours)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 24.)]
         time_series_step: f64,
 
         /// How long before heating period the system should switch on (unit: hours)
@@ -862,6 +912,7 @@ pub(crate) enum ControlDetails {
         schedule: NumericSchedule,
 
         #[serde(flatten)]
+        #[validate]
         setpoint_bounds: Option<SetpointBoundsInput>,
     },
     #[serde(rename = "ChargeControl")]
@@ -882,6 +933,7 @@ pub(crate) enum ControlDetails {
 
         /// Temperature at which charging should stop
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = -273.15)]
         temp_charge_cut: Option<f64>,
 
         /// Temperature delta schedule for charge cut-off adjustment (unit: ˚C)
@@ -891,7 +943,7 @@ pub(crate) enum ControlDetails {
         /// Indicates from which hour of the day the system starts to target the charge level for the next day rather than the current day
         #[serde(default = "default_charge_calc_time")]
         #[validate(minimum = 0.)]
-        #[validate(maximum = 24.)]
+        #[validate(exclusive_maximum = 24.)]
         charge_calc_time: f64,
 
         /// First day of the time series, day of the year, 0 to 365
@@ -899,6 +951,8 @@ pub(crate) enum ControlDetails {
         #[validate(maximum = 365)]
         start_day: u32,
 
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 24.)]
         time_series_step: f64,
     },
     #[serde(rename = "CombinationTimeControl")]
@@ -929,9 +983,10 @@ fn validate_logic_type_for_charge_target(
 }
 
 /// Enum to encapsulate possible combinations of setpoint data
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(untagged)]
+#[validate(custom = validate_setpoint_bounds)]
 pub(crate) enum SetpointBoundsInput {
     MinAndMax {
         /// Minimum setpoint allowed
@@ -1082,21 +1137,25 @@ pub(crate) struct SmartApplianceBattery {
     /// Dictionary of lists containing the battery state of charge for each timestep for each energy supply
     #[validate(custom = validate_battery_state_fractions)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
+    #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
     pub(crate) battery_state_of_charge: IndexMap<String, Vec<f64>>,
 
     /// Dictionary of lists containing energy sent to the battery from generation for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
+    #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
     pub(crate) energy_into_battery_from_generation: IndexMap<String, Vec<f64>>,
 
     /// Dictionary of lists containing energy sent to the battery from the grid for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
+    #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
     pub(crate) energy_into_battery_from_grid: IndexMap<String, Vec<f64>>,
 
     /// Dictionary of lists containing energy drawn from the battery for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
+    #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
     pub(crate) energy_out_of_battery: IndexMap<String, Vec<f64>>,
 }
 
@@ -1195,6 +1254,8 @@ pub(crate) struct SmartApplianceControlDetails {
     pub(crate) power_timeseries: IndexMap<String, Vec<f64>>,
 
     /// Timestep of the power time series (unit: hours)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 24.)]
     pub(crate) time_series_step: f64,
 }
 
@@ -1230,7 +1291,7 @@ pub enum BoilerHotWaterTest {
 pub(crate) enum HotWaterSourceDetails {
     StorageTank {
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: ColdWaterSourceReference,
+        cold_water_source: String,
 
         /// Map of heating systems connected to the storage tank
         #[serde(rename = "HeatSource")]
@@ -1261,7 +1322,7 @@ pub(crate) enum HotWaterSourceDetails {
     },
     CombiBoiler {
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: ColdWaterSourceType,
+        cold_water_source: String,
 
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: String,
@@ -1298,7 +1359,7 @@ pub(crate) enum HotWaterSourceDetails {
     #[serde(rename = "HIU")]
     Hiu {
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: ColdWaterSourceType,
+        cold_water_source: String,
 
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: String,
@@ -1318,7 +1379,7 @@ pub(crate) enum HotWaterSourceDetails {
         energy_supply: String,
 
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: ColdWaterSourceType,
+        cold_water_source: String,
 
         /// Temperature setpoint for the point-of-use water heater output (unit: ˚C)
         #[validate(minimum = -273.15)]
@@ -1354,7 +1415,7 @@ pub(crate) enum HotWaterSourceDetails {
         init_temp: f64,
 
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: ColdWaterSourceType,
+        cold_water_source: String,
 
         #[serde(rename = "EnergySupply_pump")]
         energy_supply_pump: String,
@@ -1371,7 +1432,7 @@ pub(crate) enum HotWaterSourceDetails {
     },
     HeatBattery {
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: ColdWaterSourceType,
+        cold_water_source: String,
 
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: String,
@@ -1546,33 +1607,6 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetailsJsonMap<'_> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum ColdWaterSourceType {
-    #[serde(rename = "mains water")]
-    MainsWater,
-
-    #[serde(rename = "header tank")]
-    HeaderTank,
-}
-
-impl Into<std::string::String> for &ColdWaterSourceType {
-    fn into(self) -> std::string::String {
-        match self {
-            ColdWaterSourceType::MainsWater => "mains water".into(),
-            ColdWaterSourceType::HeaderTank => "header tank".into(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(untagged)]
-pub enum ColdWaterSourceReference {
-    Type(ColdWaterSourceType),
-    Reference(String),
-}
-
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum HeatSourceControlType {
@@ -1585,7 +1619,7 @@ pub(crate) enum HeatSourceControlType {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` annotation after 0.36
+#[serde(tag = "type", deny_unknown_fields)]
 pub(crate) enum HeatSource {
     ImmersionHeater {
         /// (unit: kW)
@@ -1672,6 +1706,8 @@ pub(crate) enum HeatSource {
             deserialize_with = "deserialize_orientation",
             serialize_with = "serialize_orientation"
         )]
+        #[validate(minimum = -180.)]
+        #[validate(maximum = 180.)]
         orientation: f64,
 
         /// Heat loss coefficient of the collector loop piping (unit: W/K)
@@ -1771,9 +1807,10 @@ pub(crate) enum HeatSource {
         heater_position: f64,
 
         /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
+        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
-        thermostat_position: f64,
+        thermostat_position: Option<f64>,
     },
 }
 
@@ -1812,7 +1849,7 @@ impl HeatSource {
             HeatSource::HeatPumpHotWaterOnly {
                 thermostat_position,
                 ..
-            } => Some(*thermostat_position),
+            } => *thermostat_position,
         }
     }
 
@@ -2044,14 +2081,14 @@ pub enum Shower {
         flowrate: f64,
 
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: ColdWaterSourceType,
+        cold_water_source: String,
 
         /// Reference to HotWaterSource object that provides hot water to this shower. If only one HotWaterSource is defined, then this will be assumed by default
         #[serde(rename = "HotWaterSource", skip_serializing_if = "Option::is_none")]
         hot_water_source: Option<String>,
 
-        #[serde(flatten)]
-        wwhrs_config: MixerShowerWwhrsConfiguration,
+        #[serde(flatten, skip_serializing_if = "Option::is_none")]
+        wwhrs_config: Option<MixerShowerWwhrsConfiguration>,
     },
     #[serde(rename = "InstantElecShower")]
     InstantElectricShower {
@@ -2060,7 +2097,7 @@ pub enum Shower {
         rated_power: f64,
 
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: ColdWaterSourceType,
+        cold_water_source: String,
 
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
@@ -2071,8 +2108,8 @@ pub enum Shower {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MixerShowerWwhrsConfiguration {
     /// Reference to a key in Input.WWHRS
-    #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
-    pub(crate) waste_water_heat_recovery_system: Option<String>,
+    #[serde(rename = "WWHRS")]
+    pub(crate) waste_water_heat_recovery_system: String,
 
     /// WWHRS system configuration for this shower connection
     #[serde(
@@ -2114,7 +2151,7 @@ pub(crate) struct BathDetails {
     pub(crate) size: f64,
 
     #[serde(rename = "ColdWaterSource")]
-    pub(crate) cold_water_source: ColdWaterSourceType,
+    pub(crate) cold_water_source: String,
 
     /// Reference to HotWaterSource object that provides hot water to this bath. If only one HotWaterSource is defined, then this will be assumed by default
     #[serde(rename = "HotWaterSource", skip_serializing_if = "Option::is_none")]
@@ -2139,7 +2176,7 @@ pub(crate) struct OtherWaterUse {
     pub(crate) flowrate: f64,
 
     #[serde(rename = "ColdWaterSource")]
-    pub(crate) cold_water_source: ColdWaterSourceType,
+    pub(crate) cold_water_source: String,
 
     /// Reference to HotWaterSource object that provides hot water to this tapping point. If only one HotWaterSource is defined, then this will be assumed by default
     #[serde(rename = "HotWaterSource", skip_serializing_if = "Option::is_none")]
@@ -2586,6 +2623,18 @@ fn validate_all_items_in_option_non_negative(
         .unwrap_or_else(|| custom_validation_error("All items must be non-negative".to_string()))
 }
 
+fn validate_all_items_in_option_at_most_n(
+    items: &Option<Vec<f64>>,
+    n: f64,
+) -> Result<(), serde_valid::validation::Error> {
+    items
+        .iter()
+        .flatten()
+        .all(|item| item <= &n)
+        .then(|| Ok(()))
+        .unwrap_or_else(|| custom_validation_error("All items must be non-negative".to_string()))
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2724,9 +2773,9 @@ fn validate_system_list_no_duplicates(
         .space_heat_system
         .has_intersecting_entries_with(&zone.space_cool_system)
     {
-        return custom_validation_error(
+        custom_validation_error(
             "Space heat and space cool systems cannot have overlapping entries".into(),
-        );
+        )
     } else {
         Ok(())
     }
@@ -2738,8 +2787,7 @@ fn validate_system_list_no_duplicates(
 pub(crate) enum SystemReference {
     None(()),
     Single(String),
-    #[validate(unique_items)]
-    Multiple(Vec<String>),
+    Multiple(#[validate(unique_items)] Vec<String>),
 }
 
 impl SystemReference {
@@ -2849,10 +2897,13 @@ pub(crate) enum BuildingElement {
 
         #[serde(
             rename = "orientation360",
-            deserialize_with = "deserialize_orientation",
-            serialize_with = "serialize_orientation"
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_orientation_option",
+            serialize_with = "serialize_orientation_option"
         )]
-        orientation: f64,
+        #[validate(minimum = -180.)]
+        #[validate(maximum = 180.)]
+        orientation: Option<f64>,
 
         /// The distance between the ground and the lowest edge of the element (unit: m)
         #[validate(minimum = 0.)]
@@ -2887,10 +2938,13 @@ pub(crate) enum BuildingElement {
 
         #[serde(
             rename = "orientation360",
-            deserialize_with = "deserialize_orientation",
-            serialize_with = "serialize_orientation"
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_orientation_option",
+            serialize_with = "serialize_orientation_option"
         )]
-        orientation: f64,
+        #[validate(minimum = -180.)]
+        #[validate(maximum = 180.)]
+        orientation: Option<f64>,
 
         /// Total solar energy transmittance of the transparent part of the window
         #[validate(minimum = 0.)]
@@ -2905,6 +2959,7 @@ pub(crate) enum BuildingElement {
 
         #[serde(flatten)]
         #[validate]
+        #[validate(custom = validate_area_height_width)]
         area_input: BuildingElementAreaOrHeightWidthInput,
 
         /// Height of the openable area, corrected for obstruction due to the window frame of the openable section (unit: m)
@@ -2950,6 +3005,7 @@ pub(crate) enum BuildingElement {
         u_value: f64,
 
         /// Total thermal resistance of all layers in the floor construction (unit: m².K/W)
+        #[validate(exclusive_minimum = 0.)]
         thermal_resistance_floor_construction: f64,
 
         #[validate(exclusive_minimum = 0.)]
@@ -2971,15 +3027,6 @@ pub(crate) enum BuildingElement {
         #[validate(exclusive_minimum = 0.)]
         thickness_walls: f64,
 
-        /// Height of the floor upper surface (unit: m) - average value is used if h varies
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[validate(exclusive_minimum = 0.)]
-        height_upper_surface: Option<f64>,
-
-        /// Wind shielding factor
-        #[serde(skip_serializing_if = "Option::is_none")]
-        shield_fact_location: Option<WindShieldLocation>,
-
         /// Data specific to types of floors
         #[serde(flatten)]
         #[validate]
@@ -2988,8 +3035,9 @@ pub(crate) enum BuildingElement {
 
     #[serde(rename = "BuildingElementAdjacentConditionedSpace")]
     AdjacentConditionedSpace {
+        #[serde(skip_serializing_if = "Option::is_none", default)]
         #[validate(exclusive_minimum = 0.)]
-        area: f64,
+        area: Option<f64>,
 
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         #[validate(minimum = 0.)]
@@ -3010,8 +3058,9 @@ pub(crate) enum BuildingElement {
     #[serde(rename = "BuildingElementAdjacentUnconditionedSpace_Simple")]
     AdjacentUnconditionedSpace {
         /// Area of this building element (unit: m²)
+        #[serde(skip_serializing_if = "Option::is_none", default)]
         #[validate(exclusive_minimum = 0.)]
-        area: f64,
+        area: Option<f64>,
 
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         #[validate(minimum = 0.)]
@@ -3023,6 +3072,7 @@ pub(crate) enum BuildingElement {
         u_value_input: UValueInput,
 
         /// Effective thermal resistance of unheated space (unit: m².K/W)
+        #[validate(exclusive_minimum = 0.)]
         thermal_resistance_unconditioned_space: f64,
 
         /// Areal heat capacity (unit: J/m2.K)
@@ -3058,7 +3108,6 @@ pub(crate) enum UValueInput {
 /// Enum to encapsulate when height and width can be provided, or area (or both though they need to match)
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[validate(custom = validate_area_height_width)]
 pub(crate) struct BuildingElementAreaOrHeightWidthInput {
     /// Area of the building element (m²)
     #[validate(exclusive_minimum = 0.)]
@@ -3092,7 +3141,6 @@ impl BuildingElementHeightWidthInput {
     }
 }
 
-#[allow(dead_code)]
 fn validate_area_height_width(
     data: &BuildingElementAreaOrHeightWidthInput,
 ) -> Result<(), serde_valid::validation::Error> {
@@ -3104,7 +3152,7 @@ fn validate_area_height_width(
         BuildingElementAreaOrHeightWidthInput {
             area: Some(area),
             height_and_width: Some(height_and_width),
-        } if *area != height_and_width.area() => custom_validation_error(
+        } if !is_close!(*area, height_and_width.area()) => custom_validation_error(
             format!(
                 "Building element specified an area of {area} but a height and width pair of {} and {} making an area {} was also provided. These areas need to align.",
                 height_and_width.height,
@@ -3199,8 +3247,8 @@ impl BuildingElement {
 
     pub(crate) fn orientation(&self) -> Option<f64> {
         match self {
-            BuildingElement::Opaque { orientation, .. } => Some(*orientation),
-            BuildingElement::Transparent { orientation, .. } => Some(*orientation),
+            BuildingElement::Opaque { orientation, .. } => *orientation,
+            BuildingElement::Transparent { orientation, .. } => *orientation,
             _ => None,
         }
     }
@@ -3344,6 +3392,29 @@ where
     orientation360_value.serialize(serializer)
 }
 
+// special deserialization logic so that orientations are normalized correctly on the way in
+pub(crate) fn deserialize_orientation_option<'de, D>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let orientation360_value: Option<f64> = Deserialize::deserialize(deserializer)?;
+    Ok(orientation360_value.map(init_orientation))
+}
+
+// special serialization logic so that orientations are un-normalized correctly on way out!
+pub(crate) fn serialize_orientation_option<S>(
+    normalized: &Option<f64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let orientation360_value = normalized.map(init_orientation);
+    orientation360_value.serialize(serializer)
+}
+
 pub(crate) fn init_orientation(value: f64) -> f64 {
     // Convert orientation from 0-360 (clockwise) to -180 to +180 (anticlockwise)
     180. - value
@@ -3461,14 +3532,12 @@ pub(crate) enum FloorData {
     // (non-optional fields in the schema for SuspendedFloor, but values do seem expected)
     #[serde(rename = "Suspended_floor")]
     SuspendedFloor {
+        #[validate(exclusive_minimum = 0.)]
         height_upper_surface: f64,
 
         /// Thermal transmittance of walls above ground (unit: W/m².K)
-        #[serde(
-            rename = "thermal_transm_walls",
-            skip_serializing_if = "Option::is_none"
-        )]
-        thermal_transmission_walls: Option<f64>,
+        #[serde(rename = "thermal_transm_walls")]
+        thermal_transmission_walls: f64,
 
         /// Area of ventilation openings per perimeter (unit: m²/m)
         #[validate(exclusive_minimum = 0.)]
@@ -3478,12 +3547,9 @@ pub(crate) enum FloorData {
         shield_fact_location: WindShieldLocation,
 
         /// Thermal resistance of insulation on base of underfloor space (unit: m².K/W)
-        #[serde(
-            rename = "thermal_resist_insul",
-            skip_serializing_if = "Option::is_none"
-        )]
+        #[serde(rename = "thermal_resist_insul")]
         #[validate(exclusive_minimum = 0.)]
-        thermal_resistance_of_insulation: Option<f64>,
+        thermal_resistance_of_insulation: f64,
     },
 
     #[serde(rename = "Heated_basement")]
@@ -3496,25 +3562,6 @@ pub(crate) enum FloorData {
         #[serde(rename = "thermal_resist_walls_base")]
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_of_basement_walls: f64,
-
-        /// Thermal transmittance of walls above ground (unit: W/m².K)
-        #[serde(
-            rename = "thermal_transm_walls",
-            skip_serializing_if = "Option::is_none"
-        )]
-        thermal_transmission_walls: Option<f64>,
-
-        /// Height of the basement walls above ground level (unit: m)
-        #[validate(exclusive_minimum = 0.)]
-        height_basement_walls: Option<f64>,
-
-        /// Thermal transmittance of floor above basement (unit: W/m².K)
-        #[serde(
-            rename = "thermal_transm_envi_base",
-            skip_serializing_if = "Option::is_none"
-        )]
-        #[validate(exclusive_minimum = 0.)]
-        thermal_transmittance_of_floor_above_basement: Option<f64>,
     },
 
     #[serde(rename = "Unheated_basement")]
@@ -3804,6 +3851,7 @@ pub(crate) enum HeatSourceWetDetails {
         #[serde(rename = "EnergySupply_aux")]
         energy_supply_aux: String,
 
+        #[validate(exclusive_minimum = 0.)]
         rated_power: f64,
 
         /// Boiler efficiency at full load (dimensionless, 0-1)
@@ -4006,7 +4054,7 @@ pub struct HeatPumpBoiler {
     pub(crate) energy_supply_aux: String,
 
     /// Rated power output of the boiler (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     rated_power: f64,
 
     /// Boiler efficiency at full load (dimensionless, 0-1)
@@ -4147,7 +4195,7 @@ pub(crate) enum HeatBattery {
         velocity_in_hex_tube_at_1_l_per_min_m_per_s: f64,
 
         /// Diameter of capillary tubes (unit: m)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         capillary_diameter_m: f64,
 
         /// Heat battery parameter A (dimensionless)
@@ -4218,7 +4266,7 @@ pub(crate) struct WasteWaterHeatRecoveryDetails {
     _type: MustBe!("WWHRS_Instantaneous"),
 
     #[serde(rename = "ColdWaterSource")]
-    pub(crate) cold_water_source: ColdWaterSourceType,
+    pub(crate) cold_water_source: String,
 
     /// Test flow rates in litres per minute (e.g., [5., 7., 9., 11., 13.])
     #[validate(custom = validate_all_items_non_negative)]
@@ -4347,6 +4395,8 @@ pub(crate) struct PhotovoltaicPanel {
         deserialize_with = "deserialize_orientation",
         serialize_with = "serialize_orientation"
     )]
+    #[validate(minimum = -180.)]
+    #[validate(maximum = 180.)]
     orientation: f64,
 
     /// The distance between the ground and the lowest edge of the PV array (unit: m)
@@ -4384,6 +4434,8 @@ pub(crate) struct PhotovoltaicSystemWithPanels {
     #[validate(minimum = 0.)]
     inverter_peak_power_dc: f64,
 
+    inverter_type: InverterType,
+
     #[validate(min_items = 1)]
     panels: Vec<PhotovoltaicPanel>,
 }
@@ -4411,6 +4463,8 @@ pub(crate) struct PhotovoltaicSystem {
         deserialize_with = "deserialize_orientation",
         serialize_with = "serialize_orientation"
     )]
+    #[validate(minimum = -180.)]
+    #[validate(maximum = 180.)]
     pub(crate) orientation: f64,
 
     /// The distance between the ground and the lowest edge of the PV array (unit: m)
@@ -4418,9 +4472,11 @@ pub(crate) struct PhotovoltaicSystem {
     pub(crate) base_height: f64,
 
     /// Height of the PV array (unit: m)
+    #[validate(minimum = 0.)]
     pub(crate) height: f64,
 
     /// Width of the PV panel (unit: m)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) width: f64,
 
     #[serde(rename = "EnergySupply")]
@@ -4601,6 +4657,8 @@ pub struct Vent {
         deserialize_with = "deserialize_orientation",
         serialize_with = "serialize_orientation"
     )]
+    #[validate(minimum = -180.)]
+    #[validate(maximum = 180.)]
     pub(crate) orientation: f64,
 
     /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
@@ -4802,6 +4860,8 @@ pub struct MechanicalVentilationPosition {
         deserialize_with = "deserialize_orientation",
         serialize_with = "serialize_orientation"
     )]
+    #[validate(minimum = -180.)]
+    #[validate(maximum = 180.)]
     orientation: f64,
 
     /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
@@ -4889,6 +4949,7 @@ pub struct MechanicalVentilationDuctwork {
     pub(crate) duct_perimeter_mm: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) internal_diameter_mm: Option<f64>,
 
     /// (unit: mm)
@@ -7273,7 +7334,9 @@ impl TryFrom<&InputForProcessing> for Corpus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::space_heat_demand::ventilation::MechVentType;
     use rstest::*;
+    use serde::de::DeserializeOwned;
     use std::fs::File;
     use walkdir::{DirEntry, WalkDir};
 
@@ -7342,6 +7405,3343 @@ mod tests {
             let json = serde_json::to_string_pretty(&input.clone()).unwrap();
             let recreated_input: Input = serde_json::from_str(&json).unwrap();
             assert_eq!(input, recreated_input,);
+        }
+    }
+
+    #[fixture]
+    fn baseline_demo_file_json() -> JsonValue {
+        let file = File::open("./examples/input/core/demo.json").unwrap();
+        serde_json::from_reader(file).unwrap()
+    }
+
+    fn merge_json_onto_base(base: JsonValue, add: JsonValue) -> JsonValue {
+        let mut merged = base;
+        for (key, value) in add.as_object().unwrap() {
+            merged
+                .as_object_mut()
+                .unwrap()
+                .insert(key.to_string(), value.clone());
+        }
+        merged
+    }
+
+    /// Test WWHRS validation with empty configuration.
+    #[rstest]
+    fn test_validate_shower_waste_water_heat_recovery_systems_empty(
+        baseline_demo_file_json: JsonValue,
+    ) {
+        let modified_input = merge_json_onto_base(
+            baseline_demo_file_json,
+            json!({
+                "WWHRS": null,
+                "HotWaterDemand": {}
+            }),
+        );
+        let input: Result<Input, _> = serde_json::from_value(modified_input);
+        assert!(input.is_ok());
+    }
+
+    /// Test WWHRS validation with valid mixer shower configuration.
+    #[rstest]
+    fn test_validate_shower_waste_water_heat_recovery_systems_valid_mixer_shower(
+        baseline_demo_file_json: JsonValue,
+    ) {
+        let modified_input = merge_json_onto_base(
+            baseline_demo_file_json,
+            json!({
+                "WWHRS": {
+                    "WWHRS1": {
+                        "ColdWaterSource": "mains water",
+                        "flow_rates": [5, 7, 9, 11, 13],
+                        "system_a_efficiencies": [44.8, 39.1, 34.8, 31.4, 28.6],
+                        "system_a_utilisation_factor": 0.7,
+                        "system_b_efficiency_factor": 0.81,
+                        "type": "WWHRS_Instantaneous",
+                    }
+                },
+                "HotWaterDemand": {
+                    "Shower": {
+                        "Shower1": {
+                            "type": "MixerShower",
+                            "ColdWaterSource": "mains water",
+                            "flowrate": 15,
+                            "WWHRS": "WWHRS1",
+                            "WWHRS_configuration": "B",
+                        },
+                    },
+                },
+            }),
+        );
+        let input: Result<Input, _> = serde_json::from_value(modified_input);
+        assert!(input.is_ok());
+    }
+
+    // there is a test in the Python here that checks for invalid references - not bringing this over because
+    // we will detect bad references while building the corpus
+
+    static MINIMAL_TEST_DATA: LazyLock<JsonValue> = LazyLock::new(|| {
+        json!({
+            "air_flow_rate": 100.0,
+            "test_letter": "A",
+            "capacity": 8.4,
+            "cop": 4.6,
+            "design_flow_temp": 35,
+            "temp_outlet": 34,
+            "temp_source": 0,
+            "temp_test": -7,
+        })
+    });
+
+    fn create_heat_pump_config(source_type: &HeatPumpSourceType) -> JsonValue {
+        json!({
+            "hp": {
+                "type": "HeatPump",
+                "EnergySupply": "mains elec",
+                "source_type": source_type,
+                "sink_type": "Water",
+                "backup_ctrl_type": "TopUp",
+                "time_delay_backup": 1.0,
+                "modulating_control": true,
+                "min_modulation_rate_35": 0.35,
+                "min_modulation_rate_55": 0.4,
+                "time_constant_onoff_operation": 140,
+                "temp_return_feed_max": 70.0,
+                "temp_lower_operating_limit": -5.0,
+                "min_temp_diff_flow_return_for_hp_to_operate": 0.0,
+                "var_flow_temp_ctrl_during_test": true,
+                "power_heating_circ_pump": 0.015,
+                "power_source_circ_pump": 0.010,
+                "power_standby": 0.015,
+                "power_crankcase_heater": 0.01,
+                "power_off": 0.015,
+                "power_max_backup": 3.0,
+                "MechanicalVentilation": "mechvent1",
+                "test_data_EN14825": [*MINIMAL_TEST_DATA],
+            }
+        })
+    }
+
+    fn create_ventilation_config(vent_type: &MechVentType) -> JsonValue {
+        if *vent_type == MechVentType::Mvhr {
+            json!({
+                "sup_air_flw_ctrl": "ODA",
+                "sup_air_temp_ctrl": "NO_CTRL",
+                "vent_type": vent_type,
+                "SFP": 1.5,
+                "EnergySupply": "mains elec",
+                "design_outdoor_air_flow_rate": 0.5,
+                "position_intake": {
+                    "orientation360": 180,
+                    "pitch": 90,
+                    "mid_height_air_flow_path": 3.0,
+                },
+                "position_exhaust": {
+                    "orientation360": 0,
+                    "pitch": 90,
+                    "mid_height_air_flow_path": 2.0,
+                },
+                "mvhr_eff": 0.80,
+                "mvhr_location": "outside",
+                "ductwork": [
+                    {
+                        "cross_section_shape": "circular",
+                        "internal_diameter_mm": 200,
+                        "external_diameter_mm": 300,
+                        "length": 10.0,
+                        "insulation_thermal_conductivity": 0.023,
+                        "insulation_thickness_mm": 100,
+                        "reflective": false,
+                        "duct_type": "supply",
+                    },
+                    {
+                        "cross_section_shape": "circular",
+                        "internal_diameter_mm": 200,
+                        "external_diameter_mm": 300,
+                        "length": 10.0,
+                        "insulation_thermal_conductivity": 0.023,
+                        "insulation_thickness_mm": 100,
+                        "reflective": false,
+                        "duct_type": "extract",
+                    },
+                    {
+                        "cross_section_shape": "circular",
+                        "internal_diameter_mm": 200,
+                        "external_diameter_mm": 300,
+                        "length": 10.0,
+                        "insulation_thermal_conductivity": 0.023,
+                        "insulation_thickness_mm": 100,
+                        "reflective": false,
+                        "duct_type": "intake",
+                    },
+                    {
+                        "cross_section_shape": "circular",
+                        "internal_diameter_mm": 200,
+                        "external_diameter_mm": 300,
+                        "length": 10.0,
+                        "insulation_thermal_conductivity": 0.023,
+                        "insulation_thickness_mm": 100,
+                        "reflective": false,
+                        "duct_type": "exhaust",
+                    },
+                ],
+            })
+        } else {
+            json!({
+                "sup_air_flw_ctrl": "ODA",
+                "sup_air_temp_ctrl": "NO_CTRL",
+                "vent_type": vent_type,
+                "Control": format!("{}_Control", vent_type.to_string().replace(" ", "_")),
+                "SFP": 1.5,
+                "EnergySupply": "mains elec",
+                "design_outdoor_air_flow_rate": 0.5,
+                "orientation360": 180,
+                "pitch": 90,
+                "mid_height_air_flow_path": 2,
+            })
+        }
+    }
+
+    fn create_control_config() -> JsonValue {
+        json!({
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 0.5,
+            "schedule": {"main": [{"repeat": 7, "value": "day"}]},
+        })
+    }
+
+    /// Helper method to create complete exhaust air heat pump configuration.
+    fn create_exhaust_air_heat_pump_config(
+        base_input: JsonValue,
+        source_type: HeatPumpSourceType,
+        vent_type: MechVentType,
+    ) -> JsonValue {
+        let mut modified_input = base_input.clone();
+        let modified_input_obj = modified_input.as_object_mut().unwrap();
+
+        modified_input_obj.insert(
+            "HeatSourceWet".into(),
+            create_heat_pump_config(&source_type),
+        );
+        let mut cloned_infiltration_ventilation = base_input["InfiltrationVentilation"].clone();
+        let new_infiltration_ventilation = cloned_infiltration_ventilation.as_object_mut().unwrap();
+        new_infiltration_ventilation.insert(
+            "MechanicalVentilation".into(),
+            json!({"mechvent1": create_ventilation_config(&vent_type)}),
+        );
+        modified_input_obj.insert(
+            "InfiltrationVentilation".into(),
+            json!(new_infiltration_ventilation),
+        );
+
+        modified_input
+    }
+
+    /// Test that compatible exhaust air heat pump and ventilation combinations pass validation.
+    #[rstest]
+    fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_valid_combinations(
+        baseline_demo_file_json: JsonValue,
+    ) {
+        let valid_combinations = [
+            (HeatPumpSourceType::ExhaustAirMEV, MechVentType::Mvhr),
+            (
+                HeatPumpSourceType::ExhaustAirMEV,
+                MechVentType::CentralisedContinuousMev,
+            ),
+            (HeatPumpSourceType::ExhaustAirMVHR, MechVentType::Mvhr),
+            (HeatPumpSourceType::ExhaustAirMixed, MechVentType::Mvhr),
+        ];
+
+        for (source_type, vent_type) in valid_combinations {
+            let mut modified_input = create_exhaust_air_heat_pump_config(
+                baseline_demo_file_json.clone(),
+                source_type,
+                vent_type,
+            );
+            let modified_input_control_node = modified_input
+                .get_mut("Control")
+                .unwrap()
+                .as_object_mut()
+                .unwrap();
+            modified_input_control_node.insert("MVHR_Control".into(), create_control_config());
+            modified_input_control_node.insert(
+                "Centralised_continuous_MEV_Control".into(),
+                create_control_config(),
+            );
+            let input: Result<Input, _> = serde_json::from_value(modified_input);
+            assert!(input.is_ok());
+            let input = input.unwrap();
+            assert!(
+                input.validate().is_ok(),
+                "compatibility expected: source_type: {:?}, vent_type: {:?}",
+                source_type,
+                vent_type
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_invalid_combinations(
+        baseline_demo_file_json: JsonValue,
+    ) {
+        let invalid_combinations = [
+            (
+                HeatPumpSourceType::ExhaustAirMEV,
+                MechVentType::IntermittentMev,
+            ),
+            (
+                HeatPumpSourceType::ExhaustAirMEV,
+                MechVentType::DecentralisedContinuousMev,
+            ),
+            (
+                HeatPumpSourceType::ExhaustAirMVHR,
+                MechVentType::IntermittentMev,
+            ),
+            (
+                HeatPumpSourceType::ExhaustAirMixed,
+                MechVentType::DecentralisedContinuousMev,
+            ),
+        ];
+
+        for (source_type, vent_type) in invalid_combinations {
+            let mut modified_input = create_exhaust_air_heat_pump_config(
+                baseline_demo_file_json.clone(),
+                source_type,
+                vent_type,
+            );
+            let modified_input_control_node = modified_input
+                .get_mut("Control")
+                .unwrap()
+                .as_object_mut()
+                .unwrap();
+            modified_input_control_node
+                .insert("Intermittent_MEV_Control".into(), create_control_config());
+            modified_input_control_node.insert(
+                "Decentralised_continuous_MEV_Control".into(),
+                create_control_config(),
+            );
+            let input: Input = serde_json::from_value(modified_input).unwrap();
+            assert!(input.validate().is_err());
+        }
+    }
+
+    /// Test edge cases where validation should pass regardless of configuration.
+    #[rstest]
+    fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_edge_cases(
+        baseline_demo_file_json: JsonValue,
+    ) {
+        // Test case 1: No heat pumps
+        let mut modified_input = baseline_demo_file_json.clone();
+        let modified_input_infiltration_ventilation = modified_input
+            .get_mut("InfiltrationVentilation")
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
+        modified_input_infiltration_ventilation.insert(
+            "MechanicalVentilation".into(),
+            json!({
+                "mechvent1": create_ventilation_config(&MechVentType::IntermittentMev)
+            }),
+        );
+        let modified_input_control_node = modified_input
+            .get_mut("Control")
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
+        modified_input_control_node
+            .insert("Intermittent_MEV_Control".into(), create_control_config());
+        // should be ok
+        let input: Result<Input, _> = serde_json::from_value(modified_input);
+        let input = input.unwrap();
+        assert!(input.validate().is_ok());
+
+        // Test case 2: No mechanical ventilation
+        let mut modified_input = baseline_demo_file_json.clone();
+        let modified_input_obj = modified_input.as_object_mut().unwrap();
+        modified_input_obj.insert(
+            "HeatSourceWet".into(),
+            create_heat_pump_config(&HeatPumpSourceType::ExhaustAirMEV),
+        );
+        let infiltration_ventilation_node = modified_input
+            .get_mut("InfiltrationVentilation")
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
+        infiltration_ventilation_node.insert(
+            "MechanicalVentilation".into(),
+            json!({
+                "mechvent1": create_ventilation_config(&MechVentType::CentralisedContinuousMev)
+            }),
+        );
+        let modified_input_control_node = modified_input
+            .get_mut("Control")
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
+        modified_input_control_node.insert(
+            "Centralised_continuous_MEV_Control".into(),
+            create_control_config(),
+        );
+        // should be ok
+        let input: Result<Input, _> = serde_json::from_value(modified_input);
+        let input = input.unwrap();
+        assert!(input.validate().is_ok());
+    }
+
+    fn assert_range_constraints<T>(valid_example: JsonValue, inputs: JsonValue)
+    where
+        T: DeserializeOwned + Validate,
+    {
+        let input_under_test = merge_json_onto_base(valid_example, inputs);
+        let input: Result<T, _> = serde_json::from_value(input_under_test);
+        assert!(match input {
+            Ok(input) => input.validate().is_err(),
+            Err(_) => true,
+        });
+    }
+
+    mod time_series {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ApplianceGainsDetails {
+                events: None,
+                standby: None,
+                energy_supply: Default::default(),
+                gains_fraction: 0.0,
+                load_shifting: None,
+                priority: None,
+                schedule: None,
+                start_day: 12,
+                time_series_step: 12.0,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            // don't need to check start_day is greater than zero as this is enforced by u32 type
+            case::at_most_365(json!({"start_day": 366})),
+            case::at_least_zero_time_series_step(json!({"time_series_step": -1.0})),
+            case::at_most_24_time_series_step(json!({"time_series_step": 25.0})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ApplianceGainsDetails>(valid_example, inputs);
+        }
+    }
+
+    mod metadata {
+        use super::*;
+
+        fn test_validate_hem_core_version() {
+            let metadata = InputMetadata {
+                hem_core_version: "0.0".into(),
+            };
+            assert!(metadata.validate().is_err());
+        }
+    }
+
+    mod appliance_gains_event {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ApplianceGainsEvent {
+                duration: 7.,
+                start: 6.,
+                demand_w: 2000.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::demand_at_least_zero(json!({"demand_W": -1})),
+            case::duration_at_least_zero(json!({"duration": -1})),
+            case::start_at_least_zero(json!({"start": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ApplianceGainsEvent>(valid_example, inputs);
+        }
+    }
+
+    mod appliance_load_shifting {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ApplianceLoadShifting {
+                control: None,
+                priority: None,
+                max_shift_hrs: 12.,
+                demand_limit_weighted: 14.,
+                weight_timeseries: vec![],
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::demand_limit_at_least_zero(json!({"demand_limit_weighted": -1})),
+            case::max_shift_hrs_at_least_zero(json!({"max_shift_hrs": -1})),
+            case::max_shift_hrs_at_most_24(json!({"max_shift_hrs": 25})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ApplianceLoadShifting>(valid_example, inputs);
+        }
+    }
+
+    mod cold_water_source {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ColdWaterSourceDetails {
+                start_day: 1,
+                temperatures: vec![14.],
+                time_series_step: 1.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::temperatures_at_least_zero(json!({"temperatures": [-1]})),
+            case::temperatures_at_most_100(json!({"temperatures": [101]})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ColdWaterSourceDetails>(valid_example, inputs);
+        }
+    }
+
+    mod electric_battery {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ElectricBattery {
+                capacity: 1.,
+                charge_discharge_efficiency_round_trip: 0.8,
+                battery_age: 1.,
+                minimum_charge_rate_one_way_trip: 0.001,
+                maximum_charge_rate_one_way_trip: 1.5,
+                maximum_discharge_rate_one_way_trip: 1.25,
+                battery_location: BatteryLocation::Outside,
+                grid_charging_possible: true,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::age_at_least_zero(json!({"battery_age": -1})),
+            case::capacity_at_least_zero(json!({"capacity": -1})),
+            case::maximum_charge_rate_at_least_zero(json!({"maximum_charge_rate_one_way_trip": -1})
+            ),
+            case::maximum_discharge_rate_at_least_zero(json!({"maximum_discharge_rate_one_way_trip": -1})
+            ),
+            case::minimum_charge_rate_than_or_equal_to_zero(json!({"minimum_charge_rate_one_way_trip": -1})
+            ),
+            case::charge_discharge_efficiency_at_least_zero(json!({"charge_discharge_efficiency_round_trip": -1})
+            ),
+            case::charge_discharge_efficiency_at_most_one(json!({"charge_discharge_efficiency_round_trip": 2})
+            ),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ElectricBattery>(valid_example, inputs);
+        }
+    }
+
+    mod external_sensor_correlation {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ExternalSensorCorrelation {
+                temperature: 15.,
+                max_charge: 0.4,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::temperature_at_least_absolute_zero(json!({"temperature": -274})),
+            case::max_charge_at_least_zero(json!({"max_charge": -1})),
+            case::max_charge_at_most_one(json!({"max_charge": 2})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ExternalSensorCorrelation>(valid_example, inputs);
+        }
+    }
+
+    mod fan_speed_data {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(FanSpeedData {
+                temperature_diff: 10.,
+                power_output: vec![],
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::power_output_at_least_zero(json!({"power_output": [-1]})),
+            case::temperature_diff_at_least_zero(json!({"temperature_diff": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<FanSpeedData>(valid_example, inputs);
+        }
+    }
+
+    mod boiler {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(HeatPumpBoiler {
+                energy_supply: "mains elec".into(),
+                energy_supply_aux: "mains elec".into(),
+                rated_power: 10.,
+                efficiency_full_load: 1.,
+                efficiency_part_load: 1.,
+                boiler_location: HeatSourceLocation::Internal,
+                modulation_load: 1.,
+                electricity_circ_pump: 10.,
+                electricity_part_load: 1.,
+                electricity_full_load: 1.,
+                electricity_standby: 10.,
+                cost_schedule_hybrid: None,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::efficiency_full_load_at_least_zero(json!({"efficiency_full_load": -1})
+            ),
+            case::efficiency_full_load_at_most_one(json!({"efficiency_full_load": 2})
+            ),
+            case::efficiency_part_load_at_least_zero(json!({"efficiency_part_load": -1})
+            ),
+            case::efficiency_part_load_at_most_one(json!({"efficiency_part_load": 2})
+            ),
+            case::modulation_load_at_least_zero(json!({"modulation_load": -1})),
+            case::modulation_load_at_most_one(json!({"modulation_load": 2})),
+            case::electricity_circ_pump_at_least_zero(json!({"electricity_circ_pump": -1})
+            ),
+            case::electricity_full_load_at_least_zero(json!({"electricity_full_load": -1})
+            ),
+            case::electricity_part_load_at_least_zero(json!({"electricity_part_load": -1})
+            ),
+            case::electricity_standby_at_least_zero(json!({"electricity_standby": -1})
+            ),
+            case::rated_power_greater_than_zero(json!({"rated_power": 0})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<HeatPumpBoiler>(valid_example, inputs);
+        }
+    }
+
+    mod heat_source_wet {
+        use super::*;
+
+        mod heat_battery {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HeatBattery::Pcm {
+                    energy_supply: "mains elec".into(),
+                    temp_init: 25.,
+                    electricity_circ_pump: 0.0600,
+                    electricity_standby: 0.0244,
+                    rated_charge_power: 10.,
+                    max_rated_losses: 0.22,
+                    number_of_units: 1,
+                    simultaneous_charging_and_discharging: true,
+                    control_charge: "control".into(),
+                    heat_storage_k_j_per_k_above_phase_transition: 381.5,
+                    heat_storage_k_j_per_k_below_phase_transition: 305.2,
+                    heat_storage_k_j_per_k_during_phase_transition: 12317.,
+                    phase_transition_temperature_upper: 59.,
+                    phase_transition_temperature_lower: 57.,
+                    max_temperature: 25.,
+                    velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
+                    capillary_diameter_m: 0.0065,
+                    a: 0.4,
+                    b: 0.5,
+                    heat_exchanger_surface_area_m2: 8.83,
+                    flow_rate_l_per_min: 10.,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::capillary_diameter_m_greater_than_zero(json!({"capillary_diameter_m": 0})),
+                case::flow_rate_l_per_min_greater_than_zero(json!({"flow_rate_l_per_min": 0})),
+                case::heat_exchanger_surface_area_m2_greater_than_zero(json!({"heat_exchanger_surface_area_m2": 0})
+                ),
+                case::heat_storage_kj_per_k_above_phase_transition_greater_than_zero(json!({"heat_storage_kJ_per_K_above_Phase_transition": 0})
+                ),
+                case::heat_storage_kj_per_k_below_phase_transition_greater_than_zero(json!({"heat_storage_kJ_per_K_below_Phase_transition": 0})
+                ),
+                case::heat_storage_kj_per_k_during_phase_transition_greater_than_zero(json!({"heat_storage_kJ_per_K_during_Phase_transition": 0})
+                ),
+                case::rated_charge_power_greater_than_zero(json!({"rated_charge_power": 0})),
+                case::velocity_in_hex_tube_at_1_l_per_min_m_per_s_greater_than_zero(json!({"velocity_in_HEX_tube_at_1_l_per_min_m_per_s": 0})
+                ),
+                case::electricity_circ_pump_at_least_zero(json!({"electricity_circ_pump": -1})
+                ),
+                case::electricity_standby_at_least_zero(json!({"electricity_standby": -1})
+                ),
+                case::max_rated_losses_at_least_zero(json!({"max_rated_losses": -1})
+                ),
+                // case::number_of_units_at_least_zero(json!({"number_of_units": -1})), // not needed as enforced by u32 type
+                case::max_temperature_at_least_absolute_zero(json!({"max_temperature": -9999})
+                ),
+                case::phase_transition_temperature_upper_at_least_absolute_zero(json!({"phase_transition_temperature_upper": -9999})
+                ),
+                case::phase_transition_temperature_lower_at_least_absolute_zero(json!({"phase_transition_temperature_lower": -9999})
+                ),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HeatBattery>(valid_example, inputs);
+            }
+        }
+
+        mod hiu {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HeatSourceWetDetails::Hiu {
+                    energy_supply: "mains elec".into(),
+                    power_max: 3.0,
+                    hiu_daily_loss: 0.8,
+                    building_level_distribution_losses: 62.,
+                    power_circ_pump: None,
+                    power_aux: None,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::power_max_greater_than_zero(json!({"power_max": 0})),
+                case::hiu_daily_loss_at_least_zero(json!({"HIU_daily_loss": -1})),
+                case::building_level_distribution_losses_at_least_zero(json!({"building_level_distribution_losses": -1})
+                ),
+                case::power_circ_pump_at_least_zero(json!({"power_circ_pump": -1})),
+                case::power_aux_at_least_zero(json!({"power_aux": -1})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HeatSourceWetDetails>(valid_example, inputs);
+            }
+        }
+
+        mod heat_pump {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HeatSourceWetDetails::HeatPump {
+                    buffer_tank: None,
+                    energy_supply: "mains elec".into(),
+                    energy_supply_heat_network: None,
+                    mechanical_ventilation: None,
+                    backup_control_type: HeatPumpBackupControlType::TopUp,
+                    boiler: None,
+                    eahp_mixed_max_temp: Some(10.),
+                    eahp_mixed_min_temp: Some(10.),
+                    min_modulation_rate_20: None,
+                    min_modulation_rate_35: None,
+                    min_modulation_rate_55: None,
+                    min_temp_diff_flow_return_for_hp_to_operate: 1.,
+                    modulating_control: true,
+                    power_crankcase_heater: 0.01,
+                    power_heating_circ_pump: Some(0.015),
+                    power_heating_warm_air_fan: Some(0.015),
+                    power_max_backup: Some(3.0),
+                    power_off: 0.015,
+                    power_source_circ_pump: 0.010,
+                    power_standby: 0.015,
+                    sink_type: HeatPumpSinkType::Water,
+                    source_type: HeatPumpSourceType::ExhaustAirMixed,
+                    temp_distribution_heat_network: Some(10.),
+                    temp_lower_operating_limit: -5.,
+                    temp_return_feed_max: Some(70.),
+                    test_data_en14825: vec![],
+                    time_constant_onoff_operation: 140.,
+                    time_delay_backup: None,
+                    var_flow_temp_ctrl_during_test: true,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::eahp_mixed_max_temp_at_least_absolute_zero(json!({"eahp_mixed_max_temp": -274})),
+                case::eahp_mixed_min_temp_at_least_absolute_zero(json!({"eahp_mixed_min_temp": -274})),
+                case::temp_distribution_heat_network_at_least_absolute_zero(json!({"temp_distribution_heat_network": -274})),
+                case::temp_lower_operating_limit_at_least_absolute_zero(json!({"temp_lower_operating_limit": -274})),
+                case::temp_return_feed_max_at_least_absolute_zero(json!({"temp_return_feed_max": -274})),
+                case::min_modulation_rate_20_at_least_zero(json!({"min_modulation_rate_20": -1})),
+                case::min_modulation_rate_20_at_most_one(json!({"min_modulation_rate_20": 2})),
+                case::min_modulation_rate_35_at_least_zero(json!({"min_modulation_rate_35": -1})),
+                case::min_modulation_rate_35_at_most_one(json!({"min_modulation_rate_35": 2})),
+                case::min_modulation_rate_55_at_least_zero(json!({"min_modulation_rate_55": -1})),
+                case::min_modulation_rate_55_at_most_one(json!({"min_modulation_rate_55": 2})),
+                case::power_crankcase_heater_at_least_zero(json!({"power_crankcase_heater": -1})),
+                case::power_heating_circ_pump_at_least_zero(json!({"power_heating_circ_pump": -1})),
+                case::power_heating_warm_air_fan_at_least_zero(json!({"power_heating_warm_air_fan": -1})),
+                case::power_max_backup_at_least_zero(json!({"power_max_backup": -1})),
+                case::power_off_at_least_zero(json!({"power_off": -1})),
+                case::power_source_circ_pump_at_least_zero(json!({"power_source_circ_pump": -1})),
+                case::power_standby_at_least_zero(json!({"power_standby": -1})),
+                case::time_constant_onoff_operation_at_least_zero(json!({"time_constant_onoff_operation": -1})),
+                case::time_delay_backup_at_least_zero(json!({"time_delay_backup": -1})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HeatSourceWetDetails>(valid_example, inputs);
+            }
+        }
+    }
+
+    mod hot_water_source {
+        use super::*;
+
+        mod combi_boiler {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HotWaterSourceDetails::CombiBoiler {
+                    cold_water_source: "cold water source".into(),
+                    heat_source_wet: "heat source wet".into(),
+                    separate_dhw_tests: BoilerHotWaterTest::MOnly,
+                    rejected_energy_1: None,
+                    storage_loss_factor_2: None,
+                    rejected_factor_3: None,
+                    setpoint_temp: Some(10.),
+                    daily_hw_usage: 120.,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::daily_hw_usage_at_least_zero(json!({"daily_HW_usage": -1})),
+                case::rejected_energy_1_at_least_zero(json!({"rejected_energy_1": -1})
+                ),
+                case::rejected_factor_3_at_least_zero(json!({"rejected_factor_3": -1})
+                ),
+                case::storage_loss_factor_2_at_least_zero(json!({"storage_loss_factor_2": -1})
+                ),
+                case::setpoint_temp_at_least_absolute_zero(json!({"setpoint_temp": -9999})
+                ),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HotWaterSourceDetails>(valid_example, inputs);
+            }
+        }
+
+        mod hui {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HotWaterSourceDetails::Hiu {
+                    cold_water_source: "cold water source".into(),
+                    heat_source_wet: "heat source wet".into(),
+                    setpoint_temp: None,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::setpoint_temp_at_least_absolute_zero(json!({"setpoint_temp": -9999})
+                ),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HotWaterSourceDetails>(valid_example, inputs);
+            }
+        }
+
+        mod point_of_use {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HotWaterSourceDetails::PointOfUse {
+                    efficiency: Some(0.7),
+                    energy_supply: "mains elec".into(),
+                    cold_water_source: "cold water source".into(),
+                    setpoint_temp: 25.,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::efficiency_at_least_zero(json!({"efficiency": -1})),
+                case::efficiency_at_most_one(json!({"efficiency": 2})),
+                case::setpoint_temp_at_least_absolute_zero(json!({"setpoint_temp": -9999})
+                ),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HotWaterSourceDetails>(valid_example, inputs);
+            }
+        }
+
+        mod storage_tank {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HotWaterSourceDetails::StorageTank {
+                    cold_water_source: "cold water source".into(),
+                    heat_source: IndexMap::from([(
+                        "hp".into(),
+                        HeatSource::ServiceWaterRegular {
+                            name: "hp".into(),
+                            temp_flow_limit_upper: Some(65.),
+                            energy_supply: "mains elec".into(),
+                            control_min: Some("min_temp".into()),
+                            control_max: Some("setpoint_temp_max".into()),
+                            heater_position: 0.1,
+                            thermostat_position: Some(0.33),
+                        },
+                    )]),
+                    daily_losses: 10.,
+                    heat_exchanger_surface_area: None,
+                    init_temp: 10.,
+                    primary_pipework: None,
+                    volume: 100.,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::init_temp_at_least_absolute_zero(json!({"init_temp": -274})),
+                case::daily_losses_at_least_zero(json!({"daily_losses": -1})),
+                case::heat_exchanger_surface_area_at_least_zero(json!({"heat_exchanger_surface_area": -1})),
+                case::volume_at_least_zero(json!({"volume": -1})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HotWaterSourceDetails>(valid_example, inputs);
+            }
+        }
+    }
+
+    mod mechanical_ventilation_ductwork {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(MechanicalVentilationDuctwork {
+                cross_section_shape: DuctShape::Circular,
+                duct_perimeter_mm: None,
+                internal_diameter_mm: None,
+                external_diameter_mm: None,
+                length: 100.,
+                insulation_thermal_conductivity: 0.8,
+                insulation_thickness_mm: 20.,
+                reflective: true,
+                duct_type: DuctType::Exhaust,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::duct_perimeter_mm_greater_than_zero(json!({"duct_perimeter_mm": 0})),
+            case::external_diameter_mm_greater_than_zero(json!({"external_diameter_mm": 0})),
+            case::insulation_thermal_conductivity_greater_than_zero(json!({"insulation_thermal_conductivity": 0})
+            ),
+            case::internal_diameter_mm_greater_than_zero(json!({"internal_diameter_mm": 0})),
+            case::length_greater_than_zero(json!({"length": 0})),
+            case::insulation_thickness_mm_greater_than_zero(json!({"insulation_thickness_mm": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<MechanicalVentilationDuctwork>(valid_example, inputs);
+        }
+    }
+
+    mod other_water_use {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(OtherWaterUse {
+                flowrate: 10.,
+                cold_water_source: "cold water source".into(),
+                hot_water_source: None,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::flowrate_at_least_zero(json!({"flowrate": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<OtherWaterUse>(valid_example, inputs);
+        }
+    }
+
+    // upstream Python has tests that schedule repeater `repeat` fields are non-negative - unnecessary here as field uses unsigned integer type
+
+    mod shower {
+        use super::*;
+
+        mod mixer {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(Shower::MixerShower {
+                    flowrate: 10.,
+                    cold_water_source: "cold water source".into(),
+                    hot_water_source: None,
+                    wwhrs_config: Default::default(),
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::flowrate_at_least_zero(json!({"flowrate": -1})),
+                case::wwhrs_configuration_not_provided_when_wwhrs_not_provided(json!({"WWHRS": null, "WWHRS_configuration": "A"})
+                )
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<Shower>(valid_example, inputs);
+            }
+        }
+
+        mod instant_electric {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(Shower::InstantElectricShower {
+                    rated_power: 5.,
+                    cold_water_source: "cold water source".into(),
+                    energy_supply: "mains elec".into(),
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::rated_power_at_least_zero(json!({"rated_power": -1})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<Shower>(valid_example, inputs);
+            }
+        }
+    }
+
+    mod smart_appliance_battery {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            let base_map = IndexMap::from([("test".into(), vec![0.1, 0.2, 0.3, 0.4])]);
+
+            serde_json::to_value(SmartApplianceBattery {
+                battery_state_of_charge: base_map.clone(),
+                energy_into_battery_from_generation: base_map.clone(),
+                energy_into_battery_from_grid: base_map.clone(),
+                energy_out_of_battery: base_map.clone(),
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::battery_state_of_change_at_least_one_map_item(json!({"battery_state_of_charge": {}})),
+            case::battery_state_of_change_at_least_one_list_item(json!({"battery_state_of_charge": {"_unmet_demand": []}})),
+            case::battery_state_of_change_each_at_most_one(json!({"battery_state_of_charge": {"_unmet_demand": [0, 1, 2, -1]}})),
+            case::battery_state_of_change_each_at_least_zero(json!({"battery_state_of_charge": {"_unmet_demand": [0, 0.1, 0.2, -1]}})),
+            case::energy_into_battery_from_generation_at_least_one_map_item(json!({"energy_into_battery_from_generation": {}})),
+            case::energy_into_battery_from_generation_at_least_one_list_item(json!({"energy_into_battery_from_generation": {"_unmet_demand": []}})),
+            case::energy_into_battery_from_grid_at_least_one_map_item(json!({"energy_into_battery_from_grid": {}})),
+            case::energy_into_battery_from_grid_at_least_one_list_item(json!({"energy_into_battery_from_grid": {"_unmet_demand": []}})),
+            case::energy_out_of_battery_at_least_one_map_item(json!({"energy_out_of_battery": {}})),
+            case::energy_out_of_battery_at_least_one_list_item(json!({"energy_out_of_battery": {"_unmet_demand": []}})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<SmartApplianceBattery>(valid_example, inputs);
+        }
+    }
+
+    mod smart_appliance_control {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            let base_map = IndexMap::from([("test".into(), vec![0.1, 0.2, 0.3, 0.4])]);
+
+            serde_json::to_value(SmartApplianceControlDetails {
+                appliances: vec![],
+                battery_24hr: SmartApplianceBattery {
+                    battery_state_of_charge: base_map.clone(),
+                    energy_into_battery_from_generation: base_map.clone(),
+                    energy_into_battery_from_grid: base_map.clone(),
+                    energy_out_of_battery: base_map.clone(),
+                },
+                non_appliance_demand_24hr: IndexMap::from([("test".into(), vec![1., 2., 3., 4.])]),
+                power_timeseries: IndexMap::from([("test".into(), vec![1., 2., 3., 4.])]),
+                time_series_step: 1.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::non_appliance_demand_24hr_at_least_one_list_item(json!({"non_appliance_demand_24hr": {"_unmet_demand": []}})),
+            case::power_timeseries_at_least_one_list_item(json!({"power_timeseries": {"_unmet_demand": []}})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<SmartApplianceControlDetails>(valid_example, inputs);
+        }
+    }
+
+    mod space_heat_system_heat_source {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(SpaceHeatSystemHeatSource {
+                name: "test".into(),
+                temp_flow_limit_upper: None,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::temp_flow_limit_upper_at_least_zero(json!({"temp_flow_limit_upper": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<SpaceHeatSystemHeatSource>(valid_example, inputs);
+        }
+    }
+
+    mod thermal_bridging_linear {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ThermalBridgingDetails::Linear {
+                linear_thermal_transmittance: 0.9,
+                length: 10.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::length_greater_than_zero(json!({"length": 0})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ThermalBridgingDetails>(valid_example, inputs);
+        }
+    }
+
+    mod vent {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(Vent {
+                mid_height_air_flow_path: 1.3,
+                area_cm2: 120.,
+                pressure_difference_ref: 3.4,
+                orientation: 180. - 123.,
+                pitch: 45.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::area_cm2_greater_than_zero(json!({"area_cm2": 0})),
+            case::mid_height_air_flow_path_greater_than_zero(json!({"mid_height_air_flow_path": 0})),
+            case::orientation360_at_least_zero(json!({"orientation360": -1})),
+            case::orientation360_at_most_360(json!({"orientation360": 361})),
+            case::pitch_at_least_zero(json!({"pitch": -1})),
+            case::pitch_at_most_one(json!({"pitch": 181})),
+            case::pressure_difference_ref_at_least_zero(json!({"pressure_difference_ref": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<Vent>(valid_example, inputs);
+        }
+    }
+
+    mod ventilation_leaks {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(VentilationLeaks {
+                ventilation_zone_height: 6.,
+                test_pressure: 50.,
+                test_result: 1.2,
+                env_area: 220.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::env_area_at_least_zero(json!({"env_area": -1})),
+            case::test_pressure_at_least_zero(json!({"test_pressure": -1})),
+            case::test_result_at_least_zero(json!({"test_result": -1})),
+            case::ventilation_zone_height_at_least_zero(json!({"ventilation_zone_height": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<VentilationLeaks>(valid_example, inputs);
+        }
+    }
+
+    mod water_heating_event {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(WaterHeatingEvent {
+                start: 1.,
+                duration: None,
+                volume: None,
+                temperature: 12.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::duration_at_least_zero(json!({"duration": -1})),
+            case::start_at_least_zero(json!({"start": -1})),
+            case::volume_at_least_zero(json!({"volume": -1})),
+            case::temperature_at_least_absolute_zero(json!({"temperature": -274})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<WaterHeatingEvent>(valid_example, inputs);
+        }
+    }
+
+    mod water_pipework {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(WaterPipework {
+                location: WaterPipeworkLocation::Internal,
+                internal_diameter_mm: 25.,
+                external_diameter_mm: 27.,
+                length: 10.,
+                insulation_thermal_conductivity: 1.3,
+                insulation_thickness_mm: 34.,
+                surface_reflectivity: false,
+                pipe_contents: PipeworkContents::Water,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::external_diameter_mm_greater_than_zero(json!({"external_diameter_mm": 0})),
+            case::insulation_thermal_conductivity_greater_than_zero(json!({"insulation_thermal_conductivity": 0})),
+            case::internal_diameter_mm_greater_than_zero(json!({"internal_diameter_mm": 0})),
+            case::insulation_thickness_mm_at_least_zero(json!({"insulation_thickness_mm": -1})),
+            case::length_at_least_zero(json!({"length": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<WaterPipework>(valid_example, inputs);
+        }
+    }
+
+    mod water_pipework_simple {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(WaterPipeworkSimple {
+                location: WaterPipeworkLocation::External,
+                internal_diameter_mm: 25.,
+                length: 10.,
+                external_diameter_mm: None,
+                insulation_thermal_conductivity: None,
+                insulation_thickness_mm: None,
+                surface_reflectivity: None,
+                pipe_contents: None,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::internal_diameter_mm_greater_than_zero(json!({"internal_diameter_mm": 0})),
+            case::length_greater_than_zero(json!({"length": 0})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<WaterPipeworkSimple>(valid_example, inputs);
+        }
+    }
+
+    mod wet_emitter {
+        use super::*;
+
+        mod radiator {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(WetEmitter::Radiator {
+                    exponent: 1.2,
+                    frac_convective: 0.9,
+                    constant_data: RadiatorConstantData::Constant { constant: 1.2 },
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::c_greater_than_zero(json!({"c": 0})),
+                case::n_greater_than_zero(json!({"n": 0})),
+                case::frac_convective_at_least_zero(json!({"frac_convective": -1})),
+                case::frac_convective_at_most_one(json!({"frac_convective": 2})),
+                case::length_greater_than_zero(json!({"c": null, "length": 0, "c_per_m": 1})),
+                case::c_per_m_greater_than_zero(json!({"c": null, "c_per_m": 0, "length": 3})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<WetEmitter>(valid_example, inputs);
+            }
+        }
+
+        mod ufh {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(WetEmitter::Ufh {
+                    equivalent_specific_thermal_mass: 80.,
+                    system_performance_factor: 5.,
+                    emitter_floor_area: 40.,
+                    frac_convective: 0.9,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::equivalent_specific_thermal_mass_greater_than_zero(json!({"equivalent_specific_thermal_mass": 0})),
+                case::system_performance_factor_greater_than_zero(json!({"system_performance_factor": 0})),
+                case::emitter_floor_area_at_least_zero(json!({"emitter_floor_area": -1})),
+                case::frac_convective_at_least_zero(json!({"frac_convective": -1})),
+                case::frac_convective_at_most_one(json!({"frac_convective": 2})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<WetEmitter>(valid_example, inputs);
+            }
+        }
+
+        mod fancoil {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(WetEmitter::Fancoil {
+                    n_units: 1,
+                    frac_convective: 0.8,
+                    fancoil_test_data: FancoilTestData {
+                        fan_speed_data: vec![
+                            FanSpeedData {
+                                temperature_diff: 80.,
+                                power_output: vec![2.7, 3.6, 5., 5.3, 6.2, 7.4],
+                            },
+                            FanSpeedData {
+                                temperature_diff: 70.,
+                                power_output: vec![2.3, 3.1, 4.2, 4.5, 5.3, 6.3],
+                            },
+                            FanSpeedData {
+                                temperature_diff: 60.,
+                                power_output: vec![1.9, 2.6, 3.5, 3.8, 4.4, 5.3],
+                            },
+                            FanSpeedData {
+                                temperature_diff: 50.,
+                                power_output: vec![1.5, 2., 2.8, 3., 3.5, 4.2],
+                            },
+                        ],
+                        fan_power_w: vec![15., 19., 25., 33., 43., 56.],
+                    },
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::n_units_greater_than_zero(json!({"n_units": 0})),
+                case::frac_convective_at_least_zero(json!({"frac_convective": -1})),
+                case::frac_convective_at_most_one(json!({"frac_convective": 2})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<WetEmitter>(valid_example, inputs);
+            }
+        }
+    }
+
+    mod window_shading {
+        use super::*;
+
+        mod obstacle {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(WindowShadingObject::Obstacle {
+                    height: 10.,
+                    distance: 10.,
+                    transparency: 0.6,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::height_at_least_zero(json!({"height": -1})),
+                case::distance_at_least_zero(json!({"distance": -1})),
+                case::transparency_at_least_zero(json!({"transparency": -1})),
+                case::transparency_at_most_one(json!({"transparency": 2})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<WindowShadingObject>(valid_example, inputs);
+            }
+        }
+
+        mod object {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(WindowShadingObject::SideFinLeft {
+                    depth: 10.,
+                    distance: 1.5,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::depth_at_least_zero(json!({"depth": -1})),
+                case::distance_at_least_zero(json!({"distance": -1})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<WindowShadingObject>(valid_example, inputs);
+            }
+        }
+    }
+
+    mod bath {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(BathDetails {
+                size: 10.,
+                cold_water_source: "cold water source".into(),
+                hot_water_source: None,
+                flowrate: 2.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::flowrate_at_least_zero(json!({"flowrate": -1})),
+            case::size_greater_than_zero(json!({"size": 0})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<BathDetails>(valid_example, inputs);
+        }
+    }
+
+    mod energy_supply {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(EnergySupplyDetails {
+                fuel: FuelType::EnergyFromEnvironment,
+                diverter: None,
+                electric_battery: None,
+                factor: None,
+                priority: None,
+                is_export_capable: true,
+                threshold_charges: None,
+                threshold_prices: None,
+                tariff: None,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::threshold_charges_at_least_12_items(json!({"threshold_charges": [0, 1, 1]})),
+            case::threshold_charges_at_most_12_items(json!({"threshold_charges": [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]})),
+            case::threshold_charges_item_at_most_one(json!({"threshold_charges": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2]})),
+            case::threshold_charges_item_at_least_zero(json!({"threshold_charges": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1]})),
+            case::threshold_prices_at_least_12_items(json!({"threshold_prices": [0, 1, 1]})),
+            case::threshold_prices_at_most_12_items(json!({"threshold_prices": [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<EnergySupplyDetails>(valid_example, inputs);
+        }
+    }
+
+    mod heat_source {
+        use super::*;
+
+        mod immersion_heater {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HeatSource::ImmersionHeater {
+                    power: 12.,
+                    energy_supply: "mains elec".into(),
+                    control_min: Some("control min".into()),
+                    control_max: Some("control max".into()),
+                    heater_position: 0.7,
+                    thermostat_position: None,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::power_at_least_zero(json!({"power": -1})),
+                case::heater_position_at_least_zero(json!({"heater_position": -1})),
+                case::heater_position_at_most_one(json!({"heater_position": 2})),
+                case::thermostat_position_at_least_zero(json!({"thermostat_position": -1})),
+                case::thermostat_position_at_most_one(json!({"thermostat_position": 2})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HeatSource>(valid_example, inputs);
+            }
+        }
+
+        mod solar_thermal_system {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HeatSource::SolarThermalSystem {
+                    solar_cell_location: SolarCollectorLoopLocation::Out,
+                    area_module: 10.,
+                    modules: 1,
+                    peak_collector_efficiency: 0.8,
+                    incidence_angle_modifier: 0.9,
+                    first_order_hlc: 3.5,
+                    second_order_hlc: 0.,
+                    collector_mass_flow_rate: 1.,
+                    power_pump: 100.,
+                    power_pump_control: 10.,
+                    energy_supply: "mains elec".into(),
+                    tilt: 56.,
+                    orientation: -54.,
+                    solar_loop_piping_hlc: 0.5,
+                    heater_position: 0.8,
+                    thermostat_position: None,
+                    control_max: "control max".into(),
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::area_module_at_least_zero(json!({"area_module": -1})),
+                case::collector_mass_flow_rate_at_least_zero(json!({"collector_mass_flow_rate": -1})),
+                case::first_order_hlc_at_least_zero(json!({"first_order_hlc": -1})),
+                case::incidence_angle_modifier_at_least_zero(json!({"incidence_angle_modifier": -1})),
+                case::incidence_angle_modifier_at_least_zero(json!({"incidence_angle_modifier": 2})),
+                case::peak_collector_efficiency_at_least_zero(json!({"peak_collector_efficiency": -1})),
+                case::peak_collector_efficiency_at_most_one(json!({"peak_collector_efficiency": 2})),
+                case::power_pump_at_least_zero(json!({"power_pump": -1})),
+                case::power_pump_control_at_least_zero(json!({"power_pump_control": -1})),
+                case::second_order_hlc_at_least_zero(json!({"second_order_hlc": -1})),
+                case::solar_loop_piping_hlc_at_least_zero(json!({"solar_loop_piping_hlc": -1})),
+                case::modules_greater_than_zero(json!({"modules": 0})),
+                case::orientation_at_most_180(json!({"orientation360": -1})),
+                case::orientation_at_least_minus_180(json!({"orientation360": 361})),
+                case::heater_position_at_least_zero(json!({"heater_position": -1})),
+                case::heater_position_at_most_one(json!({"heater_position": 2})),
+                case::thermostat_position_at_least_zero(json!({"thermostat_position": -1})),
+                case::thermostat_position_at_most_one(json!({"thermostat_position": 2})),
+                case::tilt_at_least_zero(json!({"tilt": -1})),
+                case::tilt_at_most_90(json!({"tilt": 91})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HeatSource>(valid_example, inputs);
+            }
+        }
+
+        mod wet_service {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HeatSource::ServiceWaterRegular {
+                    name: Default::default(),
+                    temp_flow_limit_upper: None,
+                    energy_supply: Default::default(),
+                    heater_position: 0.8,
+                    thermostat_position: None,
+                    control_max: Some("control max".into()),
+                    control_min: None,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::heater_position_at_least_zero(json!({"heater_position": -1})),
+                case::heater_position_at_most_one(json!({"heater_position": 2})),
+                case::thermostat_position_at_least_zero(json!({"thermostat_position": -1})),
+                case::thermostat_position_at_most_one(json!({"thermostat_position": 2})),
+                case::temp_flow_limit_upper_at_least_absolute_zero(json!({"temp_flow_limit_upper": -274})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HeatSource>(valid_example, inputs);
+            }
+        }
+
+        mod heat_pump_hot_water_only {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(HeatSource::HeatPumpHotWaterOnly {
+                    power_max: 10.,
+                    vol_hw_daily_average: 10.,
+                    tank_volume_declared: 10.,
+                    heat_exchanger_surface_area_declared: 1.3,
+                    daily_losses_declared: 2.3,
+                    in_use_factor_mismatch: 0.4,
+                    test_data: HeatPumpHotWaterTestData {
+                        l: None,
+                        m: HeatPumpHotWaterOnlyTestDatum {
+                            cop_dhw: 2.5,
+                            hw_tapping_prof_daily_total: 5.845,
+                            energy_input_measured: 2.338,
+                            power_standby: 0.02,
+                            hw_vessel_loss_daily: 2.0,
+                        },
+                    },
+                    energy_supply: "mains elec".into(),
+                    control_min: "control min".into(),
+                    control_max: "control max".into(),
+                    heater_position: 1.,
+                    thermostat_position: None,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::heater_position_at_least_zero(json!({"heater_position": -1})),
+                case::heater_position_at_most_one(json!({"heater_position": 2})),
+                case::thermostat_position_at_least_zero(json!({"thermostat_position": -1})),
+                case::thermostat_position_at_most_one(json!({"thermostat_position": 2})),
+                case::daily_losses_declared_at_least_zero(json!({"daily_losses_declared": -1})),
+                case::heat_exchanger_surface_area_declared_at_least_zero(json!({"heat_exchanger_surface_area_declared": -1})),
+                case::in_use_factor_mismatch_at_least_zero(json!({"in_use_factor_mismatch": -1})),
+                case::power_max_at_least_zero(json!({"power_max": -1})),
+                case::vol_hw_daily_average_greater_than_zero(json!({"vol_hw_daily_average": 0})),
+                case::tank_volume_declared_greater_than_zero(json!({"tank_volume_declared": 0})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HeatSource>(valid_example, inputs);
+            }
+        }
+    }
+
+    mod smart_hot_water_tank {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(HotWaterSourceDetails::SmartHotWaterTank {
+                volume: 10.,
+                power_pump_kw: 5.,
+                max_flow_rate_pump_l_per_min: 10.,
+                temp_usable: 40.,
+                temp_setpnt_max: "test".into(),
+                daily_losses: 2.3,
+                init_temp: 15.,
+                cold_water_source: "cold water source".into(),
+                energy_supply_pump: "mains elec".into(),
+                heat_source: Default::default(),
+                primary_pipework: None,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::daily_losses_at_least_zero(json!({"daily_losses": -1})),
+            case::max_flow_rate_pump_l_per_min_at_least_zero(json!({"max_flow_rate_pump_l_per_min": -1})),
+            case::power_pump_kw_at_least_zero(json!({"power_pump_kW": -1})),
+            case::volume_at_least_zero(json!({"volume": -1})),
+            case::init_temp_at_least_absolute_zero(json!({"init_temp": -274})),
+            case::temp_usable_at_least_absolute_zero(json!({"temp_usable": -274})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<HotWaterSourceDetails>(valid_example, inputs);
+        }
+    }
+
+    mod mechanical_ventilation {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(MechanicalVentilation {
+                supply_air_flow_rate_control: SupplyAirFlowRateControlType::Oda,
+                supply_air_temperature_control_type: SupplyAirTemperatureControlType::NoControl,
+                mvhr_efficiency: None,
+                mvhr_location: None,
+                control: None,
+                sfp: 1.2,
+                sfp_in_use_factor: 0.0,
+                energy_supply: "mains elec".into(),
+                design_outdoor_air_flow_rate: 10.,
+                ductwork: vec![],
+                vent_data: MechVentData::Mvhr {
+                    position_intake: MechanicalVentilationPosition {
+                        orientation: 0.,
+                        pitch: 90.,
+                        mid_height_air_flow_path: 3.0,
+                    },
+                    position_exhaust: MechanicalVentilationPosition {
+                        orientation: 180.,
+                        pitch: 90.,
+                        mid_height_air_flow_path: 2.0,
+                    },
+                },
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::sfp_at_least_zero(json!({"SFP": -1})),
+            case::design_outdoor_air_flow_rate_at_least_zero(json!({"design_outdoor_air_flow_rate": -1})),
+            case::mvhr_eff_at_least_zero(json!({"mvhr_eff": -1})),
+            case::supply_air_temperature_control_type_must_be_no_control(json!({"sup_air_temp_ctrl": SupplyAirTemperatureControlType::Constant})),
+            case::mech_vent_mvhr_needs_both_position_intake_and_position_exhaust(json!({"vent_type": "MVHR", "position_intake": null})),
+            case::mech_vent_mvhr_needs_both_position_intake_and_position_exhaust(json!({"vent_type": "MVHR", "position_exhaust": null})),
+            case::mech_vent_mvhr_uses_position_intake_and_position_exhaust_not_legacy_fields(json!({"orientation360": 234})),
+            case::mech_vent_mvhr_uses_position_intake_and_position_exhaust_not_legacy_fields(json!({"pitch": 12})),
+            case::mech_vent_mvhr_uses_position_intake_and_position_exhaust_not_legacy_fields(json!({"mid_height_air_flow_path": 4})),
+            case::mech_vent_piv_uses_position_exhaust_xor_legacy_fields(json!({
+                    "vent_type": "Positive input ventilation",
+                    "position_exhaust": {
+                        "orientation360": 0,
+                        "pitch": 90,
+                        "mid_height_air_flow_path": 2.0,
+                    },
+                    "orientation360": 345,
+                })),
+            case::mech_vent_piv_uses_position_exhaust_xor_legacy_fields(json!({
+                    "vent_type": "Positive input ventilation",
+                    "position_exhaust": {
+                        "orientation360": 0,
+                        "pitch": 90,
+                        "mid_height_air_flow_path": 2.0,
+                    },
+                    "pitch": 34,
+                })),
+            case::mech_vent_piv_uses_position_exhaust_xor_legacy_fields(json!({
+                    "vent_type": "Positive input ventilation",
+                    "position_exhaust": {
+                        "orientation360": 0,
+                        "pitch": 90,
+                        "mid_height_air_flow_path": 2.0,
+                    },
+                    "mid_height_air_flow_path": 3,
+                })),
+            case::mech_vent_piv_uses_position_exhaust_or_legacy_fields(json!({
+                    "vent_type": "Positive input ventilation",
+                    "position_exhaust": null,
+                    "orientation360": null,
+                    "pitch": null,
+                    "mid_height_air_flow_path": 3,
+                })),
+            case::mech_vent_piv_uses_position_exhaust_or_legacy_fields(json!({
+                    "vent_type": "Positive input ventilation",
+                    "position_exhaust": null,
+                    "orientation360": 234,
+                    "pitch": null,
+                    "mid_height_air_flow_path": null,
+                })),
+            case::mech_vent_piv_uses_position_exhaust_or_legacy_fields(json!({
+                    "vent_type": "Positive input ventilation",
+                    "position_exhaust": null,
+                    "orientation360": null,
+                    "pitch": 23,
+                    "mid_height_air_flow_path": null,
+                })),
+            case::mech_vent_piv_does_not_have_position_intake(json!({
+                    "vent_type": "Positive input ventilation",
+                    "position_exhaust": {
+                        "orientation360": 0,
+                        "pitch": 90,
+                        "mid_height_air_flow_path": 2.0,
+                    },
+                    "position_intake": {
+                        "orientation360": 180,
+                        "pitch": 90,
+                        "mid_height_air_flow_path": 3.0,
+                    },
+                })),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<MechanicalVentilation>(valid_example, inputs);
+        }
+    }
+
+    mod photovoltaic_system {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(PhotovoltaicSystem {
+                _type: Default::default(),
+                peak_power: 10.,
+                ventilation_strategy: PhotovoltaicVentilationStrategy::Unventilated,
+                pitch: 90.,
+                orientation: 150.,
+                base_height: 10.,
+                height: 10.,
+                width: 10.,
+                energy_supply: "mains elec".into(),
+                shading: vec![],
+                inverter_peak_power_ac: 1.4,
+                inverter_peak_power_dc: 3.5,
+                inverter_is_inside: true,
+                inverter_type: InverterType::StringInverter,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::base_height_at_least_zero(json!({"base_height": -1})),
+            case::height_at_least_zero(json!({"height": -1})),
+            case::inverter_peak_power_ac_at_least_zero(json!({"inverter_peak_power_ac": -1})),
+            case::inverter_peak_power_dc_at_least_zero(json!({"inverter_peak_power_dc": -1})),
+            case::peak_power_at_least_zero(json!({"peak_power": -1})),
+            case::width_greater_than_zero(json!({"width": 0})),
+            case::orientation_at_most_180(json!({"orientation360": -1})),
+            case::orientation_at_least_minus_180(json!({"orientation360": 361})),
+            case::pitch_at_least_zero(json!({"pitch": -1})),
+            case::pitch_at_most_90(json!({"pitch": 91})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<PhotovoltaicSystem>(valid_example, inputs);
+        }
+    }
+
+    mod photovoltaic_system_with_panels {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(PhotovoltaicSystemWithPanels {
+                _type: Default::default(),
+                energy_supply: "mains elec".into(),
+                inverter_peak_power_ac: 1.4,
+                inverter_peak_power_dc: 3.5,
+                inverter_is_inside: true,
+                panels: vec![PhotovoltaicPanel {
+                    peak_power: 2.5,
+                    ventilation_strategy: PhotovoltaicVentilationStrategy::ModeratelyVentilated,
+                    pitch: 30.,
+                    orientation: 0.,
+                    base_height: 10.,
+                    height: 1.,
+                    width: 1.,
+                    shading: vec![],
+                }],
+                inverter_type: InverterType::StringInverter,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::inverter_peak_power_ac_at_least_zero(json!({"inverter_peak_power_ac": -1})),
+            case::inverter_peak_power_dc_at_least_zero(json!({"inverter_peak_power_dc": -1})),
+            case::panels_at_least_one_item(json!({"panels": []})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<PhotovoltaicSystemWithPanels>(valid_example, inputs);
+        }
+    }
+
+    mod photovoltaic_panel {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(PhotovoltaicPanel {
+                peak_power: 1.3,
+                ventilation_strategy: PhotovoltaicVentilationStrategy::Unventilated,
+                pitch: 34.,
+                orientation: -65.,
+                base_height: 1.2,
+                height: 2.3,
+                width: 4.3,
+                shading: vec![],
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::peak_power_at_least_zero(json!({"peak_power": -1})),
+            case::base_height_at_least_zero(json!({"base_height": -1})),
+            case::width_greater_than_zero(json!({"width": 0})),
+            case::orientation_at_most_180(json!({"orientation360": -1})),
+            case::orientation_at_least_minus_180(json!({"orientation360": 361})),
+            case::pitch_at_least_zero(json!({"pitch": -1})),
+            case::pitch_at_most_90(json!({"pitch": 91})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<PhotovoltaicPanel>(valid_example, inputs);
+        }
+    }
+
+    mod shading_object {
+        use super::*;
+        use crate::hem_core::external_conditions::{ShadingObject, ShadingObjectType};
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ShadingObject {
+                object_type: ShadingObjectType::Obstacle,
+                height: 10.,
+                distance: 10.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::distance_greater_than_zero(json!({"distance": 0})),
+            case::height_greater_than_zero(json!({"height": 0})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ShadingObject>(valid_example, inputs);
+        }
+    }
+
+    mod shading_segment {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ShadingSegment {
+                start: 180.,
+                end: -180.,
+                shading_objects: vec![],
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::end_at_most_180(json!({"end360": -1})),
+            case::end_at_least_minus_180(json!({"end360": 361})),
+            case::start_at_most_180(json!({"start360": -1})),
+            case::start_at_least_minus_180(json!({"start360": 361})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ShadingSegment>(valid_example, inputs);
+        }
+    }
+
+    mod air_conditioning {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(SpaceCoolSystemDetails::AirConditioning {
+                cooling_capacity: 1.2,
+                efficiency: 4.3,
+                frac_convective: 0.2,
+                energy_supply: "mains elec".into(),
+                control: "control".into(),
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::frac_convective_at_least_zero(json!({"frac_convective": -1})),
+            case::frac_convective_at_most_one(json!({"frac_convective": 2})),
+            case::efficiency_at_least_zero(json!({"efficiency": -1})),
+            case::cooling_capacity_at_least_zero(json!({"cooling_capacity": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<SpaceCoolSystemDetails>(valid_example, inputs);
+        }
+    }
+
+    mod space_heat_system {
+        use super::*;
+
+        mod instant_electric_heater {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(SpaceHeatSystemDetails::InstantElectricHeater {
+                    rated_power: 6.0,
+                    frac_convective: 0.3,
+                    energy_supply: "mains elec".into(),
+                    control: "control".into(),
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::frac_convective_at_least_zero(json!({"frac_convective": -1})),
+                case::frac_convective_at_most_one(json!({"frac_convective": 2})),
+                case::rated_power_at_least_zero(json!({"rated_power": -1})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<SpaceHeatSystemDetails>(valid_example, inputs);
+            }
+        }
+
+        mod wet_distribution {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(SpaceHeatSystemDetails::WetDistribution {
+                    heat_source: SpaceHeatSystemHeatSource {
+                        name: "immersion_system_heating".into(),
+                        temp_flow_limit_upper: None,
+                    },
+                    bypass_fraction_recirculated: Some(0.0),
+                    design_flow_temp: 55,
+                    emitters: vec![WetEmitter::Radiator {
+                        exponent: 1.2,
+                        frac_convective: 0.4,
+                        constant_data: RadiatorConstantData::Constant { constant: 0.08 },
+                    }],
+                    pipework: vec![],
+                    ecodesign_controller: EcoDesignController {
+                        ecodesign_control_class: EcoDesignControllerClass::ClassVI,
+                        min_outdoor_temp: None,
+                        max_outdoor_temp: None,
+                        min_flow_temp: None,
+                    },
+                    temp_diff_emit_dsgn: 10.0,
+                    energy_supply: None,
+                    zone: "zone_test".into(),
+                    control: "control_test".into(),
+                    thermal_mass: None,
+                    flow_data: FlowData::Variable {
+                        _variable_flow: Default::default(),
+                        max_flow_rate: 18.,
+                        min_flow_rate: 3.,
+                    },
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::min_and_max_flow_rate_needed_if_variable_flow_true(json!({"variable_flow": true, "min_flow_rate": null, "max_flow_rate": null})),
+                case::min_and_max_flow_rate_needed_if_variable_flow_true(json!({"variable_flow": true, "min_flow_rate": 4, "max_flow_rate": null})),
+                case::min_and_max_flow_rate_needed_if_variable_flow_true(json!({"variable_flow": true, "min_flow_rate": null, "max_flow_rate": 4})),
+                case::design_flow_rate_needed_if_variable_flow_false(json!({"variable_flow": false, "design_flow_rate": null})),
+                case::bypass_fraction_recirculated_at_most_one(json!({"bypass_fraction_recirculated": 2})),
+                case::bypass_fraction_recirculated_at_least_zero(json!({"bypass_fraction_recirculated": -1})),
+                case::design_flow_rate_at_least_zero(json!({"variable_flow": false, "design_flow_rate": -1})),
+                case::max_flow_rate_at_least_zero(json!({"max_flow_rate": -1})),
+                case::min_flow_rate_at_least_zero(json!({"min_flow_rate": -1})),
+                case::temp_diff_emit_dsgn_at_least_zero(json!({"temp_diff_emit_dsgn": -1})),
+                case::thermal_mass_at_least_zero(json!({"thermal_mass": -1})),
+                case::design_flow_temp_greater_than_zero(json!({"design_flow_temp": 0})),
+                case::emitters_at_least_one_item(json!({"emitters": []})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<SpaceHeatSystemDetails>(valid_example, inputs);
+            }
+        }
+
+        mod warm_air {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(SpaceHeatSystemDetails::WarmAir {
+                    frac_convective: 0.8,
+                    heat_source: SpaceHeatSystemHeatSource {
+                        name: "immersion_system_heating".into(),
+                        temp_flow_limit_upper: None,
+                    },
+                    control: "control".into(),
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::frac_convective_at_least_zero(json!({"frac_convective": -1})),
+                case::frac_convective_at_most_one(json!({"frac_convective": 2})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<SpaceHeatSystemDetails>(valid_example, inputs);
+            }
+        }
+
+        mod electric_storage_heater {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(SpaceHeatSystemDetails::ElectricStorageHeater {
+                    control_charger: "control_charger_test".into(),
+                    dry_core_max_output: vec![[0.0, 0.0], [0.5, 1.5], [1.0, 3.0]],
+                    dry_core_min_output: vec![[0.0, 0.0], [0.5, 0.02], [1.0, 0.05]],
+                    energy_supply: "energy_supply_test".into(),
+                    frac_convective: 0.2,
+                    n_units: 1,
+                    pwr_in: 3.7,
+                    state_of_charge_init: 0.,
+                    rated_power_instant: 2.5,
+                    storage_capacity: 20.,
+                    control: "control_test".into(),
+                    air_flow_type: ElectricStorageHeaterAirFlowType::FanAssisted,
+                    fan_pwr: 11.0,
+                    zone: "zone_test".into(),
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::first_soc_value_in_dry_core_max_output_must_be_zero(json!({"dry_core_max_output": [[0.1, 0.0], [0.5, 1.5], [1.0, 3.0]]})),
+                case::last_soc_value_in_dry_core_max_output_must_be_one(json!({"dry_core_max_output": [[0.0, 0.0], [0.5, 1.5], [0.9, 3.0]]})),
+                case::dry_core_max_output_values_must_be_increasing(json!({"dry_core_max_output": [[0.0, 0.0], [0.7, 1.5], [0.5, 3.0], [1.0, 3.5]]})),
+                case::first_soc_value_in_dry_core_min_output_must_be_zero(json!({"dry_core_min_output": [[0.1, 0.0], [0.5, 0.02], [1.0, 0.05]]})),
+                case::last_soc_value_in_dry_core_min_output_must_be_one(json!({"dry_core_min_output": [[0.0, 0.0], [0.5, 0.02], [0.9, 0.05]]})),
+                case::dry_core_min_output_values_must_be_increasing(json!({"dry_core_min_output": [[0.0, 0.0], [0.7, 0.02], [0.5, 0.03], [1.0, 0.05]]})),
+                case::dry_core_max_output_must_have_at_least_two_items(json!({"dry_core_max_output": [[]]})),
+                case::dry_core_max_output_item_at_least_zero(json!({"dry_core_max_output": [[-1], [-1]]})),
+                case::dry_core_min_output_must_have_at_least_two_items(json!({"dry_core_min_output": [[]]})),
+                case::dry_core_min_output_item_at_least_zero(json!({"dry_core_min_output": [[-1], [-1]]})),
+                case::fan_pwr_at_least_zero(json!({"fan_pwr": -1})),
+                case::pwr_in_at_least_zero(json!({"pwr_in": -1})),
+                case::rated_power_instant_at_least_zero(json!({"rated_power_instant": -1})),
+                case::frac_convective_at_least_zero(json!({"frac_convective": -1})),
+                case::frac_convective_at_most_one(json!({"frac_convective": 2})),
+                case::n_units_greater_than_zer(json!({"n_units": 0})),
+                case::storage_capacity_greater_than_zero(json!({"storage_capacity": 0})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<SpaceHeatSystemDetails>(valid_example, inputs);
+            }
+
+            #[rstest]
+            fn test_validate_dry_core_output_when_no_input(valid_example: JsonValue) {
+                let modified_input =
+                    merge_json_onto_base(valid_example.clone(), json!({"dry_core_max_output": []}));
+                let space_heat_system: SpaceHeatSystemDetails =
+                    serde_json::from_value(modified_input).unwrap();
+                if let SpaceHeatSystemDetails::ElectricStorageHeater {
+                    dry_core_max_output,
+                    ..
+                } = space_heat_system
+                {
+                    assert!(dry_core_max_output.is_empty());
+                } else {
+                    panic!("ElectricStorageHeater variant expected");
+                }
+
+                let modified_input =
+                    merge_json_onto_base(valid_example, json!({"dry_core_min_output": []}));
+                let space_heat_system: SpaceHeatSystemDetails =
+                    serde_json::from_value(modified_input).unwrap();
+                if let SpaceHeatSystemDetails::ElectricStorageHeater {
+                    dry_core_min_output,
+                    ..
+                } = space_heat_system
+                {
+                    assert!(dry_core_min_output.is_empty());
+                } else {
+                    panic!("ElectricStorageHeater variant expected");
+                }
+            }
+        }
+    }
+
+    mod control {
+        use super::*;
+
+        mod charge_target {
+            use super::*;
+            use crate::core::schedule::input::Schedule;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(ControlDetails::ChargeTarget {
+                    charge_level: None,
+                    external_sensor: None,
+                    logic_type: None,
+                    schedule: Schedule {
+                        main: vec![],
+                        references: Default::default(),
+                    },
+                    temp_charge_cut: None,
+                    temp_charge_cut_delta: None,
+                    charge_calc_time: default_charge_calc_time(),
+                    start_day: 0,
+                    time_series_step: 0.1,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::logic_type_automatic_requires_temp_charge_cut(json!({"logic_type": "automatic"})),
+                case::logic_type_celect_requires_temp_charge_cut(json!({"logic_type": "celect"})),
+                case::logic_type_hhrsh_requires_temp_charge_cut(json!({"logic_type": "hhrsh"})),
+                case::temp_charge_cut_at_least_absolute_zero(json!({"temp_charge_cut": -274})),
+                case::charge_calc_time_at_least_zero(json!({"charge_calc_time": -1})),
+                case::charge_calc_time_less_than_24(json!({"charge_calc_time": 24})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<ControlDetails>(valid_example, inputs);
+            }
+        }
+
+        mod setpoint_timer {
+            use super::*;
+
+            #[fixture]
+            fn base_data() -> JsonValue {
+                json!({
+                    "type": "SetpointTimeControl",
+                    "start_day": 0,
+                    "time_series_step": 1.0,
+                    "schedule": {"main": [{"value": 21.0, "repeat": 24}]},
+                })
+            }
+
+            /// Test that valid setpoint bounds pass validation.
+            #[rstest]
+            fn test_valid_setpoint_bounds(base_data: JsonValue) {
+                let data = merge_json_onto_base(
+                    base_data,
+                    json!({"setpoint_min": 18.0, "setpoint_max": 25.0, "default_to_max": false}),
+                );
+
+                let control: ControlDetails = serde_json::from_value(data).unwrap();
+                assert!(matches!(control, ControlDetails::SetpointTimer { .. }));
+                if let ControlDetails::SetpointTimer {
+                    setpoint_bounds:
+                        Some(
+                            SetpointBoundsInput::MinAndMax {
+                                setpoint_min,
+                                setpoint_max,
+                                ..
+                            },
+                            ..,
+                        ),
+                    ..
+                } = control
+                {
+                    assert_eq!(setpoint_min, 18.0);
+                    assert_eq!(setpoint_max, 25.0);
+                } else {
+                    panic!("control was expected to be a setpoint timer type");
+                }
+            }
+
+            #[rstest]
+            fn test_invalid_setpoint_bounds(base_data: JsonValue) {
+                let data = merge_json_onto_base(
+                    base_data,
+                    json!({
+                        "setpoint_min": 18.0,
+                        "setpoint_max": 18.0,  // Equal to min - should fail
+                        "default_to_max": false, // need to specify default_to_max when min and max present
+                    }),
+                );
+
+                let control: Result<ControlDetails, _> = serde_json::from_value(data);
+
+                assert!(match control {
+                    Ok(control) => control.validate().is_err(),
+                    Err(_) => true,
+                });
+            }
+
+            #[rstest(inputs,
+                case::advanced_start_at_least_zero(json!({"advanced_start": -1})),
+            )]
+            fn test_validate_range_constraints(base_data: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<ControlDetails>(base_data, inputs);
+            }
+        }
+
+        mod on_off_cost_minimising {
+            use super::*;
+            use crate::core::schedule::input::Schedule;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(ControlDetails::OnOffCostMinimising {
+                    schedule: Schedule {
+                        main: vec![],
+                        references: Default::default(),
+                    },
+                    start_day: 0,
+                    time_series_step: 1.,
+                    time_on_daily: 1.,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::time_on_daily_greater_than_zero(json!({"time_on_daily": 0})),
+                case::time_on_daily_at_most_24(json!({"time_on_daily": 25})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<ControlDetails>(valid_example, inputs);
+            }
+        }
+    }
+
+    mod waste_water_heat_recovery_system {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(WasteWaterHeatRecoveryDetails {
+                _type: Default::default(),
+                cold_water_source: "header tank".into(),
+                flow_rates: vec![],
+                system_a_efficiencies: vec![],
+                system_a_utilisation_factor: Some(1.),
+                system_b_efficiencies: None,
+                system_b_utilisation_factor: None,
+                system_c_efficiencies: None,
+                system_c_utilisation_factor: None,
+                system_b_efficiency_factor: default_system_b_efficiency_factor(),
+                system_c_efficiency_factor: default_system_c_efficiency_factor(),
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::flow_rates_and_system_a_efficiencies_must_have_same_length(json!({
+                    "system_a_efficiencies": [1, 2, 3],
+                    "system_b_efficiencies": [1, 2, 3, 4],
+                    "system_c_efficiencies": [1, 2, 3, 4],
+                    "flow_rates": [1, 2, 3, 4],
+                })),
+            case::flow_rates_and_system_b_efficiencies_must_have_same_length(json!({
+                    "system_a_efficiencies": [1, 2, 3, 4],
+                    "system_b_efficiencies": [1, 2, 3],
+                    "system_c_efficiencies": [1, 2, 3, 4],
+                    "flow_rates": [1, 2, 3, 4],
+                })),
+            case::flow_rates_and_system_c_efficiencies_must_have_same_length(json!({
+                    "system_a_efficiencies": [1, 2, 3, 4],
+                    "system_b_efficiencies": [1, 2, 3, 4],
+                    "system_c_efficiencies": [1, 2, 3],
+                    "flow_rates": [1, 2, 3, 4],
+                })),
+            case::system_a_efficiencies_item_at_least_zero(json!({"system_a_efficiencies": [-1]})),
+            case::flow_rates_item_at_least_zero(json!({"flow_rates": [-1]})),
+            case::system_a_utilisation_factor_at_least_zero(json!({"system_a_utilisation_factor": -1})),
+            case::system_a_utilisation_factor_at_most_one(json!({"system_a_utilisation_factor": 2})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<WasteWaterHeatRecoveryDetails>(valid_example, inputs);
+        }
+
+        /// Test that system B and C fields are truly optional.
+        #[rstest]
+        fn test_wwhrs_system_b_and_c_fields_optional() {
+            let cold_water_source = "test_cold_water_source".into();
+
+            let wwhrs = WasteWaterHeatRecoveryDetails {
+                _type: Default::default(),
+                cold_water_source,
+                flow_rates: vec![5., 7., 9., 11., 13.],
+                system_a_efficiencies: vec![50., 55., 60., 65., 70.],
+                system_a_utilisation_factor: Some(0.9),
+                system_b_efficiencies: None,
+                system_b_utilisation_factor: None,
+                system_c_efficiencies: None,
+                system_c_utilisation_factor: None,
+                system_b_efficiency_factor: default_system_b_efficiency_factor(),
+                system_c_efficiency_factor: default_system_c_efficiency_factor(),
+            };
+
+            assert!(wwhrs.system_b_efficiencies.is_none());
+            assert!(wwhrs.system_c_efficiencies.is_none());
+            assert!(wwhrs.system_b_utilisation_factor.is_none());
+            assert!(wwhrs.system_c_utilisation_factor.is_none());
+        }
+
+        /// Test WWHRS with all three systems configured.
+        #[rstest]
+        fn test_wwhrs_with_all_systems() {
+            let cold_water_source = "test_cold_water_source".into();
+
+            let wwhrs = WasteWaterHeatRecoveryDetails {
+                _type: Default::default(),
+                cold_water_source,
+                flow_rates: vec![5., 7., 9., 11., 13.],
+                system_a_efficiencies: vec![50., 55., 60., 65., 70.],
+                system_a_utilisation_factor: Some(0.9),
+                system_b_efficiencies: Some(vec![40., 44., 48., 52., 56.]),
+                system_b_utilisation_factor: Some(0.85),
+                system_c_efficiencies: Some(vec![45., 49., 53., 57., 61.]),
+                system_c_utilisation_factor: Some(0.88),
+                system_b_efficiency_factor: 0.81,
+                system_c_efficiency_factor: 0.88,
+            };
+
+            // Test that all values are stored correctly
+            assert_eq!(
+                wwhrs.system_b_efficiencies,
+                Some(vec![40., 44., 48., 52., 56.])
+            );
+            assert_eq!(
+                wwhrs.system_c_efficiencies,
+                Some(vec![45., 49., 53., 57., 61.])
+            );
+            assert_eq!(wwhrs.system_b_utilisation_factor, Some(0.85));
+            assert_eq!(wwhrs.system_c_utilisation_factor, Some(0.88));
+        }
+    }
+
+    mod building_element {
+        use super::*;
+
+        mod geometric_base {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::AdjacentConditionedSpace {
+                    area: None,
+                    pitch: 90.,
+                    u_value_input: UValueInput::UValue { u_value: 0.0 },
+                    areal_heat_capacity: 0.0,
+                    mass_distribution_class: MassDistributionClass::D,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::area_greater_than_zero(json!({"area": 0})),
+                case::pitch_at_least_zero(json!({"pitch": -1})),
+                case::pitch_at_most_zero(json!({"pitch": 181})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            }
+        }
+
+        mod thermal_properties_base {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::AdjacentConditionedSpace {
+                    area: None,
+                    pitch: 80.,
+                    u_value_input: UValueInput::UValue { u_value: 0.3 },
+                    areal_heat_capacity: 0.0,
+                    mass_distribution_class: MassDistributionClass::D,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::height_greater_than_zero(json!({"height": 0})),
+                case::width_greater_than_zero(json!({"width": 0})),
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})),
+                case::u_value_greater_than_zero(json!({"u_value": 0})),
+                case::must_specify_thermal_resistance_construction_or_u_value(json!({"thermal_resistance_construction": null, "u_value": null})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            }
+        }
+
+        mod spatial_properties_base {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::Opaque {
+                    is_unheated_pitched_roof: None,
+                    pitch: 80.,
+                    orientation: None,
+                    base_height: 0.0,
+                    u_value_input: UValueInput::UValue { u_value: 0.3 },
+                    areal_heat_capacity: 0.0,
+                    mass_distribution_class: MassDistributionClass::D,
+                    solar_absorption_coeff: 0.0,
+                    is_external_door: None,
+                    area_input: BuildingElementAreaOrHeightWidthInput {
+                        area: None,
+                        height_and_width: None,
+                    },
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::areal_heat_capacity_greater_than_zero(json!({"areal_heat_capacity": 0})),
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})),
+                case::orientation_at_most_180(json!({"orientation360": -1})),
+                case::orientation_at_least_minus_180(json!({"orientation360": 361})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            }
+        }
+
+        mod ground_base {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::Ground {
+                    area: 20.,
+                    total_area: 15.,
+                    pitch: 90.,
+                    u_value: 1.4,
+                    thermal_resistance_floor_construction: 0.2,
+                    areal_heat_capacity: 19200.,
+                    mass_distribution_class: MassDistributionClass::I,
+                    perimeter: 16.,
+                    psi_wall_floor_junc: 0.5,
+                    thickness_walls: 0.2,
+                    floor_data: FloorData::SlabNoEdgeInsulation,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::calculated_r_vi_greater_than_zero(json!({"u_value": 1, "thermal_resistance_floor_construction": 1})),
+                case::area_greater_than_zero(json!({"area": 0})),
+                case::thickness_walls_greater_than_zero(json!({"thickness_walls": 0})),
+                case::total_area_greater_than_zero(json!({"total_area": 0})),
+                case::perimeter_greater_than_zero(json!({"perimeter": 0})),
+                case::areal_heat_capacity_greater_than_zero(json!({"areal_heat_capacity": 0})),
+                case::thermal_resistance_floor_construction_greater_than_zero(json!({"thermal_resistance_floor_construction": 0})),
+                case::u_value_greater_than_zero(json!({"u_value": 0})),
+                // height_upper_surface only present in suspended floor, so moved that test there
+                case::pitch_at_least_zero(json!({"pitch": -1})),
+                case::pitch_at_most_zero(json!({"pitch": 181})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            }
+        }
+
+        mod transparent {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::Transparent {
+                    u_value_input: UValueInput::ThermalResistanceConstruction {
+                        thermal_resistance_construction: 0.74,
+                    },
+                    pitch: 45.,
+                    orientation: None,
+                    g_value: 10.,
+                    frame_area_fraction: 0.25,
+                    base_height: 10.,
+                    area_input: BuildingElementAreaOrHeightWidthInput {
+                        area: None,
+                        height_and_width: Some(BuildingElementHeightWidthInput {
+                            height: 10.,
+                            width: 5.,
+                        }),
+                    },
+                    free_area_height: 1.6,
+                    mid_height: 40.,
+                    max_window_open_area: 3.,
+                    window_part_list: vec![],
+                    shading: vec![],
+                    areal_heat_capacity: default_areal_heat_capacity_for_windows(),
+                    window_openable_control: None,
+                    treatment: vec![],
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::max_window_open_area_at_most_area(json!({"max_window_open_area": 9999, "width": 5, "height": 10})),
+                case::area_or_height_and_width_provided(json!({"area": null, "height": null, "width": 12})),
+                case::area_or_height_and_width_provided(json!({"area": null, "height": 12, "width": null})),
+                case::base_height_at_least_zero(json!({"base_height": -1})),
+                case::free_area_height_at_least_zero(json!({"free_area_height": -1})),
+                case::g_value_at_least_zero(json!({"g_value": -1})),
+                case::max_window_open_area_at_least_zero(json!({"max_window_open_area": -1})),
+                case::mid_height_greater_than_zero(json!({"mid_height": 0})),
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            }
+        }
+
+        mod opaque {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::Opaque {
+                    is_unheated_pitched_roof: None,
+                    solar_absorption_coeff: 0.8,
+                    u_value_input: UValueInput::UValue { u_value: 1.2 },
+                    pitch: 1.2,
+                    orientation: None,
+                    base_height: 10.,
+                    area_input: BuildingElementAreaOrHeightWidthInput {
+                        area: None,
+                        height_and_width: None,
+                    },
+                    areal_heat_capacity: default_areal_heat_capacity_for_windows(),
+                    mass_distribution_class: MassDistributionClass::I,
+                    is_external_door: None,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::base_height_at_least_zero(json!({"base_height": -1})),
+                case::solar_absorption_coeff_at_least_zero(json!({"solar_absorption_coeff": -1})),
+                case::solar_absorption_coeff_at_most_one(json!({"solar_absorption_coeff": 2})),
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            }
+        }
+
+        mod adjacent_conditioned {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::AdjacentConditionedSpace {
+                    area: None,
+                    u_value_input: UValueInput::UValue { u_value: 1.2 },
+                    pitch: 1.2,
+                    areal_heat_capacity: default_areal_heat_capacity_for_windows(),
+                    mass_distribution_class: MassDistributionClass::I,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0, "u_value": null})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            }
+        }
+
+        mod adjacent_unconditioned {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::AdjacentUnconditionedSpace {
+                    area: None,
+                    u_value_input: UValueInput::UValue { u_value: 0.7 },
+                    pitch: 1.2,
+                    areal_heat_capacity: default_areal_heat_capacity_for_windows(),
+                    mass_distribution_class: MassDistributionClass::I,
+                    thermal_resistance_unconditioned_space: 1.3,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0, "u_value": null})),
+                case::thermal_resistance_unconditioned_space_greater_than_zero(json!({"thermal_resistance_unconditioned_space": 0})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            }
+        }
+
+        mod ground {
+            use super::*;
+
+            mod suspended_floor {
+                use super::*;
+
+                #[fixture]
+                fn valid_example() -> JsonValue {
+                    serde_json::to_value(BuildingElement::Ground {
+                        area: 200.,
+                        total_area: 210.,
+                        pitch: 1.2,
+                        u_value: 0.7,
+                        thermal_resistance_floor_construction: 0.2,
+                        areal_heat_capacity: 1.2,
+                        mass_distribution_class: MassDistributionClass::I,
+                        perimeter: 100.,
+                        psi_wall_floor_junc: 0.4,
+                        thickness_walls: 20.,
+                        floor_data: FloorData::SuspendedFloor {
+                            height_upper_surface: 2.3, // missing from upstream Python definition, but giving a valid input here
+                            thermal_transmission_walls: 0.8,
+                            area_per_perimeter_vent: 4.2,
+                            shield_fact_location: WindShieldLocation::Sheltered,
+                            thermal_resistance_of_insulation: 0.7,
+                        },
+                    })
+                    .unwrap()
+                }
+
+                #[rstest(inputs,
+                    case::area_per_perimeter_vent_greater_than_zero(json!({"area_per_perimeter_vent": 0, "u_value": null})),
+                    case::thermal_transm_walls_greater_than_zero(json!({"thermal_transm_walls": 0, "u_value": null})),
+                    case::thermal_resist_insul_greater_than_zero(json!({"thermal_resist_insul": 0})),
+                    case::height_upper_surface_greater_than_zero(json!({"height_upper_surface": 0})),
+                )]
+                fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                    assert_range_constraints::<BuildingElement>(valid_example, inputs);
+                }
+            }
+
+            mod heated_basement {
+                use super::*;
+
+                #[fixture]
+                fn valid_example() -> JsonValue {
+                    serde_json::to_value(BuildingElement::Ground {
+                        area: 200.,
+                        total_area: 210.,
+                        pitch: 1.2,
+                        u_value: 0.7,
+                        thermal_resistance_floor_construction: 0.2,
+                        areal_heat_capacity: 1.2,
+                        mass_distribution_class: MassDistributionClass::I,
+                        perimeter: 100.,
+                        psi_wall_floor_junc: 0.4,
+                        thickness_walls: 20.,
+                        floor_data: FloorData::HeatedBasement {
+                            depth_basement_floor: 10.,
+                            thermal_resistance_of_basement_walls: 0.15,
+                        },
+                    })
+                    .unwrap()
+                }
+
+                #[rstest(inputs,
+                    case::height_basement_walls_greater_than_zero(json!({"height_basement_walls": 0, "u_value": null})),
+                    case::thermal_resist_walls_base_greater_than_zero(json!({"thermal_resist_walls_base": 0, "u_value": null})),
+                    case::thermal_transm_envi_base_greater_than_zero(json!({"thermal_transm_envi_base": 0, "u_value": null})),
+                    case::thermal_transm_walls_greater_than_zero(json!({"thermal_transm_walls": 0, "u_value": null})),
+                    case::depth_basement_floor_at_least_zero(json!({"depth_basement_floor": -1, "u_value": null})),
+                )]
+                fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                    assert_range_constraints::<BuildingElement>(valid_example, inputs);
+                }
+            }
+
+            mod unheated_basement {
+                use super::*;
+
+                #[fixture]
+                fn valid_example() -> JsonValue {
+                    serde_json::to_value(BuildingElement::Ground {
+                        area: 200.,
+                        total_area: 210.,
+                        pitch: 1.2,
+                        u_value: 0.7,
+                        thermal_resistance_floor_construction: 0.2,
+                        areal_heat_capacity: 1.2,
+                        mass_distribution_class: MassDistributionClass::I,
+                        perimeter: 100.,
+                        psi_wall_floor_junc: 0.4,
+                        thickness_walls: 20.,
+                        floor_data: FloorData::UnheatedBasement {
+                            thermal_transmittance_of_floor_above_basement: 1.2,
+                            thermal_transmission_walls: 0.15,
+                            depth_basement_floor: 10.,
+                            height_basement_walls: 10.,
+                            thermal_resistance_of_basement_walls: 0.15,
+                        },
+                    })
+                    .unwrap()
+                }
+
+                #[rstest(inputs,
+                    case::thermal_resist_walls_base_greater_than_zero(json!({"thermal_resist_walls_base": 0, "u_value": null})),
+                    case::thermal_transm_envi_base_greater_than_zero(json!({"thermal_transm_envi_base": 0, "u_value": null})),
+                    case::thermal_transm_walls_greater_than_zero(json!({"thermal_transm_walls": 0, "u_value": null})),
+                    case::depth_basement_floor_at_least_zero(json!({"depth_basement_floor": -1, "u_value": null})),
+                    case::height_basement_walls_greater_than_zero(json!({"height_basement_walls": 0, "u_value": null})),
+                )]
+                fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                    assert_range_constraints::<BuildingElement>(valid_example, inputs);
+                }
+            }
+        }
+    }
+
+    mod fancoil_test_data {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(FancoilTestData {
+                fan_speed_data: vec![
+                    FanSpeedData {
+                        temperature_diff: 80.0,
+                        power_output: vec![2.7, 3.6, 5., 5.3, 6.2, 7.4],
+                    },
+                    FanSpeedData {
+                        temperature_diff: 70.0,
+                        power_output: vec![2.3, 3.1, 4.2, 4.5, 5.3, 6.3],
+                    },
+                    FanSpeedData {
+                        temperature_diff: 60.0,
+                        power_output: vec![1.9, 2.6, 3.5, 3.8, 4.4, 5.3],
+                    },
+                    FanSpeedData {
+                        temperature_diff: 50.0,
+                        power_output: vec![1.5, 2., 2.8, 3., 3.5, 4.2],
+                    },
+                    FanSpeedData {
+                        temperature_diff: 40.0,
+                        power_output: vec![1.1, 1.5, 2.05, 2.25, 2.6, 3.15],
+                    },
+                    FanSpeedData {
+                        temperature_diff: 30.0,
+                        power_output: vec![0.7, 0.97, 1.32, 1.49, 1.7, 2.09],
+                    },
+                    FanSpeedData {
+                        temperature_diff: 20.0,
+                        power_output: vec![0.3, 0.44, 0.59, 0.73, 0.8, 1.03],
+                    },
+                    FanSpeedData {
+                        temperature_diff: 10.0,
+                        power_output: vec![0., 0., 0., 0., 0., 0.],
+                    },
+                ],
+                fan_power_w: vec![15., 19., 25., 33., 43., 56.],
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::fan_speed_lists_have_same_length(json!({
+                    "fan_speed_data": [
+                        {"temperature_diff": 80.0, "power_output": [2, 4, 6, 8, 9, 11]},
+                        {"temperature_diff": 70.0, "power_output": [2, 4, 6, 8, 9]},
+                    ]
+                })),
+            case::fan_power_list_same_length_as_fan_speed_lists(json!({
+                    "fan_speed_data": [
+                        {"temperature_diff": 80.0, "power_output": [2, 4, 6, 8, 9]},
+                        {"temperature_diff": 70.0, "power_output": [2, 4, 6, 8, 9]},
+                    ],
+                    "fan_power_W": [15, 19, 25, 33, 43, 56],
+                })),
+            case::fan_power_at_least_zero(json!({"fan_power_W": [-1]})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<FancoilTestData>(valid_example, inputs);
+        }
+    }
+
+    mod appliance_gains {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ApplianceGainsDetails {
+                events: None,
+                standby: None,
+                energy_supply: "mains elec".into(),
+                gains_fraction: 0.8,
+                load_shifting: None,
+                priority: None,
+                schedule: None,
+                start_day: 0,
+                time_series_step: 1.0,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::standby_at_least_zero(json!({"Standby": -1})),
+            case::gains_fraction_at_most_one(json!({"gains_fraction": 2})),
+            case::gains_fraction_at_least_zero(json!({"gains_fraction": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ApplianceGainsDetails>(valid_example, inputs);
+        }
+    }
+
+    mod boiler_cost_schedule_hybrid {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(BoilerCostScheduleHybrid {
+                cost_schedule_boiler: NumericSchedule {
+                    main: vec![],
+                    references: Default::default(),
+                },
+                cost_schedule_hp: NumericSchedule {
+                    main: vec![],
+                    references: Default::default(),
+                },
+                cost_schedule_start_day: 0,
+                cost_schedule_time_series_step: 1.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::cost_schedule_start_day_at_least_zero(json!({"cost_schedule_start_day": -1})),
+            case::cost_schedule_start_day_at_most_365(json!({"cost_schedule_start_day": 366})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<BoilerCostScheduleHybrid>(valid_example, inputs);
+        }
+    }
+
+    mod external_conditions {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ExternalConditionsInput {
+                air_temperatures: None,
+                diffuse_horizontal_radiation: None,
+                direct_beam_conversion_needed: None,
+                direct_beam_radiation: None,
+                latitude: None,
+                longitude: None,
+                shading_segments: None,
+                solar_reflectivity_of_ground: None,
+                wind_directions: None,
+                wind_speeds: None,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::air_temperatures_should_be_at_least_absolute_zero(json!({"air_temperatures": [-274]})),
+            case::latitude_should_be_at_least_minus_90(json!({"latitude": -91})),
+            case::latitude_should_be_at_most_90(json!({"latitude": 91})),
+            case::longitude_should_be_at_least_minus_180(json!({"latitude": -181})),
+            case::longitude_should_be_at_most_180(json!({"latitude": 181})),
+            case::solar_reflectivity_of_ground_should_be_at_least_zero(json!({"solar_reflectivity_of_ground": [-1]})),
+            case::solar_reflectivity_of_ground_should_be_at_most_one(json!({"solar_reflectivity_of_ground": [2]})),
+            case::wind_speeds_should_be_at_least_zero(json!({"wind_speeds": [-1]})),
+            case::diffuse_horizontal_radiation_should_be_at_least_zero(json!({"diffuse_horizontal_radiation": [-1]})),
+            case::direct_beam_radiation_should_be_at_least_zero(json!({"direct_beam_radiation": [-1]})),
+            case::wind_directions_should_be_at_least_zero(json!({"wind_directions": [-1]})),
+            case::wind_directions_should_be_at_most_360(json!({"wind_directions": [361]})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ExternalConditionsInput>(valid_example, inputs);
+        }
+
+        #[rstest]
+        fn test_are_all_fields_set() {
+            let valid_example = ExternalConditionsInput {
+                air_temperatures: Some(vec![0.; 8760]),
+                diffuse_horizontal_radiation: Some(vec![0.; 8760]),
+                direct_beam_conversion_needed: false.into(),
+                direct_beam_radiation: Some(vec![0.; 8760]),
+                latitude: Some(13.9),
+                longitude: Some(34.2),
+                shading_segments: Some(vec![]),
+                solar_reflectivity_of_ground: Some(vec![0.; 8760]),
+                wind_directions: Some(vec![0.; 8760]),
+                wind_speeds: Some(vec![0.; 8760]),
+            };
+            assert!(valid_example.are_all_fields_set());
+
+            let invalid_example = ExternalConditionsInput {
+                air_temperatures: None,
+                diffuse_horizontal_radiation: None,
+                direct_beam_conversion_needed: None,
+                direct_beam_radiation: None,
+                latitude: None,
+                longitude: None,
+                shading_segments: None,
+                solar_reflectivity_of_ground: None,
+                wind_directions: None,
+                wind_speeds: None,
+            };
+            assert!(!invalid_example.are_all_fields_set());
+        }
+
+        #[fixture]
+        fn base_for_length_test() -> JsonValue {
+            json!({
+                "air_temperatures": vec![0.0; 8760],
+                "wind_speeds": vec![0.0; 8760],
+                "wind_directions": vec![0.0; 8760],
+                "diffuse_horizontal_radiation": vec![0.0; 8760],
+                "direct_beam_conversion_needed": false,
+                "direct_beam_radiation": vec![0.0; 8760],
+                "latitude": 13.9,
+                "longitude": 34.2,
+                "shading_segments": [],
+                "solar_reflectivity_of_ground": vec![0.0; 8760],
+            })
+        }
+
+        #[rstest(inputs,
+            case::fail_when_air_temperatures_wrong_length(json!({"air_temperatures": [0]})),
+            case::fail_when_wind_speeds_wrong_length(json!({"wind_speeds": [0]})),
+            case::fail_when_wind_directions_wrong_length(json!({"wind_directions": [0]})),
+            case::fail_when_diffuse_horizontal_radiation_wrong_length(json!({"diffuse_horizontal_radiation": [0]})),
+            case::fail_when_direct_beam_radiation_wrong_length(json!({"direct_beam_radiation": [0]})),
+            case::fail_when_solar_reflectivity_of_ground_wrong_length(json!({"solar_reflectivity_of_ground": [0]})),
+        )]
+        fn test_are_all_fields_set_invalid_lengths(
+            base_for_length_test: JsonValue,
+            inputs: JsonValue,
+        ) {
+            let modified_input = merge_json_onto_base(base_for_length_test, inputs);
+            let external_conditions: ExternalConditionsInput =
+                serde_json::from_value(modified_input).unwrap();
+            assert!(!external_conditions.are_all_fields_set());
+        }
+    }
+
+    mod heat_pump_buffer_tank {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(HeatPumpBufferTank {
+                daily_losses: 1.68,
+                volume: 40.,
+                pump_fixed_flow_rate: 15.,
+                pump_power_at_flow_rate: 0.04,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::daily_losses_at_least_zero(json!({"daily_losses": -1})),
+            case::pump_fixed_flow_rate_at_least_zero(json!({"pump_fixed_flow_rate": -1})),
+            case::pump_power_at_flow_rate_at_least_zero(json!({"pump_power_at_flow_rate": -1})),
+            case::volume_at_least_zero(json!({"volume": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<HeatPumpBufferTank>(valid_example, inputs);
+        }
+    }
+
+    mod heat_pump_hot_water_only_test_datum {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(HeatPumpHotWaterOnlyTestDatum {
+                cop_dhw: 2.5,
+                hw_tapping_prof_daily_total: 5.8,
+                energy_input_measured: 2.4,
+                power_standby: 0.012,
+                hw_vessel_loss_daily: 2.0,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::cop_dhw_at_least_zero(json!({"cop_dhw": -1})),
+            case::energy_input_measured_at_least_zero(json!({"energy_input_measured": -1})),
+            case::hw_tapping_prof_daily_total_at_least_zero(json!({"hw_tapping_prof_daily_total": -1})),
+            case::hw_vessel_loss_daily_at_least_zero(json!({"hw_vessel_loss_daily": -1})),
+            case::power_standby_at_least_zero(json!({"power_standby": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<HeatPumpHotWaterOnlyTestDatum>(valid_example, inputs);
+        }
+    }
+
+    mod infiltration_ventilation {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(InfiltrationVentilation {
+                control_vent_adjust_max: None,
+                control_vent_adjust_min: None,
+                control_window_adjust: None,
+                leaks: VentilationLeaks {
+                    ventilation_zone_height: 6.,
+                    test_pressure: 50.,
+                    test_result: 1.2,
+                    env_area: 220.,
+                },
+                mechanical_ventilation: Default::default(),
+                vents: Default::default(),
+                ach_max_static_calcs: None,
+                ach_min_static_calcs: None,
+                altitude: 10.,
+                cross_vent_possible: true,
+                shield_class: VentilationShieldClass::Shielded,
+                terrain_class: TerrainClass::Urban,
+                ventilation_zone_base_height: 10.,
+                vent_opening_ratio_init: None,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::ach_max_static_calcs_at_least_zero(json!({"ach_max_static_calcs": -1})),
+            case::ventilation_zone_base_height_at_least_zero(json!({"ventilation_zone_base_height": -1})),
+            case::ach_min_static_calcs_at_least_zero(json!({"ach_min_static_calcs": -1})),
+            case::vent_opening_ratio_init_at_least_zero(json!({"vent_opening_ratio_init": -1})),
+            case::vent_opening_ratio_init_at_most_zero(json!({"vent_opening_ratio_init": 2})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<InfiltrationVentilation>(valid_example, inputs);
+        }
+    }
+
+    mod zone {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(ZoneInput {
+                building_elements: Default::default(),
+                space_cool_system: Default::default(),
+                space_heat_system: Default::default(),
+                thermal_bridging: ThermalBridging::Number(1.9),
+                area: 200.,
+                temp_setpnt_basis: None,
+                temp_setpnt_init: 10.,
+                volume: 100.,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::area_greater_than_zero(json!({"area": 0})),
+            case::volume_greater_than_zero(json!({"volume": 0})),
+            case::temp_setpnt_init_at_least_absolute_zero(json!({"temp_setpnt_init": -274})),
+            case::space_heat_system_list_does_not_allow_duplicates(json!({"SpaceHeatSystem": ["mains", "mains", "other"]})),
+            case::space_cool_system_list_does_not_allow_duplicates(json!({"SpaceCoolSystem": ["mains", "mains", "other"]})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<ZoneInput>(valid_example, inputs);
+        }
+    }
+
+    mod window_treatment {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(WindowTreatment {
+                treatment_type: WindowTreatmentType::Curtains,
+                controls: WindowTreatmentControl::AutoMotorised,
+                delta_r: 10.,
+                trans_red: 0.3,
+                closing_irradiance_control: None,
+                opening_irradiance_control: None,
+                open_control: None,
+                is_open: None,
+                opening_delay_hrs: 0.0, // valid value for field we are marking as required
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::trans_red_at_least_zero(json!({"trans_red": -1})),
+            case::trans_red_at_most_one(json!({"trans_red": 2})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<WindowTreatment>(valid_example, inputs);
+        }
+    }
+
+    mod air_terminal_device {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(AirTerminalDevice {
+                area_cm2: 100.,
+                pressure_difference_ref: 1.2,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::area_cm2_greater_than_zero(json!({"area_cm2": 0})),
+            case::pressure_difference_ref_at_least_zero(json!({"pressure_difference_ref": -1})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<AirTerminalDevice>(valid_example, inputs);
+        }
+    }
+
+    mod edge_insulation {
+        use super::*;
+
+        mod horizontal {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(EdgeInsulation::Horizontal {
+                    width: 10.,
+                    edge_thermal_resistance: 1.2,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::edge_thermal_resistance_greater_than_zero(json!({"edge_thermal_resistance": 0})),
+                case::width_at_least_zero(json!({"width": -1})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<EdgeInsulation>(valid_example, inputs);
+            }
+        }
+
+        mod vertical {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(EdgeInsulation::Vertical {
+                    depth: 10.,
+                    edge_thermal_resistance: 1.2,
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::edge_thermal_resistance_greater_than_zero(json!({"edge_thermal_resistance": 0})),
+                case::depth_at_least_zero(json!({"depth": -1})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<EdgeInsulation>(valid_example, inputs);
+            }
+        }
+    }
+
+    mod window_part {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(WindowPart {
+                mid_height_air_flow_path: 1.5,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::mid_height_air_flow_path_greater_than_zero(json!({"mid_height_air_flow_path": 0})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<WindowPart>(valid_example, inputs);
+        }
+    }
+
+    mod heat_pump_test_datum {
+        use super::*;
+
+        #[fixture]
+        fn valid_example() -> JsonValue {
+            serde_json::to_value(HeatPumpTestDatum {
+                air_flow_rate: None,
+                capacity: 10.,
+                cop: 1.2,
+                design_flow_temp: 12.,
+                eahp_mixed_ext_air_ratio: None,
+                temp_outlet: 12.,
+                temp_source: 13.,
+                temp_test: 14.,
+                test_letter: TestLetter::A,
+            })
+            .unwrap()
+        }
+
+        #[rstest(inputs,
+            case::air_flow_rate_at_least_zero(json!({"air_flow_rate": -1})),
+            case::capacity_at_least_zero(json!({"capacity": -1})),
+            case::cop_at_least_zero(json!({"cop": -1})),
+            case::eahp_mixed_ext_air_ratio_at_least_zero(json!({"eahp_mixed_ext_air_ratio": -1})),
+            case::eahp_mixed_ext_air_ratio_at_most_one(json!({"eahp_mixed_ext_air_ratio": 2})),
+        )]
+        fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            assert_range_constraints::<HeatPumpTestDatum>(valid_example, inputs);
+        }
+    }
+
+    // test for ScheduleRepeater unnecessary as `repeat` field uses usize type which cannot be negative
+
+    // test for ControlCombinations unnecessary as asserted properties are enforced at type level
+    // same applies for Schedule
+
+    mod internal_gains {
+        use super::*;
+
+        #[rstest]
+        fn test_cold_water_losses_access() {
+            let internal_gains: InternalGains = serde_json::from_value(json!({
+                "ColdWaterLosses": {"start_day": 1, "time_series_step": 1, "schedule": {"main": []}}
+            }))
+            .unwrap();
+
+            assert!(internal_gains.cold_water_losses.is_some());
+        }
+
+        #[rstest]
+        fn test_evaporative_losses_access() {
+            let internal_gains: InternalGains = serde_json::from_value(json!({
+                "EvaporativeLosses": {
+                    "start_day": 1,
+                    "time_series_step": 1,
+                    "schedule": {"main": []},
+                }
+            }))
+            .unwrap();
+
+            assert!(internal_gains.evaporative_losses.is_some());
+        }
+
+        #[rstest]
+        fn test_metabolic_gains_access() {
+            let internal_gains: InternalGains = serde_json::from_value(json!({
+                "metabolic gains": {"start_day": 1, "time_series_step": 1, "schedule": {"main": []}}
+            }))
+            .unwrap();
+
+            assert!(internal_gains.metabolic_gains.is_some());
+        }
+
+        #[rstest]
+        fn test_other_access() {
+            let internal_gains: InternalGains = serde_json::from_value(
+                json!({"other": {"start_day": 1, "time_series_step": 1, "schedule": {"main": []}}}),
+            )
+            .unwrap();
+
+            assert!(internal_gains.other.is_some());
+        }
+
+        #[rstest]
+        fn test_total_internal_gains_access() {
+            let internal_gains: InternalGains = serde_json::from_value(json!({
+                "total internal gains": {
+                    "start_day": 1,
+                    "time_series_step": 1,
+                    "schedule": {"main": []},
+                }
+            }))
+            .unwrap();
+            assert!(internal_gains.total_internal_gains.is_some());
+
+            let internal_gains: InternalGains = serde_json::from_value(json!({
+                "total_internal_gains": {
+                    "start_day": 1,
+                    "time_series_step": 1,
+                    "schedule": {"main": []},
+                }
+            }))
+            .unwrap();
+            assert!(internal_gains.total_internal_gains.is_some());
         }
     }
 }

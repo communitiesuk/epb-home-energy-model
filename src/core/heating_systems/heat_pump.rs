@@ -4470,7 +4470,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::DaylightSavingsConfig;
-    use crate::input::{BoilerHotWaterTest, ColdWaterSourceType, FuelType, HeatSourceLocation};
+    use crate::input::{BoilerHotWaterTest, FuelType, HeatSourceLocation};
     use crate::simulation_time::SimulationTime;
     use crate::{core::material_properties::WATER, external_conditions::ShadingSegment};
     use approx::{assert_relative_eq, assert_ulps_eq};
@@ -6371,7 +6371,7 @@ mod tests {
             simulation_time_for_heat_pump,
         );
         let boiler_data: HotWaterSourceDetails = HotWaterSourceDetails::CombiBoiler {
-            cold_water_source: ColdWaterSourceType::MainsWater,
+            cold_water_source: "mains water".into(),
             heat_source_wet: "hp".into(),
             separate_dhw_tests: BoilerHotWaterTest::ML,
             rejected_energy_1: Some(0.0004),

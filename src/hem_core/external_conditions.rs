@@ -23,7 +23,7 @@ pub enum DaylightSavingsConfig {
     NotApplicable,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 // #[serde(deny_unknown_fields)] // TODO: restore this for all versions after 0.36
@@ -34,14 +34,20 @@ pub(crate) struct ShadingSegment {
         deserialize_with = "deserialize_orientation",
         serialize_with = "serialize_orientation"
     )]
+    #[validate(minimum = -180.)]
+    #[validate(maximum = 180.)]
     pub(crate) start: f64,
+
     /// The end angle of the shading segment
     #[serde(rename = "end360")]
     #[serde(
         deserialize_with = "deserialize_orientation",
         serialize_with = "serialize_orientation"
     )]
+    #[validate(minimum = -180.)]
+    #[validate(maximum = 180.)]
     pub(crate) end: f64,
+
     #[serde(default, rename = "shading", skip_serializing_if = "Vec::is_empty")]
     pub(crate) shading_objects: Vec<ShadingObject>,
 }
@@ -53,9 +59,11 @@ pub(crate) struct ShadingSegment {
 pub(crate) struct ShadingObject {
     #[serde(rename = "type")]
     pub(crate) object_type: ShadingObjectType,
+
     /// Height of the shading object. (Unit: m)
     #[validate(exclusive_minimum = 0.)]
     pub(crate) height: f64,
+
     /// Distance of the shading object from the building. (Unit: m)
     #[validate(exclusive_minimum = 0.)]
     pub(crate) distance: f64,
@@ -69,9 +77,11 @@ pub(crate) enum WindowShadingObject {
         /// (unit: m)
         #[validate(minimum = 0.)]
         height: f64,
+
         /// (unit: m)
         #[validate(minimum = 0.)]
         distance: f64,
+
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         transparency: f64,
@@ -80,6 +90,7 @@ pub(crate) enum WindowShadingObject {
         /// (unit: m)
         #[validate(minimum = 0.)]
         depth: f64,
+
         /// (unit: m)
         #[validate(minimum = 0.)]
         distance: f64,
@@ -88,6 +99,7 @@ pub(crate) enum WindowShadingObject {
         /// (unit: m)
         #[validate(minimum = 0.)]
         depth: f64,
+
         /// (unit: m)
         #[validate(minimum = 0.)]
         distance: f64,
@@ -96,6 +108,7 @@ pub(crate) enum WindowShadingObject {
         /// (unit: m)
         #[validate(minimum = 0.)]
         depth: f64,
+
         /// (unit: m)
         #[validate(minimum = 0.)]
         distance: f64,
@@ -104,6 +117,7 @@ pub(crate) enum WindowShadingObject {
         /// (unit: m)
         #[validate(minimum = 0.)]
         depth: f64,
+
         /// (unit: m)
         #[validate(minimum = 0.)]
         distance: f64,

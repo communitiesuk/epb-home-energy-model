@@ -263,11 +263,11 @@ enum FacadeDirection {
 /// wind_direction -- direction the wind is blowing (degrees)
 fn get_facade_direction(
     f_cross: bool,
-    orientation: f64,
+    orientation: Option<f64>,
     pitch: f64,
     wind_direction: f64,
-) -> FacadeDirection {
-    if f_cross {
+) -> anyhow::Result<FacadeDirection> {
+    Ok(if f_cross {
         if pitch < 10. {
             FacadeDirection::Roof10
         } else if pitch <= 30. {
@@ -275,7 +275,11 @@ fn get_facade_direction(
         } else if pitch < 60. {
             FacadeDirection::Roof30
         } else {
-            let orientation_diff = orientation_difference(orientation, wind_direction);
+            let orientation_diff = orientation_difference(
+                orientation
+                    .ok_or_else(|| anyhow!("Orientation for a facade was expected to be set"))?,
+                wind_direction,
+            );
             if orientation_diff <= 60. {
                 FacadeDirection::Windward
             } else if orientation_diff < 120. {
@@ -287,7 +291,11 @@ fn get_facade_direction(
     } else if pitch < 60. {
         FacadeDirection::Roof
     } else {
-        let orientation_diff = orientation_difference(orientation, wind_direction);
+        let orientation_diff = orientation_difference(
+            orientation
+                .ok_or_else(|| anyhow!("Orientation for a facade was expected to be set"))?,
+            wind_direction,
+        );
         if orientation_diff <= 60. {
             FacadeDirection::Windward
         } else if orientation_diff < 120. {
@@ -295,7 +303,7 @@ fn get_facade_direction(
         } else {
             FacadeDirection::Leeward
         }
-    }
+    })
 }
 
 // we split the python get_c_p_path method into two methods below:
@@ -304,16 +312,16 @@ fn get_c_p_path_from_pitch_and_orientation(
     shield_class: VentilationShieldClass,
     relative_airflow_path_height: f64,
     wind_direction: f64,
-    orientation: f64,
+    orientation: Option<f64>,
     pitch: f64,
-) -> f64 {
-    let facade_direction = get_facade_direction(f_cross, orientation, pitch, wind_direction);
-    get_c_p_path(
+) -> anyhow::Result<f64> {
+    let facade_direction = get_facade_direction(f_cross, orientation, pitch, wind_direction)?;
+    Ok(get_c_p_path(
         f_cross,
         shield_class,
         relative_airflow_path_height,
         facade_direction,
-    )
+    ))
 }
 
 /// Interpreted from Table B.7 for determining dimensionless wind pressure coefficients
@@ -472,7 +480,7 @@ pub(crate) struct Window {
     a_w_max: f64,
     c_d_w: f64,
     n_w: f64,
-    orientation: f64,
+    orientation: Option<f64>,
     pitch: f64,
     on_off_ctrl_obj: Option<Arc<Control>>,
     _altitude: f64,
@@ -487,7 +495,7 @@ impl Window {
         h_w_path: f64,
         a_w_max: f64,
         window_part_list: Vec<WindowPartInput>,
-        orientation: f64,
+        orientation: Option<f64>,
         pitch: f64,
         altitude: f64,
         on_off_ctrl_obj: Option<Arc<Control>>,
@@ -587,7 +595,7 @@ impl Window {
         shield_class: VentilationShieldClass,
         r_w_arg: Option<f64>,
         simulation_time: SimulationTimeIteration,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         // Assume windows are shut if the control object is empty
         let r_w_arg = match &self.on_off_ctrl_obj {
             None => 0.,
@@ -607,7 +615,7 @@ impl Window {
             wind_direction,
             self.orientation,
             self.pitch,
-        );
+        )?;
 
         // Airflow coefficient of the window
         let c_w_path = self.calculate_flow_coeff_for_window(r_w_arg, simulation_time);
@@ -627,13 +635,13 @@ impl Window {
         }
 
         //  Convert volume air flow rate to mass air flow rate
-        convert_to_mass_air_flow_rate(
+        Ok(convert_to_mass_air_flow_rate(
             qv_in_through_window_opening,
             qv_out_through_window_opening,
             t_e,
             t_z,
             self.p_a_alt,
-        )
+        ))
     }
 }
 
@@ -837,16 +845,16 @@ impl Vent {
         f_cross: bool,
         shield_class: VentilationShieldClass,
         r_v_arg: f64,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         // Wind pressure coefficient for the air flow path
         let c_p_path = get_c_p_path_from_pitch_and_orientation(
             f_cross,
             shield_class,
             self.z,
             wind_direction,
-            self.orientation,
+            Some(self.orientation),
             self.pitch,
-        );
+        )?;
 
         let c_vent_path = self.calculate_flow_coeff_for_vent(r_v_arg);
         // Calculate airflow through each vent
@@ -870,13 +878,13 @@ impl Vent {
         }
 
         // Convert volume air flow rate to mass air flow rate
-        convert_to_mass_air_flow_rate(
+        Ok(convert_to_mass_air_flow_rate(
             qv_in_through_vent,
             qv_out_through_vent,
             t_e,
             t_z,
             self.p_a_alt,
-        )
+        ))
     }
 }
 
@@ -1835,7 +1843,7 @@ impl InfiltrationVentilation {
                 self.shield_class,
                 r_w_arg_min_max,
                 simtime,
-            );
+            )?;
             qm_in_through_window_opening += qm_in;
             qm_out_through_window_opening += qm_out;
         }
@@ -1850,7 +1858,7 @@ impl InfiltrationVentilation {
                 self.f_cross,
                 self.shield_class,
                 r_v_arg,
-            );
+            )?;
             qm_in_through_vents += qm_in;
             qm_out_through_vents += qm_out;
         }
@@ -2242,7 +2250,7 @@ impl InfiltrationVentilation {
                                 *mid_height,
                                 *max_window_open_area,
                                 window_part_list.clone(),
-                                init_orientation(*orientation),
+                                orientation.map(init_orientation),
                                 *pitch,
                                 input.altitude,
                                 on_off_ctrl,
@@ -2816,35 +2824,35 @@ mod tests {
     #[test]
     fn test_get_facade_direction() {
         assert_eq!(
-            get_facade_direction(true, 0., 5., 0.),
+            get_facade_direction(true, Some(0.), 5., 0.).unwrap(),
             FacadeDirection::Roof10
         );
         assert_eq!(
-            get_facade_direction(true, 0., 20., 0.),
+            get_facade_direction(true, Some(0.), 20., 0.).unwrap(),
             FacadeDirection::Roof10_30
         );
         assert_eq!(
-            get_facade_direction(true, 0., 45., 0.),
+            get_facade_direction(true, Some(0.), 45., 0.).unwrap(),
             FacadeDirection::Roof30
         );
         assert_eq!(
-            get_facade_direction(true, 0., 70., 0.),
+            get_facade_direction(true, Some(0.), 70., 0.).unwrap(),
             FacadeDirection::Windward
         );
         assert_eq!(
-            get_facade_direction(true, 180., 70., 0.),
+            get_facade_direction(true, Some(180.), 70., 0.).unwrap(),
             FacadeDirection::Leeward
         );
         assert_eq!(
-            get_facade_direction(false, 0., 45., 0.),
+            get_facade_direction(false, Some(0.), 45., 0.).unwrap(),
             FacadeDirection::Roof
         );
         assert_eq!(
-            get_facade_direction(false, 0., 70., 0.),
+            get_facade_direction(false, Some(0.), 70., 0.).unwrap(),
             FacadeDirection::Windward
         );
         assert_eq!(
-            get_facade_direction(false, 180., 70., 0.),
+            get_facade_direction(false, Some(180.), 70., 0.).unwrap(),
             FacadeDirection::Leeward
         );
     }
@@ -2857,9 +2865,10 @@ mod tests {
                 VentilationShieldClass::Open,
                 10.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
+            )
+            .unwrap(),
             0.50
         );
         assert_relative_eq!(
@@ -2868,9 +2877,10 @@ mod tests {
                 VentilationShieldClass::Normal,
                 10.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
+            )
+            .unwrap(),
             0.25
         );
         assert_relative_eq!(
@@ -2879,9 +2889,10 @@ mod tests {
                 VentilationShieldClass::Shielded,
                 10.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
+            )
+            .unwrap(),
             0.05
         );
         assert_relative_eq!(
@@ -2890,9 +2901,10 @@ mod tests {
                 VentilationShieldClass::Open,
                 30.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
+            )
+            .unwrap(),
             0.65
         );
         assert_relative_eq!(
@@ -2901,9 +2913,10 @@ mod tests {
                 VentilationShieldClass::Normal,
                 30.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
+            )
+            .unwrap(),
             0.45
         );
         assert_relative_eq!(
@@ -2912,9 +2925,10 @@ mod tests {
                 VentilationShieldClass::Shielded,
                 30.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
+            )
+            .unwrap(),
             0.25
         );
         assert_relative_eq!(
@@ -2923,9 +2937,10 @@ mod tests {
                 VentilationShieldClass::Open,
                 60.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
+            )
+            .unwrap(),
             0.80
         );
         assert_relative_eq!(
@@ -2934,9 +2949,10 @@ mod tests {
                 VentilationShieldClass::Normal,
                 10.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
+            )
+            .unwrap(),
             0.05
         );
         assert_relative_eq!(
@@ -2945,9 +2961,10 @@ mod tests {
                 VentilationShieldClass::Normal,
                 10.,
                 0.,
-                0.,
+                Some(0.),
                 45.
-            ),
+            )
+            .unwrap(),
             0.00
         );
     }
@@ -3054,7 +3071,7 @@ mod tests {
             vec![WindowPartInput {
                 mid_height_air_flow_path: 1.5,
             }],
-            0.,
+            Some(0.),
             90.,
             altitude,
             Some(Arc::new(ctrl)),
@@ -3154,17 +3171,19 @@ mod tests {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
         let window = create_window(ctrl, 0.);
 
-        let (qm_in, qm_out) = window.calculate_flow_from_internal_p(
-            wind_directions[0],
-            u_site,
-            celsius_to_kelvin(air_temps[0]).unwrap(),
-            t_z,
-            p_z_ref,
-            f_cross,
-            shield_class,
-            Some(r_w_arg),
-            simulation_time_iterator.current_iteration(),
-        );
+        let (qm_in, qm_out) = window
+            .calculate_flow_from_internal_p(
+                wind_directions[0],
+                u_site,
+                celsius_to_kelvin(air_temps[0]).unwrap(),
+                t_z,
+                p_z_ref,
+                f_cross,
+                shield_class,
+                Some(r_w_arg),
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
 
         // qm_in returns 0.0 and qm_out returns -20707.309683335046
         assert_relative_eq!(qm_in, 0.);
@@ -3272,16 +3291,18 @@ mod tests {
         let shield_class = VentilationShieldClass::Open;
         let r_v_arg = 1.;
 
-        let (qm_in_through_vent, qm_out_through_vent) = vent.calculate_flow_from_internal_p(
-            wind_directions[0],
-            u_site,
-            celsius_to_kelvin(air_temps[0]).unwrap(),
-            t_z,
-            p_z_ref,
-            f_cross,
-            shield_class,
-            r_v_arg,
-        );
+        let (qm_in_through_vent, qm_out_through_vent) = vent
+            .calculate_flow_from_internal_p(
+                wind_directions[0],
+                u_site,
+                celsius_to_kelvin(air_temps[0]).unwrap(),
+                t_z,
+                p_z_ref,
+                f_cross,
+                shield_class,
+                r_v_arg,
+            )
+            .unwrap();
 
         assert_relative_eq!(qm_in_through_vent, 0.);
         assert_relative_eq!(

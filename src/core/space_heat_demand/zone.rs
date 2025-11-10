@@ -1920,10 +1920,10 @@ mod tests {
         );
         let be_ground_floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,
-            thermal_transmission_walls: Some(0.5),
+            thermal_transmission_walls: 0.5,
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered,
-            thermal_resistance_of_insulation: Some(7.),
+            thermal_resistance_of_insulation: 7.,
         };
         let be_ground = BuildingElement::Ground(
             BuildingElementGround::new(
@@ -2022,7 +2022,7 @@ mod tests {
         let window_part_list = vec![WindowPart {
             mid_height_air_flow_path: 1.5,
         }];
-        let window = Window::new(1.6, 1., 3., window_part_list, 0., 0., 30., None, 2.5);
+        let window = Window::new(1.6, 1., 3., window_part_list, Some(0.), 0., 30., None, 2.5);
         let windows = HashMap::from([("window 0".to_string(), window)]);
 
         let vent = Vent::new(1.5, 100.0, 20.0, 180.0, 60.0, 30.0, 2.5);

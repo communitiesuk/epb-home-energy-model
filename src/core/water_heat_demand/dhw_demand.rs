@@ -10,10 +10,9 @@ use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
 use crate::corpus::{ColdWaterSources, EventSchedule};
 use crate::input::{
-    BathDetails, Baths as BathInput, MixerShowerWwhrsConfiguration, OtherWaterUse,
-    OtherWaterUses as OtherWaterUseInput, PipeworkContents, Shower as ShowerInput,
-    Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterDistribution,
-    WaterPipeworkSimple,
+    BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput,
+    PipeworkContents, Shower as ShowerInput, Showers as ShowersInput,
+    WaterDistribution as WaterDistributionInput, WaterDistribution, WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -409,17 +408,14 @@ fn shower_from_input(
     Ok(match input {
         ShowerInput::MixerShower {
             cold_water_source,
-            wwhrs_config:
-                MixerShowerWwhrsConfiguration {
-                    waste_water_heat_recovery_system: waste_water_heat_recovery,
-                    ..
-                },
+            wwhrs_config,
             flowrate,
             ..
         } => {
             let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
-            let wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = waste_water_heat_recovery
+            let wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = wwhrs_config
                 .as_ref()
+                .map(|config| &config.waste_water_heat_recovery_system)
                 .and_then(|w| wwhrs.get(w).cloned());
 
             Shower::MixerShower(MixerShower::new(
@@ -496,7 +492,8 @@ mod tests {
     use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::input::{
-        Baths, ColdWaterSourceType, FuelType, OtherWaterUses, Showers, WaterPipeworkLocation,
+        Baths, FuelType, MixerShowerWwhrsConfiguration, OtherWaterUses, Showers,
+        WaterPipeworkLocation,
     };
     use crate::simulation_time::SimulationTime;
     use parking_lot::RwLock;
@@ -516,7 +513,7 @@ mod tests {
         ];
         let cold_water_source = Arc::from(ColdWaterSource::new(cold_water_temps, 0, 1.));
         let cold_water_sources =
-            ColdWaterSources::from([(ColdWaterSourceType::MainsWater, cold_water_source.clone())]);
+            ColdWaterSources::from([("mains water".into(), cold_water_source.clone())]);
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;
@@ -540,11 +537,11 @@ mod tests {
                 "mixer".into(),
                 ShowerInput::MixerShower {
                     flowrate: 8.0,
-                    cold_water_source: ColdWaterSourceType::MainsWater,
-                    wwhrs_config: MixerShowerWwhrsConfiguration {
-                        waste_water_heat_recovery_system: Some("Example_Inst_WWHRS".into()),
+                    cold_water_source: "mains water".into(),
+                    wwhrs_config: Some(MixerShowerWwhrsConfiguration {
+                        waste_water_heat_recovery_system: "Example_Inst_WWHRS".into(),
                         ..Default::default()
-                    },
+                    }),
                     hot_water_source: None,
                 },
             ),
@@ -552,7 +549,7 @@ mod tests {
                 "IES".into(),
                 ShowerInput::InstantElectricShower {
                     rated_power: 9.0,
-                    cold_water_source: ColdWaterSourceType::MainsWater,
+                    cold_water_source: "mains water".into(),
                     energy_supply: "mains elec".into(),
                 },
             ),
@@ -562,7 +559,7 @@ mod tests {
             "medium".into(),
             BathDetails {
                 size: 100.,
-                cold_water_source: ColdWaterSourceType::MainsWater,
+                cold_water_source: "mains water".into(),
                 flowrate: 8.0,
                 hot_water_source: None,
             },
@@ -572,7 +569,7 @@ mod tests {
             "other".into(),
             OtherWaterUse {
                 flowrate: 8.0,
-                cold_water_source: ColdWaterSourceType::MainsWater,
+                cold_water_source: "mains water".into(),
                 hot_water_source: None,
             },
         )]));

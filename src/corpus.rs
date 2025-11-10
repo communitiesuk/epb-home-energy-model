@@ -59,13 +59,13 @@ use crate::external_conditions::{create_external_conditions, ExternalConditions}
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
-    ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
-    ControlCombinations, ControlDetails, DuctType, EnergyDiverter, EnergySupplyDetails,
-    EnergySupplyInput, FlowData, FuelType, HeatBattery as HeatBatteryInput, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
-    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
-    InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails,
-    OnSiteGeneration, PhotovoltaicInputs, PhotovoltaicSystem as PhotovoltaicSystemInput,
+    ColdWaterSourceInput, Control as ControlInput, ControlCombinations, ControlDetails, DuctType,
+    EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FlowData, FuelType,
+    HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
+    InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
+    InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
+    PhotovoltaicInputs, PhotovoltaicSystem as PhotovoltaicSystemInput,
     SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
     ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput, VentilationLeaks,
@@ -513,7 +513,9 @@ pub(super) fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<H
             BuildingElementInput::AdjacentConditionedSpace { .. } => 0.,
             BuildingElementInput::AdjacentUnconditionedSpace { area, .. } => {
                 let u_value = 1.0 / (thermal_resistance_construction + r_se + r_si);
-                *area * u_value
+                area.ok_or_else(|| {
+                    anyhow!("AdjacentConditionedSpace building element is expected have an area")
+                })? * u_value
             }
         })
     }
@@ -2982,14 +2984,14 @@ impl SpaceHeatCoolSystems<'_> {
     }
 }
 
-pub(crate) type ColdWaterSources = IndexMap<ColdWaterSourceType, Arc<ColdWaterSource>>;
+pub(crate) type ColdWaterSources = IndexMap<String, Arc<ColdWaterSource>>;
 
 fn cold_water_sources_from_input(input: &ColdWaterSourceInput) -> ColdWaterSources {
     input
         .iter()
         .map(|(source_type, source_details)| {
             (
-                *source_type,
+                source_type.into(),
                 Arc::from(cold_water_source_from_input_details(source_details)),
             )
         })
@@ -3475,10 +3477,10 @@ pub(crate) enum HotWaterResultKey {
 }
 
 fn get_cold_water_source_ref_for_type(
-    source_type: ColdWaterSourceType,
+    source_type: &str,
     cold_water_sources: &ColdWaterSources,
 ) -> Option<Arc<ColdWaterSource>> {
-    cold_water_sources.get(&source_type).cloned()
+    cold_water_sources.get(source_type).cloned()
 }
 
 pub(crate) type EventSchedule = Vec<Option<Vec<TypedScheduleEvent>>>;
@@ -3857,9 +3859,10 @@ fn building_element_from_input(
             u_value_input,
             areal_heat_capacity,
             mass_distribution_class,
+            ..
         } => {
             BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
-                *area,
+                area.ok_or_else(|| anyhow!("AdjacentConditionedSpace building element is expected have an area"))?,
                 *pitch,
                 init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
                 *areal_heat_capacity,
@@ -3876,7 +3879,7 @@ fn building_element_from_input(
             mass_distribution_class,
         } => BuildingElement::AdjacentUnconditionedSpaceSimple(
             BuildingElementAdjacentUnconditionedSpaceSimple::new(
-                *area,
+                area.ok_or_else(|| anyhow!("AdjacentUnconditionedSpace building element is expected have an area"))?,
                 *pitch,
                 init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
                 *thermal_resistance_unconditioned_space,
@@ -4814,21 +4817,12 @@ fn hot_water_source_from_input(
     let cloned_input = input.clone();
 
     let cold_water_source_for_hot_water_tank =
-        |cold_water_source_type: &ColdWaterSourceReference|
-         -> anyhow::Result<WaterSourceWithTemperature> {
-            let cold_water_source = match cold_water_source_type {
-                ColdWaterSourceReference::Type(source_type) => {
-                    cold_water_source_for_type(source_type, cold_water_sources)?
-                }
-                ColdWaterSourceReference::Reference(reference) => {
-                    if let Some(preheated) = pre_heated_water_sources.get(reference) {
-                        WaterSourceWithTemperature::Preheated(preheated.clone())
-                    } else {
-                        WaterSourceWithTemperature::Wwhrs(wwhrs.get(reference).ok_or_else(|| anyhow!("Could not find pre-heated or WWHRS water source for name '{reference}'"))?.clone())
-                    }
-                }
-            };
-            Ok(cold_water_source)
+        |cold_water_source_type: &str| -> anyhow::Result<WaterSourceWithTemperature> {
+            pre_heated_water_sources
+                .get(cold_water_source_type)
+                .map(|source| WaterSourceWithTemperature::Preheated(source.clone()))
+                .or(wwhrs.get(cold_water_source_type).map(|source| WaterSourceWithTemperature::Wwhrs(source.clone())))
+                .ok_or_else(|| anyhow!("Could not find pre-heated or WWHRS water source for name '{cold_water_source_type}'"))
         };
 
     let mut heat_sources_for_hot_water_tank =
@@ -5012,7 +5006,7 @@ fn hot_water_source_from_input(
             energy_supply_pump,
             ..
         } => {
-            let cold_water_source_type = ColdWaterSourceReference::Type(*cold_water_source);
+            let cold_water_source_type = cold_water_source;
             let cold_water_source = cold_water_source_for_hot_water_tank(&cold_water_source_type)?;
 
             // At this point in the Python, the internal_diameter and external_diameter fields on
@@ -5201,7 +5195,7 @@ fn hot_water_source_from_input(
 }
 
 fn cold_water_source_for_type(
-    cold_water_source_type: &ColdWaterSourceType,
+    cold_water_source_type: &str,
     cold_water_sources: &ColdWaterSources,
 ) -> anyhow::Result<WaterSourceWithTemperature> {
     Ok(WaterSourceWithTemperature::ColdWaterSource(
