@@ -62,7 +62,7 @@ use crate::input::{
     ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
     ControlCombinations, ControlDetails, DuctType, EnergyDiverter, EnergySupplyDetails,
     EnergySupplyInput, FlowData, FuelType, HeatBattery as HeatBatteryInput, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType,
+    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
     HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
     InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails,
     OnSiteGeneration, PhotovoltaicInputs, PhotovoltaicSystem as PhotovoltaicSystemInput,
@@ -5093,29 +5093,12 @@ fn hot_water_source_from_input(
         } => {
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
-            let energy_supply_conn_name = String::from(
-                [
-                    &heat_source_wet_type.to_canonical_string(),
-                    "_water_heating",
-                ]
-                .concat(),
-            );
+            let energy_supply_conn_name =
+                String::from([&heat_source_wet_type, "_water_heating"].concat());
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
-            let heat_source_wet = match heat_source_wet_type {
-                HeatSourceWetType::Boiler => wet_heat_sources
-                    .get_mut(&heat_source_wet_type.to_canonical_string())
-                    .ok_or_else(|| {
-                        anyhow!("Expected a boiler to have been defined as a wet heat source")
-                    })?,
-                HeatSourceWetType::HeatPump => wet_heat_sources
-                    .get_mut(&heat_source_wet_type.to_canonical_string())
-                    .ok_or_else(|| {
-                        anyhow!("Expected a heat pump to have been defined as a wet heat source")
-                    })?,
-                _ => {
-                    panic!("Did not expect a heat source type that was not a boiler or a heat pump")
-                }
-            };
+            let heat_source_wet = wet_heat_sources.get_mut(heat_source_wet_type.into()).ok_or_else(|| {
+                anyhow!("Expected '{heat_source_wet_type}' to have been defined as a wet heat source")
+            })?;
             HotWaterSource::CombiBoiler(
                 heat_source_wet
                     .create_service_hot_water_combi(
@@ -5156,18 +5139,13 @@ fn hot_water_source_from_input(
             setpoint_temp,
             ..
         } => {
-            let energy_supply_conn_name = String::from(
-                [
-                    &heat_source_wet_type.to_canonical_string(),
-                    "_water_heating",
-                ]
-                .concat(),
-            );
+            let energy_supply_conn_name =
+                String::from([&heat_source_wet_type, "_water_heating"].concat());
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
-            let heat_source_wet = match heat_source_wet_type {
-                HeatSourceWetType::HeatNetwork => {
+            let heat_source_wet = match heat_source_wet_type.as_str() {
+                "HeatNetwork" => {
                     match wet_heat_sources
                         .get("HeatNetwork")
                         .expect("expected a heat network in this context")

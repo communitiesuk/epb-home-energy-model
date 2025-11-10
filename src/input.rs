@@ -1264,7 +1264,7 @@ pub(crate) enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
 
         #[serde(rename = "HeatSourceWet")]
-        heat_source_wet: HeatSourceWetType,
+        heat_source_wet: String,
 
         /// Type of separate domestic hot water test performed on the combi boiler (M&L, M&S, M_only, or No_additional_tests)
         #[serde(rename = "separate_DHW_tests")]
@@ -1301,7 +1301,7 @@ pub(crate) enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
 
         #[serde(rename = "HeatSourceWet")]
-        heat_source_wet: HeatSourceWetType,
+        heat_source_wet: String,
 
         /// Temperature setpoint for the HIU hot water output (unit: ˚C)
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1571,28 +1571,6 @@ impl Into<std::string::String> for &ColdWaterSourceType {
 pub enum ColdWaterSourceReference {
     Type(ColdWaterSourceType),
     Reference(String),
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum HeatSourceWetType {
-    #[serde(rename = "boiler")]
-    Boiler,
-
-    HeatNetwork,
-
-    #[serde(rename = "hp")]
-    HeatPump,
-
-    #[serde(untagged)]
-    Other(String),
-}
-
-impl HeatSourceWetType {
-    /// Convert the type to a canonical string based on the input format to be used in e.g. energy supply names
-    pub fn to_canonical_string(&self) -> String {
-        serde_json::to_value(self).unwrap().as_str().unwrap().into()
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]

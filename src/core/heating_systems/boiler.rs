@@ -1092,7 +1092,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::input::{ColdWaterSourceType, FuelType, HeatSourceWetType};
+    use crate::input::{ColdWaterSourceType, FuelType};
     use crate::simulation_time::SimulationTime;
     use approx::{assert_relative_eq, assert_ulps_eq};
     use itertools::Itertools;
@@ -1284,7 +1284,7 @@ mod tests {
             setpoint_temp: None,
             daily_hw_usage: 132.5802,
             cold_water_source: ColdWaterSourceType::MainsWater,
-            heat_source_wet: HeatSourceWetType::Boiler,
+            heat_source_wet: "boiler".into(),
         }
     }
 
