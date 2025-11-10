@@ -156,6 +156,8 @@ fn main() -> anyhow::Result<()> {
         args.tariff_file.as_ref().map(|f| f.as_str()),
         &project_flags,
         args.preprocess_only,
+        args.heat_balance,
+        args.detailed_output_heating_cooling,
     )?;
 
     if let Some(response) = response {
@@ -189,12 +191,6 @@ fn output_type_from_wrapper_choice(wrapper_choice: &WrapperChoice) -> &str {
 impl From<&WrappersArgs> for ProjectFlags {
     fn from(args: &WrappersArgs) -> Self {
         let mut flags = ProjectFlags::empty();
-        if args.heat_balance {
-            flags.insert(ProjectFlags::HEAT_BALANCE);
-        }
-        if args.detailed_output_heating_cooling {
-            flags.insert(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING);
-        }
         {
             let fhs = args.wrapper_choice;
             if fhs.future_homes_standard {

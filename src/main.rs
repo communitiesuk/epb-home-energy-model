@@ -3,7 +3,7 @@ extern crate hem;
 use clap::{Args, Parser};
 use hem::output::FileOutput;
 use hem::read_weather_file::{weather_data_to_vec, ExternalConditions};
-use hem::{run_project, ProjectFlags};
+use hem::run_project;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
@@ -101,29 +101,14 @@ fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
-    let project_flags = (&args).into();
-
     run_project(
         BufReader::new(File::open(Path::new(input_file))?),
         &file_output,
         external_conditions,
         args.tariff_file.as_ref().map(|f| f.as_str()),
-        &project_flags,
+        false,
+        false,
     )?;
 
     Ok(())
-}
-
-impl From<&SapArgs> for ProjectFlags {
-    fn from(args: &SapArgs) -> Self {
-        let mut flags = ProjectFlags::empty();
-        if args.heat_balance {
-            flags.insert(ProjectFlags::HEAT_BALANCE);
-        }
-        if args.detailed_output_heating_cooling {
-            flags.insert(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING);
-        }
-
-        flags
-    }
 }

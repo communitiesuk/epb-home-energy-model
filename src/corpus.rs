@@ -75,7 +75,7 @@ use crate::input::{
     ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
-use crate::{ProjectFlags, StringOrNumber};
+use crate::StringOrNumber;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use indexmap::IndexMap;
@@ -2901,16 +2901,6 @@ struct HeatCoolOutputs {
 pub struct OutputOptions {
     pub print_heat_balance: bool,
     pub detailed_output_heating_cooling: bool,
-}
-
-impl From<&ProjectFlags> for OutputOptions {
-    fn from(flags: &ProjectFlags) -> Self {
-        Self {
-            print_heat_balance: flags.contains(ProjectFlags::HEAT_BALANCE),
-            detailed_output_heating_cooling: flags
-                .contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING),
-        }
-    }
 }
 
 struct SetpointsAndConvectiveFractions {

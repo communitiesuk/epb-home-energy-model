@@ -22,8 +22,8 @@ use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 pub use crate::corpus::RunResults;
 use crate::corpus::{
     calc_htc_hlp, Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap,
-    HtcHlpCalculation, NumberOrDivisionByZero, ResultsAnnual, ResultsEndUser, ResultsPerTimestep,
-    ZoneResultKey,
+    HtcHlpCalculation, NumberOrDivisionByZero, OutputOptions, ResultsAnnual, ResultsEndUser,
+    ResultsPerTimestep, ZoneResultKey,
 };
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
@@ -87,7 +87,8 @@ pub fn run_project(
     output: &impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
-    flags: &ProjectFlags, // TODO: this can be owned
+    heat_balance: bool,
+    detailed_output_heating_cooling: bool,
 ) -> Result<CalculationResultsWithContext, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
         #[instrument(skip_all)]
@@ -145,13 +146,14 @@ pub fn run_project(
                 input: &Input,
                 external_conditions: &ExternalConditions,
                 tariff_data_file: Option<&str>,
-                flags: &ProjectFlags,
+                print_heat_balance: bool,
+                detailed_output_heating_cooling: bool,
             ) -> anyhow::Result<Corpus> {
-                let output_options = flags.into();
+                let output_options = OutputOptions { print_heat_balance, detailed_output_heating_cooling };
                 Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options)
             }
 
-            build_corpus(&input, &external_conditions, tariff_data_file, flags).map_err(|e| {
+            build_corpus(&input, &external_conditions, tariff_data_file, heat_balance, detailed_output_heating_cooling).map_err(|e| {
                 capture_specific_error_case(&e).unwrap_or_else(|| HemError::InvalidRequest(e))
             })?
         };
@@ -189,7 +191,8 @@ pub fn run_project(
             output: &impl Output,
             results: &CalculationResultsWithContext,
             hour_per_step: f64,
-            flags: &ProjectFlags,
+            heat_balance: bool,
+            detailed_output_heating_cooling: bool,
         ) -> anyhow::Result<()> {
             if output.is_noop() {
                 return Ok(());
@@ -250,7 +253,7 @@ pub fn run_project(
                 },
             )?;
 
-            if flags.contains(ProjectFlags::HEAT_BALANCE) {
+            if heat_balance {
                 for (hb_name, hb_map) in heat_balance_dict.iter() {
                     let output_key = format!("results_heat_balance_{}", hb_name.to_string().to_case(Case::Snake)).into();
                     write_core_output_file_heat_balance(output, HeatBalanceOutputFileArgs {
@@ -262,7 +265,7 @@ pub fn run_project(
                 }
             }
 
-            if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
+            if detailed_output_heating_cooling {
                 for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
                     let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
                     write_core_output_file_heat_source_wet(output, &output_key, timestep_array, heat_source_wet_results)?;
@@ -303,7 +306,7 @@ pub fn run_project(
                 },
             )?;
 
-            if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
+            if detailed_output_heating_cooling {
                 let output_prefix = "results_emitters_";
                 write_core_output_file_emitters_detailed(output, output_prefix, emitters_output_dict)?;
 
@@ -317,7 +320,7 @@ pub fn run_project(
         let steps_in_hours = &corpus.simulation_time.step_in_hours();
         let contextualised_results =
             CalculationResultsWithContext::new(input, corpus, run_results);
-        write_core_output_files(Some(&cloned_input), output, &contextualised_results, *steps_in_hours, flags)?;
+        write_core_output_files(Some(&cloned_input), output, &contextualised_results, *steps_in_hours, heat_balance, detailed_output_heating_cooling)?;
         Ok(contextualised_results)
     }))
         .map_err(|e| {
@@ -381,8 +384,6 @@ impl CalculationResultsWithContext {
 
 bitflags! {
     pub struct ProjectFlags: u32 {
-        const HEAT_BALANCE = 0b10;
-        const DETAILED_OUTPUT_HEATING_COOLING = 0b100;
         // start FHS flags from 2^8
         #[cfg(feature = "fhs")]
         const FHS_ASSUMPTIONS = 0b100000000;

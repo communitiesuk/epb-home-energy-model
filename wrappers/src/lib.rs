@@ -91,6 +91,8 @@ pub fn run_wrappers(
     tariff_data_file: Option<&str>,
     flags: &ProjectFlags,
     preprocess_only: bool,
+    heat_balance: bool,
+    detailed_output_heating_cooling: bool,
 ) -> Result<Option<HemResponse>, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
         #[instrument(skip_all)]
@@ -171,7 +173,7 @@ pub fn run_wrappers(
                     .map(|(key, input_value)| {
                         let serialized_data = serde_json::to_vec(&input_value.input).map_err(|err| anyhow!(err))?;
                         let input_reader = BufReader::new(Cursor::new(serialized_data));
-                        hem::run_project(input_reader, &SinkOutput::default(), None, tariff_data_file, flags)
+                        hem::run_project(input_reader, &SinkOutput::default(), None, tariff_data_file, heat_balance, detailed_output_heating_cooling)
                             .map(|result_value| (*key, result_value))
                     }).collect()
             }
@@ -181,7 +183,7 @@ pub fn run_wrappers(
                     .ok_or_else(|| anyhow!("Primary key missing"))?;
                 let serialized_data = serde_json::to_vec(&input_value.input).map_err(|err| anyhow!(err))?;
                 let input_reader = BufReader::new(Cursor::new(serialized_data));
-                let calculation_result = hem::run_project(input_reader, &output, None, tariff_data_file, flags)?;
+                let calculation_result = hem::run_project(input_reader, &output, None, tariff_data_file, heat_balance, detailed_output_heating_cooling)?;
                 Ok(HashMap::from([(CalculationKey::Primary, calculation_result)]))
             }
         };
