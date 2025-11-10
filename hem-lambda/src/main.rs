@@ -27,11 +27,11 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     .ok();
 
     let resp = match run_project(input, &output, external_conditions, None, false, false) {
-        Ok(CalculationResultsWithContext { results, .. }) => {
+        Ok(CalculationResultsWithContext { .. }) => {
             Response::builder()
             .status(200)
-            .header("Content-Type", "application/json")
-            .body(Body::from(format!("{:#?}", results)))
+            .header("Content-Type", "text/plain")
+            .body(Body::from(output))
             .map_err(Box::new)?
         },
         Err(e) => Response::builder()
