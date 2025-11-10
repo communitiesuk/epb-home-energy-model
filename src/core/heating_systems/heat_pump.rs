@@ -3613,8 +3613,8 @@ impl HeatPump {
 
     fn calc_ancillary_energy(
         &mut self,
-        timestep: f64,
-        time_remaining_current_timestep: f64,
+        _timestep: f64,
+        _time_remaining_current_timestep: f64,
         timestep_index: usize,
     ) -> anyhow::Result<()> {
         // we need to collect times running separately before the main iteration as we cannot look into the service
