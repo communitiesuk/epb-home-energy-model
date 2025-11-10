@@ -219,7 +219,7 @@ pub struct EnergySupplyDetails {
 }
 
 impl EnergySupplyDetails {
-    #[cfg(feature = "fhs")]
+    #[cfg(feature = "fhs")] // TODO review after migration as we expect it may be removed
     pub fn with_fuel(fuel_type: FuelType) -> Self {
         Self {
             fuel: fuel_type,

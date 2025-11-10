@@ -76,7 +76,6 @@ fn main() -> anyhow::Result<()> {
     output_path.push(format!("{}__results", input_file_stem.to_str().unwrap()));
     fs::create_dir_all(&output_path)?;
     let input_file_name = input_file_stem.file_name().unwrap().to_str().unwrap();
-    // following is rough initial mapping given existing fhs options
     let output_type = "core";
     let file_output = FileOutput::new(
         output_path,

@@ -32,11 +32,6 @@ pub(crate) struct InputForProcessing {
     pub(crate) input: JsonValue,
 }
 
-/// This type makes methods available for restricted access by wrappers,
-/// in order to work towards a reasonable API for wrappers to interact with inputs rather than
-/// the more brittle approach of allowing full access to the input data structure.
-/// If the full access is encapsulated within methods here, it becomes possible to update the
-/// underlying structure without breaking wrappers.
 impl InputForProcessing {
     pub fn init_with_json(json: impl Read) -> Result<Self, anyhow::Error> {
         let input_for_processing = Self::init_with_json_skip_validation(json)?;
