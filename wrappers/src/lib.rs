@@ -199,8 +199,9 @@ pub fn run_wrappers(
                 let input_value = input
                     .get(&CalculationKey::Primary)
                     .ok_or_else(|| anyhow!("Primary key missing"))?;
-                let serialized_data = serde_json::to_vec(&input_value.input).map_err(|err| anyhow!(err))?;
-                let input_reader = BufReader::new(Cursor::new(serialized_data));
+                // TODO: review how we serialize and which method is closer to the Python as this different method produced different hot water events: serde_json::to_vec(&input_value.input).map_err(|err| anyhow!(err))?;
+                let serialized_input = input_value.input.to_string().into_bytes();
+                let input_reader = BufReader::new(Cursor::new(serialized_input));
                 let calculation_result = hem::run_project(input_reader, &output, None, tariff_data_file, heat_balance, detailed_output_heating_cooling)?;
                 Ok(HashMap::from([(CalculationKey::Primary, calculation_result)]))
             }
