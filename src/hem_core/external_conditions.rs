@@ -2444,8 +2444,10 @@ mod tests {
     use super::*;
     use crate::core::units::DAYS_IN_MONTH;
     use crate::external_conditions::DaylightSavingsConfig::NotApplicable;
+    use crate::input::init_orientation;
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
+    use jsonschema::ext;
     use pretty_assertions::assert_eq;
     use rstest::*;
 
@@ -2859,6 +2861,30 @@ mod tests {
     }
 
     #[rstest]
+    fn test_air_temp_with_offset(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (i, simtime_step) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.air_temp(&simtime_step),
+                [3.5, 4.0, 4.5, 5.0, 7.5, 10.0, 12.5, 15.0][i],
+                "failed on iteration index {} with step {:?}",
+                i,
+                simtime_step
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_air_temp_annual_daily_average_min(external_conditions: ExternalConditions) {
+        assert_eq!(
+            external_conditions.air_temp_annual_daily_average_min(),
+            6.75
+        );
+    }
+
+    #[rstest]
     fn test_air_temp_annual(external_conditions: ExternalConditions) {
         let precision = 1e-6;
         assert_relative_eq!(
@@ -2917,6 +2943,15 @@ mod tests {
                 [80., 60., 40., 20., 10., 50., 100., 140.][t_it.index]
             );
         }
+    }
+
+    #[rstest]
+    fn test_wind_direction_annual(external_conditions: ExternalConditions) {
+        assert_relative_eq!(
+            external_conditions.wind_direction_annual(),
+            39.11296611406138,
+            max_relative = 0.01
+        )
     }
 
     #[rstest]
@@ -5022,4 +5057,172 @@ mod tests {
     }
 
     // test_no_shading_segments in Python is unnecessary to set up in Rust as already guaranteed by type system
+
+    #[rstest]
+    fn test_sun_above_horizon(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.sun_above_horizon(t_it),
+                [false, true, true, true, true, true, true, true][t_idx]
+            )
+        }
+    }
+
+    #[rstest]
+    fn test_init_orientation() {
+        assert_eq!(init_orientation(0.), 180.);
+        assert_eq!(init_orientation(90.), 90.);
+        assert_eq!(init_orientation(180.), 0.);
+        assert_eq!(init_orientation(270.), -90.);
+        assert_eq!(init_orientation(360.), -180.);
+    }
+
+    // Python test test_diffuse_shading_reduction_factor_invalid_shading_type not required
+    // Python test test_diffuse_shading_reduction_factor_invalid_window_shading_type
+
+    #[rstest]
+    fn test_diffuse_shading_reduction_factor_zero_diffuse_radiation(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        let zero_diffuse_breakdown = DiffuseBreakdown {
+            sky: 0.,
+            circumsolar: 0.,
+            horiz: 0.,
+            ground_refl: 0.,
+        };
+        let iteration = simulation_time.iter().next().unwrap();
+        let result = external_conditions.diffuse_shading_reduction_factor(
+            zero_diffuse_breakdown,
+            0.,
+            15.,
+            1.,
+            4.,
+            0.,
+            None,
+            0.,
+            iteration,
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[ignore = "Work in progress - does not curently pass"]
+    fn test_diffuse_shading_reduction_factor_360_angles(simulation_time: SimulationTime) {
+        let diffuse_breakdown = DiffuseBreakdown {
+            sky: 12.,
+            circumsolar: 0.,
+            horiz: -2.0164780331874668,
+            ground_refl: 2.4,
+        };
+        let tilt = 90.;
+        let height = 1.35;
+        let base_height = 1.;
+        let width = 4.;
+        let orientation = 90.;
+
+        let window_shading = vec![
+            WindowShadingObject::Overhang {
+                depth: 0.5,
+                distance: 0.5,
+            },
+            WindowShadingObject::SideFinLeft {
+                depth: 0.25,
+                distance: 0.1,
+            },
+            WindowShadingObject::SideFinRight {
+                depth: 0.25,
+                distance: 0.1,
+            },
+        ];
+
+        let f_sky = 0.5;
+
+        let shading_segments = vec![
+            ShadingSegment {
+                start: 180.,
+                end: 0.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 135.,
+                end: 0.,
+                shading_objects: vec![ShadingObject {
+                    object_type: ShadingObjectType::Obstacle,
+                    height: 10.5,
+                    distance: 12.,
+                }],
+            },
+            ShadingSegment {
+                start: 0.,
+                end: -180.,
+                ..Default::default()
+            },
+        ];
+
+        let external_conditions = ExternalConditions::new(
+            &simulation_time.iter(),
+            air_temps(),
+            wind_speeds(),
+            wind_directions(),
+            diffuse_horizontal_radiation().to_vec(),
+            direct_beam_radiation().to_vec(),
+            solar_reflectivity_of_ground().to_vec(),
+            latitude(),
+            longitude(),
+            timezone(),
+            start_day(),
+            end_day(),
+            time_series_step(),
+            january_first(),
+            daylight_savings(),
+            leap_day_included(),
+            direct_beam_conversion_needed(),
+            Some(shading_segments),
+        );
+
+        let iteration = simulation_time.iter().next().unwrap();
+
+        let result = external_conditions.diffuse_shading_reduction_factor(
+            diffuse_breakdown,
+            tilt,
+            height,
+            base_height,
+            width,
+            orientation,
+            Some(&window_shading),
+            f_sky,
+            iteration,
+        );
+        assert_relative_eq!(result.unwrap(), 0.5905238865770632, max_relative = 0.01);
+
+        let tilt = 180.;
+
+        // TODO do we need to move to the second iteration to match Python?
+        // let iteration = simulation_time.iter().skip(1).next().unwrap();
+
+        let result = external_conditions.diffuse_shading_reduction_factor(
+            diffuse_breakdown,
+            tilt,
+            height,
+            base_height,
+            width,
+            orientation,
+            Some(&window_shading),
+            f_sky,
+            iteration,
+        );
+
+        // TODO this fails to match the Python
+        assert_relative_eq!(result.unwrap(), 0.7568828523411675, max_relative = 0.01);
+    }
+
+    #[rstest]
+    #[ignore = "Not yet implemented"]
+    fn test_diffuse_shading_reduction_factor_f_sky_tilt() {
+        todo!()
+    }
 }
