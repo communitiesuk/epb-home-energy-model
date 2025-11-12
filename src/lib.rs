@@ -27,9 +27,7 @@ use crate::corpus::{
 };
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
-use crate::input::{
-    ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input,
-};
+use crate::input::{ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input};
 use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
@@ -72,9 +70,14 @@ impl HemResponse {
     }
 }
 
+pub enum RunInput<'a> {
+    Json(JsonValue),
+    Read(Box<dyn Read + 'a>),
+}
+
 #[instrument(skip_all)]
 pub fn run_project(
-    input: impl Read,
+    input: RunInput,
     output: &impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
@@ -98,8 +101,11 @@ pub fn run_project(
         }
 
         #[instrument(skip_all)]
-        fn finalize(input: impl Read, external_conditions_data: Option<&ExternalConditionsFromFile>) -> anyhow::Result<Input> {
-            let input: JsonValue = serde_json::from_reader(input)?;
+        fn finalize(input: RunInput, external_conditions_data: Option<&ExternalConditionsFromFile>) -> anyhow::Result<Input> {
+            let input = match input {
+                RunInput::Json(value) => value,
+                RunInput::Read(value) => serde_json::from_reader(value)?
+            };
             // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
             // if let BasicOutput::Invalid(errors) =
             //     CORE_INCLUDING_FHS_VALIDATOR.apply(&self.input).basic()

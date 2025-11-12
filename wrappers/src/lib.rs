@@ -1,4 +1,4 @@
-use crate::future_homes_standard::input::{InputForProcessing, ingest_for_processing};
+use crate::future_homes_standard::input::{ingest_for_processing, InputForProcessing};
 use crate::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
 use anyhow::anyhow;
 use bitflags::bitflags;
@@ -8,11 +8,13 @@ pub use hem::output::Output;
 use hem::output::SinkOutput;
 pub use hem::read_weather_file;
 use hem::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
+use hem::RunInput;
 pub use hem::{CalculationResultsWithContext, HemResponse};
 use rayon::prelude::*;
 use std::collections::HashMap;
-use std::io::{BufReader, Cursor, Read};
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::fmt::Debug;
+use std::io::Read;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use tracing::{error, instrument};
 
 pub mod future_homes_standard;
@@ -189,9 +191,7 @@ pub fn run_wrappers(
             ChosenWrapper::FhsCompliance(_) => {
                 input.par_iter()
                     .map(|(key, input_value)| {
-                        let serialized_data = serde_json::to_vec(&input_value.input).map_err(|err| anyhow!(err))?;
-                        let input_reader = BufReader::new(Cursor::new(serialized_data));
-                        hem::run_project(input_reader, &SinkOutput::default(), None, tariff_data_file, heat_balance, detailed_output_heating_cooling)
+                        hem::run_project(RunInput::Json(input_value.input.clone()), &SinkOutput::default(), None, tariff_data_file, heat_balance, detailed_output_heating_cooling)
                             .map(|result_value| (*key, result_value))
                     }).collect()
             }
@@ -199,10 +199,7 @@ pub fn run_wrappers(
                 let input_value = input
                     .get(&CalculationKey::Primary)
                     .ok_or_else(|| anyhow!("Primary key missing"))?;
-                // TODO: review how we serialize and which method is closer to the Python as this different method produced different hot water events: serde_json::to_vec(&input_value.input).map_err(|err| anyhow!(err))?;
-                let serialized_input = input_value.input.to_string().into_bytes();
-                let input_reader = BufReader::new(Cursor::new(serialized_input));
-                let calculation_result = hem::run_project(input_reader, &output, None, tariff_data_file, heat_balance, detailed_output_heating_cooling)?;
+                let calculation_result = hem::run_project(RunInput::Json(input_value.input.clone()), &output, None, tariff_data_file, heat_balance, detailed_output_heating_cooling)?;
                 Ok(HashMap::from([(CalculationKey::Primary, calculation_result)]))
             }
         };

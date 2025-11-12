@@ -1,6 +1,6 @@
 use hem::output::Output;
 use hem::read_weather_file::weather_data_to_vec;
-use hem::{run_project, CalculationResultsWithContext};
+use hem::{run_project, CalculationResultsWithContext, RunInput};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
 use parking_lot::Mutex;
 use serde_json::json;
@@ -26,7 +26,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     ))))
     .ok();
 
-    let resp = match run_project(input, &output, external_conditions, None, false, false) {
+    let resp = match run_project(RunInput::Read(Box::new(input)), &output, external_conditions, None, false, false) {
         Ok(CalculationResultsWithContext { .. }) => {
             Response::builder()
             .status(200)
