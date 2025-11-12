@@ -1,8 +1,8 @@
 use super::future_homes_standard::{
+    calc_n_occupants, calc_nbeds, calc_tfa, create_cold_water_feed_temps,
+    create_hot_water_use_pattern, minimum_air_change_rate, set_temp_internal_static_calcs,
     ENERGY_SUPPLY_NAME_ELECTRICITY, HW_TEMPERATURE, LIVING_ROOM_SETPOINT_FHS,
-    REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END, SIMTIME_START, SIMTIME_STEP, calc_n_occupants,
-    calc_nbeds, calc_tfa, create_cold_water_feed_temps, create_hot_water_use_pattern,
-    minimum_air_change_rate, set_temp_internal_static_calcs,
+    REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END, SIMTIME_START, SIMTIME_STEP,
 };
 use crate::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
 use crate::future_homes_standard::input::{
@@ -12,16 +12,16 @@ use crate::future_homes_standard::input::{
 use anyhow::{anyhow, bail};
 use hem::compare_floats::min_of_2;
 use hem::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
-use hem::core::schedule::{TypedScheduleEvent, expand_events};
+use hem::core::schedule::{expand_events, TypedScheduleEvent};
 use hem::core::units::{
-    JOULES_PER_KILOJOULE, JOULES_PER_KILOWATT_HOUR, WATTS_PER_KILOWATT, convert_profile_to_daily,
+    convert_profile_to_daily, JOULES_PER_KILOJOULE, JOULES_PER_KILOWATT_HOUR, WATTS_PER_KILOWATT,
 };
 use hem::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use hem::core::water_heat_demand::dhw_demand::{
     DomesticHotWaterDemand, DomesticHotWaterDemandData,
 };
 use hem::core::water_heat_demand::misc::water_demand_to_kwh;
-use hem::corpus::{ColdWaterSources, HtcHlpCalculation, calc_htc_hlp};
+use hem::corpus::{calc_htc_hlp, ColdWaterSources, HtcHlpCalculation};
 use hem::input::{
     BuildingElement, ColdWaterSourceType, GroundBuildingElement, GroundBuildingElementJsonValue,
     HeatPumpSourceType, HeatSourceWetDetails, SpaceHeatSystemHeatSource, WaterPipeContentsType,
@@ -31,11 +31,11 @@ use hem::simulation_time::SimulationTime;
 use hem::statistics::{np_interp, percentile};
 use hem::{
     compare_floats::max_of_2,
-    core::space_heat_demand::building_element::{HeatFlowDirection, pitch_class},
+    core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection},
 };
 use indexmap::IndexMap;
 use parking_lot::Mutex;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use smartstring::alias::String;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -542,9 +542,9 @@ fn edit_glazing_for_glazing_limit(
 
 /// Apply notional building ground specifications
 ///
-///    u-value = 0.13 W/m2.K
-///    thermal resistance of the floor construction,excluding the ground, r_f = 6.12 m2.K/W
-///    linear thermal transmittance, psi_wall_floor_junc = 0.16 W/m.K
+///     u-value = 0.13 W/m2.K
+///     thermal resistance of the floor construction,excluding the ground, r_f = 6.12 m2.K/W
+///     linear thermal transmittance, psi_wall_floor_junc = 0.16 W/m.K
 pub(crate) fn edit_ground_floors(input: &mut InputForProcessing) -> anyhow::Result<()> {
     // TODO (from Python) waiting from MHCLG/DESNZ for clarification if basement floors and basement walls are treated the same
 
@@ -1545,7 +1545,7 @@ fn round_by_precision(src: f64, precision: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use hem::core::space_heat_demand::building_element::{HeatFlowDirection, pitch_class};
+    use hem::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 
     use super::*;
     use approx::assert_relative_eq;
@@ -1659,11 +1659,9 @@ mod tests {
                 .and_then(|v| v.as_f64()),
             Some(1.2)
         );
-        assert!(
-            zone_1_window_0_element
-                .get("thermal_resistance_construction")
-                .is_none()
-        );
+        assert!(zone_1_window_0_element
+            .get("thermal_resistance_construction")
+            .is_none());
 
         let zone_2_window_0_element = test_input
             .building_element_by_key("zone 2", "window 0")
@@ -1675,11 +1673,9 @@ mod tests {
                 .and_then(|v| v.as_f64()),
             Some(1.2)
         );
-        assert!(
-            zone_2_window_0_element
-                .get("thermal_resistance_construction")
-                .is_none()
-        );
+        assert!(zone_2_window_0_element
+            .get("thermal_resistance_construction")
+            .is_none());
     }
 
     #[rstest]
@@ -1813,11 +1809,9 @@ mod tests {
     fn test_calculate_area_diff_and_adjust_glazing_area(mut test_input: InputForProcessing) {
         let linear_reduction_factor: f64 = 0.7001400420140049;
 
-        let window: BuildingElement = serde_json::from_value(json!(
-            test_input
-                .building_element_by_key("zone 1", "window 0")
-                .unwrap()
-        ))
+        let window: BuildingElement = serde_json::from_value(json!(test_input
+            .building_element_by_key("zone 1", "window 0")
+            .unwrap()))
         .unwrap();
 
         let area_diff = calculate_area_diff_and_adjust_glazing_area(
