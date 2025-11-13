@@ -100,7 +100,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     run_project(
-        RunInput::Read(Box::new(File::open(Path::new(input_file))?)), // TODO review BufReader::new()
+        RunInput::Read(Box::new(File::open(Path::new(input_file))?)),
         &file_output,
         external_conditions,
         args.tariff_file.as_ref().map(|f| f.as_str()),
