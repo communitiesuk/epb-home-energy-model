@@ -7,7 +7,6 @@ use hem::{run_project, RunInput};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use tracing_subscriber::fmt::format::FmtSpan;
 
