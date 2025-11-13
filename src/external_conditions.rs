@@ -1752,7 +1752,6 @@ impl ExternalConditions {
         Ok(i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
     }
 
-    #[cfg(feature = "fhs")]
     pub fn sun_above_horizon(&self, simtime: SimulationTimeIteration) -> bool {
         let solar_angle = self.solar_angle_of_incidence(0., 0., &simtime);
         solar_angle < 90.

@@ -1911,7 +1911,6 @@ impl BuildingElement {
         }
     }
 
-    #[cfg(feature = "fhs")]
     pub fn u_value(&self) -> Option<f64> {
         match self {
             BuildingElement::Opaque { u_value, .. } => *u_value,
