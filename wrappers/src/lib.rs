@@ -26,13 +26,13 @@ pub const FHS_VERSION_DATE: &str = "2025-06-03";
 
 bitflags! {
     pub struct FhsFlags: u32 {
-        const FHS_ASSUMPTIONS = 0b100000000;
-        const FHS_FEE_ASSUMPTIONS = 0b1000000000;
-        const FHS_NOT_A_ASSUMPTIONS = 0b10000000000;
-        const FHS_NOT_B_ASSUMPTIONS = 0b100000000000;
-        const FHS_FEE_NOT_A_ASSUMPTIONS = 0b1000000000000;
-        const FHS_FEE_NOT_B_ASSUMPTIONS = 0b10000000000000;
-        const FHS_COMPLIANCE = 0b100000000000000;
+        const FHS_ASSUMPTIONS = 0b1;
+        const FHS_FEE_ASSUMPTIONS = 0b10;
+        const FHS_NOT_A_ASSUMPTIONS = 0b100;
+        const FHS_NOT_B_ASSUMPTIONS = 0b1000;
+        const FHS_FEE_NOT_A_ASSUMPTIONS = 0b10000;
+        const FHS_FEE_NOT_B_ASSUMPTIONS = 0b100000;
+        const FHS_COMPLIANCE = 0b1000000;
     }
 }
 
