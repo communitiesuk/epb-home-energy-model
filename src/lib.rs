@@ -91,6 +91,7 @@ pub fn run_project(
             Ok(input_for_processing)
         }
 
+        #[allow(unused_variables, unused_mut)] // allow these as they are only used in the feature-gated part of this function
         fn choose_schema_reference(flags: &ProjectFlags) -> SchemaReference {
             let mut schema_reference = SchemaReference::Core;
             #[cfg(feature = "fhs")]
@@ -109,6 +110,7 @@ pub fn run_project(
         let input_for_processing =
             ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref(), &choose_schema_reference(flags))?;
 
+        #[allow(unused_variables)] // allow these as they are only used in the feature-gated part of this function
         fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
             #[cfg(feature = "fhs")]
             {

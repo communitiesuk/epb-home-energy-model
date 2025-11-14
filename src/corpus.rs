@@ -3752,20 +3752,20 @@ impl CompletedVentilationLeaks {
 fn building_element_from_input(
     input: &BuildingElementInput,
     external_conditions: Arc<ExternalConditions>,
-    controls: &Controls,
-    simulation_time_iterator: &SimulationTimeIterator,
+    _controls: &Controls,
+    _simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<Arc<BuildingElement>> {
     Ok(Arc::from(match input {
         BuildingElementInput::Opaque {
-            is_unheated_pitched_roof,
-            area_input,
-            pitch,
-            solar_absorption_coeff,
-            u_value_input,
-            areal_heat_capacity,
-            mass_distribution_class,
-            orientation,
-            base_height,
+            // is_unheated_pitched_roof,
+            // area_input,
+            // pitch,
+            // solar_absorption_coeff,
+            // u_value_input,
+            // areal_heat_capacity,
+            // mass_distribution_class,
+            // orientation,
+            // base_height,
             ..
         } => {
             todo!("BuildingElementInput::Opaque cannot yet be built from input in 0.40");

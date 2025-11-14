@@ -545,7 +545,7 @@ impl OnOffMinimisingTimeControl {
 impl ControlBehaviour for OnOffMinimisingTimeControl {}
 
 #[derive(Clone, Debug)]
-pub struct SetpointTimeControl {
+pub(crate) struct SetpointTimeControl {
     /// list of float values (one entry per hour)
     schedule: Vec<Option<f64>>,
     /// first day of the time series, day of the year, 0 to 365 (single value)
@@ -563,7 +563,7 @@ pub struct SetpointTimeControl {
 /// (not including timesteps where system is only on due to min or max
 /// setpoint or advanced start)
 impl SetpointTimeControl {
-    pub fn new(
+    pub(crate) fn new(
         schedule: Vec<Option<f64>>,
         start_day: u32,
         time_series_step: f64,
