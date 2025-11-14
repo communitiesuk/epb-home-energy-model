@@ -65,6 +65,3 @@ lto = true
 
 [workspace]
 members = ["hem-lambda"]
-
-[features]
-fhs = []

@@ -219,7 +219,7 @@ pub struct EnergySupplyDetails {
 }
 
 impl EnergySupplyDetails {
-    #[cfg(feature = "fhs")] // TODO review after migration as we expect it may be removed
+    // TODO review after migration as we expect it may be removed
     pub fn with_fuel(fuel_type: FuelType) -> Self {
         Self {
             fuel: fuel_type,
@@ -321,7 +321,7 @@ impl TryFrom<EnergySupplyType> for FuelType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum EnergySupplyType {
     #[serde(rename = "mains elec")]
@@ -340,9 +340,8 @@ pub enum EnergySupplyType {
     LpgCondition11F,
     #[serde(rename = "heat network")]
     HeatNetwork,
-    #[cfg(feature = "fhs")]
-    #[serde(rename = "_notional_heat_network")]
-    NotionalHeatNetwork,
+    #[serde(untagged)]
+    Other(String),
 }
 
 impl Display for EnergySupplyType {
