@@ -2,7 +2,7 @@
 name = "hem"
 version = "1.0.0-alpha-1"
 edition = "2021"
-rust-version = "1.80.0"
+rust-version = "1.82.0"
 description = "An engine written in Rust implementing the Home Energy Model (HEM), an energy performance of buildings model"
 
 [dependencies]

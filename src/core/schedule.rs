@@ -235,16 +235,20 @@ pub(crate) mod input {
             match entry {
                 ScheduleEntry::Null(_) => vec![None],
                 ScheduleEntry::Value(v) => vec![Some(*v)],
-                ScheduleEntry::Repeater(repeater) => std::iter::repeat([match &repeater.value {
-                    ScheduleRepeaterValue::Reference(reference) => self.expand_reference(reference),
-                    ScheduleRepeaterValue::Entry(ScheduleRepeaterEntry::Null(_)) => {
-                        vec![None]
-                    }
-                    ScheduleRepeaterValue::Entry(ScheduleRepeaterEntry::Value(v)) => {
-                        vec![Some(*v)]
-                    }
-                }])
-                .take(repeater.repeat)
+                ScheduleEntry::Repeater(repeater) => std::iter::repeat_n(
+                    [match &repeater.value {
+                        ScheduleRepeaterValue::Reference(reference) => {
+                            self.expand_reference(reference)
+                        }
+                        ScheduleRepeaterValue::Entry(ScheduleRepeaterEntry::Null(_)) => {
+                            vec![None]
+                        }
+                        ScheduleRepeaterValue::Entry(ScheduleRepeaterEntry::Value(v)) => {
+                            vec![Some(*v)]
+                        }
+                    }],
+                    repeater.repeat,
+                )
                 .flatten()
                 .flatten()
                 .collect_vec(),

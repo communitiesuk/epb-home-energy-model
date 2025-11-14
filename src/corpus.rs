@@ -946,7 +946,7 @@ impl Corpus {
                     &zones,
                     &heat_sources_wet_with_buffer_tank
                         .iter()
-                        .map(|name| name.clone())
+                        .cloned()
                         .collect_vec(),
                     external_conditions.clone(),
                     output_options.detailed_output_heating_cooling,
@@ -3924,7 +3924,7 @@ fn apply_appliance_gains_from_input(
         let mut lowest_priority = priorities.into_iter().max().unwrap_or(0);
         let mut new_details = appliance_gains.clone();
         for appliance in appliance_gains.keys() {
-            if defined_priority.contains(&appliance) {
+            if defined_priority.contains(appliance) {
                 continue;
             }
             lowest_priority += 1;
@@ -4849,7 +4849,7 @@ fn hot_water_source_from_input(
             let mut used_heat_source_names: Vec<String> = Default::default();
             for (name, hs) in heat_source {
                 let name = String::from(name);
-                if used_heat_source_names.contains(&&name) {
+                if used_heat_source_names.contains(&name) {
                     return Err(anyhow!("Duplicate heat source name detected: {name}"));
                 }
                 used_heat_source_names.push(name.clone());
@@ -4880,7 +4880,7 @@ fn hot_water_source_from_input(
                 let heat_source = Arc::new(Mutex::new(heat_source));
 
                 heat_sources.insert(
-                    name.into(),
+                    name,
                     PositionedHeatSource {
                         heat_source: heat_source.clone(),
                         heater_position,
@@ -5007,7 +5007,7 @@ fn hot_water_source_from_input(
             ..
         } => {
             let cold_water_source_type = cold_water_source;
-            let cold_water_source = cold_water_source_for_hot_water_tank(&cold_water_source_type)?;
+            let cold_water_source = cold_water_source_for_hot_water_tank(cold_water_source_type)?;
 
             // At this point in the Python, the internal_diameter and external_diameter fields on
             // primary_pipework are updated, this is done in Pipework.rs in the Rust
@@ -5088,9 +5088,9 @@ fn hot_water_source_from_input(
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
             let energy_supply_conn_name =
-                String::from([&heat_source_wet_type, "_water_heating"].concat());
+                String::from([heat_source_wet_type, "_water_heating"].concat());
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
-            let heat_source_wet = wet_heat_sources.get_mut(heat_source_wet_type.into()).ok_or_else(|| {
+            let heat_source_wet = wet_heat_sources.get_mut(heat_source_wet_type).ok_or_else(|| {
                 anyhow!("Expected '{heat_source_wet_type}' to have been defined as a wet heat source")
             })?;
             HotWaterSource::CombiBoiler(
@@ -5134,7 +5134,7 @@ fn hot_water_source_from_input(
             ..
         } => {
             let energy_supply_conn_name =
-                String::from([&heat_source_wet_type, "_water_heating"].concat());
+                String::from([heat_source_wet_type, "_water_heating"].concat());
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;

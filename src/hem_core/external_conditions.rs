@@ -2461,7 +2461,6 @@ mod tests {
     use crate::input::init_orientation;
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
-    use jsonschema::ext;
     use pretty_assertions::assert_eq;
     use rstest::*;
 

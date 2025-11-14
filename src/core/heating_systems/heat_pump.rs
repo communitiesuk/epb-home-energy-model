@@ -2721,16 +2721,14 @@ impl HeatPump {
             if !matches!(self.source_type, HeatPumpSourceType::OutsideAir)
                 && !self.var_flow_temp_ctrl_during_test
             {
-                let cop_op_cond = temp_spread_correction_factor
+                temp_spread_correction_factor
                     * self.test_data.cop_op_cond_if_not_air_source(
                         HEAT_PUMP_TEMP_DIFF_LIMIT_LOW,
                         self.external_conditions
                             .air_temp(&simulation_time_iteration),
                         temp_source,
                         temp_output,
-                    )?;
-
-                cop_op_cond
+                    )?
             } else {
                 let carnot_cop_op_cond = carnot_cop(
                     temp_source,
@@ -3329,11 +3327,12 @@ impl HeatPump {
                     / time_constant_for_service;
 
                 // TODO (from Python) Why does the divisor below differ for DHW from warm air HPs?
+                // allowing same output arms until this is corrected for 1.0.0a1
                 energy_input_hp_divisor = if service_type == ServiceType::Water
                     && self.sink_type == HeatPumpSinkType::Air
                 {
-                    Some(1.) // TODO: correct all this logic for 1.0.0a1
-                             // Some(1. - deg_coeff_op_cond * (1. - load_ratio / load_ratio_continuous_min))
+                    None // TODO: correct all this logic for 1.0.0a1
+                         // Some(1. - deg_coeff_op_cond * (1. - load_ratio / load_ratio_continuous_min))
                 } else {
                     Some(1.)
                 };

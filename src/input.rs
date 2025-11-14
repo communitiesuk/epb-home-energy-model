@@ -191,8 +191,8 @@ fn validate_exhaust_air_heat_pump_ventilation_compatibility(
             .iter()
             .filter_map(|(name, source)| {
                 if let HeatSourceWetDetails::HeatPump { source_type, .. } = source {
-                    if exhaust_air_source_types.contains(&source_type) {
-                        Some((name.into(), source_type.clone()))
+                    if exhaust_air_source_types.contains(source_type) {
+                        Some((name.into(), *source_type))
                     } else {
                         None
                     }
@@ -512,7 +512,7 @@ fn validate_threshold_value_fractions(
     values: &Option<[f64; 12]>,
 ) -> Result<(), serde_valid::validation::Error> {
     if let Some(values) = values {
-        if !values.iter().all(|&v| v >= 0. && v <= 1.) {
+        if !values.iter().all(|&v| (0. ..=1.).contains(&v)) {
             return custom_validation_error("Some threshold values for an energy supply contained numbers that were not fractions between 0 and 1 inclusive.".to_string());
         }
     }
@@ -811,7 +811,7 @@ pub struct ColdWaterSourceDetails {
 fn validate_running_water_temperatures(
     temps: &[f64],
 ) -> Result<(), serde_valid::validation::Error> {
-    if !temps.iter().all(|&t| t >= 0. && t <= 100.) {
+    if !temps.iter().all(|&t| (0. ..=100.).contains(&t)) {
         custom_validation_error("Some cold water temperatures contained numbers that were not within the range 0 to 100 inclusive.".into())
     } else {
         Ok(())
@@ -1165,7 +1165,7 @@ fn validate_battery_state_fractions(
     data
         .values()
         .flatten()
-        .all(|&fraction| fraction >= 0. && fraction <= 1.)
+        .all(|&fraction| (0. ..=1.).contains(&fraction))
         .then_some(())
         .ok_or_else(|| serde_valid::validation::Error::Custom("battery_state_of_charge of SmartApplianceBattery was provided with numbers that were invalid fractions.".to_string()))
 }
@@ -2605,34 +2605,32 @@ pub(crate) struct FanSpeedData {
 }
 
 fn validate_all_items_non_negative(items: &[f64]) -> Result<(), serde_valid::validation::Error> {
-    items
-        .iter()
-        .all(|item| item >= &0.)
-        .then(|| Ok(()))
-        .unwrap_or_else(|| custom_validation_error("All items must be non-negative".to_string()))
+    if items.iter().all(|item| item >= &0.) {
+        Ok(())
+    } else {
+        custom_validation_error("All items must be non-negative".to_string())
+    }
 }
 
 fn validate_all_items_in_option_non_negative(
     items: &Option<Vec<f64>>,
 ) -> Result<(), serde_valid::validation::Error> {
-    items
-        .iter()
-        .flatten()
-        .all(|item| item >= &0.)
-        .then(|| Ok(()))
-        .unwrap_or_else(|| custom_validation_error("All items must be non-negative".to_string()))
+    if items.iter().flatten().all(|item| item >= &0.) {
+        Ok(())
+    } else {
+        custom_validation_error("All items must be non-negative".to_string())
+    }
 }
 
 fn validate_all_items_in_option_at_most_n(
     items: &Option<Vec<f64>>,
     n: f64,
 ) -> Result<(), serde_valid::validation::Error> {
-    items
-        .iter()
-        .flatten()
-        .all(|item| item <= &n)
-        .then(|| Ok(()))
-        .unwrap_or_else(|| custom_validation_error("All items must be non-negative".to_string()))
+    if items.iter().flatten().all(|item| item <= &n) {
+        Ok(())
+    } else {
+        custom_validation_error("All items must be non-negative".to_string())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]

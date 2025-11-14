@@ -149,9 +149,7 @@ impl StorageTank {
         let volume_total_in_litres = volume;
         let nb_vol = nb_vol.unwrap_or(4);
         // list of volume of layers in litres
-        let vol_n = iter::repeat(volume_total_in_litres / nb_vol as f64)
-            .take(nb_vol)
-            .collect_vec();
+        let vol_n = iter::repeat_n(volume_total_in_litres / nb_vol as f64, nb_vol).collect_vec();
         // water specific heat in kWh/kg.K
         let cp = contents.specific_heat_capacity_kwh();
         let rho = contents.density();
@@ -2485,8 +2483,8 @@ impl SmartHotWaterTank {
         // Initialize fractions
         // 0 for layers below heater layer, 1 for heater layer and above
         let mut temp_factors = Vec::with_capacity(volumes.len());
-        temp_factors.extend(iter::repeat(0.).take(heater_layer));
-        temp_factors.extend(iter::repeat(1.).take(volumes.len() - heater_layer));
+        temp_factors.extend(iter::repeat_n(0., heater_layer));
+        temp_factors.extend(iter::repeat_n(1., volumes.len() - heater_layer));
 
         // Iterates through the tank up to heater layer to determine how much each layer needs to be pumped
         for current_layer in 0..heater_layer {
