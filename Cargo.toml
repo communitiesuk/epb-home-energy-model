@@ -14,7 +14,7 @@ atomic_float = "1.1.0"
 bitflags = "2.10.0"
 bounded-vec-deque = "0.1.1"
 chrono = "0.4.42"
-clap = { version = "4.5.50", features = ["derive"], optional = true }
+clap = { version = "4.5.51", features = ["derive"], optional = true }
 convert_case = "0.8.0"
 csv = "1.4.0"
 derivative = "2.2.0"
@@ -22,7 +22,7 @@ erased-serde = "0.4.8"
 field_types = "1.1.0"
 formatx = "0.2.3"
 indexmap = { version = "2.11.4", features = ["serde", "arbitrary"] }
-indicatif = { version = "0.18.1", optional = true }
+indicatif = { version = "0.18.2", optional = true }
 interp = "2.1.1"
 is_close = "0.1.3"
 itertools = "0.14.0"
