@@ -1,6 +1,6 @@
-use hem::output::Output;
-use hem::read_weather_file::weather_data_to_vec;
-use hem::{run_project, CalculationResultsWithContext, RunInput};
+use home_energy_model::output::Output;
+use home_energy_model::read_weather_file::weather_data_to_vec;
+use home_energy_model::{run_project, CalculationResultsWithContext, RunInput};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
 use parking_lot::Mutex;
 use serde_json::json;
@@ -15,7 +15,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     let input = match event.body() {
         Body::Empty => "",
         Body::Text(text) => text.as_str(),
-        Body::Binary(_) => unimplemented!(),
+        _ => unimplemented!(),
     }
     .as_bytes();
 
