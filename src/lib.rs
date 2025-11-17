@@ -4,16 +4,17 @@
     dead_code
 )]
 
-mod compare_floats;
+pub mod compare_floats;
 pub mod core;
 pub mod corpus;
 pub mod errors;
+
 mod hem_core;
+
 pub mod input;
 pub mod output;
 pub mod read_weather_file;
-mod statistics;
-mod wrappers;
+pub mod statistics;
 
 #[macro_use]
 extern crate is_close;
@@ -26,225 +27,154 @@ use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 pub use crate::corpus::RunResults;
 use crate::corpus::{
     calc_htc_hlp, Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap,
-    HtcHlpCalculation, NumberOrDivisionByZero, ResultsAnnual, ResultsEndUser, ResultsPerTimestep,
-    ZoneResultKey,
+    HtcHlpCalculation, NumberOrDivisionByZero, OutputOptions, ResultsAnnual, ResultsEndUser,
+    ResultsPerTimestep, ZoneResultKey,
 };
-use crate::errors::{HemCoreError, HemError, NotImplementedError, PostprocessingError};
+use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
-use crate::input::{
-    ingest_for_processing, ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input,
-    InputForProcessing, SchemaReference,
-};
+use crate::input::{ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input};
 use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
-#[cfg(feature = "fhs")]
-use crate::wrappers::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
-pub use crate::wrappers::HemResponse;
-use crate::wrappers::{ChosenWrapper, HemWrapper, PassthroughHemWrapper};
 use anyhow::anyhow;
-use bitflags::bitflags;
 use chrono::prelude::*;
 use chrono::{TimeDelta, Utc};
 use convert_case::{Case, Casing};
 use csv::WriterBuilder;
+use erased_serde::Serialize as ErasedSerialize;
 use hem_core::external_conditions;
 use hem_core::simulation_time;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use rayon::prelude::*;
+use serde::{Serialize, Serializer};
+use serde_json::Value as JsonValue;
 use smartstring::alias::String;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::hash::Hash;
 use std::io::Read;
 use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
-use tracing::{debug, error, instrument};
+use tracing::{debug, instrument};
 
 pub const HEM_VERSION: &str = "1.0.0a1";
 pub const HEM_VERSION_DATE: &str = "2025-10-02";
 
+#[derive(Serialize)]
+pub struct HemResponse {
+    #[serde(flatten)]
+    payload: Box<dyn ErasedSerialize + Send + Sync + 'static>,
+}
+
+impl HemResponse {
+    pub fn new(payload: impl ErasedSerialize + Send + Sync + 'static) -> Self {
+        Self {
+            payload: Box::new(payload),
+        }
+    }
+
+    pub fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.payload.serialize(serializer)
+    }
+}
+
+pub enum RunInput<'a> {
+    Json(JsonValue),
+    Read(Box<dyn Read + 'a>),
+}
+
 #[instrument(skip_all)]
 pub fn run_project(
-    input: impl Read,
-    output: impl Output,
+    input: RunInput,
+    output: &impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
-    flags: &ProjectFlags,
-) -> Result<Option<HemResponse>, HemError> {
+    heat_balance: bool,
+    detailed_output_heating_cooling: bool,
+) -> Result<CalculationResultsWithContext, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
-        // 1. ingest/ parse input and enter preprocessing stage
         #[instrument(skip_all)]
-        fn ingest_input_and_start_preprocessing(
-            input: impl Read,
-            external_conditions_data: Option<&ExternalConditionsFromFile>,
-            schema_reference: &SchemaReference,
-        ) -> anyhow::Result<InputForProcessing> {
-            let mut input_for_processing = ingest_for_processing(input, schema_reference)?;
-
-            input_for_processing
-                .merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
-            Ok(input_for_processing)
-        }
-
-        #[allow(unused_variables, unused_mut)] // allow these as they are only used in the feature-gated part of this function
-        fn choose_schema_reference(flags: &ProjectFlags) -> SchemaReference {
-            let mut schema_reference = SchemaReference::Core;
-            #[cfg(feature = "fhs")]
-            if flags.intersects(ProjectFlags::FHS_ASSUMPTIONS
-                | ProjectFlags::FHS_FEE_ASSUMPTIONS
-                | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
-                | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS | ProjectFlags::FHS_COMPLIANCE) {
-                schema_reference = SchemaReference::Fhs;
+        fn merge_external_conditions_data(
+            mut input: Input,
+            external_conditions_data: Option<ExternalConditionsInput>,
+        ) -> anyhow::Result<Input> {
+            if let Some(external_conditions) = external_conditions_data {
+                let shading_segments = &input.external_conditions.shading_segments;
+                let mut new_external_conditions = external_conditions.clone();
+                new_external_conditions.shading_segments = shading_segments.clone();
+                input.external_conditions = Arc::from(new_external_conditions);
             }
 
-            schema_reference
-        }
-
-        let input_for_processing =
-            ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref(), &choose_schema_reference(flags))?;
-
-        #[allow(unused_variables)] // allow these as they are only used in the feature-gated part of this function
-        fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
-            #[cfg(feature = "fhs")]
-            {
-                if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
-                    ChosenWrapper::FhsCompliance(FhsComplianceWrapper::new())
-                } else if flags.intersects(
-                    ProjectFlags::FHS_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_ASSUMPTIONS
-                        | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                        | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-                ) {
-                    ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
-                } else {
-                    ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
-                }
-            }
-            #[cfg(not(feature = "fhs"))]
-            {
-                ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
-            }
-        }
-
-        let wrapper = choose_wrapper(flags);
-
-        // 2. apply preprocessing from wrappers
-        #[instrument(skip_all)]
-        fn apply_preprocessing_from_wrappers(
-            input_for_processing: InputForProcessing,
-            wrapper: &impl HemWrapper,
-            flags: &ProjectFlags,
-        ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
-            wrapper.apply_preprocessing(input_for_processing, flags)
-        }
-
-        let input = match catch_unwind(AssertUnwindSafe(|| {
-            apply_preprocessing_from_wrappers(input_for_processing, &wrapper, flags)
-                .map_err(HemError::InvalidRequest)
-        })) {
-            Ok(result) => result?,
-            Err(panic) => {
-                return Err(HemError::PanicInWrapper(
-                    panic
-                        .downcast_ref::<&str>()
-                        .map_or("Error not captured", |v| v)
-                        .to_owned(),
-                ))
-            }
-        };
-
-        let cloned_input = input.get(&CalculationKey::Primary).cloned();
-
-        // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
-        if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
-            if let Some(input) = input.get(&CalculationKey::Primary) {
-                write_preproc_file(input, &output, "preproc", "json")?;
-            } else {
-                error!("Preprocess-only flag only set up to work with a calculation using a primary calculation key (i.e. not FHS compliance)");
-            }
-
-            return Ok(None);
+            Ok(input)
         }
 
         #[instrument(skip_all)]
-        fn write_preproc_file(input: &Input, output: &impl Output, location_key: &str, file_extension: &str) -> anyhow::Result<()> {
-            let writer = output.writer_for_location_key(location_key, file_extension)?;
-            if let Err(e) = serde_json::to_writer_pretty(writer, input) {
-                error!("Could not write out preprocess file: {}", e);
-            }
-
-            Ok(())
+        fn finalize(input: RunInput, external_conditions_data: Option<&ExternalConditionsFromFile>) -> anyhow::Result<Input> {
+            let input = match input {
+                RunInput::Json(value) => value,
+                RunInput::Read(value) => serde_json::from_reader(value)?
+            };
+            // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
+            // if let BasicOutput::Invalid(errors) =
+            //     CORE_INCLUDING_FHS_VALIDATOR.apply(&self.input).basic()
+            // {
+            //     bail!(
+            //         "Wrapper formed invalid JSON for the core schema: {}",
+            //         serde_json::to_value(errors)?.to_json_string_pretty()?
+            //     );
+            // }
+            let input = serde_json::from_value(input).map_err(|err| anyhow!(err))?;
+            merge_external_conditions_data(input, external_conditions_data.map(|x| x.into()))
         }
 
+        let input = finalize(input, external_conditions_data.as_ref())?;
+        let cloned_input = input.clone();
 
-        // 3. Determine external conditions to use for calculations.
+        // 1. Determine external conditions to use for calculations.
         #[instrument(skip_all)]
         fn resolve_external_conditions(
-            input: &HashMap<CalculationKey, Input>,
-            external_conditions_data: Option<ExternalConditionsFromFile>,
-        ) -> HashMap<CalculationKey, ExternalConditions> {
-            input
-                .par_iter()
-                .map(|(key, input)| {
-                    (
-                        *key,
-                        external_conditions_from_input(
-                            input.external_conditions.clone(),
-                            external_conditions_data.clone(),
-                            input.simulation_time,
-                        ),
-                    )
-                })
-                .collect()
+            input: &Input,
+        ) -> ExternalConditions {
+            external_conditions_from_input(
+                input.external_conditions.clone(),
+                input.simulation_time,
+            )
         }
 
-        let corpora = {
-            let external_conditions = resolve_external_conditions(&input, external_conditions_data);
+        let corpus = {
+            let external_conditions = resolve_external_conditions(&input);
 
-            // 4. Build corpus from input and external conditions.
+            // 2. Build corpus from input and external conditions.
             #[instrument(skip_all)]
             fn build_corpus(
-                input: &HashMap<CalculationKey, Input>,
-                external_conditions: &HashMap<CalculationKey, ExternalConditions>,
+                input: &Input,
+                external_conditions: &ExternalConditions,
                 tariff_data_file: Option<&str>,
-                flags: &ProjectFlags,
-            ) -> anyhow::Result<HashMap<CalculationKey, Corpus>> {
-                let output_options = flags.into();
-                iterate_maps(input, external_conditions)
-                    .map(|(key, input, external_conditions)| {
-                        anyhow::Ok((*key, Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options)?))
-                    })
-                    .collect()
+                print_heat_balance: bool,
+                detailed_output_heating_cooling: bool,
+            ) -> anyhow::Result<Corpus> {
+                let output_options = OutputOptions { print_heat_balance, detailed_output_heating_cooling };
+                Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options)
             }
 
-            build_corpus(&input, &external_conditions, tariff_data_file, flags).map_err(|e| {
+            build_corpus(&input, &external_conditions, tariff_data_file, heat_balance, detailed_output_heating_cooling).map_err(|e| {
                 capture_specific_error_case(&e).unwrap_or_else(|| HemError::InvalidRequest(e))
             })?
         };
 
-        // 5. Run HEM calculation(s).
+        // 3. Run HEM calculation.
         #[instrument(skip_all)]
         fn run_hem_calculation(
-            corpora: &HashMap<CalculationKey, Corpus>,
-        ) -> anyhow::Result<HashMap<CalculationKey, RunResults>> {
-            corpora
-                .par_iter()
-                .map(|(key, corpus)| anyhow::Ok((*key, corpus.run()?)))
-                .collect()
+            corpus: &Corpus,
+        ) -> anyhow::Result<RunResults> {
+            corpus.run()
         }
 
         // catch_unwind here catches any downstream panics so we can at least map to the right HemError variant
         let run_results = match catch_unwind(AssertUnwindSafe(|| {
-            run_hem_calculation(&corpora).map_err(|e| {
+            run_hem_calculation(&corpus).map_err(|e| {
                 capture_specific_error_case(&e)
                     .unwrap_or_else(|| HemError::FailureInCalculation(HemCoreError::new(e)))
             })
@@ -260,165 +190,144 @@ pub fn run_project(
             }
         };
 
-        let contextualised_results: HashMap<_, _> = run_results
-            .iter()
-            .map(|(key, results)| {
-                (
-                    *key,
-                    CalculationResultsWithContext::new(&input[key], &corpora[key], results),
-                )
-            })
-            .collect();
-
-        // 6. Write out to core output files.
+        // 4. Write out to core output files.
         #[instrument(skip_all)]
         fn write_core_output_files(
             primary_input: Option<&Input>,
             output: &impl Output,
-            results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-            corpora: &HashMap<CalculationKey, Corpus>,
-            flags: &ProjectFlags,
+            results: &CalculationResultsWithContext,
+            hour_per_step: f64,
+            heat_balance: bool,
+            detailed_output_heating_cooling: bool,
         ) -> anyhow::Result<()> {
-            if let Some(results) = results.get(&CalculationKey::Primary) {
-                if output.is_noop() {
-                    return Ok(());
-                }
-                let CalculationResultsWithContext {
-                    results:
-                    RunResults {
-                        timestep_array,
-                        results_totals,
-                        results_end_user,
-                        energy_import,
-                        energy_export,
-                        energy_generated_consumed,
-                        energy_to_storage,
-                        energy_from_storage,
-                        energy_diverted,
-                        betafactor,
-                        zone_dict,
-                        zone_list,
-                        hc_system_dict,
-                        hot_water_dict,
-                        ductwork_gains,
-                        heat_balance_dict,
-                        heat_source_wet_results_dict,
-                        heat_source_wet_results_annual_dict,
-                        vent_output_list,
-                        emitters_output_dict,
-                        storage_from_grid,
-                        battery_state_of_charge,
-                        esh_output_dict,
-                        hot_water_source_results_dict,
-                        ..
-                    },
+            if output.is_noop() {
+                return Ok(());
+            }
+            let CalculationResultsWithContext {
+                results:
+                RunResults {
+                    timestep_array,
+                    results_totals,
+                    results_end_user,
+                    energy_import,
+                    energy_export,
+                    energy_generated_consumed,
+                    energy_to_storage,
+                    energy_from_storage,
+                    energy_diverted,
+                    betafactor,
+                    zone_dict,
+                    zone_list,
+                    hc_system_dict,
+                    hot_water_dict,
+                    ductwork_gains,
+                    heat_balance_dict,
+                    heat_source_wet_results_dict,
+                    heat_source_wet_results_annual_dict,
+                    vent_output_list,
+                    emitters_output_dict,
+                    storage_from_grid,
+                    battery_state_of_charge,
+                    esh_output_dict,
+                    hot_water_source_results_dict,
                     ..
-                } = results;
-                write_core_output_file(
-                    output,
-                    OutputFileArgs {
-                        output_key: "results".into(),
+                },
+                ..
+            } = results;
+
+            write_core_output_file(
+                output,
+                OutputFileArgs {
+                    output_key: "results".into(),
+                    timestep_array,
+                    results_totals,
+                    results_end_user,
+                    energy_import,
+                    energy_export,
+                    energy_generated_consumed,
+                    energy_to_storage,
+                    energy_from_storage,
+                    storage_from_grid,
+                    battery_state_of_charge,
+                    energy_diverted,
+                    betafactor,
+                    zone_dict,
+                    zone_list,
+                    hc_system_dict,
+                    hot_water_dict,
+                    ductwork_gains,
+                },
+            )?;
+
+            if heat_balance {
+                for (hb_name, hb_map) in heat_balance_dict.iter() {
+                    let output_key = format!("results_heat_balance_{}", hb_name.to_string().to_case(Case::Snake)).into();
+                    write_core_output_file_heat_balance(output, HeatBalanceOutputFileArgs {
+                        output_key,
                         timestep_array,
-                        results_totals,
-                        results_end_user,
-                        energy_import,
-                        energy_export,
-                        energy_generated_consumed,
-                        energy_to_storage,
-                        energy_from_storage,
-                        storage_from_grid,
-                        battery_state_of_charge,
-                        energy_diverted,
-                        betafactor,
-                        zone_dict,
-                        zone_list,
-                        hc_system_dict,
-                        hot_water_dict,
-                        ductwork_gains,
-                    },
-                )?;
-
-                if flags.contains(ProjectFlags::HEAT_BALANCE) {
-                    let hour_per_step = corpora[&CalculationKey::Primary].simulation_time.step_in_hours();
-                    for (hb_name, hb_map) in heat_balance_dict.iter() {
-                        let output_key = format!("results_heat_balance_{}", hb_name.to_string().to_case(Case::Snake)).into();
-                        write_core_output_file_heat_balance(output, HeatBalanceOutputFileArgs {
-                            output_key,
-                            timestep_array,
-                            hour_per_step,
-                            heat_balance_map: hb_map,
-                        })?;
-                    }
+                        hour_per_step,
+                        heat_balance_map: hb_map,
+                    })?;
                 }
+            }
 
-                if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
-                    for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
-                        let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
-                        write_core_output_file_heat_source_wet(output, &output_key, timestep_array, heat_source_wet_results)?;
-                    }
-                    for (heat_source_wet_name, heat_source_wet_results_annual) in heat_source_wet_results_annual_dict.iter() {
-                        let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
-                        write_core_output_file_heat_source_wet_summary(output, &output_key, heat_source_wet_results_annual)?;
-                    }
-                    // Function call to write detailed ventilation results
-                    let vent_output_file = "ventilation_results";
-                    write_core_output_file_ventilation_detailed(output, vent_output_file, vent_output_list)?;
-                    for (hot_water_source_name, hot_water_source_results) in hot_water_source_results_dict.iter() {
-                        let hot_water_source_file = format!("results_hot_water_source_summary__{}", hot_water_source_name.replace(" ", "_"));
-                        write_core_output_file_hot_water_source_summary(output, &hot_water_source_file, hot_water_source_results);
-                    }
+            if detailed_output_heating_cooling {
+                for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
+                    let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
+                    write_core_output_file_heat_source_wet(output, &output_key, timestep_array, heat_source_wet_results)?;
                 }
-
-                write_core_output_file_summary(output, results.try_into()?)?;
-
-                let corpus = results.context.corpus;
-
-                let primary_input = primary_input.ok_or_else(|| anyhow!("Primary input should be available as there is a primary calculation."))?;
-
-                let HtcHlpCalculation { total_htc: heat_transfer_coefficient, total_hlp: heat_loss_parameter, .. } = calc_htc_hlp(primary_input)?;
-                let heat_capacity_parameter = corpus.calc_hcp();
-                let heat_loss_form_factor = corpus.calc_hlff();
-
-                write_core_output_file_static(
-                    output,
-                    StaticOutputFileArgs {
-                        output_key: "results_static".into(),
-                        heat_transfer_coefficient,
-                        heat_loss_parameter,
-                        heat_capacity_parameter,
-                        heat_loss_form_factor,
-                        temp_internal_air: primary_input.temp_internal_air_static_calcs,
-                        temp_external_air: corpus.external_conditions.air_temp_annual_daily_average_min(),
-                    },
-                )?;
-
-                if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
-                    let output_prefix = "results_emitters_";
-                    write_core_output_file_emitters_detailed(output, output_prefix, emitters_output_dict)?;
-
-                    let esh_output_prefix = "results_esh_";
-                    write_core_output_file_esh_detailed(output, esh_output_prefix, esh_output_dict)?;
+                for (heat_source_wet_name, heat_source_wet_results_annual) in heat_source_wet_results_annual_dict.iter() {
+                    let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
+                    write_core_output_file_heat_source_wet_summary(output, &output_key, heat_source_wet_results_annual)?;
                 }
+                // Function call to write detailed ventilation results
+                let vent_output_file = "ventilation_results";
+                write_core_output_file_ventilation_detailed(output, vent_output_file, vent_output_list)?;
+                for (hot_water_source_name, hot_water_source_results) in hot_water_source_results_dict.iter() {
+                    let hot_water_source_file = format!("results_hot_water_source_summary__{}", hot_water_source_name.replace(" ", "_"));
+                    write_core_output_file_hot_water_source_summary(output, &hot_water_source_file, hot_water_source_results);
+                }
+            }
+
+            write_core_output_file_summary(output, results.try_into()?)?;
+
+            let corpus = &results.context.corpus;
+
+            let primary_input = primary_input.ok_or_else(|| anyhow!("Primary input should be available as there is a primary calculation."))?;
+
+            let HtcHlpCalculation { total_htc: heat_transfer_coefficient, total_hlp: heat_loss_parameter, .. } = calc_htc_hlp(primary_input)?;
+            let heat_capacity_parameter = corpus.calc_hcp();
+            let heat_loss_form_factor = corpus.calc_hlff();
+
+            write_core_output_file_static(
+                output,
+                StaticOutputFileArgs {
+                    output_key: "results_static".into(),
+                    heat_transfer_coefficient,
+                    heat_loss_parameter,
+                    heat_capacity_parameter,
+                    heat_loss_form_factor,
+                    temp_internal_air: primary_input.temp_internal_air_static_calcs,
+                    temp_external_air: corpus.external_conditions.air_temp_annual_daily_average_min(),
+                },
+            )?;
+
+            if detailed_output_heating_cooling {
+                let output_prefix = "results_emitters_";
+                write_core_output_file_emitters_detailed(output, output_prefix, emitters_output_dict)?;
+
+                let esh_output_prefix = "results_esh_";
+                write_core_output_file_esh_detailed(output, esh_output_prefix, esh_output_dict)?;
             }
 
             Ok(())
         }
 
-        write_core_output_files(cloned_input.as_ref(), &output, &contextualised_results, &corpora, flags)?;
-
-        // 7. Run wrapper post-processing and capture any output.
-        #[instrument(skip_all)]
-        fn run_wrapper_postprocessing(
-            output: &impl Output,
-            results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-            wrapper: &impl HemWrapper,
-            flags: &ProjectFlags,
-        ) -> anyhow::Result<Option<HemResponse>> {
-            wrapper.apply_postprocessing(output, results, flags)
-        }
-
-        run_wrapper_postprocessing(&output, &contextualised_results, &wrapper, flags)
-            .map_err(|e| HemError::ErrorInPostprocessing(PostprocessingError::new(e)))
+        let steps_in_hours = &corpus.simulation_time.step_in_hours();
+        let contextualised_results =
+            CalculationResultsWithContext::new(input, corpus, run_results);
+        write_core_output_files(Some(&cloned_input), output, &contextualised_results, *steps_in_hours, heat_balance, detailed_output_heating_cooling)?;
+        Ok(contextualised_results)
     }))
         .map_err(|e| {
             HemError::GeneralPanic(
@@ -437,24 +346,18 @@ fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
     None
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct CalculationContext<'a> {
-    input: &'a Input,
-    corpus: &'a Corpus,
+pub struct CalculationContext {
+    pub input: Input,
+    pub corpus: Corpus,
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct CalculationResultsWithContext<'a> {
-    results: &'a RunResults,
-    context: CalculationContext<'a>,
+pub struct CalculationResultsWithContext {
+    pub results: RunResults,
+    pub context: CalculationContext,
 }
 
-impl<'a> CalculationResultsWithContext<'a> {
-    fn new(
-        input: &'a Input,
-        corpus: &'a Corpus,
-        results: &'a RunResults,
-    ) -> CalculationResultsWithContext<'a> {
+impl CalculationResultsWithContext {
+    fn new(input: Input, corpus: Corpus, results: RunResults) -> CalculationResultsWithContext {
         Self {
             results,
             context: CalculationContext { input, corpus },
@@ -462,7 +365,7 @@ impl<'a> CalculationResultsWithContext<'a> {
     }
 }
 
-impl CalculationResultsWithContext<'_> {
+impl CalculationResultsWithContext {
     fn daily_hw_demand_percentile(&self, percentage: usize) -> anyhow::Result<f64> {
         Ok(percentile(
             &convert_profile_to_daily(
@@ -485,95 +388,36 @@ impl CalculationResultsWithContext<'_> {
     }
 }
 
-bitflags! {
-    pub struct ProjectFlags: u32 {
-        const PRE_PROCESS_ONLY = 0b1;
-        const HEAT_BALANCE = 0b10;
-        const DETAILED_OUTPUT_HEATING_COOLING = 0b100;
-        // start FHS flags from 2^8
-        #[cfg(feature = "fhs")]
-        const FHS_ASSUMPTIONS = 0b100000000;
-        #[cfg(feature = "fhs")]
-        const FHS_FEE_ASSUMPTIONS = 0b1000000000;
-        #[cfg(feature = "fhs")]
-        const FHS_NOT_A_ASSUMPTIONS = 0b10000000000;
-        #[cfg(feature = "fhs")]
-        const FHS_NOT_B_ASSUMPTIONS = 0b100000000000;
-        #[cfg(feature = "fhs")]
-        const FHS_FEE_NOT_A_ASSUMPTIONS = 0b1000000000000;
-        #[cfg(feature = "fhs")]
-        const FHS_FEE_NOT_B_ASSUMPTIONS = 0b10000000000000;
-        #[cfg(feature = "fhs")]
-        const FHS_COMPLIANCE = 0b100000000000000;
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum CalculationKey {
-    Primary,
-    #[cfg(feature = "fhs")]
-    Fhs,
-    #[cfg(feature = "fhs")]
-    FhsFee,
-    #[cfg(feature = "fhs")]
-    FhsNotional,
-    #[cfg(feature = "fhs")]
-    FhsNotionalFee,
-}
-
-fn external_conditions_from_input(
+pub fn external_conditions_from_input(
     input: Arc<ExternalConditionsInput>,
-    external_conditions_data: Option<ExternalConditionsFromFile>,
     simulation_time: SimulationTime,
 ) -> ExternalConditions {
-    match external_conditions_data {
-        Some(ec) => ExternalConditions::new(
-            &simulation_time.iter(),
-            ec.air_temperatures,
-            ec.wind_speeds,
-            ec.wind_directions,
-            ec.diffuse_horizontal_radiation,
-            ec.direct_beam_radiation,
-            ec.solar_reflectivity_of_ground,
-            ec.latitude,
-            ec.longitude,
-            0,
-            0,
-            Some(365),
-            1.0,
-            None,
-            None,
-            false,
-            ec.direct_beam_conversion_needed,
-            input.shading_segments.clone(),
-        ),
-        None => ExternalConditions::new(
-            &simulation_time.iter(),
-            input.air_temperatures.clone().unwrap_or_default(),
-            input.wind_speeds.clone().unwrap_or_default(),
-            input.wind_directions.clone().unwrap_or_default(),
-            input
-                .diffuse_horizontal_radiation
-                .clone()
-                .unwrap_or_default(),
-            input.direct_beam_radiation.clone().unwrap_or_default(),
-            input
-                .solar_reflectivity_of_ground
-                .clone()
-                .unwrap_or_default(),
-            input.latitude.unwrap_or(55.0),
-            input.longitude.unwrap_or(0.0),
-            0,
-            0,
-            Some(365),
-            1.0,
-            None,
-            None,
-            false,
-            input.direct_beam_conversion_needed.unwrap_or(false),
-            input.shading_segments.clone(),
-        ),
-    }
+    ExternalConditions::new(
+        &simulation_time.iter(),
+        input.air_temperatures.clone().unwrap_or_default(),
+        input.wind_speeds.clone().unwrap_or_default(),
+        input.wind_directions.clone().unwrap_or_default(),
+        input
+            .diffuse_horizontal_radiation
+            .clone()
+            .unwrap_or_default(),
+        input.direct_beam_radiation.clone().unwrap_or_default(),
+        input
+            .solar_reflectivity_of_ground
+            .clone()
+            .unwrap_or_default(),
+        input.latitude.unwrap_or(55.0),
+        input.longitude.unwrap_or(0.0),
+        0,
+        0,
+        Some(365),
+        1.0,
+        None,
+        None,
+        false,
+        input.direct_beam_conversion_needed.unwrap_or(false),
+        input.shading_segments.clone(),
+    )
 }
 
 pub static UNITS_MAP: LazyLock<IndexMap<&'static str, &'static str>> = LazyLock::new(|| {
@@ -946,24 +790,24 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
     Ok(())
 }
 
-struct SummaryOutputFileArgs<'a> {
+struct SummaryOutputFileArgs {
     output_key: String,
     input: SummaryInputDigest,
-    timestep_array: &'a [f64],
-    results_end_user: &'a IndexMap<String, IndexMap<String, Vec<f64>>>,
-    energy_generated_consumed: &'a IndexMap<String, Vec<f64>>,
-    energy_to_storage: &'a IndexMap<String, Vec<f64>>,
-    energy_from_storage: &'a IndexMap<String, Vec<f64>>,
-    energy_diverted: &'a IndexMap<String, Vec<f64>>,
-    energy_import: &'a IndexMap<String, Vec<f64>>,
-    energy_export: &'a IndexMap<String, Vec<f64>>,
-    storage_from_grid: &'a IndexMap<String, Vec<f64>>,
+    timestep_array: Vec<f64>,
+    results_end_user: IndexMap<String, IndexMap<String, Vec<f64>>>,
+    energy_generated_consumed: IndexMap<String, Vec<f64>>,
+    energy_to_storage: IndexMap<String, Vec<f64>>,
+    energy_from_storage: IndexMap<String, Vec<f64>>,
+    energy_diverted: IndexMap<String, Vec<f64>>,
+    energy_import: IndexMap<String, Vec<f64>>,
+    energy_export: IndexMap<String, Vec<f64>>,
+    storage_from_grid: IndexMap<String, Vec<f64>>,
     space_heat_demand_total: f64,
     space_cool_demand_total: f64,
     total_floor_area: f64,
-    heat_cop_dict: &'a IndexMap<String, NumberOrDivisionByZero>,
-    cool_cop_dict: &'a IndexMap<String, NumberOrDivisionByZero>,
-    dhw_cop_dict: &'a IndexMap<String, NumberOrDivisionByZero>,
+    heat_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
+    cool_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
+    dhw_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     daily_hw_demand_75th_percentile: f64,
 }
 
@@ -1012,75 +856,48 @@ impl From<&HotWaterSourceDetails> for SummaryInputHotWaterSourceDigest {
     }
 }
 
-impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryOutputFileArgs<'a> {
+impl TryFrom<&CalculationResultsWithContext> for SummaryOutputFileArgs {
     type Error = anyhow::Error;
 
-    fn try_from(value: &CalculationResultsWithContext<'a>) -> Result<Self, Self::Error> {
-        let RunResults {
-            timestep_array,
-            results_end_user,
-            energy_import,
-            energy_export,
-            energy_generated_consumed,
-            energy_to_storage,
-            energy_from_storage,
-            storage_from_grid,
-            energy_diverted,
-            heat_cop_dict,
-            cool_cop_dict,
-            dhw_cop_dict,
-            ..
-        } = value.results;
+    fn try_from(value: &CalculationResultsWithContext) -> Result<Self, Self::Error> {
         Ok(SummaryOutputFileArgs {
             output_key: "results_summary".into(),
-            input: value.context.input.into(),
-            timestep_array,
-            results_end_user,
-            energy_generated_consumed,
-            energy_to_storage,
-            energy_from_storage,
-            energy_diverted,
-            energy_import,
-            energy_export,
-            storage_from_grid,
+            input: (&value.context.input).into(),
+            timestep_array: value.results.timestep_array.clone(),
+            results_end_user: value.results.results_end_user.clone(),
+            energy_generated_consumed: value.results.energy_generated_consumed.clone(),
+            energy_to_storage: value.results.energy_to_storage.clone(),
+            energy_from_storage: value.results.energy_from_storage.clone(),
+            energy_diverted: value.results.energy_diverted.clone(),
+            energy_import: value.results.energy_import.clone(),
+            energy_export: value.results.energy_export.clone(),
+            storage_from_grid: value.results.storage_from_grid.clone(),
             space_heat_demand_total: value.results.space_heat_demand_total(),
             space_cool_demand_total: value.results.space_cool_demand_total(),
             total_floor_area: value.context.corpus.total_floor_area,
-            heat_cop_dict,
-            cool_cop_dict,
-            dhw_cop_dict,
+            heat_cop_dict: value.results.heat_cop_dict.clone(),
+            cool_cop_dict: value.results.cool_cop_dict.clone(),
+            dhw_cop_dict: value.results.dhw_cop_dict.clone(),
             daily_hw_demand_75th_percentile: value.daily_hw_demand_percentile(75)?,
         })
     }
 }
 
-impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryDataArgs<'a> {
+impl TryFrom<&CalculationResultsWithContext> for SummaryDataArgs {
     type Error = anyhow::Error;
 
-    fn try_from(results: &CalculationResultsWithContext<'a>) -> Result<Self, Self::Error> {
-        let RunResults {
-            timestep_array,
-            results_end_user,
-            energy_import,
-            energy_export,
-            energy_generated_consumed,
-            energy_to_storage,
-            energy_from_storage,
-            storage_from_grid,
-            energy_diverted,
-            ..
-        } = results.results;
+    fn try_from(results: &CalculationResultsWithContext) -> Result<Self, Self::Error> {
         Ok(SummaryDataArgs {
-            timestep_array,
-            input: results.context.input.into(),
-            results_end_user,
-            energy_generated_consumed,
-            energy_to_storage,
-            energy_from_storage,
-            storage_from_grid,
-            energy_diverted,
-            energy_import,
-            energy_export,
+            timestep_array: results.results.timestep_array.clone(),
+            input: (&results.context.input).into(),
+            results_end_user: results.results.results_end_user.clone(),
+            energy_generated_consumed: results.results.energy_generated_consumed.clone(),
+            energy_to_storage: results.results.energy_to_storage.clone(),
+            energy_from_storage: results.results.energy_from_storage.clone(),
+            storage_from_grid: results.results.storage_from_grid.clone(),
+            energy_diverted: results.results.energy_diverted.clone(),
+            energy_import: results.results.energy_import.clone(),
+            energy_export: results.results.energy_export.clone(),
         })
     }
 }
@@ -1341,17 +1158,17 @@ fn write_core_output_file_summary(
     Ok(())
 }
 
-struct SummaryDataArgs<'a> {
-    timestep_array: &'a [f64],
+pub struct SummaryDataArgs {
+    timestep_array: Vec<f64>,
     input: SummaryInputDigest,
-    results_end_user: &'a ResultsEndUser,
-    energy_generated_consumed: &'a IndexMap<String, Vec<f64>>,
-    energy_to_storage: &'a IndexMap<String, Vec<f64>>,
-    energy_from_storage: &'a IndexMap<String, Vec<f64>>,
-    storage_from_grid: &'a IndexMap<String, Vec<f64>>,
-    energy_diverted: &'a IndexMap<String, Vec<f64>>,
-    energy_import: &'a IndexMap<String, Vec<f64>>,
-    energy_export: &'a IndexMap<String, Vec<f64>>,
+    results_end_user: ResultsEndUser,
+    energy_generated_consumed: IndexMap<String, Vec<f64>>,
+    energy_to_storage: IndexMap<String, Vec<f64>>,
+    energy_from_storage: IndexMap<String, Vec<f64>>,
+    storage_from_grid: IndexMap<String, Vec<f64>>,
+    energy_diverted: IndexMap<String, Vec<f64>>,
+    energy_import: IndexMap<String, Vec<f64>>,
+    energy_export: IndexMap<String, Vec<f64>>,
 }
 
 #[derive(Clone, Copy)]
@@ -1404,7 +1221,7 @@ enum EnergySupplyStatKey {
     StorageEff,
 }
 
-fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
+pub fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
     let SummaryDataArgs {
         timestep_array,
         input,
@@ -1560,8 +1377,8 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
     }
 }
 
-struct SummaryData {
-    delivered_energy_map: IndexMap<String, IndexMap<String, f64>>,
+pub struct SummaryData {
+    pub delivered_energy_map: IndexMap<String, IndexMap<String, f64>>,
     stats: IndexMap<String, EnergySupplyStat>,
     peak_elec_consumption: f64,
     index_peak_elec_consumption: usize,
@@ -1968,8 +1785,6 @@ fn write_core_output_file_hot_water_source_summary(
     // TODO complete when hot water source results defined
 }
 
-const HOURS_TO_END_DEC: f64 = 8760.;
-
 struct HourForTimestep {
     month: String,
     day: usize,
@@ -2095,12 +1910,4 @@ impl From<&ExternalConditionsFromFile> for ExternalConditionsInput {
             ..Default::default()
         }
     }
-}
-
-/// Utility function for iterating multiple hashmaps with same keys.
-fn iterate_maps<'a: 'b, 'b, K: Eq + Hash, V, W>(
-    m1: &'a HashMap<K, V>,
-    m2: &'b HashMap<K, W>,
-) -> impl Iterator<Item = (&'a K, &'a V, &'b W)> {
-    m1.iter().map(move |(k, v1)| (k, v1, m2.get(k).unwrap()))
 }

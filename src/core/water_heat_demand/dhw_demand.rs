@@ -58,7 +58,7 @@ impl DomesticHotWaterDemand {
     // Time of finalisation of the previous hot water event
     // __time_end_previous_event = 0.0
 
-    pub(crate) fn new(
+    pub fn new(
         showers_input: ShowersInput,
         bath_input: BathInput,
         other_hot_water_input: OtherWaterUseInput,
@@ -129,7 +129,7 @@ impl DomesticHotWaterDemand {
         })
     }
 
-    pub(crate) fn hot_water_demand(
+    pub fn hot_water_demand(
         &self,
         simtime: SimulationTimeIteration,
         temp_hot_water: f64,
@@ -387,8 +387,8 @@ impl DomesticHotWaterDemand {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct DomesticHotWaterDemandData {
-    pub(crate) hw_demand_vol: f64,
+pub struct DomesticHotWaterDemandData {
+    pub hw_demand_vol: f64,
     pub(crate) hw_demand_vol_target: IndexMap<DemandVolTargetKey, VolumeReference>,
     pub(crate) hw_vol_at_tapping_points: f64,
     pub(crate) hw_duration: f64,

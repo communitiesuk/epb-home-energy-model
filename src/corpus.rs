@@ -73,7 +73,7 @@ use crate::input::{
     WaterPipework, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
-use crate::{ProjectFlags, StringOrNumber};
+use crate::StringOrNumber;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use indexmap::IndexMap;
@@ -450,7 +450,7 @@ fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f
 
 /// Calculate heat transfer coefficient (HTC) and heat loss parameter (HLP)
 /// according to the SAP10.2 specification
-pub(super) fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCalculation> {
+pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCalculation> {
     let simtime = input.simulation_time();
     let external_conditions = Arc::from(create_external_conditions(
         (*input.external_conditions()).clone(),
@@ -627,15 +627,15 @@ pub(super) fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<H
     Ok(HtcHlpCalculation {
         total_htc,
         total_hlp,
-        htc_map,
+        _htc_map: htc_map,
         _hlp_map: hlp_map,
     })
 }
 
-pub(crate) struct HtcHlpCalculation {
+pub struct HtcHlpCalculation {
     pub(crate) total_htc: f64,
     pub(crate) total_hlp: f64,
-    pub(crate) htc_map: IndexMap<String, f64>,
+    pub _htc_map: IndexMap<String, f64>,
     pub(crate) _hlp_map: IndexMap<String, f64>,
 }
 
@@ -653,7 +653,7 @@ pub struct Corpus {
     pub(crate) energy_supply_conn_unmet_demand_zone: IndexMap<String, Arc<EnergySupplyConnection>>,
     pub(crate) heat_system_name_for_zone: IndexMap<String, Vec<String>>,
     pub(crate) cool_system_name_for_zone: IndexMap<String, Vec<String>>,
-    pub(crate) total_floor_area: f64,
+    pub total_floor_area: f64,
     pub(crate) total_volume: f64,
     pub(crate) wet_heat_sources: IndexMap<String, WetHeatSource>,
     pub(crate) hot_water_sources: IndexMap<String, HotWaterSource>,
@@ -2916,18 +2916,8 @@ struct HeatCoolOutputs {
 
 #[derive(Debug, Default)]
 pub struct OutputOptions {
-    pub(crate) print_heat_balance: bool,
-    pub(crate) detailed_output_heating_cooling: bool,
-}
-
-impl From<&ProjectFlags> for OutputOptions {
-    fn from(flags: &ProjectFlags) -> Self {
-        Self {
-            print_heat_balance: flags.contains(ProjectFlags::HEAT_BALANCE),
-            detailed_output_heating_cooling: flags
-                .contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING),
-        }
-    }
+    pub print_heat_balance: bool,
+    pub detailed_output_heating_cooling: bool,
 }
 
 struct SetpointsAndConvectiveFractions {
@@ -2984,7 +2974,7 @@ impl SpaceHeatCoolSystems<'_> {
     }
 }
 
-pub(crate) type ColdWaterSources = IndexMap<String, Arc<ColdWaterSource>>;
+pub type ColdWaterSources = IndexMap<String, Arc<ColdWaterSource>>;
 
 fn cold_water_sources_from_input(input: &ColdWaterSourceInput) -> ColdWaterSources {
     input
@@ -3351,17 +3341,18 @@ fn shareable_fn(num: &Arc<RwLock<f64>>) -> TempInternalAirFn {
 }
 
 /// A struct definition to encapsulate results from a corpus run.
+#[derive(Debug)]
 pub struct RunResults {
-    pub(crate) timestep_array: Vec<f64>,
-    pub(crate) results_totals: IndexMap<String, Vec<f64>>,
-    pub(crate) results_end_user: ResultsEndUser,
-    pub(crate) energy_import: IndexMap<String, Vec<f64>>,
-    pub(crate) energy_export: IndexMap<String, Vec<f64>>,
+    pub timestep_array: Vec<f64>,
+    pub results_totals: IndexMap<String, Vec<f64>>,
+    pub results_end_user: ResultsEndUser,
+    pub energy_import: IndexMap<String, Vec<f64>>,
+    pub energy_export: IndexMap<String, Vec<f64>>,
     pub(crate) energy_generated_consumed: IndexMap<String, Vec<f64>>,
-    pub(crate) energy_to_storage: IndexMap<String, Vec<f64>>,
-    pub(crate) energy_from_storage: IndexMap<String, Vec<f64>>,
-    pub(crate) storage_from_grid: IndexMap<String, Vec<f64>>,
-    pub(crate) battery_state_of_charge: IndexMap<String, Vec<f64>>,
+    pub energy_to_storage: IndexMap<String, Vec<f64>>,
+    pub energy_from_storage: IndexMap<String, Vec<f64>>,
+    pub storage_from_grid: IndexMap<String, Vec<f64>>,
+    pub battery_state_of_charge: IndexMap<String, Vec<f64>>,
     pub(crate) energy_diverted: IndexMap<String, Vec<f64>>,
     pub(crate) betafactor: IndexMap<String, Vec<f64>>,
     pub(crate) zone_dict: IndexMap<ZoneResultKey, IndexMap<String, Vec<f64>>>,
@@ -3382,14 +3373,14 @@ pub struct RunResults {
 }
 
 impl RunResults {
-    pub(crate) fn space_heat_demand_total(&self) -> f64 {
+    pub fn space_heat_demand_total(&self) -> f64 {
         self.zone_dict[&ZoneResultKey::SpaceHeatDemand]
             .values()
             .map(|v| v.iter().sum::<f64>())
             .sum::<f64>()
     }
 
-    pub(crate) fn space_cool_demand_total(&self) -> f64 {
+    pub fn space_cool_demand_total(&self) -> f64 {
         self.zone_dict[&ZoneResultKey::SpaceCoolDemand]
             .values()
             .map(|v| v.iter().sum::<f64>())

@@ -27,7 +27,7 @@ pub enum DaylightSavingsConfig {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 // #[serde(deny_unknown_fields)] // TODO: restore this for all versions after 0.36
-pub(crate) struct ShadingSegment {
+pub struct ShadingSegment {
     /// Starting angle of the shading segment
     #[serde(rename = "start360")]
     #[serde(
@@ -72,7 +72,7 @@ pub(crate) struct ShadingObject {
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "lowercase", tag = "type")]
-pub(crate) enum WindowShadingObject {
+pub enum WindowShadingObject {
     Obstacle {
         /// (unit: m)
         #[validate(minimum = 0.)]
@@ -186,7 +186,7 @@ pub struct ExternalConditions {
 /// * `shading_segments` - data splitting the ground plane into segments (8-36) and giving height
 ///                        and distance to shading objects surrounding the building
 impl ExternalConditions {
-    pub(crate) fn new(
+    pub fn new(
         simulation_time: &SimulationTimeIterator,
         air_temps: Vec<f64>,
         wind_speeds: Vec<f64>,
@@ -961,7 +961,7 @@ impl ExternalConditions {
     ///                   inclined surface normal, -180 to 180, in degrees;
     /// * `window_shading` - data on overhangs and side fins associated to this building element
     ///                   includes the shading object type, depth, anf distance from element
-    pub(crate) fn direct_shading_reduction_factor(
+    pub fn direct_shading_reduction_factor(
         &self,
         base_height: f64,
         height: f64,
@@ -1833,7 +1833,7 @@ impl ExternalConditions {
         Ok(i_sol_dif * diffuse_shading_factor + i_sol_dir * direct_shading_factor)
     }
 
-    pub(crate) fn sun_above_horizon(&self, simtime: SimulationTimeIteration) -> bool {
+    pub fn sun_above_horizon(&self, simtime: SimulationTimeIteration) -> bool {
         let solar_angle = self.solar_angle_of_incidence(0., 0., &simtime);
         solar_angle < 90.
     }
@@ -1990,7 +1990,7 @@ impl RelativeEq for DiffuseBreakdown {
     }
 }
 
-pub(crate) fn create_external_conditions(
+pub fn create_external_conditions(
     input: ExternalConditionsInput,
     simulation_time: &SimulationTimeIterator,
 ) -> anyhow::Result<ExternalConditions> {

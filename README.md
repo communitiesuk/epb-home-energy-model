@@ -60,6 +60,13 @@ this) deploy to AWS using e.g.:
 cargo lambda deploy --binary-name {YOUR_BINARY_NAME}
 ```
 
+You can also test the lambda by running it locally:
+```bash
+cargo lambda watch --package hem-lambda
+```
+
+Then you can use Postman for example to call it (e.g. http://localhost:9000/lambda-url/hem-lambda)
+
 ## Contributing
 
 ### Using the commit template

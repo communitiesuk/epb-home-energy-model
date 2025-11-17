@@ -107,6 +107,7 @@ pub struct StorageTank {
     total_volume_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
 }
 
+#[derive(Debug)]
 pub(crate) struct StorageTankDetailedResult {} // TODO implement detailed results for StorageTank
 
 impl StorageTank {
@@ -2638,7 +2639,7 @@ impl ImmersionHeater {
 }
 
 /// Trait to represent a thing that can divert a surplus, like a PV diverter.
-pub(crate) trait SurplusDiverting: Send + Sync {
+pub trait SurplusDiverting: Send + Sync {
     fn divert_surplus(
         &self,
         supply_surplus: f64,

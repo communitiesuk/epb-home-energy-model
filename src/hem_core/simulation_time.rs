@@ -27,7 +27,7 @@ pub struct SimulationTime {
 }
 
 impl SimulationTime {
-    pub(crate) fn new(start_time: f64, end_time: f64, step: f64) -> Self {
+    pub fn new(start_time: f64, end_time: f64, step: f64) -> Self {
         Self {
             start_time,
             end_time,
@@ -35,7 +35,7 @@ impl SimulationTime {
         }
     }
 
-    pub(crate) fn total_steps(&self) -> usize {
+    pub fn total_steps(&self) -> usize {
         ((self.end_time - self.start_time) / self.step).ceil() as usize
     }
 
@@ -43,7 +43,7 @@ impl SimulationTime {
         self.start_time
     }
 
-    pub(crate) fn iter(&self) -> SimulationTimeIterator {
+    pub fn iter(&self) -> SimulationTimeIterator {
         SimulationTimeIterator::from(*self)
     }
 }
