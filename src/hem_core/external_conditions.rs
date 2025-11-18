@@ -5123,7 +5123,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "Work in progress - does not curently pass"]
     fn test_diffuse_shading_reduction_factor_360_angles(simulation_time: SimulationTime) {
         let diffuse_breakdown = DiffuseBreakdown {
             sky: 12.,
@@ -5156,8 +5155,8 @@ mod tests {
 
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 0.,
+                start: 0., // Python uses start360 of 180 here. So start is 180 - 180 = 0
+                end: -180., // Python uses end360 of 0 here. So end is 180 - 0 = -180
                 ..Default::default()
             },
             ShadingSegment {
@@ -5214,8 +5213,168 @@ mod tests {
 
         let tilt = 180.;
 
-        // TODO do we need to move to the second iteration to match Python?
-        // let iteration = simulation_time.iter().skip(1).next().unwrap();
+        let result = external_conditions.diffuse_shading_reduction_factor(
+            diffuse_breakdown,
+            tilt,
+            height,
+            base_height,
+            width,
+            orientation,
+            Some(&window_shading),
+            f_sky,
+            iteration,
+        );
+
+        assert_relative_eq!(result.unwrap(), 0.7568828523411675, max_relative = 0.01);
+    }
+
+    #[rstest]
+    #[ignore = "work in progress - currently does not pass"]
+    #[case(1., 0.,  0.626408173927592)]
+    #[ignore = "work in progress - currently does not pass"]
+    #[case(1., 45.,  0.5905238865770632)]
+    #[ignore = "work in progress - currently does not pass"]
+    #[case(1., 90.,  0.4030970346549258)]
+    #[ignore = "work in progress - currently does not pass"]
+    #[case(1., 180.,  0.4030970346549258)]
+    #[ignore = "work in progress - currently does not pass"]
+    #[case(1.5, 0.,  0.6556673434737625)]
+    #[ignore = "work in progress - currently does not pass"]
+    #[case(1.5, 45.,  0.5374627128732344)]
+    #[ignore = "work in progress - currently does not pass"]
+    #[case(1.5, 90.,  0.07492542574646884)]
+    #[ignore = "work in progress - currently does not pass"]
+    #[case(1.5, 180.,  0.07492542574646884)]
+    fn test_diffuse_shading_reduction_factor_f_sky_tilt(simulation_time: SimulationTime, #[case] f_sky: f64, #[case] tilt: f64, #[case] expected: f64) {
+        
+        let diffuse_breakdown = DiffuseBreakdown {
+            sky: 12.,
+            circumsolar: 0.,
+            horiz: -2.0164780331874668,
+            ground_refl: 2.4,
+        };
+
+        let height = 15.;
+        let base_height = 1.;
+        let width = 4.;
+        let orientation = 180.;
+
+        let window_shading = vec![
+            WindowShadingObject::Overhang {
+                depth: 0.5,
+                distance: 0.5,
+            },
+            WindowShadingObject::Overhang {
+                depth: 0.5,
+                distance: 10.,
+            },
+            WindowShadingObject::SideFinLeft {
+                depth: 0.25,
+                distance: 0.1,
+            },
+            WindowShadingObject::SideFinRight {
+                depth: 0.25,
+                distance: 0.1,
+            },
+            WindowShadingObject::Obstacle { 
+                height: 10., 
+                distance: 0.1, 
+                transparency: 0.2 },
+        ];
+
+        let shading_segments = vec![
+            ShadingSegment {
+                start: 180.,
+                end: 135.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 135.,
+                end: 90.,
+               ..Default::default()
+            },
+            ShadingSegment {
+                start: 90.,
+                end: 45.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 45.,
+                end: 0.,
+                shading_objects: vec![ShadingObject {
+                    object_type: ShadingObjectType::Obstacle,
+                    height: 10.5,
+                    distance: 12.,
+                },
+                ShadingObject {
+                    object_type: ShadingObjectType::Obstacle,
+                    height: 30.5,
+                    distance: 12.,
+                },
+                ShadingObject {
+                    object_type: ShadingObjectType::Overhang,
+                    height: 0.5,
+                    distance: 12.,
+                }],
+            },
+            ShadingSegment {
+                start: 0.,
+                end: 45.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: -45.,
+                end: -90.,
+                shading_objects: vec![ShadingObject {
+                    object_type: ShadingObjectType::Overhang,
+                    height: 10.5,
+                    distance: 12.,
+                },
+                ShadingObject {
+                    object_type: ShadingObjectType::Overhang,
+                    height: 10.5,
+                    distance: 1.,
+                },
+                ShadingObject {
+                    object_type: ShadingObjectType::Overhang,
+                    height: 20.5,
+                    distance: 1.,
+                }],
+            },
+            ShadingSegment {
+                start: -90.,
+                end: -135.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: -135.,
+                end: -180.,
+                ..Default::default()
+            },
+        ];
+
+        let external_conditions = ExternalConditions::new(
+            &simulation_time.iter(),
+            air_temps(),
+            wind_speeds(),
+            wind_directions(),
+            diffuse_horizontal_radiation().to_vec(),
+            direct_beam_radiation().to_vec(),
+            solar_reflectivity_of_ground().to_vec(),
+            latitude(),
+            longitude(),
+            timezone(),
+            start_day(),
+            end_day(),
+            time_series_step(),
+            january_first(),
+            daylight_savings(),
+            leap_day_included(),
+            direct_beam_conversion_needed(),
+            Some(shading_segments),
+        );
+
+        let iteration = simulation_time.iter().next().unwrap();
 
         let result = external_conditions.diffuse_shading_reduction_factor(
             diffuse_breakdown,
@@ -5229,13 +5388,6 @@ mod tests {
             iteration,
         );
 
-        // TODO this fails to match the Python
-        assert_relative_eq!(result.unwrap(), 0.7568828523411675, max_relative = 0.01);
-    }
-
-    #[rstest]
-    #[ignore = "Not yet implemented"]
-    fn test_diffuse_shading_reduction_factor_f_sky_tilt() {
-        todo!()
+        assert_relative_eq!(result.unwrap(), expected, max_relative = 0.01);
     }
 }
