@@ -871,6 +871,49 @@ mod tests {
     }
 
     #[rstest]
+    fn test_no_battery_or_invalid_charging(
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+        energy_supply: EnergySupply,
+    ) {
+        let elec_battery = ElectricBattery::new(
+            2.,
+            0.8,
+            3.,
+            0.001,
+            1.5,
+            1.5,
+            BatteryLocation::Inside,
+            true,
+            simulation_time.step,
+            Arc::new(external_conditions),
+        );
+
+        assert!(EnergySupply::new(
+            FuelType::Electricity,
+            simulation_time.total_steps(),
+            None,
+            Some(elec_battery),
+            None,
+            None,
+        )
+        .is_err());
+
+        assert!(!energy_supply.has_battery());
+        assert!(energy_supply.get_battery_max_capacity().is_none());
+        assert!(energy_supply
+            .get_battery_charge_efficiency(simulation_time.iter().current_iteration())
+            .is_none());
+        assert!(energy_supply.get_battery_max_discharge(0.7).is_none());
+        assert!(energy_supply.get_battery_available_charge().is_none());
+    }
+
+    #[rstest]
+    fn test_existing_user_name(energy_supply: EnergySupply) {
+        assert!(EnergySupply::connection(Arc::new(energy_supply.into()), "shower").is_err());
+    }
+
+    #[rstest]
     pub fn test_init_demand_list(simulation_time: SimulationTime) {
         assert_eq!(
             init_demand_list(simulation_time.total_steps()),
@@ -887,6 +930,8 @@ mod tests {
             energy_supply
                 .energy_out("shower", amount_demand[t_idx], t_idx)
                 .unwrap();
+
+            assert_eq!(energy_supply.demand_total[t_idx].load(Ordering::SeqCst), 0.);
             assert_eq!(
                 energy_supply.energy_out_by_end_user["shower"][t_idx].load(Ordering::SeqCst),
                 amount_demand[t_idx]
@@ -939,6 +984,9 @@ mod tests {
                 energy_supply.demand_by_end_user["shower"][t_idx].load(Ordering::SeqCst),
                 amount_demanded[t_idx]
             );
+            assert!(energy_supply
+                .demand_energy("others", amount_demanded[t_idx], t_idx)
+                .is_err());
         }
     }
 
@@ -987,7 +1035,7 @@ mod tests {
     ];
 
     #[rstest]
-    pub fn test_results_by_end_user(
+    pub fn test_results_by_end_user_and_step(
         energy_supply_connections: (
             EnergySupplyConnection,
             EnergySupplyConnection,
@@ -1008,6 +1056,36 @@ mod tests {
                 energy_supply.read().results_by_end_user()["bath"][simtime.index],
                 EXPECTED_TOTAL_DEMANDS_BY_END_USER[1][simtime.index]
             );
+            assert_eq!(
+                energy_supply
+                    .read()
+                    .results_by_end_user_single_step(simtime.index),
+                IndexMap::from([
+                    (
+                        energy_connection_1.clone().end_user_name,
+                        EXPECTED_TOTAL_DEMANDS_BY_END_USER[0][simtime.index]
+                    ),
+                    (
+                        energy_connection_2.clone().end_user_name,
+                        EXPECTED_TOTAL_DEMANDS_BY_END_USER[1][simtime.index]
+                    )
+                ])
+            );
+
+            // Case where end_user is not in energy_out_by_end_user,
+            // (demand_by_end_user.keys() != energy_out_by_end_user.keys())
+            energy_supply.write().energy_out_by_end_user.insert(
+                "others".into(),
+                vec![EXPECTED_TOTAL_DEMANDS_BY_END_USER[0][simtime.index].into()],
+            );
+            assert_eq!(
+                energy_supply.read().results_by_end_user()["shower"][simtime.index],
+                EXPECTED_TOTAL_DEMANDS_BY_END_USER[0][simtime.index]
+            );
+
+            // Testing the edge case at the last timestep,
+            // to check when an end_user exists only in demand_by_end_user, not in energy_out_by_end_user
+            // TODO add last assertion
         }
     }
 
