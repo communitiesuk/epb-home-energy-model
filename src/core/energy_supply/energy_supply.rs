@@ -79,16 +79,16 @@ impl EnergySupplyConnection {
 pub(crate) struct EnergySupplyTariffInput {
     tariff: EnergySupplyTariff,
     tariff_data: Box<dyn Read>,
-    threshold_charges: Vec<f64>,
-    threshold_prices: Vec<f64>,
+    threshold_charges: Option<Vec<f64>>,
+    threshold_prices: Option<Vec<f64>>,
 }
 
 impl EnergySupplyTariffInput {
     pub(crate) fn new(
         tariff: EnergySupplyTariff,
         tariff_data: Box<dyn Read>,
-        threshold_charges: Vec<f64>,
-        threshold_prices: Vec<f64>,
+        threshold_charges: Option<Vec<f64>>,
+        threshold_prices: Option<Vec<f64>>,
     ) -> Self {
         Self {
             tariff,
@@ -103,8 +103,8 @@ impl EnergySupplyTariffInput {
 struct EnergySupplyTariffInfo {
     tariff: EnergySupplyTariff,
     tariff_data: TariffData,
-    threshold_charges: Vec<f64>,
-    threshold_prices: Vec<f64>,
+    threshold_charges: Option<Vec<f64>>,
+    threshold_prices: Option<Vec<f64>>,
 }
 
 impl TryFrom<EnergySupplyTariffInput> for EnergySupplyTariffInfo {
@@ -470,7 +470,7 @@ impl EnergySupply {
     pub(crate) fn is_charging_from_grid(
         &self,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(bool, f64, bool)> {
+    ) -> anyhow::Result<(bool, Option<f64>, bool)> {
         // TODO (from Python): Additional logic for grid charging decision
         //      Negative prices - Priority over PV? That would mean calling the function twice
         //                        Once before PV and again after but flagging if charging was
@@ -491,12 +491,12 @@ impl EnergySupply {
             .tariff_info
             .as_ref()
             .ok_or_else(|| anyhow!("Tariff info not set when expected."))?;
-        let threshold_charge = *threshold_charges
-            .get(month)
-            .ok_or_else(|| anyhow!("Threshold charge not set for month {month}."))?;
-        let threshold_price = *threshold_prices
-            .get(month)
-            .ok_or_else(|| anyhow!("Threshold price not set for month {month}."))?;
+        let threshold_charge = threshold_charges
+            .as_ref()
+            .and_then(|threshold_charges| threshold_charges.get(month).copied());
+        let threshold_price = threshold_prices
+            .as_ref()
+            .and_then(|threshold_charges| threshold_charges.get(month).copied());
         // For tariff selected look up price etc and decide whether to charge
         let elec_price = tariff_data.price(tariff, t_idx)?;
         let (current_charge, charge_discharge_efficiency) = {
@@ -510,15 +510,17 @@ impl EnergySupply {
             )
         };
 
-        Ok(
-            match (
-                elec_price / charge_discharge_efficiency < threshold_price,
-                current_charge < threshold_charge,
-            ) {
-                (false, _) => (false, threshold_charge, false),
-                (true, charging_condition) => (charging_condition, threshold_charge, true),
-            },
-        )
+        Ok(match threshold_price {
+            Some(threshold_price) if elec_price / charge_discharge_efficiency < threshold_price => {
+                match threshold_charge {
+                    Some(threshold_charge) if current_charge < threshold_charge => {
+                        (true, Some(threshold_charge), true)
+                    }
+                    _ => (false, threshold_charge, true),
+                }
+            }
+            _ => (false, threshold_charge, false),
+        })
     }
 
     pub(crate) fn calc_energy_import_from_grid_to_battery(
@@ -533,18 +535,20 @@ impl EnergySupply {
                 let max_capacity = electric_battery.get_max_capacity();
 
                 let (charging_condition, threshold_charge, _) = self.is_charging_from_grid(simtime).expect("Expected to be able to determine whether charging from grid if grid charging is possible on battery.");
-                if charging_condition {
-                    // Create max elec_demand from grid to complete battery charging if battery conditions allow
-                    let elec_demand = -max_capacity * (threshold_charge - current_charge)
-                        / electric_battery.get_charge_efficiency(simtime);
-                    // Attempt charging battery and retrieving energy_accepted
-                    let energy_accepted =
-                        -electric_battery.charge_discharge_battery(elec_demand, false, simtime);
-                    self.energy_into_battery_from_grid[t_idx]
-                        .store(energy_accepted, Ordering::SeqCst);
+                if let Some(threshold_charge) = threshold_charge {
+                    if charging_condition {
+                        // Create max elec_demand from grid to complete battery charging if battery conditions allow
+                        let elec_demand = -max_capacity * (threshold_charge - current_charge)
+                            / electric_battery.get_charge_efficiency(simtime);
+                        // Attempt charging battery and retrieving energy_accepted
+                        let energy_accepted =
+                            -electric_battery.charge_discharge_battery(elec_demand, false, simtime);
+                        self.energy_into_battery_from_grid[t_idx]
+                            .store(energy_accepted, Ordering::SeqCst);
 
-                    // Informing EnergyImport of imported electricity
-                    self.demand_not_met[t_idx].fetch_add(energy_accepted, Ordering::SeqCst);
+                        // Informing EnergyImport of imported electricity
+                        self.demand_not_met[t_idx].fetch_add(energy_accepted, Ordering::SeqCst);
+                    }
                 };
 
                 // this function is called at the end of the timestep to reset time charging etc:
@@ -1235,8 +1239,8 @@ mod tests {
         EnergySupplyTariffInput::new(
             EnergySupplyTariff::VariableTimeOfDay,
             Box::new(File::open(Path::new(tariff_data_path)).unwrap()),
-            threshold_charges,
-            threshold_prices,
+            Some(threshold_charges),
+            Some(threshold_prices),
         )
     }
 
@@ -1293,14 +1297,14 @@ mod tests {
         assert_eq!(energy_supply.get_battery_available_charge().unwrap(), 0.);
 
         let expected_charging_state = [
-            (true, 0.8, true),   // elec_price/efficiency=13.5877158875 < 16; current charge=0
-            (false, 0.8, true),  // elec_price/efficiency=12.16550081375 < 16;
-            (false, 0.8, false), // elec_price/efficiency=18.1486140875 !< 16
-            (false, 0.8, true),  // elec_price/efficiency=11.6733265175 < 16
-            (false, 0.8, false), // elec_price/efficiency=25.5426676375 !< 16
-            (false, 0.8, false), // elec_price/efficiency=24.914735325 !< 16
-            (false, 0.8, false), // elec_price/efficiency=24.1577282 !< 16
-            (false, 0.8, false), // elec_price/efficiency=17.394483375 !< 16
+            (true, Some(0.8), true), // elec_price/efficiency=13.5877158875 < 16; current charge=0
+            (false, Some(0.8), true), // elec_price/efficiency=12.16550081375 < 16;
+            (false, Some(0.8), false), // elec_price/efficiency=18.1486140875 !< 16
+            (false, Some(0.8), true), // elec_price/efficiency=11.6733265175 < 16
+            (false, Some(0.8), false), // elec_price/efficiency=25.5426676375 !< 16
+            (false, Some(0.8), false), // elec_price/efficiency=24.914735325 !< 16
+            (false, Some(0.8), false), // elec_price/efficiency=24.1577282 !< 16
+            (false, Some(0.8), false), // elec_price/efficiency=17.394483375 !< 16
         ];
         let expected_diverted_energy = [0.; 8];
         let expected_generated_energy_into_battery = vec![0.; 8];

@@ -3077,8 +3077,8 @@ fn energy_supply_from_input(
             builder = builder.with_tariff_input(EnergySupplyTariffInput::new(
                 input.tariff.ok_or_else(|| anyhow!("Energy supply with electric battery that allows grid charging expected tariff to be indicated"))?,
                 tariff_data,
-                input.threshold_charges.ok_or_else(|| anyhow!("Threshold charges expected to be indicated for energy supply that uses tariff data"))?.to_vec(),
-                input.threshold_prices.ok_or_else(|| anyhow!("Threshold prices expected to be indicated for energy supply that uses tariff data"))?.to_vec(),
+                input.threshold_charges.map(|threshold_charges| threshold_charges.to_vec()),
+                input.threshold_prices.map(|threshold_prices| threshold_prices.to_vec()),
             ))?;
         }
 
