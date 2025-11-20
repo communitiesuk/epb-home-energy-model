@@ -139,7 +139,7 @@ pub struct EnergySupply {
     demand_not_met: Vec<AtomicF64>,
     grid_to_consumption: Vec<AtomicF64>,
     energy_into_battery_from_generation: Vec<AtomicF64>,
-    energy_out_of_battery: Vec<AtomicF64>,
+    energy_battery_to_consumption: Vec<AtomicF64>,
     energy_into_battery_from_grid: Vec<AtomicF64>,
     battery_state_of_charge: Vec<AtomicF64>,
     energy_diverted: Vec<AtomicF64>,
@@ -190,7 +190,7 @@ impl EnergySupply {
             demand_not_met: init_demand_list(simulation_timesteps),
             grid_to_consumption: init_demand_list(simulation_timesteps),
             energy_into_battery_from_generation: init_demand_list(simulation_timesteps),
-            energy_out_of_battery: init_demand_list(simulation_timesteps),
+            energy_battery_to_consumption: init_demand_list(simulation_timesteps),
             energy_into_battery_from_grid: init_demand_list(simulation_timesteps),
             battery_state_of_charge: init_demand_list(simulation_timesteps),
             energy_diverted: init_demand_list(simulation_timesteps),
@@ -436,7 +436,7 @@ impl EnergySupply {
     pub fn get_energy_to_from_battery(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
         (
             Self::vec_of_floats_from_atomics(&self.energy_into_battery_from_generation),
-            Self::vec_of_floats_from_atomics(&self.energy_out_of_battery),
+            Self::vec_of_floats_from_atomics(&self.energy_battery_to_consumption),
             Self::vec_of_floats_from_atomics(&self.energy_into_battery_from_grid),
             Self::vec_of_floats_from_atomics(&self.battery_state_of_charge),
         )
@@ -524,7 +524,7 @@ impl EnergySupply {
     pub(crate) fn calc_energy_import_from_grid_to_battery(
         &self,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<Option<f64>> {
+    ) -> anyhow::Result<()> {
         if let Some(electric_battery) = &self.electric_battery {
             let t_idx = simtime.index;
             if electric_battery.is_grid_charging_possible() {
@@ -533,7 +533,7 @@ impl EnergySupply {
                 let max_capacity = electric_battery.get_max_capacity();
 
                 let (charging_condition, threshold_charge, _) = self.is_charging_from_grid(simtime).expect("Expected to be able to determine whether charging from grid if grid charging is possible on battery.");
-                let energy_accepted = if charging_condition {
+                if charging_condition {
                     // Create max elec_demand from grid to complete battery charging if battery conditions allow
                     let elec_demand = -max_capacity * (threshold_charge - current_charge)
                         / electric_battery.get_charge_efficiency(simtime);
@@ -545,24 +545,21 @@ impl EnergySupply {
 
                     // Informing EnergyImport of imported electricity
                     self.demand_not_met[t_idx].fetch_add(energy_accepted, Ordering::SeqCst);
-                    energy_accepted
-                } else {
-                    0.0
                 };
 
                 // this function is called at the end of the timestep to reset time charging etc:
                 electric_battery.timestep_end();
                 self.battery_state_of_charge[t_idx]
                     .store(electric_battery.get_state_of_charge(), Ordering::SeqCst);
-                Ok(Some(energy_accepted))
+                Ok(())
             } else {
                 electric_battery.timestep_end();
                 self.battery_state_of_charge[t_idx]
                     .store(electric_battery.get_state_of_charge(), Ordering::SeqCst);
-                Ok(None)
+                Ok(())
             }
         } else {
-            Ok(None)
+            Ok(())
         }
     }
 
@@ -645,7 +642,7 @@ impl EnergySupply {
                             let energy_out_of_battery =
                                 battery.charge_discharge_battery(demand_not_met, false, simtime);
                             demand_not_met -= energy_out_of_battery;
-                            self.energy_out_of_battery[timestep_idx]
+                            self.energy_battery_to_consumption[timestep_idx]
                                 .store(-energy_out_of_battery, Ordering::SeqCst);
                         }
                     }
@@ -686,7 +683,7 @@ impl EnergySupply {
                             simtime,
                         );
                         demand_not_met -= energy_out_of_battery;
-                        self.energy_out_of_battery[simtime.index]
+                        self.energy_battery_to_consumption[simtime.index]
                             .store(-energy_out_of_battery, Ordering::SeqCst);
                     } else if matches!(item, EnergySupplyPriorityEntry::Diverter)
                         && self.diverter.is_some()
@@ -882,23 +879,37 @@ mod tests {
         }
     }
 
-    #[rstest]
-    fn test_no_battery_or_invalid_charging(
-        simulation_time: SimulationTime,
+    fn create_elec_battery(
+        grid_charging_possible: bool,
+        battery_location: BatteryLocation,
         external_conditions: ExternalConditions,
-        energy_supply: EnergySupply,
-    ) {
-        let elec_battery = ElectricBattery::new(
+        simulation_time: SimulationTime,
+    ) -> ElectricBattery {
+        ElectricBattery::new(
             2.,
             0.8,
             3.,
             0.001,
             1.5,
             1.5,
-            BatteryLocation::Inside,
-            true,
+            battery_location,
+            grid_charging_possible,
             simulation_time.step,
             Arc::new(external_conditions),
+        )
+    }
+
+    #[rstest]
+    fn test_no_battery_or_invalid_charging(
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+        energy_supply: EnergySupply,
+    ) {
+        let elec_battery = create_elec_battery(
+            true,
+            BatteryLocation::Inside,
+            external_conditions,
+            simulation_time,
         );
 
         assert!(EnergySupply::new(
@@ -1215,46 +1226,45 @@ mod tests {
         );
     }
 
-    #[rstest]
-    fn test_battery_with_grid_charging_and_priority(
-        simulation_time: SimulationTime,
-        external_conditions: ExternalConditions,
-    ) {
-        // Valid battery where there is grid charging and tariff_path is set
-        let battery_age = 3.;
-        let elec_battery = ElectricBattery::new(
-            2.,
-            0.8,
-            battery_age,
-            0.001,
-            1.5,
-            1.5,
-            BatteryLocation::Inside,
-            true,
-            simulation_time.step,
-            Arc::new(external_conditions),
-        );
+    #[fixture]
+    fn tariff_input() -> EnergySupplyTariffInput {
         let tariff_data_path = "examples/tariff_data/tariff_data_25-06-2024.csv";
         let threshold_charges = vec![0.8, 0.7, 0.7, 0.8, 0.6, 0.8, 0.7, 0.7, 0.8, 0.7, 0.8, 0.8];
         let threshold_prices = vec![16., 16., 16., 20., 20., 20., 20., 20., 20., 20., 20., 20.];
-        let tariff_input = EnergySupplyTariffInput::new(
+
+        EnergySupplyTariffInput::new(
             EnergySupplyTariff::VariableTimeOfDay,
             Box::new(File::open(Path::new(tariff_data_path)).unwrap()),
             threshold_charges,
             threshold_prices,
-        );
-        let energy_supply = EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            Some(tariff_input),
-            Some(elec_battery),
-            Some(vec![
-                EnergySupplyPriorityEntry::Diverter,
-                EnergySupplyPriorityEntry::ElectricBattery,
-            ]),
-            None,
         )
-        .unwrap();
+    }
+
+    #[rstest]
+    fn test_battery_with_grid_charging_and_priority(
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+        tariff_input: EnergySupplyTariffInput,
+    ) {
+        // Valid battery where there is grid charging and tariff_path is set
+        let battery_age = 3.;
+        let elec_battery = create_elec_battery(
+            true,
+            BatteryLocation::Inside,
+            external_conditions,
+            simulation_time,
+        );
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps());
+        let energy_supply = builder
+            .with_electric_battery(elec_battery)
+            .with_tariff_input(tariff_input)
+            .unwrap()
+            .with_priority(vec![
+                EnergySupplyPriorityEntry::ElectricBattery,
+                EnergySupplyPriorityEntry::Diverter,
+            ])
+            .build();
 
         assert!(energy_supply.has_battery());
 
@@ -1282,79 +1292,69 @@ mod tests {
         ); // max discharge rate * discharge factor * timestep * -1
         assert_eq!(energy_supply.get_battery_available_charge().unwrap(), 0.);
 
-        // let expected_charging_state = [
-        //     (true, 0.8, true),   // elec_price/efficiency=13.5877158875 < 16; current charge=0
-        //     (false, 0.8, true),  // elec_price/efficiency=12.16550081375 < 16;
-        //     (false, 0.8, false), // elec_price/efficiency=18.1486140875 !< 16
-        //     (false, 0.8, true),  // elec_price/efficiency=11.6733265175 < 16
-        //     (false, 0.8, false), // elec_price/efficiency=25.5426676375 !< 16
-        //     (false, 0.8, false), // elec_price/efficiency=24.914735325 !< 16
-        //     (false, 0.8, false), // elec_price/efficiency=24.1577282 !< 16
-        //     (false, 0.8, false), // elec_price/efficiency=17.394483375 !< 16
-        // ];
+        let expected_charging_state = [
+            (true, 0.8, true),   // elec_price/efficiency=13.5877158875 < 16; current charge=0
+            (false, 0.8, true),  // elec_price/efficiency=12.16550081375 < 16;
+            (false, 0.8, false), // elec_price/efficiency=18.1486140875 !< 16
+            (false, 0.8, true),  // elec_price/efficiency=11.6733265175 < 16
+            (false, 0.8, false), // elec_price/efficiency=25.5426676375 !< 16
+            (false, 0.8, false), // elec_price/efficiency=24.914735325 !< 16
+            (false, 0.8, false), // elec_price/efficiency=24.1577282 !< 16
+            (false, 0.8, false), // elec_price/efficiency=17.394483375 !< 16
+        ];
         let expected_diverted_energy = [0.; 8];
-        // let expected_generated_energy_into_battery = vec![0.; 8];
-        // let expected_energy_out_of_battery = vec![0.; 8];
-        // let expected_battery_state_of_charge = vec![0.8; 8];
-        // let expected_energy_import_from_grid = vec![1.5741918561598522, 0., 0., 0., 0., 0., 0., 0.];
+        let expected_generated_energy_into_battery = vec![0.; 8];
+        let expected_energy_out_of_battery = vec![0.; 8];
+        let expected_battery_state_of_charge = vec![0.8; 8];
+        let expected_energy_import_from_grid = vec![1.5741918561598522, 0., 0., 0., 0., 0., 0., 0.];
 
-        // for (t_idx, t_it) in simulation_time.iter().enumerate() {
-        // assert_eq!(
-        //     energy_supply.is_charging_from_grid(t_it).unwrap(),
-        //     expected_charging_state[t_idx]
-        // );
-        // TODO
-        // }
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                energy_supply.is_charging_from_grid(t_it).unwrap(),
+                expected_charging_state[t_idx]
+            );
+            energy_supply
+                .calc_energy_import_from_grid_to_battery(t_it)
+                .unwrap();
+            energy_supply
+                .calc_energy_import_export_betafactor(t_it)
+                .unwrap();
+        }
+
         assert_eq!(
             energy_supply.get_energy_diverted(),
             expected_diverted_energy
         );
-        // assert_eq!(
-        //     energy_supply.get_energy_to_from_battery(),
-        //     (
-        //         expected_generated_energy_into_battery,
-        //         expected_energy_out_of_battery,
-        //         expected_energy_import_from_grid,
-        //         expected_battery_state_of_charge,
-        //     )
-        // );
+        assert_eq!(
+            energy_supply.get_energy_to_from_battery(),
+            (
+                expected_generated_energy_into_battery,
+                expected_energy_out_of_battery,
+                expected_energy_import_from_grid,
+                expected_battery_state_of_charge,
+            )
+        );
     }
 
     #[rstest]
     fn test_battery_with_grid_charging_no_priority(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
+        tariff_input: EnergySupplyTariffInput,
     ) {
-        let elec_battery = ElectricBattery::new(
-            2.,
-            0.8,
-            3.,
-            0.001,
-            1.5,
-            1.5,
-            BatteryLocation::Inside,
+        let elec_battery = create_elec_battery(
             true,
-            simulation_time.step,
-            Arc::new(external_conditions),
+            BatteryLocation::Inside,
+            external_conditions,
+            simulation_time,
         );
-        let tariff_data_path = "examples/tariff_data/tariff_data_25-06-2024.csv";
-        let threshold_charges = vec![0.8, 0.7, 0.7, 0.8, 0.6, 0.8, 0.7, 0.7, 0.8, 0.7, 0.8, 0.8];
-        let threshold_prices = vec![16., 16., 16., 20., 20., 20., 20., 20., 20., 20., 20., 20.];
-        let tariff_input = EnergySupplyTariffInput::new(
-            EnergySupplyTariff::VariableTimeOfDay,
-            Box::new(File::open(Path::new(tariff_data_path)).unwrap()),
-            threshold_charges,
-            threshold_prices,
-        );
-        let energy_supply = EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            Some(tariff_input),
-            Some(elec_battery),
-            None,
-            None,
-        )
-        .unwrap();
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps());
+        let energy_supply = builder
+            .with_electric_battery(elec_battery)
+            .with_tariff_input(tariff_input)
+            .unwrap()
+            .build();
 
         for t_idx in simulation_time.iter() {
             energy_supply
@@ -1373,27 +1373,15 @@ mod tests {
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
     ) {
-        let elec_battery = ElectricBattery::new(
-            2.,
-            0.8,
-            3.,
-            0.001,
-            1.5,
-            1.5,
-            BatteryLocation::Inside,
+        let elec_battery = create_elec_battery(
             false,
-            simulation_time.step,
-            Arc::new(external_conditions),
+            BatteryLocation::Inside,
+            external_conditions,
+            simulation_time,
         );
-        let energy_supply = EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            None,
-            Some(elec_battery),
-            None,
-            None,
-        )
-        .unwrap();
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps());
+        let energy_supply = builder.with_electric_battery(elec_battery).build();
 
         for t_idx in simulation_time.iter() {
             energy_supply
@@ -1463,17 +1451,11 @@ mod tests {
         let amount_demanded = [50.0, 100.0, 150.0, 200.0, 250.0, 300.0, 350.0, 400.0];
         let amount_produced = [50.0, 90.0, 130.0, 210.0, 2300.0, 290.0, 300.0, 350.0];
 
-        let elec_battery = ElectricBattery::new(
-            2.,
-            0.8,
-            3.,
-            0.001,
-            1.5,
-            1.5,
-            BatteryLocation::Outside,
+        let elec_battery = create_elec_battery(
             false,
-            simulation_time.step,
-            Arc::new(external_conditions.clone()),
+            BatteryLocation::Outside,
+            external_conditions,
+            simulation_time,
         );
 
         let builder =
@@ -1548,11 +1530,7 @@ mod tests {
             );
 
             assert_eq!(
-                energy_supply
-                    .energy_generated_consumed
-                    .iter()
-                    .map(|x| x.load(Ordering::SeqCst))
-                    .collect_vec(),
+                energy_supply.get_energy_generated_consumed(),
                 vec![
                     33.739999999999995,
                     65.40110697396963,
@@ -1580,12 +1558,13 @@ mod tests {
             );
 
             assert_eq!(
-                energy_supply
-                    .energy_out_of_battery
-                    .iter()
-                    .map(|x| x.load(Ordering::SeqCst))
-                    .collect_vec(),
-                vec![-1.121472, -0.2201687864998738, -0., -0., 0., -0., -0., -0.]
+                energy_supply.get_energy_to_from_battery(),
+                (
+                    vec![1.6770509831248424, -0., -0., -0., -0., -0., -0., -0.,],
+                    vec![-1.121472, -0.2201687864998738, -0., -0., 0., -0., -0., -0.,],
+                    vec![0.; 8],
+                    vec![0.; 8]
+                )
             );
 
             assert_eq!(
@@ -1723,7 +1702,7 @@ mod tests {
 
             assert_eq!(
                 energy_supply
-                    .energy_out_of_battery
+                    .energy_battery_to_consumption
                     .iter()
                     .map(|x| x.load(Ordering::SeqCst))
                     .collect_vec(),
@@ -1884,7 +1863,7 @@ mod tests {
 
             assert_eq!(
                 energy_supply
-                    .energy_out_of_battery
+                    .energy_battery_to_consumption
                     .iter()
                     .map(|x| x.load(Ordering::SeqCst))
                     .collect_vec(),
