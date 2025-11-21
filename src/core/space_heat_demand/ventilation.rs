@@ -2656,6 +2656,12 @@ mod tests {
         // Use spreadsheet to find answer.
     }
 
+    #[rstest]
+    fn test_air_change_rate_to_flow_rate() {
+        assert_relative_eq!(_air_change_rate_to_flow_rate(3600., 1.), 1.);
+        assert_relative_eq!(_air_change_rate_to_flow_rate(120., 20.), 0.6666666666666666);
+    }
+
     #[test]
     fn test_wind_speed_at_zone_level() {
         let c_rgh_site = 0.8;
@@ -2686,6 +2692,22 @@ mod tests {
         #[case] expected: f64,
     ) {
         assert_eq!(get_fuel_flow_factor(fuel_type, appliance_type), expected);
+    }
+
+    #[rstest]
+    #[should_panic]
+    #[case(CombustionFuelType::Wood, CombustionApplianceType::OpenGasFire)]
+    #[should_panic]
+    #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenGasFire)]
+    #[should_panic]
+    #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenGasFire)]
+    #[should_panic]
+    #[case(CombustionFuelType::Gas, CombustionApplianceType::ClosedFire)]
+    fn test_get_fuel_flow_factor_invalid_combinations(
+        #[case] fuel_type: CombustionFuelType,
+        #[case] appliance_type: CombustionApplianceType,
+    ) {
+        get_fuel_flow_factor(fuel_type, appliance_type);
     }
 
     #[rstest]
@@ -2835,6 +2857,7 @@ mod tests {
             get_facade_direction(true, Some(0.), 45., 0.).unwrap(),
             FacadeDirection::Roof30
         );
+        // TODO update below assertions
         assert_eq!(
             get_facade_direction(true, Some(0.), 70., 0.).unwrap(),
             FacadeDirection::Windward
@@ -3040,7 +3063,7 @@ mod tests {
                 ..Default::default()
             },
         ]
-        .into();
+            .into();
         Arc::new(ExternalConditions::new(
             &simulation_time_iterator,
             air_temps,
@@ -3400,7 +3423,7 @@ mod tests {
             FuelType::Electricity,
             simulation_time_iterator.total_steps(),
         )
-        .build()
+            .build()
     }
     #[fixture]
     fn mechanical_ventilation(energy_supply: EnergySupply) -> MechanicalVentilation {
