@@ -306,6 +306,7 @@ impl PhotovoltaicSystem {
 
     /// Produce electrical energy (in kWh) from the PV system
     /// according to BS EN 15316-4-3:2017
+    #[allow(unused_assignments)] // Python overwrites weighted_f_sh_dir without using it (reported to DESNZ 2025-11-21) - remove this attribute when corrected in future bug fix
     pub(crate) fn produce_energy(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
