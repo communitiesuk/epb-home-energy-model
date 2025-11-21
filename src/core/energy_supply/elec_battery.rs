@@ -120,7 +120,7 @@ impl ElectricBattery {
     /// TODO (from Python) Revisit available research to improve charge/discharge rate dependency with state of charge
     ///      Consider paper "Joint State of Charge (SOC) and State of Health (SOH) Estimation for Lithium-Ion Batteries
     ///      Packs of Electric Vehicles. Principal Author: Panpan Hu
-    fn charge_rate_soc_equ(_x: f64) -> f64 {
+    fn charge_rate_soc_equ(_state_of_charge: f64) -> f64 {
         1.
     }
 
@@ -131,18 +131,18 @@ impl ElectricBattery {
     /// TODO (from Python) Revisit available research to improve charge/discharge rate dependency with state of charge
     ///      Consider paper "Joint State of Charge (SOC) and State of Health (SOH) Estimation for Lithium-Ion Batteries
     ///      Packs of Electric Vehicles. Principal Author: Panpan Hu
-    fn discharge_rate_soc_equ(_x: f64) -> f64 {
+    fn discharge_rate_soc_equ(_state_of_charge: f64) -> f64 {
         1.
     }
 
     /// Equation for battery capacity as function of external air temperature (only used if battery is outside)
     /// Based on manufacturer data (graph): https://www.bonnenbatteries.com/the-effect-of-low-temperature-on-lithium-batteries/
     /// TODO (from Python) Revisit available research to improve capacity temperature dependency
-    fn capacity_temp_equ(x: f64) -> f64 {
-        if x > 20. {
+    fn capacity_temp_equ(air_temp: f64) -> f64 {
+        if air_temp > 20. {
             1.
         } else {
-            0.8496 + 0.01208 * x - 0.000228 * x.powi(2)
+            0.8496 + 0.01208 * air_temp - 0.000228 * air_temp.powi(2)
         }
     }
 
@@ -150,8 +150,8 @@ impl ElectricBattery {
     /// Based on manufacturer guarantee of 60% remaining capacity after 10 years - i.e. 4% drop per year.
     /// Guaranteed performance is probably quite conservative. Seek to refine this in future.
     /// TODO (from Python) Seek less conservative source
-    fn state_of_health_equ(x: f64) -> f64 {
-        -0.04 * x + 1.
+    fn state_of_health_equ(battery_age: f64) -> f64 {
+        -0.04 * battery_age + 1.
     }
 
     pub(crate) fn get_charge_efficiency(&self, simtime: SimulationTimeIteration) -> f64 {
@@ -179,7 +179,7 @@ impl ElectricBattery {
     }
 
     /// Arguments:
-    /// elec_demand -- the supply (-ve) or demand (+ve) to/on the electric battery (kWh)
+    /// energy_flow -- the supply (-ve) or demand (+ve) to/on the electric battery (kWh)
     /// charging_from_grid        -- Charging from charging_from_grid, not PV.
     /// Other variables:
     /// energy_available_to_charge_battery -- the total energy that could charge/discharge the battery
@@ -190,7 +190,7 @@ impl ElectricBattery {
     /// energy_accepted_by_battery -- the total energy the battery is able to supply or charge (kWh)
     pub(crate) fn charge_discharge_battery(
         &self,
-        elec_demand: f64,
+        energy_flow: f64,
         charging_from_grid: bool,
         simtime: SimulationTimeIteration,
     ) -> f64 {
@@ -200,7 +200,7 @@ impl ElectricBattery {
             <= self
                 .total_time_charging_current_timestep
                 .load(Ordering::SeqCst)
-            && elec_demand < 0.
+            && energy_flow < 0.
         {
             // No more scope for charging
             return 0.;
@@ -218,22 +218,22 @@ impl ElectricBattery {
         let state_of_charge = min_of_2(state_of_charge, 1.);
         let state_of_charge = max_of_2(state_of_charge, 0.);
 
-        let energy_available_to_charge_battery = if elec_demand < 0. {
+        let energy_available_to_charge_battery = if energy_flow < 0. {
             // Charging battery
-            // Convert elec_demand (in kWh) to a power (in kW) by dividing energy by time available for charging (in hours)
-            let elec_demand_power = elec_demand
+            // Convert energy_flow (in kWh) to a power (in kW) by dividing energy by time available for charging (in hours)
+            let energy_flow_power = energy_flow
                 / (timestep
                     - self
                         .total_time_charging_current_timestep
                         .load(Ordering::SeqCst));
             // If supply is less than minimum charge rate, do not add charge to the battery
-            if !charging_from_grid && -elec_demand_power < self.minimum_charge_rate {
+            if !charging_from_grid && -energy_flow_power < self.minimum_charge_rate {
                 0.
             } else {
                 let (max_charge, max_charge_rate_temp) = self.calculate_max_charge(state_of_charge);
                 max_charge_rate = max_charge_rate_temp;
                 min_of_2(
-                    -elec_demand
+                    -energy_flow
                         * self.one_way_battery_efficiency
                         * self.state_of_health
                         * air_temp_capacity_factor,
@@ -249,7 +249,7 @@ impl ElectricBattery {
                 self.calculate_max_discharge(state_of_charge)
             };
 
-            max_of_2(-elec_demand, max_discharge) / self.one_way_battery_efficiency
+            max_of_2(-energy_flow, max_discharge) / self.one_way_battery_efficiency
                 * self.state_of_health
                 * air_temp_capacity_factor // reductions due to state of health (i.e age) and cold temperature applied here
         };
@@ -270,7 +270,7 @@ impl ElectricBattery {
             self.current_energy_stored.load(Ordering::SeqCst) - prev_energy_stored;
 
         // Return the supply/demand energy the battery can accept (including charging/discharging losses)
-        if elec_demand < 0. {
+        if energy_flow < 0. {
             // Charging battery
             // Calculate charging time of battery
             let time_charging_current_load = match max_charge_rate {
