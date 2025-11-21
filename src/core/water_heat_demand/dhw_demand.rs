@@ -306,7 +306,7 @@ impl DomesticHotWaterDemand {
         let vol_hot_water_left_in_pipework = self
             .hot_water_distribution_pipework
             .iter()
-            .map(|pipework| pipework.volume_litres())
+            .map(|pipework| pipework.volume())
             .sum::<f64>();
         hw_demand_vol += all_events as f64 * vol_hot_water_left_in_pipework;
 
@@ -370,11 +370,11 @@ impl DomesticHotWaterDemand {
             match pipework.location() {
                 PipeworkLocation::Internal => {
                     cool_down_loss_internal +=
-                        pipework.cool_down_loss(demand_water_temperature, internal_air_temperature);
+                        pipework.calculate_cool_down_loss(demand_water_temperature, internal_air_temperature);
                 }
                 PipeworkLocation::External => {
                     cool_down_loss_external +=
-                        pipework.cool_down_loss(demand_water_temperature, external_air_temperature);
+                        pipework.calculate_cool_down_loss(demand_water_temperature, external_air_temperature);
                 }
             }
         }
