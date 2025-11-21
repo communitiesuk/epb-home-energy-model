@@ -9,7 +9,8 @@ use crate::core::energy_supply::energy_supply::{
     EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, EnergySupplyTariffInput,
     ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME, UNMET_DEMAND_SUPPLY_NAME,
 };
-use crate::core::energy_supply::pv::PhotovoltaicSystem;
+use crate::core::energy_supply::inverter::Inverter;
+use crate::core::energy_supply::pv::{PhotovoltaicPanel, PhotovoltaicSystem};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem, SpaceHeatingService};
 use crate::core::heating_systems::elec_storage_heater::{
@@ -2464,7 +2465,7 @@ impl Corpus {
             // loop through on-site energy generation
             for pv in self.on_site_generation.values() {
                 // Get energy produced for the current timestep
-                let (_energy_produced, energy_lost) = pv.produce_energy(t_it);
+                let (_energy_produced, energy_lost) = pv.produce_energy(t_it)?;
                 // Add the energy lost figure to the internal gains if it is considered inside the building
                 if pv.inverter_is_inside() {
                     gains_internal_dhw += energy_lost * WATTS_PER_KILOWATT as f64 / delta_t_h;
@@ -5460,22 +5461,19 @@ fn on_site_generation_from_input(
                 } = generation_details;
                 let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("On site generation (photovoltaic) references an undeclared energy supply '{energy_supply}'."))?.clone();
                 let energy_supply_conn = EnergySupply::connection(energy_supply, name).unwrap();
-                PhotovoltaicSystem::new(
-                    *peak_power,
-                    *ventilation_strategy,
-                    *pitch,
-                    *orientation,
-                    *base_height,
-                    *height,
-                    *width,
-                    external_conditions.clone(),
+                let panels = vec![PhotovoltaicPanel::new(*peak_power, *ventilation_strategy, *pitch, *orientation, *base_height, *height, *width, simulation_time_iterator.step_in_hours(), shading.to_vec())]; // TODO review migration alpha1
+                let inverter = Inverter::new(
                     energy_supply_conn,
-                    simulation_time_iterator.step_in_hours(),
-                    shading.clone(),
+                    simulation_time_iterator.clone(),
                     *inverter_peak_power_dc,
                     *inverter_peak_power_ac,
                     *inverter_is_inside,
                     *inverter_type,
+                );
+                PhotovoltaicSystem::new(
+                    external_conditions.clone(),
+                    panels,
+                    inverter
                 )
             }))
         })
