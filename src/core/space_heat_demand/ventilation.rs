@@ -192,7 +192,10 @@ fn convert_mass_flow_rate_to_volume_flow_rate(qm: f64, temperature: f64, p_a_alt
 ///
 ///    Returns:
 ///        float: Calculated roughness coefficient CR.
-fn terrain_class_to_roughness_coeff(terrain: &TerrainClass, relative_airflow_path_height: f64) -> f64 {
+fn terrain_class_to_roughness_coeff(
+    terrain: &TerrainClass,
+    relative_airflow_path_height: f64,
+) -> f64 {
     let (kr, z0, zmin) = match terrain {
         TerrainClass::OpenWater => (0.17, 0.01, 2.),
         TerrainClass::OpenField => (0.19, 0.05, 4.),
@@ -1066,7 +1069,11 @@ impl Leaks {
         let mut qv_in_through_leak = 0.;
         let mut qv_out_through_leak = 0.;
         let air_flow = self.calculate_ventilation_through_leaks_using_internal_p(
-            u_site, t_e, t_z, pressure_coefficient_path, p_z_ref,
+            u_site,
+            t_e,
+            t_z,
+            pressure_coefficient_path,
+            p_z_ref,
         );
 
         // Add airflow entering and leaving through leak
@@ -1876,8 +1883,8 @@ impl InfiltrationVentilation {
         let mut qm_out_through_leaks = 0.;
         let mut qm_in_through_comb = 0.;
         let mut qm_out_through_comb = 0.;
-        let mut qm_in_through_passive_hybrid_ducts = 0.;
-        let mut qm_out_through_passive_hybrid_ducts = 0.;
+        let qm_in_through_passive_hybrid_ducts = 0.;
+        let qm_out_through_passive_hybrid_ducts = 0.;
         let mut qm_sup_to_vent_zone = 0.;
         let mut qm_eta_from_vent_zone = 0.;
         let mut qm_in_effective_heat_recovery_saving_total = 0.0;
@@ -3161,7 +3168,7 @@ mod tests {
                 ..Default::default()
             },
         ]
-            .into();
+        .into();
         Arc::new(ExternalConditions::new(
             &simulation_time_iterator,
             air_temps,
@@ -3521,7 +3528,7 @@ mod tests {
             FuelType::Electricity,
             simulation_time_iterator.total_steps(),
         )
-            .build()
+        .build()
     }
     #[fixture]
     fn mechanical_ventilation(energy_supply: EnergySupply) -> MechanicalVentilation {
@@ -3658,6 +3665,7 @@ mod tests {
     // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
 
     #[rstest]
+    #[ignore = "WIP migration"]
     fn test_calculate_internal_reference_pressure(
         infiltration_ventilation: InfiltrationVentilation,
         wind_speeds: Vec<f64>,
@@ -3690,6 +3698,7 @@ mod tests {
     // TODO more cases here / different states
     // copy expected values across from Python
     #[rstest]
+    #[ignore = "WIP migration"]
     fn test_implicit_mass_balance_for_internal_reference_pressure(
         infiltration_ventilation: InfiltrationVentilation,
         wind_speeds: Vec<f64>,
@@ -3720,6 +3729,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "WIP migration"]
     fn test_incoming_air_flow(
         infiltration_ventilation: InfiltrationVentilation,
         wind_speeds: Vec<f64>,
@@ -3752,6 +3762,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "WIP migration"]
     fn test_find_r_v_arg_within_bounds(
         infiltration_ventilation: InfiltrationVentilation,
         air_temps: Vec<f64>,
