@@ -128,7 +128,7 @@ pub struct EventApplianceGains {
     time_series_step: f64,
     _series_length: usize,
     load_shifting_metadata: Option<LoadShiftingMetadata>,
-    max_shift: f64,
+    max_shift: Option<f64>,
     usage_events: Arc<RwLock<Vec<ApplianceGainsEvent>>>,
     total_floor_area: f64,
     total_power_supply: Vec<AtomicF64>,
@@ -197,10 +197,11 @@ impl EventApplianceGains {
             / simulation_time.step_in_hours()
             / time_series_step)
             .ceil() as usize;
-        let max_shift = match &appliance_data.load_shifting {
-            Some(value) => value.max_shift_hrs / simulation_time.step_in_hours(),
-            None => -1.,
-        };
+        let max_shift = appliance_data
+            .load_shifting
+            .as_ref()
+            .map(|value| value.max_shift_hrs / simulation_time.step_in_hours());
+
         Ok(Self {
             energy_supply_conn,
             energy_supply_name: appliance_data.energy_supply.clone(),
@@ -246,9 +247,7 @@ impl EventApplianceGains {
             for (i, power) in power_timesteps.iter().enumerate() {
                 let t_idx = min_of_2(start_idx + i, self.simulation_timestep_count - 1);
                 self.total_power_supply[t_idx].fetch_add(*power, Ordering::SeqCst);
-                if self.max_shift >= 0. {
-                    // a smart control is expected logically to exist here
-                    let smart_control = self.smart_control.as_ref().expect("Smart control is expected to exist when max shift is above zero, meaning load shifting is indicated.");
+                if let Some(smart_control) = self.smart_control.as_ref() {
                     smart_control.add_appliance_demand(
                         simtime,
                         power / WATTS_PER_KILOWATT as f64 * self.simulation_timestep,
@@ -263,23 +262,15 @@ impl EventApplianceGains {
 
     fn process_event(&self, event: &ApplianceGainsEvent) -> anyhow::Result<(usize, Vec<f64>)> {
         let (start_idx, power_list_over_timesteps) = self.event_to_schedule(event);
-        Ok((
-            start_idx
-                + if self.max_shift >= 0. {
-                    self.shift_iterative(start_idx, &power_list_over_timesteps, event)?
-                } else {
-                    0
-                },
-            power_list_over_timesteps,
-        ))
-    }
 
-    //     def __process_event(self, eventdict):
-    //         start_idx, power_list_over_timesteps = self.__event_to_schedule(eventdict)
-    //         if self.__max_shift >= 0:
-    //             start_shift = self.__shift_iterative(start_idx, power_list_over_timesteps, eventdict)
-    //             return start_idx + start_shift, power_list_over_timesteps
-    //         return start_idx, power_list_over_timesteps
+        let start_shift = if self.max_shift.is_some() {
+            self.shift_iterative(start_idx, &power_list_over_timesteps, event)?
+        } else {
+            0
+        };
+
+        Ok((start_idx + start_shift, power_list_over_timesteps))
+    }
 
     /// shifts an event forward in time one timestep at a time,
     /// until either the total weighted demand on that timestep is below demandlimit
@@ -298,15 +289,11 @@ impl EventApplianceGains {
         // the lowest value in this list will represent the time at which the usage event would result in the
         // lowest demand.
 
-        let ceil_max_shift = self.max_shift.ceil();
-        let mut pos_list = vec![
-            0.;
-            if ceil_max_shift >= 0. {
-                ceil_max_shift as usize
-            } else {
-                0
-            }
-        ];
+        let ceil_max_shift = self
+            .max_shift
+            .ok_or(anyhow!("Max shift should not be None"))?
+            .ceil();
+        let mut pos_list = vec![0.; (ceil_max_shift + 1.) as usize];
         for (start_shift, pos_list_entry) in pos_list.iter_mut().enumerate() {
             for (i, power) in power_list_over_timesteps.iter().enumerate() {
                 let t_idx = min_of_2(
@@ -331,26 +318,23 @@ impl EventApplianceGains {
                     break;
                 }
 
-                let other_demand = self
-                    .smart_control
-                    .as_ref()
-                    .ok_or_else(|| {
-                        anyhow!("Internal gains event processing expects load shifting to be set.")
-                    })?
-                    .get_demand(t_idx, &self.energy_supply_name);
+                let mut other_demand = 0.;
+                if let Some(smart_control) = &self.smart_control {
+                    other_demand = smart_control.get_demand(t_idx, &self.energy_supply_name);
+                }
+
                 let new_demand = power / WATTS_PER_KILOWATT as f64 * self.simulation_timestep;
                 *pos_list_entry += (new_demand + other_demand) * weight_timeseries[series_idx];
             }
             let demand_limit = self
                 .load_shifting_metadata
                 .as_ref()
-                .ok_or_else(|| {
-                    anyhow!("Internal gains event processing expects load shifting to be set.")
-                })?
-                .demand_limit;
-            if demand_limit > 0. && *pos_list_entry < demand_limit {
-                // demand is below the limit, good enough, no need to look further into the future
-                return Ok(start_shift);
+                .map(|data| data.demand_limit);
+
+            if let Some(limit) = demand_limit {
+                if limit > 0. && *pos_list_entry < limit {
+                    return Ok(start_shift);
+                }
             }
         }
 
