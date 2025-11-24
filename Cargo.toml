@@ -32,7 +32,7 @@ ode_solvers = { version = "0.5.0", git = "https://github.com/russ-madetech/ode-s
 ordered-float = "5.1.0"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 partial_application = "0.2.1"
-polyfit-rs = "0.2.1"
+polyfit-rs = "0.2.2"
 rand = "0.9.1"
 rand_distr = "0.5.1"
 rand_mt = { version = "5.0.0", features = ["rand-traits"] }
