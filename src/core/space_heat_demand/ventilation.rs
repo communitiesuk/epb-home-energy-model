@@ -3191,7 +3191,7 @@ mod tests {
         ))
     }
 
-    fn create_window(ctrl: Control, altitude: f64) -> Window {
+    fn create_window(ctrl: Option<Control>, altitude: f64) -> Window {
         Window::new(
             1.6,
             1.5,
@@ -3202,7 +3202,7 @@ mod tests {
             Some(0.),
             90.,
             altitude,
-            Some(Arc::new(ctrl)),
+            ctrl.map(Arc::new),
             0.,
         )
     }
@@ -3224,11 +3224,25 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_window_opening_free_area_no_ctrl(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let window = create_window(None, 0.);
+        assert_eq!(
+            window.calculate_window_opening_free_area(
+                0.5,
+                simulation_time_iterator.current_iteration()
+            ),
+            0.
+        )
+    }
+
+    #[rstest]
     fn test_calculate_window_opening_free_area_ctrl_off(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
-        let window = create_window(ctrl, 0.);
+        let window = create_window(Some(ctrl), 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
                 0.5,
@@ -3243,7 +3257,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(ctrl, 0.);
+        let window = create_window(Some(ctrl), 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
                 0.5,
@@ -3254,11 +3268,23 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_flow_coeff_for_window_ctrl_no_ctrl(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let window = create_window(None, 0.);
+        assert_relative_eq!(
+            window
+                .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
+            0.
+        )
+    }
+
+    #[rstest]
     fn test_calculate_flow_coeff_for_window_ctrl_off(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
-        let window = create_window(ctrl, 0.);
+        let window = create_window(Some(ctrl), 0.);
         assert_relative_eq!(
             window
                 .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
@@ -3271,7 +3297,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(ctrl, 0.);
+        let window = create_window(Some(ctrl), 0.);
         let expected_a_w = 1.5;
         let expected_flow_coeff =
             3600. * window.c_d_w * expected_a_w * (2. / p_a_ref()).powf(window.n_w);
@@ -3289,15 +3315,13 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let u_site = 5.0;
-        let _p_a_alt = p_a_ref();
-        let _t_e = 290.15;
         let t_z = 293.15;
         let p_z_ref = 1.;
         let f_cross = true;
         let shield_class = VentilationShieldClass::Open;
         let r_w_arg = 0.5;
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(ctrl, 0.);
+        let window = create_window(Some(ctrl), 0.);
 
         let (qm_in, qm_out) = window
             .calculate_flow_from_internal_p(
@@ -3313,13 +3337,44 @@ mod tests {
             )
             .unwrap();
 
-        // qm_in returns 0.0 and qm_out returns -13199.752632683054
         assert_relative_eq!(qm_in, 0.);
         assert_relative_eq!(
             qm_out,
             -13199.752632683054,
             max_relative = EIGHT_DECIMAL_PLACES
         );
+    }
+
+    #[rstest]
+    fn test_calculate_flow_from_internal_p_no_ctrl(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let wind_direction = 10.;
+        let u_site = 10.0;
+        let t_e = 290.;
+        let t_z = 300.;
+        let p_z_ref = 1.;
+        let f_cross = true;
+        let shield_class = VentilationShieldClass::Open;
+        let r_w_arg = 1.;
+        let window = create_window(None, 0.);
+
+        let (qm_in, qm_out) = window
+            .calculate_flow_from_internal_p(
+                wind_direction,
+                u_site,
+                t_e,
+                t_z,
+                p_z_ref,
+                f_cross,
+                shield_class,
+                Some(r_w_arg),
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
+
+        assert_relative_eq!(qm_in, 0.);
+        assert_relative_eq!(qm_out, 0.);
     }
 
     #[fixture]
@@ -3599,7 +3654,7 @@ mod tests {
         mechanical_ventilation: MechanicalVentilation,
     ) -> InfiltrationVentilation {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let windows = vec![create_window(ctrl, 30.)];
+        let windows = vec![create_window(Some(ctrl), 30.)];
         let vents = vec![Vent::new(1.5, 100., 20., 0., 90., 30., 2.5)];
         let leaks = CompletedVentilationLeaks {
             ventilation_zone_height: 6.,
