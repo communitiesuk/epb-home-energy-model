@@ -1765,7 +1765,7 @@ impl InfiltrationVentilation {
 
         Err(InternalReferencePressureCalculationError {
             initial_p_z_ref_guess,
-            temp_int_air: temp_interior_air,
+            temp_interior_air,
             r_w_arg,
         })
     }
@@ -1843,8 +1843,8 @@ impl InfiltrationVentilation {
     /// * `p_z_ref` - internal reference pressure (Pa)
     /// * `wind_speed` - wind speed, in m/s
     /// * `wind_direction` - direction wind is blowing from, in clockwise degrees from North
-    /// * `temp_int_air` - temperature of air in the zone (C)
-    /// * `temp_ext_air` - temperature of external air (C)
+    /// * `temp_interior_air` - temperature of air in the zone (C)
+    /// * `temp_exterior_air` - temperature of external air (C)
     /// * `reporting_flag` - flag used to give more detailed ventilation outputs (None = no additional reporting)
     ///
     /// Key Variables:
@@ -1865,16 +1865,16 @@ impl InfiltrationVentilation {
         p_z_ref: f64,
         wind_speed: f64,
         wind_direction: f64,
-        temp_int_air: f64,
-        temp_ext_air: f64,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
         r_v_arg: f64,
         r_w_arg_min_max: Option<f64>,
         reporting_flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64)> {
         let u_site = wind_speed_at_zone_level(self.c_rgh_site, wind_speed, None, None, None);
-        let t_e = celsius_to_kelvin(temp_ext_air)?;
-        let t_z = celsius_to_kelvin(temp_int_air)?;
+        let t_e = celsius_to_kelvin(temp_exterior_air)?;
+        let t_z = celsius_to_kelvin(temp_interior_air)?;
         let mut qm_in_through_window_opening = 0.;
         let mut qm_out_through_window_opening = 0.;
         let mut qm_in_through_vents = 0.;
@@ -2001,7 +2001,7 @@ impl InfiltrationVentilation {
                         incoming_air_flow,
                         total_volume: self.total_volume,
                         air_changes_per_hour,
-                        temp_int_air,
+                        temp_interior_air,
                         p_z_ref,
                         qm_in_through_window_opening,
                         qm_out_through_window_opening,
@@ -2033,8 +2033,8 @@ impl InfiltrationVentilation {
         &self,
         wind_speed: f64,
         wind_direction: f64,
-        temp_int_air: f64,
-        temp_ext_air: f64,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
         r_v_arg: f64,
         r_w_arg: Option<f64>,
         initial_p_z_ref_guess: f64,
@@ -2049,8 +2049,8 @@ impl InfiltrationVentilation {
                     self,
                     wind_speed,
                     wind_direction,
-                    temp_int_air,
-                    temp_ext_air,
+                    temp_interior_air,
+                    temp_exterior_air,
                     r_v_arg,
                     r_w_arg,
                     initial_p_z_ref_guess,
@@ -2064,8 +2064,8 @@ impl InfiltrationVentilation {
             initial_p_z_ref_guess,
             wind_speed,
             wind_direction,
-            temp_int_air,
-            temp_ext_air,
+            temp_interior_air,
+            temp_exterior_air,
             r_v_arg,
             r_w_arg,
             simtime,
@@ -2075,8 +2075,8 @@ impl InfiltrationVentilation {
             internal_reference_pressure,
             wind_speed,
             wind_direction,
-            temp_int_air,
-            temp_ext_air,
+            temp_interior_air,
+            temp_exterior_air,
             r_v_arg,
             r_w_arg,
             reporting_flag,
@@ -2093,8 +2093,8 @@ impl InfiltrationVentilation {
     /// * `r_v_arg` - Current vent position, where 0 means vents are fully closed and 1 means vents are fully open.
     /// * `wind_speed` - Speed of the wind.
     /// * `wind_direction` - Direction of the wind.
-    /// * `temp_int_air` - Interior air temperature.
-    /// * `temp_ext_air` - Exterior air temperature.
+    /// * `temp_interior_air` - Interior air temperature.
+    /// * `temp_exterior_air` - Exterior air temperature.
     /// * `ach_target` - The desired target ACH value that needs to be achieved.
     /// * `r_w_arg` - Parameter related to the wind or building ventilation.
     /// * `initial_p_z_ref_guess` -Initial guess for reference pressure.
@@ -2109,8 +2109,8 @@ impl InfiltrationVentilation {
         r_v_arg: f64,
         wind_speed: f64,
         wind_direction: f64,
-        temp_int_air: f64,
-        temp_ext_air: f64,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
         ach_target: f64,
         r_w_arg: Option<f64>,
         initial_p_z_ref_guess: f64,
@@ -2120,8 +2120,8 @@ impl InfiltrationVentilation {
         let ach = self.calc_air_changes_per_hour(
             wind_speed,
             wind_direction,
-            temp_int_air,
-            temp_ext_air,
+            temp_interior_air,
+            temp_exterior_air,
             r_v_arg,
             r_w_arg,
             initial_p_z_ref_guess,
@@ -2253,8 +2253,8 @@ impl InfiltrationVentilation {
             infiltration_ventilation: self,
             wind_speed,
             wind_direction,
-            temp_int_air: temp_interior_air,
-            temp_ext_air: temp_exterior_air,
+            temp_interior_air,
+            temp_exterior_air,
             ach_target,
             r_w_arg,
             initial_p_z_ref_guess,
@@ -2512,8 +2512,8 @@ struct FindRVArgProblem<'a> {
     infiltration_ventilation: &'a InfiltrationVentilation,
     wind_speed: f64,
     wind_direction: f64,
-    temp_int_air: f64,
-    temp_ext_air: f64,
+    temp_interior_air: f64,
+    temp_exterior_air: f64,
     ach_target: f64,
     r_w_arg: Option<f64>,
     initial_p_z_ref_guess: f64,
@@ -2531,8 +2531,8 @@ impl CostFunction for FindRVArgProblem<'_> {
             *param,
             self.wind_speed,
             self.wind_direction,
-            self.temp_int_air,
-            self.temp_ext_air,
+            self.temp_interior_air,
+            self.temp_exterior_air,
             self.ach_target,
             self.r_w_arg,
             self.initial_p_z_ref_guess,
@@ -2545,8 +2545,8 @@ impl CostFunction for FindRVArgProblem<'_> {
 struct ImplicitMassBalanceProblem<'a> {
     wind_speed: f64,
     wind_direction: f64,
-    temp_int_air: f64,
-    temp_ext_air: f64,
+    temp_interior_air: f64,
+    temp_exterior_air: f64,
     r_v_arg: f64,
     r_w_arg: Option<f64>,
     simtime: SimulationTimeIteration,
@@ -2564,8 +2564,8 @@ impl CostFunction for ImplicitMassBalanceProblem<'_> {
                 *p_z_ref,
                 self.wind_speed,
                 self.wind_direction,
-                self.temp_int_air,
-                self.temp_ext_air,
+                self.temp_interior_air,
+                self.temp_exterior_air,
                 self.r_v_arg,
                 self.r_w_arg,
                 None,
@@ -2579,8 +2579,8 @@ fn root_scalar_for_implicit_mass_balance(
     infiltration_ventilation: &InfiltrationVentilation,
     wind_speed: f64,
     wind_direction: f64,
-    temp_int_air: f64,
-    temp_ext_air: f64,
+    temp_interior_air: f64,
+    temp_exterior_air: f64,
     r_v_arg: f64,
     r_w_arg: Option<f64>,
     simtime: SimulationTimeIteration,
@@ -2589,8 +2589,8 @@ fn root_scalar_for_implicit_mass_balance(
     let problem = ImplicitMassBalanceProblem {
         wind_speed,
         wind_direction,
-        temp_int_air,
-        temp_ext_air,
+        temp_interior_air,
+        temp_exterior_air,
         r_v_arg,
         r_w_arg,
         simtime,
@@ -2624,7 +2624,7 @@ pub(crate) struct VentilationDetailedResult {
     incoming_air_flow: f64,
     total_volume: f64,
     air_changes_per_hour: f64,
-    temp_int_air: f64,
+    temp_interior_air: f64,
     p_z_ref: f64,
     qm_in_through_window_opening: f64,
     qm_out_through_window_opening: f64,
@@ -2652,7 +2652,7 @@ impl VentilationDetailedResult {
             self.incoming_air_flow.to_string().into(),
             self.total_volume.to_string().into(),
             self.air_changes_per_hour.to_string().into(),
-            self.temp_int_air.to_string().into(),
+            self.temp_interior_air.to_string().into(),
             self.p_z_ref.to_string().into(),
             self.qm_in_through_window_opening.to_string().into(),
             self.qm_out_through_window_opening.to_string().into(),
@@ -2676,11 +2676,11 @@ impl VentilationDetailedResult {
 }
 
 #[derive(Debug, Error)]
-#[error("Could not resolve an internal reference pressure for infiltration ventilation. Initial p_z_ref_guess: {initial_p_z_ref_guess}, temp_int_air: {temp_int_air}, r_w_arg: {r_w_arg:?}"
+#[error("Could not resolve an internal reference pressure for infiltration ventilation. Initial p_z_ref_guess: {initial_p_z_ref_guess}, temp_interior_air: {temp_interior_air}, r_w_arg: {r_w_arg:?}"
 )]
 pub struct InternalReferencePressureCalculationError {
     initial_p_z_ref_guess: f64,
-    temp_int_air: f64,
+    temp_interior_air: f64,
     r_w_arg: Option<f64>,
 }
 
