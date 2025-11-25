@@ -3350,7 +3350,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let wind_direction = 10.;
-        let u_site = 10.0;
+        let u_site = 10.;
         let t_e = 290.;
         let t_z = 300.;
         let p_z_ref = 1.;
@@ -3358,6 +3358,39 @@ mod tests {
         let shield_class = VentilationShieldClass::Open;
         let r_w_arg = 1.;
         let window = create_window(None, 0.);
+
+        let (qm_in, qm_out) = window
+            .calculate_flow_from_internal_p(
+                wind_direction,
+                u_site,
+                t_e,
+                t_z,
+                p_z_ref,
+                f_cross,
+                shield_class,
+                Some(r_w_arg),
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
+
+        assert_relative_eq!(qm_in, 0.);
+        assert_relative_eq!(qm_out, 0.);
+    }
+
+    #[rstest]
+    fn test_calculate_flow_from_internal_p_ctrl_off(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let wind_direction = 10.;
+        let u_site = 10.;
+        let t_e = 290.;
+        let t_z = 300.;
+        let p_z_ref = 1.;
+        let f_cross = true;
+        let shield_class = VentilationShieldClass::Open;
+        let r_w_arg = 1.;
+        let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
+        let window = create_window(Some(ctrl), 0.);
 
         let (qm_in, qm_out) = window
             .calculate_flow_from_internal_p(
@@ -3523,7 +3556,7 @@ mod tests {
         let t_z = 293.15;
         let c_p_path = -0.7;
         let p_z_ref = 1.;
-        let expected_output = -10.6531458050959;
+        let expected_output = -10.653145805095907;
 
         assert_relative_eq!(
             leaks.calculate_ventilation_through_leaks_using_internal_p(
