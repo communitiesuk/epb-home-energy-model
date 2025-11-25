@@ -5155,7 +5155,7 @@ mod tests {
 
         let shading_segments = vec![
             ShadingSegment {
-                start: 0., // Python uses start360 of 180 here. So start is 180 - 180 = 0
+                start: 0.,  // Python uses start360 of 180 here. So start is 180 - 180 = 0
                 end: -180., // Python uses end360 of 0 here. So end is 180 - 0 = -180
                 ..Default::default()
             },
@@ -5230,23 +5230,27 @@ mod tests {
 
     #[rstest]
     #[ignore = "work in progress - currently does not pass"]
-    #[case(1., 0.,  0.626408173927592)]
+    #[case(1., 0., 0.626408173927592)]
     #[ignore = "work in progress - currently does not pass"]
-    #[case(1., 45.,  0.5905238865770632)]
+    #[case(1., 45., 0.5905238865770632)]
     #[ignore = "work in progress - currently does not pass"]
-    #[case(1., 90.,  0.4030970346549258)]
+    #[case(1., 90., 0.4030970346549258)]
     #[ignore = "work in progress - currently does not pass"]
-    #[case(1., 180.,  0.4030970346549258)]
+    #[case(1., 180., 0.4030970346549258)]
     #[ignore = "work in progress - currently does not pass"]
-    #[case(1.5, 0.,  0.6556673434737625)]
+    #[case(1.5, 0., 0.6556673434737625)]
     #[ignore = "work in progress - currently does not pass"]
-    #[case(1.5, 45.,  0.5374627128732344)]
+    #[case(1.5, 45., 0.5374627128732344)]
     #[ignore = "work in progress - currently does not pass"]
-    #[case(1.5, 90.,  0.07492542574646884)]
+    #[case(1.5, 90., 0.07492542574646884)]
     #[ignore = "work in progress - currently does not pass"]
-    #[case(1.5, 180.,  0.07492542574646884)]
-    fn test_diffuse_shading_reduction_factor_f_sky_tilt(simulation_time: SimulationTime, #[case] f_sky: f64, #[case] tilt: f64, #[case] expected: f64) {
-        
+    #[case(1.5, 180., 0.07492542574646884)]
+    fn test_diffuse_shading_reduction_factor_f_sky_tilt(
+        simulation_time: SimulationTime,
+        #[case] f_sky: f64,
+        #[case] tilt: f64,
+        #[case] expected: f64,
+    ) {
         let diffuse_breakdown = DiffuseBreakdown {
             sky: 12.,
             circumsolar: 0.,
@@ -5276,10 +5280,11 @@ mod tests {
                 depth: 0.25,
                 distance: 0.1,
             },
-            WindowShadingObject::Obstacle { 
-                height: 10., 
-                distance: 0.1, 
-                transparency: 0.2 },
+            WindowShadingObject::Obstacle {
+                height: 10.,
+                distance: 0.1,
+                transparency: 0.2,
+            },
         ];
 
         let shading_segments = vec![
@@ -5291,7 +5296,7 @@ mod tests {
             ShadingSegment {
                 start: 135.,
                 end: 90.,
-               ..Default::default()
+                ..Default::default()
             },
             ShadingSegment {
                 start: 90.,
@@ -5301,21 +5306,23 @@ mod tests {
             ShadingSegment {
                 start: 45.,
                 end: 0.,
-                shading_objects: vec![ShadingObject {
-                    object_type: ShadingObjectType::Obstacle,
-                    height: 10.5,
-                    distance: 12.,
-                },
-                ShadingObject {
-                    object_type: ShadingObjectType::Obstacle,
-                    height: 30.5,
-                    distance: 12.,
-                },
-                ShadingObject {
-                    object_type: ShadingObjectType::Overhang,
-                    height: 0.5,
-                    distance: 12.,
-                }],
+                shading_objects: vec![
+                    ShadingObject {
+                        object_type: ShadingObjectType::Obstacle,
+                        height: 10.5,
+                        distance: 12.,
+                    },
+                    ShadingObject {
+                        object_type: ShadingObjectType::Obstacle,
+                        height: 30.5,
+                        distance: 12.,
+                    },
+                    ShadingObject {
+                        object_type: ShadingObjectType::Overhang,
+                        height: 0.5,
+                        distance: 12.,
+                    },
+                ],
             },
             ShadingSegment {
                 start: 0.,
@@ -5325,21 +5332,23 @@ mod tests {
             ShadingSegment {
                 start: -45.,
                 end: -90.,
-                shading_objects: vec![ShadingObject {
-                    object_type: ShadingObjectType::Overhang,
-                    height: 10.5,
-                    distance: 12.,
-                },
-                ShadingObject {
-                    object_type: ShadingObjectType::Overhang,
-                    height: 10.5,
-                    distance: 1.,
-                },
-                ShadingObject {
-                    object_type: ShadingObjectType::Overhang,
-                    height: 20.5,
-                    distance: 1.,
-                }],
+                shading_objects: vec![
+                    ShadingObject {
+                        object_type: ShadingObjectType::Overhang,
+                        height: 10.5,
+                        distance: 12.,
+                    },
+                    ShadingObject {
+                        object_type: ShadingObjectType::Overhang,
+                        height: 10.5,
+                        distance: 1.,
+                    },
+                    ShadingObject {
+                        object_type: ShadingObjectType::Overhang,
+                        height: 20.5,
+                        distance: 1.,
+                    },
+                ],
             },
             ShadingSegment {
                 start: -90.,

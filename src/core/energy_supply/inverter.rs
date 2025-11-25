@@ -72,9 +72,8 @@ impl Inverter {
             // System of 3 equations to fit efficiency curve for Sunny Boy PV2AC Inverters
             let inverter_dc_ac_efficiency_1 =
                 97.2 * (1. - (0.18 / (1. + std::f64::consts::E.powf(21. * ratio_of_rated_output))));
-            let inverter_dc_ac_efficiency_2 = 0.5
-                * (std::f64::consts::PI * ratio_of_rated_output).cos()
-                + 96.9;
+            let inverter_dc_ac_efficiency_2 =
+                0.5 * (std::f64::consts::PI * ratio_of_rated_output).cos() + 96.9;
             let inverter_dc_ac_efficiency_3 = 97.2 * (30. * ratio_of_rated_output).tanh();
             min_of_3(
                 inverter_dc_ac_efficiency_1,

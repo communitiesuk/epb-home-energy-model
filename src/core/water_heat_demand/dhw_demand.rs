@@ -369,12 +369,16 @@ impl DomesticHotWaterDemand {
         for pipework in &self.hot_water_distribution_pipework {
             match pipework.location() {
                 PipeworkLocation::Internal => {
-                    cool_down_loss_internal +=
-                        pipework.calculate_cool_down_loss(demand_water_temperature, internal_air_temperature);
+                    cool_down_loss_internal += pipework.calculate_cool_down_loss(
+                        demand_water_temperature,
+                        internal_air_temperature,
+                    );
                 }
                 PipeworkLocation::External => {
-                    cool_down_loss_external +=
-                        pipework.calculate_cool_down_loss(demand_water_temperature, external_air_temperature);
+                    cool_down_loss_external += pipework.calculate_cool_down_loss(
+                        demand_water_temperature,
+                        external_air_temperature,
+                    );
                 }
             }
         }
