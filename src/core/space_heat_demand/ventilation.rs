@@ -82,7 +82,16 @@ fn calculate_pressure_difference_at_an_airflow_path(
 ) -> f64 {
     let p_e_path = p_a_ref() * T_E_REF / t_e * (0.5 * c_p_path * u_site.powi(2) - h_path * G); //(5)
     let p_z_path = p_z_ref - p_a_ref() * h_path * G * T_E_REF / t_z; //(6)
-    p_e_path - p_z_path //(4)
+
+    // TODO (from Python): Investigate why, due to differences in internal temperature, these values are different in
+    // Windows implementation when compared to Linux
+    let delta_p_path = if is_close!(p_e_path, p_z_path, abs_tol = 1e-12) {
+        0.
+    } else {
+        p_e_path - p_z_path // (4)
+    };
+
+    delta_p_path
 }
 
 /// Convert infiltration rate from ach to m^3/s
@@ -532,10 +541,22 @@ pub(crate) struct Window {
 }
 
 impl Window {
+    /// Construct a Window object
+    /// Arguments:
+    ///     free_area_height -- The free area height of the window
+    ///     midheight -- The midheight of the window.
+    ///     max_opening_area -- The maximum window opening area.
+    ///     window_part_list -- The list of window parts.
+    ///     orientation -- The orientation of the window.
+    ///     pitch -- The pitch of the window.
+    ///     altitude -- altitude of dwelling above sea level (m)
+    ///     on_off_ctrl_obj -
+    /// Method
+    ///     - Based on Section 6.4.3.5 Airflow due to windows opening section.
     pub(crate) fn new(
-        h_w_fa: f64,
-        h_w_path: f64,
-        a_w_max: f64,
+        free_area_height: f64,
+        midheight: f64,
+        max_opening_area: f64,
         window_part_list: Vec<WindowPartInput>,
         orientation: Option<f64>,
         pitch: f64,
@@ -545,7 +566,7 @@ impl Window {
     ) -> Self {
         let n_w_div = max_of_2(window_part_list.len() - 1, 0usize) as f64;
         Self {
-            a_w_max,
+            a_w_max: max_opening_area,
             c_d_w: 0.67,
             n_w: 0.5,
             orientation,
@@ -553,14 +574,14 @@ impl Window {
             on_off_ctrl_obj,
             _altitude: altitude,
             p_a_alt: adjust_air_density_for_altitude(altitude),
-            z: h_w_path + ventilation_zone_base_height,
+            z: midheight + ventilation_zone_base_height,
             window_parts: window_part_list
                 .iter()
                 .enumerate()
                 .map(|(window_part_number, window_part_input)| {
                     WindowPart::new(
                         window_part_input.mid_height_air_flow_path,
-                        h_w_fa,
+                        free_area_height,
                         n_w_div,
                         window_part_number + 1,
                         ventilation_zone_base_height,
@@ -650,7 +671,7 @@ impl Window {
             }
         };
         // Wind pressure coefficient for the window
-        let c_p_path = get_pressure_coefficient_from_pitch_and_orientation(
+        let pressure_coefficient_path = get_pressure_coefficient_from_pitch_and_orientation(
             f_cross,
             shield_class,
             self.z,
@@ -667,7 +688,12 @@ impl Window {
         let mut qv_out_through_window_opening = 0.;
         for window_part in &self.window_parts {
             let air_flow = window_part.calculate_ventilation_through_windows_using_internal_p(
-                u_site, t_e, t_z, c_w_path, p_z_ref, c_p_path,
+                u_site,
+                t_e,
+                t_z,
+                c_w_path,
+                p_z_ref,
+                pressure_coefficient_path,
             );
             if air_flow >= 0. {
                 qv_in_through_window_opening += air_flow;
@@ -696,23 +722,29 @@ struct WindowPart {
 }
 
 impl WindowPart {
+    /// Construct a WindowPart object
+    /// Argument:
+    ///     midheight -- Mid-height of the window
+    ///     free_area_height -- free area height of the window
+    ///     number_window_divisions -- number of window divisions
+    ///     window_part_number -- The identifying number of the window part
     fn new(
-        h_w_path: f64,
-        h_w_fa: f64,
-        n_w_div: f64,
+        midheight: f64,
+        free_area_height: f64,
+        number_window_divisions: f64,
         window_part_number: usize,
         ventilation_zone_base_height: f64,
     ) -> Self {
         Self {
-            n_w_div,
+            n_w_div: number_window_divisions,
             h_w_div_path: Self::calculate_height_for_delta_p_w_div_path(
-                h_w_path,
-                h_w_fa,
-                n_w_div,
+                midheight,
+                free_area_height,
+                number_window_divisions,
                 window_part_number,
             ),
             n_w: 0.5,
-            _z: h_w_path + ventilation_zone_base_height,
+            _z: midheight + ventilation_zone_base_height,
         }
     }
 
@@ -781,8 +813,8 @@ impl Vent {
     /// Construct a Vent object
     ///
     /// Arguments:
-    ///    h_path -- mid-height of air flow path relative to ventilation zone (m)
-    ///    A_vent - Equivalent area of a vent (m2)
+    ///    midheight -- mid-height of air flow path relative to ventilation zone (m)
+    ///    area - Equivalent area of a vent (cm2)
     ///    delta_p_vent_ref -- reference pressure difference for vent (Pa)
     ///    orientation -- The orientation of the vent (degrees)
     ///    pitch -- The pitch of the vent (degrees)
@@ -791,8 +823,8 @@ impl Vent {
     /// Method:
     ///    - Based on Section 6.4.3.6 Airflow through vents from BS EN 16798-7
     pub(crate) fn new(
-        h_path: f64,
-        a_vent: f64,
+        midheight: f64,
+        area: f64,
         delta_p_vent_ref: f64,
         orientation: f64,
         pitch: f64,
@@ -800,8 +832,8 @@ impl Vent {
         ventilation_zone_base_height: f64, // TODO: added as part of the 0.32 migration, still WIP
     ) -> Self {
         Self {
-            h_path,
-            a_vent,
+            h_path: midheight,
+            a_vent: area,
             delta_p_vent_ref,
             orientation,
             pitch,
@@ -809,7 +841,7 @@ impl Vent {
             n_vent: 0.5, // Flow exponent for vents based on Section B.3.2.2 from BS EN 16798-7
             c_d_vent: 0.6, // Discharge coefficient of vents based on B.3.2.1 from BS EN 16798-7
             p_a_alt: adjust_air_density_for_altitude(altitude),
-            z: h_path + ventilation_zone_base_height,
+            z: midheight + ventilation_zone_base_height,
         }
     }
 
@@ -889,7 +921,7 @@ impl Vent {
         r_v_arg: f64,
     ) -> anyhow::Result<(f64, f64)> {
         // Wind pressure coefficient for the air flow path
-        let c_p_path = get_pressure_coefficient_from_pitch_and_orientation(
+        let pressure_coefficient_path = get_pressure_coefficient_from_pitch_and_orientation(
             f_cross,
             shield_class,
             self.z,
@@ -905,7 +937,7 @@ impl Vent {
             t_e,
             t_z,
             c_vent_path,
-            c_p_path,
+            pressure_coefficient_path,
             p_z_ref,
         );
 
@@ -3608,6 +3640,19 @@ mod tests {
 
         assert_relative_eq!(q_in_comb, 0.);
         assert_relative_eq!(q_out_comb, -10.08);
+    }
+
+    #[rstest]
+    fn test_calculate_air_flow_req_for_comb_appliance_no_op_comp(
+        combustion_appliances: CombustionAppliances,
+    ) {
+        let f_op_comp = 0.;
+        let p_h_fi = 1.;
+        let (q_in_comb, q_out_comb) =
+            combustion_appliances.calculate_air_flow_req_for_comb_appliance(f_op_comp, p_h_fi);
+
+        assert_relative_eq!(q_in_comb, 0.);
+        assert_relative_eq!(q_out_comb, 0.);
     }
 
     #[fixture]
