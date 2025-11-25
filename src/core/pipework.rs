@@ -1,6 +1,10 @@
 use crate::core::material_properties::{MaterialProperties, GLYCOL25, WATER};
-use crate::core::units::{LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE};
+use crate::core::units::{
+    JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
+    WATTS_PER_KILOWATT,
+};
 use crate::input::{PipeworkContents, WaterPipework, WaterPipeworkLocation};
+use ordered_float::Pow;
 use std::f64::consts::PI;
 use thiserror::Error;
 
@@ -16,10 +20,10 @@ const INTERNAL_HTC_GLYCOL25: f64 = INTERNAL_HTC_WATER;
 const EXTERNAL_REFLECTIVE_HTC: f64 = 5.7; // low emissivity reflective surface, CIBSE Guide C, Table 3.25
 const EXTERNAL_NONREFLECTIVE_HTC: f64 = 10.0; // high emissivity non-reflective surface, CIBSE Guide C, Table 3.25
 
-const C_N_CALCULATION_FACTOR: f64 = 0.02716;  // CIBSE Guide C empirical factor
-const C_N_EXPONENT: f64 = 0.8254;  // CIBSE Guide C empirical exponent
-const N_CALCULATION_FACTOR: f64 = -0.001793;  // CIBSE Guide C empirical factor
-const N_OFFSET: f64 = 1.245135;  // CIBSE Guide C empirical offset
+const C_N_CALCULATION_FACTOR: f64 = 0.02716; // CIBSE Guide C empirical factor
+const C_N_EXPONENT: f64 = 0.8254; // CIBSE Guide C empirical exponent
+const N_CALCULATION_FACTOR: f64 = -0.001793; // CIBSE Guide C empirical factor
+const N_OFFSET: f64 = 1.245135; // CIBSE Guide C empirical offset
 
 #[derive(Clone, Copy, Debug)]
 pub enum PipeworkLocation {
@@ -43,6 +47,8 @@ pub(crate) trait Pipeworkesque {
     fn location(&self) -> PipeworkLocation;
 
     fn volume(&self) -> f64;
+
+    fn length(&self) -> f64;
 
     fn calculate_cool_down_loss(&self, inside_temp: f64, outside_temp: f64) -> f64;
 }
@@ -75,13 +81,10 @@ impl PipeworkSimple {
             contents_properties,
         })
     }
-    
+
     fn calculate_volume(internal_diameter: f64, length: f64) -> f64 {
         let radius = internal_diameter / 2.;
-        return PI
-            * radius * radius
-            * length
-            * LITRES_PER_CUBIC_METRE as f64;
+        return PI * radius * radius * length * LITRES_PER_CUBIC_METRE as f64;
     }
 }
 
@@ -92,6 +95,10 @@ impl Pipeworkesque for PipeworkSimple {
 
     fn volume(&self) -> f64 {
         self.volume_litres
+    }
+
+    fn length(&self) -> f64 {
+        self.length_in_m
     }
 
     /// Calculates the total heat loss from a full pipe from demand temp to ambient
@@ -109,9 +116,8 @@ impl Pipeworkesque for PipeworkSimple {
 #[derive(Debug)]
 pub struct Pipework {
     simple_pipework: PipeworkSimple,
-    interior_surface_resistance: f64, // in K m / W
-    insulation_resistance: f64,       // in K m / W
-    external_surface_resistance: f64, // in K m / W
+    external_diameter_in_m: f64,
+    total_resistance: f64, // in K m / W
 }
 
 impl TryFrom<WaterPipework> for Pipework {
@@ -171,32 +177,27 @@ impl Pipework {
 
         let internal_htc = Self::get_internal_heat_transfer_coefficient(contents);
         let external_htc = Self::get_external_heat_transfer_coefficient(reflective);
-        let d_insulation_in_m = Self::calculate_insulated_diameter(external_diameter_in_m, insulation_thickness);
-        let interior_surface_resistance = Self::calculate_interior_surface_resistance(internal_diameter_in_m, internal_htc);
-        let insulation_resistance = Self::calculate_insulation_resistance(insulation_thermal_conductivity, external_diameter_in_m, d_insulation_in_m);
-        let external_surface_resistance = Self::calculate_external_surface_resistance(external_htc, d_insulation_in_m);
+        let d_insulation_in_m =
+            Self::calculate_insulated_diameter(external_diameter_in_m, insulation_thickness);
+        let interior_surface_resistance =
+            Self::calculate_interior_surface_resistance(internal_diameter_in_m, internal_htc);
+        let insulation_resistance = Self::calculate_insulation_resistance(
+            insulation_thermal_conductivity,
+            external_diameter_in_m,
+            d_insulation_in_m,
+        );
+        let external_surface_resistance =
+            Self::calculate_external_surface_resistance(external_htc, d_insulation_in_m);
+        let total_resistance =
+            interior_surface_resistance + insulation_resistance + external_surface_resistance;
+
+        // Note Python calculates __linear_thermal_transmittance here but it is never used
 
         Ok(Self {
             simple_pipework,
-            interior_surface_resistance,
-            insulation_resistance,
-            external_surface_resistance,
+            external_diameter_in_m,
+            total_resistance,
         })
-    }
-
-    /// Return the heat loss from the pipe for the current timestep (in W)
-    ///
-    /// Arguments:
-    /// * `inside_temp` - temperature of water (or air) inside the pipe, in degrees C
-    /// * `outside_temp` - temperature outside the pipe, in degrees C
-    pub fn heat_loss(&self, inside_temp: f64, outside_temp: f64) -> f64 {
-        // Calculate total thermal resistance
-        let total_resistance = self.interior_surface_resistance
-            + self.insulation_resistance
-            + self.external_surface_resistance;
-
-        // Calculate the heat loss for the current timestep, in W
-        (inside_temp - outside_temp) / total_resistance * self.simple_pipework.length_in_m
     }
 
     /// Get the internal heat transfer coefficient based on pipe contents.
@@ -234,7 +235,10 @@ impl Pipework {
     ///
     ///        Returns:
     ///            Interior surface resistance, in Km/W
-    fn calculate_interior_surface_resistance(internal_diameter_in_m: f64, internal_htc: f64) -> f64 {
+    fn calculate_interior_surface_resistance(
+        internal_diameter_in_m: f64,
+        internal_htc: f64,
+    ) -> f64 {
         1.0 / (internal_htc * PI * internal_diameter_in_m)
     }
 
@@ -246,7 +250,11 @@ impl Pipework {
     ///
     ///        Returns:
     ///            Insulation resistance, in Km/W
-    fn calculate_insulation_resistance(insulation_thermal_conductivity: f64, external_diameter: f64, d_insulation_in_m: f64) -> f64 {
+    fn calculate_insulation_resistance(
+        insulation_thermal_conductivity: f64,
+        external_diameter: f64,
+        d_insulation_in_m: f64,
+    ) -> f64 {
         // before (d_insulation_in_m / internal_diameter_in_m).ln() / (2f64 * PI * k_insulation);
         (d_insulation_in_m / external_diameter).ln() / (2. * PI * insulation_thermal_conductivity)
     }
@@ -263,28 +271,83 @@ impl Pipework {
         1f64 / (external_htc * PI * d_insulation_in_m)
     }
 
-    #[cfg(test)]
-    /// Calculates by how much the temperature of water in a full pipe will fall
-    /// over the timestep.
-    ///
-    /// Arguments:
-    /// * `inside_temp` - temperature of water (or air) inside the pipe, in degrees C
-    /// * `outside_temp` - temperature outside the pipe, in degrees C
-    pub fn temperature_drop(&self, inside_temp: f64, outside_temp: f64) -> f64 {
-        use crate::compare_floats::min_of_2;
-        use crate::core::units::{JOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
-        let heat_loss_kwh = (SECONDS_PER_HOUR as f64 * self.heat_loss(inside_temp, outside_temp))
-            / WATTS_PER_KILOWATT as f64; // heat loss for the one hour timestep in kWh
+    /// Return the c and n value equivalent and thermal mass for the pipework as if working like a emitter
+    fn c_n_equivalence(&self) -> (f64, f64, f64) {
+        // Calculate c and n values needed to give the same heat loss predicted by CIBSE Guide C
+        // using equations 3.101, 3.107 and 3.108. The following equations give a good fit through
+        // the data over the realistic working range of temperatures and pipework thicknesses used
+        // in dwellings derived from the more detailed CIBSE equations,
+        // outputting in the c and n format needed here.
 
-        min_of_2(
-            (heat_loss_kwh * JOULES_PER_KILOWATT_HOUR as f64)
-                / (self
-                    .simple_pipework
-                    .contents_properties
-                    .volumetric_heat_capacity()
-                    * self.volume()),
-            inside_temp - outside_temp,
-        )
+        let c =
+            self.length() * C_N_CALCULATION_FACTOR * self.external_diameter_in_m.pow(C_N_EXPONENT);
+        let n = N_CALCULATION_FACTOR * self.external_diameter_in_m.ln() + N_OFFSET;
+
+        let thermal_mass =
+            self.volume() * WATER.specific_heat_capacity() / JOULES_PER_KILOWATT_HOUR as f64;
+
+        // # TODO (from Python): Add thermal mass of pipe itself
+
+        return (c, n, thermal_mass);
+    }
+
+    /// Return the heat loss from the pipe for the current timestep
+    ///
+    /// Args:
+    ///     inside_temp    -- temperature of water inside the pipe, in degrees C
+    ///     outside_temp   -- temperature outside the pipe, in degrees C
+    ///
+    /// Returns:
+    ///     Heat loss in W
+    fn calculate_steady_state_heat_loss(&self, inside_temp: f64, outside_temp: f64) -> f64 {
+        (inside_temp - outside_temp) / (self.total_resistance) * self.length()
+    }
+
+    ///Calculate temperature drop of water in pipe over one timestep.
+    ///
+    ///    Args:
+    ///        inside_temp: Temperature of water inside the pipe, in degrees C
+    ///        outside_temp: Temperature outside the pipe, in degrees C
+    ///
+    ///    Returns:
+    ///        Temperature drop in degrees C (cannot exceed inside_temp - outside_temp)
+    fn calculate_temperature_drop(&self, inside_temp: f64, outside_temp: f64) -> f64 {
+        let heat_loss_kwh = self.convert_heat_loss_to_kwh(inside_temp, outside_temp);
+        let temp_drop = self.calculate_temperature_drop_from_heat_loss(heat_loss_kwh);
+        let max_possible_drop = inside_temp - outside_temp;
+
+        temp_drop.min(max_possible_drop)
+    }
+
+    //Convert steady state heat loss from watts to kilowatt-hours for one timestep.
+    //
+    //    Args:
+    //        inside_temp: Temperature of water inside the pipe, in degrees C
+    //        outside_temp: Temperature outside the pipe, in degrees C
+    //
+    //    Returns:
+    //        Heat loss in kWh for one hour timestep
+    fn convert_heat_loss_to_kwh(&self, inside_temp: f64, outside_temp: f64) -> f64 {
+        let heat_loss_watts = self.calculate_steady_state_heat_loss(inside_temp, outside_temp);
+        (SECONDS_PER_HOUR as f64 * heat_loss_watts) / WATTS_PER_KILOWATT as f64
+    }
+
+    /// Calculate temperature drop from heat loss using Q = C * m * ΔT.
+    ///
+    ///    Args:
+    ///        heat_loss_kwh: Heat loss in kWh
+    ///
+    ///    Returns:
+    ///        Temperature drop in degrees C
+    fn calculate_temperature_drop_from_heat_loss(&self, heat_loss_kwh: f64) -> f64 {
+        let volumetric_heat_capacity = self
+            .simple_pipework
+            .contents_properties
+            .volumetric_heat_capacity();
+
+        // ΔT = Q / (C * m)
+        (heat_loss_kwh * JOULES_PER_KILOWATT_HOUR as f64)
+            / (volumetric_heat_capacity * self.volume())
     }
 }
 
@@ -295,6 +358,10 @@ impl Pipeworkesque for Pipework {
 
     fn volume(&self) -> f64 {
         self.simple_pipework.volume()
+    }
+
+    fn length(&self) -> f64 {
+        self.simple_pipework.length()
     }
 
     fn calculate_cool_down_loss(&self, inside_temp: f64, outside_temp: f64) -> f64 {
@@ -331,76 +398,135 @@ mod tests {
     }
 
     #[rstest]
-    fn should_have_correct_interior_surface_resistance(pipework: Pipework) {
-        assert_relative_eq!(
-            pipework.interior_surface_resistance,
-            0.00849,
-            max_relative = 0.0005
-        );
-    }
-
-    #[rstest]
-    fn should_have_correct_insulation_resistance(pipework: Pipework) {
-        assert_relative_eq!(pipework.insulation_resistance, 6.08832, max_relative = 1e-4);
-    }
-
-    #[rstest]
-    fn should_have_correct_external_surface_resistance(pipework: Pipework) {
-        assert_relative_eq!(
-            pipework.external_surface_resistance,
-            0.30904,
-            max_relative = 1e-4
-        );
-    }
-
-    #[ignore = "work in progress - pipework migration"]
-    #[rstest]
-    fn should_have_correct_heat_loss(pipework: Pipework, simulation_time: SimulationTimeIterator) {
-        let temps_inside = [50.0, 51.0, 52.0, 52.0, 51.0, 50.0, 51.0, 52.0];
-        let temps_outside = [15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 21.0];
-        let expected_losses = [
-            5.18072, 5.18072, 5.18072, 5.03270, 4.73666, 4.44062, 4.44062, 4.58864,
-        ];
-        for (idx, _) in simulation_time.enumerate() {
-            assert_relative_eq!(
-                pipework.heat_loss(temps_inside[idx], temps_outside[idx]),
-                expected_losses[idx],
-                max_relative = 1e-4
-            );
-        }
-    }
-
-    #[rstest]
-    fn should_have_correct_temp_drop(pipework: Pipework, simulation_time: SimulationTimeIterator) {
-        let temps_inside = [50.0, 51.0, 52.0, 52.0, 51.0, 50.0, 51.0, 52.0];
-        let temps_outside = [15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 21.0];
-        let expected_drops = [35.0, 35.0, 35.0, 34.0, 32.0, 30.0, 30.0, 31.0];
-        for (idx, _) in simulation_time.enumerate() {
-            assert_relative_eq!(
-                pipework.temperature_drop(temps_inside[idx], temps_outside[idx]),
-                expected_drops[idx],
-                max_relative = 0.0005
-            );
-        }
-    }
-
-    #[rstest]
-    fn should_have_correct_cool_down_loss(
+    #[case(50.0, 15.0, 5.463755)]
+    #[case(51.0, 16.0, 5.463755)]
+    #[case(52.0, 17.0, 5.463755)]
+    #[case(52.0, 18.0, 5.307648)]
+    #[case(51.0, 19.0, 4.995433)]
+    #[case(50.0, 20.0, 4.683219)]
+    #[case(51.0, 21.0, 4.683219)]
+    #[case(52.0, 21.0, 4.839326)]
+    fn test_heat_loss(
         pipework: Pipework,
-        simulation_time: SimulationTimeIterator,
+        #[case] t_i: f64,
+        #[case] t_o: f64,
+        #[case] expected: f64,
     ) {
-        let temps_inside = [50.0, 51.0, 52.0, 52.0, 51.0, 50.0, 51.0, 52.0];
-        let temps_outside = [15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 21.0];
-        let expected_losses = [
-            0.01997, 0.01997, 0.01997, 0.01940, 0.01826, 0.01712, 0.01712, 0.01769,
-        ];
-        for (idx, _) in simulation_time.enumerate() {
-            assert_relative_eq!(
-                pipework.calculate_cool_down_loss(temps_inside[idx], temps_outside[idx]),
-                expected_losses[idx],
-                max_relative = 0.0005
-            );
-        }
+        let result = pipework.calculate_steady_state_heat_loss(t_i, t_o);
+        assert_relative_eq!(result, expected, epsilon = 1e-5);
+    }
+
+    #[rstest]
+    #[case(50.0, 15.0, 35.0)]
+    #[case(51.0, 16.0, 35.0)]
+    #[case(52.0, 17.0, 35.0)]
+    #[case(52.0, 18.0, 34.0)]
+    #[case(51.0, 19.0, 32.0)]
+    #[case(50.0, 20.0, 30.0)]
+    #[case(51.0, 21.0, 30.0)]
+    #[case(52.0, 21.0, 31.0)]
+    fn test_temp_drop(
+        pipework: Pipework,
+        #[case] t_i: f64,
+        #[case] t_o: f64,
+        #[case] expected: f64,
+    ) {
+        let result = pipework.calculate_temperature_drop(t_i, t_o);
+        assert_relative_eq!(result, expected, epsilon = 1e-5);
+    }
+
+    #[rstest]
+    #[case(50.0, 15.0, 0.01997)]
+    #[case(51.0, 16.0, 0.01997)]
+    #[case(52.0, 17.0, 0.01997)]
+    #[case(52.0, 18.0, 0.01940)]
+    #[case(51.0, 19.0, 0.01826)]
+    #[case(50.0, 20.0, 0.01712)]
+    #[case(51.0, 21.0, 0.01712)]
+    #[case(52.0, 21.0, 0.01769)]
+    fn test_cool_down_loss(
+        pipework: Pipework,
+        #[case] t_i: f64,
+        #[case] t_o: f64,
+        #[case] expected: f64,
+    ) {
+        let result = pipework.calculate_cool_down_loss(t_i, t_o);
+        assert_relative_eq!(result, expected, epsilon = 1e-5);
+    }
+
+    #[rstest]
+    #[case(2.0, 1.0)]
+    #[case(1.0, 1.0)]
+    #[case(0.5, 0.4)]
+    fn test_invalid_diameter_combinations(
+        #[case] internal_diameter: f64,
+        #[case] external_diameter: f64,
+    ) {
+        let result = Pipework::new(
+            PipeworkLocation::Internal,
+            internal_diameter,
+            external_diameter,
+            1.0,
+            0.035,
+            0.038,
+            false,
+            PipeworkContents::Water,
+        );
+
+        assert!(result.is_err());
+    }
+
+    // Not porting test_invalid_contents - impossible state in Rust implementation
+
+    // Not porting test_interior_surface_resistance_from_contents or test_external_surface_resistance_from_reflective because
+    // they test internal properties which are not accessible in this implementation
+
+    #[rstest]
+    fn test_c_n_equivalence(pipework: Pipework) {
+        let (c, n, thermal_mass) = pipework.c_n_equivalence();
+
+        let expected_c = 1.0 * 0.02716 * 0.027.pow(0.8254);
+        let expected_n = -0.001793 * 0.027f64.ln() + 1.245135;
+
+        let volume_litres = PI * (0.025 / 2.) * (0.025 / 2.) * 1.0 * LITRES_PER_CUBIC_METRE as f64;
+        let expected_thermal_mass =
+            volume_litres * WATER.specific_heat_capacity() / JOULES_PER_KILOWATT_HOUR as f64;
+
+        assert_relative_eq!(c, expected_c, epsilon = 1e-5);
+        assert_relative_eq!(n, expected_n, epsilon = 1e-5);
+        assert_relative_eq!(thermal_mass, expected_thermal_mass, epsilon = 1e-5);
+
+        // Test with a different pipework configuration to ensure formula works correctly
+        let pipework2 = Pipework::new(
+            PipeworkLocation::External,
+            0.050,
+            0.055,
+            2.0,
+            0.040,
+            0.025,
+            true,
+            PipeworkContents::Water,
+        )
+        .unwrap();
+
+        let (c2, n2, thermal_mass2) = pipework2.c_n_equivalence();
+
+        let expected_c2 = 2.0 * 0.02716 * 0.055.pow(0.8254);
+        let expected_n2 = -0.001793 * 0.055f64.ln() + 1.245135;
+        let volume_litres2 = PI * (0.050 / 2.) * (0.050 / 2.) * 2.0 * LITRES_PER_CUBIC_METRE as f64;
+        let expected_thermal_mass2 =
+            volume_litres2 * WATER.specific_heat_capacity() / JOULES_PER_KILOWATT_HOUR as f64;
+
+        assert_relative_eq!(c2, expected_c2, epsilon = 1e-5);
+        assert_relative_eq!(n2, expected_n2, epsilon = 1e-5);
+        assert_relative_eq!(thermal_mass2, expected_thermal_mass2, epsilon = 1e-5);
+    }
+
+    #[rstest]
+    fn test_heat_loss_increases_with_temperature_difference(pipework: Pipework) {
+        let loss_small = pipework.calculate_steady_state_heat_loss(50.0, 45.0); // ΔT = 5°C
+        let loss_large = pipework.calculate_steady_state_heat_loss(50.0, 20.0); // ΔT = 30°C
+        assert!(loss_large > loss_small);
     }
 
     #[fixture]
@@ -454,37 +580,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_volume_litres(
+    fn test_volume_litres(
         internal_simple_pipe: PipeworkSimple,
         external_simple_pipe: PipeworkSimple,
     ) {
-        assert_relative_eq!(
-            internal_simple_pipe.volume(),
-            1.227184630308513,
-            max_relative = 1e-7
-        );
-        assert_relative_eq!(
-            external_simple_pipe.volume(),
-            13.744467859455346,
-            max_relative = 1e-7
-        );
+        let volume_ratio = external_simple_pipe.volume() / internal_simple_pipe.volume();
+        let expected_ratio = (0.05 / 0.025).pow(2) * (7.0 / 2.5); // (2² × 2.8) = 11.2
+
+        assert_relative_eq!(volume_ratio, expected_ratio, epsilon = 1e-5);
     }
 
     #[rstest]
-    fn test_cool_down_loss(internal_simple_pipe: PipeworkSimple) {
-        assert_relative_eq!(
-            internal_simple_pipe.calculate_cool_down_loss(20.0, 10.0),
-            0.014262612481141163,
-            max_relative = 1e-7
-        );
-        assert_relative_eq!(
-            internal_simple_pipe.calculate_cool_down_loss(25.0, 30.0),
-            -0.007131306240570581,
-            max_relative = 1e-7
-        );
-    }
-
-    #[test]
     fn test_invalid_diameter() {
         assert!(Pipework::new(
             PipeworkLocation::Internal,
@@ -499,77 +605,32 @@ mod tests {
         .is_err());
     }
 
-    #[test]
-    fn test_interior_surface_resistance_from_contents() {
-        let pipework = Pipework::new(
-            PipeworkLocation::Internal,
-            1.,
-            2.,
-            1.,
-            1.,
-            1.,
-            false,
-            PipeworkContents::Water,
-        )
-        .unwrap();
-
-        assert_eq!(
-            pipework.interior_surface_resistance,
-            1. / (INTERNAL_HTC_WATER * PI)
+    #[rstest]
+    fn test_cool_down_loss_for_simple_pipework(internal_simple_pipe: PipeworkSimple) {
+        // Test case 1: Positive temperature difference (heat loss)
+        let loss_positive = internal_simple_pipe.calculate_cool_down_loss(20.0, 10.0);
+        assert!(
+            loss_positive > 0.,
+            "Heat loss should be positive when inside is hotter"
         );
 
-        let pipework = Pipework::new(
-            PipeworkLocation::Internal,
-            1.,
-            2.,
-            1.,
-            1.,
-            1.,
-            false,
-            PipeworkContents::Glycol25,
-        )
-        .unwrap();
-
-        assert_eq!(
-            pipework.interior_surface_resistance,
-            1. / (INTERNAL_HTC_GLYCOL25 * PI)
-        );
-    }
-
-    #[test]
-    fn test_external_surface_resistance_from_reflective() {
-        let pipework = Pipework::new(
-            PipeworkLocation::Internal,
-            1.,
-            2.,
-            1.,
-            1.,
-            1.,
-            false,
-            PipeworkContents::Water,
-        )
-        .unwrap();
-
-        assert_eq!(
-            pipework.external_surface_resistance,
-            1. / (EXTERNAL_NONREFLECTIVE_HTC * PI * 4.)
+        // Test case 2: Negative temperature difference (heat gain)
+        let loss_negative = internal_simple_pipe.calculate_cool_down_loss(25.0, 30.0);
+        assert!(
+            loss_negative < 0.,
+            "Heat gain should be negative when outside is hotter"
         );
 
-        let pipework = Pipework::new(
-            PipeworkLocation::Internal,
-            1.,
-            2.,
-            1.,
-            1.,
-            1.,
-            true,
-            PipeworkContents::Water,
-        )
-        .unwrap();
+        // Test case 3: Zero temperature difference (no heat transfer)
+        let loss_zero = internal_simple_pipe.calculate_cool_down_loss(25.0, 25.0);
+        assert_relative_eq!(loss_zero, 0., epsilon = 1e-10); // "No heat transfer when temperatures are equal"
 
-        assert_eq!(
-            pipework.external_surface_resistance,
-            1. / (EXTERNAL_REFLECTIVE_HTC * PI * 4.)
-        );
+        // # Test that energy loss scales with temperature difference
+        // Doubling the temperature difference should roughly double the energy loss
+
+        let loss_small = internal_simple_pipe.calculate_cool_down_loss(30.0, 20.0); // 10°C diff
+        let loss_large = internal_simple_pipe.calculate_cool_down_loss(40.0, 20.0); // 20°C diff
+
+        assert_relative_eq!(loss_large, 2.0 * loss_small, epsilon = 1e-2) // "Energy loss should scale with temperature difference"
     }
 }

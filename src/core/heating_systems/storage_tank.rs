@@ -1415,24 +1415,18 @@ impl StorageTank {
             if input_energy_adj > 0. {
                 for pipework_data in primary_pipework_lst {
                     // Primary losses for the timestep calculated from temperature difference
-                    let primary_pipework_losses_w = pipework_data.heat_loss(
-                        setpnt_max,
-                        self.temp_surrounding_primary_pipework(
-                            pipework_data,
-                            simulation_time_iteration,
-                        ),
-                    );
 
+                    let primary_pipework_losses_w = todo!("pipework_data.heat_loss function does not exist in v1.0.a1. Migrate storage tank to match.");
                     // Check if pipework location is internal
-                    let location = pipework_data.location();
+                    // let location = pipework_data.location();
 
-                    if matches!(location, PipeworkLocation::Internal) {
-                        primary_gains_w += primary_pipework_losses_w
-                    }
+                    // if matches!(location, PipeworkLocation::Internal) {
+                    //     primary_gains_w += primary_pipework_losses_w
+                    // }
 
-                    primary_pipework_losses_kwh += primary_pipework_losses_w
-                        * self.simulation_timestep
-                        / WATTS_PER_KILOWATT as f64
+                    // primary_pipework_losses_kwh += primary_pipework_losses_w
+                    //     * self.simulation_timestep
+                    //     / WATTS_PER_KILOWATT as f64
                 }
             }
 
