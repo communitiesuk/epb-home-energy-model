@@ -237,12 +237,13 @@ impl EventApplianceGains {
         // may occur in the future rather than at the time specified
         let usage_event_count = self.usage_events.read().len();
         for _event_idx in 0..usage_event_count {
-            let event = if self.usage_events.read()[0].start <= simtime.current_hour() as f64 {
-                self.usage_events.write().remove(0)
-            } else {
-                // no events to process yet
-                break;
-            };
+            let event =
+                if self.usage_events.read()[0].start.floor() <= simtime.current_hour() as f64 {
+                    self.usage_events.write().remove(0)
+                } else {
+                    // no events to process yet
+                    break;
+                };
             let (start_idx, power_timesteps) = self.process_event(&event)?;
             for (i, power) in power_timesteps.iter().enumerate() {
                 let t_idx = min_of_2(start_idx + i, self.simulation_timestep_count - 1);
@@ -1068,6 +1069,46 @@ mod tests {
             );
 
             let expected = [0., 0., 0., 0., 0., 90., 90., 45., 0., 0., 0., 0.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
+
+        #[test]
+        /// Test that the gains begin at a whole timestep
+        fn test_single_appliance_half_timestep_before() {
+            let zone_area = 10.;
+            let mut appliance_data = appliance_data();
+            appliance_data
+                .as_object_mut()
+                .unwrap()
+                .insert("Standby".to_string(), json!(0.));
+            appliance_data
+                .as_object_mut()
+                .unwrap()
+                .insert("gains_fraction".to_string(), json!(1.));
+            appliance_data.as_object_mut().unwrap().insert(
+                "Events".to_string(),
+                Value::Array(vec![
+                    json!({"start": 4.5, "duration": 2., "demand_W": 900.0}),
+                ]),
+            );
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 90., 90., 0., 0., 0., 0., 0., 0.];
             for iteration in simulation_time_iterator() {
                 assert_eq!(
                     event_appliance_gains
