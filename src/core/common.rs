@@ -37,4 +37,16 @@ impl WaterSourceWithTemperature {
             },
         }
     }
+    
+    // NOTE added for use by storage tank
+    // TODO do we need simulation time?
+    pub(crate) fn get_temp_cold_water(&self, _volume_needed: f64) -> Vec<(f64, f64)> {
+        todo!()
+    }
+
+    // NOTE added for use by storage tank
+    pub(crate) fn draw_off_water(&self, volume_needed: f64) -> Vec<(f64, f64)> {
+        // this seems to just be a proxy for the above method
+        self.get_temp_cold_water(volume_needed)
+    }
 }

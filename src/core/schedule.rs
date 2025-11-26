@@ -61,6 +61,9 @@ pub struct TypedScheduleEvent {
     pub(crate) volume: Option<f64>,
     pub(crate) warm_volume: Option<f64>,
     pub(crate) pipework_volume: Option<f64>,
+
+    // NOTE added for storage_tank migration
+    pub(crate) volume_hot: f64,
 }
 
 impl TypedScheduleEvent {
