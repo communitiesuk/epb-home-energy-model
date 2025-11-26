@@ -6,7 +6,6 @@ use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::AIR;
-use crate::core::solvers::fsolve;
 use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 use crate::core::units::{
     celsius_to_kelvin, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
@@ -197,14 +196,11 @@ fn convert_mass_flow_rate_to_volume_flow_rate(qm: f64, temperature: f64, p_a_alt
 ///
 ///     Args:
 ///     * `terrain_class` - The terrain type ('OpenWater', 'OpenField', 'Suburban', 'Urban').
-///     * `relative_airflow_path_height` - Height of airflow path relative to the ground (m).
+///     * `z` - Height of airflow path relative to the ground (m).
 ///
 ///    Returns:
 ///        float: Calculated roughness coefficient CR.
-fn terrain_class_to_roughness_coeff(
-    terrain: &TerrainClass,
-    relative_airflow_path_height: f64,
-) -> f64 {
+fn terrain_class_to_roughness_coeff(terrain: &TerrainClass, z: f64) -> f64 {
     let (kr, z0, zmin) = match terrain {
         TerrainClass::OpenWater => (0.17, 0.01, 2.),
         TerrainClass::OpenField => (0.19, 0.05, 4.),
@@ -213,7 +209,7 @@ fn terrain_class_to_roughness_coeff(
     };
 
     // ensure z is at least zmin
-    let z = relative_airflow_path_height.max(zmin);
+    let z = z.max(zmin);
 
     // calculate the roughness coefficient
     kr * (z / z0).ln()
@@ -342,7 +338,7 @@ fn get_facade_direction(
 fn get_pressure_coefficient_from_pitch_and_orientation(
     f_cross: bool,
     shield_class: VentilationShieldClass,
-    relative_airflow_path_height: f64,
+    z: f64,
     wind_direction: f64,
     orientation: Option<f64>,
     pitch: f64,
@@ -351,7 +347,7 @@ fn get_pressure_coefficient_from_pitch_and_orientation(
     Ok(get_pressure_coefficient(
         f_cross,
         shield_class,
-        relative_airflow_path_height,
+        z,
         facade_direction,
     ))
 }
@@ -360,7 +356,7 @@ fn get_pressure_coefficient_from_pitch_and_orientation(
 /// Arguments:
 /// * `f_cross` - boolean, dependent on if cross ventilation is possible or not
 /// * `shield_class` - indicates exposure to wind
-/// * `relative_airflow_path_height` - height of air flow path relative to ground (m)
+/// * `z` - height of air flow path relative to ground (m)
 /// * `wind_direction` - direction the wind is blowing (degrees)
 /// * `orientation` - orientation of the facade (degrees)
 /// * `pitch` - pitch of the facade (degrees)
@@ -368,11 +364,11 @@ fn get_pressure_coefficient_from_pitch_and_orientation(
 fn get_pressure_coefficient(
     f_cross: bool,
     shield_class: VentilationShieldClass,
-    relative_airflow_path_height: f64,
+    z: f64,
     facade_direction: FacadeDirection,
 ) -> f64 {
     if f_cross {
-        if relative_airflow_path_height < 15. {
+        if z < 15. {
             match shield_class {
                 VentilationShieldClass::Open => match facade_direction {
                     FacadeDirection::WindSeg1 => 0.7,
@@ -412,7 +408,7 @@ fn get_pressure_coefficient(
         // We preserve the split by exposure type here, for future update to values.
         // Coefficient data currently has only a single value for (flat) roofs
         // and so that is applied here to all roof pitches for now.
-        } else if (15. ..50.).contains(&relative_airflow_path_height) {
+        } else if (15. ..50.).contains(&z) {
             match shield_class {
                 VentilationShieldClass::Open => match facade_direction {
                     FacadeDirection::WindSeg1 => 0.49,
@@ -986,40 +982,40 @@ struct Leaks {
 
 impl Leaks {
     /// Arguments:
-    /// * `h_path` - mid-height of the air flow path relative to ventilation zone floor level
+    /// * `midheight` - mid-height of the air flow path relative to ventilation zone floor level
     /// * `delta_p_leak_ref` - Reference pressure difference (From pressure test e.g. blower door = 50Pa)
     /// * `qv_delta_p_leak_ref` - flow rate through
     /// * `facade_direction` - The direction of the facade the leak is on.
-    /// * `a_roof` - Surface area of the roof of the ventilation zone (m2)
-    /// * `a_facades` - Surface area of facades (m2)
-    /// * `a_leak` - Reference area of the envelope airtightness index qv_delta_p_leak_ref (depends on national context)
+    /// * `area_roof` - Surface area of the roof of the ventilation zone (m2)
+    /// * `area_facades` - Surface area of facades (m2)
+    /// * `area_leak` - Reference area of the envelope airtightness index qv_delta_p_leak_ref (depends on national context)
     /// * `altitude` - altitude of dwelling above sea level (m)
     /// * `ventilation_zone_base_height` - Base height of the ventilation zone relative to ground (m)
     ///
     /// Based on Section 6.4.3.6 Airflow through leaks from BS EN 16798-7.
     //
     fn new(
-        h_path: f64,
+        midheight: f64,
         delta_p_leak_ref: f64,
         qv_delta_p_leak_ref: f64,
         facade_direction: FacadeDirection,
-        a_roof: f64,
-        a_facades: f64,
-        a_leak: f64,
+        area_roof: f64,
+        area_facades: f64,
+        area_leak: f64,
         altitude: f64,
         ventilation_zone_base_height: f64,
     ) -> Self {
         Self {
-            h_path,
+            h_path: midheight,
             delta_p_leak_ref,
-            a_roof,
-            a_facades,
-            a_leak,
+            a_roof: area_roof,
+            a_facades: area_facades,
+            a_leak: area_leak,
             qv_delta_p_leak_ref,
             facade_direction,
             _altitude: altitude,
             p_a_alt: adjust_air_density_for_altitude(altitude),
-            z: h_path + ventilation_zone_base_height,
+            z: midheight + ventilation_zone_base_height,
         }
     }
 
@@ -1043,7 +1039,7 @@ impl Leaks {
         if !is_wind_segment(self.facade_direction) {
             // leak in roof
             let c_leak_roof = c_leak * self.a_roof / (self.a_facades + self.a_roof);
-            return c_leak_roof;
+            return c_leak_roof; // Table B.12
         }
 
         // Leakage coefficient of facades, estimated to be proportional to ratio
@@ -1137,86 +1133,86 @@ pub(crate) struct AirTerminalDevices {
     delta_p_atd_ref: f64,
     // NOTE - in Python we have c_atd_path as an instance variable but here we calculate it when needed instead
 }
-
-// remove following directive when things start referencing AirTerminalDevices (upstream is not fully implemented as of 0.30)
-#[allow(dead_code)]
-impl AirTerminalDevices {
-    /// Construct a AirTerminalDevices object
-    /// Arguments:
-    /// a_atd -- equivalent area of the air terminal device (m2)
-    /// delta_p_atd_ref -- Reference pressure difference for an air terminal device (Pa)
-    /// Method: Based on Section 6.4.3.2.2 from BS EN 16798-7
-    fn new(a_atd: f64, delta_p_atd_ref: f64) -> Self {
-        Self {
-            c_d_atd: 0.6, // Discharge coefficient for air terminal devices based on B.3.2.1
-            n_atd: 0.5,   // Flow exponent of air terminal devices based on B.3.2.2
-            a_atd,
-            delta_p_atd_ref,
-        }
-    }
-
-    /// The airflow coefficient of the ATD is calculated
-    /// from the equivalent area A_vent value, according to
-    /// EN 13141-1 and EN 13141-2.
-    /// Equation 26 from BS EN 16798-7.
-    fn calculate_flow_coeff_for_atd(&self) -> f64 {
-        // NOTE: The standard does not define what the below 3600 and 10000 are.
-        (3600. / 10000.)
-            * self.c_d_atd
-            * self.a_atd
-            * (2. / p_a_ref()).powf(0.5)
-            * (1. / self.delta_p_atd_ref).powf(self.n_atd - 0.5)
-    }
-
-    /// The pressure loss at internal air terminal devices is calculated from
-    /// the total air flow rate passing through the device.
-    /// Equation 25 from BS EN 16798-7.
-    /// Solving for qv_pdu.
-    /// Arguments:
-    /// qv_pdu - volume flow rate through passive and hybrid ducts.
-    fn calculate_pressure_difference_atd(&self, qv_pdu: f64) -> f64 {
-        let c_atd_path = self.calculate_flow_coeff_for_atd();
-
-        -(f64::from(sign(qv_pdu))) * (qv_pdu.abs() / c_atd_path).powf(1. / self.n_atd)
-    }
-}
-
-/// An object to represent Cowls
-// remove following directive when something references Cowls type
-#[allow(dead_code)]
-struct Cowls {
-    c_p_cowl_roof: f64,
-    height: f64,
-    // NOTE - in Python we have delta_cowl_height as an instance variable but here we calculate it when needed from the height
-}
-
-// remove following directive when something references Cowls type
-#[allow(dead_code)]
-impl Cowls {
-    /// Construct a Cowls object
-    /// Arguments:
-    /// height - height Between the top of the roof and the roof outlet in m (m)
-    fn new(height: f64) -> Self {
-        Self {
-            c_p_cowl_roof: 0., // Default B.3.3.5
-            height,
-        }
-    }
-
-    /// Interpreted Table B.9 from BS EN 16798-7
-    /// Get values for delta_C_cowl_height.
-    /// Arguments:
-    /// height - height Between the top of the roof and the roof outlet in m (m)
-    fn get_delta_cowl_height(&self) -> f64 {
-        if self.height < 0.5 {
-            -0.0
-        } else if (0.5..=1.).contains(&self.height) {
-            -0.1
-        } else {
-            0.2
-        }
-    }
-}
+// TODO (from Python) uncomment when re-implementing ATDs
+// // remove following directive when things start referencing AirTerminalDevices (upstream is not fully implemented as of 0.30)
+// #[allow(dead_code)]
+// impl AirTerminalDevices {
+//     /// Construct a AirTerminalDevices object
+//     /// Arguments:
+//     /// a_atd -- equivalent area of the air terminal device (m2)
+//     /// delta_p_atd_ref -- Reference pressure difference for an air terminal device (Pa)
+//     /// Method: Based on Section 6.4.3.2.2 from BS EN 16798-7
+//     fn new(a_atd: f64, delta_p_atd_ref: f64) -> Self {
+//         Self {
+//             c_d_atd: 0.6, // Discharge coefficient for air terminal devices based on B.3.2.1
+//             n_atd: 0.5,   // Flow exponent of air terminal devices based on B.3.2.2
+//             a_atd,
+//             delta_p_atd_ref,
+//         }
+//     }
+//
+//     /// The airflow coefficient of the ATD is calculated
+//     /// from the equivalent area A_vent value, according to
+//     /// EN 13141-1 and EN 13141-2.
+//     /// Equation 26 from BS EN 16798-7.
+//     fn calculate_flow_coeff_for_atd(&self) -> f64 {
+//         // NOTE: The standard does not define what the below 3600 and 10000 are.
+//         (3600. / 10000.)
+//             * self.c_d_atd
+//             * self.a_atd
+//             * (2. / p_a_ref()).powf(0.5)
+//             * (1. / self.delta_p_atd_ref).powf(self.n_atd - 0.5)
+//     }
+//
+//     /// The pressure loss at internal air terminal devices is calculated from
+//     /// the total air flow rate passing through the device.
+//     /// Equation 25 from BS EN 16798-7.
+//     /// Solving for qv_pdu.
+//     /// Arguments:
+//     /// qv_pdu - volume flow rate through passive and hybrid ducts.
+//     fn calculate_pressure_difference_atd(&self, qv_pdu: f64) -> f64 {
+//         let c_atd_path = self.calculate_flow_coeff_for_atd();
+//
+//         -(f64::from(sign(qv_pdu))) * (qv_pdu.abs() / c_atd_path).powf(1. / self.n_atd)
+//     }
+// }
+//
+// /// An object to represent Cowls
+// // remove following directive when something references Cowls type
+// #[allow(dead_code)]
+// struct Cowls {
+//     c_p_cowl_roof: f64,
+//     height: f64,
+//     // NOTE - in Python we have delta_cowl_height as an instance variable but here we calculate it when needed from the height
+// }
+//
+// // remove following directive when something references Cowls type
+// #[allow(dead_code)]
+// impl Cowls {
+//     /// Construct a Cowls object
+//     /// Arguments:
+//     /// height - height Between the top of the roof and the roof outlet in m (m)
+//     fn new(height: f64) -> Self {
+//         Self {
+//             c_p_cowl_roof: 0., // Default B.3.3.5
+//             height,
+//         }
+//     }
+//
+//     /// Interpreted Table B.9 from BS EN 16798-7
+//     /// Get values for delta_C_cowl_height.
+//     /// Arguments:
+//     /// height - height Between the top of the roof and the roof outlet in m (m)
+//     fn get_delta_cowl_height(&self) -> f64 {
+//         if self.height < 0.5 {
+//             -0.0
+//         } else if (0.5..=1.).contains(&self.height) {
+//             -0.1
+//         } else {
+//             0.2
+//         }
+//     }
+// }
 
 /// An object to represent CombustionAppliances
 #[derive(Clone, Copy, Debug)]
@@ -1249,8 +1245,10 @@ impl CombustionAppliances {
     /// Calculate additional air flow rate required for the operation of
     /// combustion appliance q_v_comb.
     /// Arguments:
-    /// f_op_comp --  Operation requirement signal (combustion appliance) (0 =  OFF ; 1 = ON)
-    /// p_h_fi -- Combustion appliance heating fuel input power (kW)
+    ///     f_op_comp --  Operation requirement signal (combustion appliance) (0 =  OFF ; 1 = ON)
+    ///     p_h_fi -- Combustion appliance heating fuel input power (kW)
+    /// Returns:
+    ///     q_v_in_through_comb, q_v_out_through_comb
     fn calculate_air_flow_req_for_comb_appliance(&self, f_op_comp: f64, p_h_fi: f64) -> (f64, f64) {
         // TODO (from the Python) flue is considered as vertical passive duct, standard formulas in CIBSE guide.
         let q_v_in_through_comb = 0.; // (37)
@@ -1703,56 +1701,57 @@ impl InfiltrationVentilation {
             .collect()
     }
 
-    /// Implicit solver for qv_pdu
-    fn calculate_qv_pdu(
-        &self,
-        qv_pdu: f64,
-        p_z_ref: f64,
-        t_z: f64,
-        t_e: f64,
-        h_z: f64,
-    ) -> anyhow::Result<f64> {
-        let func = |qv_pdu, [p_z_ref, t_z, h_z]: [f64; 3]| {
-            Ok(self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, t_e, h_z))
-        };
-
-        fsolve(func, qv_pdu, [p_z_ref, t_z, h_z]) // returns qv_pdu
-    }
-
-    /// Implicit formula solving for qv_pdu as unknown.
-    /// Equation 30 from BS EN 16798-7
-    /// Arguments:
-    /// qv_pdu -- volume flow rate from passive and hybrid ducts (m3/h)
-    /// p_z_ref -- internal reference pressure (Pa)
-    /// T_z -- thermal zone temperature (K)
-    /// h_z -- height of ventilation zone (m)
-    fn implicit_formula_for_qv_pdu(
-        &self,
-        qv_pdu: f64,
-        p_z_ref: f64,
-        t_z: f64,
-        t_e: f64,
-        h_z: f64,
-    ) -> f64 {
-        let external_air_density = air_density_at_temp(t_e, self.p_a_alt);
-        let zone_air_density = air_density_at_temp(t_z, self.p_a_alt);
-
-        // TODO (from Python) Standard isn't clear if delta_p_ATD can be totalled or not.
-        let delta_p_atd_list: Vec<f64> = self
-            .air_terminal_devices
-            .iter()
-            .map(|atd| atd.calculate_pressure_difference_atd(qv_pdu))
-            .collect();
-
-        let delta_p_atd: f64 = delta_p_atd_list.iter().sum();
-
-        // Stack effect in passive and hybrid duct. As there is no air transfer
-        // between levels of the ventilation zone Equation B.1 is used.
-        let h_pdu_stack = h_z + 2.;
-
-        // TODO (from Python) include delta_p_dpu and delta_p_cowl in the return.
-        delta_p_atd - p_z_ref - h_pdu_stack * G * (external_air_density - zone_air_density)
-    }
+    // // TODO (from Python) uncomment when re-implementing ATDs
+    // /// Implicit solver for qv_pdu
+    // fn calculate_qv_pdu(
+    //     &self,
+    //     qv_pdu: f64,
+    //     p_z_ref: f64,
+    //     t_z: f64,
+    //     t_e: f64,
+    //     h_z: f64,
+    // ) -> anyhow::Result<f64> {
+    //     let func = |qv_pdu, [p_z_ref, t_z, h_z]: [f64; 3]| {
+    //         Ok(self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, t_e, h_z))
+    //     };
+    //
+    //     fsolve(func, qv_pdu, [p_z_ref, t_z, h_z]) // returns qv_pdu
+    // }
+    //
+    // /// Implicit formula solving for qv_pdu as unknown.
+    // /// Equation 30 from BS EN 16798-7
+    // /// Arguments:
+    // /// qv_pdu -- volume flow rate from passive and hybrid ducts (m3/h)
+    // /// p_z_ref -- internal reference pressure (Pa)
+    // /// T_z -- thermal zone temperature (K)
+    // /// h_z -- height of ventilation zone (m)
+    // fn implicit_formula_for_qv_pdu(
+    //     &self,
+    //     qv_pdu: f64,
+    //     p_z_ref: f64,
+    //     t_z: f64,
+    //     t_e: f64,
+    //     h_z: f64,
+    // ) -> f64 {
+    //     let external_air_density = air_density_at_temp(t_e, self.p_a_alt);
+    //     let zone_air_density = air_density_at_temp(t_z, self.p_a_alt);
+    //
+    //     // TODO (from Python) Standard isn't clear if delta_p_ATD can be totalled or not.
+    //     let delta_p_atd_list: Vec<f64> = self
+    //         .air_terminal_devices
+    //         .iter()
+    //         .map(|atd| atd.calculate_pressure_difference_atd(qv_pdu))
+    //         .collect();
+    //
+    //     let delta_p_atd: f64 = delta_p_atd_list.iter().sum();
+    //
+    //     // Stack effect in passive and hybrid duct. As there is no air transfer
+    //     // between levels of the ventilation zone Equation B.1 is used.
+    //     let h_pdu_stack = h_z + 2.;
+    //
+    //     // TODO (from Python) include delta_p_dpu and delta_p_cowl in the return.
+    //     delta_p_atd - p_z_ref - h_pdu_stack * G * (external_air_density - zone_air_density)
+    // }
 
     /// The root scalar function will iterate until it finds a value of p_z_ref
     /// that satisfies the mass balance equation.
