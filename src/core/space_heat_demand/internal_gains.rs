@@ -1278,5 +1278,279 @@ mod tests {
                 );
             }
         }
+
+        #[test]
+        /// Test that no load shifting occurs when loadshifting isn't set
+        fn test_loadshifting_disabled() {
+            let zone_area = 10.;
+            let appliance_data = json!({
+                "EnergySupply": "mains elec",
+                "start_day": 0,
+                "time_series_step": 1.,
+                "gains_fraction": 1.,
+
+                "Standby": 0,
+                "Events": [{"start": 5., "duration": 2., "demand_W": 900.0}, {"start": 6., "duration": 2, "demand_W": 900.0}],
+            });
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 0., 90., 180., 90., 0., 0., 0., 0.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
+
+        #[test]
+        /// Test that gains past the end of the simulation are assigned to the last timestep
+        fn test_past_end_of_simulation() {
+            let zone_area = 10.;
+            let appliance_data = json!({
+                "EnergySupply": "mains elec",
+                "start_day": 0,
+                "time_series_step": 1.,
+                "gains_fraction": 1.,
+                "loadshifting": {
+                    "demand_limit_weighted": 0,
+                    "power_timeseries": [100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100.],
+                    "max_shift_hrs": 1,
+                    "weight": "Tariff",
+                    "weight_timeseries": [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.],
+                },
+                "Standby": 0,
+                "Events": [{"start": 8., "duration": 5., "demand_W": 100.0}],
+            });
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 0., 0., 0., 0., 10., 10., 10., 20.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
+
+        #[test]
+        /// Test that load shifting occurs with a demand_limit_weighted set
+        fn test_demand_limit() {
+            let zone_area = 10.;
+            let appliance_data = json!({
+                "EnergySupply": "mains elec",
+                "start_day": 0,
+                "time_series_step": 1.,
+                "gains_fraction": 1.,
+                "loadshifting": {
+                    "demand_limit_weighted": 1000,
+                    "power_timeseries": [100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100.],
+                    "max_shift_hrs": 10,
+                    "weight": "Tariff",
+                    "weight_timeseries": [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.],
+                },
+                "Standby": 0,
+                "Events": [{"start": 5., "duration": 2., "demand_W": 900.0}, {"start": 6., "duration": 2., "demand_W": 900.0}],
+            });
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 0., 90., 90., 90., 90., 0., 0., 0.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
+
+        #[test]
+        /// Test that load shifting occurs with the larger demand first
+        fn test_demand_limit_with_larger_event_first() {
+            let zone_area = 10.;
+            let appliance_data = json!({
+                "EnergySupply": "mains elec",
+                "start_day": 0,
+                "time_series_step": 1.,
+                "gains_fraction": 1.,
+                "loadshifting": {
+                    "demand_limit_weighted": 1000,
+                    "power_timeseries": [100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100.],
+                    "max_shift_hrs": 10,
+                    "weight": "Tariff",
+                    "weight_timeseries": [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.],
+                },
+                "Standby": 0,
+                "Events": [{"start": 5., "duration": 2., "demand_W": 900.0}, {"start": 6., "duration": 2., "demand_W": 800.0}],
+            });
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 0., 90., 90., 80., 80., 0., 0., 0.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
+
+        #[test]
+        /// Test that load shifting does not occur with the smaller demand first
+        fn test_demand_limit_with_larger_event_last() {
+            let zone_area = 10.;
+            let appliance_data = json!({
+                "EnergySupply": "mains elec",
+                "start_day": 0,
+                "time_series_step": 1.,
+                "gains_fraction": 1.,
+                "loadshifting": {
+                    "demand_limit_weighted": 1000,
+                    "power_timeseries": [100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100.],
+                    "max_shift_hrs": 10,
+                    "weight": "Tariff",
+                    "weight_timeseries": [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.],
+                },
+                "Standby": 0,
+                "Events": [{"start": 5., "duration": 2., "demand_W": 800.0}, {"start": 6., "duration": 2., "demand_W": 900.0}],
+            });
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 0., 80., 170., 90., 0., 0., 0., 0.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
+
+        #[test]
+        /// Test that the load shifting does not occur with a large demand_limit_weighted
+        fn test_large_demand_limit() {
+            let zone_area = 10.;
+            let appliance_data = json!({
+                "EnergySupply": "mains elec",
+                "start_day": 0,
+                "time_series_step": 1.,
+                "gains_fraction": 1.,
+                "loadshifting": {
+                    "demand_limit_weighted": 20000,
+                    "power_timeseries": [100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100.],
+                    "max_shift_hrs": 10,
+                    "weight": "Tariff",
+                    "weight_timeseries": [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.],
+                },
+                "Standby": 0,
+                "Events": [{"start": 5., "duration": 2., "demand_W": 900.0}, {"start": 6., "duration": 2., "demand_W": 800.0}],
+            });
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 0., 90., 170., 80., 0., 0., 0., 0.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
+
+        #[test]
+        /// Test that the load shifting does not occur with negative weight_timeseries
+        fn test_negative_weights() {
+            let zone_area = 10.;
+            let appliance_data = json!({
+                "EnergySupply": "mains elec",
+                "start_day": 0,
+                "time_series_step": 1.,
+                "gains_fraction": 1.,
+                "loadshifting": {
+                    "demand_limit_weighted": 100,
+                    "power_timeseries": [100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100.],
+                    "max_shift_hrs": 10,
+                    "weight": "Tariff",
+                    "weight_timeseries": [-1., -1., -1., -1., -1., -1., -1., -1., -1., -1., -1., -1.],
+                },
+                "Standby": 0,
+                "Events": [{"start": 5., "duration": 2., "demand_W": 900.0}, {"start": 6., "duration": 2., "demand_W": 800.0}],
+            });
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 0., 90., 170., 80., 0., 0., 0., 0.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
     }
 }
