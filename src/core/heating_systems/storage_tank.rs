@@ -122,8 +122,9 @@ pub struct StorageTank {
     temp_average_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
     temp_average_drawoff_volweighted: AtomicF64, // In Python this is created from inside extract_hot_water()
     total_volume_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
-    ambient_temperature: f64,        // TODO should these be AtomicF64
-    previous_event_time_end: f64,
+    ambient_temperature: f64,
+    pipework_primary_gains_for_timestep: f64, // TODO do we need this?
+    previous_event_time_end: f64
 }
 
 #[derive(Debug)]
@@ -168,10 +169,8 @@ impl StorageTank {
     ) -> anyhow::Result<Self> {
         let q_std_ls_ref = losses;
         let ambient_temperature = ambient_temperature.unwrap_or(DEFAULT_AMBIENT_TEMPERATURE);
-        let pipework_primary_gains_for_timestep = pipework_primary_gains_for_timestep
-            .unwrap_or(DEFAULT_PIPEWORK_PRIMARY_GAINS_FOR_TIMESTEP);
-        let previous_event_time_end =
-            previous_event_time_end.unwrap_or(DEFAULT_PREVIOUS_EVENT_TIME_END);
+        let pipework_primary_gains_for_timestep = pipework_primary_gains_for_timestep.unwrap_or(DEFAULT_PIPEWORK_PRIMARY_GAINS_FOR_TIMESTEP);
+        let previous_event_time_end = previous_event_time_end.unwrap_or(DEFAULT_PREVIOUS_EVENT_TIME_END);
 
         let volume_total_in_litres = volume;
         let number_of_volumes = number_of_volumes.unwrap_or(4);
@@ -603,7 +602,6 @@ impl StorageTank {
             new_temps[i] = volume_weighted_temperature / total_volume;
             remaining_vols[i] = total_volume;
         }
-
         (new_temps, flag_rearrange_layers)
     }
 
@@ -1243,8 +1241,7 @@ impl StorageTank {
 
         // Initialize the unmet and met energies
         let mut _energy_withdrawn = 0.0;
-        self.temp_average_drawoff_volweighted
-            .store(0.0, Ordering::SeqCst);
+        self.temp_average_drawoff_volweighted.store(0.0, Ordering::SeqCst);
         self.total_volume_drawoff.store(0.0, Ordering::SeqCst);
 
         let list_temp_vol = self
@@ -1332,7 +1329,6 @@ impl StorageTank {
                 / self.total_volume_drawoff.load(Ordering::SeqCst),
             Ordering::SeqCst,
         );
-
         // Determine the new temperature distribution after displacement
         let (mut new_temp_distribution, flag_rearrange_layers) =
             self.calc_temps_after_extraction(remaining_vols, simulation_time_iteration);
