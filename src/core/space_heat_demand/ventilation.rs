@@ -3852,9 +3852,22 @@ mod tests {
             None,
             Some(180.),
             Some(90.),
-            Some(30.),
+            Some(3.),
             1.,
         )
+    }
+
+    #[rstest]
+    fn test_mvhr_positions(mechanical_ventilation: MechanicalVentilation) {
+        assert_eq!(mechanical_ventilation.orientation_intake.unwrap(), 180.);
+        assert_eq!(mechanical_ventilation.pitch_intake.unwrap(), 90.);
+        assert_eq!(mechanical_ventilation.h_path_intake.unwrap(), 3.);
+        assert_eq!(mechanical_ventilation.z_intake.unwrap(), 6.); // 3 + 3
+
+        assert_eq!(mechanical_ventilation.orientation_exhaust, 0.);
+        assert_eq!(mechanical_ventilation.pitch_exhaust, 90.);
+        assert_eq!(mechanical_ventilation.h_path_exhaust, 2.);
+        assert_eq!(mechanical_ventilation.z_exhaust, 5.); // 2 + 3
     }
 
     #[rstest]
@@ -3869,10 +3882,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calc_req_oda_flow_rates_at_atds(mechanical_ventilation: MechanicalVentilation) {
+    fn test_calc_req_oda_flow_rates_at_atds(mut mechanical_ventilation: MechanicalVentilation) {
         let (qv_sup_req, qv_eta_req) = mechanical_ventilation.calc_req_oda_flow_rates_at_atds();
         assert_relative_eq!(qv_sup_req, 0.55);
         assert_relative_eq!(qv_eta_req, -0.55);
+
+        mechanical_ventilation.vent_type = MechVentType::IntermittentMev;
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation.calc_req_oda_flow_rates_at_atds();
+        assert_relative_eq!(qv_sup_req, 0.);
+        assert_relative_eq!(qv_eta_req, -0.55);
+
+        mechanical_ventilation.vent_type = MechVentType::PositiveInputVentilation;
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation.calc_req_oda_flow_rates_at_atds();
+        assert_relative_eq!(qv_sup_req, 0.55);
+        assert_relative_eq!(qv_eta_req, 0.);
     }
 
     #[rstest]
