@@ -299,7 +299,7 @@ impl Pipework {
     ///
     /// Returns:
     ///     Heat loss in W
-    fn calculate_steady_state_heat_loss(&self, inside_temp: f64, outside_temp: f64) -> f64 {
+    pub(crate) fn calculate_steady_state_heat_loss(&self, inside_temp: f64, outside_temp: f64) -> f64 {
         (inside_temp - outside_temp) / (self.total_resistance) * self.length()
     }
 

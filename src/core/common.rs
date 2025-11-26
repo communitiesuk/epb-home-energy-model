@@ -15,6 +15,8 @@ pub(crate) enum WaterSourceWithTemperature {
 }
 
 impl WaterSourceWithTemperature {
+
+    // NOTE this will be replaced by get_temp_cold_water and draw_off_water
     pub(crate) fn temperature(
         &self,
         simtime: SimulationTimeIteration,
@@ -27,7 +29,7 @@ impl WaterSourceWithTemperature {
             WaterSourceWithTemperature::Wwhrs(w) => w.lock().temperature(),
             WaterSourceWithTemperature::Preheated(source) => match source {
                 HotWaterStorageTank::StorageTank(storage_tank) => {
-                    storage_tank.read().temperature(volume_needed, simtime)
+                    todo!() // switched to get_temp_cold_water and draw_off_water in latest
                 }
                 HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
                     smart_hot_water_tank
@@ -38,15 +40,26 @@ impl WaterSourceWithTemperature {
         }
     }
     
-    // NOTE added for use by storage tank
-    // TODO do we need simulation time?
-    pub(crate) fn get_temp_cold_water(&self, _volume_needed: f64) -> Vec<(f64, f64)> {
-        todo!()
+    // NOTE this may need simulation_time in future
+    pub(crate) fn get_temp_cold_water(&self, volume_needed: f64, _simulation_time: SimulationTimeIteration) -> Vec<(f64, f64)> {
+        match self {
+            WaterSourceWithTemperature::ColdWaterSource(_cold_water_source) => todo!(),
+            WaterSourceWithTemperature::Wwhrs(_mutex) => todo!(),
+            WaterSourceWithTemperature::Preheated(hot_water_storage_tank) => match hot_water_storage_tank {
+                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().get_temp_cold_water(volume_needed),
+                HotWaterStorageTank::SmartHotWaterTank(_rw_lock) => todo!(),
+            },
+        }
     }
 
-    // NOTE added for use by storage tank
-    pub(crate) fn draw_off_water(&self, volume_needed: f64) -> Vec<(f64, f64)> {
-        // this seems to just be a proxy for the above method
-        self.get_temp_cold_water(volume_needed)
+    pub(crate) fn draw_off_water(&self, volume_needed: f64, simulation_time_iteration: SimulationTimeIteration) -> Vec<(f64, f64)> {
+        match self {
+            WaterSourceWithTemperature::ColdWaterSource(_cold_water_source) => todo!(),
+            WaterSourceWithTemperature::Wwhrs(_mutex) => todo!(),
+            WaterSourceWithTemperature::Preheated(hot_water_storage_tank) => match hot_water_storage_tank {
+                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().draw_off_water(volume_needed, simulation_time_iteration),
+                HotWaterStorageTank::SmartHotWaterTank(_rw_lock) => todo!(),
+            },
+        }
     }
 }
