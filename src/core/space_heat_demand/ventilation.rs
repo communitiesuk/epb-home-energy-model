@@ -1,7 +1,7 @@
 // This module provides objects to represent Infiltration and Ventilation.
 // The calculations are based on Method 1 of BS EN 16798-7.
 
-use crate::compare_floats::max_of_2;
+use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
@@ -12,7 +12,6 @@ use crate::core::units::{
     WATTS_PER_KILOWATT,
 };
 use crate::corpus::{CompletedVentilationLeaks, Controls, ReportingFlag};
-use crate::errors::NotImplementedError;
 use crate::input::{
     init_orientation, BuildingElement, CombustionAirSupplySituation, CombustionApplianceType,
     CombustionFuelType, DuctShape, FlueGasExhaustSituation,
@@ -507,6 +506,50 @@ impl Display for MechVentType {
             "{}",
             serde_json::to_value(self).unwrap().as_str().unwrap()
         )
+    }
+}
+
+impl MechVentType {
+    /// Check if this ventilation type is a balanced system (both supply and extract).
+    fn is_balanced(&self) -> bool {
+        matches!(self, Self::Mvhr { .. })
+    }
+
+    /// Check if this ventilation type is an extract-only system.
+    fn is_extract_only(&self) -> bool {
+        matches!(
+            self,
+            Self::IntermittentMev { .. }
+                | Self::CentralisedContinuousMev { .. }
+                | Self::DecentralisedContinuousMev { .. }
+        )
+    }
+
+    /// Check if this ventilation type is a supply-only system.
+    fn is_supply_only(&self) -> bool {
+        matches!(self, Self::PositiveInputVentilation { .. })
+    }
+
+    /// Check if this ventilation type includes supply air.
+    fn has_supply(&self) -> bool {
+        self.is_balanced() || self.is_supply_only()
+    }
+
+    /// Check if this ventilation type includes extract air.
+    fn has_extract(&self) -> bool {
+        self.is_balanced() || self.is_extract_only()
+    }
+
+    // Flow change coefficients for different mechanical ventilation types
+    // From "Sensitivity of fans to back pressure – generic values for HEM - Technical Note"
+    fn flow_change_coefficients(&self) -> f64 {
+        match self {
+            Self::Mvhr => 0.5,
+            Self::CentralisedContinuousMev => 0.5,
+            Self::DecentralisedContinuousMev => 0.1,
+            Self::IntermittentMev => 0.5,
+            Self::PositiveInputVentilation => 0.1,
+        }
     }
 }
 
@@ -1447,23 +1490,91 @@ impl MechanicalVentilation {
     /// T_z -- thermal zone temperature (K)
     fn calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
         &self,
+        u_site: f64,
+        wind_direction: f64,
+        f_cross: bool,
+        shield_class: VentilationShieldClass,
         t_z: f64,
         t_e: f64,
+        p_z_ref: f64,
         simulation_time: &SimulationTimeIteration,
-    ) -> Result<(f64, f64, f64), NotImplementedError> {
+    ) -> anyhow::Result<(f64, f64, f64)> {
         // Required air flow at air terminal devices
         let (qv_sup_req, qv_eta_req) = self.calc_req_oda_flow_rates_at_atds();
+
+        // Calculate pressure differences based on system type
+        let (delta_p_intake, delta_p_exhaust) = if self.vent_type.has_supply() {
+            let pressure_coefficient_intake = get_pressure_coefficient_from_pitch_and_orientation(
+                f_cross,
+                shield_class,
+                self.z_intake.expect("z_intake was expected to be set"),
+                wind_direction,
+                self.orientation_intake,
+                self.pitch_intake
+                    .expect("pitch_intake was expected to be set"),
+            )?;
+            let delta_p_intake = calculate_pressure_difference_at_an_airflow_path(
+                self.h_path_intake
+                    .expect("h_path_intake was expected to be set"),
+                pressure_coefficient_intake,
+                u_site,
+                t_e,
+                t_z,
+                p_z_ref,
+            );
+
+            (delta_p_intake, 0.)
+        } else if self.vent_type.has_extract() {
+            let pressure_coefficient_exhaust = get_pressure_coefficient_from_pitch_and_orientation(
+                f_cross,
+                shield_class,
+                self.z_exhaust,
+                wind_direction,
+                Some(self.orientation_exhaust),
+                self.pitch_exhaust,
+            )?;
+            let delta_p_exhaust = calculate_pressure_difference_at_an_airflow_path(
+                self.h_path_exhaust,
+                pressure_coefficient_exhaust,
+                u_site,
+                t_e,
+                t_z,
+                p_z_ref,
+            );
+
+            (0., delta_p_exhaust)
+        } else {
+            bail!("Unrecognised ventilation system type");
+        };
 
         // Amount of air flow depends on controls
         let (qv_sup_dis_req, qv_eta_dis_req) = match self.sup_air_flw_ctrl {
             SupplyAirFlowRateControlType::Oda => {
                 let f_op_v = self.f_op_v(simulation_time);
-                let qv_sup_dis_req = f_op_v * qv_sup_req;
-                let qv_eta_dis_req = f_op_v * qv_eta_req;
+                let flow_change_coefficient = self.vent_type.flow_change_coefficients();
+
+                // Based on Equation 18 and 19
+                let mut qv_sup_dis_req = f_op_v * qv_sup_req;
+                if self.vent_type.has_supply() {
+                    let flow_intake_change_due_to_pressure =
+                        flow_change_coefficient * delta_p_intake / LITRES_PER_CUBIC_METRE as f64
+                            * SECONDS_PER_HOUR as f64;
+                    qv_sup_dis_req =
+                        max_of_2(0., qv_sup_dis_req + flow_intake_change_due_to_pressure);
+                }
+
+                let mut qv_eta_dis_req = f_op_v * qv_eta_req;
+                if self.vent_type.has_extract() {
+                    let flow_exhaust_change_due_to_pressure =
+                        flow_change_coefficient * delta_p_exhaust / LITRES_PER_CUBIC_METRE as f64
+                            * SECONDS_PER_HOUR as f64;
+                    qv_eta_dis_req =
+                        min_of_2(0., qv_eta_dis_req + flow_exhaust_change_due_to_pressure);
+                }
 
                 (qv_sup_dis_req, qv_eta_dis_req)
             }
-            SupplyAirFlowRateControlType::Load => unimplemented!(), // TODO: complete as part of migration to 1.0.0a1
+            SupplyAirFlowRateControlType::Load => unimplemented!(), // TODO: complete as part of migration (not yet implemented in Python 1.0.0a1 )
         };
 
         // Calculate effective flow rate of external air
@@ -2030,7 +2141,16 @@ impl InfiltrationVentilation {
 
         for mech_vent in &self.mech_vents {
             let (qm_sup, qm_eta, qm_in_effective_heat_recovery_saving) = mech_vent
-                .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(t_z, t_e, &simtime)?;
+                .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                    u_site,
+                    wind_direction,
+                    self.f_cross,
+                    self.shield_class,
+                    t_z,
+                    t_e,
+                    p_z_ref,
+                    &simtime,
+                )?;
             qm_sup_to_vent_zone += qm_sup;
             qm_eta_from_vent_zone += qm_eta;
             qm_in_effective_heat_recovery_saving_total += qm_in_effective_heat_recovery_saving;
@@ -3767,12 +3887,17 @@ mod tests {
         let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
             mechanical_ventilation
                 .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                    4.135012577787589,
+                    140.,
+                    true,
+                    VentilationShieldClass::Normal,
                     293.15,
                     celsius_to_kelvin(air_temps[0]).unwrap(),
+                    1.7775065710163496,
                     &simulation_time_iterator.next().unwrap(),
                 )
                 .unwrap();
-        assert_relative_eq!(qm_sup_dis_req, 0.7106861797547136);
+        assert_relative_eq!(qm_sup_dis_req, 0.);
         assert_relative_eq!(qm_eta_dis_req, -0.6622);
         assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);
     }
