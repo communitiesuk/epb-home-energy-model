@@ -122,8 +122,7 @@ pub struct StorageTank {
     temp_average_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
     temp_average_drawoff_volweighted: AtomicF64, // In Python this is created from inside extract_hot_water()
     total_volume_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
-    ambient_temperature: f64,
-    pipework_primary_gains_for_timestep: f64, // TODO do we need this?
+    ambient_temperature: f64, // TODO should these be AtomicF64
     previous_event_time_end: f64
 }
 
@@ -2122,7 +2121,6 @@ impl SmartHotWaterTank {
             // Calculate state of charge for usable and max temperatures
             let soc_temp_usable = self.calc_state_of_charge(&temp_simulation_usable, simtime)?;
             let soc_temp_max = self.calc_state_of_charge(&temp_simulation_max, simtime)?;
-
             if soc_max.is_some() {
                 let soc_max = soc_max.unwrap();
                 if soc_temp_usable >= soc_max {
@@ -2403,6 +2401,8 @@ impl SmartHotWaterTank {
 
         // Standby losses coefficient - W/K
         let h_sto_ls = self.storage_tank.stand_by_losses_coefficient();
+        
+        let setpnt = self.temp_setpnt_max.setpnt(&simtime).unwrap_or(self.temp_usable);
 
         let setpnt = self
             .temp_setpnt_max
