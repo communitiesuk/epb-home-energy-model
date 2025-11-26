@@ -789,7 +789,7 @@ mod tests {
         };
         use crate::core::space_heat_demand::internal_gains::{ApplianceGains, EventApplianceGains};
         use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIterator};
-        use crate::input::{ApplianceGainsDetails, FuelType, SmartApplianceBattery};
+        use crate::input::{FuelType, SmartApplianceBattery};
         use indexmap::IndexMap;
         use parking_lot::RwLock;
         use serde_json::json;
@@ -882,32 +882,26 @@ mod tests {
         }
 
         #[test]
+        /// Test that there are always gains from standby power
         fn test_standby() {
             let zone_area = 10.;
-            let stand_by = 10.;
+
             let mut appliance_data = appliance_data();
-
             appliance_data
                 .as_object_mut()
                 .unwrap()
-                .insert("Standby".to_string(), Value::from(stand_by));
-            let events = Value::Array(vec![]);
+                .insert("Standby".to_string(), json!(10.));
             appliance_data
                 .as_object_mut()
                 .unwrap()
-                .insert("Events".to_string(), events);
-
-            let appliance_gains_details: ApplianceGainsDetails =
-                serde_json::from_value(appliance_data).unwrap();
-
-            let smart_control = smart_control(); // MagicMock used in Python - we've made some data up here
+                .insert("Events".to_string(), Value::Array(vec![]));
 
             let event_appliance_gains = EventApplianceGains::new(
                 energy_supply_connection(),
                 &simulation_time_iterator(),
-                &appliance_gains_details,
+                &serde_json::from_value(appliance_data).unwrap(),
                 total_floor_area(),
-                Some(smart_control.into()),
+                Some(smart_control().into()), // MagicMock used in Python - we've made some data up here
             );
 
             for iteration in simulation_time_iterator() {
