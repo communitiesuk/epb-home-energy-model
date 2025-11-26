@@ -1605,7 +1605,7 @@ impl MechanicalVentilation {
     /// zone_volume -- volume of the zone (m3)
     /// total_volume -- volume of the dwelling (m3)
     /// vent_type -- one of "Intermittent MEV", "Centralised continuous MEV",
-    /// "Decentralised continuous MEV", "MVHR" or "PIV".
+    /// "Decentralised continuous MEV", "MVHR" or "POSITIVE_INPUT_VENTILATION".
     pub(crate) fn fans(
         &self,
         zone_volume: f64,
@@ -1634,10 +1634,7 @@ impl MechanicalVentilation {
                 // Balanced, therefore split power between extract and supply fans
                 (fan_energy_use_kwh / 2., fan_energy_use_kwh / 2.)
             }
-            MechVentType::PositiveInputVentilation => {
-                // Positive input, supply fans only
-                (fan_energy_use_kwh, 0.)
-            }
+            MechVentType::PositiveInputVentilation => unimplemented!(), // TODO PIV code has been commented out in upstream Python 1.0.0a1
         };
         self.energy_supply_conn
             .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration.index)
