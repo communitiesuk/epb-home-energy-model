@@ -781,4 +781,145 @@ mod tests {
             15
         );
     }
+
+    mod test_event_appliance_gains_total_internal_gain {
+        use crate::core::controls::time_control::SmartApplianceControl;
+        use crate::core::energy_supply::energy_supply::{
+            EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
+        };
+        use crate::core::space_heat_demand::internal_gains::{ApplianceGains, EventApplianceGains};
+        use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIterator};
+        use crate::input::{ApplianceGainsDetails, FuelType, SmartApplianceBattery};
+        use indexmap::IndexMap;
+        use parking_lot::RwLock;
+        use serde_json::json;
+        use serde_json::Value;
+        use std::sync::Arc;
+
+        fn simulation_time() -> SimulationTime {
+            SimulationTime::new(0.0, 12.0, 1.)
+        }
+
+        fn simulation_time_iterator() -> SimulationTimeIterator {
+            simulation_time().iter()
+        }
+
+        fn energy_supply() -> Arc<RwLock<EnergySupply>> {
+            Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time_iterator().total_steps(),
+                )
+                .build(),
+            ))
+        }
+
+        fn energy_supply_connection() -> EnergySupplyConnection {
+            EnergySupply::connection(energy_supply(), "lighting").unwrap()
+        }
+
+        fn total_energy_supply() -> Vec<f64> {
+            vec![100.; 12]
+        }
+
+        fn appliance_gains() -> ApplianceGains {
+            ApplianceGains {
+                total_energy_supply: total_energy_supply(),
+                energy_supply_connection: energy_supply_connection(),
+                gains_fraction: 0.5,
+                start_day: 0,
+                time_series_step: 1.0,
+            }
+        }
+
+        fn appliance_data() -> Value {
+            json!({
+                // "type": "Clothes_drying",
+                "EnergySupply": "mains elec",
+                "start_day": 0,
+                "time_series_step": 1.,
+                "gains_fraction": 0.7,
+                "loadshifting": {
+                    "demand_limit_weighted": 0,
+                    "power_timeseries": [100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100.],
+                    "max_shift_hrs": 8,
+                    "weight": "Tariff",
+                    "weight_timeseries": [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.],
+                }
+            })
+        }
+
+        fn total_floor_area() -> f64 {
+            100.
+        }
+
+        fn smart_control() -> SmartApplianceControl {
+            let power_timeseries = vec![
+                100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100.,
+            ];
+            let time_series_step = 1.;
+            let non_appliance_demand_24hr = IndexMap::from([(
+                "mains elec".into(),
+                vec![
+                    0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+                    0., 0., 0., 0.,
+                ],
+            )]);
+            let battery24hr: SmartApplianceBattery = serde_json::from_value(serde_json::json!({
+                "battery_state_of_charge": { "mains elec": [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0 ]}
+            })).unwrap();
+
+            SmartApplianceControl::new(
+                &IndexMap::from([("mains elec".into(), power_timeseries)]),
+                time_series_step,
+                &simulation_time_iterator(),
+                non_appliance_demand_24hr,
+                battery24hr,
+                &IndexMap::from([("mains elec".into(), energy_supply())]),
+                vec!["Clothes_drying".into()],
+            )
+            .unwrap()
+        }
+
+        #[test]
+        fn test_standby() {
+            let zone_area = 10.;
+            let stand_by = 10.;
+            let mut appliance_data = appliance_data();
+
+            appliance_data
+                .as_object_mut()
+                .unwrap()
+                .insert("Standby".to_string(), Value::from(stand_by));
+            let events = Value::Array(vec![]);
+            appliance_data
+                .as_object_mut()
+                .unwrap()
+                .insert("Events".to_string(), events);
+
+            let appliance_gains_details: ApplianceGainsDetails =
+                serde_json::from_value(appliance_data).unwrap();
+
+            let smart_control = smart_control(); // MagicMock used in Python - we've made some data up here
+
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &appliance_gains_details,
+                total_floor_area(),
+                Some(smart_control.into()),
+            );
+
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    0.7
+                );
+            }
+        }
+    }
 }
