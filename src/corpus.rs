@@ -5316,6 +5316,7 @@ fn space_heat_systems_from_input(
                         let space_heater = Emitters::new(
                             *thermal_mass,
                             emitters,
+                            &[], // <---- pipework goes here!!
                             *temp_diff_emit_dsgn,
                             matches!(flow_data, FlowData::Variable {..}),
                             if let FlowData::Design {design_flow_rate, ..} = flow_data {
@@ -5340,6 +5341,7 @@ fn space_heat_systems_from_input(
                             external_conditions.clone(),
                             *ecodesign_controller,
                             *design_flow_temp as f64,
+                            20., // replace!!!!! this uses a function to provide an initial value
                             energy_supply_fc_conn,
                             detailed_output_heating_cooling.into(),
                             with_buffer_tank.into(),

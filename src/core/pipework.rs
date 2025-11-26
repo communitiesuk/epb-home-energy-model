@@ -272,7 +272,7 @@ impl Pipework {
     }
 
     /// Return the c and n value equivalent and thermal mass for the pipework as if working like a emitter
-    fn c_n_equivalence(&self) -> (f64, f64, f64) {
+    pub(crate) fn c_n_equivalence(&self) -> (f64, f64, f64) {
         // Calculate c and n values needed to give the same heat loss predicted by CIBSE Guide C
         // using equations 3.101, 3.107 and 3.108. The following equations give a good fit through
         // the data over the realistic working range of temperatures and pipework thicknesses used
