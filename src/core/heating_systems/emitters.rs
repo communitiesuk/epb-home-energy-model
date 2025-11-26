@@ -6,16 +6,17 @@ use crate::core::heating_systems::heat_pump::{
     BufferTankEmittersData, BufferTankEmittersDataWithResult,
 };
 use crate::core::material_properties::WATER;
+use crate::core::pipework::Pipework;
 use crate::core::solvers::{fsolve, root};
 use crate::core::space_heat_demand::zone::SimpleZone;
 use crate::core::units::{
-    JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, SECONDS_PER_MINUTE,
-    WATTS_PER_KILOWATT,
+    JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE,
+    MILLIMETRES_IN_METRE, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    EcoDesignController, EcoDesignControllerClass, FanSpeedData, FancoilTestData,
-    WetEmitter as WetEmitterInput,
+    EcoDesignController, EcoDesignControllerClass, FanSpeedData, FancoilTestData, WaterPipework,
+    WaterPipeworkLocation, WetEmitter as WetEmitterInput,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
@@ -60,7 +61,7 @@ pub(crate) struct Emitters {
     external_conditions: Arc<ExternalConditions>,
     with_buffer_tank: bool,
     variable_flow_data: VariableFlowData,
-    bypass_percentage_recirculated: f64,
+    bypass_fraction_recirculated: f64,
     design_flow_temp: f64,
     ecodesign_controller_class: EcoDesignControllerClass,
     min_outdoor_temp: Option<f64>,
@@ -246,33 +247,54 @@ impl Emitters {
     ///
     /// Arguments:
     /// * `thermal_mass` - thermal mass of emitters, in kWh / K
-    /// * `c` - constant from characteristic equation of emitters (e.g. derived from BS EN 442 tests)
-    /// * `n` - exponent from characteristic equation of emitters (e.g. derived from BS EN 442 tests)
-    /// * `temp_diff_emit_dsgn` - design temperature difference across the emitters, in deg C or K
-    /// * `frac_convective` - convective fraction for heating
-    /// * `heat_source` - reference to an object representing the system (e.g.
-    ///                       boiler or heat pump) providing heat to the emitters
-    /// * `zone` - reference to the Zone object representing the zone in which the
-    ///             emitters are located
-    /// * `simulation_timestep` - timestep length for simulation time being used in this context
-    ///
-    /// Other variables:
-    /// * `temp_emitter_prev` - temperature of the emitters at the end of the
-    ///    previous timestep, in deg C
+    /// * `emitters` -- list of each emiiter characteristics, i.e. wet_emitter_type -- type of emitter: radiator, ufh (under floor heating), fancoil
+    ///                    For Radiators:
+    ///                        c -- constant from characteristic equation of emitters
+    ///                            (e.g. derived from BS EN 442 tests)
+    ///                        n -- exponent from characteristic equation of emitters
+    ///                            (e.g. derived from BS EN 442 tests)
+    ///                        frac_convective -- convective fraction for heating
+    ///                    For UFH:
+    ///                        equivalent_specific_thermal_mass -- Equivalent thermal mass per m² of floor area for under-floor heating systems in kJ/m²K
+    ///                                                            calculated according to BEAMA guidance
+    ///                        system_performance_factor -- Heat output per m² of floor area for under-floor heating systems in W/m²K
+    ///                                                    (i.e. Kh from EN1264)
+    ///                        emitter_floor_area -- Floor area of UFH emitter
+    ///                        frac_convective -- convective fraction for heating (optional)
+    ///                    For Fancoils:
+    ///                        n_units -- Number of units of this specification of fancoil in Zone
+    ///                        fancoil_test_data -- Manufacturer's data for fancoil unit
+    /// * `pipework` -- list of each distribution pipework characteristics as required by pipework module with diameters in mm instead of m
+    /// * `temp_diff_emit_dsgn` -- design temperature difference across the emitters, in deg C or K
+    /// * `variable_flow` -- the heat source can modulate flow rate.
+    /// * `design_flow_rate` -- constant flow rate if the heat source can´t modulate flow rate.
+    /// * `min_flow_rate` -- minimum flow rate allowed.
+    /// * `max_flow_rate` -- maximum flow rate allowed.
+    /// * `bypass_fraction_recirculated` -- fraction of return back into flow water.
+    /// * `heat_source` -- reference to an object representing the system (e.g.
+    ///                    boiler or heat pump) providing heat to the emitters
+    /// * `zone` -- reference to the Zone object representing the zone in which the
+    ///                emitters are located
+    /// * `energy_supply_fan_coil_conn` -- reference to EnergySupplyConnection object to capture fan energy
+    ///                                   from Fancoil units.
+    /// * `output_detailed_results` -- flag to create detailed emitter output results
+    /// * `with_buffer_tank` -- True/False the emitters loop include a buffer tank (Only for HPs)
     pub(crate) fn new(
         thermal_mass: Option<f64>,
         emitters: &[WetEmitterInput],
+        pipework: &[WaterPipework],
         temp_diff_emit_dsgn: f64,
         variable_flow: bool,
         design_flow_rate: Option<f64>,
         min_flow_rate: Option<f64>,
         max_flow_rate: Option<f64>,
-        bypass_percentage_recirculated: Option<f64>,
+        bypass_fraction_recirculated: Option<f64>,
         heat_source: Arc<RwLock<SpaceHeatingService>>,
         zone: Arc<dyn SimpleZone>,
         external_conditions: Arc<ExternalConditions>,
         ecodesign_controller: EcoDesignController,
         design_flow_temp: f64,
+        initial_temp: f64,
         energy_supply_fan_coil_conn: Option<Arc<EnergySupplyConnection>>,
         output_detailed_results: Option<bool>,
         with_buffer_tank: Option<bool>,
@@ -300,7 +322,7 @@ impl Emitters {
         } else {
             bail!("design_flow_rate is required if variable_flow is false")
         };
-        let bypass_percentage_recirculated = bypass_percentage_recirculated.unwrap_or(0.0);
+        let bypass_fraction_recirculated = bypass_fraction_recirculated.unwrap_or(0.0);
         let ecodesign_controller_class = ecodesign_controller.ecodesign_control_class;
         let (min_outdoor_temp, max_outdoor_temp, min_flow_temp, max_flow_temp) = if matches!(
             ecodesign_controller_class,
@@ -412,6 +434,41 @@ impl Emitters {
         // self.__frac_convective = ((8.92 * (Tf - Ta) ** 1.1 / (Tf - Ta)) - 5.5) / (8.92 * ( Tf - Ta ) ** 1.1 / ( Tf - Ta ))
         // Need to come up with a method to calculate floor surface temperature.
 
+        let mut pipework_list: Vec<Pipework> = Vec::with_capacity(pipework.len());
+        for pipework_input in pipework {
+            if pipework_input.location == WaterPipeworkLocation::Internal {
+                let pipework_emitter = Pipework::new(
+                    pipework_input.location.into(),
+                    pipework_input.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
+                    pipework_input.external_diameter_mm / MILLIMETRES_IN_METRE as f64,
+                    pipework_input.length,
+                    pipework_input.insulation_thermal_conductivity,
+                    pipework_input.insulation_thickness_mm,
+                    pipework_input.surface_reflectivity,
+                    pipework_input.pipe_contents,
+                )?;
+                if fancoil.is_some() {
+                    pipework_list.push(pipework_emitter);
+                } else {
+                    // Currently only uninsulated pipework are considered for distribution losses when combined with radiators
+                    if is_close!(pipework_input.insulation_thickness_mm, 0.) {
+                        let (pw_c, pw_n, pw_thermal_mass) = pipework_emitter.c_n_equivalence();
+
+                        // create a new radiator entry
+                        let new_radiator = WetEmitter::Radiator {
+                            c: pw_c,
+                            n: pw_n,
+                            frac_convective: 0.7,
+                        };
+                        thermal_mass += pw_thermal_mass;
+
+                        // add it to the emitters list
+                        model_emitters.push(Some(Arc::new(new_radiator)));
+                    }
+                }
+            }
+        }
+
         // Final initialisation checks:
 
         // Ensure total UFH area does not exceed zone area
@@ -444,14 +501,14 @@ impl Emitters {
             external_conditions,
             with_buffer_tank,
             variable_flow_data,
-            bypass_percentage_recirculated,
+            bypass_fraction_recirculated,
             design_flow_temp,
             ecodesign_controller_class,
             min_outdoor_temp,
             max_outdoor_temp,
             min_flow_temp,
             max_flow_temp,
-            temp_emitter_prev: 20.0.into(),
+            temp_emitter_prev: initial_temp.into(),
             target_flow_temp: 20.0.into(), // initial value, though expected to be updated before being used
             output_detailed_results,
             emitters_detailed_results: output_detailed_results.then(Default::default),
@@ -1606,7 +1663,7 @@ impl Emitters {
                     let blended_temp_flow_target = self.blended_temp(
                         temp_flow_target,
                         temp_return_target,
-                        self.bypass_percentage_recirculated,
+                        self.bypass_fraction_recirculated,
                     );
                     let temp_return_target =
                         temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
@@ -1654,12 +1711,12 @@ impl Emitters {
         let blended_temp_flow_target = self.blended_temp(
             temp_flow_target,
             temp_return_target,
-            self.bypass_percentage_recirculated,
+            self.bypass_fraction_recirculated,
         );
         let mut temp_return_target =
             temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
 
-        if self.bypass_percentage_recirculated > 0. {
+        if self.bypass_fraction_recirculated > 0. {
             // Loop again but this time using blended temp and initial reduced return temp.
             temp_return_target = self.update_return_temp(
                 energy_demand,
