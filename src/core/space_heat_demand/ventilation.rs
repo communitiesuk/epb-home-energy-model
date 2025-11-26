@@ -1279,8 +1279,16 @@ pub(crate) struct MechanicalVentilation {
     sfp: f64,
     energy_supply_conn: EnergySupplyConnection,
     _altitude: f64,
+    orientation_exhaust: f64,
+    pitch_exhaust: f64,
+    h_path_exhaust: f64,
+    z_exhaust: f64,
     pub(crate) design_outdoor_air_flow_rate_m3_h: f64,
     mvhr_eff: f64,
+    orientation_intake: Option<f64>,
+    pitch_intake: Option<f64>,
+    h_path_intake: Option<f64>,
+    z_intake: Option<f64>,
     qv_oda_req_design: f64,
     p_a_alt: f64,
 }
@@ -1293,16 +1301,24 @@ impl MechanicalVentilation {
     /// q_h_des -- design zone heating need to be covered by the mechanical ventilation system
     /// q_c_des -- design zone cooling need to be covered by the mechanical ventilation system
     /// vent_type -- ventilation system type
-    /// specific_fan_power -- in W / (litre / second), inclusive of any in use factors
+    /// specific_fan_power -- in W / (litre / second), assumed inclusive of any in use factors if sfp_in_use_factor not supplied
     /// design_outdoor_air_flow_rate -- design outdoor air flow rate in m3/h
     /// simulation_time -- reference to Simulation time object
     /// energy_supply_conn -- Energy supply connection
     /// total_volume  -- Total zone volume (m3)
     /// altitude -- altitude of dwelling above sea level (m)
+    /// orientation_exhaust -- orientation of the exhaust (degrees) - for MVHR/MEV
+    /// pitch_exhaust -- pitch of the exhaust (degrees) - for MVHR/MEV
+    /// midheight_exhaust -- mid height of exhaust air flow path relative to ventilation zone (m) - for MVHR/MEV
+    /// ventilation_zone_base_height -- Base height of the ventilation zone relative to ground (m)
     /// ctrl_intermittent_MEV -- reference to Control object with boolean schedule
     /// defining when the MechVent should be on.
     /// mvhr_eff -- MVHR efficiency
     /// theta_ctrl_sys -- Temperature variation based on control system (K)
+    /// orientation_intake -- orientation of the intake (degrees) - for MVHR
+    /// pitch_intake -- pitch of the intake (degrees) - for MVHR
+    /// h_path_intake -- mid height of intake air flow path relative to ventilation zone (m) - for MVHR
+    /// sfp_in_use_factor -- in-use factor to be applied to specific_fan_power. default of 1 if not supplied
     pub(crate) fn new(
         _sup_air_flw_ctrl: SupplyAirFlowRateControlType,
         _sup_air_temp_ctrl: SupplyAirTemperatureControlType,
@@ -1314,13 +1330,23 @@ impl MechanicalVentilation {
         energy_supply_conn: EnergySupplyConnection,
         total_volume: f64,
         altitude: f64,
+        orientation_exhaust: f64, // For MVHR exhaust / MEV extract
+        pitch_exhaust: f64,
+        midheight_exhaust: f64,
+        ventilation_zone_base_height: f64,
         ctrl_intermittent_mev: Option<Arc<Control>>,
         mvhr_eff: Option<f64>,
         theta_ctrl_sys: Option<f64>, // Only required if sup_air_temp_ctrl = LOAD_COM
+        orientation_intake: Option<f64>,
+        pitch_intake: Option<f64>,
+        h_path_intake: Option<f64>,
+        sfp_in_use_factor: f64,
     ) -> Self {
         let f_ctrl = 1.; // From table B.4, for residential buildings, default f_ctrl = 1
         let f_sys = 1.1; // From table B.5, f_sys = 1.1
         let e_v = 1.; // Section B.3.3.7 defaults E_v = 1 (this is the assumption for perfect mixing)
+        let z_intake =
+            h_path_intake.map(|h_path_intake| h_path_intake + ventilation_zone_base_height);
 
         Self {
             _theta_z_t: 0., // TODO (from Python) get Thermal zone temperature - used for LOAD
@@ -1332,11 +1358,19 @@ impl MechanicalVentilation {
             vent_type,
             _total_volume: total_volume,
             ctrl_intermittent_mev,
-            sfp: specific_fan_power,
+            sfp: specific_fan_power * sfp_in_use_factor,
             energy_supply_conn,
             _altitude: altitude,
+            orientation_exhaust,
+            pitch_exhaust,
+            h_path_exhaust: midheight_exhaust,
+            z_exhaust: midheight_exhaust + ventilation_zone_base_height,
             design_outdoor_air_flow_rate_m3_h: design_outdoor_air_flow_rate, // in m3/h
             mvhr_eff: mvhr_eff.unwrap_or(0.0),
+            orientation_intake,
+            pitch_intake,
+            h_path_intake,
+            z_intake,
             // Calculated variables
             qv_oda_req_design: Self::calculate_required_outdoor_air_flow_rate(
                 f_ctrl,
@@ -2329,11 +2363,12 @@ impl InfiltrationVentilation {
                     } = building_element
                     {
                         Some({
-                            let on_off_ctrl = window_openable_control.as_ref().and_then(
-                                |window_openable_control| {
+                            let on_off_ctrl = window_openable_control
+                                .as_ref()
+                                .and_then(|window_openable_control| {
                                     controls.get_with_string(window_openable_control)
-                                },
-                            );
+                                })
+                                .filter(|ctrl| matches!(&**ctrl, Control::OnOffTime(_)));
                             anyhow::Ok(Window::new(
                                 *free_area_height,
                                 *mid_height,
@@ -2462,8 +2497,8 @@ impl InfiltrationVentilation {
             let ctrl_intermittent_mev = mech_vents_data
                 .control
                 .as_ref()
-                .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
-
+                .and_then(|ctrl_name| controls.get_with_string(ctrl_name))
+                .filter(|ctrl| matches!(&**ctrl, Control::SetpointTime(_)));
             let energy_supply = energy_supplies
                 .get(&mech_vents_data.energy_supply)
                 .ok_or_else(|| {
@@ -2474,6 +2509,10 @@ impl InfiltrationVentilation {
                 })?;
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), mech_vents_name)?;
+            let (orientation_exhaust, pitch_exhaust, midheight_exhaust) =
+                mech_vents_data.vent_data.position_exhaust();
+            let (orientation_intake, pitch_intake, h_p_intake) =
+                mech_vents_data.vent_data.position_intake();
 
             mechanical_ventilations.push(Arc::new(MechanicalVentilation::new(
                 mech_vents_data.supply_air_flow_rate_control,
@@ -2486,6 +2525,10 @@ impl InfiltrationVentilation {
                 energy_supply_connection,
                 total_volume,
                 input.altitude,
+                orientation_exhaust,
+                pitch_exhaust,
+                midheight_exhaust,
+                input.ventilation_zone_base_height,
                 ctrl_intermittent_mev,
                 match mech_vents_data.vent_data {
                     MechVentData::Mvhr { .. } => mech_vents_data.mvhr_efficiency,
@@ -2495,6 +2538,10 @@ impl InfiltrationVentilation {
                     MechVentData::PositiveInputVentilation { .. } => unimplemented!(), // TODO: presumably to be completed during migration to 1.0.0a1
                 },
                 None,
+                orientation_intake,
+                pitch_intake,
+                h_p_intake,
+                mech_vents_data.sfp_in_use_factor,
             )));
 
             // TODO (from Python) not all dwellings have mech vents - update to make mech vents optional
@@ -3679,9 +3726,17 @@ mod tests {
             energy_supply_connection,
             250.,
             0.,
+            0.,
+            90.,
+            2.,
+            3.,
             None,
             Some(0.),
             None,
+            Some(180.),
+            Some(90.),
+            Some(30.),
+            1.,
         )
     }
 

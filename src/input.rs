@@ -4751,6 +4751,47 @@ impl MechVentData {
             Self::PositiveInputVentilation { .. } => "Positive input ventilation",
         }
     }
+
+    pub(crate) fn position_exhaust(&self) -> (f64, f64, f64) {
+        match self {
+            Self::Mvhr {
+                position_exhaust, ..
+            }
+            | Self::IntermittentMev {
+                position_exhaust, ..
+            }
+            | Self::CentralisedContinuousMev {
+                position_exhaust, ..
+            }
+            | Self::DecentralisedContinuousMev {
+                position_exhaust, ..
+            }
+            | Self::PositiveInputVentilation {
+                position_exhaust, ..
+            } => {
+                let MechanicalVentilationPosition {
+                    orientation,
+                    pitch,
+                    mid_height_air_flow_path,
+                } = *position_exhaust;
+
+                (orientation, pitch, mid_height_air_flow_path)
+            }
+        }
+    }
+
+    pub(crate) fn position_intake(&self) -> (Option<f64>, Option<f64>, Option<f64>) {
+        match self {
+            Self::Mvhr {
+                position_intake, ..
+            } => (
+                Some(position_intake.orientation),
+                Some(position_intake.pitch),
+                Some(position_intake.mid_height_air_flow_path),
+            ),
+            _ => (None, None, None),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -4763,7 +4804,7 @@ pub struct MechanicalVentilationPosition {
     )]
     #[validate(minimum = -180.)]
     #[validate(maximum = 180.)]
-    orientation: f64,
+    pub(crate) orientation: f64,
 
     /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
     #[validate(minimum = 0.)]
@@ -4772,7 +4813,7 @@ pub struct MechanicalVentilationPosition {
 
     /// Mid height of air flow path relative to ventilation zone (unit: m)
     #[validate(exclusive_minimum = 0.)]
-    mid_height_air_flow_path: f64,
+    pub(crate) mid_height_air_flow_path: f64,
 }
 
 pub trait MechanicalVentilationForProcessing {
