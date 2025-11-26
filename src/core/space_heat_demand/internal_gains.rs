@@ -915,5 +915,46 @@ mod tests {
                 );
             }
         }
+        #[test]
+        /// Test that there are gains from a single appliance
+        fn test_single_appliance() {
+            let zone_area = 10.;
+
+            let mut appliance_data = appliance_data();
+            appliance_data
+                .as_object_mut()
+                .unwrap()
+                .insert("Standby".to_string(), json!(0.));
+            appliance_data
+                .as_object_mut()
+                .unwrap()
+                .insert("gains_fraction".to_string(), json!(1.));
+            appliance_data.as_object_mut().unwrap().insert(
+                "Events".to_string(),
+                Value::Array(vec![
+                    json!({"start": 5., "duration": 2., "demand_W": 900.0}),
+                ]),
+            );
+
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 0., 90., 90., 0., 0., 0., 0., 0.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
     }
 }
