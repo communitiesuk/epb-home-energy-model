@@ -2132,6 +2132,7 @@ mod tests {
         Emitters::new(
             Some(thermal_mass),
             &wet_emitters,
+            &[], // pipework for now - replace!!
             temp_diff_emit_dsgn,
             true,
             None,
@@ -2143,6 +2144,7 @@ mod tests {
             external_conditions.into(),
             ecodesign_controller,
             design_flow_temp,
+            20., // default value for now - replace!!
             None,
             false.into(),
             with_buffer_tank.into(),
@@ -2228,6 +2230,7 @@ mod tests {
         Emitters::new(
             None,
             &emitters,
+            &[], // pipework for now - replace!!
             10.0,
             true,
             None,
@@ -2239,6 +2242,7 @@ mod tests {
             Arc::new(external_conditions),
             ecodesign_controller,
             55.0,
+            20., // default value for now - replace!!
             Some(Arc::new(energy_supply_conn)),
             None,
             None,
@@ -2461,6 +2465,7 @@ mod tests {
         Emitters::new(
             thermal_mass.into(),
             &emitters,
+            &[], // pipework for now - replace!!
             temp_diff_emit_dsgn,
             true,
             None,
@@ -2472,6 +2477,7 @@ mod tests {
             external_conditions.into(),
             ecodesign_controller,
             55.0,
+            20., // default value for now - replace!!
             None,
             None,
             None,
