@@ -956,5 +956,88 @@ mod tests {
                 );
             }
         }
+        #[test]
+        /// Test that smartcontrol.add_appliance_demand is called with the load
+        /// Note that in Python a Spy is used, instead we assert on the result of
+        /// `total_internal_gain_in_w`. This means the two tests are not equivalent.
+        fn test_smart_control_called() {
+            let zone_area = 10.;
+            let appliance_data = json!({
+                "EnergySupply": "mains elec",
+                "start_day": 0,
+                "time_series_step": 1.,
+                "gains_fraction": 0.5,
+                "loadshifting": {
+                    "demand_limit_weighted": 0,
+                    "power_timeseries": [100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100.],
+                    "max_shift_hrs": 10,
+                    "weight": "Tariff",
+                    "weight_timeseries": [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.],
+                },
+                "Standby": 0,
+                "Events": [{"start": 5., "duration": 2., "demand_W": 900.0}],
+
+            });
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 0., 45., 45., 0., 0., 0., 0., 0.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
+
+        #[test]
+        /// Test that the lowest weighted power is used for load shifting
+        fn test_weighted_loadshifting() {
+            let zone_area = 10.;
+            let appliance_data = json!({
+                "EnergySupply": "mains elec",
+                "start_day": 0,
+                "time_series_step": 1.,
+                "gains_fraction": 1.,
+                "loadshifting": {
+                    "demand_limit_weighted": 0,
+                    "power_timeseries": [100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100., 100.],
+                    "max_shift_hrs": 10,
+                    "weight": "Tariff",
+                    "weight_timeseries": [0., 0., 0., 0., 0., 0., 1., 1., 0.2, 0.2, 0.2, 0.2],
+                },
+                "Standby": 0,
+                "Events": [{"start": 5., "duration": 2., "demand_W": 900.0}],
+
+            });
+            let event_appliance_gains = EventApplianceGains::new(
+                energy_supply_connection(),
+                &simulation_time_iterator(),
+                &serde_json::from_value(appliance_data).unwrap(),
+                total_floor_area(),
+                Some(smart_control().into()),
+            );
+
+            let expected = [0., 0., 0., 0., 0., 0., 0., 0., 90., 90., 0., 0.];
+            for iteration in simulation_time_iterator() {
+                assert_eq!(
+                    event_appliance_gains
+                        .as_ref()
+                        .unwrap()
+                        .total_internal_gain_in_w(zone_area, iteration)
+                        .unwrap(),
+                    expected[iteration.index]
+                );
+            }
+        }
     }
 }
