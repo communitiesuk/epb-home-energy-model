@@ -290,7 +290,7 @@ impl SpaceHeatSystem {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SpaceHeatingService {
     HeatPump(HeatPumpServiceSpace),
     Boiler(BoilerServiceSpace),

@@ -306,7 +306,7 @@ impl BoilerServiceWaterRegular {
 }
 
 /// A struct representing a space heating service provided by a boiler to e.g. a cylinder.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BoilerServiceSpace {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,

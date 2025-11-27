@@ -34,6 +34,7 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use tracing_subscriber::fmt::time;
 
 type State = Vector1<f64>;
 type Time = f64;
@@ -54,6 +55,7 @@ pub fn convert_flow_to_return_temp(flow_temp_celsius: f64) -> f64 {
 pub(crate) struct Emitters {
     pub thermal_mass: f64,
     emitters: Vec<Arc<WetEmitter>>,
+    pipework_list: Vec<Pipework>,
     temp_diff_emit_dsgn: f64,
     heat_source: Arc<RwLock<SpaceHeatingService>>,
     #[derivative(Debug = "ignore")]
@@ -495,6 +497,7 @@ impl Emitters {
         Ok(Self {
             thermal_mass,
             emitters: model_emitters,
+            pipework_list,
             temp_diff_emit_dsgn,
             heat_source,
             zone,
@@ -1390,6 +1393,15 @@ impl Emitters {
                 {
                     let n_units = *n_units as f64;
                     let delta_t_fancoil = temp_emitter_max - temp_rm_prev;
+
+                    // Removing pipework internal distribution losses in space from energy demand to be delivered by fancoil
+                    let pw_heat_loss = self.pipework_list.iter().fold(0., |acc, pw| {
+                        acc + pw.calculate_steady_state_heat_loss(temp_flow_target, temp_rm_prev)
+                            * timestep
+                            / WATTS_PER_KILOWATT as f64
+                    });
+                    energy_demand -= pw_heat_loss;
+
                     let power_req_from_fan_coil = energy_demand / n_units / timestep;
                     let (
                         power_delivered_by_fancoil,
@@ -1401,6 +1413,7 @@ impl Emitters {
                         fan_power_data,
                         power_req_from_fan_coil,
                     );
+                    // Adding back pipework internal distribution losses to power required from heat source
                     let power_req_from_heat_source =
                         (power_delivered_by_fancoil - fan_power_single_unit) * n_units;
                     let fan_power = fan_power_single_unit * n_units;
@@ -1734,16 +1747,16 @@ impl Emitters {
         Ok((temp_return_target, blended_temp_flow_target, flow_rate_m3s))
     }
 
+    /// When there is bypass recirculated water, the blended temperature is calculated following
+    /// the formula of final temperature of the water mixture T(final)=(m1*T1+m2*T2)/(m1+m2)
     fn blended_temp(
         &self,
         temp_flow_target: f64,
         temp_return_target: f64,
-        bypass_percentage_recirculated: f64,
+        bypass_fraction_recirculated: f64,
     ) -> f64 {
-        // When there is bypass recirculated water, the blended temperature is calculated following
-        // the formula of final temperature of the water mixture T(final)=(m1*T1+m2*T2)/(m1+m2)
-        (temp_flow_target + bypass_percentage_recirculated * temp_return_target)
-            / (1. + bypass_percentage_recirculated)
+        (1. - bypass_fraction_recirculated) * temp_flow_target
+            + bypass_fraction_recirculated * temp_return_target
     }
 
     /// Calculate the return temperature for a given flow temperature using fsolve.
@@ -1925,9 +1938,10 @@ mod tests {
     use crate::core::heating_systems::boiler::BoilerServiceSpace;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::external_conditions::ShadingSegment;
-    use crate::input::FuelType;
     use crate::input::HeatSourceLocation;
     use crate::input::HeatSourceWetDetails;
+    use crate::input::WetEmitter as WetEmitterInput;
+    use crate::input::{FuelType, RadiatorConstantData};
     use crate::simulation_time::SimulationTime;
     use crate::simulation_time::SimulationTimeIterator;
     use approx::assert_relative_eq;
@@ -1935,7 +1949,7 @@ mod tests {
     use parking_lot::RwLock;
     use rstest::fixture;
     use rstest::rstest;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
     const FOUR_DECIMAL_PLACES: f64 = 1e-3;
@@ -2119,20 +2133,27 @@ mod tests {
 
         let with_buffer_tank = false;
 
-        let wet_emitters = vec![serde_json::from_value(json!(
-         {
-          "wet_emitter_type": "radiator",
-          "c": 0.08,
-          "n": 1.2,
-          "frac_convective": 0.4
-         }
-        ))
-        .unwrap()];
+        let wet_emitters: Vec<WetEmitterInput> = serde_json::from_value(json!([
+            {
+                "wet_emitter_type": "radiator",
+                "c": 0.04,
+                "n": 1.2,
+                "frac_convective": 0.4
+            },
+            {
+                "wet_emitter_type": "radiator",
+                "c_per_m": 0.08,
+                "length": 0.5,
+                "n": 1.2,
+                "frac_convective": 0.4
+            }
+        ]))
+        .unwrap();
 
         Emitters::new(
             Some(thermal_mass),
             &wet_emitters,
-            &[], // pipework for now - replace!!
+            &[],
             temp_diff_emit_dsgn,
             true,
             None,
@@ -2144,7 +2165,7 @@ mod tests {
             external_conditions.into(),
             ecodesign_controller,
             design_flow_temp,
-            20., // default value for now - replace!!
+            20.,
             None,
             false.into(),
             with_buffer_tank.into(),
@@ -2176,61 +2197,67 @@ mod tests {
     }
 
     #[fixture]
+    fn fancoil_test_data() -> Value {
+        json!({
+        "fan_speed_data": [
+            {
+            "temperature_diff": 80.0,
+            "power_output": [2.7, 3.6, 5, 5.3, 6.2, 7.4]
+            },
+            {
+            "temperature_diff": 70.0,
+            "power_output": [2.3, 3.1, 4.2, 4.5, 5.3, 6.3]
+            },
+            {
+            "temperature_diff": 60.0,
+            "power_output": [1.9, 2.6, 3.5, 3.8, 4.4, 5.3]
+            },
+            {
+            "temperature_diff": 50.0,
+            "power_output": [1.5, 2, 2.8, 3, 3.5, 4.2]
+            },
+            {
+            "temperature_diff": 40.0,
+            "power_output": [1.1, 1.5, 2.05, 2.25, 2.6, 3.15]
+            },
+            {
+            "temperature_diff": 30.0,
+            "power_output": [0.7, 0.97, 1.32, 1.49, 1.7, 2.09]
+            },
+            {
+            "temperature_diff": 20.0,
+            "power_output": [0.3, 0.44, 0.59, 0.73, 0.8, 1.03]
+            },
+            {
+            "temperature_diff": 10.0,
+            "power_output": [0, 0, 0, 0, 0, 0]
+            }
+        ],
+        "fan_power_W": [15, 19, 25, 33, 43, 56]
+        })
+    }
+
+    #[fixture]
     fn fancoil(
         heat_source: SpaceHeatingService,
         zone: Arc<dyn SimpleZone>,
         external_conditions: ExternalConditions,
         ecodesign_controller: EcoDesignController,
         energy_supply_conn: EnergySupplyConnection,
+        fancoil_test_data: Value,
     ) -> Emitters {
         let emitters = vec![serde_json::from_value(json!({
             "wet_emitter_type": "fancoil",
             "n_units": 1,
             "frac_convective": 0.4,
-            "fancoil_test_data": {
-                "fan_speed_data": [
-                    {
-                    "temperature_diff": 80.0,
-                    "power_output": [2.7, 3.6, 5, 5.3, 6.2, 7.4]
-                    },
-                    {
-                    "temperature_diff": 70.0,
-                    "power_output": [2.3, 3.1, 4.2, 4.5, 5.3, 6.3]
-                    },
-                    {
-                    "temperature_diff": 60.0,
-                    "power_output": [1.9, 2.6, 3.5, 3.8, 4.4, 5.3]
-                    },
-                    {
-                    "temperature_diff": 50.0,
-                    "power_output": [1.5, 2, 2.8, 3, 3.5, 4.2]
-                    },
-                    {
-                    "temperature_diff": 40.0,
-                    "power_output": [1.1, 1.5, 2.05, 2.25, 2.6, 3.15]
-                    },
-                    {
-                    "temperature_diff": 30.0,
-                    "power_output": [0.7, 0.97, 1.32, 1.49, 1.7, 2.09]
-                    },
-                    {
-                    "temperature_diff": 20.0,
-                    "power_output": [0.3, 0.44, 0.59, 0.73, 0.8, 1.03]
-                    },
-                    {
-                    "temperature_diff": 10.0,
-                    "power_output": [0, 0, 0, 0, 0, 0]
-                    }
-                ],
-                "fan_power_W": [15, 19, 25, 33, 43, 56]
-                }
+            "fancoil_test_data": fancoil_test_data,
             }
         ))
         .unwrap()];
         Emitters::new(
             None,
             &emitters,
-            &[], // pipework for now - replace!!
+            &[],
             10.0,
             true,
             None,
@@ -2242,12 +2269,247 @@ mod tests {
             Arc::new(external_conditions),
             ecodesign_controller,
             55.0,
-            20., // default value for now - replace!!
+            20.,
             Some(Arc::new(energy_supply_conn)),
             None,
             None,
         )
         .unwrap()
+    }
+
+    // test_init_invalid_flow_rate from Python is unnecessary in Rust as these illegal states are made impossible by typing
+    // test_init_bypass_fraction_recirculated is unnecessary to port to Rust as bounds of possible values are enforced within input
+
+    #[rstest]
+    fn test_init_output_detailed_results(
+        fancoil: Emitters,
+        heat_source: SpaceHeatingService,
+        zone: Arc<dyn SimpleZone>,
+        external_conditions: ExternalConditions,
+        ecodesign_controller: EcoDesignController,
+    ) {
+        assert!(fancoil.output_emitter_results().is_none());
+
+        let fancoil_with_outputs = Emitters::new(
+            None,
+            &[],
+            &[],
+            10.0,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.0),
+            Arc::new(RwLock::new(heat_source)),
+            zone,
+            Arc::new(external_conditions),
+            ecodesign_controller,
+            55.0,
+            20.,
+            None,
+            Some(true),
+            None,
+        )
+        .unwrap();
+        assert!(fancoil_with_outputs.output_emitter_results().is_some());
+    }
+
+    #[rstest]
+    fn test_init_emitters(
+        heat_source: SpaceHeatingService,
+        zone: Arc<dyn SimpleZone>,
+        external_conditions: ExternalConditions,
+        ecodesign_controller: EcoDesignController,
+        energy_supply_conn: EnergySupplyConnection,
+        fancoil_test_data: Value,
+    ) {
+        // Test that the constructor errors if thermal mass is None for a radiator type
+        let emitters = [WetEmitterInput::Radiator {
+            constant_data: RadiatorConstantData::Constant { constant: 0.08 },
+            exponent: 1.2,
+            frac_convective: 0.4,
+        }];
+        assert!(Emitters::new(
+            None,
+            &emitters,
+            &[],
+            10.0,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.0),
+            Arc::new(RwLock::new(heat_source.clone())),
+            zone.clone(),
+            Arc::new(external_conditions.clone()),
+            ecodesign_controller,
+            55.0,
+            20.,
+            None,
+            Some(true),
+            None,
+        )
+        .is_err());
+
+        // Test that the thermal mass can be None for a UFH type
+        let emitters = [WetEmitterInput::Ufh {
+            equivalent_specific_thermal_mass: 0.,
+            system_performance_factor: 1.,
+            emitter_floor_area: 1.,
+            frac_convective: 0.4,
+        }];
+        assert!(Emitters::new(
+            None,
+            &emitters,
+            &[],
+            10.0,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.0),
+            Arc::new(RwLock::new(heat_source.clone())),
+            zone.clone(),
+            Arc::new(external_conditions.clone()),
+            ecodesign_controller,
+            55.0,
+            20.,
+            None,
+            Some(true),
+            None,
+        )
+        .is_ok());
+
+        // Test that fan coil can be created with given data
+        let emitters = [WetEmitterInput::Fancoil {
+            n_units: 0,
+            frac_convective: 0.4,
+            fancoil_test_data: serde_json::from_value(fancoil_test_data.clone()).unwrap(),
+        }];
+        assert!(Emitters::new(
+            None,
+            &emitters,
+            &[],
+            10.0,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.0),
+            Arc::new(RwLock::new(heat_source.clone())),
+            zone.clone(),
+            Arc::new(external_conditions.clone()),
+            ecodesign_controller,
+            55.0,
+            20.,
+            None,
+            Some(true),
+            None,
+        )
+        .is_ok());
+
+        // checks for no fancoil test data or no frac_convective in Python unneeded here as enforced by Rust types
+
+        // Test that the constructor errors if emitter_floor_area is above the zone floor area
+        let emitters = [WetEmitterInput::Ufh {
+            equivalent_specific_thermal_mass: 0.,
+            system_performance_factor: 1.,
+            emitter_floor_area: 100.,
+            frac_convective: 0.4,
+        }];
+        assert!(Emitters::new(
+            None,
+            &emitters,
+            &[],
+            10.0,
+            true,
+            Some(3.),
+            Some(3.),
+            Some(6.),
+            None,
+            Arc::new(RwLock::new(heat_source.clone())),
+            zone.clone(),
+            Arc::new(external_conditions.clone()),
+            ecodesign_controller,
+            55.0,
+            20.,
+            None,
+            Some(true),
+            None,
+        )
+        .is_err());
+
+        // Test that the constructor errors if there is more than one fancoil
+        let emitters = [
+            WetEmitterInput::Fancoil {
+                n_units: 1,
+                frac_convective: 0.4,
+                fancoil_test_data: serde_json::from_value(fancoil_test_data.clone()).unwrap(),
+            },
+            WetEmitterInput::Fancoil {
+                n_units: 1,
+                frac_convective: 0.4,
+                fancoil_test_data: serde_json::from_value(fancoil_test_data).unwrap(),
+            },
+        ];
+        assert!(Emitters::new(
+            None,
+            &emitters,
+            &[],
+            10.0,
+            true,
+            Some(3.),
+            Some(3.),
+            Some(6.),
+            None,
+            Arc::new(RwLock::new(heat_source.clone())),
+            zone.clone(),
+            Arc::new(external_conditions.clone()),
+            ecodesign_controller,
+            55.0,
+            20.,
+            None,
+            Some(true),
+            None,
+        )
+        .is_err());
+
+        // Test that the constructor doesn't error if there is more than one UFH
+        let emitters = [
+            WetEmitterInput::Ufh {
+                equivalent_specific_thermal_mass: 0.,
+                system_performance_factor: 1.,
+                emitter_floor_area: 1.,
+                frac_convective: 0.4,
+            },
+            WetEmitterInput::Ufh {
+                equivalent_specific_thermal_mass: 0.,
+                system_performance_factor: 1.,
+                emitter_floor_area: 1.,
+                frac_convective: 0.4,
+            },
+        ];
+        assert!(Emitters::new(
+            None,
+            &emitters,
+            &[],
+            10.0,
+            true,
+            Some(3.),
+            Some(3.),
+            Some(6.),
+            None,
+            Arc::new(RwLock::new(heat_source.clone())),
+            zone.clone(),
+            Arc::new(external_conditions.clone()),
+            ecodesign_controller,
+            55.0,
+            20.,
+            None,
+            Some(true),
+            None,
+        )
+        .is_ok());
     }
 
     #[rstest]
