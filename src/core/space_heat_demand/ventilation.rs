@@ -2886,6 +2886,9 @@ mod tests {
     use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
 
+    use crate::core::space_heat_demand::ventilation::FacadeDirection::{
+        Roof, Roof10, Roof10_30, Roof30, WindSeg2, WindSeg4,
+    };
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, ShadingSegment};
     use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
@@ -3923,11 +3926,11 @@ mod tests {
         assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);
     }
 
-    struct MockControl(f64);
+    struct MockControl(Option<f64>);
 
     impl ControlBehaviour for MockControl {
         fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-            Some(self.0)
+            self.0
         }
     }
 
@@ -3946,14 +3949,117 @@ mod tests {
         );
 
         mechanical_ventilation.vent_type = MechVentType::IntermittentMev;
-        mechanical_ventilation.ctrl_intermittent_mev = Some(Arc::new(MockControl(setpoint)));
+        mechanical_ventilation.ctrl_intermittent_mev = Some(Arc::new(MockControl(Some(setpoint))));
         assert_eq!(
             mechanical_ventilation.f_op_v(&simulation_time_iterator.current_iteration()),
             0.5
         );
 
-        mechanical_ventilation.ctrl_intermittent_mev = Some(Arc::new(MockControl(setpoint)));
+        mechanical_ventilation.ctrl_intermittent_mev = Some(Arc::new(MockControl(Some(setpoint))));
         mechanical_ventilation.f_op_v(&simulation_time_iterator.current_iteration());
+    }
+
+    #[rstest]
+    fn test_fans(energy_supply: EnergySupply, simulation_time_iterator: SimulationTimeIterator) {
+        let simtime = &simulation_time_iterator.current_iteration();
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
+
+        let mut mechanical_ventilation = MechanicalVentilation::new(
+            SupplyAirFlowRateControlType::Oda,
+            SupplyAirTemperatureControlType::Constant,
+            1.,
+            3.4,
+            MechVentType::CentralisedContinuousMev,
+            1.5,
+            50.,
+            energy_supply_connection,
+            250.,
+            0.,
+            180.,
+            90.,
+            2.,
+            3.,
+            Some(Arc::new(MockControl(None))),
+            Some(0.),
+            Some(1.1),
+            Some(180.),
+            Some(90.),
+            Some(2.),
+            1.,
+        );
+
+        assert_relative_eq!(mechanical_ventilation.fans(200., 2000., None, simtime), 0.);
+
+        mechanical_ventilation.vent_type = MechVentType::Mvhr;
+
+        assert_relative_eq!(
+            mechanical_ventilation.fans(200., 2000., None, simtime),
+            1.1458333333333335e-06,
+        );
+    }
+
+    #[rstest]
+    fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone_extract_only(
+        energy_supply: EnergySupply,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let simtime = &simulation_time_iterator.current_iteration();
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
+
+        let mechanical_ventilation = MechanicalVentilation::new(
+            SupplyAirFlowRateControlType::Oda,
+            SupplyAirTemperatureControlType::NoControl,
+            1.,
+            3.4,
+            MechVentType::CentralisedContinuousMev, // This is extract-only
+            1.5,
+            50.,
+            energy_supply_connection,
+            250.,
+            0.,
+            180.,
+            90.,
+            2.,
+            3.,
+            None,
+            Some(0.),
+            None,
+            None,
+            None,
+            None,
+            1.,
+        );
+
+        // Test with positive delta_p_mech_vent (back pressure)
+        let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
+            mechanical_ventilation
+                .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                    4.135012577787589,
+                    140.,
+                    true,
+                    VentilationShieldClass::Normal,
+                    293.15,
+                    celsius_to_kelvin(10.).unwrap(),
+                    2.,
+                    simtime,
+                )
+                .unwrap();
+
+        // For extract-only systems, supply should be 0
+        assert_eq!(qm_sup_dis_req, 0.);
+        // Extract should be negative (air leaving)
+        assert!(qm_eta_dis_req < 0.);
+        assert_eq!(qm_in_effective_heat_recovery_saving, 0.);
+    }
+
+    #[rstest]
+    #[ignore]
+    fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone_supply_only() {
+        // TODO (from Python): When PIV (Positive Input Ventilation) is implemented, add test coverage here
     }
 
     #[fixture]
@@ -4027,6 +4133,35 @@ mod tests {
 
     // NOTE - Python has a commented out test here for test_calculate_qv_pdu
     // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
+
+    #[rstest]
+    #[case(5., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof10])]
+    #[case(15., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof10_30])]
+    #[case(40., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof30])]
+    #[case(40., false, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof] )]
+    #[should_panic = "Average roof pitch was not expected to be greater than 60 degrees."]
+    #[case(90., true, vec![WindSeg2, WindSeg4, Roof10])]
+    fn test_make_leak_objects_roof_pitch(
+        #[case] roof_pitch: f64,
+        #[case] f_cross: bool,
+        #[case] expected: Vec<FacadeDirection>,
+    ) {
+        let leaks = CompletedVentilationLeaks {
+            ventilation_zone_height: 6.,
+            test_pressure: 50.,
+            test_result: 1.2,
+            area_roof: 25.,
+            area_facades: 85.,
+            env_area: 220.,
+            altitude: 30.,
+        };
+
+        let leak_vec = InfiltrationVentilation::make_leak_objects(leaks, roof_pitch, 2.5, f_cross);
+
+        for (idx, leaks) in leak_vec.iter().enumerate() {
+            assert_eq!(leaks.facade_direction, expected[idx]);
+        }
+    }
 
     #[rstest]
     #[ignore = "WIP migration"]
