@@ -1318,7 +1318,7 @@ pub(crate) struct MechanicalVentilation {
     _theta_ctrl_sys: Option<f64>,
     vent_type: MechVentType,
     _total_volume: f64,
-    ctrl_intermittent_mev: Option<Arc<Control>>,
+    ctrl_intermittent_mev: Option<Arc<dyn ControlBehaviour>>,
     sfp: f64,
     energy_supply_conn: EnergySupplyConnection,
     _altitude: f64,
@@ -1377,7 +1377,7 @@ impl MechanicalVentilation {
         pitch_exhaust: f64,
         midheight_exhaust: f64,
         ventilation_zone_base_height: f64,
-        ctrl_intermittent_mev: Option<Arc<Control>>,
+        ctrl_intermittent_mev: Option<Arc<dyn ControlBehaviour>>,
         mvhr_eff: Option<f64>,
         theta_ctrl_sys: Option<f64>, // Only required if sup_air_temp_ctrl = LOAD_COM
         orientation_intake: Option<f64>,
@@ -2615,7 +2615,8 @@ impl InfiltrationVentilation {
                 .control
                 .as_ref()
                 .and_then(|ctrl_name| controls.get_with_string(ctrl_name))
-                .filter(|ctrl| matches!(&**ctrl, Control::SetpointTime(_)));
+                .filter(|ctrl| matches!(&**ctrl, Control::SetpointTime(_)))
+                .map(|ctrl| ctrl.clone() as Arc<dyn ControlBehaviour>);
             let energy_supply = energy_supplies
                 .get(&mech_vents_data.energy_supply)
                 .ok_or_else(|| {
@@ -3922,7 +3923,38 @@ mod tests {
         assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);
     }
 
-    // NOTE - Python has a commented out test here
+    struct MockControl(f64);
+
+    impl ControlBehaviour for MockControl {
+        fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+            Some(self.0)
+        }
+    }
+
+    #[rstest]
+    #[case(0.5)]
+    #[should_panic(expected = "Error f_op_v is not between 0 and 1")]
+    #[case(1.5)]
+    fn test_f_op_v(
+        mut mechanical_ventilation: MechanicalVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+        #[case] setpoint: f64,
+    ) {
+        assert_relative_eq!(
+            mechanical_ventilation.f_op_v(&simulation_time_iterator.current_iteration()),
+            1.
+        );
+
+        mechanical_ventilation.vent_type = MechVentType::IntermittentMev;
+        mechanical_ventilation.ctrl_intermittent_mev = Some(Arc::new(MockControl(setpoint)));
+        assert_eq!(
+            mechanical_ventilation.f_op_v(&simulation_time_iterator.current_iteration()),
+            0.5
+        );
+
+        mechanical_ventilation.ctrl_intermittent_mev = Some(Arc::new(MockControl(setpoint)));
+        mechanical_ventilation.f_op_v(&simulation_time_iterator.current_iteration());
+    }
 
     #[fixture]
     fn infiltration_ventilation(
