@@ -917,13 +917,13 @@ impl Zone {
         temp_setpnt_heat: f64,
         temp_setpnt_cool: f64,
         temp_setpnt_cool_vent: f64,
-        temp_operative_free: f64,
+        temp_free: f64,
         temp_int_air_free: f64,
         ach_args: AirChangesPerHourArgument,
         avg_supply_temp: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, Option<f64>)> {
-        let mut temp_operative_free = temp_operative_free;
+        let mut temp_free = temp_free;
 
         // If ach required for cooling has not been provided, check if the
         // maximum air changes when window shut and open are different
@@ -946,17 +946,21 @@ impl Zone {
                     simtime,
                     self.print_heat_balance,
                 )?;
-
-                let temp_operative_vent_max =
-                    self.temp_operative_by_temp_vector(&temp_vector_vent_max);
                 let temp_int_air_vent_max = temp_vector_vent_max[self.zone_idx];
+
+                let temp_vent_max = match self.temp_setpnt_basis {
+                    ZoneTemperatureControlBasis::Operative => {
+                        self.temp_operative_by_temp_vector(&temp_vector_vent_max)
+                    }
+                    ZoneTemperatureControlBasis::Air => temp_int_air_vent_max,
+                };
 
                 let ach_to_trigger_heating = Self::ach_req_to_reach_temperature(
                     temp_setpnt_heat,
                     ach_target,
                     ach_windows_open,
-                    temp_operative_free,
-                    temp_operative_vent_max,
+                    temp_free,
+                    temp_vent_max,
                     temp_int_air_free,
                     temp_int_air_vent_max,
                     avg_supply_temp,
@@ -964,8 +968,8 @@ impl Zone {
 
                 // If there is cooling potential from additional ventilation, and
                 // free-floating temperature exceeds setpoint for additional ventilation
-                let ach_cooling = if temp_operative_vent_max < temp_operative_free
-                    && temp_operative_free > temp_setpnt_cool_vent
+                let ach_cooling = if temp_vent_max < temp_free
+                    && temp_free > temp_setpnt_cool_vent
                     && temp_int_air_free > avg_supply_temp
                 {
                     // Calculate ventilation required to reach cooling setpoint for ventilation
@@ -973,8 +977,8 @@ impl Zone {
                         temp_setpnt_cool_vent,
                         ach_target,
                         ach_windows_open,
-                        temp_operative_free,
-                        temp_operative_vent_max,
+                        temp_free,
+                        temp_vent_max,
                         temp_int_air_free,
                         temp_int_air_vent_max,
                         avg_supply_temp,
@@ -997,17 +1001,23 @@ impl Zone {
 
                     // Calculate internal operative temperature at free-floating conditions
                     // i.e. with no heating/cooling
-                    let temp_operative_free_vent_extra =
-                        self.temp_operative_by_temp_vector(&temp_vector_no_heat_cool_vent_extra);
+                    let temp_free_vent_extra = match self.temp_setpnt_basis {
+                        ZoneTemperatureControlBasis::Operative => {
+                            self.temp_operative_by_temp_vector(&temp_vector_no_heat_cool_vent_extra)
+                        }
+                        ZoneTemperatureControlBasis::Air => {
+                            temp_vector_no_heat_cool_vent_extra[self.zone_idx]
+                        }
+                    };
 
                     // If temperature achieved by additional ventilation is above setpoint
                     // for active cooling, assume cooling system will be used instead of
                     // additional ventilation. Otherwise, use resultant operative temperature
                     // in calculation of space heating/cooling demand.
-                    if temp_operative_free_vent_extra > temp_setpnt_cool {
+                    if temp_free_vent_extra > temp_setpnt_cool {
                         ach_cooling = ach_target;
                     } else {
-                        temp_operative_free = temp_operative_free_vent_extra;
+                        temp_free = temp_free_vent_extra;
                     }
 
                     Some(ach_cooling)
@@ -1026,7 +1036,7 @@ impl Zone {
             AirChangesPerHourArgument::Cooling { ach_cooling } => (None, ach_cooling),
         };
 
-        Ok((temp_operative_free, ach_cooling, ach_to_trigger_heating))
+        Ok((temp_free, ach_cooling, ach_to_trigger_heating))
     }
 
     fn interp_heat_cool_demand(
