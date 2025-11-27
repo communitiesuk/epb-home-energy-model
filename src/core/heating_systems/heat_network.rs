@@ -166,7 +166,7 @@ impl HeatNetworkServiceWaterStorage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HeatNetworkServiceSpace {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,
