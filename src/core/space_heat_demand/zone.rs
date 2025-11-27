@@ -1,6 +1,7 @@
 // This module provides objects to represent the thermal zones in the building,
 // and to calculate the temperatures in the zone and associated building elements.
 
+use crate::compare_floats::is_close;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::material_properties::AIR;
 use crate::core::space_heat_demand::building_element::BuildingElement;
@@ -1044,27 +1045,20 @@ impl Zone {
         delta_t_h: f64,
         temp_setpnt: f64,
         heat_cool_load_upper: f64,
-        temp_operative_free: f64,
-        temp_operative_upper: f64,
-        temp_int_air_free: f64,
-        temp_int_air_upper: f64,
+        temp_free: f64,
+        temp_upper: f64,
     ) -> anyhow::Result<f64> {
-        let heat_cool_load_unrestricted = match self.temp_setpnt_basis {
-            ZoneTemperatureControlBasis::Operative => {
-                if temp_operative_upper - temp_operative_free == 0.0 {
-                    bail!("Divide-by-zero in calculation of heating/cooling demand. This may be caused by the specification of very low overall areal heat capacity of BuildingElements and/or very high thermal mass of WetDistribution.");
-                }
-                heat_cool_load_upper * (temp_setpnt - temp_operative_free)
-                    / (temp_operative_upper - temp_operative_free)
-            }
-            ZoneTemperatureControlBasis::Air => {
-                if temp_int_air_upper - temp_int_air_free == 0.0 {
-                    bail!("Divide-by-zero in calculation of heating/cooling demand. This may be caused by the specification of very low overall areal heat capacity of BuildingElements and/or very high thermal mass of WetDistribution.");
-                }
-                heat_cool_load_upper * (temp_setpnt - temp_int_air_free)
-                    / (temp_int_air_upper - temp_int_air_free)
-            }
-        };
+        if temp_upper - temp_free == 0.0 {
+            bail!(
+                "Divide-by-zero in calculation of heating/cooling demand.
+            This may be caused by the specification of very low overall
+            areal heat capacity of BuildingElements and/or very high thermal
+            mass of WetDistribution."
+            )
+        }
+
+        let heat_cool_load_unrestricted =
+            heat_cool_load_upper * (temp_setpnt - temp_free) / (temp_upper - temp_free);
 
         // Convert from W to kWh
         let heat_cool_demand = heat_cool_load_unrestricted / WATTS_PER_KILOWATT as f64 * delta_t_h;
@@ -1158,10 +1152,15 @@ impl Zone {
 
         // Calculate internal operative temperature at free-floating conditions
         // i.e. with no heating/cooling
-        let temp_operative_free = self.temp_operative_by_temp_vector(&temp_vector_no_heat_cool);
         let temp_int_air_free = temp_vector_no_heat_cool[self.zone_idx];
+        let temp_free = match self.temp_setpnt_basis {
+            ZoneTemperatureControlBasis::Operative => {
+                self.temp_operative_by_temp_vector(&temp_vector_no_heat_cool)
+            }
+            ZoneTemperatureControlBasis::Air => temp_int_air_free,
+        };
 
-        let (temp_operative_free, ach_cooling, ach_to_trigger_heating) = self
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = self
             .calc_cooling_potential_from_ventilation(
                 delta_t,
                 temp_ext_air,
@@ -1172,7 +1171,7 @@ impl Zone {
                 temp_setpnt_heat,
                 temp_setpnt_cool,
                 temp_setpnt_cool_vent,
-                temp_operative_free,
+                temp_free,
                 temp_int_air_free,
                 ach_args,
                 avg_air_supply_temp,
@@ -1181,20 +1180,21 @@ impl Zone {
 
         // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
         // Determine maximum heating/cooling
-        let (temp_setpnt, heat_cool_load_upper, frac_convective) =
-            if temp_operative_free > temp_setpnt_cool {
-                // Cooling
-                // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
-                //      Could max. power be available at this point for all heating/cooling systems?
-                (temp_setpnt_cool, -10. * self.area(), frac_convective_cool)
-            } else if temp_operative_free < temp_setpnt_heat {
-                // Heating
-                // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
-                //      Could max. power be available at this point for all heating/cooling systems?
-                (temp_setpnt_heat, 10. * self.area(), frac_convective_heat)
-            } else {
-                return Ok((0.0, 0.0, ach_cooling, ach_to_trigger_heating));
-            };
+        let (temp_setpnt, heat_cool_load_upper, frac_convective) = if temp_free > temp_setpnt_cool
+            && !is_close(temp_free, temp_setpnt_cool, 1e-10)
+        {
+            // Cooling
+            // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
+            //      Could max. power be available at this point for all heating/cooling systems?
+            (temp_setpnt_cool, -10. * self.area(), frac_convective_cool)
+        } else if temp_free < temp_setpnt_heat && !is_close(temp_free, temp_setpnt_cool, 1e-10) {
+            // Heating
+            // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
+            //      Could max. power be available at this point for all heating/cooling systems?
+            (temp_setpnt_heat, 10. * self.area(), frac_convective_heat)
+        } else {
+            return Ok((0.0, 0.0, ach_cooling, ach_to_trigger_heating));
+        };
 
         // Calculate node and internal air temperatures with maximum heating/cooling
         let gains_heat_cool_upper = gains_heat_cool + heat_cool_load_upper;
@@ -1216,17 +1216,20 @@ impl Zone {
         )?;
 
         // Calculate internal operative temperature with maximum heating/cooling
-        let temp_operative_upper = self.temp_operative_by_temp_vector(&temp_vector_upper_heat_cool);
+        let temp_upper = match self.temp_setpnt_basis {
+            ZoneTemperatureControlBasis::Operative => {
+                self.temp_operative_by_temp_vector(&temp_vector_upper_heat_cool)
+            }
+            ZoneTemperatureControlBasis::Air => temp_vector_upper_heat_cool[self.zone_idx],
+        };
 
         // Calculate heating (positive) or cooling (negative) required to reach setpoint
         let heat_cool_demand = self.interp_heat_cool_demand(
             delta_t_h,
             temp_setpnt,
             heat_cool_load_upper,
-            temp_operative_free,
-            temp_operative_upper,
-            temp_int_air_free,
-            temp_vector_upper_heat_cool[self.zone_idx],
+            temp_free,
+            temp_upper,
         )?;
 
         let mut space_heat_demand = 0.0;
@@ -1325,16 +1328,10 @@ impl Zone {
             .sum::<f64>()
     }
 
+    /// Return the total heat transfer coefficient for all
+    /// thermal bridges in a zone, in W / K
     pub fn total_thermal_bridges(&self) -> f64 {
         self.tb_heat_trans_coeff
-    }
-
-    /// Return the ventilation heat loss from all ventilation elements, in W / K
-    pub fn total_vent_heat_loss(&self) -> f64 {
-        // TODO (from Python) This doesn't work yet
-        //      if self.__vent_obj is not None:
-        //          total_vent_heat_loss = self.__vent_obj.h_ve_average(self.__volume)
-        0.0
     }
 }
 
