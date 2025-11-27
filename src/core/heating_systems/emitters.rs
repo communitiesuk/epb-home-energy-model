@@ -34,6 +34,7 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use tracing_subscriber::fmt::time;
 
 type State = Vector1<f64>;
 type Time = f64;
@@ -1959,6 +1960,10 @@ mod tests {
     use crate::external_conditions::ShadingSegment;
     use crate::input::{FuelType, RadiatorConstantData};
     use crate::input::{PipeworkContents, WetEmitter as WetEmitterInput};
+    use crate::input::HeatSourceLocation;
+    use crate::input::HeatSourceWetDetails;
+    use crate::input::WetEmitter as WetEmitterInput;
+    use crate::input::{FuelType, RadiatorConstantData};
     use crate::simulation_time::SimulationTime;
     use crate::simulation_time::SimulationTimeIterator;
     use approx::assert_relative_eq;
@@ -2304,6 +2309,7 @@ mod tests {
         zone: Arc<dyn SimpleZone>,
         external_conditions: ExternalConditions,
         ecodesign_controller: EcoDesignController,
+        energy_supply_conn: EnergySupplyConnection,
         fancoil_test_data: Value,
     ) {
         // Test that the constructor errors if thermal mass is None for a radiator type
