@@ -16,6 +16,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         Body::Empty => "",
         Body::Text(text) => text.as_str(),
         Body::Binary(_) => unimplemented!(),
+        _ => unimplemented!(),
     }
     .as_bytes();
 
