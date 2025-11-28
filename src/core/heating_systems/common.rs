@@ -284,7 +284,7 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::Instant(instant) => Ok(instant.energy_output_min()),
             SpaceHeatSystem::WarmAir(warm_air) => Ok(warm_air.energy_output_min()),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
-                Ok(wet_distribution.energy_output_min(simulation_time_iteration))
+                wet_distribution.energy_output_min(simulation_time_iteration)
             }
         }
     }
@@ -296,6 +296,8 @@ pub enum SpaceHeatingService {
     Boiler(BoilerServiceSpace),
     HeatNetwork(HeatNetworkServiceSpace),
     HeatBattery(HeatBatteryServiceSpace),
+    #[cfg(test)]
+    Mock,
 }
 
 impl SpaceHeatingService {
@@ -342,6 +344,16 @@ impl SpaceHeatingService {
                     simulation_time_iteration,
                 )?,
                 None,
+            )),
+            #[cfg(test)]
+            SpaceHeatingService::Mock => Ok((
+                2.5,
+                emitters_data_for_buffer_tank.map(|emitters_data| {
+                    BufferTankEmittersDataWithResult {
+                        data: emitters_data,
+                        result: Default::default(),
+                    }
+                }),
             )),
         }
     }
@@ -402,6 +414,8 @@ impl SpaceHeatingService {
                 )?,
                 None,
             )),
+            #[cfg(test)]
+            SpaceHeatingService::Mock => Ok(((0.0f64).max(2.5f64.min(energy_demand)), None)),
         }
     }
 
