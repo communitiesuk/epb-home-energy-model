@@ -2885,7 +2885,6 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
-
     use crate::core::space_heat_demand::ventilation::FacadeDirection::{
         Roof, Roof10, Roof10_30, Roof30, WindSeg2, WindSeg4,
     };
@@ -2895,6 +2894,7 @@ mod tests {
     use approx::assert_relative_eq;
     use parking_lot::lock_api::RwLock;
     use rstest::{fixture, rstest};
+    use serde_json::json;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
 
@@ -3294,6 +3294,250 @@ mod tests {
             .unwrap(),
             -0.05
         );
+    }
+
+    #[rstest]
+    fn test_create_infiltration_ventilation(energy_supply: EnergySupply) {
+        let infiltration_ventilation_input: InfiltrationVentilationInput =
+            serde_json::from_value(json!({
+                "cross_vent_possible": true,
+                "shield_class": "Normal",
+                "terrain_class": "OpenField",
+                "ventilation_zone_base_height": 2.5,
+                "altitude": 30,
+                "Vents": {
+                    "vent1": {
+                        "mid_height_air_flow_path": 1.5,
+                        "area_cm2": 100,
+                        "pressure_difference_ref": 20,
+                        "orientation360": 180,
+                        "pitch": 60,
+                    }
+                },
+                "Leaks": {
+                    "ventilation_zone_height": 6,
+                    "test_pressure": 50,
+                    "test_result": 1.2,
+                    "env_area": 220,
+                },
+                "CombustionAppliances": {
+                    "Fireplace": {
+                        "supply_situation": "room_air",
+                        "exhaust_situation": "into_separate_duct",
+                        "fuel_type": "wood",
+                        "appliance_type": "open_fireplace",
+                    }
+                },
+                "MechanicalVentilation": {
+                    "mechvent1": {
+                        "sup_air_flw_ctrl": "ODA",
+                        "sup_air_temp_ctrl": "NO_CTRL",
+                        "vent_type": "Centralised continuous MEV",
+                        "SFP": 1.5,
+                        "EnergySupply": "mains elec",
+                        "design_outdoor_air_flow_rate": 80,
+                        "orientation360": 180,
+                        "pitch": 90,
+                        "mid_height_air_flow_path": 2,
+                        "Control": "min_temp",
+                    },
+                    "mechvent2": {
+                        "sup_air_flw_ctrl": "ODA",
+                        "sup_air_temp_ctrl": "NO_CTRL",
+                        "vent_type": "MVHR",
+                        "mvhr_eff": 0.80,
+                        "SFP": 1.5,
+                        "EnergySupply": "mains elec",
+                        "design_outdoor_air_flow_rate": 80,
+                        "position_intake": {
+                            "orientation360": 180,
+                            "pitch": 90,
+                            "mid_height_air_flow_path": 3.0,
+                        },
+                        "position_exhaust": {
+                            "orientation360": 0,
+                            "pitch": 90,
+                            "mid_height_air_flow_path": 2.0,
+                        },
+                        "mvhr_location": "outside",
+                        "ductwork": [
+                            {
+                                "cross_section_shape": "circular",
+                                "internal_diameter_mm": 200,
+                                "external_diameter_mm": 300,
+                                "length": 10.0,
+                                "insulation_thermal_conductivity": 0.023,
+                                "insulation_thickness_mm": 100,
+                                "reflective": false,
+                                "duct_type": "supply",
+                            },
+                            {
+                                "cross_section_shape": "rectangular",
+                                "duct_perimeter_mm": 300,
+                                "length": 10.0,
+                                "insulation_thermal_conductivity": 0.023,
+                                "insulation_thickness_mm": 100,
+                                "reflective": false,
+                                "duct_type": "extract",
+                            },
+                            {
+                                "cross_section_shape": "circular",
+                                "internal_diameter_mm": 200,
+                                "external_diameter_mm": 300,
+                                "length": 10.0,
+                                "insulation_thermal_conductivity": 0.023,
+                                "insulation_thickness_mm": 100,
+                                "reflective": false,
+                                "duct_type": "intake",
+                            },
+                            {
+                                "cross_section_shape": "circular",
+                                "internal_diameter_mm": 200,
+                                "external_diameter_mm": 300,
+                                "length": 10.0,
+                                "insulation_thermal_conductivity": 0.023,
+                                "insulation_thickness_mm": 100,
+                                "reflective": false,
+                                "duct_type": "exhaust",
+                            },
+                        ],
+                    },
+                },
+            }))
+            .unwrap();
+        let zone_input: ZoneDictionary = serde_json::from_value(json!({
+            "zone 1": {
+                "SpaceHeatSystem": "zone 1 radiators",
+                "ThermalBridging": {},
+                "area": 80.0,
+                "volume": 250.0,
+                "temp_setpnt_init": 21.0,
+                "BuildingElement": {
+                    "wall 0": {
+                        "type": "BuildingElementOpaque",
+                        "solar_absorption_coeff": 0.6,
+                        "thermal_resistance_construction": 0.7,
+                        "areal_heat_capacity": 19000,
+                        "mass_distribution_class": "IE",
+                        "pitch": 90,
+                        "orientation360": 90,
+                        "base_height": 0,
+                        "height": 2.5,
+                        "width": 10,
+                        "area": 20.0,
+                    },
+                    "wall 1": {
+                        "type": "BuildingElementOpaque",
+                        "solar_absorption_coeff": 0.62,
+                        "thermal_resistance_construction": 0.72,
+                        "areal_heat_capacity": 19200,
+                        "mass_distribution_class": "E",
+                        "pitch": 50,
+                        "orientation360": 0,
+                        "base_height": 0,
+                        "height": 2.5,
+                        "width": 8,
+                        "area": 20.0,
+                    },
+                    "wall 2": {
+                        "type": "BuildingElementOpaque",
+                        "solar_absorption_coeff": 0.62,
+                        "thermal_resistance_construction": 0.72,
+                        "areal_heat_capacity": 19200,
+                        "mass_distribution_class": "E",
+                        "pitch": 40,
+                        "orientation360": 0,
+                        "base_height": 0,
+                        "height": 2.5,
+                        "width": 8,
+                        "area": 20.0,
+                    },
+                    "window 0": {
+                        "type": "BuildingElementTransparent",
+                        "Control_WindowOpenable": "_window_opening_closedsleeping",
+                        "thermal_resistance_construction": 0.4,
+                        "pitch": 90,
+                        "orientation360": 90,
+                        "g_value": 0.75,
+                        "frame_area_fraction": 0.25,
+                        "base_height": 1,
+                        "height": 1.25,
+                        "width": 4,
+                        "free_area_height": 1.6,
+                        "mid_height": 1.5,
+                        "max_window_open_area": 3,
+                        "window_part_list": [{"mid_height_air_flow_path": 1.5}],
+                        "shading": [
+                            {"type": "overhang", "depth": 0.5, "distance": 0.5},
+                            {"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
+                            {"type": "sidefinright", "depth": 0.25, "distance": 0.1},
+                        ],
+                    },
+                    "Window 1": {
+                        "type": "BuildingElementTransparent",
+                        "Control_WindowOpenable": "_window_opening_closedsleeping",
+                        "thermal_resistance_construction": 0.4,
+                        "pitch": 50,
+                        "orientation360": 90,
+                        "g_value": 0.75,
+                        "frame_area_fraction": 0.25,
+                        "base_height": 1,
+                        "height": 1.25,
+                        "width": 4,
+                        "free_area_height": 1.6,
+                        "mid_height": 1.5,
+                        "max_window_open_area": 3,
+                        "window_part_list": [{"mid_height_air_flow_path": 1.5}], // this is empty in the Python
+                        "shading": [],
+                    },
+                },
+        }}))
+        .unwrap();
+        let energy_supplies =
+            IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
+        let controls: Controls = Controls::new(Default::default(), Default::default());
+
+        let infiltration_ventilation = InfiltrationVentilation::create(
+            &infiltration_ventilation_input,
+            &zone_input,
+            true,
+            &energy_supplies,
+            &controls,
+        )
+        .unwrap();
+
+        assert!(infiltration_ventilation.f_cross);
+        assert_eq!(
+            infiltration_ventilation.shield_class,
+            VentilationShieldClass::Normal
+        );
+        assert_eq!(infiltration_ventilation.ventilation_zone_height, 6.);
+        assert_eq!(infiltration_ventilation.c_rgh_site, 0.8930912695005592);
+        assert!(infiltration_ventilation.detailed_output_heating_cooling);
+        assert_eq!(infiltration_ventilation.p_a_alt, 1.200588938687906);
+        assert_eq!(infiltration_ventilation.total_volume, 250.);
+        assert_eq!(infiltration_ventilation.windows.len(), 2);
+        assert_eq!(infiltration_ventilation.vents.len(), 1);
+        assert_eq!(infiltration_ventilation.leaks.len(), 5);
+        assert_eq!(infiltration_ventilation.mech_vents.len(), 2);
+        assert_eq!(infiltration_ventilation.space_heating_ductworks.len(), 1);
+
+        for leak in infiltration_ventilation.leaks.iter() {
+            assert_eq!(leak.a_roof, 45.)
+        }
+
+        for leak in infiltration_ventilation.leaks.iter() {
+            assert_eq!(leak.a_facades, 25.)
+        }
+
+        // TODO
+        // self.assertEqual(
+        //     [
+        //         vent._MechanicalVentilation__ctrl_intermittent_MEV
+        //     for vent in infiltration_ventilation._InfiltrationVentilation__mech_vents  # type: ignore[AttributeAccessIssue]
+        // ],
+        // [control1, None],
+        // )
     }
 
     #[fixture]
@@ -4159,7 +4403,7 @@ mod tests {
     #[case(5., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof10])]
     #[case(15., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof10_30])]
     #[case(40., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof30])]
-    #[case(40., false, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof] )]
+    #[case(40., false, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof])]
     #[should_panic = "Average roof pitch was not expected to be greater than 60 degrees."]
     #[case(90., true, vec![WindSeg2, WindSeg4, Roof10])]
     fn test_make_leak_objects_roof_pitch(
