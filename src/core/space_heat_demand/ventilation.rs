@@ -2952,14 +2952,11 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
     #[case(CombustionFuelType::Wood, CombustionApplianceType::OpenGasFire)]
-    #[should_panic]
     #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenGasFire)]
-    #[should_panic]
     #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenGasFire)]
-    #[should_panic]
     #[case(CombustionFuelType::Gas, CombustionApplianceType::ClosedFire)]
+    #[should_panic]
     fn test_get_fuel_flow_factor_invalid_combinations(
         #[case] fuel_type: CombustionFuelType,
         #[case] appliance_type: CombustionApplianceType,
