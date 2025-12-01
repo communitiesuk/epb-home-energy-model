@@ -3213,6 +3213,17 @@ impl BuildingElement {
             _ => None,
         }
     }
+
+    #[cfg(test)]
+    pub fn remove_window_openable_control(&mut self) {
+        match self {
+            BuildingElement::Transparent {
+                window_openable_control,
+                ..
+            } => *window_openable_control = None,
+            _ => {}
+        }
+    }
 }
 
 pub trait TransparentBuildingElement {

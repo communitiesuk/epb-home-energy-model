@@ -2883,7 +2883,8 @@ pub struct InternalReferencePressureCalculationError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::OnOffTimeControl;
+    use crate::core::controls::time_control::Control::{OnOffTime, SetpointTime};
+    use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::space_heat_demand::ventilation::FacadeDirection::{
         Roof, Roof10, Roof10_30, Roof30, WindSeg2, WindSeg4,
@@ -2895,6 +2896,7 @@ mod tests {
     use parking_lot::lock_api::RwLock;
     use rstest::{fixture, rstest};
     use serde_json::json;
+    use std::collections::HashMap;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
 
@@ -3294,7 +3296,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_create_infiltration_ventilation(energy_supply: EnergySupply) {
+    fn test_create_infiltration_ventilation(
+        energy_supply: EnergySupply,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
         let infiltration_ventilation_input: InfiltrationVentilationInput =
             serde_json::from_value(json!({
                 "cross_vent_possible": true,
@@ -3492,7 +3497,22 @@ mod tests {
         .unwrap();
         let energy_supplies =
             IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
-        let controls: Controls = Controls::new(Default::default(), Default::default());
+        let control1 = SetpointTime(SetpointTimeControl::new(
+            vec![],
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            1.,
+        ));
+        let control2 = OnOffTime(OnOffTimeControl::new(vec![], 0, 1.));
+        let controls: Controls = Controls::new(
+            vec![],
+            HashMap::from([
+                ("min_temp".into(), control1.into()),
+                ("_window_opening_closedsleeping".into(), control2.into()),
+            ]),
+        );
 
         let infiltration_ventilation = InfiltrationVentilation::create(
             &infiltration_ventilation_input,
@@ -3527,14 +3547,87 @@ mod tests {
             assert_eq!(leak.a_facades, 25.)
         }
 
-        // TODO
-        // self.assertEqual(
-        //     [
-        //         vent._MechanicalVentilation__ctrl_intermittent_MEV
-        //     for vent in infiltration_ventilation._InfiltrationVentilation__mech_vents  # type: ignore[AttributeAccessIssue]
-        // ],
-        // [control1, None],
-        // )
+        assert!(infiltration_ventilation.mech_vents[0]
+            .ctrl_intermittent_mev
+            .is_some());
+        assert!(infiltration_ventilation.mech_vents[1]
+            .ctrl_intermittent_mev
+            .is_none());
+
+        let ductworks = infiltration_ventilation
+            .space_heating_ductworks()
+            .values()
+            .flatten()
+            .clone()
+            .collect_vec();
+        let resistances = ductworks
+            .iter()
+            .map(|ductwork| ductwork.internal_surface_resistance())
+            .collect_vec();
+
+        assert_relative_eq!(resistances[0], 0.10268060844638409);
+        assert_relative_eq!(resistances[1], 0.21505376344086025);
+        assert_relative_eq!(resistances[2], 0.10268060844638409);
+        assert_relative_eq!(resistances[3], 0.10268060844638409);
+        assert_eq!(ductworks[2].diameter_including_insulation_in_m, Some(0.5));
+
+        // Test removing window controls
+        assert!(infiltration_ventilation.windows[0]
+            .on_off_ctrl_obj
+            .is_some());
+
+        let mut zone_input_copy = zone_input.clone();
+        zone_input_copy["zone 1"].building_elements["window 0"].remove_window_openable_control();
+        let energy_supply = EnergySupplyBuilder::new(
+            FuelType::Electricity,
+            simulation_time_iterator.total_steps(),
+        )
+        .build();
+        let energy_supplies =
+            IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
+
+        let infiltration_ventilation = InfiltrationVentilation::create(
+            &infiltration_ventilation_input,
+            &zone_input_copy,
+            true,
+            &energy_supplies,
+            &controls,
+        )
+        .unwrap();
+
+        assert!(infiltration_ventilation.windows[0]
+            .on_off_ctrl_obj
+            .is_none());
+
+        // Test without walls
+        assert_eq!(infiltration_ventilation.leaks[4].facade_direction, Roof30);
+
+        let mut zone_input_copy = zone_input.clone();
+        if let Some(zone) = zone_input_copy.get_mut("zone 1") {
+            zone.building_elements.shift_remove("wall 1");
+            zone.building_elements.shift_remove("wall 2");
+        }
+        let energy_supply = EnergySupplyBuilder::new(
+            FuelType::Electricity,
+            simulation_time_iterator.total_steps(),
+        )
+        .build();
+        let energy_supplies =
+            IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
+
+        let infiltration_ventilation = InfiltrationVentilation::create(
+            &infiltration_ventilation_input,
+            &zone_input_copy,
+            true,
+            &energy_supplies,
+            &controls,
+        )
+        .unwrap();
+
+        assert_eq!(infiltration_ventilation.leaks[4].facade_direction, Roof10);
+
+        // Test without combustion appliances - skipping as combustion appliances not currently implemented
+        // TODO migrations later than 1.0.0a1, check if they've been reimplemented, if not, remove comment
     }
 
     #[fixture]
