@@ -1249,7 +1249,8 @@ impl Corpus {
         // TODO (from Python) Remove the branch on the type of ventilation (find a better way)
         let mech_vents = self.ventilation.mech_vents();
         for mech_vent in mech_vents.iter() {
-            gains_internal_zone += mech_vent.fans(zone.volume(), self.total_volume, None, &simtime);
+            gains_internal_zone +=
+                mech_vent.fans(zone.volume(), self.total_volume, None, &simtime)?;
             gains_internal_zone += internal_gains_ductwork_per_m3 * zone.volume();
         }
 
