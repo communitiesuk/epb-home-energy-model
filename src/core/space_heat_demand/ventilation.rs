@@ -540,6 +540,21 @@ impl MechVentType {
         self.is_balanced() || self.is_extract_only()
     }
 
+    /// Check if this ventilation type operates continuously.
+    fn is_continuous(&self) -> bool {
+        matches!(
+            self,
+            Self::CentralisedContinuousMev { .. }
+                | Self::DecentralisedContinuousMev { .. }
+                | Self::Mvhr { .. }
+        )
+    }
+
+    /// Check if this ventilation type operates intermittently.
+    fn is_intermittent(&self) -> bool {
+        matches!(self, Self::IntermittentMev { .. })
+    }
+
     // Flow change coefficients for different mechanical ventilation types
     // From "Sensitivity of fans to back pressure – generic values for HEM - Technical Note"
     fn flow_change_coefficients(&self) -> f64 {
@@ -1440,49 +1455,42 @@ impl MechanicalVentilation {
     /// Calculate required outdoor air flow rates at the air terminal devices
     /// Equations 10-17 from BS EN 16798-7
     /// Adjusted to be based on ventilation type instead of vent_sys_op.
-    fn calc_req_oda_flow_rates_at_atds(&self) -> (f64, f64) {
-        match &self.vent_type {
-            MechVentType::Mvhr => (self.qv_oda_req_design, -self.qv_oda_req_design),
-            MechVentType::IntermittentMev
-            | MechVentType::CentralisedContinuousMev
-            | MechVentType::DecentralisedContinuousMev => {
-                // NOTE: Calculation of effective flow rate of external air (in func
-                // calc_mech_vent_air_flw_rates_req_to_supply_vent_zone) assumes that
-                // supply and extract are perfectly balanced (as defined above), so
-                // any future change to this assumption will need to be considered
-                // with that in mind
-                (0., -self.qv_oda_req_design)
-            }
-            MechVentType::PositiveInputVentilation => (self.qv_oda_req_design, 0.),
-        }
+    fn calc_req_oda_flow_rates_at_atds(&self) -> anyhow::Result<(f64, f64)> {
+        let (qv_sup_req, qv_eta_req) = if self.vent_type.is_balanced() {
+            // NOTE: Calculation of effective flow rate of external air (in func
+            // calc_mech_vent_air_flw_rates_req_to_supply_vent_zone) assumes that
+            // supply and extract are perfectly balanced (as defined above), so
+            // any future change to this assumption will need to be considered
+            // with that in mind
+            (self.qv_oda_req_design, -self.qv_oda_req_design)
+        } else if self.vent_type.is_extract_only() {
+            (0., -self.qv_oda_req_design)
+        } else if self.vent_type.is_supply_only() {
+            (self.qv_oda_req_design, 0.)
+        } else {
+            bail!("Unrecognised ventilation system type")
+        };
+
+        Ok((qv_sup_req, qv_eta_req))
     }
 
     /// Returns the fraction of the timestep for which the ventilation is running
-    fn f_op_v(&self, simulation_time: &SimulationTimeIteration) -> f64 {
-        match &self.vent_type {
-            MechVentType::IntermittentMev => {
-                let f_op_v = self
-                    .ctrl_intermittent_mev
-                    .as_ref()
-                    .expect("ctrl_intermittent_mev was expected to be set")
-                    .setpnt(simulation_time)
-                    .expect("A setpoint was expected to be derivable for a control.");
-
-                if !(0. ..=1.).contains(&f_op_v) {
-                    panic!("Error f_op_v is not between 0 and 1")
-                }
-
-                f_op_v
+    fn f_op_v(&self, simulation_time: &SimulationTimeIteration) -> anyhow::Result<f64> {
+        if self.vent_type.is_intermittent() {
+            let f_op_v = self
+                .ctrl_intermittent_mev
+                .as_ref()
+                .and_then(|ctrl| ctrl.setpnt(simulation_time));
+            match f_op_v {
+                Some(f_op_v) if (0. ..=1.).contains(&f_op_v) => Ok(f_op_v),
+                _ => bail!("Error f_op_v is not between 0 and 1"),
             }
-            MechVentType::DecentralisedContinuousMev
-            | MechVentType::CentralisedContinuousMev
-            | MechVentType::Mvhr => {
-                // Assumed to operate continuously
-                1.
-            }
+        } else if self.vent_type.is_continuous() {
+            Ok(1.)
+        } else {
             // NOTE - this will happen for VentType::Piv
             // same behaviour as Python
-            _ => panic!("Unknown mechanical ventilation system type"),
+            bail!("Unknown mechanical ventilation system type")
         }
     }
 
@@ -1500,7 +1508,7 @@ impl MechanicalVentilation {
         simulation_time: &SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64)> {
         // Required air flow at air terminal devices
-        let (qv_sup_req, qv_eta_req) = self.calc_req_oda_flow_rates_at_atds();
+        let (qv_sup_req, qv_eta_req) = self.calc_req_oda_flow_rates_at_atds()?;
 
         // Calculate pressure differences based on system type
         let (delta_p_intake, delta_p_exhaust) = if self.vent_type.has_supply() {
@@ -1550,7 +1558,7 @@ impl MechanicalVentilation {
         // Amount of air flow depends on controls
         let (qv_sup_dis_req, qv_eta_dis_req) = match self.sup_air_flw_ctrl {
             SupplyAirFlowRateControlType::Oda => {
-                let f_op_v = self.f_op_v(simulation_time);
+                let f_op_v = self.f_op_v(simulation_time)?;
                 let flow_change_coefficient = self.vent_type.flow_change_coefficients();
 
                 // Based on Equation 18 and 19
@@ -1612,7 +1620,7 @@ impl MechanicalVentilation {
         total_volume: f64,
         throughput_factor: Option<f64>,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let _throughput_factor = throughput_factor.unwrap_or(1.0);
         // Calculate energy use by fans
         let fan_power_w = (self.sfp
@@ -1621,7 +1629,7 @@ impl MechanicalVentilation {
             * (zone_volume / total_volume);
         let fan_energy_use_kwh = (fan_power_w / f64::from(WATTS_PER_KILOWATT))
             * simulation_time_iteration.timestep
-            * self.f_op_v(simulation_time_iteration);
+            * self.f_op_v(simulation_time_iteration)?;
 
         let (supply_fan_energy_use_kwh, extract_fan_energy_use_in_kwh) = match self.vent_type {
             MechVentType::IntermittentMev
@@ -1637,17 +1645,14 @@ impl MechanicalVentilation {
             MechVentType::PositiveInputVentilation => unimplemented!(), // TODO PIV code has been commented out in upstream Python 1.0.0a1
         };
         self.energy_supply_conn
-            .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration.index)
-            .unwrap();
-        self.energy_supply_conn
-            .demand_energy(
-                extract_fan_energy_use_in_kwh,
-                simulation_time_iteration.index,
-            )
-            .unwrap();
+            .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration.index)?;
+        self.energy_supply_conn.demand_energy(
+            extract_fan_energy_use_in_kwh,
+            simulation_time_iteration.index,
+        )?;
 
-        supply_fan_energy_use_kwh
-            / (f64::from(WATTS_PER_KILOWATT) * simulation_time_iteration.timestep)
+        Ok(supply_fan_energy_use_kwh
+            / (f64::from(WATTS_PER_KILOWATT) * simulation_time_iteration.timestep))
     }
 
     pub fn vent_type(&self) -> MechVentType {
@@ -4221,17 +4226,23 @@ mod tests {
 
     #[rstest]
     fn test_calc_req_oda_flow_rates_at_atds(mut mechanical_ventilation: MechanicalVentilation) {
-        let (qv_sup_req, qv_eta_req) = mechanical_ventilation.calc_req_oda_flow_rates_at_atds();
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation
+            .calc_req_oda_flow_rates_at_atds()
+            .unwrap();
         assert_relative_eq!(qv_sup_req, 0.55);
         assert_relative_eq!(qv_eta_req, -0.55);
 
         mechanical_ventilation.vent_type = MechVentType::IntermittentMev;
-        let (qv_sup_req, qv_eta_req) = mechanical_ventilation.calc_req_oda_flow_rates_at_atds();
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation
+            .calc_req_oda_flow_rates_at_atds()
+            .unwrap();
         assert_relative_eq!(qv_sup_req, 0.);
         assert_relative_eq!(qv_eta_req, -0.55);
 
         mechanical_ventilation.vent_type = MechVentType::PositiveInputVentilation;
-        let (qv_sup_req, qv_eta_req) = mechanical_ventilation.calc_req_oda_flow_rates_at_atds();
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation
+            .calc_req_oda_flow_rates_at_atds()
+            .unwrap();
         assert_relative_eq!(qv_sup_req, 0.55);
         assert_relative_eq!(qv_eta_req, 0.);
     }
@@ -4278,19 +4289,25 @@ mod tests {
         #[case] setpoint: f64,
     ) {
         assert_relative_eq!(
-            mechanical_ventilation.f_op_v(&simulation_time_iterator.current_iteration()),
+            mechanical_ventilation
+                .f_op_v(&simulation_time_iterator.current_iteration())
+                .unwrap(),
             1.
         );
 
         mechanical_ventilation.vent_type = MechVentType::IntermittentMev;
         mechanical_ventilation.ctrl_intermittent_mev = Some(Arc::new(MockControl(Some(setpoint))));
         assert_eq!(
-            mechanical_ventilation.f_op_v(&simulation_time_iterator.current_iteration()),
+            mechanical_ventilation
+                .f_op_v(&simulation_time_iterator.current_iteration())
+                .unwrap(),
             0.5
         );
 
         mechanical_ventilation.ctrl_intermittent_mev = Some(Arc::new(MockControl(Some(setpoint))));
-        mechanical_ventilation.f_op_v(&simulation_time_iterator.current_iteration());
+        mechanical_ventilation
+            .f_op_v(&simulation_time_iterator.current_iteration())
+            .unwrap();
     }
 
     #[rstest]
@@ -4324,12 +4341,19 @@ mod tests {
             1.,
         );
 
-        assert_relative_eq!(mechanical_ventilation.fans(200., 2000., None, simtime), 0.);
+        assert_relative_eq!(
+            mechanical_ventilation
+                .fans(200., 2000., None, simtime)
+                .unwrap(),
+            0.
+        );
 
         mechanical_ventilation.vent_type = MechVentType::Mvhr;
 
         assert_relative_eq!(
-            mechanical_ventilation.fans(200., 2000., None, simtime),
+            mechanical_ventilation
+                .fans(200., 2000., None, simtime)
+                .unwrap(),
             1.1458333333333335e-06,
         );
     }
