@@ -26,7 +26,7 @@ pub struct Ductwork {
     // in K m / W
     external_surface_resistance: f64, // K m / W
     #[cfg(test)]
-    diameter_including_insulation_in_m: Option<f64>,
+    pub diameter_including_insulation_in_m: Option<f64>,
 }
 
 impl Ductwork {
@@ -203,6 +203,11 @@ impl Ductwork {
                 }
             },
         }
+    }
+
+    #[cfg(test)]
+    pub fn internal_surface_resistance(&self) -> f64 {
+        self.internal_surface_resistance
     }
 }
 
