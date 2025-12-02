@@ -3109,7 +3109,7 @@ mod tests {
         assert_eq!(heat_transfer_other_side_a.h_re(), 4.14);
     }
 
-    // skip test_fabric_heat_losss as Rust would not allow invalid method call
+    // skip test_fabric_heat_loss as Rust would not allow invalid method call
 
     #[fixture]
     fn simulation_time() -> SimulationTimeIterator {
@@ -4264,6 +4264,8 @@ mod tests {
         );
     }
 
+    // skip test_orientation_none as orientation is not optional
+
     impl SolarRadiationInteractionTransmitted for MockSolarRadiationInteraction {
         fn unconverted_g_value(&self) -> f64 {
             self.0.unwrap()
@@ -4317,6 +4319,8 @@ mod tests {
 
         assert_relative_eq!(solar_gains, 0.9, max_relative = 1e-6);
     }
+
+    // skip test_solar_gains_error as orientation and shading cannot be None at the point of the methods calls in this test
 
     #[fixture]
     fn transparent_building_element(
@@ -4383,12 +4387,8 @@ mod tests {
 
     #[rstest]
     fn test_heat_flow_direction(transparent_building_element: BuildingElementTransparent) {
-        // Python test uses None here, but reasonable to expecta temperature to be passed in because
-        // that example only works because of the pitch set on this building element, and would fail
-        // for a different value
-        let stock_temperature = 20.;
         assert_eq!(
-            transparent_building_element.heat_flow_direction(stock_temperature, stock_temperature),
+            transparent_building_element.heat_flow_direction(10., 10.),
             HeatFlowDirection::Horizontal,
             "incorrect heat flow direction returned"
         );
@@ -4405,12 +4405,8 @@ mod tests {
 
     #[rstest]
     fn test_h_ci_for_transparent(transparent_building_element: BuildingElementTransparent) {
-        // Python test uses None here, but reasonable to expecta temperature to be passed in because
-        // that example only works because of the pitch set on this building element, and would fail
-        // for a different value
-        let stock_temperature = 20.;
         assert_eq!(
-            transparent_building_element.h_ci(stock_temperature, stock_temperature),
+            transparent_building_element.h_ci(10., 10.),
             2.5,
             "incorrect h_ci returned"
         );
@@ -4898,6 +4894,8 @@ mod tests {
             .is_open
             .load(Ordering::SeqCst))
     }
+
+    // skip test_adjust_treatment_orientation_shading_error as orientation and shading cannot be None at the point of the methods calls in this test
 
     #[rstest]
     fn test_fabric_heat_loss_for_transparent(
