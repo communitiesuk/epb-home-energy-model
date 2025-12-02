@@ -20,7 +20,7 @@ impl WaterSourceWithTemperature {
     pub(crate) fn temperature(
         &self,
         simtime: SimulationTimeIteration,
-        volume_needed: Option<f64>,
+        _volume_needed: Option<f64>,
     ) -> f64 {
         match self {
             WaterSourceWithTemperature::ColdWaterSource(cold_water_source) => {
@@ -28,10 +28,10 @@ impl WaterSourceWithTemperature {
             }
             WaterSourceWithTemperature::Wwhrs(w) => w.lock().temperature(),
             WaterSourceWithTemperature::Preheated(source) => match source {
-                HotWaterStorageTank::StorageTank(storage_tank) => {
+                HotWaterStorageTank::StorageTank(_storage_tank) => {
                     todo!() // switched to get_temp_cold_water and draw_off_water in latest
                 }
-                HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
+                HotWaterStorageTank::SmartHotWaterTank(_smart_hot_water_tank) => {
                     todo!() // switched to get_temp_cold_water and draw_off_water in latest
                 }
             },

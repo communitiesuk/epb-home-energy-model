@@ -138,7 +138,7 @@ impl StorageTank {
     /// * `cold_feed` - reference to ColdWaterSource object
     /// * `simulation_timestep` - the timestep for the simulation time being used in the calculation
     /// * `heat_sources`     -- hashmap of names and heat source objects
-    /// *  `nb_vol` -number of volumes the storage is modelled with
+    /// *  `number_of_volumes` -number of volumes the storage is modelled with
     ///              see App.C (C.1.2 selection of the number of volumes to model the storage unit)
     ///              for more details if this wants to be changed.
     /// * `primary_pipework` - optional reference to pipework
@@ -1513,7 +1513,7 @@ impl SmartHotWaterTank {
     /// * `heat_sources` - dict where keys are heat source objects and
     ///                                values are tuples of heater and thermostat
     ///                                position
-    /// * `nb_vol` -
+    /// * `number_of_volumes` -
     ///                               number of volumes the storage is modelled with
     ///                               see App.C (C.1.2 selection of the number of volumes to model the storage unit)
     ///                               for more details if this wants to be changed.
@@ -1533,13 +1533,13 @@ impl SmartHotWaterTank {
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
         detailed_output: Option<bool>,
-        nb_vol: Option<usize>,
+        number_of_volumes: Option<usize>,
         primary_pipework_lst: Option<&Vec<WaterPipework>>,
         energy_supply_conn_pump: EnergySupplyConnection,
         contents: Option<MaterialProperties>,
     ) -> anyhow::Result<Self> {
         let detailed_output = detailed_output.unwrap_or(false);
-        let nb_vol = nb_vol.unwrap_or(100);
+        let number_of_volumes = number_of_volumes.unwrap_or(100);
         let contents = contents.unwrap_or(*WATER);
 
         let storage_tank = StorageTank::new(
@@ -1551,7 +1551,7 @@ impl SmartHotWaterTank {
             heat_sources,
             temp_internal_air_fn,
             external_conditions,
-            nb_vol.into(),
+            number_of_volumes.into(),
             primary_pipework_lst,
             contents,
             None,
@@ -2228,18 +2228,18 @@ impl SmartHotWaterTank {
         // Init for remaining volume of water in storage layers
         let mut remaining_vols = self.storage_tank.vol_n.clone();
         // Temperature of water in storage tank layers
-        let temp_tank = temp_s7_n.to_vec();
+        let tank_layer_temperatures = temp_s7_n.to_vec();
 
         // Volume pumped using top up pump
         let volume_pumped = self.bottom_to_top_pump_volume(
-            &temp_tank,
+            &tank_layer_temperatures,
             q_x_in_n,
             heater_layer,
             &remaining_vols,
             simtime,
         )?;
 
-        Ok(self.temps_after_pumping(volume_pumped, &mut remaining_vols, &temp_tank))
+        Ok(self.temps_after_pumping(volume_pumped, &mut remaining_vols, &tank_layer_temperatures))
     }
 
     /// Calculate the temperatures of the tank after volume is pumped
@@ -2247,9 +2247,9 @@ impl SmartHotWaterTank {
         &self,
         volume_pumped: f64,
         remaining_vols: &mut [f64],
-        temp_tank: &[f64],
+        tank_layer_temperatures: &[f64],
     ) -> Vec<f64> {
-        let mut tank_layer_temperatures = temp_tank.to_vec();
+        let mut tank_layer_temperatures = tank_layer_temperatures.to_vec();
         let mut remaining_vols = remaining_vols.to_vec();
         if volume_pumped > 0. {
             // Calculate water removed
@@ -2462,8 +2462,8 @@ pub struct ImmersionHeater {
     pwr: f64, // rated power
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control_min: Arc<Control>,
-    control_max: Arc<Control>,
+    control_min: Option<Arc<Control>>,
+    control_max: Option<Arc<Control>>,
     diverter: ArcSwapOption<RwLock<PVDiverter>>,
 }
 
@@ -2483,8 +2483,8 @@ impl ImmersionHeater {
         rated_power: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Option<Arc<Control>>,
+        control_max: Option<Arc<Control>>,
     ) -> Self {
         Self {
             pwr: rated_power,
@@ -2497,8 +2497,8 @@ impl ImmersionHeater {
     }
     pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
         (
-            self.control_min.setpnt(&simtime),
-            self.control_max.setpnt(&simtime),
+            if self.control_min.is_some() { self.control_min.as_ref().unwrap().setpnt(&simtime) } else { None },
+            if self.control_max.is_some() { self.control_max.as_ref().unwrap().setpnt(&simtime) } else { None },
         )
     }
 
@@ -2520,9 +2520,7 @@ impl ImmersionHeater {
             bail!("Negative energy demand on ImmersionHeater");
         };
 
-        // Account for time control. In the Python they also check here whether control_min is None
-        // but this is not possible as it's a required field for an ImmersionHeater.
-        let energy_supplied = if self.control_min.as_ref().is_on(simtime) {
+        let energy_supplied = if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(simtime) {
             min_of_2(energy_demand, self.pwr * self.simulation_timestep)
         } else {
             0.
@@ -2531,7 +2529,7 @@ impl ImmersionHeater {
         // If there is a diverter to this immersion heater, then any heating
         // capacity already in use is not available to the diverter.
         if let Some(ref diverter) = &self.diverter.load_full() {
-            diverter.read().capacity_already_in_use(energy_supplied);
+            diverter.read().capacity_used(energy_supplied);
         }
 
         self.energy_supply_connection
@@ -2546,9 +2544,7 @@ impl ImmersionHeater {
         simtime: SimulationTimeIteration,
         ignore_standard_control: bool,
     ) -> f64 {
-        // Account for time control. In the Python they also check here whether control_min is None
-        // but this is not possible as it's a required field for an ImmersionHeater.
-        if self.control_min.as_ref().is_on(simtime) || ignore_standard_control {
+        if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(simtime) || ignore_standard_control {
             self.pwr * self.simulation_timestep
         } else {
             0.
@@ -2577,7 +2573,7 @@ pub struct PVDiverter {
     immersion_heater: Arc<Mutex<ImmersionHeater>>,
     heat_source_name: String,
     control_max: Option<Arc<Control>>,
-    capacity_already_in_use: AtomicF64,
+    capacity_used: AtomicF64,
 }
 
 impl PVDiverter {
@@ -2592,7 +2588,7 @@ impl PVDiverter {
             heat_source_name,
             control_max,
             immersion_heater: heat_source.clone(),
-            capacity_already_in_use: Default::default(),
+            capacity_used: Default::default(),
         }));
 
         heat_source.lock().connect_diverter(diverter.clone());
@@ -2601,13 +2597,13 @@ impl PVDiverter {
     }
 
     /// Record heater output that would happen anyway, to avoid double-counting
-    pub fn capacity_already_in_use(&self, energy_supplied: f64) {
-        self.capacity_already_in_use
+    pub fn increment_capacity_used(&self, energy_supplied: f64) {
+        self.capacity_used
             .fetch_add(energy_supplied, Ordering::SeqCst);
     }
 
     pub fn timestep_end(&self) {
-        self.capacity_already_in_use
+        self.capacity_used
             .store(Default::default(), Ordering::SeqCst);
     }
 }
@@ -2627,7 +2623,7 @@ impl SurplusDiverting for PVDiverter {
             .immersion_heater
             .lock()
             .energy_output_max(simulation_time_iteration, true)
-            - self.capacity_already_in_use.load(Ordering::SeqCst);
+            - self.capacity_used.load(Ordering::SeqCst);
 
         // Calculate the maximum energy that could be diverted
         // Note: supply_surplus argument is negative by convention, so negate it here
