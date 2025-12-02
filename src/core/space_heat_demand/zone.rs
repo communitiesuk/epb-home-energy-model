@@ -2138,7 +2138,7 @@ mod tests {
     }
 
     #[rstest]
-    fn should_have_correct_total_fabric_heat_loss(thermal_bridging_objects: ThermalBridging) {
+    fn test_total_fabric_heat_loss(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
             zone(thermal_bridging_objects).total_fabric_heat_loss(),
             181.99557093947166,
@@ -2147,12 +2147,12 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_heat_capacity(thermal_bridging_objects: ThermalBridging) {
+    pub fn test_total_heat_capacity(thermal_bridging_objects: ThermalBridging) {
         assert_eq!(zone(thermal_bridging_objects).total_heat_capacity(), 2166.);
     }
 
     #[rstest]
-    pub fn should_have_correct_thermal_bridges(thermal_bridging_objects: ThermalBridging) {
+    pub fn test_total_thermal_bridges(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
             zone(thermal_bridging_objects).total_thermal_bridges(),
             4.3,
