@@ -1717,8 +1717,7 @@ impl SmartHotWaterTank {
 
         let mut temp_s8_n = vec![0.; self.storage_tank.number_of_volumes];
 
-        for (heat_source_name, positioned_heat_source) in self.storage_tank.heat_source_data.clone()
-        {
+        for (heat_source_name, positioned_heat_source) in self.storage_tank.heat_source_data.clone() {
             let (_, _setpntmax) = positioned_heat_source.heat_source.lock().setpnt(simtime)?;
             let heater_layer = (positioned_heat_source.heater_position
                 * self.storage_tank.number_of_volumes as f64)
@@ -1781,8 +1780,7 @@ impl SmartHotWaterTank {
         // recoverable heat losses (storage) - kWh
         let q_sto_h_rbl_env = q_ls * THERMAL_CONSTANTS_F_STO_M;
         // total recoverable heat losses for heating - kWh
-        self.storage_tank
-            .q_sto_h_ls_rbl
+        self.storage_tank.q_sto_h_ls_rbl
             .store(q_sto_h_rbl_env + q_sto_h_rbl_aux, Ordering::SeqCst);
 
         // set temperatures calculated to be initial temperatures of volumes for the next timestep
@@ -1854,11 +1852,9 @@ impl SmartHotWaterTank {
                 heat_source
             {
                 // we are passing the storage tank object to the SolarThermal as this needs to call back the storage tank (sic from Python)
-                solar_heat_source.lock().energy_output_max(
-                    &self.storage_tank,
-                    temp_s3_n,
-                    &simulation_time,
-                )
+                solar_heat_source
+                    .lock()
+                    .energy_output_max(&self.storage_tank, temp_s3_n, &simulation_time)
             } else {
                 // N.B calling the SmartStorageTank specific method here
                 self.determine_heat_source_switch_on(
