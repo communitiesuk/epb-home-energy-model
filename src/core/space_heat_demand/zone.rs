@@ -2185,8 +2185,36 @@ mod tests {
     #[ignore = "TODO: Python uses np.linalg.solve, what would be valuable in Rust?"]
     pub fn test_fast_solver() {}
 
+    fn maps_approx_equal(
+        actual: &IndexMap<String, f64>,
+        expected: &IndexMap<String, f64>,
+        tol: f64,
+    ) -> bool {
+        if actual.len() != expected.len() {
+            return false;
+        }
+
+        for (key, &expected_value) in expected.iter() {
+            match actual.get(key) {
+                Some(&actual_value) => {
+                    if (expected_value - actual_value).abs() > tol {
+                        eprintln!(
+                            "Field '{}' differs. Expected {}, got {}",
+                            key, expected_value, actual_value
+                        );
+                        return false;
+                    }
+                }
+                None => {
+                    eprintln!("Could not find expected key '{}'", key);
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
     #[rstest]
-    #[ignore = "WIP"]
     pub fn test_update_temperatures(thermal_bridging_objects: ThermalBridging) {
         let expected_heat_balance = HeatBalance {
             air_node: HeatBalanceAirNode {
@@ -2220,7 +2248,8 @@ mod tests {
                 ztc_fabric_ext: 0.,
                 ztu_fabric_ext: -434.43500426106175,
             },
-        };
+        }
+            .as_index_map();
         let simulatio_time_iteration = simulation_time().iter().next().unwrap();
         let actual_heat_balance = zone(thermal_bridging_objects)
             .update_temperatures(
@@ -2235,9 +2264,13 @@ mod tests {
                 simulatio_time_iteration,
             )
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .as_index_map();
 
-        assert_eq!(actual_heat_balance, expected_heat_balance);
+        for (key, actual_value) in actual_heat_balance {
+            let expected_value = expected_heat_balance.get(&key).unwrap();
+            assert!(maps_approx_equal(&actual_value, expected_value, 1e-8));
+        }
     }
 
     // test is commented out in upstream
