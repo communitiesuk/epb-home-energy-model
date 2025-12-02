@@ -1710,6 +1710,7 @@ mod tests {
     use crate::core::units::DAYS_IN_MONTH;
     use crate::corpus::CompletedVentilationLeaks;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+    use crate::hem_core::external_conditions::ShadingSegment;
     use crate::input::{
         FloorData, MassDistributionClass, TerrainClass, VentilationShieldClass, WindShieldLocation,
         WindowPart,
@@ -1856,16 +1857,59 @@ mod tests {
             );
         }
 
+        let shading_segments = vec![
+            ShadingSegment {
+                start: 180.,
+                end: 135.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 135.,
+                end: 90.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 90.,
+                end: 45.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 45.,
+                end: 0.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 0.,
+                end: -45.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: -45.,
+                end: -90.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: -90.,
+                end: -135.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: -135.,
+                end: -180.,
+                ..Default::default()
+            },
+        ];
+
         Arc::new(ExternalConditions::new(
             &simulation_time.iter(),
             air_temps,
             wind_speeds,
             wind_directions,
-            vec![0.0; 4],
-            vec![0.0; 4],
-            vec![0.2; 4],
-            55.0,
-            0.0,
+            vec![333.0, 610.0, 572.0, 420.0, 0.0, 10.0, 90.0, 275.0],
+            vec![420.0, 750.0, 425.0, 500.0, 0.0, 40.0, 0.0, 388.0],
+            vec![0.2; 8760],
+            51.42,
+            -0.75,
             0,
             0,
             None,
@@ -1874,7 +1918,7 @@ mod tests {
             Some(DaylightSavingsConfig::NotApplicable),
             false,
             false,
-            None,
+            shading_segments.into(),
         ))
     }
 
@@ -2067,6 +2111,25 @@ mod tests {
         let zone = zone(thermal_bridging);
 
         assert_eq!(zone.tb_heat_trans_coeff, 4.)
+    }
+
+    #[rstest]
+    fn test_setpnt_init(thermal_bridging_objects: ThermalBridging) {
+        assert_eq!(zone(thermal_bridging_objects).setpnt_init(), 21.);
+    }
+
+    #[rstest]
+    fn test_area(thermal_bridging_objects: ThermalBridging) {
+        assert_eq!(zone(thermal_bridging_objects).area(), 80.);
+    }
+
+    #[rstest]
+    fn test_gains_solar(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        assert_relative_eq!(
+            zone(thermal_bridging_objects).gains_solar(simulation_time_iteration),
+            -2154.583062153444
+        );
     }
 
     #[rstest]
