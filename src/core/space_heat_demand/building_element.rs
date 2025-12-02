@@ -1,5 +1,7 @@
 use crate::core::controls::time_control::{Control, ControlBehaviour};
-use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
+use crate::core::units::{
+    average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, JOULES_PER_KILOJOULE,
+};
 use crate::corpus::Controls;
 use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
@@ -10,7 +12,7 @@ use crate::input::{
     WindowTreatmentType,
 };
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use atomic_float::AtomicF64;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -2152,12 +2154,10 @@ impl BuildingElementGround {
 
         // Calculate thermal resistance of virtual layer using BS EN ISO 13370:2017 Equation (F1)
         let r_si = 0.17; // ISO 6946 - internal surface resistance
-        let r_vi = (1.0 / u_value) - r_si - thermal_resistance_floor_construction - r_gr; // in m2.K/W
-
-        // BS EN ISO 13370:2017 Table 2 validity interval r_vi > 0
-        if r_vi <= 0. {
-            bail!("r_vi should be greater than zero. Check u-value and thermal_resistance_floor_construction inputs for ground floors");
-        }
+        let r_vi = calculate_thermal_resistance_of_virtual_layer(
+            u_value,
+            thermal_resistance_floor_construction,
+        )?;
 
         new_ground.init_heat_transfer_through_3_plus_2_nodes(
             thermal_resistance_floor_construction,
@@ -4167,34 +4167,28 @@ mod tests {
         }
     }
 
-    // skipping test_from_string and test_from_string_invalid for TestWindowTreatmentType & TestWindowTreatmentCtrl as not necessary in Rust
-
+    // below window treatment tests are now in test_enums.py in the Python
     #[rstest]
-    fn test_is_manual() {
-        let manual: WindowTreatmentControl = WindowTreatmentControl::Manual;
-        let manual_motorised: WindowTreatmentControl = WindowTreatmentControl::ManualMotorised;
-        let auto_motorised: WindowTreatmentControl = WindowTreatmentControl::AutoMotorised;
-        let combined_light_blind_hvac: WindowTreatmentControl =
-            WindowTreatmentControl::CombinedLightBlindHvac;
-
-        assert_eq!(manual.is_manual(), true);
-        assert_eq!(manual_motorised.is_manual(), true);
-        assert_eq!(auto_motorised.is_manual(), false);
-        assert_eq!(combined_light_blind_hvac.is_manual(), false);
+    #[case(WindowTreatmentControl::Manual)]
+    #[case(WindowTreatmentControl::ManualMotorised)]
+    #[case(WindowTreatmentControl::AutoMotorised)]
+    #[case(WindowTreatmentControl::CombinedLightBlindHvac)]
+    fn test_is_either_automatic_or_manual(#[case] control: WindowTreatmentControl) {
+        assert!(control.is_automatic() || control.is_manual());
     }
 
     #[rstest]
-    fn test_is_automatic() {
-        let manual: WindowTreatmentControl = WindowTreatmentControl::Manual;
-        let manual_motorised: WindowTreatmentControl = WindowTreatmentControl::ManualMotorised;
-        let auto_motorised: WindowTreatmentControl = WindowTreatmentControl::AutoMotorised;
-        let combined_light_blind_hvac: WindowTreatmentControl =
-            WindowTreatmentControl::CombinedLightBlindHvac;
+    #[case(WindowTreatmentControl::AutoMotorised)]
+    #[case(WindowTreatmentControl::CombinedLightBlindHvac)]
+    fn test_is_not_manual(#[case] control: WindowTreatmentControl) {
+        assert!(!control.is_manual());
+    }
 
-        assert_eq!(manual.is_automatic(), false);
-        assert_eq!(manual_motorised.is_automatic(), false);
-        assert_eq!(auto_motorised.is_automatic(), true);
-        assert_eq!(combined_light_blind_hvac.is_automatic(), true);
+    #[rstest]
+    #[case(WindowTreatmentControl::Manual)]
+    #[case(WindowTreatmentControl::ManualMotorised)]
+    fn test_is_not_automatic(#[case] control: WindowTreatmentControl) {
+        assert!(!control.is_automatic());
     }
 
     struct MockSolarRadiationInteraction(Option<f64>);
