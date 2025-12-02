@@ -531,7 +531,7 @@ impl Zone {
                         * ((eli.element.h_ci(
                             temp_prev[self.zone_idx],
                             temp_prev[self.element_positions[eli_idx].1],
-                        )) * (air_node_temp * temp_int_surface))
+                    )) * (air_node_temp - temp_int_surface))
                 })
                 .sum::<f64>();
 
@@ -1450,7 +1450,7 @@ pub(crate) trait GainsLossesAsIndexMap {
     fn as_index_map(&self) -> IndexMap<String, f64>;
 }
 
-#[derive(Debug, FieldName)]
+#[derive(Debug, FieldName, PartialEq)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceAirNode {
     pub solar_gains: f64,
@@ -1513,7 +1513,7 @@ impl GainsLossesAsIndexMap for HeatBalanceAirNode {
     }
 }
 
-#[derive(Debug, FieldName)]
+#[derive(Debug, FieldName, PartialEq)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceInternalBoundary {
     pub fabric_int_air_convective: f64,
@@ -1561,7 +1561,7 @@ impl GainsLossesAsIndexMap for HeatBalanceInternalBoundary {
     }
 }
 
-#[derive(Debug, FieldName)]
+#[derive(Debug, FieldName, PartialEq)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceExternalBoundary {
     pub solar_gains: f64,
@@ -1669,7 +1669,7 @@ impl GainsLossesAsIndexMap for HeatBalanceExternalBoundary {
     }
 }
 
-#[derive(Debug, FieldName)]
+#[derive(Debug, FieldName, PartialEq)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalance {
     pub air_node: HeatBalanceAirNode,
@@ -2037,7 +2037,7 @@ mod tests {
             temp_setpnt_init,
             temp_setpnt_basis,
             None,
-            false,
+            true,
             &simulation_time.iter(),
         )
         .unwrap()
@@ -2179,6 +2179,65 @@ mod tests {
             zone(thermal_bridging_objects).temp_internal_air(),
             20.999999999999996,
         );
+    }
+
+    #[rstest]
+    #[ignore = "TODO: Python uses np.linalg.solve, what would be valuable in Rust?"]
+    pub fn test_fast_solver() {}
+
+    #[rstest]
+    #[ignore = "WIP"]
+    pub fn test_update_temperatures(thermal_bridging_objects: ThermalBridging) {
+        let expected_heat_balance = HeatBalance {
+            air_node: HeatBalanceAirNode {
+                solar_gains: 22.,
+                internal_gains: 80.,
+                heating_or_cooling_system_gains: 0.,
+                energy_to_change_internal_temperature: 1617.0201164499708,
+                thermal_bridges: -31.655330373346523,
+                infiltration_ventilation: -247.6853738767846,
+                fabric_heat_loss: -1439.6794121998396,
+            },
+            internal_boundary: HeatBalanceInternalBoundary {
+                fabric_int_air_convective: 1439.679412199842,
+                fabric_int_sol: 198.,
+                fabric_int_int_gains: 120.,
+                fabric_int_heat_cool: 0.,
+            },
+            external_boundary: HeatBalanceExternalBoundary {
+                solar_gains: 220.,
+                internal_gains: 200.,
+                heating_or_cooling_system_gains: 0.,
+                thermal_bridges: -31.655330373346523,
+                infiltration_ventilation: -247.6853738767846,
+                fabric_ext_air_convective: 465.59408303760006,
+                fabric_ext_air_radiative: 355.39880327150297,
+                fabric_ext_sol: -3204.6068977063023,
+                fabric_ext_sky: -1124.4913565980596,
+                opaque_fabric_ext: -2118.880733022755,
+                transparent_fabric_ext: -137.91628674680447,
+                ground_fabric_ext: -816.8733439646372,
+                ztc_fabric_ext: 0.,
+                ztu_fabric_ext: -434.43500426106175,
+            },
+        };
+        let simulatio_time_iteration = simulation_time().iter().next().unwrap();
+        let actual_heat_balance = zone(thermal_bridging_objects)
+            .update_temperatures(
+                1800.,
+                10.,
+                200.,
+                220.,
+                0.,
+                1.,
+                0.4,
+                10.,
+                simulatio_time_iteration,
+            )
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(actual_heat_balance, expected_heat_balance);
     }
 
     // test is commented out in upstream
