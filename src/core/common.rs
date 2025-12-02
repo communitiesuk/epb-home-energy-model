@@ -32,9 +32,7 @@ impl WaterSourceWithTemperature {
                     todo!() // switched to get_temp_cold_water and draw_off_water in latest
                 }
                 HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
-                    smart_hot_water_tank
-                        .read()
-                        .temperature(volume_needed, simtime)
+                    todo!() // switched to get_temp_cold_water and draw_off_water in latest
                 }
             },
         }
@@ -47,7 +45,7 @@ impl WaterSourceWithTemperature {
             WaterSourceWithTemperature::Wwhrs(_mutex) => todo!(),
             WaterSourceWithTemperature::Preheated(hot_water_storage_tank) => match hot_water_storage_tank {
                 HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().get_temp_cold_water(volume_needed),
-                HotWaterStorageTank::SmartHotWaterTank(_rw_lock) => todo!(),
+                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock.read().get_temp_cold_water(volume_needed),
             },
         }
     }
@@ -58,7 +56,7 @@ impl WaterSourceWithTemperature {
             WaterSourceWithTemperature::Wwhrs(_mutex) => todo!(),
             WaterSourceWithTemperature::Preheated(hot_water_storage_tank) => match hot_water_storage_tank {
                 HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().draw_off_water(volume_needed, simulation_time_iteration),
-                HotWaterStorageTank::SmartHotWaterTank(_rw_lock) => todo!(),
+                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock.read().draw_off_water(volume_needed, simulation_time_iteration),
             },
         }
     }
