@@ -1718,6 +1718,7 @@ mod tests {
     use approx::assert_relative_eq;
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
+    use rstest::{fixture, rstest};
     use std::collections::HashMap;
 
     const BASE_AIR_TEMPS: [f64; 24] = [
@@ -1877,7 +1878,7 @@ mod tests {
         ))
     }
 
-    fn zone() -> Zone {
+    fn zone(thermal_bridging: ThermalBridging) -> Zone {
         let simulation_time = simulation_time();
         let external_conditions = external_conditions(simulation_time);
         // Create objects for the different building elements in the zone
@@ -1978,26 +1979,6 @@ mod tests {
             ("be_ztu".into(), be_ztu.into()),
         ]);
 
-        // Create objects for thermal bridges
-        let tb_linear_1 = ThermalBridge::Linear {
-            linear_thermal_transmittance: 0.28,
-            length: 5.,
-        };
-        let tb_linear_2 = ThermalBridge::Linear {
-            linear_thermal_transmittance: 0.25,
-            length: 6.,
-        };
-        let tb_point = ThermalBridge::Point {
-            heat_transfer_coefficient: 1.4,
-        };
-
-        // Put thermal bridge objects in a list that can be iterated over
-        let thermal_bridging = ThermalBridging::Bridges(IndexMap::from([
-            ("tb_linear_1".into(), tb_linear_1),
-            ("tb_linear_2".into(), tb_linear_2),
-            ("tb_point".into(), tb_point),
-        ]));
-
         let temp_ext_air_init = 2.2;
         let temp_setpnt_init = 21.;
         let temp_setpnt_basis = ZoneTemperatureControlBasis::Air;
@@ -2016,6 +1997,29 @@ mod tests {
             &simulation_time.iter(),
         )
         .unwrap()
+    }
+
+    #[fixture]
+    fn thermal_bridging_objects() -> ThermalBridging {
+        // Create objects for thermal bridges
+        let tb_linear_1 = ThermalBridge::Linear {
+            linear_thermal_transmittance: 0.28,
+            length: 5.,
+        };
+        let tb_linear_2 = ThermalBridge::Linear {
+            linear_thermal_transmittance: 0.25,
+            length: 6.,
+        };
+        let tb_point = ThermalBridge::Point {
+            heat_transfer_coefficient: 1.4,
+        };
+
+        // Put thermal bridge objects in a list that can be iterated over
+        ThermalBridging::Bridges(IndexMap::from([
+            ("tb_linear_1".into(), tb_linear_1),
+            ("tb_linear_2".into(), tb_linear_2),
+            ("tb_point".into(), tb_point),
+        ]))
     }
 
     fn infiltration_ventilation() -> InfiltrationVentilation {
@@ -2058,27 +2062,39 @@ mod tests {
     }
 
     #[test]
-    fn test_volume() {
-        assert_eq!(zone().volume(), 250.);
+    fn test_init_single_thermal_bridging_value() {
+        let thermal_bridging = ThermalBridging::Number(4.);
+        let zone = zone(thermal_bridging);
+
+        assert_eq!(zone.tb_heat_trans_coeff, 4.)
     }
 
-    #[test]
-    fn should_have_correct_total_fabric_heat_loss() {
+    #[rstest]
+    fn test_volume(thermal_bridging_objects: ThermalBridging) {
+        assert_eq!(zone(thermal_bridging_objects).volume(), 250.);
+    }
+
+    #[rstest]
+    fn should_have_correct_total_fabric_heat_loss(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
-            zone().total_fabric_heat_loss(),
+            zone(thermal_bridging_objects).total_fabric_heat_loss(),
             181.99557093947166,
             max_relative = 1e-2
         );
     }
 
-    #[test]
-    pub fn should_have_correct_heat_capacity() {
-        assert_eq!(zone().total_heat_capacity(), 2166.);
+    #[rstest]
+    pub fn should_have_correct_heat_capacity(thermal_bridging_objects: ThermalBridging) {
+        assert_eq!(zone(thermal_bridging_objects).total_heat_capacity(), 2166.);
     }
 
-    #[test]
-    pub fn should_have_correct_thermal_bridges() {
-        assert_relative_eq!(zone().total_thermal_bridges(), 4.3, max_relative = 1e-2);
+    #[rstest]
+    pub fn should_have_correct_thermal_bridges(thermal_bridging_objects: ThermalBridging) {
+        assert_relative_eq!(
+            zone(thermal_bridging_objects).total_thermal_bridges(),
+            4.3,
+            max_relative = 1e-2
+        );
     }
 
     // test is commented out in upstream
