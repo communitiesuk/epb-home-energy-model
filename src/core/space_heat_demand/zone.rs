@@ -1718,7 +1718,6 @@ mod tests {
     use approx::assert_relative_eq;
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
-    use rstest::*;
     use std::collections::HashMap;
 
     const BASE_AIR_TEMPS: [f64; 24] = [
@@ -1734,13 +1733,11 @@ mod tests {
         200., 320., 330., 340., 350., 355., 315., 5.,
     ];
 
-    #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
     }
 
-    #[fixture]
-    pub fn external_conditions(simulation_time: SimulationTime) -> Arc<ExternalConditions> {
+    fn external_conditions(simulation_time: SimulationTime) -> Arc<ExternalConditions> {
         let air_temp_day_jan = BASE_AIR_TEMPS;
         let air_temp_day_feb = BASE_AIR_TEMPS.map(|t| t + 1.0);
         let air_temp_day_mar = BASE_AIR_TEMPS.map(|t| t + 2.0);
@@ -1880,12 +1877,9 @@ mod tests {
         ))
     }
 
-    #[fixture]
-    pub fn zone(
-        external_conditions: Arc<ExternalConditions>,
-        simulation_time: SimulationTime,
-        infiltration_ventilation: InfiltrationVentilation,
-    ) -> Zone {
+    fn zone() -> Zone {
+        let simulation_time = simulation_time();
+        let external_conditions = external_conditions(simulation_time);
         // Create objects for the different building elements in the zone
         let be_opaque_i = BuildingElement::Opaque(BuildingElementOpaque::new(
             20.,
@@ -2013,7 +2007,7 @@ mod tests {
             250.,
             be_objs,
             thermal_bridging,
-            Arc::new(infiltration_ventilation),
+            Arc::new(infiltration_ventilation()),
             temp_ext_air_init,
             temp_setpnt_init,
             temp_setpnt_basis,
@@ -2024,7 +2018,6 @@ mod tests {
         .unwrap()
     }
 
-    #[fixture]
     fn infiltration_ventilation() -> InfiltrationVentilation {
         let window_part_list = vec![WindowPart {
             mid_height_air_flow_path: 1.5,
@@ -2064,37 +2057,37 @@ mod tests {
         )
     }
 
-    #[rstest]
-    pub fn test_volume(zone: Zone) {
-        assert_eq!(zone.volume(), 250.);
+    #[test]
+    fn test_volume() {
+        assert_eq!(zone().volume(), 250.);
     }
 
-    #[rstest]
-    pub fn should_have_correct_total_fabric_heat_loss(zone: Zone) {
+    #[test]
+    fn should_have_correct_total_fabric_heat_loss() {
         assert_relative_eq!(
-            zone.total_fabric_heat_loss(),
+            zone().total_fabric_heat_loss(),
             181.99557093947166,
             max_relative = 1e-2
         );
     }
 
-    #[rstest]
-    pub fn should_have_correct_heat_capacity(zone: Zone) {
-        assert_eq!(zone.total_heat_capacity(), 2166.);
+    #[test]
+    pub fn should_have_correct_heat_capacity() {
+        assert_eq!(zone().total_heat_capacity(), 2166.);
     }
 
-    #[rstest]
-    pub fn should_have_correct_thermal_bridges(zone: Zone) {
-        assert_relative_eq!(zone.total_thermal_bridges(), 4.3, max_relative = 1e-2);
+    #[test]
+    pub fn should_have_correct_thermal_bridges() {
+        assert_relative_eq!(zone().total_thermal_bridges(), 4.3, max_relative = 1e-2);
     }
 
     // test is commented out in upstream
-    // #[rstest]
+    // #[test]
     // pub fn should_have_correct_total_vent_heat_loss(zone: Zone) {
     //     assert_relative_eq!(zone.total_vent_heat_loss(), 157.9, max_relative = 0.05);
     // }
 
-    #[rstest]
+    #[test]
     pub fn should_replicate_numpy_isclose() {
         // test cases for python doctests
         assert!(!isclose(
