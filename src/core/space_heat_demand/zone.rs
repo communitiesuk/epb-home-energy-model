@@ -2147,17 +2147,17 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_total_heat_capacity(thermal_bridging_objects: ThermalBridging) {
+    fn test_total_heat_capacity(thermal_bridging_objects: ThermalBridging) {
         assert_eq!(zone(thermal_bridging_objects).total_heat_capacity(), 2166.);
     }
 
     #[rstest]
-    pub fn test_total_heat_loss_area(thermal_bridging_objects: ThermalBridging) {
+    fn test_total_heat_loss_area(thermal_bridging_objects: ThermalBridging) {
         assert_eq!(zone(thermal_bridging_objects).total_heat_loss_area(), 106.);
     }
 
     #[rstest]
-    pub fn test_total_thermal_bridges(thermal_bridging_objects: ThermalBridging) {
+    fn test_total_thermal_bridges(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
             zone(thermal_bridging_objects).total_thermal_bridges(),
             4.3,
@@ -2166,7 +2166,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_temp_operative(thermal_bridging_objects: ThermalBridging) {
+    fn test_temp_operative(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
             zone(thermal_bridging_objects).temp_operative(),
             18.92809674634258,
@@ -2174,7 +2174,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_temp_internal_air(thermal_bridging_objects: ThermalBridging) {
+    fn test_temp_internal_air(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
             zone(thermal_bridging_objects).temp_internal_air(),
             20.999999999999996,
@@ -2183,7 +2183,7 @@ mod tests {
 
     #[rstest]
     #[ignore = "TODO: Python uses np.linalg.solve, what would be valuable in Rust?"]
-    pub fn test_fast_solver() {}
+    fn test_fast_solver() {}
 
     fn maps_approx_equal(
         actual: &IndexMap<String, f64>,
@@ -2214,8 +2214,9 @@ mod tests {
 
         true
     }
+
     #[rstest]
-    pub fn test_update_temperatures(thermal_bridging_objects: ThermalBridging) {
+    fn test_update_temperatures(thermal_bridging_objects: ThermalBridging) {
         let expected_heat_balance = HeatBalance {
             air_node: HeatBalanceAirNode {
                 solar_gains: 22.,
