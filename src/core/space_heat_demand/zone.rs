@@ -2152,11 +2152,32 @@ mod tests {
     }
 
     #[rstest]
+    pub fn test_total_heat_loss_area(thermal_bridging_objects: ThermalBridging) {
+        assert_eq!(zone(thermal_bridging_objects).total_heat_loss_area(), 106.);
+    }
+
+    #[rstest]
     pub fn test_total_thermal_bridges(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
             zone(thermal_bridging_objects).total_thermal_bridges(),
             4.3,
             max_relative = 1e-2
+        );
+    }
+
+    #[rstest]
+    pub fn test_temp_operative(thermal_bridging_objects: ThermalBridging) {
+        assert_relative_eq!(
+            zone(thermal_bridging_objects).temp_operative(),
+            18.92809674634258,
+        );
+    }
+
+    #[rstest]
+    pub fn test_temp_internal_air(thermal_bridging_objects: ThermalBridging) {
+        assert_relative_eq!(
+            zone(thermal_bridging_objects).temp_internal_air(),
+            20.999999999999996,
         );
     }
 
