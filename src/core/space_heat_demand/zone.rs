@@ -557,14 +557,14 @@ impl Zone {
                 self.building_elements.iter().enumerate()
             {
                 // Get position in vector for the first (external) node of the building element
-                let idx = self.element_positions[eli_idx].1;
+                let idx = self.element_positions[eli_idx].0;
                 let temp_ext_surface = vector_x[idx];
                 let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(simtime);
                 let (f_sh_dir, f_sh_dif) = eli
                     .shading_factors_direct_diffuse(simtime)
                     .expect("Expected shading factors direct diffuse to be calculable.");
                 hb_fabric_ext_air_convective +=
-                    eli.area() * (eli.h_ce() * (eli.temp_ext(simtime) - temp_ext_surface));
+                    eli.area() * eli.h_ce() * (eli.temp_ext(simtime) - temp_ext_surface);
                 hb_fabric_ext_air_radiative +=
                     eli.area() * eli.h_re() * (eli.temp_ext(simtime) - temp_ext_surface);
                 hb_fabric_ext_sol += eli.area()
