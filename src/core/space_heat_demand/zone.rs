@@ -1922,7 +1922,10 @@ mod tests {
         ))
     }
 
-    fn zone(thermal_bridging: ThermalBridging, control: Option<Arc<dyn ControlBehaviour>>) -> Zone {
+    fn zone(
+        thermal_bridging: ThermalBridging,
+        control: Option<Arc<dyn ControlBehaviour>>,
+    ) -> anyhow::Result<Zone> {
         let simulation_time = simulation_time();
         let external_conditions = external_conditions(simulation_time);
         // Create objects for the different building elements in the zone
@@ -2040,7 +2043,6 @@ mod tests {
             true,
             &simulation_time.iter(),
         )
-        .unwrap()
     }
 
     #[fixture]
@@ -2108,39 +2110,46 @@ mod tests {
     #[test]
     fn test_init_single_thermal_bridging_value() {
         let thermal_bridging = ThermalBridging::Number(4.);
-        let zone = zone(thermal_bridging, None);
+        let zone = zone(thermal_bridging, None).unwrap();
 
         assert_eq!(zone.tb_heat_trans_coeff, 4.)
     }
 
     #[rstest]
     fn test_setpnt_init(thermal_bridging_objects: ThermalBridging) {
-        assert_eq!(zone(thermal_bridging_objects, None).setpnt_init(), 21.);
+        assert_eq!(
+            zone(thermal_bridging_objects, None).unwrap().setpnt_init(),
+            21.
+        );
     }
 
     #[rstest]
     fn test_area(thermal_bridging_objects: ThermalBridging) {
-        assert_eq!(zone(thermal_bridging_objects, None).area(), 80.);
+        assert_eq!(zone(thermal_bridging_objects, None).unwrap().area(), 80.);
     }
 
     #[rstest]
     fn test_gains_solar(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
         assert_relative_eq!(
-            zone(thermal_bridging_objects, None).gains_solar(simulation_time_iteration),
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .gains_solar(simulation_time_iteration),
             -2154.583062153444
         );
     }
 
     #[rstest]
     fn test_volume(thermal_bridging_objects: ThermalBridging) {
-        assert_eq!(zone(thermal_bridging_objects, None).volume(), 250.);
+        assert_eq!(zone(thermal_bridging_objects, None).unwrap().volume(), 250.);
     }
 
     #[rstest]
     fn test_total_fabric_heat_loss(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
-            zone(thermal_bridging_objects, None).total_fabric_heat_loss(),
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .total_fabric_heat_loss(),
             181.99557093947166,
             max_relative = 1e-2
         );
@@ -2149,7 +2158,9 @@ mod tests {
     #[rstest]
     fn test_total_heat_capacity(thermal_bridging_objects: ThermalBridging) {
         assert_eq!(
-            zone(thermal_bridging_objects, None).total_heat_capacity(),
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .total_heat_capacity(),
             2166.
         );
     }
@@ -2157,7 +2168,9 @@ mod tests {
     #[rstest]
     fn test_total_heat_loss_area(thermal_bridging_objects: ThermalBridging) {
         assert_eq!(
-            zone(thermal_bridging_objects, None).total_heat_loss_area(),
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .total_heat_loss_area(),
             106.
         );
     }
@@ -2165,7 +2178,9 @@ mod tests {
     #[rstest]
     fn test_total_thermal_bridges(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
-            zone(thermal_bridging_objects, None).total_thermal_bridges(),
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .total_thermal_bridges(),
             4.3,
             max_relative = 1e-2
         );
@@ -2174,7 +2189,9 @@ mod tests {
     #[rstest]
     fn test_temp_operative(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
-            zone(thermal_bridging_objects, None).temp_operative(),
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .temp_operative(),
             18.92809674634258,
         );
     }
@@ -2182,7 +2199,9 @@ mod tests {
     #[rstest]
     fn test_temp_internal_air(thermal_bridging_objects: ThermalBridging) {
         assert_relative_eq!(
-            zone(thermal_bridging_objects, None).temp_internal_air(),
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .temp_internal_air(),
             20.999999999999996,
         );
     }
@@ -2259,6 +2278,7 @@ mod tests {
         .as_index_map();
         let simulatio_time_iteration = simulation_time().iter().next().unwrap();
         let actual_heat_balance = zone(thermal_bridging_objects, None)
+            .unwrap()
             .update_temperatures(
                 1800.,
                 10.,
@@ -2299,6 +2319,7 @@ mod tests {
     fn test_calc_cooling_potential_from_ventilation_1(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects, None)
+            .unwrap()
             .calc_cooling_potential_from_ventilation(
                 1800.0,
                 17.8,
@@ -2326,6 +2347,7 @@ mod tests {
     fn test_calc_cooling_potential_from_ventilation_2(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects, None)
+            .unwrap()
             .calc_cooling_potential_from_ventilation(
                 1800.0,
                 17.8,
@@ -2353,6 +2375,7 @@ mod tests {
     fn test_calc_cooling_potential_from_ventilation_3(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects, None)
+            .unwrap()
             .calc_cooling_potential_from_ventilation(
                 1800.0,
                 17.8,
@@ -2379,7 +2402,7 @@ mod tests {
     #[rstest]
     fn test_calc_cooling_potential_from_ventilation_4(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let mut zone = zone(thermal_bridging_objects, None);
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
             .calc_cooling_potential_from_ventilation(
@@ -2408,7 +2431,7 @@ mod tests {
     #[rstest]
     fn test_calc_cooling_potential_from_ventilation_5(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let mut zone = zone(thermal_bridging_objects, None);
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
             .calc_cooling_potential_from_ventilation(
@@ -2437,7 +2460,7 @@ mod tests {
     #[rstest]
     fn test_calc_cooling_potential_from_ventilation_6(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let mut zone = zone(thermal_bridging_objects, None);
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
         let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
             .calc_cooling_potential_from_ventilation(
@@ -2465,7 +2488,7 @@ mod tests {
 
     #[rstest]
     fn test_interp_heat_cool_demand(thermal_bridging_objects: ThermalBridging) {
-        let mut zone = zone(thermal_bridging_objects, None);
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
 
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Air;
         let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 18., 21.2);
@@ -2481,7 +2504,7 @@ mod tests {
     #[rstest]
     /// Cases where temp upper and temp free are the same
     fn test_interp_heat_cool_demand_invalid(thermal_bridging_objects: ThermalBridging) {
-        let mut zone = zone(thermal_bridging_objects, None);
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
 
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
         let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 19., 19.);
@@ -2497,7 +2520,7 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_1(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let zone = zone(thermal_bridging_objects, None);
+        let zone = zone(thermal_bridging_objects, None).unwrap();
         let space_heat_cool_demand = zone.space_heat_cool_demand(
             0.5,
             2.8,
@@ -2520,7 +2543,7 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_2(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let zone = zone(thermal_bridging_objects, None);
+        let zone = zone(thermal_bridging_objects, None).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
             .space_heat_cool_demand(
                 0.5,
@@ -2545,9 +2568,9 @@ mod tests {
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
     }
 
-    struct MockControl(f64);
+    struct FakeControl(f64);
 
-    impl ControlBehaviour for MockControl {
+    impl ControlBehaviour for FakeControl {
         fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
             Some(self.0)
         }
@@ -2556,8 +2579,8 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_3(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let mock_control = Arc::new(MockControl(25.));
-        let zone = zone(thermal_bridging_objects, Some(mock_control));
+        let fake_control = Arc::new(FakeControl(25.));
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
             .space_heat_cool_demand(
                 0.5,
@@ -2580,6 +2603,20 @@ mod tests {
         assert_eq!(space_cool_demand, 0.);
         assert_relative_eq!(ach_cooling, 0.14);
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_4(thermal_bridging_objects: ThermalBridging) {
+        let fake_control = Arc::new(FakeControl(20.));
+        let zone = zone(thermal_bridging_objects, Some(fake_control));
+        // In the Python test the error is raised when space_cool_heat_demand is called.
+        // In Rust we get the error earlier, when creating the Zone with the fake Control.
+        // This is because in the Python test set up, the Control object is None when Zone
+        // is created and is only added just before space_cool_heat_demand is called.
+        // Because of the above, this test deviates a bit from the Python and asserts that
+        // Zone itself returns an Error.
+
+        assert!(matches!(zone, Result::Err { .. }));
     }
 
     #[test]
