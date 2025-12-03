@@ -2457,6 +2457,88 @@ mod tests {
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.1306962441148573);
     }
 
+    #[rstest]
+    fn test_interp_heat_cool_demand(thermal_bridging_objects: ThermalBridging) {
+        let mut zone = zone(thermal_bridging_objects);
+
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Air;
+        let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 18., 21.2);
+
+        assert_relative_eq!(heat_cool_demand.unwrap(), 1.2500000000000002);
+
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 20., 19.);
+
+        assert_eq!(heat_cool_demand.unwrap(), 0.);
+    }
+
+    #[rstest]
+    /// Cases where temp upper and temp free are the same
+    fn test_interp_heat_cool_demand_invalid(thermal_bridging_objects: ThermalBridging) {
+        let mut zone = zone(thermal_bridging_objects);
+
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 19., 19.);
+
+        assert!(matches!(heat_cool_demand, Result::Err { .. }));
+
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Air;
+        let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 18., 18.);
+
+        assert!(matches!(heat_cool_demand, Result::Err { .. }));
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_1(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let zone = zone(thermal_bridging_objects);
+        let space_heat_cool_demand = zone.space_heat_cool_demand(
+            0.5,
+            2.8,
+            13.5,
+            9.1,
+            0.4,
+            0.95,
+            24.0,
+            21.0,
+            2.8,
+            Some(0.0),
+            Some(0.0),
+            AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+            simulation_time_iteration,
+        );
+
+        assert!(matches!(space_heat_cool_demand, Result::Err { .. }));
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_2(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let zone = zone(thermal_bridging_objects);
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.0),
+                Some(0.0),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
     #[test]
     pub fn should_replicate_numpy_isclose() {
         // test cases for python doctests
