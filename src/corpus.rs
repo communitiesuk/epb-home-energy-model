@@ -17,7 +17,9 @@ use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
 use crate::core::heating_systems::emitters::{Emitters, EmittersDetailedResult};
-use crate::core::heating_systems::heat_battery_pcm::{HeatBattery, HeatBatteryServiceWaterRegular};
+use crate::core::heating_systems::heat_battery_pcm::{
+    HeatBatteryPcm, HeatBatteryPcmServiceWaterRegular,
+};
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
 use crate::core::heating_systems::heat_pump::{HeatPump, HeatPumpHotWaterOnly};
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
@@ -4062,7 +4064,7 @@ pub(crate) enum WetHeatSource {
     HeatPump(Arc<Mutex<HeatPump>>),
     Boiler(Arc<RwLock<Boiler>>),
     Hiu(Arc<Mutex<HeatNetwork>>),
-    HeatBattery(Arc<RwLock<HeatBattery>>),
+    HeatBattery(Arc<RwLock<HeatBatteryPcm>>),
 }
 
 impl WetHeatSource {
@@ -4464,26 +4466,27 @@ fn heat_source_wet_from_input(
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_name)?;
 
-            let heat_source = WetHeatSource::HeatBattery(Arc::new(RwLock::new(HeatBattery::new(
-                &input,
-                controls
-                    .get_with_string(control_charge)
-                    .unwrap_or_else(|| {
-                        panic!(
+            let heat_source =
+                WetHeatSource::HeatBattery(Arc::new(RwLock::new(HeatBatteryPcm::new(
+                    &input,
+                    controls
+                        .get_with_string(control_charge)
+                        .unwrap_or_else(|| {
+                            panic!(
                             "expected a control to be registered with the name '{control_charge}'"
                         )
-                    })
-                    .clone(),
-                energy_supply,
-                energy_supply_conn,
-                simulation_time,
-                Some(8),
-                Some(20.),
-                Some(120.),
-                Some(10.),
-                Some(53.),
-                Some(detailed_output_heating_cooling),
-            ))));
+                        })
+                        .clone(),
+                    energy_supply,
+                    energy_supply_conn,
+                    simulation_time,
+                    Some(8),
+                    Some(20.),
+                    Some(120.),
+                    Some(10.),
+                    Some(53.),
+                    Some(detailed_output_heating_cooling),
+                ))));
             Ok(heat_source)
         }
         HeatSourceWetDetails::HeatBattery {
@@ -4654,7 +4657,7 @@ fn heat_source_from_input(
                     }
                     WetHeatSource::HeatBattery(battery) => {
                         HeatSource::Wet(Box::new(HeatSourceWet::HeatBatteryHotWater(
-                            HeatBattery::create_service_hot_water_regular(
+                            HeatBatteryPcm::create_service_hot_water_regular(
                                 battery,
                                 &energy_supply_conn_name,
                                 cold_water_source.clone(),
@@ -4722,7 +4725,7 @@ pub(crate) enum HotWaterSource {
     CombiBoiler(BoilerServiceWaterCombi),
     PointOfUse(PointOfUse),
     HeatNetwork(HeatNetworkServiceWaterDirect),
-    HeatBattery(HeatBatteryServiceWaterRegular),
+    HeatBattery(HeatBatteryPcmServiceWaterRegular),
 }
 
 impl HotWaterSource {
@@ -5182,7 +5185,7 @@ fn hot_water_source_from_input(
                 _ => unreachable!("heat source wet was expected to be a heat battery"),
             };
 
-            HotWaterSource::HeatBattery(HeatBattery::create_service_hot_water_regular(
+            HotWaterSource::HeatBattery(HeatBatteryPcm::create_service_hot_water_regular(
                 heat_battery,
                 &energy_supply_conn_name,
                 cold_water_source,
@@ -5307,7 +5310,7 @@ fn space_heat_systems_from_input(
                                     SpaceHeatingService::HeatNetwork(heat_source_service)
                                 }
                                 WetHeatSource::HeatBattery(heat_battery) => {
-                                    let heat_source_service = HeatBattery::create_service_space_heating(heat_battery.clone(), &energy_supply_conn_name, control);
+                                    let heat_source_service = HeatBatteryPcm::create_service_space_heating(heat_battery.clone(), &energy_supply_conn_name, control);
                                     SpaceHeatingService::HeatBattery(heat_source_service)
                                 }
                             };
