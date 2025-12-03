@@ -2773,9 +2773,13 @@ impl SolarThermalSystem {
         }
     }
 
-    pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
-        let temp_setpnt = self.control_max.setpnt(&simtime);
-        (temp_setpnt, temp_setpnt)
+    pub(crate) fn energy_potential(&self) -> f64 {
+        self.heat_output_collector_loop.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
+        let control_max_setpnt = self.control_max.setpnt(simulation_time_iteration);
+        (control_max_setpnt, control_max_setpnt)
     }
 
     /// Calculate collector loop heat output
@@ -2830,9 +2834,9 @@ impl SolarThermalSystem {
         let mut avg_collector_water_temp = inlet_temp_s1
             + (0.4 * solar_irradiance * self.area) / (self.collector_mass_flow_rate * self.cp * 2.);
 
-        let mut inlet_temp2: f64 = Default::default(); // need a running slot in the loop for this to be overridden each time
-
         // calculation of collector efficiency
+        // Initialize inlet_temp2 before the loop using the initial inlet temperature
+        let mut inlet_temp2: f64 = Default::default();
         for _ in 0..4 {
             // Eq 53
             let th = (avg_collector_water_temp
@@ -2844,13 +2848,6 @@ impl SolarThermalSystem {
                 * self.incidence_angle_modifier
                 - self.first_order_hlc * th
                 - self.second_order_hlc * th.powi(2) * solar_irradiance;
-
-            // Eq 54
-            let _collector_absorber_heat_input = self.peak_collector_efficiency
-                * solar_irradiance
-                * self.area
-                * simulation_time.timestep
-                / WATTS_PER_KILOWATT as f64;
 
             // Eq 55
             let collector_output_heat =
