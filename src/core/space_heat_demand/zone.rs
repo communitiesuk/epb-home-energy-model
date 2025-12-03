@@ -2509,15 +2509,16 @@ mod tests {
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
         let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 19., 19.);
 
-        assert!(matches!(heat_cool_demand, Result::Err { .. }));
+        assert!(heat_cool_demand.is_err());
 
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Air;
         let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 18., 18.);
 
-        assert!(matches!(heat_cool_demand, Result::Err { .. }));
+        assert!(heat_cool_demand.is_err());
     }
 
     #[rstest]
+    /// errors when cooling setpoint is below heating setpoint
     fn test_space_heat_cool_demand_1(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
         let zone = zone(thermal_bridging_objects, None).unwrap();
@@ -2536,8 +2537,7 @@ mod tests {
             AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
             simulation_time_iteration,
         );
-
-        assert!(matches!(space_heat_cool_demand, Result::Err { .. }));
+        assert!(space_heat_cool_demand.is_err());
     }
 
     #[rstest]
@@ -2616,7 +2616,7 @@ mod tests {
         // Because of the above, this test deviates a bit from the Python and asserts that
         // Zone itself returns an Error.
 
-        assert!(matches!(zone, Result::Err { .. }));
+        assert!(zone.is_err());
     }
 
     #[test]
