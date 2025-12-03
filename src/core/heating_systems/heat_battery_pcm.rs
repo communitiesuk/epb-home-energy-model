@@ -2,6 +2,7 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
 use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::{
@@ -25,12 +26,6 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum ServiceType {
-    WaterRegular,
-    Space,
-}
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum HeatBatteryPcmOperationMode {
@@ -158,7 +153,7 @@ impl HeatBatteryPcmServiceWaterRegular {
 
         self.heat_battery.read().demand_energy(
             &self.service_name,
-            ServiceType::WaterRegular,
+            HeatingServiceType::DomesticHotWaterRegular,
             energy_demand,
             self.cold_feed.temperature(simulation_time_iteration, None),
             Some(temp_hot_water),
@@ -183,7 +178,7 @@ impl HeatBatteryPcmServiceWaterRegular {
 
         self.heat_battery.read().demand_energy(
             &self.service_name,
-            ServiceType::WaterRegular,
+            HeatingServiceType::DomesticHotWaterRegular,
             energy_demand,
             temp_return,
             temp_flow,
@@ -269,7 +264,7 @@ impl HeatBatteryPcmServiceSpace {
 
         self.heat_battery.read().demand_energy(
             &self.service_name,
-            ServiceType::Space,
+            HeatingServiceType::Space,
             energy_demand,
             temp_return,
             Some(temp_flow),
@@ -313,7 +308,7 @@ const DEFAULT_ESTIMATED_OUTLET_TEMP: f64 = 53.;
 #[allow(dead_code)]
 struct HeatBatteryResult {
     service_name: String,
-    service_type: ServiceType,
+    service_type: HeatingServiceType,
     service_on: bool,
     energy_output_required: f64,
     temp_output: Option<f64>,
@@ -1359,7 +1354,7 @@ impl HeatBatteryPcm {
     pub(crate) fn demand_energy(
         &self,
         service_name: &str,
-        service_type: ServiceType,
+        service_type: HeatingServiceType,
         energy_output_required: f64,
         temp_return_feed: f64,
         temp_output: Option<f64>,
@@ -1850,7 +1845,7 @@ impl HeatBatteryPcm {
                 .unwrap()
                 .results[service_idx]
                 .service_type
-                == ServiceType::WaterRegular
+                == HeatingServiceType::DomesticHotWaterRegular
             {
                 // For DHW, need to include storage and primary circuit losses.
                 // Can do this by replacing H4 numerator with total energy
@@ -2003,10 +1998,10 @@ mod tests {
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
+    use crate::core::heating_systems::common::HeatingServiceType;
     use crate::core::heating_systems::heat_battery_pcm::HeatBatteryPcm;
     use crate::core::heating_systems::heat_battery_pcm::HeatBatteryPcmServiceSpace;
     use crate::core::heating_systems::heat_battery_pcm::HeatBatteryPcmServiceWaterRegular;
-    use crate::core::heating_systems::heat_battery_pcm::ServiceType;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
@@ -2673,7 +2668,7 @@ mod tests {
                 .read()
                 .demand_energy(
                     service_name,
-                    ServiceType::WaterRegular,
+                    HeatingServiceType::DomesticHotWaterRegular,
                     5.,
                     40.,
                     Some(52.5),
@@ -2777,7 +2772,7 @@ mod tests {
             .read()
             .demand_energy(
                 service_name,
-                ServiceType::WaterRegular,
+                HeatingServiceType::DomesticHotWaterRegular,
                 5.0,
                 40.,
                 Some(55.),

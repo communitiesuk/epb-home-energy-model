@@ -19,6 +19,12 @@ use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{bail, Error};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum HeatingServiceType {
+    DomesticHotWaterRegular,
+    Space,
+}
+
 #[derive(Debug)]
 pub(crate) enum HeatSourceWet {
     #[allow(dead_code)]
