@@ -531,7 +531,7 @@ impl Zone {
                         * ((eli.element.h_ci(
                             temp_prev[self.zone_idx],
                             temp_prev[self.element_positions[eli_idx].1],
-                    )) * (air_node_temp - temp_int_surface))
+                        )) * (air_node_temp - temp_int_surface))
                 })
                 .sum::<f64>();
 
@@ -2250,7 +2250,7 @@ mod tests {
                 ztu_fabric_ext: -434.43500426106175,
             },
         }
-            .as_index_map();
+        .as_index_map();
         let simulatio_time_iteration = simulation_time().iter().next().unwrap();
         let actual_heat_balance = zone(thermal_bridging_objects)
             .update_temperatures(
