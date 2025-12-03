@@ -2568,18 +2568,18 @@ mod tests {
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
     }
 
-    struct FakeControl(f64);
+    struct FakeControl(Option<f64>);
 
     impl ControlBehaviour for FakeControl {
         fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-            Some(self.0)
+            self.0
         }
     }
 
     #[rstest]
     fn test_space_heat_cool_demand_3(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let fake_control = Arc::new(FakeControl(25.));
+        let fake_control = Arc::new(FakeControl(Some(25.)));
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
             .space_heat_cool_demand(
@@ -2607,7 +2607,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_4(thermal_bridging_objects: ThermalBridging) {
-        let fake_control = Arc::new(FakeControl(20.));
+        let fake_control = Arc::new(FakeControl(Some(20.)));
         let zone = zone(thermal_bridging_objects, Some(fake_control));
         // In the Python test the error is raised when space_cool_heat_demand is called.
         // In Rust we get the error earlier, when creating the Zone with the fake Control.
@@ -2617,6 +2617,246 @@ mod tests {
         // Zone itself returns an Error.
 
         assert!(zone.is_err());
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_5(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = Arc::new(FakeControl(None));
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.0),
+                Some(0.0),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_6(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = Arc::new(FakeControl(None));
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let space_heat_cool_demand = zone.space_heat_cool_demand(
+            0.5,
+            2.8,
+            13.5,
+            9.1,
+            0.4,
+            0.95,
+            2.6e32,
+            2.7e32,
+            2.8,
+            Some(0.0),
+            Some(0.0),
+            AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+            simulation_time_iteration,
+        );
+
+        assert!(space_heat_cool_demand.is_err());
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_7(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = Arc::new(FakeControl(None));
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.2),
+                Some(0.3),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 2.153884539283528, max_relative = 1e-8);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_8(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = Arc::new(FakeControl(None));
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.),
+                Some(0.),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387, max_relative = 1e-8);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_9(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = Arc::new(FakeControl(None));
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                16.0,
+                24.0,
+                2.8,
+                Some(0.),
+                Some(0.),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 0.);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.17);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_10(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = Arc::new(FakeControl(None));
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                16.0,
+                16.0,
+                2.8,
+                Some(0.),
+                Some(0.),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 0.);
+        assert_eq!(space_cool_demand, -0.3774681469845284);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.17);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_11(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = Arc::new(FakeControl(None));
+        let mut zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.),
+                Some(0.),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 3.147608479695715, max_relative = 1e-8);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_12(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = Arc::new(FakeControl(None));
+        let mut zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                24.0,
+                24.0,
+                2.8,
+                Some(0.),
+                Some(0.),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 4.699947718442156, max_relative = 1e-8);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    // In Python there are two more assertions in test_space_heat_cool_demand that we have skipped
+    // they both use a canned return value for zone.interp_heat_cool_demand() which we cannot
+    // easily replicate in Rust
+    #[test]
+    #[ignore]
+    pub fn test_space_heat_cool_demand_fast_solver() {
+        todo!("we have skipped this for now as Python uses a difficult to replicate Mock");
     }
 
     #[test]
