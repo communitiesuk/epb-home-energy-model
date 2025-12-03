@@ -7,7 +7,7 @@ use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
 use crate::core::heating_systems::heat_battery_pcm::{
-    HeatBatteryServiceSpace, HeatBatteryServiceWaterRegular,
+    HeatBatteryPcmServiceSpace, HeatBatteryPcmServiceWaterRegular,
 };
 use crate::core::heating_systems::heat_network::{
     HeatNetworkServiceSpace, HeatNetworkServiceWaterStorage,
@@ -27,7 +27,7 @@ pub(crate) enum HeatSourceWet {
     #[allow(dead_code)]
     Space(BoilerServiceSpace),
     HeatNetworkWaterStorage(HeatNetworkServiceWaterStorage),
-    HeatBatteryHotWater(HeatBatteryServiceWaterRegular),
+    HeatBatteryHotWater(HeatBatteryPcmServiceWaterRegular),
     HeatPumpWater(HeatPumpServiceWater),
     HeatPumpWaterOnly(HeatPumpHotWaterOnly),
 }
@@ -295,7 +295,7 @@ pub enum SpaceHeatingService {
     HeatPump(HeatPumpServiceSpace),
     Boiler(BoilerServiceSpace),
     HeatNetwork(HeatNetworkServiceSpace),
-    HeatBattery(HeatBatteryServiceSpace),
+    HeatBattery(HeatBatteryPcmServiceSpace),
     #[cfg(test)]
     Mock,
 }
