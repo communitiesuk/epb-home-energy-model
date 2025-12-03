@@ -2274,11 +2274,188 @@ mod tests {
         }
     }
 
-    // test is commented out in upstream
-    // #[test]
-    // pub fn should_have_correct_total_vent_heat_loss(zone: Zone) {
-    //     assert_relative_eq!(zone.total_vent_heat_loss(), 157.9, max_relative = 0.05);
-    // }
+    #[test]
+    fn test_ach_req_to_reach_temperature() {
+        let ach = Zone::ach_req_to_reach_temperature(21., 0.08, 48., 9.9, 8.8, 9.8, 8.2, 8.1);
+        assert_relative_eq!(ach, 0.08);
+
+        let ach = Zone::ach_req_to_reach_temperature(21., 0.08, 48., 9.9, 12., 9.8, 8.2, 8.1);
+        assert_relative_eq!(ach, 0.08);
+
+        let ach = Zone::ach_req_to_reach_temperature(21., 0.08, 48., 9.9, 8.8, 12., 8.2, 10.);
+        assert_relative_eq!(ach, 21.65371789094187);
+
+        let ach = Zone::ach_req_to_reach_temperature(5., 0.08, 48., 9.9, 8.8, 12., 11., 10.);
+        assert_relative_eq!(ach, 48.);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_1(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects)
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                24.0,
+                22.0,
+                20.0,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 20.0);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.13105245458346534);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_2(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects)
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                24.0,
+                18.0,
+                20.0,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 17.52067994302452, max_relative = 1e-8);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.13105245458346534);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_3(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects)
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                15.0,
+                18.0,
+                20.0,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 20.);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.13105245458346534);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_4(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let mut zone = zone(thermal_bridging_objects);
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                24.0,
+                22.0,
+                19.9,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 19.9);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.1306962441148573);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_5(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let mut zone = zone(thermal_bridging_objects);
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                24.0,
+                18.0,
+                19.9,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 15.144632024928118, max_relative = 1e-8);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.1306962441148573);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_6(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let mut zone = zone(thermal_bridging_objects);
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                15.0,
+                18.0,
+                19.9,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 19.9);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.1306962441148573);
+    }
 
     #[test]
     pub fn should_replicate_numpy_isclose() {
