@@ -17,7 +17,7 @@ use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
 use crate::core::heating_systems::emitters::{Emitters, EmittersDetailedResult};
-use crate::core::heating_systems::heat_battery::{HeatBattery, HeatBatteryServiceWaterRegular};
+use crate::core::heating_systems::heat_battery_pcm::{HeatBattery, HeatBatteryServiceWaterRegular};
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
 use crate::core::heating_systems::heat_pump::{HeatPump, HeatPumpHotWaterOnly};
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
@@ -4139,10 +4139,10 @@ impl WetHeatSource {
                 .ok()
                 .map(|(results_per_timestep, results_annual)| {
                     (
-                        crate::core::heating_systems::heat_battery::to_corpus_results_per_timestep(
+                        crate::core::heating_systems::heat_battery_pcm::to_corpus_results_per_timestep(
                             results_per_timestep,
                         ),
-                        crate::core::heating_systems::heat_battery::to_corpus_results_annual(
+                        crate::core::heating_systems::heat_battery_pcm::to_corpus_results_annual(
                             results_annual,
                         ),
                     )

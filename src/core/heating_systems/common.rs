@@ -6,7 +6,7 @@ use crate::core::heating_systems::boiler::{
 use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
-use crate::core::heating_systems::heat_battery::{
+use crate::core::heating_systems::heat_battery_pcm::{
     HeatBatteryServiceSpace, HeatBatteryServiceWaterRegular,
 };
 use crate::core::heating_systems::heat_network::{
