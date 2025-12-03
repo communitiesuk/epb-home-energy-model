@@ -100,6 +100,7 @@ impl HeatBatteryPcmServiceWaterRegular {
         ))
     }
 
+    // TODO remove below 3 methods 1.0.0a1
     pub(crate) fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
         &self.cold_feed
     }
@@ -171,6 +172,7 @@ impl HeatBatteryPcmServiceWaterRegular {
     pub(crate) fn demand_energy(
         &self,
         energy_demand: f64,
+        temp_flow: Option<f64>,
         temp_return: f64,
         update_heat_source_state: Option<bool>,
         simulation_time_iteration: SimulationTimeIteration,
@@ -184,12 +186,7 @@ impl HeatBatteryPcmServiceWaterRegular {
             ServiceType::WaterRegular,
             energy_demand,
             temp_return,
-            self.control_max
-                .as_ref()
-                .ok_or_else(|| {
-                    anyhow!("control max expected on heat battery when setpnt is called")
-                })?
-                .setpnt(&simulation_time_iteration),
+            temp_flow,
             service_on,
             None,
             Some(update_heat_source_state),
@@ -2289,6 +2286,7 @@ mod tests {
         battery_control_on: Control,
     ) {
         let energy_demand = 10.;
+        let temp_flow = 55.;
         let temp_return = 40.;
 
         let control_min = create_setpoint_time_control(vec![
@@ -2324,7 +2322,13 @@ mod tests {
             );
 
         let result = heat_battery_service
-            .demand_energy(energy_demand, temp_return, None, simulation_time_iteration)
+            .demand_energy(
+                energy_demand,
+                Some(temp_flow),
+                temp_return,
+                None,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         assert_relative_eq!(result, 9.198558500698649);
@@ -2338,6 +2342,7 @@ mod tests {
         battery_control_on: Control,
     ) {
         let energy_demand = 10.;
+        let temp_flow = 55.;
         let temp_return = 40.;
 
         let service_control_off = Arc::new(create_setpoint_time_control(vec![None]));
@@ -2354,7 +2359,13 @@ mod tests {
             );
 
         let result = heat_battery_service
-            .demand_energy(energy_demand, temp_return, None, simulation_time_iteration)
+            .demand_energy(
+                energy_demand,
+                Some(temp_flow),
+                temp_return,
+                None,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         assert_eq!(result, 0.);

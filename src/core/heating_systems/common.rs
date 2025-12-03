@@ -129,7 +129,7 @@ impl HeatSourceWet {
             HeatSourceWet::HeatNetworkWaterStorage(water_storage) => Ok(water_storage
                 .demand_energy(energy_demand, Default::default(), temperature, &simtime)),
             HeatSourceWet::HeatBatteryHotWater(battery) => {
-                battery.demand_energy(energy_demand, temperature, None, simtime)
+                battery.demand_energy(energy_demand, temp_flow, temperature, None, simtime)
             }
             HeatSourceWet::HeatPumpWater(water) => {
                 water.demand_energy(energy_demand, temp_flow, temperature, simtime)
