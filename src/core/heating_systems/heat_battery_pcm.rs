@@ -211,6 +211,41 @@ impl HeatBatteryPcmServiceWaterRegular {
     }
 }
 
+/// An object to represent a direct water heating service provided by a heat battery.
+///
+/// This is similar to a combi boiler or HIU providing hot water on demand.
+struct HeatBatteryPcmServiceWaterDirect {
+    heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+    service_name: String,
+    setpoint_temp: f64,
+    cold_feed: WaterSourceWithTemperature,
+}
+
+impl HeatBatteryPcmServiceWaterDirect {
+    /// Arguments:
+    /// * `heat_battery` - reference to the HeatBatteryPCM object providing the service
+    /// * `service_name` - name of the service demanding energy from the heat battery
+    /// * `setpoint_temp` - temperature of hot water to be provided, in deg C
+    /// * `cold_feed` - reference to ColdWaterSource object
+    fn new(
+        heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+        service_name: String,
+        setpoint_temp: f64,
+        cold_feed: WaterSourceWithTemperature,
+    ) -> Self {
+        Self {
+            heat_battery,
+            service_name,
+            setpoint_temp,
+            cold_feed,
+        }
+    }
+
+    fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+        &self.cold_feed
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct HeatBatteryPcmServiceSpace {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
