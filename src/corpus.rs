@@ -3578,7 +3578,7 @@ fn zone_from_input(
     cool_system_name_for_zone: &mut IndexMap<String, Vec<String>>,
     external_conditions: Arc<ExternalConditions>,
     infiltration_ventilation: Arc<InfiltrationVentilation>,
-    window_adjust_control: Option<Arc<Control>>,
+    window_adjust_control: Option<Arc<dyn ControlBehaviour>>,
     controls: &Controls,
     print_heat_balance: bool,
     simulation_time_iterator: &SimulationTimeIterator,
@@ -3675,14 +3675,15 @@ fn infiltration_ventilation_from_input(
     detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<(
     InfiltrationVentilation,
-    Option<Arc<Control>>,
+    Option<Arc<dyn ControlBehaviour>>,
     Option<Arc<Control>>,
     Option<Arc<Control>>,
 )> {
     let window_adjust_control = input
         .control_window_adjust
         .as_ref()
-        .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
+        .and_then(|ctrl_name| controls.get_with_string(ctrl_name))
+        .map(|ctrl| ctrl.clone() as Arc<dyn ControlBehaviour>);
     let vent_adjust_min_control = input
         .control_vent_adjust_min
         .as_ref()
