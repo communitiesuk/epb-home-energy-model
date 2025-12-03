@@ -2005,10 +2005,10 @@ mod tests {
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
-    use crate::core::heating_systems::heat_battery::HeatBattery;
-    use crate::core::heating_systems::heat_battery::HeatBatteryServiceSpace;
-    use crate::core::heating_systems::heat_battery::HeatBatteryServiceWaterRegular;
-    use crate::core::heating_systems::heat_battery::ServiceType;
+    use crate::core::heating_systems::heat_battery_pcm::HeatBattery;
+    use crate::core::heating_systems::heat_battery_pcm::HeatBatteryServiceSpace;
+    use crate::core::heating_systems::heat_battery_pcm::HeatBatteryServiceWaterRegular;
+    use crate::core::heating_systems::heat_battery_pcm::ServiceType;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
