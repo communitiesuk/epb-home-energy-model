@@ -37,4 +37,17 @@ impl WaterSourceWithTemperature {
             },
         }
     }
+
+    pub(crate) fn get_temp_cold_water(
+        &self,
+        volume_needed: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(f64, f64)>> {
+        match self {
+            WaterSourceWithTemperature::ColdWaterSource(cold_water_source) => {
+                cold_water_source.get_temp_cold_water(volume_needed, simtime)
+            }
+            _ => unimplemented!("TODO during migration 1.0.0a1"),
+        }
+    }
 }
