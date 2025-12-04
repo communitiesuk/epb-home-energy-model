@@ -8,6 +8,7 @@ use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::{
     KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
+use crate::core::water_heat_demand::misc::calculate_volume_weighted_average_temperature;
 use crate::corpus::{
     ResultParamValue, ResultsAnnual as CorpusResultsAnnual,
     ResultsPerTimestep as CorpusResultsPerTimestep,
@@ -243,6 +244,52 @@ impl HeatBatteryPcmServiceWaterDirect {
 
     fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
         &self.cold_feed
+    }
+
+    fn temp_hot_water(
+        &self,
+        vol: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let list_temp_vol = self
+            .cold_feed
+            .get_temp_cold_water(vol, simulation_time_iteration)?;
+        let inlet_temp =
+            calculate_volume_weighted_average_temperature(list_temp_vol, Some(vol), None)?;
+
+        self.heat_battery.read().get_temp_hot_water(inlet_temp, vol)
+    }
+
+    fn get_temp_hot_water(
+        &self,
+        volume_req: f64,
+        volume_req_already: Option<f64>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(Option<f64>, f64)>> {
+        let volume_req_already = volume_req_already.unwrap_or(0.);
+
+        if is_close!(volume_req, 0., abs_tol = 1e-10) {
+            return Ok(vec![(None, volume_req)]);
+        }
+
+        let volume_req_cumulative = volume_req + volume_req_already;
+        let temp_hot_water_cumulative =
+            self.temp_hot_water(volume_req_cumulative, simulation_time_iteration)?;
+
+        // Base temperature on the part of the draw-off for volume_req, and
+        // ignore any volume previously considered
+        let temp_hot_water_req = if is_close!(volume_req_already, 0., abs_tol = 1e-10) {
+            temp_hot_water_cumulative
+        } else {
+            let temp_hot_water_req_already =
+                self.temp_hot_water(volume_req_already, simulation_time_iteration)?;
+
+            (temp_hot_water_cumulative * volume_req_cumulative
+                - temp_hot_water_req_already * volume_req_already)
+                / volume_req
+        };
+
+        Ok(vec![(Some(temp_hot_water_req), volume_req)])
     }
 }
 
@@ -2027,29 +2074,24 @@ pub(crate) fn to_corpus_results_annual(results: ResultsAnnual) -> CorpusResultsA
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::core::common::WaterSourceWithTemperature;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::controls::time_control::{ChargeControl, Control};
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
-    use crate::core::heating_systems::common::HeatingServiceType;
-    use crate::core::heating_systems::heat_battery_pcm::HeatBatteryPcm;
-    use crate::core::heating_systems::heat_battery_pcm::HeatBatteryPcmServiceSpace;
-    use crate::core::heating_systems::heat_battery_pcm::HeatBatteryPcmServiceWaterRegular;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
         ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,
         HeatSourceWetDetails,
     };
-    use crate::simulation_time::SimulationTimeIteration;
-    use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use itertools::Itertools;
     use parking_lot::RwLock;
-    use rstest::fixture;
-    use rstest::rstest;
+    use rstest::*;
     use serde_json::json;
     use smartstring::alias::String;
     use std::sync::atomic::Ordering;
@@ -2264,6 +2306,42 @@ mod tests {
         );
 
         assert!(!heat_battery_service.is_on(simulation_time_iteration));
+    }
+
+    #[fixture]
+    fn heat_battery_service_water_direct(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) -> HeatBatteryPcmServiceWaterDirect {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+            ColdWaterSource::new(vec![1.0, 1.2], 0, 1.),
+        ));
+        let service_name = "WaterHeating".into();
+
+        HeatBatteryPcmServiceWaterDirect::new(heat_battery, service_name, 60., cold_feed.clone())
+    }
+
+    #[rstest]
+    fn test_get_cold_water_source_for_water_direct(
+        heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
+    ) {
+        let expected = WaterSourceWithTemperature::ColdWaterSource(Arc::new(ColdWaterSource::new(
+            vec![1.0, 1.2],
+            0,
+            1.,
+        )));
+        let actual = heat_battery_service_water_direct.get_cold_water_source();
+
+        match (actual, expected) {
+            (
+                WaterSourceWithTemperature::ColdWaterSource(actual),
+                WaterSourceWithTemperature::ColdWaterSource(expected),
+            ) => {
+                assert_eq!(actual, &expected);
+            }
+            _ => panic!("Expected ColdWaterSource variant"),
+        }
     }
 
     // test_service_is_on_without_control
