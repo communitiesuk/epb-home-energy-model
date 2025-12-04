@@ -1,4 +1,3 @@
-use crate::compare_floats::is_close;
 use crate::core::material_properties::WATER;
 use anyhow::bail;
 
@@ -61,7 +60,7 @@ pub(crate) fn calculate_volume_weighted_average_temperature(
 
     // Validate expected volume if provided
     if let Some(expected_volume) = expected_volume {
-        if !is_close(total_volume, expected_volume, tolerance) {
+        if !is_close!(total_volume, expected_volume, rel_tol = tolerance) {
             bail!("Volume mismatch: expected {expected_volume}, got {total_volume}");
         }
     }
@@ -107,7 +106,7 @@ mod tests {
         let result =
             calculate_volume_weighted_average_temperature(temp_vol_pairs, None, None).unwrap();
 
-        assert!(is_close(result, expected_temp, 1e-10));
+        assert!(is_close!(result, expected_temp, rel_tol = 1e-10));
     }
 
     #[test]
@@ -123,7 +122,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(is_close(result, 22., 1e-10));
+        assert!(is_close!(result, 22., rel_tol = 1e-10));
     }
 
     #[test]

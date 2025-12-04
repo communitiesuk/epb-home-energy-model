@@ -19,10 +19,6 @@ pub fn max_of_2<T: PartialOrd + Copy>(first: T, second: T) -> T {
     }
 }
 
-pub fn is_close(a: f64, b: f64, abs_tol: f64) -> bool {
-    (a - b).abs() <= abs_tol
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,25 +78,5 @@ mod tests {
     #[test]
     fn should_calc_minus_10_as_min_of_three_numbers() {
         assert_eq!(min_of_3(33., -10., 1.55), -10.);
-    }
-
-    #[test]
-    fn two_equal_numbers_are_close() {
-        assert!(is_close(1.1, 1.1, 1e-10));
-    }
-
-    #[test]
-    fn two_different_numbers_are_not_close() {
-        assert_eq!(is_close(1.1, 3.1, 1e-10), false);
-    }
-
-    #[test]
-    fn two_numbers_within_threshold_are_close() {
-        assert!(is_close(1., 1.00000000009, 1e-10));
-    }
-
-    #[test]
-    fn two_numbers_outside_threshold_are_not_close() {
-        assert_eq!(is_close(1., 1.0000000009, 1e-10), false);
     }
 }
