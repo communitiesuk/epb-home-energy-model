@@ -1102,35 +1102,8 @@ mod tests {
     use std::any::type_name;
 
     #[fixture]
-    pub fn boiler_data() -> HeatSourceWetDetails {
-        HeatSourceWetDetails::Boiler {
-            energy_supply: "mains gas".into(),
-            energy_supply_aux: "mains elec".into(),
-            rated_power: 24.0,
-            efficiency_full_load: 0.88,
-            efficiency_part_load: 0.986,
-            boiler_location: HeatSourceLocation::Internal,
-            modulation_load: 0.2,
-            electricity_circ_pump: 0.0600,
-            electricity_part_load: 0.0131,
-            electricity_full_load: 0.0388,
-            electricity_standby: 0.0244,
-        }
-    }
-
-    #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 2., 1.)
-    }
-
-    #[fixture]
-    pub fn boiler_energy_output_required() -> [f64; 2] {
-        [2.0, 10.0]
-    }
-
-    #[fixture]
-    pub fn temp_return_feed() -> [f64; 2] {
-        [51.05, 60.00]
     }
 
     #[fixture]
@@ -1199,6 +1172,203 @@ mod tests {
         )
     }
 
+    mod test_boiler_service_water_combi {
+        use crate::core::common::WaterSourceWithTemperature;
+        use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
+        use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
+        use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+        use crate::core::water_heat_demand::dhw_demand::{DemandVolTargetKey, VolumeReference};
+        use crate::hem_core::external_conditions::ExternalConditions;
+        use crate::hem_core::simulation_time::SimulationTime;
+        use crate::input::{
+            BoilerHotWaterTest, FuelType, HeatSourceLocation, HeatSourceWetDetails,
+            HotWaterSourceDetails,
+        };
+        use approx::assert_relative_eq;
+        use indexmap::IndexMap;
+        use parking_lot::RwLock;
+        use rstest::{fixture, rstest};
+        use std::sync::Arc;
+
+        #[fixture]
+        pub fn boiler_data() -> HeatSourceWetDetails {
+            HeatSourceWetDetails::Boiler {
+                rated_power: 16.85,
+                energy_supply: "mains gas".into(),
+                energy_supply_aux: "mains elec".into(),
+                efficiency_full_load: 0.868,
+                efficiency_part_load: 0.952,
+                boiler_location: HeatSourceLocation::Internal,
+                modulation_load: 1.,
+                electricity_circ_pump: 0.0600,
+                electricity_part_load: 0.0131,
+                electricity_full_load: 0.0388,
+                electricity_standby: 0.0244,
+            }
+        }
+
+        #[fixture]
+        fn boiler_service_water_combi_data() -> HotWaterSourceDetails {
+            HotWaterSourceDetails::CombiBoiler {
+                separate_dhw_tests: BoilerHotWaterTest::ML,
+                // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test fixture
+                rejected_energy_1: Some(0.0004),
+                // storage_loss_factor_1: 0.98328, // we don't have this field currently - unsure whether this is a mistake in the test fixture
+                storage_loss_factor_2: Some(0.91574),
+                rejected_factor_3: Some(0.),
+                setpoint_temp: None,
+                daily_hw_usage: 132.5802,
+                cold_water_source: "mains water".into(),
+                heat_source_wet: "boiler".into(),
+            }
+        }
+
+        #[fixture]
+        fn volume_demanded() -> [IndexMap<DemandVolTargetKey, VolumeReference>; 2] {
+            [
+                IndexMap::from([
+                    (
+                        41.0.into(),
+                        VolumeReference {
+                            warm_temp: 41.0,
+                            warm_vol: 48.0,
+                        },
+                    ),
+                    (
+                        43.0.into(),
+                        VolumeReference {
+                            warm_temp: 43.0,
+                            warm_vol: 100.0,
+                        },
+                    ),
+                    (
+                        40.0.into(),
+                        VolumeReference {
+                            warm_temp: 40.0,
+                            warm_vol: 0.0,
+                        },
+                    ),
+                    (
+                        DemandVolTargetKey::TempHotWater,
+                        VolumeReference {
+                            warm_temp: 55.0,
+                            warm_vol: 110.59194954841298,
+                        },
+                    ),
+                ]),
+                IndexMap::from([
+                    (
+                        41.0.into(),
+                        VolumeReference {
+                            warm_temp: 41.0,
+                            warm_vol: 48.0,
+                        },
+                    ),
+                    (
+                        DemandVolTargetKey::TempHotWater,
+                        VolumeReference {
+                            warm_temp: 55.0,
+                            warm_vol: 32.60190808710678,
+                        },
+                    ),
+                ]),
+            ]
+        }
+
+        #[fixture]
+        pub fn boiler(
+            boiler_data: HeatSourceWetDetails,
+            external_conditions: ExternalConditions,
+            simulation_time: SimulationTime,
+        ) -> Boiler {
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
+            ));
+            let energy_supply_aux = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
+                    .build(),
+            ));
+            let energy_supply_conn_aux =
+                EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
+
+            let mut boiler = Boiler::new(
+                boiler_data,
+                energy_supply,
+                energy_supply_conn_aux,
+                Arc::new(external_conditions),
+                simulation_time.step,
+            )
+            .unwrap();
+            boiler.create_service_connection("boiler_test").unwrap();
+
+            boiler
+        }
+
+        #[fixture]
+        fn boiler_service_water(
+            boiler: Boiler,
+            boiler_service_water_combi_data: HotWaterSourceDetails,
+            simulation_time: SimulationTime,
+        ) -> BoilerServiceWaterCombi {
+            let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step);
+
+            BoilerServiceWaterCombi::new(
+                Arc::new(RwLock::new(boiler)),
+                boiler_service_water_combi_data,
+                "boiler_test".into(),
+                60.,
+                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
+                simulation_time.step,
+            )
+            .unwrap()
+        }
+
+        #[rstest]
+        fn test_boiler_service_water(
+            boiler_service_water: BoilerServiceWaterCombi,
+            simulation_time: SimulationTime,
+            volume_demanded: [IndexMap<DemandVolTargetKey, VolumeReference>; 2],
+        ) {
+            for (idx, t_it) in simulation_time.iter().enumerate() {
+                assert_relative_eq!(
+                    boiler_service_water
+                        .demand_hot_water(volume_demanded[idx].clone(), t_it)
+                        .unwrap(),
+                    [7.624602058956146, 2.267017951167212][idx],
+                    max_relative = 1e-6
+                );
+            }
+        }
+    }
+
+    #[fixture]
+    pub fn boiler_data() -> HeatSourceWetDetails {
+        HeatSourceWetDetails::Boiler {
+            energy_supply: "mains gas".into(),
+            energy_supply_aux: "mains elec".into(),
+            rated_power: 24.0,
+            efficiency_full_load: 0.88,
+            efficiency_part_load: 0.986,
+            boiler_location: HeatSourceLocation::Internal,
+            modulation_load: 0.2,
+            electricity_circ_pump: 0.0600,
+            electricity_part_load: 0.0131,
+            electricity_full_load: 0.0388,
+            electricity_standby: 0.0244,
+        }
+    }
+
+    #[fixture]
+    pub fn boiler_energy_output_required() -> [f64; 2] {
+        [2.0, 10.0]
+    }
+
+    #[fixture]
+    pub fn temp_return_feed() -> [f64; 2] {
+        [51.05, 60.00]
+    }
+
     #[fixture]
     fn boiler(
         boiler_data: HeatSourceWetDetails,
@@ -1225,159 +1395,6 @@ mod tests {
         boiler.create_service_connection("boiler_test").unwrap();
 
         (boiler, energy_supply)
-    }
-
-    #[fixture]
-    pub fn boiler_data_for_combi() -> HeatSourceWetDetails {
-        HeatSourceWetDetails::Boiler {
-            rated_power: 16.85,
-            energy_supply: "mains gas".into(),
-            energy_supply_aux: "mains elec".into(),
-            efficiency_full_load: 0.868,
-            efficiency_part_load: 0.952,
-            boiler_location: HeatSourceLocation::Internal,
-            modulation_load: 1.,
-            electricity_circ_pump: 0.0600,
-            electricity_part_load: 0.0131,
-            electricity_full_load: 0.0388,
-            electricity_standby: 0.0244,
-        }
-    }
-
-    #[fixture]
-    pub fn boiler_for_combi(
-        boiler_data_for_combi: HeatSourceWetDetails,
-        external_conditions: ExternalConditions,
-        simulation_time: SimulationTime,
-    ) -> Boiler {
-        let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
-        ));
-        let energy_supply_aux = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
-        ));
-        let energy_supply_conn_aux =
-            EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
-
-        let mut boiler = Boiler::new(
-            boiler_data_for_combi,
-            energy_supply,
-            energy_supply_conn_aux,
-            Arc::new(external_conditions),
-            simulation_time.step,
-        )
-        .unwrap();
-        boiler.create_service_connection("boiler_test").unwrap();
-
-        boiler
-    }
-
-    #[fixture]
-    pub fn combi_boiler_data() -> HotWaterSourceDetails {
-        HotWaterSourceDetails::CombiBoiler {
-            separate_dhw_tests: BoilerHotWaterTest::ML,
-            // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test fixture
-            rejected_energy_1: Some(0.0004),
-            // storage_loss_factor_1: 0.98328, // we don't have this field currently - unsure whether this is a mistake in the test fixture
-            storage_loss_factor_2: Some(0.91574),
-            rejected_factor_3: Some(0.),
-            setpoint_temp: None,
-            daily_hw_usage: 132.5802,
-            cold_water_source: "mains water".into(),
-            heat_source_wet: "boiler".into(),
-        }
-    }
-
-    #[fixture]
-    pub fn cold_water_source(simulation_time: SimulationTime) -> ColdWaterSource {
-        ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step)
-    }
-
-    #[fixture]
-    pub fn combi_boiler(
-        boiler_for_combi: Boiler,
-        combi_boiler_data: HotWaterSourceDetails,
-        cold_water_source: ColdWaterSource,
-        simulation_time: SimulationTime,
-    ) -> BoilerServiceWaterCombi {
-        BoilerServiceWaterCombi::new(
-            Arc::new(RwLock::new(boiler_for_combi)),
-            combi_boiler_data,
-            "boiler_test".into(),
-            60.,
-            WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-            simulation_time.step,
-        )
-        .unwrap()
-    }
-
-    #[fixture]
-    fn volume_demanded() -> [IndexMap<DemandVolTargetKey, VolumeReference>; 2] {
-        [
-            IndexMap::from([
-                (
-                    41.0.into(),
-                    VolumeReference {
-                        warm_temp: 41.0,
-                        warm_vol: 48.0,
-                    },
-                ),
-                (
-                    43.0.into(),
-                    VolumeReference {
-                        warm_temp: 43.0,
-                        warm_vol: 100.0,
-                    },
-                ),
-                (
-                    40.0.into(),
-                    VolumeReference {
-                        warm_temp: 40.0,
-                        warm_vol: 0.0,
-                    },
-                ),
-                (
-                    DemandVolTargetKey::TempHotWater,
-                    VolumeReference {
-                        warm_temp: 55.0,
-                        warm_vol: 110.59194954841298,
-                    },
-                ),
-            ]),
-            IndexMap::from([
-                (
-                    41.0.into(),
-                    VolumeReference {
-                        warm_temp: 41.0,
-                        warm_vol: 48.0,
-                    },
-                ),
-                (
-                    DemandVolTargetKey::TempHotWater,
-                    VolumeReference {
-                        warm_temp: 55.0,
-                        warm_vol: 32.60190808710678,
-                    },
-                ),
-            ]),
-        ]
-    }
-
-    #[rstest]
-    fn combi_boiler_should_provide_demand_hot_water(
-        combi_boiler: BoilerServiceWaterCombi,
-        simulation_time: SimulationTime,
-        volume_demanded: [IndexMap<DemandVolTargetKey, VolumeReference>; 2],
-    ) {
-        for (idx, t_it) in simulation_time.iter().enumerate() {
-            assert_relative_eq!(
-                combi_boiler
-                    .demand_hot_water(volume_demanded[idx].clone(), t_it)
-                    .unwrap(),
-                [7.624602058956146, 2.267017951167212][idx],
-                max_relative = 1e-6
-            );
-        }
     }
 
     #[fixture]
