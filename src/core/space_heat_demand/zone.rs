@@ -1,7 +1,5 @@
 // This module provides objects to represent the thermal zones in the building,
 // and to calculate the temperatures in the zone and associated building elements.
-
-use crate::compare_floats::is_close;
 use crate::core::controls::time_control::ControlBehaviour;
 use crate::core::material_properties::AIR;
 use crate::core::space_heat_demand::building_element::BuildingElement;
@@ -1181,13 +1179,15 @@ impl Zone {
         // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
         // Determine maximum heating/cooling
         let (temp_setpnt, heat_cool_load_upper, frac_convective) = if temp_free > temp_setpnt_cool
-            && !is_close(temp_free, temp_setpnt_cool, 1e-10)
+            && !is_close!(temp_free, temp_setpnt_cool, rel_tol = 1e-10)
         {
             // Cooling
             // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
             //      Could max. power be available at this point for all heating/cooling systems?
             (temp_setpnt_cool, -10. * self.area(), frac_convective_cool)
-        } else if temp_free < temp_setpnt_heat && !is_close(temp_free, temp_setpnt_cool, 1e-10) {
+        } else if temp_free < temp_setpnt_heat
+            && !is_close!(temp_free, temp_setpnt_cool, rel_tol = 1e-10)
+        {
             // Heating
             // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
             //      Could max. power be available at this point for all heating/cooling systems?
