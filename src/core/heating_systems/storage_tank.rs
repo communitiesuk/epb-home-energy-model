@@ -51,7 +51,7 @@ const DEFAULT_PIPEWORK_PRIMARY_GAINS_FOR_TIMESTEP: f64 = 0.;
 const DEFAULT_PREVIOUS_EVENT_TIME_END: f64 = 0.;
 
 // Auxiliary energy recovery factor
-const THERMAL_CONSTANTS_F_RVD_AUX: f64 =  0.25;
+const THERMAL_CONSTANTS_F_RVD_AUX: f64 = 0.25;
 
 // Thermal loss recovery factor
 const THERMAL_CONSTANTS_F_STO_M: f64 = 0.75;
@@ -115,15 +115,15 @@ pub struct StorageTank {
     heating_active: HashMap<String, AtomicBool>,
     q_ls_n_prev_heat_source: Arc<RwLock<Vec<f64>>>,
     q_sto_h_ls_rbl: AtomicF64, // total recoverable heat losses for heating in kWh, memoised between steps
-    pipework_primary_gains_for_timestep: AtomicF64,  // primary pipework gains for a timestep (mutates over lifetime)
+    pipework_primary_gains_for_timestep: AtomicF64, // primary pipework gains for a timestep (mutates over lifetime)
     #[cfg(test)]
     energy_demand_test: AtomicF64,
     temp_final_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
     temp_average_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
     temp_average_drawoff_volweighted: AtomicF64, // In Python this is created from inside extract_hot_water()
     total_volume_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
-    ambient_temperature: f64, // TODO should these be AtomicF64
-    previous_event_time_end: f64
+    ambient_temperature: f64,        // TODO should these be AtomicF64
+    previous_event_time_end: f64,
 }
 
 #[derive(Debug)]
@@ -168,13 +168,19 @@ impl StorageTank {
     ) -> anyhow::Result<Self> {
         let q_std_ls_ref = losses;
         let ambient_temperature = ambient_temperature.unwrap_or(DEFAULT_AMBIENT_TEMPERATURE);
-        let pipework_primary_gains_for_timestep = pipework_primary_gains_for_timestep.unwrap_or(DEFAULT_PIPEWORK_PRIMARY_GAINS_FOR_TIMESTEP);
-        let previous_event_time_end = previous_event_time_end.unwrap_or(DEFAULT_PREVIOUS_EVENT_TIME_END);
+        let pipework_primary_gains_for_timestep = pipework_primary_gains_for_timestep
+            .unwrap_or(DEFAULT_PIPEWORK_PRIMARY_GAINS_FOR_TIMESTEP);
+        let previous_event_time_end =
+            previous_event_time_end.unwrap_or(DEFAULT_PREVIOUS_EVENT_TIME_END);
 
         let volume_total_in_litres = volume;
         let number_of_volumes = number_of_volumes.unwrap_or(4);
         // list of volume of layers in litres
-        let vol_n = iter::repeat_n(volume_total_in_litres / number_of_volumes as f64, number_of_volumes).collect_vec();
+        let vol_n = iter::repeat_n(
+            volume_total_in_litres / number_of_volumes as f64,
+            number_of_volumes,
+        )
+        .collect_vec();
         // water specific heat in kWh/kg.K
         let cp = contents.specific_heat_capacity_kwh();
         let rho = contents.density();
@@ -253,7 +259,7 @@ impl StorageTank {
             temp_average_drawoff_volweighted: Default::default(),
             total_volume_drawoff: Default::default(),
             ambient_temperature,
-            previous_event_time_end
+            previous_event_time_end,
         })
     }
 
@@ -277,14 +283,12 @@ impl StorageTank {
 
         self.temp_average_drawoff_volweighted
             .store(0., Ordering::SeqCst);
-        self.temp_final_drawoff
-            .store(0., Ordering::SeqCst);
+        self.temp_final_drawoff.store(0., Ordering::SeqCst);
         self.total_volume_drawoff.store(0., Ordering::SeqCst);
         self.temp_average_drawoff
             .store(self.initial_temperature, Ordering::SeqCst);
 
         for event in usage_events.iter().flatten() {
-
             // Decision no to include yet the overlapping of events for pipework losses
             // even if applying pipework losses to all events might be overstimating
             // the following overlapping processing could be understimating for multiple
@@ -355,7 +359,9 @@ impl StorageTank {
 
             // In cases where there is no thermostat or tank is one layer, set the thermostat layer to the heater layer
             let thermostat_layer = match positioned_heat_source.thermostat_position {
-                Some(thermostat_position) => (thermostat_position * self.number_of_volumes as f64) as usize,
+                Some(thermostat_position) => {
+                    (thermostat_position * self.number_of_volumes as f64) as usize
+                }
                 None => heater_layer,
             };
 
@@ -402,7 +408,8 @@ impl StorageTank {
 
         // 6.4.7 Recoverable, recovered thermal losses
         // recoverable auxiliary energy transmitted to the heated space - kWh
-        let q_sto_h_rbl_aux = w_sto_aux * THERMAL_CONSTANTS_F_STO_M * (1. - THERMAL_CONSTANTS_F_RVD_AUX);
+        let q_sto_h_rbl_aux =
+            w_sto_aux * THERMAL_CONSTANTS_F_STO_M * (1. - THERMAL_CONSTANTS_F_RVD_AUX);
         // recoverable heat losses (storage) - kWh
         let q_sto_h_rbl_env = q_ls * THERMAL_CONSTANTS_F_STO_M;
         // total recoverable heat losses for heating - kWh
@@ -480,9 +487,11 @@ impl StorageTank {
             // Record the met volume demand for the current temperature target
             // vol_removed is the volume of warm water that has been satisfied from hot water in this layer
 
-            let list_temp_vol = self.cold_feed.get_temp_cold_water(hot_volume, simulation_time);
-            let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| { t * v }).sum();
-            let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| { v }).sum();
+            let list_temp_vol = self
+                .cold_feed
+                .get_temp_cold_water(hot_volume, simulation_time);
+            let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| t * v).sum();
+            let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| v).sum();
             let temp_cold = sum_t_by_v / sum_v;
 
             energy_withdrawn +=
@@ -579,9 +588,11 @@ impl StorageTank {
                 // a given temperature, eventually resourting to its own cold feed. So cold feed
                 // temperature for the tank depends on the volume required.
 
-                let list_temp_vol = self.cold_feed.draw_off_water(needed_volume, simulation_time);
-                let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| { t * v }).sum();
-                let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| { v }).sum();
+                let list_temp_vol = self
+                    .cold_feed
+                    .draw_off_water(needed_volume, simulation_time);
+                let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| t * v).sum();
+                let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| v).sum();
 
                 let temp_cold_feed = sum_t_by_v / sum_v;
                 volume_weighted_temperature += needed_volume * temp_cold_feed;
@@ -591,7 +602,7 @@ impl StorageTank {
             new_temps[i] = volume_weighted_temperature / total_volume;
             remaining_vols[i] = total_volume;
         }
-        
+
         (new_temps, flag_rearrange_layers)
     }
 
@@ -714,7 +725,9 @@ impl StorageTank {
                 )?;
 
                 let default_temp_flow = self.temp_n.read()[heater_layer];
-                let temp_flow = self.temp_flow(heat_source, simulation_time).unwrap_or(default_temp_flow);
+                let temp_flow = self
+                    .temp_flow(heat_source, simulation_time)
+                    .unwrap_or(default_temp_flow);
                 if self.heating_active[heat_source_name].load(Ordering::SeqCst) {
                     // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
                     let mut energy_potential = match heat_source {
@@ -741,11 +754,12 @@ impl StorageTank {
                         heat_source,
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(_))
                     ) {
-                        let (primary_pipework_losses_kwh, _) = self.calculate_primary_pipework_losses(
-                            energy_potential,
-                            temp_flow,
-                            simulation_time,
-                        );
+                        let (primary_pipework_losses_kwh, _) = self
+                            .calculate_primary_pipework_losses(
+                                energy_potential,
+                                temp_flow,
+                                simulation_time,
+                            );
                         energy_potential -= primary_pipework_losses_kwh;
                     }
 
@@ -993,11 +1007,12 @@ impl StorageTank {
                 .lock()
                 .demand_energy(input_energy_adj, simulation_time_iteration.index)),
             HeatSource::Wet(ref wet_heat_source) => {
-                let (primary_pipework_losses_kwh, primary_gains) = self.calculate_primary_pipework_losses(
-                    input_energy_adj,
-                    temp_flow,
-                    simulation_time_iteration,
-                );
+                let (primary_pipework_losses_kwh, primary_gains) = self
+                    .calculate_primary_pipework_losses(
+                        input_energy_adj,
+                        temp_flow,
+                        simulation_time_iteration,
+                    );
                 let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
 
                 // TODO Use different temperatures for flow and return in the call to
@@ -1010,7 +1025,8 @@ impl StorageTank {
                 )? - primary_pipework_losses_kwh;
                 self.input_energy_adj_prev_timestep
                     .store(input_energy_adj, Ordering::SeqCst);
-                self.pipework_primary_gains_for_timestep.store(primary_gains, Ordering::SeqCst);
+                self.pipework_primary_gains_for_timestep
+                    .store(primary_gains, Ordering::SeqCst);
 
                 // TODO (from Python) - how are these gains reflected in the calculations? allocation by zone?
                 Ok(heat_source_output)
@@ -1119,7 +1135,11 @@ impl StorageTank {
     /// but this could be similar to the cold feed temperature after big draw-offs
     /// To avoid any issues in those situations we use the setpoing temperature of the
     /// tank.
-    pub(crate) fn get_temp_hot_water(&self, volume_req: f64, volume_req_already: Option<f64>) -> Vec<(f64, f64)> {
+    pub(crate) fn get_temp_hot_water(
+        &self,
+        volume_req: f64,
+        volume_req_already: Option<f64>,
+    ) -> Vec<(f64, f64)> {
         let mut volume_req = volume_req;
         let volume_req_already = volume_req_already.unwrap_or(0.);
         let mut volume_req_cumulative = volume_req + volume_req_already;
@@ -1206,12 +1226,11 @@ impl StorageTank {
     ///
     /// Arguments:
     /// * volume    -- volume of water required
-    fn draw_off_hot_water(
+    pub(crate) fn draw_off_hot_water(
         &self,
         volume: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, f64) {
-
         if volume.abs() <= 1e-10 {
             return (None, volume);
         }
@@ -1223,17 +1242,18 @@ impl StorageTank {
 
         // Initialize the unmet and met energies
         let mut _energy_withdrawn = 0.0;
-        self.temp_average_drawoff_volweighted.store(0.0, Ordering::SeqCst);
+        self.temp_average_drawoff_volweighted
+            .store(0.0, Ordering::SeqCst);
         self.total_volume_drawoff.store(0.0, Ordering::SeqCst);
 
-        let list_temp_vol = self.cold_feed.get_temp_cold_water(volume, simulation_time_iteration);
-        let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| { t * v }).sum();
-        let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| { v }).sum();
+        let list_temp_vol = self
+            .cold_feed
+            .get_temp_cold_water(volume, simulation_time_iteration);
+        let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| t * v).sum();
+        let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| v).sum();
 
-        self.temp_average_drawoff.store(
-            sum_t_by_v / sum_v,
-            Ordering::SeqCst,
-        );
+        self.temp_average_drawoff
+            .store(sum_t_by_v / sum_v, Ordering::SeqCst);
 
         let _temp_ini_n = self.temp_n.clone();
         let temp_s3_n = self.temp_n.clone();
@@ -1268,9 +1288,11 @@ impl StorageTank {
             self.total_volume_drawoff
                 .fetch_add(required_vol, Ordering::SeqCst);
 
-            let list_temp_vol = self.cold_feed.get_temp_cold_water(required_vol, simulation_time_iteration);
-            let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| { t * v }).sum();
-            let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| { v }).sum();
+            let list_temp_vol = self
+                .cold_feed
+                .get_temp_cold_water(required_vol, simulation_time_iteration);
+            let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| t * v).sum();
+            let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| v).sum();
             let temp_cold_water = sum_t_by_v / sum_v;
             //  Record the met volume demand for the current temperature target
             //  warm_vol_removed is the volume of warm water that has been satisfied from hot water in this layer
@@ -1289,9 +1311,11 @@ impl StorageTank {
         }
 
         if remaining_demanded_volume > 0.0 {
-            let list_temp_vol = self.cold_feed.get_temp_cold_water(remaining_demanded_volume, simulation_time_iteration);
-            let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| { t * v }).sum();
-            let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| { v }).sum();
+            let list_temp_vol = self
+                .cold_feed
+                .get_temp_cold_water(remaining_demanded_volume, simulation_time_iteration);
+            let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| t * v).sum();
+            let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| v).sum();
             let temp_cold_water = sum_t_by_v / sum_v;
 
             self.temp_average_drawoff_volweighted.fetch_add(
@@ -1307,7 +1331,7 @@ impl StorageTank {
                 / self.total_volume_drawoff.load(Ordering::SeqCst),
             Ordering::SeqCst,
         );
-        
+
         // Determine the new temperature distribution after displacement
         let (mut new_temp_distribution, flag_rearrange_layers) =
             self.calc_temps_after_extraction(remaining_vols, simulation_time_iteration);
@@ -1320,7 +1344,10 @@ impl StorageTank {
         *self.temp_n.write() = new_temp_distribution;
 
         // Return the average temperature and volume drawn
-        (Some(self.temp_average_drawoff.load(Ordering::SeqCst)), self.total_volume_drawoff.load(Ordering::SeqCst))
+        (
+            Some(self.temp_average_drawoff.load(Ordering::SeqCst)),
+            self.total_volume_drawoff.load(Ordering::SeqCst),
+        )
     }
     fn additional_energy_input(
         &self,
@@ -1336,7 +1363,8 @@ impl StorageTank {
 
         let heat_source_data = &self.heat_source_data[heat_source_name];
 
-        let heater_layer = (heat_source_data.heater_position * self.number_of_volumes as f64) as usize;
+        let heater_layer =
+            (heat_source_data.heater_position * self.number_of_volumes as f64) as usize;
 
         let mut q_x_in_n = vec![0.; self.number_of_volumes];
         q_x_in_n[heater_layer] = energy_input;
@@ -1372,8 +1400,11 @@ impl StorageTank {
 
     /// Return the DHW recoverable heat losses as internal gain for the current timestep in W
     pub(crate) fn internal_gains(&self) -> f64 {
-        let primary_gains_timestep = self.pipework_primary_gains_for_timestep.load(Ordering::SeqCst);
-        self.pipework_primary_gains_for_timestep.store(0., Ordering::SeqCst);
+        let primary_gains_timestep = self
+            .pipework_primary_gains_for_timestep
+            .load(Ordering::SeqCst);
+        self.pipework_primary_gains_for_timestep
+            .store(0., Ordering::SeqCst);
 
         (self.q_sto_h_ls_rbl.load(Ordering::SeqCst) * WATTS_PER_KILOWATT as f64
             / self.simulation_timestep)
@@ -1394,9 +1425,13 @@ impl StorageTank {
                 && self.input_energy_adj_prev_timestep.load(Ordering::SeqCst) == 0.
             {
                 for pipework_data in primary_pipework {
-                    let outside_temperature = self.temp_surrounding_primary_pipework(&pipework_data, simulation_time_iteration);
-                    let cool_down_loss = pipework_data.calculate_cool_down_loss(temp_flow, outside_temperature);
-                    
+                    let outside_temperature = self.temp_surrounding_primary_pipework(
+                        &pipework_data,
+                        simulation_time_iteration,
+                    );
+                    let cool_down_loss =
+                        pipework_data.calculate_cool_down_loss(temp_flow, outside_temperature);
+
                     primary_pipework_losses_kwh += cool_down_loss;
                 }
             }
@@ -1406,9 +1441,12 @@ impl StorageTank {
                 for pipework_data in primary_pipework {
                     // Primary losses for the timestep calculated from temperature difference
 
-                    let outside_temperature = self.temp_surrounding_primary_pipework(&pipework_data, simulation_time_iteration);
-                    let primary_pipework_losses_w = pipework_data.calculate_steady_state_heat_loss(temp_flow, outside_temperature);
-
+                    let outside_temperature = self.temp_surrounding_primary_pipework(
+                        &pipework_data,
+                        simulation_time_iteration,
+                    );
+                    let primary_pipework_losses_w = pipework_data
+                        .calculate_steady_state_heat_loss(temp_flow, outside_temperature);
 
                     // Check if pipework location is internal
                     let location = pipework_data.location();
@@ -1462,7 +1500,11 @@ impl StorageTank {
     }
 
     /// Return the pre-heated water temperature for the current timestep and the volume drawn
-    pub(crate) fn draw_off_water(&self, volume_needed: f64, simulation_time_iteration: SimulationTimeIteration) -> Vec<(f64, f64)> {
+    pub(crate) fn draw_off_water(
+        &self,
+        volume_needed: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> Vec<(f64, f64)> {
         let list_temp_vol = self.get_temp_cold_water(volume_needed);
         self.draw_off_hot_water(volume_needed, simulation_time_iteration);
         list_temp_vol
@@ -1617,21 +1659,25 @@ impl SmartHotWaterTank {
 
         let mut temp_s3_n = self.storage_tank.temp_n.read().clone();
 
-        self.storage_tank.temp_average_drawoff_volweighted
+        self.storage_tank
+            .temp_average_drawoff_volweighted
             .store(0., Ordering::SeqCst);
-        self.storage_tank.temp_final_drawoff
+        self.storage_tank
+            .temp_final_drawoff
             .store(0., Ordering::SeqCst);
-        self.storage_tank.total_volume_drawoff.store(0., Ordering::SeqCst);
-        self.storage_tank.temp_average_drawoff
+        self.storage_tank
+            .total_volume_drawoff
+            .store(0., Ordering::SeqCst);
+        self.storage_tank
+            .temp_average_drawoff
             .store(self.storage_tank.initial_temperature, Ordering::SeqCst);
 
         for event in usage_events.iter().flatten() {
-
             let (volume_used, energy_withdrawn, remaining_vols) =
                 self.storage_tank.extract_hot_water(event.clone(), simtime);
-            
-            let (temp_s3_n_new, rearrange) =
-                self.storage_tank
+
+            let (temp_s3_n_new, rearrange) = self
+                .storage_tank
                 .calc_temps_after_extraction(remaining_vols, simtime);
             temp_s3_n = temp_s3_n_new;
 
@@ -1670,18 +1716,23 @@ impl SmartHotWaterTank {
         // Run over multiple heat sources
         let mut temp_after_prev_heat_source = temp_s3_n.clone();
         let mut q_ls = 0.0;
-        *self.storage_tank.q_ls_n_prev_heat_source.write() = vec![0.0; self.storage_tank.number_of_volumes];
+        *self.storage_tank.q_ls_n_prev_heat_source.write() =
+            vec![0.0; self.storage_tank.number_of_volumes];
 
         let mut temp_s8_n = vec![0.; self.storage_tank.number_of_volumes];
 
-        for (heat_source_name, positioned_heat_source) in self.storage_tank.heat_source_data.clone() {
+        for (heat_source_name, positioned_heat_source) in self.storage_tank.heat_source_data.clone()
+        {
             let (_, _setpntmax) = positioned_heat_source.heat_source.lock().setpnt(simtime)?;
-            let heater_layer =
-                (positioned_heat_source.heater_position * self.storage_tank.number_of_volumes as f64) as usize;
+            let heater_layer = (positioned_heat_source.heater_position
+                * self.storage_tank.number_of_volumes as f64)
+                as usize;
 
             // In cases where there is no thermostat or tank is one layer, set the thermostat layer to the heater layer
             let thermostat_layer = match positioned_heat_source.thermostat_position {
-                Some(thermostat_position) => (thermostat_position * self.storage_tank.number_of_volumes as f64) as usize,
+                Some(thermostat_position) => {
+                    (thermostat_position * self.storage_tank.number_of_volumes as f64) as usize
+                }
                 None => heater_layer,
             };
 
@@ -1729,11 +1780,13 @@ impl SmartHotWaterTank {
 
         // 6.4.7 Recoverable, recovered thermal losses
         // recoverable auxiliary energy transmitted to the heated space - kWh
-        let q_sto_h_rbl_aux = w_sto_aux * THERMAL_CONSTANTS_F_STO_M * (1. - THERMAL_CONSTANTS_F_RVD_AUX);
+        let q_sto_h_rbl_aux =
+            w_sto_aux * THERMAL_CONSTANTS_F_STO_M * (1. - THERMAL_CONSTANTS_F_RVD_AUX);
         // recoverable heat losses (storage) - kWh
         let q_sto_h_rbl_env = q_ls * THERMAL_CONSTANTS_F_STO_M;
         // total recoverable heat losses for heating - kWh
-        self.storage_tank.q_sto_h_ls_rbl
+        self.storage_tank
+            .q_sto_h_ls_rbl
             .store(q_sto_h_rbl_env + q_sto_h_rbl_aux, Ordering::SeqCst);
 
         // set temperatures calculated to be initial temperatures of volumes for the next timestep
@@ -1766,7 +1819,7 @@ impl SmartHotWaterTank {
             heat_source,
             heat_source_name,
             heater_layer,
-        thermostat_layer,
+            thermostat_layer,
             simulation_time,
         )?;
 
@@ -1805,9 +1858,11 @@ impl SmartHotWaterTank {
                 heat_source
             {
                 // we are passing the storage tank object to the SolarThermal as this needs to call back the storage tank (sic from Python)
-                solar_heat_source
-                    .lock()
-                    .energy_output_max(&self.storage_tank, temp_s3_n, &simulation_time)
+                solar_heat_source.lock().energy_output_max(
+                    &self.storage_tank,
+                    temp_s3_n,
+                    &simulation_time,
+                )
             } else {
                 // N.B calling the SmartStorageTank specific method here
                 self.determine_heat_source_switch_on(
@@ -1847,11 +1902,12 @@ impl SmartHotWaterTank {
                         heat_source,
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(_))
                     ) {
-                        let (primary_pipework_losses_kwh, _) = self.storage_tank.calculate_primary_pipework_losses(
-                            energy_potential,
-                            temp_flow,
-                            simulation_time,
-                        );
+                        let (primary_pipework_losses_kwh, _) =
+                            self.storage_tank.calculate_primary_pipework_losses(
+                                energy_potential,
+                                temp_flow,
+                                simulation_time,
+                            );
                         energy_potential -= primary_pipework_losses_kwh;
                     }
 
@@ -1946,14 +2002,20 @@ impl SmartHotWaterTank {
         let t_u = self.temp_usable;
 
         // Cold inlet temperature
-        let list_temp_vol: Vec<(f64, f64)> = self.storage_tank.cold_feed.get_temp_cold_water(self.storage_tank.volume_total_in_litres, simtime);
-        let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| { t * v }).sum();
-        let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| { v }).sum();
+        let list_temp_vol: Vec<(f64, f64)> = self
+            .storage_tank
+            .cold_feed
+            .get_temp_cold_water(self.storage_tank.volume_total_in_litres, simtime);
+        let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| t * v).sum();
+        let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| v).sum();
         let t_c = sum_t_by_v / sum_v;
         // TODO (from Python) Maybe use underlying cold feed?
 
         // Max set point temperature
-        let t_sp = self.temp_setpnt_max.setpnt(&simtime).unwrap_or(self.temp_usable);
+        let t_sp = self
+            .temp_setpnt_max
+            .setpnt(&simtime)
+            .unwrap_or(self.temp_usable);
 
         // Calculate state of charge
         let mut soc_numerator_total = 0.0;
@@ -2063,7 +2125,7 @@ impl SmartHotWaterTank {
             // Calculate state of charge for usable and max temperatures
             let soc_temp_usable = self.calc_state_of_charge(&temp_simulation_usable, simtime)?;
             let soc_temp_max = self.calc_state_of_charge(&temp_simulation_max, simtime)?;
-            
+
             if soc_max.is_some() {
                 let soc_max = soc_max.unwrap();
                 if soc_temp_usable >= soc_max {
@@ -2281,7 +2343,8 @@ impl SmartHotWaterTank {
                 }
 
                 // Initialise the variables for mixing temperatures
-                let mut volume_weighted_temperature = remaining_vols[i] * tank_layer_temperatures[i];
+                let mut volume_weighted_temperature =
+                    remaining_vols[i] * tank_layer_temperatures[i];
 
                 // Filling layer
                 // ---------------
@@ -2343,16 +2406,18 @@ impl SmartHotWaterTank {
 
         // Standby losses coefficient - W/K
         let h_sto_ls = self.storage_tank.stand_by_losses_coefficient();
-        
-        let setpnt = self.temp_setpnt_max.setpnt(&simtime).unwrap_or(self.temp_usable);
+
+        let setpnt = self
+            .temp_setpnt_max
+            .setpnt(&simtime)
+            .unwrap_or(self.temp_usable);
 
         // Calculate heat losses difference for all layers
         for (i, &vol_i) in self.storage_tank.vol_n.iter().enumerate() {
-            q_ls_n[i] =
-                (h_sto_ls * self.storage_tank.rho * self.storage_tank.cp)
-                    * (vol_i / self.storage_tank.volume_total_in_litres)
-                    * (setpnt - self.storage_tank.ambient_temperature)
-                    * simtime.timestep;
+            q_ls_n[i] = (h_sto_ls * self.storage_tank.rho * self.storage_tank.cp)
+                * (vol_i / self.storage_tank.volume_total_in_litres)
+                * (setpnt - self.storage_tank.ambient_temperature)
+                * simtime.timestep;
         }
 
         // The heat losses list is used to calculate the temperature difference
@@ -2444,8 +2509,13 @@ impl SmartHotWaterTank {
         Ok(volume_pumped)
     }
 
-    pub(crate) fn get_temp_hot_water(&self, volume_req: f64, volume_req_already: Option<f64>) -> Vec<(f64, f64)> {
-        self.storage_tank.get_temp_hot_water(volume_req, volume_req_already)
+    pub(crate) fn get_temp_hot_water(
+        &self,
+        volume_req: f64,
+        volume_req_already: Option<f64>,
+    ) -> Vec<(f64, f64)> {
+        self.storage_tank
+            .get_temp_hot_water(volume_req, volume_req_already)
     }
 
     pub(crate) fn draw_off_hot_water(
@@ -2453,7 +2523,19 @@ impl SmartHotWaterTank {
         volume: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, f64) {
-        self.storage_tank.draw_off_hot_water(volume, simulation_time_iteration)
+        self.storage_tank
+            .draw_off_hot_water(volume, simulation_time_iteration)
+    }
+
+    pub(crate) fn draw_off_water(&self,
+        volume_needed: f64,
+        simulation_time_iteration: SimulationTimeIteration) -> Vec<(f64, f64)> {
+            self.storage_tank.draw_off_water(volume_needed, simulation_time_iteration)
+        }
+
+     pub(crate) fn get_temp_cold_water(&self, volume_needed: f64) -> Vec<(f64, f64)> {
+        // TODO this matches Python - is it correct?
+        self.storage_tank.get_temp_hot_water(volume_needed, None)
     }
 }
 
@@ -2497,8 +2579,16 @@ impl ImmersionHeater {
     }
     pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
         (
-            if self.control_min.is_some() { self.control_min.as_ref().unwrap().setpnt(&simtime) } else { None },
-            if self.control_max.is_some() { self.control_max.as_ref().unwrap().setpnt(&simtime) } else { None },
+            if self.control_min.is_some() {
+                self.control_min.as_ref().unwrap().setpnt(&simtime)
+            } else {
+                None
+            },
+            if self.control_max.is_some() {
+                self.control_max.as_ref().unwrap().setpnt(&simtime)
+            } else {
+                None
+            },
         )
     }
 
@@ -2520,16 +2610,17 @@ impl ImmersionHeater {
             bail!("Negative energy demand on ImmersionHeater");
         };
 
-        let energy_supplied = if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(simtime) {
-            min_of_2(energy_demand, self.pwr * self.simulation_timestep)
-        } else {
-            0.
-        };
+        let energy_supplied =
+            if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(simtime) {
+                min_of_2(energy_demand, self.pwr * self.simulation_timestep)
+            } else {
+                0.
+            };
 
         // If there is a diverter to this immersion heater, then any heating
         // capacity already in use is not available to the diverter.
         if let Some(ref diverter) = &self.diverter.load_full() {
-            diverter.read().capacity_used(energy_supplied);
+            diverter.read().increment_capacity_used(energy_supplied);
         }
 
         self.energy_supply_connection
@@ -2544,7 +2635,9 @@ impl ImmersionHeater {
         simtime: SimulationTimeIteration,
         ignore_standard_control: bool,
     ) -> f64 {
-        if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(simtime) || ignore_standard_control {
+        if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(simtime)
+            || ignore_standard_control
+        {
             self.pwr * self.simulation_timestep
         } else {
             0.
@@ -2777,7 +2870,10 @@ impl SolarThermalSystem {
         self.heat_output_collector_loop.load(Ordering::SeqCst)
     }
 
-    pub(crate) fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
+    pub(crate) fn setpnt(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> (Option<f64>, Option<f64>) {
         let control_max_setpnt = self.control_max.setpnt(simulation_time_iteration);
         (control_max_setpnt, control_max_setpnt)
     }
@@ -3091,8 +3187,8 @@ mod tests {
             rated_power,
             energy_supply_connection.clone(),
             simulation_timestep,
-            Arc::new(Control::SetpointTime(control_min)),
-            Arc::new(Control::SetpointTime(control_max)),
+            Some(Arc::new(Control::SetpointTime(control_min))),
+            Some(Arc::new(Control::SetpointTime(control_max))),
         );
         PositionedHeatSource {
             heat_source: Arc::new(Mutex::new(HeatSource::Storage(

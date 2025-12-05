@@ -15,7 +15,6 @@ pub(crate) enum WaterSourceWithTemperature {
 }
 
 impl WaterSourceWithTemperature {
-
     // NOTE this will be replaced by get_temp_cold_water and draw_off_water
     pub(crate) fn temperature(
         &self,
@@ -37,27 +36,47 @@ impl WaterSourceWithTemperature {
             },
         }
     }
-    
+
     // NOTE this may need simulation_time in future
-    pub(crate) fn get_temp_cold_water(&self, volume_needed: f64, _simulation_time: SimulationTimeIteration) -> Vec<(f64, f64)> {
+    pub(crate) fn get_temp_cold_water(
+        &self,
+        volume_needed: f64,
+        _simulation_time: SimulationTimeIteration,
+    ) -> Vec<(f64, f64)> {
         match self {
             WaterSourceWithTemperature::ColdWaterSource(_cold_water_source) => todo!(),
             WaterSourceWithTemperature::Wwhrs(_mutex) => todo!(),
-            WaterSourceWithTemperature::Preheated(hot_water_storage_tank) => match hot_water_storage_tank {
-                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().get_temp_cold_water(volume_needed),
-                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock.read().get_temp_cold_water(volume_needed),
-            },
+            WaterSourceWithTemperature::Preheated(hot_water_storage_tank) => {
+                match hot_water_storage_tank {
+                    HotWaterStorageTank::StorageTank(rw_lock) => {
+                        rw_lock.read().get_temp_cold_water(volume_needed)
+                    }
+                    HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
+                        rw_lock.read().get_temp_cold_water(volume_needed)
+                    }
+                }
+            }
         }
     }
 
-    pub(crate) fn draw_off_water(&self, volume_needed: f64, simulation_time_iteration: SimulationTimeIteration) -> Vec<(f64, f64)> {
+    pub(crate) fn draw_off_water(
+        &self,
+        volume_needed: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> Vec<(f64, f64)> {
         match self {
             WaterSourceWithTemperature::ColdWaterSource(_cold_water_source) => todo!(),
             WaterSourceWithTemperature::Wwhrs(_mutex) => todo!(),
-            WaterSourceWithTemperature::Preheated(hot_water_storage_tank) => match hot_water_storage_tank {
-                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().draw_off_water(volume_needed, simulation_time_iteration),
-                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock.read().draw_off_water(volume_needed, simulation_time_iteration),
-            },
+            WaterSourceWithTemperature::Preheated(hot_water_storage_tank) => {
+                match hot_water_storage_tank {
+                    HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
+                        .read()
+                        .draw_off_water(volume_needed, simulation_time_iteration),
+                    HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock
+                        .read()
+                        .draw_off_water(volume_needed, simulation_time_iteration),
+                }
+            }
         }
     }
 }

@@ -4026,7 +4026,7 @@ impl HeatSource {
         match self {
             HeatSource::Storage(ref storage) => match storage {
                 HeatSourceWithStorageTank::Immersion(imm) => Ok(imm.lock().setpnt(simtime)),
-                HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar.lock().setpnt(simtime)),
+                HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar.lock().setpnt(&simtime)),
             },
             HeatSource::Wet(ref heat_source) => heat_source.setpnt(simtime),
         }
@@ -4533,8 +4533,8 @@ fn heat_source_from_input(
                         *power,
                         energy_supply_conn,
                         simulation_time.step_in_hours(),
-                        control_min,
-                        control_max,
+                        Some(control_min),
+                        Some(control_max),
                     ),
                 )))),
                 name.into(),
@@ -4747,20 +4747,38 @@ impl HotWaterSource {
         }
     }
 
+    // TODO this has been replaced by get_temp_hot_water
     pub(crate) fn temp_hot_water(&self, t_it: SimulationTimeIteration) -> anyhow::Result<f64> {
         Ok(match self {
             HotWaterSource::PreHeated(source) => match source {
                 HotWaterStorageTank::StorageTank(storage_tank) => {
-                    storage_tank.read().get_temp_hot_water()
+                    todo!("update all callers to use get_temp_hot_water instead");
                 }
                 HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
-                    smart_storage_tank.read().get_temp_hot_water()
+                    todo!("update all callers to use get_temp_hot_water instead");
                 }
             },
             HotWaterSource::CombiBoiler(combi) => combi.temperature_hot_water_in_c(),
             HotWaterSource::PointOfUse(point_of_use) => point_of_use.get_temp_hot_water(),
             HotWaterSource::HeatNetwork(heat_network) => heat_network.temp_hot_water(),
             HotWaterSource::HeatBattery(battery) => battery.get_temp_hot_water(t_it)?,
+        })
+    }
+
+    pub(crate) fn get_temp_hot_water(&self, t_it: SimulationTimeIteration, volume_req: f64, volume_req_already: Option<f64>) -> anyhow::Result<Vec<(f64, f64)>> {
+        Ok(match self {
+            HotWaterSource::PreHeated(source) => match source {
+                HotWaterStorageTank::StorageTank(storage_tank) => {
+                    storage_tank.read().get_temp_hot_water(volume_req, volume_req_already)
+                }
+                HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
+                    smart_storage_tank.read().get_temp_hot_water(volume_req, volume_req_already)
+                }
+            },
+            HotWaterSource::CombiBoiler(combi) => todo!(),
+            HotWaterSource::PointOfUse(point_of_use) => todo!(),
+            HotWaterSource::HeatNetwork(heat_network) => todo!(),
+            HotWaterSource::HeatBattery(battery) => todo!(),
         })
     }
 
@@ -4968,12 +4986,11 @@ fn hot_water_source_from_input(
                 external_conditions,
                 Some(24),
                 primary_pipework_lst,
-                Some(EnergySupply::connection(
-                    energy_supplies.get(UNMET_DEMAND_SUPPLY_NAME).expect("Energy supply representing unmet demand was expected to have been declared.").clone(),
-                    &source_name,
-                )?),
                 *WATER,
-                detailed_output_heating_cooling,
+                None,
+                None,
+                None,
+                detailed_output_heating_cooling
             )?));
 
             connect_diverter_for_hot_water_tank(
@@ -5054,11 +5071,6 @@ fn hot_water_source_from_input(
                     })
                     .transpose()?
                     .as_ref(),
-                EnergySupply::connection(
-                    energy_supplies[UNMET_DEMAND_SUPPLY_NAME].clone(),
-                    &source_name,
-                )?
-                .into(),
                 energy_supply_conn_pump,
                 None,
             )?));
