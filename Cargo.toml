@@ -11,6 +11,7 @@ arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
 arc-swap = "1.7.1"
 argmin = "0.11.0"
 atomic_float = "1.1.0"
+axum = { version = "0.7", features = ["macros", "json"] }
 bitflags = "2.10.0"
 bounded-vec-deque = "0.1.1"
 chrono = "0.4.42"
@@ -51,6 +52,8 @@ strum_macros = "0.27.0"
 thiserror = "2.0.17"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.20"
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+tower-http = { version = "0.5", features = ["fs", "cors"] }
 
 [dev-dependencies]
 approx = "0.5.1"
@@ -67,6 +70,11 @@ name = "hem"
 path = "src/main.rs"
 doc = false
 required-features = ["clap"]
+
+[[bin]]
+name = "hem_gui"
+path = "src/bin/hem_gui.rs"
+doc = false
 
 [profile.release]
 opt-level = 3

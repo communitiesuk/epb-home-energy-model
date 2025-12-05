@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Home Energy Model – Local GUI</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 1.5rem;
+      background: #020617;
+      color: #e5e7eb;
+    }
+    h1 {
+      margin-bottom: 0.25rem;
+    }
+    h2 {
+      margin-top: 2rem;
+      margin-bottom: 0.5rem;
+      font-size: 1.1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #a855f7;
+    }
+    p {
+      color: #9ca3af;
+      line-height: 1.5;
+    }
+    a {
+      color: #38bdf8;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    label {
+      display:block;
+      margin-top:1rem;
+      font-weight:600;
+      font-size: 0.9rem;
+    }
+    select, input[type="text"] {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      margin-top: 0.25rem;
+      border-radius: 0.375rem;
+      border: 1px solid #4b5563;
+      background: #020617;
+      color: #e5e7eb;
+      font-size: 0.9rem;
+    }
+    select:disabled {
+      opacity: 0.5;
+    }
+    .row {
+      display:flex;
+      gap:1rem;
+      margin-top:1rem;
+      align-items:center;
+      flex-wrap: wrap;
+    }
+    .checkbox {
+      display:flex;
+      align-items:center;
+      gap:0.35rem;
+      font-weight:500;
+      font-size:0.85rem;
+    }
+    button {
+      margin-top:1.5rem;
+      padding:0.8rem 1.8rem;
+      border-radius:9999px;
+      border:none;
+      cursor:pointer;
+      font-weight:600;
+      background: linear-gradient(135deg,#7c3aed,#ec4899);
+      color:white;
+      font-size:0.95rem;
+    }
+    button:disabled {
+      opacity:0.5;
+      cursor:not-allowed;
+    }
+    .status {
+      margin-top:1rem;
+      min-height:1.5rem;
+      font-size:0.9rem;
+    }
+    .ok { color:#4ade80; }
+    .err { color:#f97373; }
+    .badge {
+      display:inline-flex;
+      align-items:center;
+      gap:0.35rem;
+      padding:0.2rem 0.55rem;
+      border-radius:9999px;
+      background:#111827;
+      border:1px solid #4b5563;
+      font-size:0.75rem;
+      color:#9ca3af;
+      margin-left:0.5rem;
+    }
+    .pill {
+      display:inline-block;
+      padding:0.15rem 0.5rem;
+      border-radius:9999px;
+      background:#111827;
+      font-size:0.7rem;
+      text-transform:uppercase;
+      letter-spacing:0.08em;
+      color:#9ca3af;
+      margin-left:0.5rem;
+    }
+    .hint {
+      font-size:0.8rem;
+      color:#6b7280;
+      margin-top:0.2rem;
+    }
+    hr {
+      border:none;
+      border-top:1px solid #111827;
+      margin:1.5rem 0;
+    }
+    .preview {
+      margin-top: 1rem;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>HEM Easy GUI</h1>
+  <p>
+    This interface runs the HEM locally using the GitHub repo. Choose a JSON file from the list or alternatively, open a the demo JSON add your own
+    parameters. Same with the weather file then click RUN HEM, output file is under the demo_results_gui folder instead.
+  </p>
+
+  <h2>1. Choose input JSON</h2>
+  <label>
+    Example inputs (from <code>examples/input/core</code>)
+    <span class="badge" id="examplesBadge">Loading…</span>
+    <select id="exampleSelect" disabled>
+      <option value="">No examples found</option>
+    </select>
+  </label>
+  <div class="hint">
+    Selecting an example will populate the path below. You can ignore the dropdown and type your own path if you prefer.
+  </div>
+
+  <label>
+    Want to use your own file in a different folder? Type it here.
+    <input id="inputPath" type="text" placeholder="e.g. examples/input/core/demo.json">
+    <div class="hint">Path is relative to the repo root (current directory) or an absolute path.</div>
+  </label>
+
+  <hr />
+
+  <h2>2. Choose weather file</h2>
+  <p>
+    Weather files must be in <strong>EPW</strong> format. A common source is the official
+    <a href="https://energyplus.net/weather" target="_blank" rel="noreferrer">EnergyPlus weather data site</a>.
+    Download a file for your location and save it under a <code>weather</code> folder in this repo.
+  </p>
+
+  <label>
+    Available EPW files (from <code>weather</code> folder)
+    <span class="badge" id="weatherBadge">Loading…</span>
+    <select id="weatherSelect" disabled>
+      <option value="">No EPW files found</option>
+    </select>
+  </label>
+  <div class="hint">
+    Selecting a weather file will populate the path below. You can also type a custom path.
+  </div>
+
+  <label>
+    Weather EPW file path
+    <input id="weatherPath" type="text" placeholder="e.g. weather/uk_london.epw">
+  </label>
+
+  <div class="row">
+    <label class="checkbox">
+      <input id="heatBalance" type="checkbox">
+      Output heat balance
+    </label>
+    <label class="checkbox">
+      <input id="detailed" type="checkbox">
+      Detailed heating/cooling output
+    </label>
+    <span class="pill">Optional flags</span>
+  </div>
+
+  <button id="runBtn">Run HEM</button>
+
+  <div id="status" class="status"></div>
+  <div id="resultsInfo" class="preview"></div>
+
+  <script>
+    const runBtn = document.getElementById('runBtn');
+    const statusEl = document.getElementById('status');
+    const exampleSelect = document.getElementById('exampleSelect');
+    const inputPathEl = document.getElementById('inputPath');
+    const examplesBadge = document.getElementById('examplesBadge');
+
+    const weatherSelect = document.getElementById('weatherSelect');
+    const weatherPathEl = document.getElementById('weatherPath');
+    const weatherBadge = document.getElementById('weatherBadge');
+
+    const resultsInfoEl = document.getElementById('resultsInfo');
+
+    function setStatus(msg, ok) {
+      statusEl.textContent = msg || '';
+      statusEl.className = 'status ' + (ok === true ? 'ok' : ok === false ? 'err' : '');
+    }
+
+    function renderResultsInfo(data) {
+      if (!data || !data.output_folder) {
+        resultsInfoEl.innerHTML = '';
+        return;
+      }
+
+      const rel = data.output_folder;
+      const abs = data.output_folder_abs || rel;
+
+      const fileUrl = 'file:///' + abs.replace(/\\/g, '/');
+
+      resultsInfoEl.innerHTML = `
+        <h2>Results location</h2>
+        <p>
+          CSV outputs have been written to:<br>
+          <code>${abs}</code>
+        </p>
+        <p>
+          <a href="${fileUrl}" target="_blank" rel="noreferrer">Open results folder (may be blocked by browser)</a>
+        </p>
+      `;
+    }
+
+    async function loadExamples() {
+      try {
+        const res = await fetch('/api/examples');
+        const data = await res.json();
+        const files = data.files || [];
+
+        exampleSelect.innerHTML = '';
+        if (files.length === 0) {
+          exampleSelect.disabled = true;
+          exampleSelect.innerHTML = '<option value="">No examples found</option>';
+          examplesBadge.textContent = '0 found';
+          return;
+        }
+
+        exampleSelect.disabled = false;
+        examplesBadge.textContent = files.length + ' found';
+
+        exampleSelect.innerHTML = '<option value="">Select an example…</option>';
+        files.forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f;
+          opt.textContent = f;
+          exampleSelect.appendChild(opt);
+        });
+
+        const demo = files.find(f => f.toLowerCase().includes('demo'));
+        if (demo) {
+          inputPathEl.value = demo;
+          exampleSelect.value = demo;
+        }
+      } catch (err) {
+        console.error(err);
+        examplesBadge.textContent = 'Error';
+        exampleSelect.disabled = true;
+      }
+    }
+
+    async function loadWeatherFiles() {
+      try {
+        const res = await fetch('/api/weather-files');
+        const data = await res.json();
+        const files = data.files || [];
+
+        weatherSelect.innerHTML = '';
+        if (files.length === 0) {
+          weatherSelect.disabled = true;
+          weatherSelect.innerHTML = '<option value="">No EPW files found</option>';
+          weatherBadge.textContent = '0 found';
+          return;
+        }
+
+        weatherSelect.disabled = false;
+        weatherBadge.textContent = files.length + ' found';
+
+        weatherSelect.innerHTML = '<option value="">Select a weather file…</option>';
+        files.forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f;
+          opt.textContent = f;
+          weatherSelect.appendChild(opt);
+        });
+
+        if (files.length === 1) {
+          weatherSelect.value = files[0];
+          weatherPathEl.value = files[0];
+        }
+      } catch (err) {
+        console.error(err);
+        weatherBadge.textContent = 'Error';
+        weatherSelect.disabled = true;
+      }
+    }
+
+    exampleSelect.addEventListener('change', () => {
+      const val = exampleSelect.value;
+      if (val) {
+        inputPathEl.value = val;
+      }
+    });
+
+    weatherSelect.addEventListener('change', () => {
+      const val = weatherSelect.value;
+      if (val) {
+        weatherPathEl.value = val;
+      }
+    });
+
+    runBtn.addEventListener('click', async () => {
+      const inputPath = inputPathEl.value.trim();
+      const weatherPath = weatherPathEl.value.trim();
+      const heatBalance = document.getElementById('heatBalance').checked;
+      const detailed = document.getElementById('detailed').checked;
+
+      if (!inputPath || !weatherPath) {
+        setStatus('Please provide both input JSON and weather EPW paths.', false);
+        renderResultsInfo(null);
+        return;
+      }
+
+      runBtn.disabled = true;
+      setStatus('Running HEM, please wait…', null);
+      renderResultsInfo(null);
+
+      try {
+        const res = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input_path: inputPath,
+            weather_path: weatherPath,
+            heat_balance: heatBalance,
+            detailed_output: detailed,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.ok) {
+          setStatus(
+            `Done. Outputs written to: ${data.output_folder_abs || data.output_folder}`,
+            true
+          );
+          renderResultsInfo(data);
+        } else {
+          setStatus(data.message || 'Unknown error', false);
+          renderResultsInfo(null);
+        }
+      } catch (err) {
+        console.error(err);
+        setStatus('Request failed: ' + err, false);
+        renderResultsInfo(null);
+      } finally {
+        runBtn.disabled = false;
+      }
+    });
+
+    loadExamples();
+    loadWeatherFiles();
+  </script>
+</body>
+</html>
