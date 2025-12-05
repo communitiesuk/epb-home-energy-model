@@ -122,8 +122,8 @@ pub struct StorageTank {
     temp_average_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
     temp_average_drawoff_volweighted: AtomicF64, // In Python this is created from inside extract_hot_water()
     total_volume_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
-    ambient_temperature: f64, // TODO should these be AtomicF64
-    previous_event_time_end: f64
+    ambient_temperature: f64,        // TODO should these be AtomicF64
+    previous_event_time_end: f64,
 }
 
 #[derive(Debug)]
@@ -168,8 +168,10 @@ impl StorageTank {
     ) -> anyhow::Result<Self> {
         let q_std_ls_ref = losses;
         let ambient_temperature = ambient_temperature.unwrap_or(DEFAULT_AMBIENT_TEMPERATURE);
-        let pipework_primary_gains_for_timestep = pipework_primary_gains_for_timestep.unwrap_or(DEFAULT_PIPEWORK_PRIMARY_GAINS_FOR_TIMESTEP);
-        let previous_event_time_end = previous_event_time_end.unwrap_or(DEFAULT_PREVIOUS_EVENT_TIME_END);
+        let pipework_primary_gains_for_timestep = pipework_primary_gains_for_timestep
+            .unwrap_or(DEFAULT_PIPEWORK_PRIMARY_GAINS_FOR_TIMESTEP);
+        let previous_event_time_end =
+            previous_event_time_end.unwrap_or(DEFAULT_PREVIOUS_EVENT_TIME_END);
 
         let volume_total_in_litres = volume;
         let number_of_volumes = number_of_volumes.unwrap_or(4);
@@ -1240,7 +1242,8 @@ impl StorageTank {
 
         // Initialize the unmet and met energies
         let mut _energy_withdrawn = 0.0;
-        self.temp_average_drawoff_volweighted.store(0.0, Ordering::SeqCst);
+        self.temp_average_drawoff_volweighted
+            .store(0.0, Ordering::SeqCst);
         self.total_volume_drawoff.store(0.0, Ordering::SeqCst);
 
         let list_temp_vol = self
@@ -1717,7 +1720,8 @@ impl SmartHotWaterTank {
 
         let mut temp_s8_n = vec![0.; self.storage_tank.number_of_volumes];
 
-        for (heat_source_name, positioned_heat_source) in self.storage_tank.heat_source_data.clone() {
+        for (heat_source_name, positioned_heat_source) in self.storage_tank.heat_source_data.clone()
+        {
             let (_, _setpntmax) = positioned_heat_source.heat_source.lock().setpnt(simtime)?;
             let heater_layer = (positioned_heat_source.heater_position
                 * self.storage_tank.number_of_volumes as f64)
@@ -1780,7 +1784,8 @@ impl SmartHotWaterTank {
         // recoverable heat losses (storage) - kWh
         let q_sto_h_rbl_env = q_ls * THERMAL_CONSTANTS_F_STO_M;
         // total recoverable heat losses for heating - kWh
-        self.storage_tank.q_sto_h_ls_rbl
+        self.storage_tank
+            .q_sto_h_ls_rbl
             .store(q_sto_h_rbl_env + q_sto_h_rbl_aux, Ordering::SeqCst);
 
         // set temperatures calculated to be initial temperatures of volumes for the next timestep
@@ -1852,9 +1857,11 @@ impl SmartHotWaterTank {
                 heat_source
             {
                 // we are passing the storage tank object to the SolarThermal as this needs to call back the storage tank (sic from Python)
-                solar_heat_source
-                    .lock()
-                    .energy_output_max(&self.storage_tank, temp_s3_n, &simulation_time)
+                solar_heat_source.lock().energy_output_max(
+                    &self.storage_tank,
+                    temp_s3_n,
+                    &simulation_time,
+                )
             } else {
                 // N.B calling the SmartStorageTank specific method here
                 self.determine_heat_source_switch_on(
@@ -2397,8 +2404,11 @@ impl SmartHotWaterTank {
 
         // Standby losses coefficient - W/K
         let h_sto_ls = self.storage_tank.stand_by_losses_coefficient();
-        
-        let setpnt = self.temp_setpnt_max.setpnt(&simtime).unwrap_or(self.temp_usable);
+
+        let setpnt = self
+            .temp_setpnt_max
+            .setpnt(&simtime)
+            .unwrap_or(self.temp_usable);
 
         let setpnt = self
             .temp_setpnt_max

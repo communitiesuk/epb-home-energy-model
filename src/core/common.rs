@@ -90,8 +90,8 @@ impl WaterSourceWithTemperature {
                 cold_water_source.draw_off_water(volume_needed, simtime)
             }
             WaterSourceWithTemperature::Preheated(hot_water_storage_tank) => match hot_water_storage_tank {
-                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().draw_off_water(volume_needed, simtime),
-                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock.read().draw_off_water(volume_needed, simtime),
+                HotWaterStorageTank::StorageTank(rw_lock) => Ok(rw_lock.read().draw_off_water(volume_needed, simtime)),
+                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => Ok(rw_lock.read().draw_off_water(volume_needed, simtime)),
             },
             _ => unimplemented!("TODO during migration 1.0.0a1"),
         }
