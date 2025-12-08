@@ -4483,7 +4483,6 @@ fn heat_source_wet_from_input(
                     simulation_time,
                     Some(8),
                     Some(20.),
-                    Some(120.),
                     Some(10.),
                     Some(53.),
                     Some(detailed_output_heating_cooling),

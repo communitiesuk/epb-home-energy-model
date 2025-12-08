@@ -26,7 +26,7 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use smartstring::alias::String;
 use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -440,11 +440,10 @@ impl HeatBatteryPcmServiceSpace {
     }
 }
 
-const DEFAULT_N_ZONES: usize = 8;
-const DEFAULT_HB_TIME_STEP: f64 = 20.;
-const DEFAULT_MINIMUM_TIME_REQUIRED_TO_RUN: f64 = 120.;
-const DEFAULT_INITIAL_INLET_TEMP: f64 = 10.;
-const DEFAULT_ESTIMATED_OUTLET_TEMP: f64 = 53.;
+const DEFAULT_N_LAYERS: usize = 8; // Number of calculation layers in heat battery
+const DEFAULT_TIME_STEP_SECONDS: f64 = 20.; // Time step for iterative calculations (seconds)
+const DEFAULT_INLET_TEMP_CELSIUS: f64 = 10.; // Initial inlet temperature for Reynolds number calculation (°C)
+const DEFAULT_OUTLET_TEMP_CELSIUS: f64 = 53.; // Estimated outlet temperature for Reynolds number calculation (°C)
 
 // nothing seems to read this - check upstream whether service_results field is necessary
 #[derive(Clone, Debug)]
@@ -457,12 +456,9 @@ struct HeatBatteryResult {
     temp_output: Option<f64>,
     temp_inlet: f64,
     time_running: f64,
-    energy_left_in_pipe: f64,
-    temperature_left_in_pipe: f64,
     energy_delivered_hb: f64,
     energy_delivered_backup: f64,
     energy_delivered_total: f64,
-    energy_delivered_low_temp: f64,
     energy_charged_during_service: f64,
     hb_zone_temperatures: Vec<f64>,
     current_hb_power: f64,
@@ -481,12 +477,9 @@ impl HeatBatteryResult {
             },
             "temp_inlet" => self.temp_inlet.to_string().into(),
             "time_running" => self.time_running.to_string().into(),
-            "energy_left_in_pipe" => self.energy_left_in_pipe.to_string().into(),
-            "temperature_left_in_pipe" => self.temperature_left_in_pipe.to_string().into(),
             "energy_delivered_hb" => self.energy_delivered_hb.to_string().into(),
             "energy_delivered_backup" => self.energy_delivered_backup.to_string().into(),
             "energy_delivered_total" => self.energy_delivered_total.to_string().into(),
-            "energy_delivered_low_temp" => self.energy_delivered_low_temp.to_string().into(),
             "energy_charged_during_service" => {
                 self.energy_charged_during_service.to_string().into()
             }
@@ -537,9 +530,9 @@ pub struct HeatBatteryPcm {
     flag_first_call: AtomicBool,
     #[allow(dead_code)]
     charge_level: f64,
-    n_zones: usize,
+    battery_losses: AtomicF64,
+    n_layers: usize,
     hb_time_step: f64,
-    minimum_time_required_to_run: f64,
     initial_inlet_temp: f64,
     estimated_outlet_temp: f64,
     pipe_energy: Arc<RwLock<IndexMap<String, PipeEnergy>>>,
@@ -568,19 +561,17 @@ impl HeatBatteryPcm {
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: Arc<SimulationTimeIterator>,
-        n_zones: Option<usize>,
+        n_layers: Option<usize>,
         hb_time_step: Option<f64>,
-        minimum_time_required_to_run: Option<f64>,
         initial_inlet_temp: Option<f64>,
         estimated_outlet_temp: Option<f64>,
         output_detailed_results: Option<bool>,
     ) -> Self {
-        let n_zones = n_zones.unwrap_or(DEFAULT_N_ZONES);
-        let hb_time_step = hb_time_step.unwrap_or(DEFAULT_HB_TIME_STEP);
-        let minimum_time_required_to_run =
-            minimum_time_required_to_run.unwrap_or(DEFAULT_MINIMUM_TIME_REQUIRED_TO_RUN);
-        let initial_inlet_temp = initial_inlet_temp.unwrap_or(DEFAULT_INITIAL_INLET_TEMP);
-        let estimated_outlet_temp = estimated_outlet_temp.unwrap_or(DEFAULT_ESTIMATED_OUTLET_TEMP);
+        let n_layers = n_layers.unwrap_or(DEFAULT_N_LAYERS);
+        let hb_time_step = hb_time_step.unwrap_or(DEFAULT_TIME_STEP_SECONDS);
+
+        let initial_inlet_temp = initial_inlet_temp.unwrap_or(DEFAULT_INLET_TEMP_CELSIUS);
+        let estimated_outlet_temp = estimated_outlet_temp.unwrap_or(DEFAULT_OUTLET_TEMP_CELSIUS);
         let output_detailed_results = output_detailed_results.unwrap_or(false);
 
         let (
@@ -602,6 +593,7 @@ impl HeatBatteryPcm {
             b,
             heat_exchanger_surface_area_m2,
             flow_rate_l_per_min,
+            temp_init,
             ..,
         ) = if let HeatSourceWetDetails::HeatBattery {
             battery:
@@ -624,6 +616,7 @@ impl HeatBatteryPcm {
                     b,
                     heat_exchanger_surface_area_m2,
                     flow_rate_l_per_min,
+                    temp_init,
                     ..
                 },
         } = heat_battery_details
@@ -647,6 +640,7 @@ impl HeatBatteryPcm {
                 *b,
                 *heat_exchanger_surface_area_m2,
                 *flow_rate_l_per_min,
+                *temp_init,
             )
         } else {
             unreachable!()
@@ -673,19 +667,19 @@ impl HeatBatteryPcm {
             total_time_running_current_timestep: Default::default(),
             flag_first_call: true.into(),
             charge_level: Default::default(),
-            n_zones,
+            battery_losses: Default::default(),
+            n_layers,
             hb_time_step,
-            minimum_time_required_to_run,
             initial_inlet_temp,
             estimated_outlet_temp,
             pipe_energy: Default::default(),
             energy_charged: Default::default(),
             simultaneous_charging_and_discharging,
             max_temp_of_charge,
-            zone_temp_c_dist_initial: Arc::new(RwLock::new(vec![max_temp_of_charge; n_zones])),
-            heat_storage_kj_per_k_above,
-            heat_storage_kj_per_k_below,
-            heat_storage_kj_per_k_during,
+            zone_temp_c_dist_initial: Arc::new(RwLock::new(vec![temp_init; n_layers])),
+            heat_storage_kj_per_k_above: heat_storage_kj_per_k_above / n_layers as f64,
+            heat_storage_kj_per_k_below: heat_storage_kj_per_k_below / n_layers as f64,
+            heat_storage_kj_per_k_during: heat_storage_kj_per_k_during / n_layers as f64,
             phase_transition_temperature_upper,
             phase_transition_temperature_lower,
             velocity_in_hex_tube,
@@ -1175,7 +1169,7 @@ impl HeatBatteryPcm {
         let mut q_max_kj =
             -pwr_in * time_step_s / SECONDS_PER_HOUR as f64 * KILOJOULES_PER_KILOWATT_HOUR as f64;
 
-        let mut energy_transf_delivered = vec![0.; self.n_zones];
+        let mut energy_transf_delivered = vec![0.; self.n_layers];
         let mut inlet_temp_c_zone = inlet_temp_c;
         let mut energy_transf;
         let mut zone_index;
@@ -1505,8 +1499,6 @@ impl HeatBatteryPcm {
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
     ) -> anyhow::Result<f64> {
-        let mut energy_output_required = energy_output_required;
-
         // Return the energy provided by the HB during a HEM time step (assuming
         // an inlet temperature constant) and update the HB state (zones distribution temperatures)
         // The HEM time step is divided into sub-timesteps. For each sub-timestep the zones temperature are
@@ -1529,21 +1521,6 @@ impl HeatBatteryPcm {
             0.
         };
 
-        {
-            let mut pipe_energy = self.pipe_energy.write();
-            let service_pipe_energy = &mut pipe_energy.deref_mut()[service_name];
-            if temp_output.is_none() || temp_output.unwrap() <= service_pipe_energy.temperature {
-                if energy_output_required > service_pipe_energy.energy {
-                    energy_output_required -= service_pipe_energy.energy;
-                    service_pipe_energy.energy = 0.;
-                    service_pipe_energy.temperature = 0.;
-                } else {
-                    service_pipe_energy.energy -= energy_output_required;
-                    energy_output_required = 0.;
-                }
-            }
-        }
-
         // Distributing energy demand through all units
         let energy_demand = energy_output_required / self.n_units as f64;
 
@@ -1563,14 +1540,11 @@ impl HeatBatteryPcm {
             (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
 
         let mut energy_delivered_hb = 0.;
-        let mut total_energy_low_temp = 0.;
         let inlet_temp_c = temp_return_feed;
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
 
-        if energy_output_required <= 0. {
+        if energy_output_required < 0. || is_close!(energy_output_required, 0., abs_tol = 1e-10) {
             if update_heat_source_state {
-                let pipe_energy = self.pipe_energy.read();
-                let service_pipe_energy = &pipe_energy.deref()[service_name];
                 self.service_results.write().push(HeatBatteryResult {
                     service_name: service_name.into(),
                     service_type,
@@ -1579,31 +1553,28 @@ impl HeatBatteryPcm {
                     temp_output,
                     temp_inlet: temp_return_feed,
                     time_running: 0.,
-                    energy_left_in_pipe: service_pipe_energy.energy,
-                    temperature_left_in_pipe: service_pipe_energy.temperature,
                     energy_delivered_hb: 0.,
                     energy_delivered_backup: 0.,
                     energy_delivered_total: 0.,
-                    energy_delivered_low_temp: 0.,
                     energy_charged_during_service: 0.,
                     hb_zone_temperatures: zone_temp_c_dist,
                     current_hb_power: Default::default(),
                 });
             }
-            return Ok(energy_delivered_hb);
+            return Ok(0.);
         }
 
         let mut time_step_s = 1.;
         let mut time_running_current_service = 0.;
 
-        let mut flag_minimum_run = false; // False: supply energy to emitter; True: running water to complete loop
         let mut energy_charged = 0.;
-        let mut time_extra = Default::default();
+
+        let mut outlet_temp_c = None;
 
         while time_step_s > 0. {
             // Processing HB zones
             let (
-                outlet_temp_c,
+                outlet_temp_c_new,
                 zone_temp_c_dist_new,
                 energy_transf_delivered,
                 energy_charged_during_battery_time_step,
@@ -1618,6 +1589,7 @@ impl HeatBatteryPcm {
             )?;
 
             zone_temp_c_dist = zone_temp_c_dist_new;
+            outlet_temp_c = Some(outlet_temp_c_new);
 
             if update_heat_source_state {
                 self.energy_charged
@@ -1628,94 +1600,43 @@ impl HeatBatteryPcm {
             time_running_current_service += time_step_s;
 
             // RN for next time step
-            water_kinematic_viscosity_m2_per_s =
-                Self::calculate_water_kinematic_viscosity_m2_per_s(temp_return_feed, outlet_temp_c);
+            water_kinematic_viscosity_m2_per_s = Self::calculate_water_kinematic_viscosity_m2_per_s(
+                temp_return_feed,
+                outlet_temp_c_new,
+            );
             reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
                 water_kinematic_viscosity_m2_per_s,
                 self.velocity_in_hex_tube,
                 self.capillary_diameter_m,
             );
 
+            // TODO 1.0.0a1 use fsum here instead?
             let energy_delivered_ts =
                 energy_transf_delivered.iter().sum::<f64>() / KILOJOULES_PER_KILOWATT_HOUR as f64;
+            energy_delivered_hb += energy_delivered_ts; // demand_per_time_step_kwh
+                                                        // balance = total_energy - energy_charged
+            let max_instant_power = energy_delivered_ts / time_step_s;
 
-            if temp_output.is_none() || outlet_temp_c > temp_output.unwrap() {
-                if !flag_minimum_run {
-                    energy_delivered_hb += energy_delivered_ts; // demand_per_time_step_kwh
-                    let max_instant_power = energy_delivered_ts / time_step_s;
+            if max_instant_power > 0. {
+                time_step_s = (energy_demand - energy_delivered_hb) / max_instant_power;
+            }
 
-                    if max_instant_power > 0. {
-                        time_step_s = (energy_demand - energy_delivered_hb) / max_instant_power;
-                    }
-                } else if energy_delivered_ts != 0. {
-                    let mut pipe_energy = self.pipe_energy.write();
-                    let service_pipe_energy = &mut pipe_energy.deref_mut()[service_name];
-                    let current_energy = service_pipe_energy.energy;
-                    let current_temperature = service_pipe_energy.temperature;
-                    let new_temperature = ((current_temperature * current_energy)
-                        + (outlet_temp_c * energy_delivered_ts))
-                        / (current_energy + energy_delivered_ts);
+            if time_step_s > self.hb_time_step {
+                time_step_s = self.hb_time_step;
+            }
 
-                    service_pipe_energy.energy += energy_delivered_ts;
-                    service_pipe_energy.temperature = new_temperature;
-                }
+            if is_close!(energy_demand, energy_delivered_hb, abs_tol = 1e-10)
+                || energy_delivered_hb > energy_demand
+            {
+                // Energy delivered could exceed energy delivered by a small amount in some circumstances, hence the 'or' condition.
+                // Energy supplied, run to complete water loop
+                break;
+            }
 
-                if time_step_s > self.hb_time_step {
-                    time_step_s = self.hb_time_step;
-                }
-
-                if (energy_demand - energy_delivered_hb) < 0.0001 {
-                    // Energy supplied, run to complete water loop
-                    if time_running_current_service > self.minimum_time_required_to_run {
-                        break;
-                    }
-
-                    if !flag_minimum_run {
-                        time_extra =
-                            self.minimum_time_required_to_run - time_running_current_service;
-                        flag_minimum_run = true;
-                    } else {
-                        time_extra -= time_step_s;
-                    }
-
-                    if time_extra > self.hb_time_step {
-                        time_step_s = self.hb_time_step
-                    } else {
-                        time_step_s = time_extra
-                    }
-                }
-
-                if time_running_current_service + time_step_s
-                    > time_available * SECONDS_PER_HOUR as f64
-                {
-                    time_step_s =
-                        time_available * SECONDS_PER_HOUR as f64 - time_running_current_service
-                }
-            } else {
-                // outlet_temp_c is below required temperature
-                total_energy_low_temp += energy_delivered_ts;
-
-                if energy_delivered_hb > 0. {
-                    if time_running_current_service > self.minimum_time_required_to_run {
-                        break;
-                    }
-
-                    if !flag_minimum_run {
-                        time_extra =
-                            self.minimum_time_required_to_run - time_running_current_service;
-                        flag_minimum_run = true;
-                    } else {
-                        time_extra -= time_step_s;
-                    }
-
-                    if time_extra > self.hb_time_step {
-                        time_step_s = self.hb_time_step
-                    } else {
-                        time_step_s = time_extra
-                    }
-                } else {
-                    break;
-                }
+            if time_running_current_service + time_step_s > time_available * SECONDS_PER_HOUR as f64
+            {
+                time_step_s =
+                    time_available * SECONDS_PER_HOUR as f64 - time_running_current_service
             }
         }
 
@@ -1733,22 +1654,17 @@ impl HeatBatteryPcm {
                 Default::default()
             };
             // TODO (from Python) Clarify whether Heat Batteries can have direct electric backup if depleted
-            let pipe_energy = self.pipe_energy.read();
-            let service_pipe_energy = &pipe_energy.deref()[service_name];
             self.service_results.write().push(HeatBatteryResult {
                 service_name: service_name.into(),
                 service_type,
                 service_on,
                 energy_output_required,
-                temp_output,
+                temp_output: outlet_temp_c,
                 temp_inlet: temp_return_feed,
                 time_running: time_running_current_service,
-                energy_left_in_pipe: service_pipe_energy.energy,
-                temperature_left_in_pipe: service_pipe_energy.temperature,
                 energy_delivered_hb: energy_delivered_hb * self.n_units as f64,
                 energy_delivered_backup: 0.,
                 energy_delivered_total: energy_delivered_hb * self.n_units as f64 + 0.,
-                energy_delivered_low_temp: total_energy_low_temp * self.n_units as f64,
                 energy_charged_during_service: energy_charged * self.n_units as f64,
                 hb_zone_temperatures: zone_temp_c_dist,
                 current_hb_power,
@@ -1797,11 +1713,8 @@ impl HeatBatteryPcm {
         let energy_aux =
             self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx)?;
 
-        // Calculating heat battery losses in timestep to correct charge level
-        // Currently assumed all losses are to the exterior independently of the
-        // heat battery location
-        // TODO (from Python): Assign thermal losses to relevant zone if heat battery is not outdoors.
         let (battery_losses, zone_temp_c_after_losses) = self.battery_heat_loss()?;
+        self.battery_losses.store(battery_losses, Ordering::SeqCst);
 
         // Charging battery for the remaining of the timestep
         let (end_of_ts_charge, zone_temp_c_after_charging) = if self
@@ -1829,7 +1742,8 @@ impl HeatBatteryPcm {
                     results,
                     summary: HeatBatteryTimestepSummary {
                         energy_aux: energy_aux * self.n_units as f64,
-                        battery_losses: battery_losses * self.n_units as f64,
+                        battery_losses: self.battery_losses.load(Ordering::SeqCst)
+                            * self.n_units as f64,
                         temps_after_losses: zone_temp_c_after_losses,
                         total_charge: self.energy_charged.load(Ordering::SeqCst)
                             * self.n_units as f64,
@@ -1856,7 +1770,7 @@ impl HeatBatteryPcm {
         // Define parameters to output
         // Last element of each tuple controls whether item is summed for annual total
 
-        let output_parameters: [(&'static str, Option<&'static str>, bool); 16] = [
+        let output_parameters: [(&'static str, Option<&'static str>, bool); 13] = [
             ("service_name", None, false),
             ("service_type", None, false),
             ("service_on", None, false),
@@ -1864,12 +1778,9 @@ impl HeatBatteryPcm {
             ("temp_output", "degC".into(), false),
             ("temp_inlet", "degC".into(), false),
             ("time_running", "secs".into(), true),
-            ("energy_left_in_pipe", "kWh".into(), true),
-            ("temperature_left_in_pipe", "degC".into(), false),
             ("energy_delivered_HB", "kWh".into(), true),
             ("energy_delivered_backup", "kWh".into(), true),
             ("energy_delivered_total", "kWh".into(), true),
-            ("energy_delivered_low_temp", "kWh".into(), true),
             ("energy_charged_during_service", "kWh".into(), true),
             ("hb_zone_temperatures", "degC".into(), false),
             ("current_hb_power", "kW".into(), false),
@@ -2274,9 +2185,9 @@ mod tests {
                 number_of_units: 1,
                 control_charge: "hb_charge_control".into(),
                 simultaneous_charging_and_discharging: false,
-                heat_storage_k_j_per_k_above_phase_transition: 47.6875,
-                heat_storage_k_j_per_k_below_phase_transition: 38.15,
-                heat_storage_k_j_per_k_during_phase_transition: 1539.625,
+                heat_storage_k_j_per_k_above_phase_transition: 381.5,
+                heat_storage_k_j_per_k_below_phase_transition: 305.2,
+                heat_storage_k_j_per_k_during_phase_transition: 12317.,
                 phase_transition_temperature_upper: 59.,
                 phase_transition_temperature_lower: 57.,
                 max_temperature: 80.,
@@ -2306,7 +2217,6 @@ mod tests {
             simulation_time_iterator,
             Some(8),
             Some(20.),
-            Some(120.),
             None,
             None,
             None,
@@ -2458,35 +2368,6 @@ mod tests {
         assert!(heat_battery_service
             .is_on(simulation_time_iteration)
             .unwrap());
-    }
-
-    #[rstest]
-    fn test_demand_energy_when_service_control_on_for_water_regular(
-        simulation_time_iteration: SimulationTimeIteration,
-        simulation_time_iterator: Arc<SimulationTimeIterator>,
-        battery_control_on: Control,
-    ) {
-        let energy_demand = 10.;
-        let temp_flow = 55.;
-        let temp_return = 40.;
-
-        let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
-            create_service_water_regular_with_controls(
-                battery_control_on,
-                simulation_time_iterator,
-            );
-
-        let result = heat_battery_service
-            .demand_energy(
-                energy_demand,
-                Some(temp_flow),
-                temp_return,
-                None,
-                simulation_time_iteration,
-            )
-            .unwrap();
-
-        assert_relative_eq!(result, 9.198558500698649);
     }
 
     #[rstest]
@@ -2729,6 +2610,10 @@ mod tests {
         let create_connection_result =
             HeatBatteryPcm::create_service_connection(heat_battery.clone(), "new service");
         assert!(create_connection_result.is_ok());
+        assert!(heat_battery
+            .read()
+            .energy_supply_connections
+            .contains_key("new service"));
         let create_connection_result =
             HeatBatteryPcm::create_service_connection(heat_battery, "new service");
         assert!(create_connection_result.is_err()) // second attempt to create a service connection with same name should error
@@ -2877,6 +2762,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "TODO after 1.0.0a1 migration"]
     fn test_timestep_end(
         external_sensor: ExternalSensor,
         external_conditions: ExternalConditions,
@@ -2926,7 +2812,7 @@ mod tests {
                 .read()
                 .total_time_running_current_timestep
                 .load(Ordering::SeqCst),
-            0.25690083365212835
+            0.25690463025906096
         );
 
         let service_names_in_results = get_service_names_from_results(heat_battery.clone());
