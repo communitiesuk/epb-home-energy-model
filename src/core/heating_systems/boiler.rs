@@ -1298,15 +1298,15 @@ mod tests {
                 energy_supply_conn_aux,
                 Arc::new(external_conditions),
                 simulation_time.step,
-            )
-            .unwrap();
+            ).unwrap();
+
             boiler.create_service_connection("boiler_test").unwrap();
 
             boiler
         }
 
         #[fixture]
-        fn boiler_service_water(
+        fn boiler_service(
             boiler: Boiler,
             boiler_service_water_combi_data: HotWaterSourceDetails,
             simulation_time: SimulationTime,
@@ -1320,24 +1320,156 @@ mod tests {
                 60.,
                 WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
                 simulation_time.step,
-            )
-            .unwrap()
+            ).unwrap()
         }
 
         #[rstest]
         fn test_boiler_service_water(
-            boiler_service_water: BoilerServiceWaterCombi,
+            boiler_service: BoilerServiceWaterCombi,
             simulation_time: SimulationTime,
             volume_demanded: [IndexMap<DemandVolTargetKey, VolumeReference>; 2],
         ) {
             for (idx, t_it) in simulation_time.iter().enumerate() {
                 assert_relative_eq!(
-                    boiler_service_water
+                    boiler_service
                         .demand_hot_water(volume_demanded[idx].clone(), t_it)
                         .unwrap(),
                     [7.624602058956146, 2.267017951167212][idx],
                     max_relative = 1e-6
                 );
+            }
+        }
+    }
+
+    mod test_boiler_service_water_regular {
+        use crate::core::controls::time_control::{Control, SetpointTimeControl};
+        use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
+        use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterRegular};
+        use crate::hem_core::external_conditions::ExternalConditions;
+        use crate::hem_core::simulation_time::SimulationTime;
+        use crate::input::{FuelType, HeatSourceLocation, HeatSourceWetDetails};
+        use approx::assert_relative_eq;
+        use parking_lot::RwLock;
+        use rstest::{fixture, rstest};
+        use std::sync::Arc;
+
+
+        #[fixture]
+        fn boiler_data() -> HeatSourceWetDetails {
+            HeatSourceWetDetails::Boiler {
+                rated_power: 24.0,
+                energy_supply: "mains gas".into(),
+                energy_supply_aux: "mains elec".into(),
+                efficiency_full_load: 0.891,
+                efficiency_part_load: 0.991,
+                boiler_location: HeatSourceLocation::Internal,
+                modulation_load: 0.3,
+                electricity_circ_pump: 0.0600,
+                electricity_part_load: 0.0131,
+                electricity_full_load: 0.0388,
+                electricity_standby: 0.0244,
+            }
+        }
+        #[fixture]
+        fn boiler(
+            boiler_data: HeatSourceWetDetails,
+            external_conditions: ExternalConditions,
+            simulation_time: SimulationTime,
+        ) -> Boiler {
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
+            ));
+            let energy_supply_aux = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+            ));
+            let energy_supply_conn_aux =
+                EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
+
+            let mut boiler = Boiler::new(
+                boiler_data,
+                energy_supply,
+                energy_supply_conn_aux,
+                Arc::new(external_conditions),
+                simulation_time.step,
+            )
+                .unwrap();
+            boiler.create_service_connection("boiler_test").unwrap();
+
+            boiler
+        }
+
+        #[fixture]
+        fn control_min() -> Arc<Control> {
+            Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                vec![Some(52.), Some(52.)],
+                0,
+                1.,
+                Default::default(),
+                Default::default(),
+                1.,
+            )))
+        }
+
+        #[fixture]
+        fn control_max() -> Arc<Control> {
+            Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                vec![Some(60.), Some(60.)],
+                0,
+                1.,
+                Default::default(),
+                Default::default(),
+                1.,
+            )))
+        }
+
+        #[fixture]
+        fn boiler_service<'a>(
+            boiler: Boiler,
+            control_min: Arc<Control>,
+            control_max: Arc<Control>,
+        ) -> BoilerServiceWaterRegular {
+            BoilerServiceWaterRegular::new(
+                Arc::new(RwLock::new(boiler)),
+                "boiler_test".into(),
+                control_min,
+                control_max,
+            ).unwrap()
+        }
+
+        #[rstest]
+        fn test_boiler_service_water(
+            boiler_service: BoilerServiceWaterRegular,
+            simulation_time: SimulationTime,
+        ) {
+            let temp_return_feed = [51.05, 60.00];
+            for (idx, t_it) in simulation_time.iter().enumerate() {
+                assert_relative_eq!(
+                boiler_service
+                    .demand_energy(
+                        [0.7241412, 0.1748878][idx],
+                        Default::default(),
+                        Some(temp_return_feed[idx]),
+                        None,
+                        None,
+                        None,
+                        t_it
+                    )
+                    .unwrap()
+                    .0,
+                [0.7241412, 0.1748878][idx],
+                max_relative = 1e-7
+            );
+            }
+        }
+
+        #[rstest]
+        fn test_temp_setpnt(
+            boiler_service: BoilerServiceWaterRegular,
+            simulation_time: SimulationTime,
+        ) {
+            for t_it in simulation_time.iter() {
+                pretty_assertions::assert_eq!(boiler_service.setpnt(t_it), (Some(52.), Some(60.)));
             }
         }
     }
@@ -1395,126 +1527,6 @@ mod tests {
         boiler.create_service_connection("boiler_test").unwrap();
 
         (boiler, energy_supply)
-    }
-
-    #[fixture]
-    fn boiler_data_for_regular() -> HeatSourceWetDetails {
-        HeatSourceWetDetails::Boiler {
-            rated_power: 24.0,
-            energy_supply: "mains gas".into(),
-            energy_supply_aux: "mains elec".into(),
-            efficiency_full_load: 0.891,
-            efficiency_part_load: 0.991,
-            boiler_location: HeatSourceLocation::Internal,
-            modulation_load: 0.3,
-            electricity_circ_pump: 0.0600,
-            electricity_part_load: 0.0131,
-            electricity_full_load: 0.0388,
-            electricity_standby: 0.0244,
-        }
-    }
-
-    #[fixture]
-    fn boiler_for_regular(
-        boiler_data_for_regular: HeatSourceWetDetails,
-        external_conditions: ExternalConditions,
-        simulation_time: SimulationTime,
-    ) -> Boiler {
-        let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
-        ));
-        let energy_supply_aux = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
-        ));
-        let energy_supply_conn_aux =
-            EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
-
-        let mut boiler = Boiler::new(
-            boiler_data_for_regular,
-            energy_supply,
-            energy_supply_conn_aux,
-            Arc::new(external_conditions),
-            simulation_time.step,
-        )
-        .unwrap();
-        boiler.create_service_connection("boiler_test").unwrap();
-
-        boiler
-    }
-
-    #[fixture]
-    fn control_min() -> Arc<Control> {
-        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(52.), Some(52.)],
-            0,
-            1.,
-            Default::default(),
-            Default::default(),
-            1.,
-        )))
-    }
-
-    #[fixture]
-    fn control_max() -> Arc<Control> {
-        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(60.), Some(60.)],
-            0,
-            1.,
-            Default::default(),
-            Default::default(),
-            1.,
-        )))
-    }
-
-    #[fixture]
-    fn regular_boiler<'a>(
-        boiler_for_regular: Boiler,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
-    ) -> BoilerServiceWaterRegular {
-        BoilerServiceWaterRegular::new(
-            Arc::new(RwLock::new(boiler_for_regular)),
-            "boiler_test".into(),
-            control_min,
-            control_max,
-        )
-        .unwrap()
-    }
-
-    #[rstest]
-    fn regular_boiler_should_provide_demand_hot_water(
-        regular_boiler: BoilerServiceWaterRegular,
-        simulation_time: SimulationTime,
-    ) {
-        let temp_return_feed = [51.05, 60.00];
-        for (idx, t_it) in simulation_time.iter().enumerate() {
-            assert_relative_eq!(
-                regular_boiler
-                    .demand_energy(
-                        [0.7241412, 0.1748878][idx],
-                        Default::default(),
-                        Some(temp_return_feed[idx]),
-                        None,
-                        None,
-                        None,
-                        t_it
-                    )
-                    .unwrap()
-                    .0,
-                [0.7241412, 0.1748878][idx],
-                max_relative = 1e-7
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_temp_setpnt(
-        regular_boiler: BoilerServiceWaterRegular,
-        simulation_time: SimulationTime,
-    ) {
-        for t_it in simulation_time.iter() {
-            assert_eq!(regular_boiler.setpnt(t_it), (Some(52.), Some(60.)));
-        }
     }
 
     #[fixture]
