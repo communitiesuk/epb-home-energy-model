@@ -1,6 +1,11 @@
 use crate::core::material_properties::WATER;
 use anyhow::bail;
 
+/// Result of processing a single water use event
+pub(crate) struct WaterEventResult {
+    pub(crate) volume_hot: f64, // Hot water demand volume (litres)
+}
+
 /// Calculate the fraction of hot water required when mixing hot and cold
 /// water to achieve a target temperature
 ///
