@@ -8,7 +8,9 @@ use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::{
     KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
-use crate::core::water_heat_demand::misc::calculate_volume_weighted_average_temperature;
+use crate::core::water_heat_demand::misc::{
+    calculate_volume_weighted_average_temperature, water_demand_to_kwh, WaterEventResult,
+};
 use crate::corpus::{
     ResultParamValue, ResultsAnnual as CorpusResultsAnnual,
     ResultsPerTimestep as CorpusResultsPerTimestep,
@@ -290,6 +292,65 @@ impl HeatBatteryPcmServiceWaterDirect {
         };
 
         Ok(vec![(Some(temp_hot_water_req), volume_req)])
+    }
+
+    /// Process hot water demand directly from dry core heat battery
+    fn demand_hot_water(
+        &self,
+        usage_events: Option<Vec<WaterEventResult>>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let mut energy_demand = 0.;
+        let mut total_volume = 0.;
+        let mut weighted_cold_temp_sum = 0.;
+
+        if let Some(events) = usage_events {
+            for event in events {
+                if is_close!(event.volume_hot, 0., abs_tol = 1e-10) {
+                    continue;
+                }
+                let hot_temp = self.get_temp_hot_water(event.volume_hot, None, simtime)?[0].0;
+
+                // Skip this event if no temperature available
+                if let Some(hot_temp) = hot_temp {
+                    let list_temp_vol = self.cold_feed.draw_off_water(event.volume_hot, simtime)?;
+                    let cold_temp = calculate_volume_weighted_average_temperature(
+                        list_temp_vol,
+                        Some(event.volume_hot), // This validates the volume
+                        None,
+                    )?;
+
+                    // Calculate energy needed to heat water
+                    energy_demand += water_demand_to_kwh(event.volume_hot, hot_temp, cold_temp);
+
+                    // Accumulate for weighted average cold water temperature
+                    total_volume += event.volume_hot;
+                    weighted_cold_temp_sum += cold_temp * event.volume_hot;
+                }
+            }
+        }
+
+        // Calculate weighted average cold water temperature
+        let cold_water_temp = if total_volume > 0. {
+            weighted_cold_temp_sum / total_volume
+        } else {
+            // Fallback to sampling method if no events processed
+            let cold_water_temp_vol = self.cold_feed.get_temp_cold_water(1., simtime)?;
+
+            calculate_volume_weighted_average_temperature(cold_water_temp_vol, Some(1.), None)?
+        };
+
+        // Demand energy from heat battery
+        self.heat_battery.read().demand_energy(
+            self.service_name.as_str(),
+            HeatingServiceType::DomesticHotWaterDirect,
+            energy_demand,
+            cold_water_temp, // return temperature (cold water inlet)
+            None,            // flow temperature (hot water outlet)
+            true,
+            None,
+            Some(true),
+        )
     }
 }
 

@@ -23,6 +23,7 @@ use anyhow::{bail, Error};
 pub(crate) enum HeatingServiceType {
     DomesticHotWaterRegular,
     Space,
+    DomesticHotWaterDirect,
 }
 
 #[derive(Debug)]

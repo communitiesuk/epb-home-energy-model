@@ -47,7 +47,7 @@ impl ColdWaterSource {
         Ok(vec![(temperature, volume_needed)])
     }
 
-    fn draw_off_water(
+    pub(crate) fn draw_off_water(
         &self,
         volume_needed: f64,
         simtime: SimulationTimeIteration,
