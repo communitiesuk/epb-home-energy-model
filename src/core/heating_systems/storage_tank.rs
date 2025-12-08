@@ -3260,9 +3260,11 @@ mod tests {
             external_conditions.clone(),
             None,
             None,
-            Some(energy_supply_connection),
             *WATER,
-            false,
+            None,
+            None,
+            None,
+            false
         )
         .unwrap();
 
@@ -3330,9 +3332,11 @@ mod tests {
             external_conditions.clone(),
             None,
             None,
-            Some(energy_supply_connection),
             *WATER,
-            false,
+            None,
+            None,
+            None,
+            false
         )
         .unwrap();
 
@@ -3462,8 +3466,10 @@ mod tests {
             external_conditions_for_pv_diverter.clone(),
             None,
             None,
-            None,
             *WATER,
+            None,
+            None,
+            None,
             false,
         )
         .unwrap()
@@ -3736,9 +3742,11 @@ mod tests {
             external_conditions_for_solar_thermal,
             None,
             None,
-            None,
             *WATER,
-            false,
+            None,
+            None,
+            None,
+            false
         )
         .unwrap();
 
