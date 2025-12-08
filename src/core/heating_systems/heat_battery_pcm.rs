@@ -2405,14 +2405,11 @@ mod tests {
         }
     }
 
-    // test_service_is_on_without_control
-    #[rstest]
-    fn test_service_with_no_service_control_is_always_on_for_water_regular(
-        simulation_time_iteration: SimulationTimeIteration,
-        battery_control_off: Control,
+    fn create_service_water_regular_with_controls(
+        battery_control: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
-    ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+    ) -> HeatBatteryPcmServiceWaterRegular {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control);
         let control_min = create_setpoint_time_control(vec![
             Some(52.),
             None,
@@ -2433,15 +2430,30 @@ mod tests {
             Some(55.),
             Some(55.),
         ]);
-        let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
-        let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
-            HeatBatteryPcmServiceWaterRegular::new(
-                heat_battery,
-                SERVICE_NAME.into(),
-                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                Some(Arc::new(control_min)),
-                Some(Arc::new(control_max)),
-            );
+        let cold_water_source = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+            ColdWaterSource::new(vec![1.0, 1.2], 0, 1.),
+        ));
+
+        HeatBatteryPcmServiceWaterRegular::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            cold_water_source,
+            Some(Arc::new(control_min)),
+            Some(Arc::new(control_max)),
+        )
+    }
+
+    // test_service_is_on_without_control
+    #[rstest]
+    fn test_service_with_no_service_control_is_always_on_for_water_regular(
+        simulation_time_iteration: SimulationTimeIteration,
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let heat_battery_service = create_service_water_regular_with_controls(
+            battery_control_off,
+            simulation_time_iterator,
+        );
 
         assert!(heat_battery_service
             .is_on(simulation_time_iteration)
@@ -2458,36 +2470,10 @@ mod tests {
         let temp_flow = 55.;
         let temp_return = 40.;
 
-        let control_min = create_setpoint_time_control(vec![
-            Some(52.),
-            None,
-            None,
-            None,
-            Some(52.),
-            Some(52.),
-            Some(52.),
-            Some(52.),
-        ]);
-        let control_max = create_setpoint_time_control(vec![
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-        ]);
-
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
-        let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
         let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
-            HeatBatteryPcmServiceWaterRegular::new(
-                heat_battery,
-                SERVICE_NAME.into(),
-                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                Some(Arc::new(control_min)),
-                Some(Arc::new(control_max)),
+            create_service_water_regular_with_controls(
+                battery_control_on,
+                simulation_time_iterator,
             );
 
         let result = heat_battery_service
@@ -2501,6 +2487,37 @@ mod tests {
             .unwrap();
 
         assert_relative_eq!(result, 9.198558500698649);
+    }
+
+    #[rstest]
+    fn test_setpnt_for_water_regular(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        simulation_time: SimulationTime,
+        battery_control_off: Control,
+    ) {
+        let service = create_service_water_regular_with_controls(
+            battery_control_off,
+            simulation_time_iterator,
+        );
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let (control_min, control_max) = service.setpnt(t_it).unwrap();
+
+            assert_eq!(
+                control_min,
+                [
+                    Some(52.),
+                    None,
+                    None,
+                    None,
+                    Some(52.),
+                    Some(52.),
+                    Some(52.),
+                    Some(52.)
+                ][t_idx]
+            );
+            assert_eq!(control_max, Some(55.));
+        }
     }
 
     // In Python this is test_demand_energy_service_off
@@ -2547,36 +2564,10 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         battery_control_on: Control,
     ) {
-        let control_min = create_setpoint_time_control(vec![
-            Some(52.),
-            None,
-            None,
-            None,
-            Some(52.),
-            Some(52.),
-            Some(52.),
-            Some(52.),
-        ]);
-        let control_max = create_setpoint_time_control(vec![
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-        ]);
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
-        let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
-        let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
-            HeatBatteryPcmServiceWaterRegular::new(
-                heat_battery,
-                SERVICE_NAME.into(),
-                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                Some(Arc::new(control_min)),
-                Some(Arc::new(control_max)),
-            );
+        let heat_battery_service = create_service_water_regular_with_controls(
+            battery_control_on,
+            simulation_time_iterator,
+        );
 
         let temp_flow = 50.0;
         let temp_return = 40.0;
@@ -2594,37 +2585,10 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         battery_control_off: Control,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
-        let control_min = create_setpoint_time_control(vec![
-            Some(52.),
-            None,
-            None,
-            None,
-            Some(52.),
-            Some(52.),
-            Some(52.),
-            Some(52.),
-        ]);
-        let control_max = create_setpoint_time_control(vec![
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-        ]);
-
-        let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
-        let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
-            HeatBatteryPcmServiceWaterRegular::new(
-                heat_battery,
-                SERVICE_NAME.into(),
-                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                Some(Arc::new(control_min)),
-                Some(Arc::new(control_max)),
-            );
+        let heat_battery_service = create_service_water_regular_with_controls(
+            battery_control_off,
+            simulation_time_iterator,
+        );
 
         let temp_flow = 50.0;
         let temp_return = 40.0;
@@ -2681,6 +2645,7 @@ mod tests {
         let energy_demand = 10.;
         let temp_return = 40.;
         let temp_flow = 1.;
+        let time_start = 0.2;
         let ctrl: Control = create_setpoint_time_control(vec![None]);
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
         let heat_battery_space =
@@ -2688,9 +2653,9 @@ mod tests {
         let result = heat_battery_space
             .demand_energy(
                 energy_demand,
-                temp_return,
                 temp_flow,
-                None,
+                temp_return,
+                Some(time_start),
                 None,
                 simulation_time_iteration,
             )
