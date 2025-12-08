@@ -759,6 +759,12 @@ impl HeatBatteryPcm {
         ))
     }
 
+    /// Return a HeatBatteryPCMServiceSpace object and create an EnergySupplyConnection for it
+    ///
+    /// Arguments:
+    /// * `heat_battery` - reference to heat battery
+    /// * `service_name` - name of the service demanding energy from the heat battery
+    /// * `control` - reference to a control object which must implement is_on() and setpnt() funcs
     pub(crate) fn create_service_space_heating(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
@@ -2658,6 +2664,27 @@ mod tests {
             _ => panic!("Expected ColdWaterSource variant"),
         }
 
+        assert!(heat_battery
+            .read()
+            .energy_supply_connections
+            .contains_key("new_service"));
+    }
+
+    #[rstest]
+    fn test_create_service_space_heating(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        simulation_time_iteration: SimulationTimeIteration,
+        battery_control_off: Control,
+    ) {
+        let control = Arc::new(create_setpoint_time_control(vec![Some(21.0)]));
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let service = HeatBatteryPcm::create_service_space_heating(
+            heat_battery.clone(),
+            "new_service",
+            control,
+        );
+
+        assert!(service.is_on(simulation_time_iteration));
         assert!(heat_battery
             .read()
             .energy_supply_connections
