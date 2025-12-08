@@ -535,7 +535,6 @@ pub struct HeatBatteryPcm {
     hb_time_step: f64,
     initial_inlet_temp: f64,
     estimated_outlet_temp: f64,
-    pipe_energy: Arc<RwLock<IndexMap<String, PipeEnergy>>>,
     energy_charged: AtomicF64,
     simultaneous_charging_and_discharging: bool,
     max_temp_of_charge: f64,
@@ -672,7 +671,6 @@ impl HeatBatteryPcm {
             hb_time_step,
             initial_inlet_temp,
             estimated_outlet_temp,
-            pipe_energy: Default::default(),
             energy_charged: Default::default(),
             simultaneous_charging_and_discharging,
             max_temp_of_charge,
@@ -709,16 +707,6 @@ impl HeatBatteryPcm {
         heat_battery.write().energy_supply_connections.insert(
             service_name.into(),
             EnergySupply::connection(energy_supply, service_name)?,
-        );
-
-        // Set up PipeEnergy for this service to store extra
-        // energy pushed into the pipe to run the battery and temperature
-        heat_battery.read().pipe_energy.write().insert(
-            service_name.into(),
-            PipeEnergy {
-                energy: 0.,
-                temperature: 0.,
-            },
         );
 
         Ok(())
