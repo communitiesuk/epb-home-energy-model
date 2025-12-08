@@ -221,6 +221,11 @@ impl BoilerServiceWaterCombi {
     pub fn energy_output_max(&self) -> f64 {
         self.boiler.read().energy_output_max(None, None)
     }
+
+    //TODO: review if this is needed
+    fn is_on(&self, _simtime: SimulationTimeIteration) -> bool {
+        true
+    }
 }
 
 #[derive(Debug)]
@@ -1090,8 +1095,14 @@ mod tests {
     use super::*;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::simulation_time::SimulationTime;
-    use itertools::Itertools;
     use rstest::*;
+
+    // In Python there are tests covering the abstract base class BoilerService which we have not
+    // implemented in Rust. Instead we have directly implemented the `is_on` method on the concrete
+    // BoilerService structs. Subsequently, the tests are in the relevant sections below that cover
+    // these three classes/structs. The tests are:
+    // test_is_on_with_control_on, test_is_on_with_control_off and
+    // test_is_on_with_no_control (only relevant for BoilerServiceWaterCombi).
 
     #[fixture]
     fn simulation_time() -> SimulationTime {
@@ -1318,6 +1329,14 @@ mod tests {
         }
 
         #[rstest]
+        fn test_is_on_with_no_control(
+            boiler_service: BoilerServiceWaterCombi,
+            simulation_time: SimulationTime,
+        ) {
+            assert!(boiler_service.is_on(simulation_time.iter().next().unwrap()));
+        }
+
+        #[rstest]
         fn test_boiler_service_water(
             boiler_service: BoilerServiceWaterCombi,
             simulation_time: SimulationTime,
@@ -1341,7 +1360,7 @@ mod tests {
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterRegular};
         use crate::hem_core::external_conditions::ExternalConditions;
-        use crate::hem_core::simulation_time::SimulationTime;
+        use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIteration};
         use crate::input::{FuelType, HeatSourceLocation, HeatSourceWetDetails};
         use approx::assert_relative_eq;
         use parking_lot::RwLock;
@@ -1396,7 +1415,7 @@ mod tests {
         #[fixture]
         fn control_min() -> Arc<Control> {
             Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-                vec![Some(52.), Some(52.)],
+                vec![Some(52.), Some(52.), None],
                 0,
                 1.,
                 Default::default(),
@@ -1430,6 +1449,27 @@ mod tests {
                 control_max,
             )
             .unwrap()
+        }
+
+        #[rstest]
+        fn test_is_on_with_control_on(boiler_service: BoilerServiceWaterRegular) {
+            let simulation_time_iteration = SimulationTimeIteration {
+                index: 0,
+                time: 0.,
+                timestep: 1.,
+            };
+            assert!(boiler_service.is_on(simulation_time_iteration));
+        }
+
+        #[rstest]
+        // more accurate name would be test_is_off_with_control_off
+        fn test_is_on_with_control_off(boiler_service: BoilerServiceWaterRegular) {
+            let simulation_time_iteration = SimulationTimeIteration {
+                index: 0,
+                time: 2.,
+                timestep: 1.,
+            };
+            assert!(!boiler_service.is_on(simulation_time_iteration));
         }
 
         #[rstest]
@@ -1475,7 +1515,7 @@ mod tests {
         use crate::core::heating_systems::boiler::tests::external_conditions;
         use crate::core::heating_systems::boiler::{Boiler, BoilerServiceSpace};
         use crate::hem_core::external_conditions::ExternalConditions;
-        use crate::hem_core::simulation_time::SimulationTime;
+        use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIteration};
         use crate::input::{FuelType, HeatSourceLocation, HeatSourceWetDetails};
         use approx::assert_ulps_eq;
         use parking_lot::RwLock;
@@ -1552,6 +1592,27 @@ mod tests {
                 "boiler_test".into(),
                 Arc::new(control),
             )
+        }
+
+        #[rstest]
+        fn test_is_on_with_control_on(boiler_service: BoilerServiceSpace) {
+            let simulation_time_iteration = SimulationTimeIteration {
+                index: 0,
+                time: 0.,
+                timestep: 1.,
+            };
+            assert!(boiler_service.is_on(simulation_time_iteration));
+        }
+
+        #[rstest]
+        // more accurate name would be test_is_off_with_control_off
+        fn test_is_on_with_control_off(boiler_service: BoilerServiceSpace) {
+            let simulation_time_iteration = SimulationTimeIteration {
+                index: 0,
+                time: 2.,
+                timestep: 1.,
+            };
+            assert!(!boiler_service.is_on(simulation_time_iteration));
         }
 
         #[rstest]
