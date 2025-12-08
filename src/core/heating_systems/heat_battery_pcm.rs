@@ -217,7 +217,7 @@ impl HeatBatteryPcmServiceWaterRegular {
 /// An object to represent a direct water heating service provided by a heat battery.
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
-struct HeatBatteryPcmServiceWaterDirect {
+pub(crate) struct HeatBatteryPcmServiceWaterDirect {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
     setpoint_temp: f64,
@@ -735,6 +735,28 @@ impl HeatBatteryPcm {
             control_min,
             control_max,
         )
+    }
+
+    /// Return a HeatBatteryPCMServiceWaterDirect object and create an EnergySupplyConnection for it
+    ///
+    /// Arguments:
+    /// * `heat_battery` - reference to heat battery
+    /// * `service_name` - name of the service demanding energy from the heat battery
+    /// * `setpoint_temp` - temperature of hot water to be provided, in deg C
+    /// * `cold_feed` - reference to ColdWaterSource object
+    pub(crate) fn create_service_hot_water_direct(
+        heat_battery: Arc<RwLock<Self>>,
+        service_name: &str,
+        setpoint_temp: f64,
+        cold_feed: WaterSourceWithTemperature,
+    ) -> anyhow::Result<HeatBatteryPcmServiceWaterDirect> {
+        Self::create_service_connection(heat_battery.clone(), service_name)?;
+        Ok(HeatBatteryPcmServiceWaterDirect::new(
+            heat_battery,
+            service_name.into(),
+            setpoint_temp,
+            cold_feed,
+        ))
     }
 
     pub(crate) fn create_service_space_heating(
@@ -2605,6 +2627,41 @@ mod tests {
         let create_connection_result =
             HeatBatteryPcm::create_service_connection(heat_battery, "new service");
         assert!(create_connection_result.is_err()) // second attempt to create a service connection with same name should error
+    }
+
+    #[rstest]
+    fn test_create_service_hot_water_direct(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        battery_control_on: Control,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+            ColdWaterSource::new(vec![1.0, 1.2], 0, 1.),
+        ));
+        let service = HeatBatteryPcm::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "new_service",
+            60.,
+            cold_feed.clone(),
+        )
+        .unwrap();
+
+        let actual = service.get_cold_water_source();
+
+        match (actual, cold_feed) {
+            (
+                WaterSourceWithTemperature::ColdWaterSource(actual),
+                WaterSourceWithTemperature::ColdWaterSource(cold_feed),
+            ) => {
+                assert_eq!(actual, &cold_feed);
+            }
+            _ => panic!("Expected ColdWaterSource variant"),
+        }
+
+        assert!(heat_battery
+            .read()
+            .energy_supply_connections
+            .contains_key("new_service"));
     }
 
     #[rstest]
