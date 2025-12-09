@@ -2963,6 +2963,158 @@ mod tests {
     }
 
     #[rstest]
+    fn test_process_zone_simultaneous_charging(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let _heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+
+        // TODO
+    }
+
+    // skipping python's test_process_zone_simultaneous_charging_warning1 and
+    // test_process_zone_simultaneous_charging_warning2 as we haven't incorporated these warnings
+
+    #[rstest]
+    #[case(55., 3000., -23.63695937090432)]
+    #[case(58., 3000., 18.720183486238533)]
+    #[case(60., 3000., 57.08244702443777)]
+    #[case(55., 4000., -49.84927916120577)]
+    #[case(58., 4000., -7.49213630406291)]
+    #[case(60., 4000., 34.11500655307995)]
+    #[case(60., 10., 59.79030144167759)]
+    #[case(50., -4000., 72.70799475753604)]
+    #[case(50., -3000., 58.77507509945603)]
+    #[case(50., -100., 52.62123197903014)]
+    #[case(58., -2000., 68.65399737876803)]
+    #[case(58., -1000., 58.64950880896322)]
+    #[case(60., -1000., 80.96985583224115)]
+    fn test_calculate_new_zone_temperature(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        #[case] zone_temp_c_start: f64,
+        #[case] energy_transf: f64,
+        #[case] expected: f64,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let result = heat_battery
+            .read()
+            .calculate_new_zone_temperature(zone_temp_c_start, energy_transf);
+
+        assert_relative_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_charge_battery_hydraulic(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+
+        assert_relative_eq!(
+            heat_battery.write()._charge_battery_hydraulic(70.).unwrap(),
+            0.
+        );
+        assert_relative_eq!(
+            heat_battery.write()._charge_battery_hydraulic(80.).unwrap(),
+            -138.85748246864733
+        );
+        assert_relative_eq!(
+            heat_battery.write()._charge_battery_hydraulic(90.).unwrap(),
+            -3814.99999900312
+        );
+    }
+
+    #[rstest]
+    fn test_get_temp_hot_water(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .get_temp_hot_water(50., 20., 80.)
+                .unwrap(),
+            79.70798180572169
+        );
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .get_temp_hot_water(50., 10., 80.)
+                .unwrap(),
+            79.8652529090689
+        );
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .get_temp_hot_water(40., 10., 80.)
+                .unwrap(),
+            79.81947841211459
+        );
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .get_temp_hot_water(60., 1., 65.)
+                .unwrap(),
+            65.
+        );
+    }
+
+    // skipping python's test_energy_output_max_negative as unable to replicate patch object
+
+    // TODO (implementation not yet updated) test_output_detailed_results_water_regular
+    // TODO (implementation not yet updated) test_output_detailed_results_space
+    // TODO (implementation not yet updated) test_output_detailed_results_none
+
+    #[rstest]
+    fn test_demand_energy_low_temp_minimum_run_coverage(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        heat_battery
+            .write()
+            .energy_supply
+            .write()
+            .set_fuel_type(FuelType::MainsGas);
+        heat_battery.write().hb_time_step = 5.; // Small time step
+                                                // Set all zones to high temperature
+        heat_battery.write().zone_temp_c_dist_initial = Arc::new(RwLock::new(vec![50.2; 8]));
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), "test_service").unwrap();
+        // Very small energy demand that will be satisfied in first loop iteration
+        // But will need to continue running to meet minimum time
+        heat_battery
+            .read()
+            .demand_energy(
+                "test_service",
+                HeatingServiceType::DomesticHotWaterRegular,
+                0.1,
+                40.,
+                Some(50.),
+                true,
+                Some(0.),
+                Some(true),
+            )
+            .unwrap();
+
+        //Check that minimum time was enforced
+        let service_result = heat_battery
+            .read()
+            .service_results
+            .read()
+            .last()
+            .unwrap()
+            .clone();
+
+        assert_relative_eq!(service_result.time_running, 51.08689856959955);
+    }
+
+    // TODO (implementation not yet updated) test_timestep_end_with_uncalled_services
+    // TODO (implementation not yet updated) test_timestep_end_no_services_called
+
+    #[rstest]
     fn test_heat_battery_create_service_connection_already_exists(
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
