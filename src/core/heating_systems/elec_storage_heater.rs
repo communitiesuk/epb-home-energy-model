@@ -1,4 +1,8 @@
 use crate::core::controls::time_control::{per_control, ControlBehaviour};
+use crate::core::heating_systems::heat_battery_drycore;
+use crate::core::heating_systems::heat_battery_drycore::{
+    EnergyOutputSocOdeFunction, HeatStorageDryCore, OutputMode,
+};
 use crate::core::units::HOURS_PER_DAY;
 use crate::{
     core::{
@@ -8,14 +12,14 @@ use crate::{
     external_conditions::ExternalConditions,
     input::{ControlLogicType, ElectricStorageHeaterAirFlowType},
     simulation_time::{SimulationTimeIteration, SimulationTimeIterator},
-    statistics::{np_interp, np_interp_with_extrapolate},
+    statistics::np_interp,
 };
 use anyhow::bail;
 use atomic_float::AtomicF64;
 use derivative::Derivative;
 use itertools::Itertools;
 use nalgebra::{Vector1, Vector3};
-use ode_solvers::{dop_shared::OutputType, Dopri5, System};
+use ode_solvers::{dop_shared::OutputType, Dopri5};
 use parking_lot::RwLock;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -26,20 +30,9 @@ type Time = f64;
 type EnergyOutputState = Vector3<f64>;
 
 // replicates numpys's linspace function
-fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
+pub(super) fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
     let step = (end - start) / f64::from(num - 1);
     (0..num).map(|n| start + (f64::from(n) * step)).collect()
-}
-
-// replicate numpy's clip function
-fn clip(n: f64, min: f64, max: f64) -> f64 {
-    if n < min {
-        min
-    } else if n > max {
-        max
-    } else {
-        n
-    }
 }
 
 #[derive(Derivative)]
@@ -110,95 +103,6 @@ impl StorageHeaterDetailedResult {
             self.time_used_max.to_string(),
         ]
     }
-}
-
-struct SocOdeFunction<'a> {
-    soc_array: &'a [f64],
-    power_array: &'a [f64],
-    storage_capacity: f64,
-}
-
-impl System<Time, State> for SocOdeFunction<'_> {
-    fn system(&self, _x: Time, y: &State, dy: &mut State) {
-        // Define the ODE for SOC and energy delivered (no charging, only discharging)
-
-        // Ensure SOC stays within bounds
-        let soc = clip(y[0], 0., 1.);
-
-        // Discharging: calculate power used based on SOC
-        let discharge_rate = -np_interp(soc, self.soc_array, self.power_array);
-
-        // Track the total energy delivered (discharged energy)
-        let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
-
-        // SOC rate of change (discharging), divided by storage capacity
-        let dsoc_dt = -ddelivered_dt / self.storage_capacity;
-
-        dy[0] = dsoc_dt;
-    }
-}
-
-struct EnergyOutputSocOdeFunction<'a> {
-    soc_array: &'a Vec<f64>,
-    power_array: &'a Vec<f64>,
-    storage_capacity: f64,
-    soc_max: f64,
-    charge_rate: f64,
-    pwr_in: f64,
-    target_charge: f64,
-}
-
-impl System<Time, EnergyOutputState> for EnergyOutputSocOdeFunction<'_> {
-    fn system(&self, _x: Time, y: &EnergyOutputState, dy: &mut EnergyOutputState) {
-        // Ensure SOC stays within bounds
-        let soc = clip(y[0], 0., 1.);
-
-        // Discharging: calculate power used based on SOC
-
-        // // Python does two interpolations, which we've copied here
-        // TODO confirm this is intended
-        let power_max_func_result_arr = self
-            .soc_array
-            .iter()
-            .map(|s| np_interp(*s, self.soc_array, self.power_array))
-            .collect_vec();
-        let discharge_rate =
-            -np_interp_with_extrapolate(soc, self.soc_array, &power_max_func_result_arr);
-
-        // Single interpolation version:
-        // let discharge_rate =
-        //     -np_interp_with_extrapolate(soc, self.soc_array, &self.power_array);
-
-        // Track the total energy delivered (discharged energy)
-        let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
-
-        let dcharged_dt = if soc < self.soc_max {
-            self.charge_rate
-        } else if self.target_charge > 0. {
-            ddelivered_dt.min(self.pwr_in)
-        } else {
-            0.0
-        };
-
-        // Net SOC rate of change (discharge + charge), divided by storage capacity
-        let dsoc_dt = (-ddelivered_dt + dcharged_dt) / self.storage_capacity;
-
-        dy[0] = dsoc_dt;
-        dy[1] = dcharged_dt;
-        dy[2] = ddelivered_dt;
-    }
-
-    // TODO implement
-    // fn solout(&mut self, _x: Time, y: &EnergyOutputState, _dy: &EnergyOutputState) -> bool {
-    //     // TODO we want to check if we've passed this value, not that we are equal to it
-    //     // see Emitters for example of this
-    //     todo!()
-    // }
-}
-
-pub(crate) enum OutputMode {
-    Min,
-    Max,
 }
 
 impl ElecStorageHeater {
@@ -313,9 +217,11 @@ impl ElecStorageHeater {
             }
         }
 
-        // TODO can we pass these vecs/arrays by reference instead
-        let heat_retention_ratio =
-            Self::heat_retention_output(&soc_min_array, &power_min_array, storage_capacity);
+        let heat_retention_ratio = HeatStorageDryCore::heat_retention_output(
+            &soc_min_array,
+            &power_min_array,
+            storage_capacity,
+        );
 
         Ok(Self {
             pwr_in,
@@ -374,82 +280,6 @@ impl ElecStorageHeater {
         // time -- length of the time active
         // returns -- Energy in kWh
         power / f64::from(WATTS_PER_KILOWATT) * time
-    }
-
-    pub fn heat_retention_output(
-        soc_array: &[f64],
-        power_array: &[f64],
-        storage_capacity: f64,
-    ) -> f64 {
-        // Simulates the heat retention over 16 hours in OutputMode.MIN.
-
-        // Starts with a SOC of 1.0 and calculates the SOC after 16 hours.
-        // This is a self-contained function, and the SOC is not stored in self.__state_of_charge.
-
-        // :return: Final SOC after 16 hours.
-
-        // Set initial state of charge to 1.0 (fully charged)
-        let initial_soc = 1.0;
-
-        // Total time for the simulation (16 hours)
-        let total_time = 16.0; // This is the value from BS EN 60531 for determining heat retention ability
-
-        // Select the SOC and power arrays for OutputMode.MIN
-        let soc_ode = SocOdeFunction {
-            soc_array,
-            power_array,
-            storage_capacity,
-        };
-
-        let f = soc_ode; // f - Structure implementing the System trait
-        let x = 0.; // x - Initial value of the independent variable (usually time)
-        let x_end = total_time; // x_end - Final value of the independent variable
-        let dx = 0.; // dx - Increment in the dense output. This argument has no effect if the output type is Sparse
-        let y0: State = State::new(initial_soc); // y - Initial value of the dependent variable(s)
-
-        // scipy implementation for reference:
-        // https://github.com/scipy/scipy/blob/6b657ede0c3c4cffef3156229afddf02a2b1d99a/scipy/integrate/_ivp/rk.py#L293
-        let rtol = 1e-3; // rtol - set from scipy docs - Relative tolerance used in the computation of the adaptive step size
-        let atol = 1e-6; // atol - set from scipy docs - Absolute tolerance used in the computation of the adaptive step size
-        let h = 0.; // initial step size - 0
-        let safety_factor = 0.9; // matches scipy implementation
-        let beta = 0.; // setting this to 0 gives us an alpha of 0.2 and matches scipy's adaptive step size logic (default was 0.04)
-        let fac_min = 0.2; // matches scipy implementation
-        let fac_max = 10.; // matches scipy implementation
-        let h_max = x_end - x;
-        let n_max = 100000;
-        let n_stiff = 1000;
-        let mut stepper = Dopri5::from_param(
-            f,
-            x,
-            x_end,
-            dx,
-            y0,
-            rtol,
-            atol,
-            safety_factor,
-            beta,
-            fac_min,
-            fac_max,
-            h_max,
-            h,
-            n_max,
-            n_stiff,
-            OutputType::Sparse,
-        );
-
-        // Solve the ODE for SOC and cumulative energy delivered
-        let _ = stepper.integrate();
-
-        // sol = solve_ivp(soc_ode, [0, total_time], [initial_soc], method='RK45', rtol=1e-1, atol=1e-3)
-
-        // Final state of charge after 16 hours
-        let final_soc = stepper.y_out().last().unwrap()[0];
-
-        // Clip the final SOC to ensure it's between 0 and 1
-
-        // Return the final state of charge after 16 hours
-        clip(final_soc, 0., 1.)
     }
 
     pub(crate) fn energy_output(
@@ -653,7 +483,7 @@ impl ElecStorageHeater {
         let new_state_of_charge = self.state_of_charge.load(Ordering::SeqCst)
             + (current_profile.energy_charged - current_profile.energy_delivered)
                 / self.storage_capacity;
-        let new_state_of_charge = clip(new_state_of_charge, 0., 1.);
+        let new_state_of_charge = heat_battery_drycore::clip(new_state_of_charge, 0., 1.);
         self.state_of_charge
             .store(new_state_of_charge, Ordering::SeqCst);
 
@@ -778,7 +608,7 @@ impl ElecStorageHeater {
                     };
                     let target_charge_hhrsh =
                         current_state_of_charge + energy_to_add / self.storage_capacity;
-                    clip(target_charge_hhrsh, 0., 1.)
+                    heat_battery_drycore::clip(target_charge_hhrsh, 0., 1.)
                 } else {
                     0.
                 };
@@ -2342,7 +2172,7 @@ mod tests {
         let power_array = vec![0., 0.02, 0.05];
         let storage_capacity = 10.;
         let actual =
-            ElecStorageHeater::heat_retention_output(&soc_array, &power_array, storage_capacity);
+            HeatStorageDryCore::heat_retention_output(&soc_array, &power_array, storage_capacity);
 
         assert_relative_eq!(actual, 0.92372001, max_relative = EIGHT_DECIMAL_PLACES);
     }
