@@ -729,15 +729,15 @@ impl HeatBatteryPcm {
         cold_feed: WaterSourceWithTemperature,
         control_min: Option<Arc<Control>>,
         control_max: Option<Arc<Control>>,
-    ) -> HeatBatteryPcmServiceWaterRegular {
-        Self::create_service_connection(heat_battery.clone(), service_name).unwrap();
-        HeatBatteryPcmServiceWaterRegular::new(
+    ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular> {
+        Self::create_service_connection(heat_battery.clone(), service_name)?;
+        Ok(HeatBatteryPcmServiceWaterRegular::new(
             heat_battery,
             service_name.into(),
             cold_feed,
             control_min,
             control_max,
-        )
+        ))
     }
 
     /// Return a HeatBatteryPCMServiceWaterDirect object and create an EnergySupplyConnection for it
@@ -772,9 +772,13 @@ impl HeatBatteryPcm {
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         control: Arc<Control>,
-    ) -> HeatBatteryPcmServiceSpace {
-        Self::create_service_connection(heat_battery.clone(), service_name).unwrap();
-        HeatBatteryPcmServiceSpace::new(heat_battery, service_name.into(), control)
+    ) -> anyhow::Result<HeatBatteryPcmServiceSpace> {
+        Self::create_service_connection(heat_battery.clone(), service_name)?;
+        Ok(HeatBatteryPcmServiceSpace::new(
+            heat_battery,
+            service_name.into(),
+            control,
+        ))
     }
 
     /// Return battery losses
@@ -2694,7 +2698,8 @@ mod tests {
             heat_battery.clone(),
             "new_service",
             control,
-        );
+        )
+        .unwrap();
 
         assert!(service.is_on(simulation_time_iteration));
         assert!(heat_battery
@@ -2956,4 +2961,102 @@ mod tests {
             heat_battery.read().timestep_end(t_idx).unwrap();
         }
     }
+
+    #[rstest]
+    fn test_heat_battery_create_service_connection_already_exists(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let service_name = "test_service";
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+            ColdWaterSource::new(vec![1.0, 1.2], 0, 1.),
+        ));
+
+        let result = HeatBatteryPcm::create_service_hot_water_regular(
+            heat_battery.clone(),
+            service_name,
+            cold_feed.clone(),
+            None,
+            None,
+        );
+
+        assert!(result.is_ok());
+
+        let result = HeatBatteryPcm::create_service_hot_water_regular(
+            heat_battery,
+            service_name,
+            cold_feed,
+            None,
+            None,
+        );
+
+        assert!(result.is_err())
+    }
+
+    // skipping python's test_heat_battery_edge_case_zero_timestep as function can't return None
+
+    // skipping python's test_heat_battery_process_zone_edge_cases as function can't return None and does return 4 values
+
+    // skipping python's test_heat_battery_charge_battery_hydraulic_edge_cases as function can't return None
+
+    #[rstest]
+    fn test_heat_battery_energy_output_max_boundary_conditions(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+
+        // Test with very low output temperature
+        let result = heat_battery
+            .read()
+            .energy_output_max(10., Some(0.))
+            .unwrap();
+
+        // The method returns energy based on zone temps, not necessarily 0
+        assert!(result >= 0.);
+
+        //Test with temperature at threshold
+        let result = heat_battery
+            .read()
+            .energy_output_max(45., Some(0.))
+            .unwrap();
+
+        assert!(result >= 0.);
+    }
+
+    // skipping python's test_heat_battery_service_cold_water_source_not_set as cold feed not optional
+
+    #[rstest]
+    fn test_heat_battery_zero_volume_zones(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+
+        // Test with zero energy transfer
+        let result = heat_battery.read().calculate_new_zone_temperature(50., 0.);
+
+        assert_eq!(result, 50.);
+    }
+
+    #[rstest]
+    fn test_heat_battery_all_zones_below_threshold(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        // Request high output temperature that no zone can provide
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+
+        let result = heat_battery
+            .read()
+            .energy_output_max(80., Some(0.))
+            .unwrap();
+
+        assert_eq!(result, 0.);
+    }
+
+    // TODO review list of tests below to see if we can replicate, Python uses mocking
+    // test_demand_hot_water_with_varying_cold_temperatures
+    // test_demand_hot_water_zero_volume_continue
 }

@@ -4667,7 +4667,7 @@ fn heat_source_from_input(
                                 cold_water_source.clone(),
                                 Some(control_min),
                                 Some(control_max),
-                            ),
+                            )?,
                         )))
                     }
                 },
@@ -5183,7 +5183,7 @@ fn hot_water_source_from_input(
                 cold_water_source,
                 None,
                 None,
-            ))
+            )?)
         }
     };
 
@@ -5302,7 +5302,7 @@ fn space_heat_systems_from_input(
                                     SpaceHeatingService::HeatNetwork(heat_source_service)
                                 }
                                 WetHeatSource::HeatBattery(heat_battery) => {
-                                    let heat_source_service = HeatBatteryPcm::create_service_space_heating(heat_battery.clone(), &energy_supply_conn_name, control);
+                                    let heat_source_service = HeatBatteryPcm::create_service_space_heating(heat_battery.clone(), &energy_supply_conn_name, control)?;
                                     SpaceHeatingService::HeatBattery(heat_source_service)
                                 }
                             };
