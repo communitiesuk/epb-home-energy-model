@@ -1403,7 +1403,7 @@ fn calc_design_capacity(
     set_temp_internal_static_calcs(&mut clone)?;
     let HtcHlpCalculation {
         htc_map: htc_dict, ..
-    } = calc_htc_hlp(&clone.as_input())?;
+    } = calc_htc_hlp(&clone.as_input()?)?;
 
     // Calculate design capacity
     let min_air_temp = *input.external_conditions()?.air_temperatures.as_ref().ok_or_else(|| anyhow!("FHS Notional wrapper expected to have air temperatures merged onto the input structure."))?.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("FHS Notional wrapper expects air temperature list set on input structure not to be empty."))?;

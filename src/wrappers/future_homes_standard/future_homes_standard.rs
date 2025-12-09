@@ -1891,7 +1891,7 @@ fn create_appliance_gains(
         // if it needs to be modelled per use
         let map_appliance = appliance_map
             .get(appliance_key.as_str())
-            .expect("Appliance key was not in appliance map");
+            .ok_or_else(|| anyhow!("Appliance key '{appliance_key}' was not in appliance map"))?;
 
         if let Some(use_data) = map_appliance.use_data {
             // value on energy label is defined differently between appliance types
@@ -2619,7 +2619,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     };
 
     let corpus = Corpus::from_inputs(
-        &input_24h.as_input(),
+        &input_24h.as_input()?,
         None,
         sim_settings.tariff_data_filename.as_deref(),
         &output_options,

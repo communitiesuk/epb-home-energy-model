@@ -3611,8 +3611,8 @@ impl InputForProcessing {
         Ok(Self { input })
     }
 
-    pub(crate) fn as_input(&self) -> Input {
-        serde_json::from_value(self.input.to_owned()).unwrap()
+    pub(crate) fn as_input(&self) -> anyhow::Result<Input> {
+        serde_json::from_value(self.input.to_owned()).map_err(Into::into)
     }
 
     pub(crate) fn finalize(self) -> Result<Input, serde_json::Error> {
