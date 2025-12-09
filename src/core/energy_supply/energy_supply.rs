@@ -755,6 +755,11 @@ impl EnergySupply {
 
         Ok(min_of_2(beta_factor, 1. / demand_ratio))
     }
+
+    #[cfg(test)]
+    pub(crate) fn set_fuel_type(&mut self, fuel_type: FuelType) {
+        self.fuel_type = fuel_type;
+    }
 }
 
 enum BetaFactorFunction {
