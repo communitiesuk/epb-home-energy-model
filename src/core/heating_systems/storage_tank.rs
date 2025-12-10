@@ -303,7 +303,7 @@ impl StorageTank {
             // self.previous_event_time_end = deepcopy(time_start_current_event + (event['duration'] + 0.0) / 60.0)
 
             let (volume_used, energy_withdrawn, remaining_vols) =
-                self.extract_hot_water(event.clone(), simtime);
+                self.extract_hot_water(event.clone(), simtime)?;
 
             // Determine the new temperature distribution after displacement
             // Now that pre-heated sources can be the 'cold' feed, rearrangement of temperaturs, that used to
@@ -434,13 +434,14 @@ impl StorageTank {
         &self,
         event: TypedScheduleEvent,
         simulation_time: SimulationTimeIteration,
-    ) -> (f64, f64, Vec<f64>) {
+    ) -> anyhow::Result<(f64, f64, Vec<f64>)> {
         // Make a copy of the volume list to keep track of remaining volumes
         // Remaining volume of water in storage tank layers
         let mut remaining_vols = self.vol_n.clone();
 
         // Extract the temperature and required hot volume from the event
-        let hot_volume = event.volume_hot;
+        let hot_volume = event.volume_hot.ok_or_else(|| anyhow!("Storage tank hot water events must have a volume_hot."));
+        let hot_volume = event.volume_hot.unwrap();
 
         // # Remaining volume of hot water to be satisfied for current event
         let mut remaining_demanded_volume = hot_volume;
@@ -515,7 +516,7 @@ impl StorageTank {
         //  Calculate the total volume used
         let volume_used = self.volume_total_in_litres - remaining_total_volume;
 
-        (volume_used, energy_withdrawn, remaining_vols)
+        Ok((volume_used, energy_withdrawn, remaining_vols))
     }
 
     /// Calculate the new temperature distribution after displacement.
@@ -1674,7 +1675,7 @@ impl SmartHotWaterTank {
 
         for event in usage_events.iter().flatten() {
             let (volume_used, energy_withdrawn, remaining_vols) =
-                self.storage_tank.extract_hot_water(event.clone(), simtime);
+                self.storage_tank.extract_hot_water(event.clone(), simtime)?;
 
             let (temp_s3_n_new, rearrange) = self
                 .storage_tank
@@ -3777,6 +3778,7 @@ mod tests {
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None, // TODO
                 },
                 TypedScheduleEvent {
                     start: 6.,
@@ -3787,6 +3789,7 @@ mod tests {
                     volume: None,
                     warm_volume: Some(48.),
                     pipework_volume: None,
+                    volume_hot: None, // TODO
                 },
                 TypedScheduleEvent {
                     start: 6.,
@@ -3797,6 +3800,7 @@ mod tests {
                     volume: None,
                     warm_volume: Some(100.),
                     pipework_volume: None,
+                    volume_hot: None, // TODO
                 },
                 TypedScheduleEvent {
                     start: 6.,
@@ -3807,6 +3811,7 @@ mod tests {
                     volume: None,
                     warm_volume: Some(8.),
                     pipework_volume: None,
+                    volume_hot: None, // TODO
                 },
             ],
             vec![TypedScheduleEvent {
@@ -3818,6 +3823,7 @@ mod tests {
                 volume: None,
                 warm_volume: Some(48.),
                 pipework_volume: None,
+                volume_hot: None, // TODO
             }],
             vec![],
             vec![TypedScheduleEvent {
@@ -3829,6 +3835,7 @@ mod tests {
                 volume: None,
                 warm_volume: Some(48.),
                 pipework_volume: None,
+                volume_hot: None, // TODO
             }],
             vec![],
             vec![TypedScheduleEvent {
@@ -3840,6 +3847,7 @@ mod tests {
                 volume: None,
                 warm_volume: Some(52.),
                 pipework_volume: None,
+                volume_hot: None, // TODO
             }],
             vec![],
             vec![],
@@ -4022,8 +4030,8 @@ mod tests {
     #[rstest]
     fn test_get_temp_hot_water(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (storage_tank1, _) = storage_tank1;
-
-        assert_eq!(storage_tank1.get_temp_hot_water(), 55.0);
+        let expected = vec![(55.0, 37.5), (55.0, 37.5), (55.0, 25.0)];
+        assert_eq!(storage_tank1.get_temp_hot_water(100.0, None), expected);
     }
 
     #[rstest]
@@ -4319,41 +4327,18 @@ mod tests {
             volume: None,
             warm_volume: Some(8.0),
             pipework_volume: Some(5.),
+            volume_hot: Some(5.511111111111113)
         };
-        assert_eq!(
-            storage_tank1.extract_hot_water(
-                event,
-                simulation_time_for_storage_tank.iter().current_iteration()
-            ),
-            (
-                10.51111111111112,
-                0.5497311111111112,
-                0.0,
-                vec![37.5, 37.5, 32.5, 31.988888888888887]
-            )
-        );
 
-        // With no pipework vol
-        let event = TypedScheduleEvent {
-            start: 0.,
-            duration: Some(1.),
-            temperature: 41.0,
-            event_type: WaterScheduleEventType::Other,
-            name: "other".to_string(),
-            volume: None,
-            warm_volume: Some(8.0),
-            pipework_volume: Some(0.),
-        };
         assert_eq!(
             storage_tank1.extract_hot_water(
                 event,
                 simulation_time_for_storage_tank.iter().current_iteration()
-            ),
+            ).unwrap(),
             (
                 5.51111111111112,
-                0.2882311111111111,
-                0.0,
-                vec![37.5, 37.5, 37.5, 31.988888888888887]
+                0.2882311111111112,
+                vec![37.5, 37.5, 32.5, 31.988888888888887]
             )
         );
     }
@@ -4540,8 +4525,8 @@ mod tests {
             rated_power,
             energy_supply_connection,
             timestep,
-            control_min,
-            control_max,
+            Some(control_min),
+            Some(control_max),
         )
     }
 
@@ -4747,237 +4732,6 @@ mod tests {
         }
     }
 
-    #[rstest]
-    // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
-    fn test_demand_hot_water_for_storage_tank_with_solar_thermal(
-        storage_tank_with_solar_thermal: (
-            StorageTank,
-            Arc<Mutex<SolarThermalSystem>>,
-            SimulationTime,
-            Arc<RwLock<EnergySupply>>,
-        ),
-    ) {
-        let (storage_tank, solar_thermal, simulation_time, energy_supply) =
-            storage_tank_with_solar_thermal;
-
-        let expected_energy_demands = [
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.3943936789277888,
-            0.8431700006423382,
-            1.3873931365189958,
-            1.0919832923582113,
-            1.1503273689665232,
-            1.484482745066628,
-            0.9003339693974624,
-            0.49807749362100157,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        ];
-        let expected_energy_potentials = [
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.3943936789277888,
-            0.8431700006423382,
-            1.3873931365189958,
-            1.0919832923582113,
-            1.1503273689665232,
-            1.484482745066628,
-            0.9003339693974624,
-            0.49807749362100157,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-        ];
-        let expected_energy_supplied = [
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.3943936789277888,
-            0.8431700006423382,
-            1.3873931365189958,
-            1.0919832923582113,
-            1.1503273689665232,
-            1.484482745066628,
-            0.9003339693974624,
-            0.49807749362100157,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-            0.,
-        ];
-        let expected_energy_supply_results = [
-            10., 10., 10., 10., 10., 10., 10., 10., 110., 110., 110., 110., 110., 110., 110., 110.,
-            10., 10., 10., 10., 10., 10., 10., 10.,
-        ];
-
-        let usage_events: [Vec<TypedScheduleEvent>; 24] = [
-            vec![],
-            vec![TypedScheduleEvent {
-                start: 7.,
-                duration: Some(6.),
-                temperature: 41.0,
-                event_type: WaterScheduleEventType::Shower,
-                name: "mixer".to_owned(),
-                volume: None,
-                warm_volume: Some(48.0),
-                pipework_volume: None,
-            }],
-            vec![],
-            vec![TypedScheduleEvent {
-                start: 9.,
-                duration: Some(6.),
-                temperature: 45.0,
-                event_type: WaterScheduleEventType::Shower,
-                name: "mixer".to_owned(),
-                volume: None,
-                warm_volume: Some(48.0),
-                pipework_volume: None,
-            }],
-            vec![],
-            vec![TypedScheduleEvent {
-                start: 11.,
-                duration: Some(6.5),
-                temperature: 41.0,
-                event_type: WaterScheduleEventType::Shower,
-                name: "mixer".to_owned(),
-                volume: None,
-                warm_volume: Some(52.0),
-                pipework_volume: None,
-            }],
-            vec![],
-            vec![],
-            vec![],
-            vec![TypedScheduleEvent {
-                start: 7.,
-                duration: Some(6.),
-                temperature: 41.0,
-                event_type: WaterScheduleEventType::Shower,
-                name: "mixer".to_owned(),
-                volume: None,
-                warm_volume: Some(48.0),
-                pipework_volume: None,
-            }],
-            vec![],
-            vec![TypedScheduleEvent {
-                start: 9.,
-                duration: Some(6.),
-                temperature: 45.0,
-                event_type: WaterScheduleEventType::Shower,
-                name: "mixer".to_owned(),
-                volume: None,
-                warm_volume: Some(48.0),
-                pipework_volume: None,
-            }],
-            vec![],
-            vec![TypedScheduleEvent {
-                start: 11.,
-                duration: Some(6.5),
-                temperature: 41.0,
-                event_type: WaterScheduleEventType::Shower,
-                name: "mixer".to_owned(),
-                volume: None,
-                warm_volume: Some(52.0),
-                pipework_volume: None,
-            }],
-            vec![],
-            vec![],
-            vec![],
-            vec![TypedScheduleEvent {
-                start: 7.,
-                duration: Some(6.),
-                temperature: 41.0,
-                event_type: WaterScheduleEventType::Shower,
-                name: "mixer".to_owned(),
-                volume: None,
-                warm_volume: Some(48.0),
-                pipework_volume: None,
-            }],
-            vec![],
-            vec![TypedScheduleEvent {
-                start: 9.,
-                duration: Some(6.),
-                temperature: 45.0,
-                event_type: WaterScheduleEventType::Shower,
-                name: "mixer".to_owned(),
-                volume: None,
-                warm_volume: Some(48.0),
-                pipework_volume: None,
-            }],
-            vec![],
-            vec![TypedScheduleEvent {
-                start: 11.,
-                duration: Some(6.5),
-                temperature: 41.0,
-                event_type: WaterScheduleEventType::Shower,
-                name: "mixer".to_owned(),
-                volume: None,
-                warm_volume: Some(52.0),
-                pipework_volume: None,
-            }],
-            vec![],
-            vec![],
-        ];
-
-        for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            storage_tank
-                .demand_hot_water(Some(usage_events.get(t_idx).unwrap().clone()), t_it)
-                .unwrap();
-            assert_relative_eq!(
-                storage_tank.test_energy_demand(),
-                expected_energy_demands[t_idx],
-                max_relative = 1e-7
-            );
-            assert_relative_eq!(
-                solar_thermal.lock().test_energy_potential(),
-                expected_energy_potentials[t_idx],
-                max_relative = 1e-7
-            );
-            assert_relative_eq!(
-                solar_thermal.lock().test_energy_supplied(),
-                expected_energy_supplied[t_idx],
-                max_relative = 1e-7
-            );
-            assert_relative_eq!(
-                energy_supply.read().results_by_end_user()["solarthermal"][t_idx],
-                expected_energy_supply_results[t_idx],
-                max_relative = 1e-7
-            );
-        }
-    }
-
     #[fixture]
     fn simulation_time_for_smart_hot_water_tank() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
@@ -5103,8 +4857,8 @@ mod tests {
             5.,
             energy_supply_connection,
             1.,
-            control_min.into(),
-            control_max.into(),
+            Some(control_min.into()),
+            Some(control_max.into()),
         );
         let heat_source = HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(
             Mutex::new(immersion_heater),
@@ -5140,7 +4894,6 @@ mod tests {
             None,
             Some(4),
             None,
-            None,
             energy_supply_conn_pump,
             None,
         )
@@ -5166,6 +4919,89 @@ mod tests {
             1.68,
             50.,
         )
+    }
+
+    // TODO use a new WaterEventResult type instead of TypedScheduleEvent
+    fn get_event_data_immersion() -> Vec<Option<Vec<TypedScheduleEvent>>> {
+        &[
+            Some(vec![
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(6.),
+                    temperature: 41.,
+                    name: "IES".into(),
+                    event_type: WaterScheduleEventType::Shower,
+                    volume: None,
+                    warm_volume: Some(48.0),
+                    volume_hot: Some(33.0666666666667),
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(6.),
+                    temperature: 41.,
+                    name: "mixer".into(),
+                    event_type: WaterScheduleEventType::Shower,
+                    volume: None,
+                    warm_volume: Some(48.),
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(20.),
+                    temperature: 43.,
+                    name: "medium".into(),
+                    event_type: WaterScheduleEventType::Bath,
+                    volume: None,
+                    warm_volume: Some(100.),
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(1.),
+                    temperature: 40.,
+                    name: "other".into(),
+                    event_type: WaterScheduleEventType::Other,
+                    volume: None,
+                    warm_volume: Some(8.),
+                    pipework_volume: None,
+                },
+            ]),
+            Some(vec![TypedScheduleEvent {
+                start: 7.,
+                duration: Some(6.),
+                temperature: 41.,
+                name: "mixer".into(),
+                event_type: WaterScheduleEventType::Shower,
+                volume: None,
+                warm_volume: Some(48.),
+                pipework_volume: None,
+            }]),
+            None,
+            Some(vec![TypedScheduleEvent {
+                start: 9.,
+                duration: Some(6.),
+                temperature: 45.,
+                name: "mixer".into(),
+                event_type: WaterScheduleEventType::Shower,
+                volume: None,
+                warm_volume: Some(48.),
+                pipework_volume: None,
+            }]),
+            None,
+            Some(vec![TypedScheduleEvent {
+                start: 11.,
+                duration: Some(6.5),
+                temperature: 41.,
+                name: "mixer".into(),
+                event_type: WaterScheduleEventType::Shower,
+                volume: None,
+                warm_volume: Some(52.),
+                pipework_volume: None,
+            }]),
+            None,
+            None,
+        ];
     }
 
     const TWO_DECIMAL_PLACES: f64 = 1e-3;
@@ -5321,85 +5157,7 @@ mod tests {
             60.,
         );
 
-        // In Python the usage_events are stored under test_data_pairs, but the first values in the pairs are not used
-        let usage_events: &[Option<Vec<TypedScheduleEvent>>] = &[
-            Some(vec![
-                TypedScheduleEvent {
-                    start: 6.,
-                    duration: Some(6.),
-                    temperature: 41.,
-                    name: "IES".into(),
-                    event_type: WaterScheduleEventType::Shower,
-                    volume: None,
-                    warm_volume: None,
-                    pipework_volume: None,
-                },
-                TypedScheduleEvent {
-                    start: 6.,
-                    duration: Some(6.),
-                    temperature: 41.,
-                    name: "mixer".into(),
-                    event_type: WaterScheduleEventType::Shower,
-                    volume: None,
-                    warm_volume: Some(48.),
-                    pipework_volume: None,
-                },
-                TypedScheduleEvent {
-                    start: 6.,
-                    duration: Some(20.),
-                    temperature: 43.,
-                    name: "medium".into(),
-                    event_type: WaterScheduleEventType::Bath,
-                    volume: None,
-                    warm_volume: Some(100.),
-                    pipework_volume: None,
-                },
-                TypedScheduleEvent {
-                    start: 6.,
-                    duration: Some(1.),
-                    temperature: 40.,
-                    name: "other".into(),
-                    event_type: WaterScheduleEventType::Other,
-                    volume: None,
-                    warm_volume: Some(8.),
-                    pipework_volume: None,
-                },
-            ]),
-            Some(vec![TypedScheduleEvent {
-                start: 7.,
-                duration: Some(6.),
-                temperature: 41.,
-                name: "mixer".into(),
-                event_type: WaterScheduleEventType::Shower,
-                volume: None,
-                warm_volume: Some(48.),
-                pipework_volume: None,
-            }]),
-            None,
-            Some(vec![TypedScheduleEvent {
-                start: 9.,
-                duration: Some(6.),
-                temperature: 45.,
-                name: "mixer".into(),
-                event_type: WaterScheduleEventType::Shower,
-                volume: None,
-                warm_volume: Some(48.),
-                pipework_volume: None,
-            }]),
-            None,
-            Some(vec![TypedScheduleEvent {
-                start: 11.,
-                duration: Some(6.5),
-                temperature: 41.,
-                name: "mixer".into(),
-                event_type: WaterScheduleEventType::Shower,
-                volume: None,
-                warm_volume: Some(52.),
-                pipework_volume: None,
-            }]),
-            None,
-            None,
-        ];
+        let usage_events = get_event_data_immersion();
 
         let expected_temperatures_1 = &[
             vec![42.06224020071341, 50.0, 50.0, 50.0],

@@ -31,7 +31,7 @@ pub struct ScheduleEvent {
     pub start: f64,
     pub duration: Option<f64>,
     pub volume: Option<f64>,
-    pub temperature: Option<f64>,
+    pub temperature: Option<f64>
 }
 
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
@@ -62,8 +62,9 @@ pub struct TypedScheduleEvent {
     pub(crate) warm_volume: Option<f64>,
     pub(crate) pipework_volume: Option<f64>,
 
-    // NOTE added for storage_tank migration
-    pub(crate) volume_hot: f64,
+    // TODO Python has a WaterEventResult class that uses this
+    // we should split this struct into TypedScheduleEvent and WaterEventResult
+    pub(crate) volume_hot: Option<f64>,
 }
 
 impl TypedScheduleEvent {
@@ -88,6 +89,7 @@ impl TypedScheduleEvent {
             volume,
             warm_volume: None,
             pipework_volume: None,
+            volume_hot: None
         })
     }
 }
@@ -626,6 +628,7 @@ mod tests {
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None
                 },
                 TypedScheduleEvent {
                     start: 2.1,
@@ -636,6 +639,7 @@ mod tests {
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None,
                 },
             ]),
             None,
@@ -648,6 +652,7 @@ mod tests {
                 volume: None,
                 warm_volume: None,
                 pipework_volume: None,
+                volume_hot: None,
             }]),
             None,
             None,

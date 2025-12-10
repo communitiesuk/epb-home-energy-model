@@ -2219,7 +2219,7 @@ pub struct WaterHeatingEvent {
 
     /// Target temperature for the water heating event (unit: ˚C)
     #[validate(minimum = -273.15)]
-    pub temperature: f64,
+    pub temperature: f64
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]

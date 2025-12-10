@@ -2363,13 +2363,7 @@ impl Corpus {
 
             let (hw_energy_output, pw_losses_internal, pw_losses_external, gains_internal_dhw_use) =
                 if let HotWaterSource::PreHeated(source) = &self.hot_water_sources["hw cylinder"] {
-                    let (
-                        hw_energy_output,
-                        _unmet_energy,
-                        temp_final_drawoff,
-                        temp_average_drawoff,
-                        volume_water_remove_from_tank,
-                    ) = match source {
+                    let hw_energy_output = match source {
                         HotWaterStorageTank::StorageTank(storage_tank) => {
                             storage_tank.read().demand_hot_water(usage_events, t_it)?
                         }
@@ -2383,11 +2377,11 @@ impl Corpus {
                     let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
                         .pipework_losses_and_internal_gains_from_hw_storage_tank(
                             delta_t_h,
-                            volume_water_remove_from_tank,
+                            todo!("No longer available in 1_0_a1"),
                             hw_duration,
                             no_events,
-                            temp_final_drawoff,
-                            temp_average_drawoff,
+                            todo!("No longer available in 1_0_a1"),
+                            todo!("No longer available in 1_0_a1"),
                             temp_hot_water,
                             vol_hot_water_equiv_elec_shower,
                             t_it,
@@ -2478,10 +2472,12 @@ impl Corpus {
                 if let HotWaterSource::PreHeated(source) = &self.hot_water_sources["hw cylinder"] {
                     match source {
                         HotWaterStorageTank::StorageTank(storage_tank) => {
-                            storage_tank.read().to_report()
+                            todo!("No longer available in 1_0_a1")
+                            // storage_tank.read().to_report()
                         }
                         HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
-                            smart_hot_water_tank.read().to_report()
+                            todo!("No longer available in 1_0_a1")
+                            // smart_hot_water_tank.read().to_report()
                         }
                     }
                 } else {

@@ -636,6 +636,7 @@ mod tests {
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None,
                 },
                 TypedScheduleEvent {
                     start: 4.5,
@@ -646,6 +647,7 @@ mod tests {
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None,
                 },
             ]),
             None,
@@ -659,6 +661,7 @@ mod tests {
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None,
                 },
                 TypedScheduleEvent {
                     start: 6.,
@@ -669,6 +672,7 @@ mod tests {
                     volume: Some(100.0),
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None,
                 },
             ]),
             Some(vec![
@@ -681,6 +685,7 @@ mod tests {
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None,
                 },
                 TypedScheduleEvent {
                     start: 7.,
@@ -691,6 +696,7 @@ mod tests {
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None,
                 },
             ]),
             Some(vec![
@@ -703,6 +709,7 @@ mod tests {
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None,
                 },
                 TypedScheduleEvent {
                     start: 8.,
@@ -713,6 +720,7 @@ mod tests {
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
+                    volume_hot: None,
                 },
             ]),
             None,
@@ -808,6 +816,7 @@ mod tests {
                                 volume: None,
                                 warm_volume: None,
                                 pipework_volume: Some(7.556577529434648),
+                                volume_hot: None
                             },
                             TypedScheduleEvent {
                                 start: 4.5,
@@ -818,6 +827,7 @@ mod tests {
                                 volume: None,
                                 warm_volume: None,
                                 pipework_volume: Some(7.556577529434648),
+                                volume_hot: None
                             }
                         ]),
                         vol_hot_water_equiv_elec_shower: 29.783791734078537
@@ -864,6 +874,7 @@ mod tests {
                                 volume: None,
                                 warm_volume: None,
                                 pipework_volume: Some(7.556577529434648),
+                                volume_hot: None
                             },
                             TypedScheduleEvent {
                                 start: 6.,
@@ -874,6 +885,7 @@ mod tests {
                                 volume: Some(100.0),
                                 warm_volume: Some(100.),
                                 pipework_volume: Some(7.556577529434648),
+                                volume_hot: None
                             }
                         ]),
                         vol_hot_water_equiv_elec_shower: 14.610916699736642
@@ -910,6 +922,7 @@ mod tests {
                                 volume: None,
                                 warm_volume: Some(48.0),
                                 pipework_volume: Some(7.556577529434648),
+                                volume_hot: None
                             },
                             TypedScheduleEvent {
                                 start: 7.,
@@ -920,6 +933,7 @@ mod tests {
                                 volume: None,
                                 warm_volume: Some(8.0),
                                 pipework_volume: Some(7.556577529434648),
+                                volume_hot: None
                             }
                         ]),
                         vol_hot_water_equiv_elec_shower: 0.0
@@ -956,6 +970,7 @@ mod tests {
                                 volume: None,
                                 warm_volume: Some(48.0),
                                 pipework_volume: Some(7.556577529434648),
+                                volume_hot: None
                             },
                             TypedScheduleEvent {
                                 start: 8.,
@@ -966,6 +981,7 @@ mod tests {
                                 volume: None,
                                 warm_volume: Some(24.),
                                 pipework_volume: Some(7.556577529434648),
+                                volume_hot: None
                             }
                         ]),
                         vol_hot_water_equiv_elec_shower: 0.0
