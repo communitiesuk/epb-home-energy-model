@@ -1344,7 +1344,7 @@ mod tests {
                 rejected_energy_1: Some(0.0004),
                 // storage_loss_factor_1: 0.98328, // we don't have this field currently - unsure whether this is a mistake in the test data
                 // fuel_energy_2: 13.078 // we don't have this field currently - unsure whether this is a mistake in the test data
-                // rejected_energy_2: 0.91574 // we don't have this field currently - unsure whether this is a mistake in the test data
+                // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
                 setpoint_temp: None,
@@ -1365,6 +1365,37 @@ mod tests {
                 assert_eq!(boiler_service.rejected_energy_1, Some(0.0004));
                 assert_eq!(boiler_service.storage_loss_factor_2, Some(0.91574));
                 assert_eq!(boiler_service.rejected_factor_3, Some(0.));
+        }
+
+        #[rstest]
+        fn test_init_separate_dhw_tests_m_only(boiler: Boiler, simulation_time: SimulationTime) {
+            let boiler_service_data = HotWaterSourceDetails::CombiBoiler {
+                separate_dhw_tests: BoilerHotWaterTest::MOnly,
+                // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test data
+                rejected_energy_1: Some(0.0004),
+                // storage_loss_factor_1: 0.98328, // we don't have this field currently - unsure whether this is a mistake in the test data
+                // fuel_energy_2: 13.078 // we don't have this field currently - unsure whether this is a mistake in the test data
+                // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
+                storage_loss_factor_2: Some(0.91574),
+                rejected_factor_3: Some(0.),
+                setpoint_temp: None,
+                daily_hw_usage: 132.5802,
+                cold_water_source: "mains water".into(),
+                heat_source_wet: "boiler".into(),
+            };
+            let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step);
+            let boiler_service = BoilerServiceWaterCombi::new(
+                    Arc::new(RwLock::new(boiler)),
+                    boiler_service_data,
+                    "boiler_test".into(),
+                    20.,
+                    WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
+                    simulation_time.step,
+                ).unwrap();
+
+                assert_eq!(boiler_service.rejected_energy_1, Some(0.0004));
+                assert_eq!(boiler_service.storage_loss_factor_2, Some(0.91574));
+                assert_eq!(boiler_service.rejected_factor_3, None);
         }
 
         #[rstest]
