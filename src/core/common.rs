@@ -62,27 +62,6 @@ impl WaterSourceWithTemperature {
     pub(crate) fn draw_off_water(
         &self,
         volume_needed: f64,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> Vec<(f64, f64)> {
-        match self {
-            WaterSourceWithTemperature::ColdWaterSource(_cold_water_source) => todo!(),
-            WaterSourceWithTemperature::Wwhrs(_mutex) => todo!(),
-            WaterSourceWithTemperature::Preheated(hot_water_storage_tank) => {
-                match hot_water_storage_tank {
-                    HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
-                        .read()
-                        .draw_off_water(volume_needed, simulation_time_iteration),
-                    HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock
-                        .read()
-                        .draw_off_water(volume_needed, simulation_time_iteration),
-                }
-            }
-        }
-    }
-
-    pub(crate) fn draw_off_water(
-        &self,
-        volume_needed: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         match self {
