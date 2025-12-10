@@ -1267,19 +1267,26 @@ mod tests {
         }
 
         #[fixture]
+        fn cold_water_source_with_temp(
+            simulation_time: SimulationTime,
+        ) -> WaterSourceWithTemperature {
+            let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step);
+            WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source))
+        }
+
+        #[fixture]
         fn boiler_service(
             boiler: Boiler,
             boiler_service_water_combi_data: HotWaterSourceDetails,
+            cold_water_source_with_temp: WaterSourceWithTemperature,
             simulation_time: SimulationTime,
         ) -> BoilerServiceWaterCombi {
-            let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step);
-
             BoilerServiceWaterCombi::new(
                 Arc::new(RwLock::new(boiler)),
                 boiler_service_water_combi_data,
                 "boiler_test".into(),
                 60.,
-                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
+                cold_water_source_with_temp,
                 simulation_time.step,
             )
             .unwrap()
@@ -1399,6 +1406,38 @@ mod tests {
                     [7.624602058956146, 2.267017951167212][idx],
                     max_relative = 1e-6
                 );
+            }
+        }
+
+        #[rstest]
+        fn test_demand_hot_water_with_no_hot_water(
+            boiler_service: BoilerServiceWaterCombi,
+            simulation_time: SimulationTime,
+        ) {
+            let actual = boiler_service
+                .demand_hot_water(vec![], simulation_time.iter().current_iteration())
+                .unwrap();
+            assert_eq!(actual, 0.03815583333333333);
+        }
+
+        #[rstest]
+        fn test_get_cold_water_source(
+            boiler_service: BoilerServiceWaterCombi,
+            cold_water_source_with_temp: WaterSourceWithTemperature,
+        ) {
+            // using match statement because we have not implemented PartialEq for all
+            // WaterSourceWithTemperature variants
+            match (
+                boiler_service.get_cold_water_source(),
+                cold_water_source_with_temp,
+            ) {
+                (
+                    WaterSourceWithTemperature::ColdWaterSource(actual),
+                    WaterSourceWithTemperature::ColdWaterSource(expected),
+                ) => {
+                    assert_eq!(actual, &expected)
+                }
+                _ => unreachable!(),
             }
         }
     }
