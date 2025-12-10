@@ -6,7 +6,7 @@ pub(crate) enum WaterEventResultType {
     Shower,
     Bath,
     Other,
-    PipeFlush
+    PipeFlush,
 }
 
 #[derive(Clone)]
@@ -14,8 +14,8 @@ pub(crate) enum WaterEventResultType {
 pub(crate) struct WaterEventResult {
     pub(crate) event_result_type: WaterEventResultType,
     pub(crate) temperature_warm: f64, // Temperature of water at outlet (Celsius)
-    pub(crate) volume_warm: f64, // Volume of water at outlet (litres)
-    pub(crate) volume_hot: f64, // Hot water demand volume (litres)
+    pub(crate) volume_warm: f64,      // Volume of water at outlet (litres)
+    pub(crate) volume_hot: f64,       // Hot water demand volume (litres)
 }
 
 /// Calculate the fraction of hot water required when mixing hot and cold
