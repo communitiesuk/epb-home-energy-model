@@ -1,6 +1,7 @@
 use crate::core::material_properties::WATER;
 use anyhow::bail;
 
+#[derive(Clone)]
 pub(crate) enum WaterEventResultType {
     Shower,
     Bath,
@@ -8,11 +9,12 @@ pub(crate) enum WaterEventResultType {
     PipeFlush
 }
 
+#[derive(Clone)]
 /// Result of processing a single water use event
 pub(crate) struct WaterEventResult {
-    event_result_type: WaterEventResultType,
-    temperature_warm: f64, // Temperature of water at outlet (Celsius)
-    volume_warm: f64, // Volume of water at outlet (litres)
+    pub(crate) event_result_type: WaterEventResultType,
+    pub(crate) temperature_warm: f64, // Temperature of water at outlet (Celsius)
+    pub(crate) volume_warm: f64, // Volume of water at outlet (litres)
     pub(crate) volume_hot: f64, // Hot water demand volume (litres)
 }
 
