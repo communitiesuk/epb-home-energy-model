@@ -1,6 +1,10 @@
 use crate::core::material_properties::WATER;
 use anyhow::bail;
 
+// Fraction of domestic hot water energy that becomes internal gains
+// This applies to both hot water usage and combi boiler losses
+pub(crate) const FRAC_DHW_ENERGY_INTERNAL_GAINS: f64 = 0.25;
+
 #[derive(Clone)]
 pub(crate) enum WaterEventResultType {
     Shower,

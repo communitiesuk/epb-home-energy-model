@@ -3,7 +3,9 @@ use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
-use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
+use crate::core::water_heat_demand::misc::{
+    water_demand_to_kwh, WaterEventResult, FRAC_DHW_ENERGY_INTERNAL_GAINS,
+};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{BoilerHotWaterTest, FuelType, HotWaterSourceDetails};
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
@@ -218,12 +220,8 @@ impl BoilerServiceWaterCombi {
         combi_loss
     }
 
-    pub fn internal_gains(&self) -> f64 {
-        // TODO (from the Python) Fraction of hot water energy resulting in internal gains should
-        // ideally be defined in one place, but it is duplicated here and in
-        // main hot water demand calculation for now.
-        let frac_dhw_energy_internal_gains = 0.25;
-        let gain_internal = frac_dhw_energy_internal_gains
+    pub(crate) fn internal_gains(&self) -> f64 {
+        let gain_internal = FRAC_DHW_ENERGY_INTERNAL_GAINS
             * self.combi_loss.load(Ordering::SeqCst)
             * WATTS_PER_KILOWATT as f64
             / self.simulation_timestep;
@@ -1330,7 +1328,7 @@ mod tests {
                 WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
                 simulation_time.step,
             )
-                .unwrap();
+            .unwrap();
 
             assert_eq!(boiler_service.rejected_energy_1, Some(0.0004));
             assert_eq!(boiler_service.storage_loss_factor_2, Some(0.91574));
@@ -1362,7 +1360,7 @@ mod tests {
                 WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
                 simulation_time.step,
             )
-                .unwrap();
+            .unwrap();
 
             assert_eq!(boiler_service.rejected_energy_1, Some(0.0004));
             assert_eq!(boiler_service.storage_loss_factor_2, Some(0.91574));
@@ -1452,6 +1450,12 @@ mod tests {
                 boiler_service.get_temp_hot_water(10., None),
                 vec![(60., 10.)]
             );
+        }
+
+        #[rstest]
+        fn test_internal_gains(mut boiler_service: BoilerServiceWaterCombi) {
+            boiler_service.combi_loss = 10.0.into();
+            assert_eq!(boiler_service.internal_gains(), 2500.);
         }
     }
 
