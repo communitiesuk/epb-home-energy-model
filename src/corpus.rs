@@ -4777,9 +4777,12 @@ impl HotWaterSource {
                 // StorageTank does not match the same method signature or return type as all other Hot Water sources
                 panic!("demand_hot_water for HotWaterSource::StorageTank should be called directly on the HotWaterSource::StorageTank");
             }
-            HotWaterSource::CombiBoiler(ref source) => source
-                .demand_hot_water(vol_demand_target, simulation_time_iteration)
-                .expect("Combi boiler could not calc demand hot water."),
+            HotWaterSource::CombiBoiler(ref _source) => {
+                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
+            }
+            // source
+            //     .demand_hot_water(vol_demand_target, simulation_time_iteration)
+            //     .expect("Combi boiler could not calc demand hot water."),
             HotWaterSource::PointOfUse(ref source) => {
                 source.demand_hot_water(vol_demand_target, &simulation_time_iteration)
             }
