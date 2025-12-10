@@ -2346,6 +2346,9 @@ mod tests {
         }
     }
 
+    // skipping following python tests due to mocking
+    // test_get_temp_hot_water, test_demand_hot_water, test_demand_hot_water_fallback_path
+
     fn create_service_water_regular_with_controls(
         battery_control: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
@@ -2545,8 +2548,6 @@ mod tests {
             Some(true)
         );
     }
-
-    // TODO test_demand_energy_for_space
 
     #[rstest]
     fn test_demand_energy_service_off_for_space(
@@ -2845,6 +2846,52 @@ mod tests {
         HeatBatteryPcm::create_service_connection(heat_battery.clone(), "new_service").unwrap();
 
         heat_battery
+    }
+
+    // skipping python's test_demand_energy_simultaneous_charging_and_discharging due to mocking
+
+    #[rstest]
+    fn test_demand_energy_simultaneous_no_temp_output(
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .demand_energy(
+                    SERVICE_NAME,
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    0.08,
+                    40.,
+                    None,
+                    true,
+                    None,
+                    None
+                )
+                .unwrap(),
+            0.08021138263537801
+        );
+
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .demand_energy(
+                    SERVICE_NAME,
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    0.06,
+                    40.,
+                    None,
+                    true,
+                    None,
+                    None
+                )
+                .unwrap(),
+            0.06018673551977593
+        );
+
+        // Battery losses
+        assert_eq!(heat_battery.read().get_battery_losses(), 0.);
     }
 
     #[rstest]
