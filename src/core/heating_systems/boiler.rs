@@ -3,7 +3,7 @@ use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
-use crate::core::water_heat_demand::misc::WaterEventResult;
+use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{BoilerHotWaterTest, FuelType, HotWaterSourceDetails};
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
@@ -111,15 +111,34 @@ impl BoilerServiceWaterCombi {
     /// Demand volume from boiler. Currently combi only
     pub fn demand_hot_water(
         &self,
-        _usage_events: Vec<WaterEventResult>,
-        _simtime: SimulationTimeIteration,
+        usage_events: Vec<WaterEventResult>,
+        simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let timestep = self.simulation_timestep;
         let return_temperature = 60.;
 
         let mut energy_demand = 0.;
+        for event in usage_events {
+            if is_close!(event.volume_hot, 0.0, abs_tol = 1e-10) {
+                continue;
+            }
+            let list_temp_vol = self
+                .cold_feed
+                .draw_off_water(event.volume_hot, simtime)?
+                .into_iter();
+            let total_temperatures_by_volume: f64 = list_temp_vol
+                .clone()
+                .map(|(temperature, volume)| temperature * volume)
+                .sum();
+            let total_volume: f64 = list_temp_vol.map(|(_, volume)| volume).sum();
+            let temp_cold_water = total_temperatures_by_volume / total_volume;
 
-        // TODO - WIP - migration to 1.0.0a1
+            energy_demand += water_demand_to_kwh(
+                event.volume_hot,
+                self.temperature_hot_water_in_c,
+                temp_cold_water,
+            );
+        }
 
         let combi_loss = self.boiler_combi_loss(energy_demand, timestep);
         energy_demand += combi_loss;
@@ -1167,12 +1186,12 @@ mod tests {
     }
 
     mod test_boiler_service_water_combi {
-        use crate::core::water_heat_demand::misc::{WaterEventResult, WaterEventResultType};
         use crate::core::common::WaterSourceWithTemperature;
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
         use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+        use crate::core::water_heat_demand::misc::{WaterEventResult, WaterEventResultType};
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{
@@ -1292,17 +1311,18 @@ mod tests {
             };
             let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step);
             let boiler_service = BoilerServiceWaterCombi::new(
-                    Arc::new(RwLock::new(boiler)),
-                    boiler_service_data,
-                    "boiler_test".into(),
-                    20.,
-                    WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                    simulation_time.step,
-                ).unwrap();
+                Arc::new(RwLock::new(boiler)),
+                boiler_service_data,
+                "boiler_test".into(),
+                20.,
+                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
+                simulation_time.step,
+            )
+                .unwrap();
 
-                assert_eq!(boiler_service.rejected_energy_1, Some(0.0004));
-                assert_eq!(boiler_service.storage_loss_factor_2, Some(0.91574));
-                assert_eq!(boiler_service.rejected_factor_3, Some(0.));
+            assert_eq!(boiler_service.rejected_energy_1, Some(0.0004));
+            assert_eq!(boiler_service.storage_loss_factor_2, Some(0.91574));
+            assert_eq!(boiler_service.rejected_factor_3, Some(0.));
         }
 
         #[rstest]
@@ -1323,53 +1343,52 @@ mod tests {
             };
             let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step);
             let boiler_service = BoilerServiceWaterCombi::new(
-                    Arc::new(RwLock::new(boiler)),
-                    boiler_service_data,
-                    "boiler_test".into(),
-                    20.,
-                    WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                    simulation_time.step,
-                ).unwrap();
+                Arc::new(RwLock::new(boiler)),
+                boiler_service_data,
+                "boiler_test".into(),
+                20.,
+                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
+                simulation_time.step,
+            )
+                .unwrap();
 
-                assert_eq!(boiler_service.rejected_energy_1, Some(0.0004));
-                assert_eq!(boiler_service.storage_loss_factor_2, Some(0.91574));
-                assert_eq!(boiler_service.rejected_factor_3, None);
+            assert_eq!(boiler_service.rejected_energy_1, Some(0.0004));
+            assert_eq!(boiler_service.storage_loss_factor_2, Some(0.91574));
+            assert_eq!(boiler_service.rejected_factor_3, None);
         }
 
-        #[ignore = "WIP"]
         #[rstest]
         fn test_boiler_service_water(
             boiler_service: BoilerServiceWaterCombi,
             simulation_time: SimulationTime,
-            // volume_demanded: [IndexMap<DemandVolTargetKey, VolumeReference>; 2],
         ) {
             let usage_events_all_timesteps = vec![
                 vec![
-                    WaterEventResult{
+                    WaterEventResult {
                         event_result_type: WaterEventResultType::Other,
                         temperature_warm: 60.0,
                         volume_warm: 34.93868988826640,
-                        volume_hot: 34.93868988826640
+                        volume_hot: 34.93868988826640,
                     },
-                    WaterEventResult{
+                    WaterEventResult {
                         event_result_type: WaterEventResultType::Other,
                         temperature_warm: 60.0,
                         volume_warm: 75.65325966014560,
-                        volume_hot: 75.65325966014560
+                        volume_hot: 75.65325966014560,
                     },
-                    WaterEventResult{
+                    WaterEventResult {
                         event_result_type: WaterEventResultType::Other,
                         temperature_warm: 60.0,
                         volume_warm: 0.,
-                        volume_hot: 0.
-                    }
+                        volume_hot: 0.,
+                    },
                 ],
-                vec![WaterEventResult{
+                vec![WaterEventResult {
                     event_result_type: WaterEventResultType::Other,
                     temperature_warm: 60.0,
                     volume_warm: 32.60190808710678,
-                    volume_hot: 32.60190808710678
-                }]
+                    volume_hot: 32.60190808710678,
+                }],
             ];
 
             for (idx, t_it) in simulation_time.iter().enumerate() {
