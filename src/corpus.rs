@@ -4760,7 +4760,9 @@ impl HotWaterSource {
                     smart_storage_tank.read().get_temp_hot_water()
                 }
             },
-            HotWaterSource::CombiBoiler(combi) => combi.temperature_hot_water_in_c(),
+            HotWaterSource::CombiBoiler(_combi) => {
+                todo!("Probably gets removed/moved as part of migration to 1.0.01a")
+            } // combi.get_temp_hot_water(),
             HotWaterSource::PointOfUse(point_of_use) => point_of_use.get_temp_hot_water(),
             HotWaterSource::HeatNetwork(heat_network) => heat_network.temp_hot_water(),
             HotWaterSource::HeatBattery(battery) => battery.get_temp_hot_water(t_it)?,

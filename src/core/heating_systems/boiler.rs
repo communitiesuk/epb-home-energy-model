@@ -104,8 +104,13 @@ impl BoilerServiceWaterCombi {
         &self.cold_feed
     }
 
-    pub fn temperature_hot_water_in_c(&self) -> f64 {
-        self.temperature_hot_water_in_c
+    pub fn get_temp_hot_water(
+        &self,
+        volume_req: f64,
+        _volume_req_already: Option<f64>,
+    ) -> Vec<(f64, f64)> {
+        // Always supplies the whole volume at the same temperature, so list has a single element
+        vec![(self.temperature_hot_water_in_c, volume_req)]
     }
 
     /// Demand volume from boiler. Currently combi only
@@ -1439,6 +1444,14 @@ mod tests {
                 }
                 _ => unreachable!(),
             }
+        }
+
+        #[rstest]
+        fn test_get_temp_hot_water(boiler_service: BoilerServiceWaterCombi) {
+            assert_eq!(
+                boiler_service.get_temp_hot_water(10., None),
+                vec![(60., 10.)]
+            );
         }
     }
 
