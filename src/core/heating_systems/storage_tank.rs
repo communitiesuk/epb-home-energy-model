@@ -3034,6 +3034,7 @@ mod tests {
     use crate::core::material_properties::WATER;
     use crate::core::schedule::WaterScheduleEventType;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+    use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::corpus::HeatSource;
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
@@ -3767,41 +3768,8 @@ mod tests {
     ) {
         let (storage_tank1, energy_supply1) = storage_tank1;
         let (storage_tank2, energy_supply2) = storage_tank2;
-        let usage_events = [
-            vec![
-                WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() },
-                // ...
-            ],
-            vec![WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() },
-                // ...
-            ],
-            vec![],
-            vec![WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() },
-                // ...
-            ],
-            vec![],
-            vec![WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() },
-                // ...
-            ],
-            vec![],
-            vec![],
-        ];
+        let event_data = get_event_data_immersion();
+
         //  Expected results for the unit test
         let expected_temperatures_1 = [
             [55.0, 55.0, 55.0, 55.0],
@@ -3886,7 +3854,7 @@ mod tests {
 
         // Loop through the timesteps and the associated data pairs using `subTest`
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
-            let usage_events_for_iteration = Some(usage_events[t_idx].clone());
+            let usage_events_for_iteration = event_data[t_idx].clone();
             storage_tank1
                 .demand_hot_water(usage_events_for_iteration.clone(), t_it)
                 .unwrap();
@@ -4869,56 +4837,50 @@ mod tests {
 
     // TODO use a new WaterEventResult type instead of TypedScheduleEvent
     fn get_event_data_immersion() -> Vec<Option<Vec<WaterEventResult>>> {
-        &[
+        vec![
             Some(vec![
                 WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() 
+                    event_result_type: WaterEventResultType::Shower, 
+                    temperature_warm: 41.0, 
+                    volume_warm: 48.0, 
+                    volume_hot: 33.0666666666667
                 },
                 WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() 
+                    event_result_type: WaterEventResultType::Bath, 
+                    temperature_warm: 43.0, 
+                    volume_warm: 100.0, 
+                    volume_hot: 73.3333333333333
                 },
                 WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() 
-                },
-                WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() 
+                    event_result_type: WaterEventResultType::Other, 
+                    temperature_warm: 40.0,
+                    volume_warm: 8.0, 
+                    volume_hot: 5.3333333333333
                 },
             ]),
             Some(vec![WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() 
-                }]),
+                    event_result_type: WaterEventResultType::Shower, 
+                    temperature_warm: 41.0, 
+                    volume_warm: 48.0, 
+                    volume_hot: 33.0666666666667
+                },]),
             None,
             Some(vec![WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() 
-                }]),
+                    event_result_type: WaterEventResultType::Shower, 
+                    temperature_warm: 45.0, 
+                    volume_warm: 48.0, 
+                    volume_hot: 37.8988082756996
+                },]),
             None,
             Some(vec![WaterEventResult { 
-                    event_result_type: todo!(), 
-                    temperature_warm: todo!(), 
-                    volume_warm: todo!(), 
-                    volume_hot: todo!() 
+                    event_result_type: WaterEventResultType::Shower, 
+                    temperature_warm: 41.0,
+                    volume_warm: 52.0,
+                    volume_hot: 37.8988082756996
                 }]),
             None,
             None,
-        ];
+        ]
     }
 
     const TWO_DECIMAL_PLACES: f64 = 1e-3;
