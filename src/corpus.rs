@@ -17,7 +17,9 @@ use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
 use crate::core::heating_systems::emitters::{Emitters, EmittersDetailedResult};
-use crate::core::heating_systems::heat_battery_pcm::{HeatBatteryPcm, HeatBatteryPcmServiceWater};
+use crate::core::heating_systems::heat_battery_pcm::{
+    HeatBatteryPcm, HeatBatteryPcmServiceWaterDirect,
+};
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
 use crate::core::heating_systems::heat_pump::{HeatPump, HeatPumpHotWaterOnly};
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
@@ -2364,9 +2366,8 @@ impl Corpus {
             let (hw_energy_output, pw_losses_internal, pw_losses_external, gains_internal_dhw_use) =
                 if let HotWaterSource::PreHeated(_source) = &self.hot_water_sources["hw cylinder"] {
                     unimplemented!("To be implemented as part of migration to 1_0_a1")
-                } else if let HotWaterSource::HeatBattery(
-                    HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterDirect(source),
-                ) = &self.hot_water_sources["hw cylinder"]
+                } else if let HotWaterSource::HeatBattery(source) =
+                    &self.hot_water_sources["hw cylinder"]
                 {
                     let hw_energy_output = source.demand_hot_water(None, t_it)?; // TODO 1.0.0a1 update to use common demand_hot_water method once its signature has been updated and pass in usage_events
                     let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
@@ -4695,7 +4696,7 @@ pub(crate) enum HotWaterSource {
     CombiBoiler(BoilerServiceWaterCombi),
     PointOfUse(PointOfUse),
     HeatNetwork(HeatNetworkServiceWaterDirect),
-    HeatBattery(HeatBatteryPcmServiceWater),
+    HeatBattery(HeatBatteryPcmServiceWaterDirect),
 }
 
 impl HotWaterSource {
@@ -4712,12 +4713,7 @@ impl HotWaterSource {
             HotWaterSource::CombiBoiler(source) => source.get_cold_water_source().clone(),
             HotWaterSource::PointOfUse(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),
-            HotWaterSource::HeatBattery(source) => match source {
-                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterDirect(battery) => {
-                    battery.get_cold_water_source().clone()
-                }
-                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterRegular(_) => unreachable!(), // TODO review, method removed from this type in version 1.0.0a1
-            },
+            HotWaterSource::HeatBattery(source) => source.get_cold_water_source().clone(),
         }
     }
 
@@ -4738,10 +4734,9 @@ impl HotWaterSource {
             } // combi.get_temp_hot_water(),
             HotWaterSource::PointOfUse(point_of_use) => point_of_use.get_temp_hot_water(),
             HotWaterSource::HeatNetwork(heat_network) => heat_network.temp_hot_water(),
-            HotWaterSource::HeatBattery(source) => match source {
-                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterDirect(_) => unreachable!(), // TODO 1.0.0a1, is this called outside of hb module?
-                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterRegular(_) => unreachable!(), // TODO review, method removed from this type in version 1.0.0a1
-            },
+            HotWaterSource::HeatBattery(_source) => {
+                todo!("Probably gets removed/moved as part of migration to 1.0.01a")
+            }
         })
     }
 
@@ -4767,12 +4762,9 @@ impl HotWaterSource {
             HotWaterSource::HeatNetwork(ref source) => {
                 source.demand_hot_water(vol_demand_target, simulation_time_iteration)
             }
-            HotWaterSource::HeatBattery(source) => match source {
-                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterDirect(battery) => {
-                    battery.demand_hot_water(None, simulation_time_iteration)? // TODO 1.0.0a1, pass in usage events once parameters updated
-                }
-                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterRegular(_) => unreachable!(), // TODO review, method removed from this type in version 1.0.0a1
-            },
+            HotWaterSource::HeatBattery(_source) => {
+                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
+            }
         })
     }
 }
@@ -5138,6 +5130,7 @@ fn hot_water_source_from_input(
         HotWaterSourceDetails::HeatBattery {
             cold_water_source,
             heat_source_wet: heat_source_wet_name,
+            setpoint_temp,
             ..
         } => {
             let energy_supply_conn_name: String =
@@ -5155,17 +5148,12 @@ fn hot_water_source_from_input(
                 _ => unreachable!("heat source wet was expected to be a heat battery"),
             };
 
-            HotWaterSource::HeatBattery(
-                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterRegular(
-                    HeatBatteryPcm::create_service_hot_water_regular(
-                        heat_battery,
-                        &energy_supply_conn_name,
-                        cold_water_source,
-                        None,
-                        None,
-                    )?,
-                ),
-            )
+            HotWaterSource::HeatBattery(HeatBatteryPcm::create_service_hot_water_direct(
+                heat_battery,
+                &energy_supply_conn_name,
+                *setpoint_temp,
+                cold_water_source,
+            )?)
         }
     };
 

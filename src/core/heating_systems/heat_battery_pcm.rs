@@ -37,12 +37,6 @@ pub(crate) enum HeatBatteryPcmOperationMode {
     Losses,
 }
 
-#[derive(Debug)]
-pub(crate) enum HeatBatteryPcmServiceWater {
-    HeatBatteryPcmServiceWaterRegular(HeatBatteryPcmServiceWaterRegular),
-    HeatBatteryPcmServiceWaterDirect(HeatBatteryPcmServiceWaterDirect),
-}
-
 /// An object to represent a water heating service provided by a regular heat battery.
 ///
 /// This object contains the parts of the heat battery calculation that are
@@ -187,7 +181,7 @@ impl HeatBatteryPcmServiceWaterDirect {
         &self.cold_feed
     }
 
-    pub(crate) fn temp_hot_water(
+    fn temp_hot_water(
         &self,
         vol: f64,
         simulation_time_iteration: SimulationTimeIteration,
@@ -203,7 +197,7 @@ impl HeatBatteryPcmServiceWaterDirect {
             .get_temp_hot_water(inlet_temp, vol, self.setpoint_temp)
     }
 
-    fn get_temp_hot_water(
+    pub(crate) fn get_temp_hot_water(
         &self,
         volume_req: f64,
         volume_req_already: Option<f64>,
@@ -1435,7 +1429,7 @@ impl HeatBatteryPcm {
                 self.capillary_diameter_m,
             );
 
-            // TODO use fsum here?
+            // TODO use fsum here instead?
             let energy_delivered_ts: f64 = energy_transf_delivered.iter().sum();
 
             if outlet_temp_c > temp_output {
@@ -1581,7 +1575,7 @@ impl HeatBatteryPcm {
                 self.capillary_diameter_m,
             );
 
-            // TODO 1.0.0a1 use fsum here instead?
+            // TODO use fsum here instead?
             let energy_delivered_ts =
                 energy_transf_delivered.iter().sum::<f64>() / KILOJOULES_PER_KILOWATT_HOUR as f64;
             energy_delivered_hb += energy_delivered_ts; // demand_per_time_step_kwh
@@ -1708,6 +1702,7 @@ impl HeatBatteryPcm {
         if self.detailed_results.is_some() {
             // TODO review as part of 1.0.0a1 migration, do we need to update?
             let results = self.service_results.read().clone();
+
             self.detailed_results
                 .as_ref()
                 .unwrap()
@@ -3480,7 +3475,6 @@ mod tests {
         assert_eq!(result, 0.);
     }
 
-    // TODO review list of tests below to see if we can replicate, Python uses mocking
-    // test_demand_hot_water_with_varying_cold_temperatures
-    // test_demand_hot_water_zero_volume_continue
+    // skipping python's test_demand_hot_water_with_varying_cold_temperatures and
+    // test_demand_hot_water_zero_volume_continue due to mocking
 }
