@@ -211,7 +211,7 @@ impl HeatBatteryPcmServiceWaterDirect {
     ) -> anyhow::Result<Vec<(Option<f64>, f64)>> {
         let volume_req_already = volume_req_already.unwrap_or(0.);
 
-        if is_close!(volume_req, 0., abs_tol = 1e-10) {
+        if is_close!(volume_req, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
             return Ok(vec![(None, volume_req)]);
         }
 
@@ -221,16 +221,17 @@ impl HeatBatteryPcmServiceWaterDirect {
 
         // Base temperature on the part of the draw-off for volume_req, and
         // ignore any volume previously considered
-        let temp_hot_water_req = if is_close!(volume_req_already, 0., abs_tol = 1e-10) {
-            temp_hot_water_cumulative
-        } else {
-            let temp_hot_water_req_already =
-                self.temp_hot_water(volume_req_already, simulation_time_iteration)?;
+        let temp_hot_water_req =
+            if is_close!(volume_req_already, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
+                temp_hot_water_cumulative
+            } else {
+                let temp_hot_water_req_already =
+                    self.temp_hot_water(volume_req_already, simulation_time_iteration)?;
 
-            (temp_hot_water_cumulative * volume_req_cumulative
-                - temp_hot_water_req_already * volume_req_already)
-                / volume_req
-        };
+                (temp_hot_water_cumulative * volume_req_cumulative
+                    - temp_hot_water_req_already * volume_req_already)
+                    / volume_req
+            };
 
         Ok(vec![(Some(temp_hot_water_req), volume_req)])
     }
@@ -247,7 +248,7 @@ impl HeatBatteryPcmServiceWaterDirect {
 
         if let Some(events) = usage_events {
             for event in events {
-                if is_close!(event.volume_hot, 0., abs_tol = 1e-10) {
+                if is_close!(event.volume_hot, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
                     continue;
                 }
                 let hot_temp = self.get_temp_hot_water(event.volume_hot, None, simtime)?[0].0;
@@ -1511,7 +1512,9 @@ impl HeatBatteryPcm {
         let inlet_temp_c = temp_return_feed;
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
 
-        if energy_output_required < 0. || is_close!(energy_output_required, 0., abs_tol = 1e-10) {
+        if energy_output_required < 0.
+            || is_close!(energy_output_required, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+        {
             if update_heat_source_state {
                 self.service_results.write().push(HeatBatteryResult {
                     service_name: service_name.into(),
@@ -1593,18 +1596,20 @@ impl HeatBatteryPcm {
                 time_step_s = self.hb_time_step;
             }
 
-            if is_close!(energy_demand, energy_delivered_hb, abs_tol = 1e-10)
-                || energy_delivered_hb > energy_demand
+            if is_close!(
+                energy_demand,
+                energy_delivered_hb,
+                rel_tol = 1e-09,
+                abs_tol = 1e-10
+            ) || energy_delivered_hb > energy_demand
             {
-                // Energy delivered could exceed energy delivered by a small amount in some circumstances, hence the 'or' condition.
-                // Energy supplied, run to complete water loop
                 break;
             }
 
             if time_running_current_service + time_step_s > time_available * SECONDS_PER_HOUR as f64
             {
                 time_step_s =
-                    time_available * SECONDS_PER_HOUR as f64 - time_running_current_service
+                    time_available * SECONDS_PER_HOUR as f64 - time_running_current_service;
             }
         }
 
@@ -2514,38 +2519,7 @@ mod tests {
         assert_eq!(result, 0.);
     }
 
-    // in Python this test is called test_energy_output_max_service_on
-    #[rstest]
-    #[ignore = "python test uses mocks and is not equivalent, delete?"]
-    fn test_energy_output_max_service_on_for_space(
-        battery_control_on: Control,
-        simulation_time_iteration: SimulationTimeIteration,
-        simulation_time_iterator: Arc<SimulationTimeIterator>,
-    ) {
-        let temp_output = 70.;
-        let temp_return = 40.;
-        let time_start = 0.1;
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
-        let service_control_on: Control =
-            create_setpoint_time_control(vec![Some(21.0), Some(21.0)]);
-
-        let heat_battery_service: HeatBatteryPcmServiceSpace = HeatBatteryPcmServiceSpace::new(
-            heat_battery,
-            SERVICE_NAME.into(),
-            service_control_on.into(),
-        );
-
-        let result = heat_battery_service
-            .energy_output_max(
-                temp_output,
-                temp_return,
-                Some(time_start),
-                simulation_time_iteration,
-            )
-            .unwrap();
-
-        assert_relative_eq!(result, 25080.879624795467);
-    }
+    // skipping python's test_energy_output_max_service_on due to mocking
 
     // in Python this test is called test_energy_output_max_service_off
     #[rstest]
@@ -3003,7 +2977,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO after 1.0.0a1 migration"]
     fn test_timestep_end(
         external_sensor: ExternalSensor,
         external_conditions: ExternalConditions,
