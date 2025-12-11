@@ -252,8 +252,8 @@ impl BoilerServiceWaterRegular {
     pub(crate) fn new(
         boiler: Arc<RwLock<Boiler>>,
         service_name: String,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Arc<Control>, // In Python this can be one of SetpointTimeControl or CombinationTimeControl
+        control_max: Arc<Control>, // In Python this can be one of SetpointTimeControl or CombinationTimeControl
     ) -> anyhow::Result<Self> {
         Ok(Self {
             boiler,
@@ -2252,6 +2252,8 @@ mod tests {
             }
         }
 
+        // Skipping test_calc_boiler_eff_with_invalid_location as in Rust it's an enum that won't allow any values other than the valid ones
+
         #[rstest]
         fn test_calc_energy_output_provided(
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
@@ -2362,11 +2364,10 @@ mod tests {
                 .all(|&service| service_names_in_list.iter().any(|x| x.as_str() == service)));
         }
 
-        // Python contains some further assertions using mocked boiler methods, which is difficult to do in Rust
+        // Python contains some further assertions & tests using mocked boiler methods, which is difficult to do in Rust
         // without littering the implementation with test-specific overrides - deciding that this isn't worth
         // the trade-off here, at least for now
-        // the Python method is called test_fuel_demand
-
+        // the Python tests are called test_fuel_demand and test_fuel_demand_with_no_return_feed, test_calc_auxiliary_energy_with_space_heating
         #[rstest]
         fn test_calc_auxiliary_energy(
             simulation_time: SimulationTime,
@@ -2550,9 +2551,10 @@ mod tests {
                 0.992758,
                 max_relative = 1e-5
             );
-
-            // Python here has a check for handling bad fuel codes, which are inexpressible in Rust due to use of enum (good thing!)
         }
+
+        // Skipping test_effvsreturntemp_with_invalid_fuel & test_high_value_correction_part_load_with_invalid_fuel
+        // as this is inexpressible in Rust due to use of enum
 
         #[rstest]
         fn test_high_value_correction_full_load() {
