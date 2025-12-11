@@ -3779,33 +3779,38 @@ mod tests {
         let expected_temperatures_1 = [
             [55.0, 55.0, 55.0, 55.0],
             [
-                15.45,
+                15.448000000000006,
                 54.595555555555556,
                 54.595555555555556,
                 54.595555555555556,
             ],
             [
-                15.45,
+                15.448000000000006,
                 54.19530534979424,
                 54.19530534979424,
                 54.19530534979424,
             ],
-            [10.5, 15.4, 53.38820740740741, 53.80385185185185],
+            [
+                10.5,
+                15.39537857738237,
+                53.39140601130916,
+                53.79920588690748,
+            ],
             [55.0, 55.0, 55.0, 55.0],
             [
-                13.4,
+                13.400000000000002,
                 54.595555555555556,
                 54.595555555555556,
                 54.595555555555556,
             ],
             [
-                13.4,
+                13.400000000000002,
                 54.19530534979424,
                 54.19530534979424,
                 54.19530534979424,
             ],
             [
-                13.4,
+                13.400000000000002,
                 53.79920588690749,
                 53.79920588690749,
                 53.79920588690749,
@@ -3815,44 +3820,50 @@ mod tests {
         // Also test case where heater does not heat all layers, to ensure this is handled correctly
 
         let expected_temperatures_2 = [
-            [10.0, 24.55880864197531, 60.0, 60.0],
+            [10.0, 24.55607367670878, 60.0, 60.0],
             [
-                10.06,
-                16.317728395061728,
-                39.76012654320988,
+                10.056616089321501,
+                16.312757933665832,
+                39.76314001211786,
                 59.687654320987654,
             ],
             [
-                10.06,
-                16.315472915714068,
-                39.59145897824265,
+                10.056616089321501,
+                16.31053773845771,
+                39.59445105524171,
                 59.37752591068435,
             ],
-            [10.34, 12.28, 24.509163580246913, 46.392706790123455],
-            [10.34, 12.28, 60.0, 60.0],
-            [10.74, 11.1, 60.0, 60.0],
-            [10.74, 11.1, 59.687654320987654, 59.687654320987654],
-            [10.74, 11.1, 59.37752591068435, 59.37752591068435],
+            [
+                10.342751590114434,
+                12.274601927758184,
+                24.50747434931655,
+                46.393323819752034,
+            ],
+            [10.342751590114434, 12.274601927758184, 60.0, 60.0],
+            [10.741316223514428, 11.103100848370719, 60.0, 60.0],
+            [
+                10.741316223514428,
+                11.103100848370719,
+                59.687654320987654,
+                59.687654320987654,
+            ],
+            [
+                10.741316223514428,
+                11.103100848370719,
+                59.37752591068435,
+                59.37752591068435,
+            ],
         ];
 
-        let expected_energy_supplied_1 = [
-            5.913725648148166,
-            0.0,
-            0.0,
-            0.0,
-            3.858245898765432,
-            0.0,
-            0.0,
-            0.0,
-        ];
+        let expected_energy_supplied_1 = [5.9141614815, 0.0, 0.0, 0.0, 3.8585103966, 0.0, 0.0, 0.0];
 
         let expected_energy_supplied_2 = [
-            0.6720797510288063,
+            0.6719988461,
             0.0,
             0.0,
             0.0,
-            3.033920793930041,
-            1.8039389176954712,
+            3.0339862161,
+            1.8040212455,
             0.0,
             0.0,
         ];
@@ -3877,8 +3888,23 @@ mod tests {
                 max_relative = 1e-6
             );
 
+            let cold_water_temps = match storage_tank2.cold_feed {
+                WaterSourceWithTemperature::ColdWaterSource(ref cold_water_source) => &cold_water_source.cold_water_temps,
+                _ => unreachable!() // we know this is a cold water source
+            };
+
+            let temp_hot = if t_idx == 0 { 60. } else { expected_temperatures_2[t_idx - 1][3] };
+            let usage_events2_for_iteration = usage_events_for_iteration.unwrap().iter().map(|event| {
+                let volume_hot = event.volume_warm * (event.temperature_warm - cold_water_temps[t_idx]) / (temp_hot - cold_water_temps[t_idx]);
+                WaterEventResult { 
+                    event_result_type: event.event_result_type.clone(),
+                    temperature_warm: event.temperature_warm, 
+                    volume_warm: event.volume_warm, 
+                    volume_hot: volume_hot }
+            }).collect_vec();
+
             storage_tank2
-                .demand_hot_water(usage_events_for_iteration.clone(), t_it)
+                .demand_hot_water(Some(usage_events2_for_iteration.clone()), t_it)
                 .unwrap();
 
             assert_eq!(

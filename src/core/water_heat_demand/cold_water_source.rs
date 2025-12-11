@@ -5,7 +5,7 @@ use anyhow::anyhow;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColdWaterSource {
-    cold_water_temps: Vec<f64>,
+    pub(crate) cold_water_temps: Vec<f64>,
     start_day: u32,
     time_series_step: f64,
 }

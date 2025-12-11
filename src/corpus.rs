@@ -4720,11 +4720,11 @@ impl HotWaterSource {
     pub(crate) fn temp_hot_water(&self) -> anyhow::Result<f64> {
         Ok(match self {
             HotWaterSource::PreHeated(source) => match source {
-                HotWaterStorageTank::StorageTank(storage_tank) => {
+                HotWaterStorageTank::StorageTank(_storage_tank) => {
                     unimplemented!("WIP - storage tank migration")
                     // storage_tank.read().get_temp_hot_water()
                 }
-                HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
+                HotWaterStorageTank::SmartHotWaterTank(_smart_storage_tank) => {
                     unimplemented!("WIP - storage tank migration")
                     // smart_storage_tank.read().get_temp_hot_water()
                 }
