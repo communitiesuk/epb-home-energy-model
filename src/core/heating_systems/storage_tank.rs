@@ -301,7 +301,8 @@ impl StorageTank {
             // 0.0 can be modified for additional minutes when pipework could be considered still warm/hot
             // self.previous_event_time_end = deepcopy(time_start_current_event + (event['duration'] + 0.0) / 60.0)
 
-            let (volume_used, energy_withdrawn, remaining_vols) = self.extract_hot_water(event.clone(), simtime)?;
+            let (volume_used, energy_withdrawn, remaining_vols) =
+                self.extract_hot_water(event.clone(), simtime)?;
 
             // Determine the new temperature distribution after displacement
             // Now that pre-heated sources can be the 'cold' feed, rearrangement of temperaturs, that used to
@@ -1669,8 +1670,9 @@ impl SmartHotWaterTank {
             .store(self.storage_tank.initial_temperature, Ordering::SeqCst);
 
         for event in usage_events.iter().flatten() {
-            let (volume_used, energy_withdrawn, remaining_vols) =
-                self.storage_tank.extract_hot_water(event.clone(), simtime)?;
+            let (volume_used, energy_withdrawn, remaining_vols) = self
+                .storage_tank
+                .extract_hot_water(event.clone(), simtime)?;
 
             let (temp_s3_n_new, rearrange) = self
                 .storage_tank
@@ -2527,13 +2529,16 @@ impl SmartHotWaterTank {
             .draw_off_hot_water(volume, simulation_time_iteration)
     }
 
-    pub(crate) fn draw_off_water(&self,
+    pub(crate) fn draw_off_water(
+        &self,
         volume_needed: f64,
-        simulation_time_iteration: SimulationTimeIteration) -> anyhow::Result<Vec<(f64, f64)>> {
-            self.storage_tank.draw_off_water(volume_needed, simulation_time_iteration)
-        }
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(f64, f64)>> {
+        self.storage_tank
+            .draw_off_water(volume_needed, simulation_time_iteration)
+    }
 
-     pub(crate) fn get_temp_cold_water(&self, volume_needed: f64) -> Vec<(f64, f64)> {
+    pub(crate) fn get_temp_cold_water(&self, volume_needed: f64) -> Vec<(f64, f64)> {
         // TODO this matches Python - is it correct?
         self.storage_tank.get_temp_hot_water(volume_needed, None)
     }
@@ -3265,7 +3270,7 @@ mod tests {
             None,
             None,
             None,
-            false
+            false,
         )
         .unwrap();
 
@@ -3337,7 +3342,7 @@ mod tests {
             None,
             None,
             None,
-            false
+            false,
         )
         .unwrap();
 
@@ -3747,7 +3752,7 @@ mod tests {
             None,
             None,
             None,
-            false
+            false,
         )
         .unwrap();
 
@@ -4225,7 +4230,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore ="not yet updated to 1_0_a1"]
+    #[ignore = "not yet updated to 1_0_a1"]
     fn test_extract_hot_water(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
@@ -4237,18 +4242,20 @@ mod tests {
         storage_tank1
             .total_volume_drawoff
             .store(0.0, Ordering::SeqCst);
-        let event =  WaterEventResult { 
-            event_result_type: todo!(), 
-            temperature_warm: todo!(), 
-            volume_warm: todo!(), 
-            volume_hot: todo!() 
+        let event = WaterEventResult {
+            event_result_type: todo!(),
+            temperature_warm: todo!(),
+            volume_warm: todo!(),
+            volume_hot: todo!(),
         };
 
         assert_eq!(
-            storage_tank1.extract_hot_water(
-                event,
-                simulation_time_for_storage_tank.iter().current_iteration()
-            ).unwrap(),
+            storage_tank1
+                .extract_hot_water(
+                    event,
+                    simulation_time_for_storage_tank.iter().current_iteration()
+                )
+                .unwrap(),
             (
                 5.51111111111112,
                 0.2882311111111112,
@@ -4266,10 +4273,12 @@ mod tests {
         let remaining_vol = vec![0.5, 1., 1.5, 2., 2.5, 3., 3.5, 4.];
 
         assert_eq!(
-            storage_tank1.calc_temps_after_extraction(
-                remaining_vol,
-                simulation_time_for_storage_tank.iter().current_iteration()
-            ).unwrap(),
+            storage_tank1
+                .calc_temps_after_extraction(
+                    remaining_vol,
+                    simulation_time_for_storage_tank.iter().current_iteration()
+                )
+                .unwrap(),
             (vec![10.0, 10.0, 10.0, 16.0], false)
         );
     }
@@ -4839,45 +4848,45 @@ mod tests {
     fn get_event_data_immersion() -> Vec<Option<Vec<WaterEventResult>>> {
         vec![
             Some(vec![
-                WaterEventResult { 
-                    event_result_type: WaterEventResultType::Shower, 
-                    temperature_warm: 41.0, 
-                    volume_warm: 48.0, 
-                    volume_hot: 33.0666666666667
+                WaterEventResult {
+                    event_result_type: WaterEventResultType::Shower,
+                    temperature_warm: 41.0,
+                    volume_warm: 48.0,
+                    volume_hot: 33.0666666666667,
                 },
-                WaterEventResult { 
-                    event_result_type: WaterEventResultType::Bath, 
-                    temperature_warm: 43.0, 
-                    volume_warm: 100.0, 
-                    volume_hot: 73.3333333333333
+                WaterEventResult {
+                    event_result_type: WaterEventResultType::Bath,
+                    temperature_warm: 43.0,
+                    volume_warm: 100.0,
+                    volume_hot: 73.3333333333333,
                 },
-                WaterEventResult { 
-                    event_result_type: WaterEventResultType::Other, 
+                WaterEventResult {
+                    event_result_type: WaterEventResultType::Other,
                     temperature_warm: 40.0,
-                    volume_warm: 8.0, 
-                    volume_hot: 5.3333333333333
+                    volume_warm: 8.0,
+                    volume_hot: 5.3333333333333,
                 },
             ]),
-            Some(vec![WaterEventResult { 
-                    event_result_type: WaterEventResultType::Shower, 
-                    temperature_warm: 41.0, 
-                    volume_warm: 48.0, 
-                    volume_hot: 33.0666666666667
-                },]),
+            Some(vec![WaterEventResult {
+                event_result_type: WaterEventResultType::Shower,
+                temperature_warm: 41.0,
+                volume_warm: 48.0,
+                volume_hot: 33.0666666666667,
+            }]),
             None,
-            Some(vec![WaterEventResult { 
-                    event_result_type: WaterEventResultType::Shower, 
-                    temperature_warm: 45.0, 
-                    volume_warm: 48.0, 
-                    volume_hot: 37.8988082756996
-                },]),
+            Some(vec![WaterEventResult {
+                event_result_type: WaterEventResultType::Shower,
+                temperature_warm: 45.0,
+                volume_warm: 48.0,
+                volume_hot: 37.8988082756996,
+            }]),
             None,
-            Some(vec![WaterEventResult { 
-                    event_result_type: WaterEventResultType::Shower, 
-                    temperature_warm: 41.0,
-                    volume_warm: 52.0,
-                    volume_hot: 37.8988082756996
-                }]),
+            Some(vec![WaterEventResult {
+                event_result_type: WaterEventResultType::Shower,
+                temperature_warm: 41.0,
+                volume_warm: 52.0,
+                volume_hot: 37.8988082756996,
+            }]),
             None,
             None,
         ]
@@ -5184,7 +5193,11 @@ mod tests {
             .calc_temps_after_extraction(
                 remaining_vol,
                 simulation_time_iteration_for_smart_hot_water_tank,
-            ).unwrap();
-        assert_eq!(actual_remaining_vol, (vec![10.0, 10.0, 10.0, 12.666666666666666], false));
+            )
+            .unwrap();
+        assert_eq!(
+            actual_remaining_vol,
+            (vec![10.0, 10.0, 10.0, 12.666666666666666], false)
+        );
     }
 }
