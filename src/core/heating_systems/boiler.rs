@@ -1457,6 +1457,11 @@ mod tests {
             boiler_service.combi_loss = 10.0.into();
             assert_eq!(boiler_service.internal_gains(), 2500.);
         }
+
+        #[rstest]
+        fn test_energy_output_max(boiler_service: BoilerServiceWaterCombi) {
+            assert_eq!(boiler_service.energy_output_max(), 16.85);
+        }
     }
 
     mod test_boiler_service_water_regular {
