@@ -17,9 +17,7 @@ use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
 use crate::core::heating_systems::emitters::{Emitters, EmittersDetailedResult};
-use crate::core::heating_systems::heat_battery_pcm::{
-    HeatBatteryPcm, HeatBatteryPcmServiceWaterRegular,
-};
+use crate::core::heating_systems::heat_battery_pcm::{HeatBatteryPcm, HeatBatteryPcmServiceWater};
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
 use crate::core::heating_systems::heat_pump::{HeatPump, HeatPumpHotWaterOnly};
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
@@ -2329,7 +2327,7 @@ impl Corpus {
         for t_it in simulation_time_iter {
             timestep_array.push(t_it.time);
             self.update_temp_internal_air();
-            let temp_hot_water = self.hot_water_sources["hw cylinder"].temp_hot_water(t_it)?;
+            let temp_hot_water = self.hot_water_sources["hw cylinder"].temp_hot_water()?;
             let _temp_final_drawoff = temp_hot_water;
             let _temp_average_drawoff = temp_hot_water;
 
@@ -2401,10 +2399,11 @@ impl Corpus {
                         pw_losses_external,
                         gains_internal_dhw_use,
                     )
-                } else if let HotWaterSource::HeatBattery(source) =
-                    &self.hot_water_sources["hw cylinder"]
+                } else if let HotWaterSource::HeatBattery(
+                    HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterDirect(source),
+                ) = &self.hot_water_sources["hw cylinder"]
                 {
-                    let hw_energy_output = source.demand_hot_water(usage_events, t_it)?;
+                    let hw_energy_output = source.demand_hot_water(None, t_it)?; // TODO 1.0.0a1 update to use common demand_hot_water method once its signature has been updated and pass in usage_events
                     let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
                         .pipework_losses_and_internal_gains_from_hw(
                             delta_t_h,
@@ -4729,7 +4728,7 @@ pub(crate) enum HotWaterSource {
     CombiBoiler(BoilerServiceWaterCombi),
     PointOfUse(PointOfUse),
     HeatNetwork(HeatNetworkServiceWaterDirect),
-    HeatBattery(HeatBatteryPcmServiceWaterRegular),
+    HeatBattery(HeatBatteryPcmServiceWater),
 }
 
 impl HotWaterSource {
@@ -4746,11 +4745,16 @@ impl HotWaterSource {
             HotWaterSource::CombiBoiler(source) => source.get_cold_water_source().clone(),
             HotWaterSource::PointOfUse(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),
-            HotWaterSource::HeatBattery(source) => source.get_cold_water_source().clone(),
+            HotWaterSource::HeatBattery(source) => match source {
+                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterDirect(battery) => {
+                    battery.get_cold_water_source().clone()
+                }
+                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterRegular(_) => unreachable!(), // TODO review, method removed from this type in version 1.0.0a1
+            },
         }
     }
 
-    pub(crate) fn temp_hot_water(&self, t_it: SimulationTimeIteration) -> anyhow::Result<f64> {
+    pub(crate) fn temp_hot_water(&self) -> anyhow::Result<f64> {
         Ok(match self {
             HotWaterSource::PreHeated(source) => match source {
                 HotWaterStorageTank::StorageTank(storage_tank) => {
@@ -4765,7 +4769,10 @@ impl HotWaterSource {
             } // combi.get_temp_hot_water(),
             HotWaterSource::PointOfUse(point_of_use) => point_of_use.get_temp_hot_water(),
             HotWaterSource::HeatNetwork(heat_network) => heat_network.temp_hot_water(),
-            HotWaterSource::HeatBattery(battery) => battery.get_temp_hot_water(t_it)?,
+            HotWaterSource::HeatBattery(source) => match source {
+                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterDirect(_) => unreachable!(), // TODO 1.0.0a1, is this called outside of hb module?
+                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterRegular(_) => unreachable!(), // TODO review, method removed from this type in version 1.0.0a1
+            },
         })
     }
 
@@ -4791,9 +4798,12 @@ impl HotWaterSource {
             HotWaterSource::HeatNetwork(ref source) => {
                 source.demand_hot_water(vol_demand_target, simulation_time_iteration)
             }
-            HotWaterSource::HeatBattery(ref source) => {
-                source.demand_hot_water(None, simulation_time_iteration)?
-            } // TODO: review as part of migration to 0.34
+            HotWaterSource::HeatBattery(source) => match source {
+                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterDirect(battery) => {
+                    battery.demand_hot_water(None, simulation_time_iteration)? // TODO 1.0.0a1, pass in usage events once parameters updated
+                }
+                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterRegular(_) => unreachable!(), // TODO review, method removed from this type in version 1.0.0a1
+            },
         })
     }
 }
@@ -5182,13 +5192,17 @@ fn hot_water_source_from_input(
                 _ => unreachable!("heat source wet was expected to be a heat battery"),
             };
 
-            HotWaterSource::HeatBattery(HeatBatteryPcm::create_service_hot_water_regular(
-                heat_battery,
-                &energy_supply_conn_name,
-                cold_water_source,
-                None,
-                None,
-            )?)
+            HotWaterSource::HeatBattery(
+                HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterRegular(
+                    HeatBatteryPcm::create_service_hot_water_regular(
+                        heat_battery,
+                        &energy_supply_conn_name,
+                        cold_water_source,
+                        None,
+                        None,
+                    )?,
+                ),
+            )
         }
     };
 

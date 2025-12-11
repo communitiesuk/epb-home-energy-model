@@ -5,7 +5,6 @@ use crate::core::controls::time_control::{per_control, Control, ControlBehaviour
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
-use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::{
     KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
@@ -36,6 +35,12 @@ pub(crate) enum HeatBatteryPcmOperationMode {
     Normal,
     OnlyCharging,
     Losses,
+}
+
+#[derive(Debug)]
+pub(crate) enum HeatBatteryPcmServiceWater {
+    HeatBatteryPcmServiceWaterRegular(HeatBatteryPcmServiceWaterRegular),
+    HeatBatteryPcmServiceWaterDirect(HeatBatteryPcmServiceWaterDirect),
 }
 
 /// An object to represent a water heating service provided by a regular heat battery.
@@ -99,74 +104,6 @@ impl HeatBatteryPcmServiceWaterRegular {
         ))
     }
 
-    // TODO remove below 3 methods 1.0.0a1
-    pub(crate) fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
-        &self.cold_feed
-    }
-
-    pub(crate) fn get_temp_hot_water(
-        &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        let volume = 20.; // Nominal volumen to calculate water temperature from battery
-        let inlet_temp = self.cold_feed.temperature(simulation_time_iteration, None);
-
-        self.heat_battery
-            .read()
-            .get_temp_hot_water(inlet_temp, volume, 1.)
-    }
-
-    pub(crate) fn demand_hot_water(
-        &self,
-        usage_events: Option<Vec<TypedScheduleEvent>>,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        let mut energy_demand = 0.;
-        let mut temp_hot_water = 0.;
-
-        // Filtering out IES events that don't get added a 'warm_volume' when processing
-        // the dhw_demand calculation
-        let filtered_events = usage_events
-            .clone()
-            .into_iter()
-            .flatten()
-            .filter(|e| e.warm_volume.is_some())
-            .collect_vec();
-
-        for event in filtered_events {
-            let warm_temp = event.temperature;
-            let warm_volume = event.warm_volume;
-
-            if warm_temp > temp_hot_water {
-                temp_hot_water = warm_temp;
-            }
-
-            let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kwh_per_litre(
-                warm_temp,
-                self.cold_feed.temperature(simulation_time_iteration, None),
-            );
-
-            energy_demand += warm_volume.unwrap() * energy_content_kwh_per_litre;
-        }
-
-        let service_on = self.is_on(simulation_time_iteration)?;
-
-        if !service_on {
-            energy_demand = 0.;
-        }
-
-        self.heat_battery.read().demand_energy(
-            &self.service_name,
-            HeatingServiceType::DomesticHotWaterRegular,
-            energy_demand,
-            self.cold_feed.temperature(simulation_time_iteration, None),
-            Some(temp_hot_water),
-            service_on,
-            None,
-            Some(true),
-        )
-    }
-
     /// Demand energy (in kWh) from the heat_battery
     pub(crate) fn demand_energy(
         &self,
@@ -218,6 +155,7 @@ impl HeatBatteryPcmServiceWaterRegular {
 /// An object to represent a direct water heating service provided by a heat battery.
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
+#[derive(Debug)]
 pub(crate) struct HeatBatteryPcmServiceWaterDirect {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
@@ -245,11 +183,11 @@ impl HeatBatteryPcmServiceWaterDirect {
         }
     }
 
-    fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+    pub(crate) fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
         &self.cold_feed
     }
 
-    fn temp_hot_water(
+    pub(crate) fn temp_hot_water(
         &self,
         vol: f64,
         simulation_time_iteration: SimulationTimeIteration,
@@ -298,7 +236,7 @@ impl HeatBatteryPcmServiceWaterDirect {
     }
 
     /// Process hot water demand directly from dry core heat battery
-    fn demand_hot_water(
+    pub(crate) fn demand_hot_water(
         &self,
         usage_events: Option<Vec<WaterEventResult>>,
         simtime: SimulationTimeIteration,
