@@ -2362,43 +2362,8 @@ impl Corpus {
             //      need to be revised to handle that scenario.
 
             let (hw_energy_output, pw_losses_internal, pw_losses_external, gains_internal_dhw_use) =
-                if let HotWaterSource::PreHeated(source) = &self.hot_water_sources["hw cylinder"] {
-                    let (
-                        hw_energy_output,
-                        _unmet_energy,
-                        temp_final_drawoff,
-                        temp_average_drawoff,
-                        volume_water_remove_from_tank,
-                    ) = match source {
-                        HotWaterStorageTank::StorageTank(storage_tank) => {
-                            storage_tank.read().demand_hot_water(usage_events, t_it)?
-                        }
-                        HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
-                            smart_storage_tank
-                                .read()
-                                .demand_hot_water(usage_events, t_it)?
-                        }
-                    };
-
-                    let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
-                        .pipework_losses_and_internal_gains_from_hw_storage_tank(
-                            delta_t_h,
-                            volume_water_remove_from_tank,
-                            hw_duration,
-                            no_events,
-                            temp_final_drawoff,
-                            temp_average_drawoff,
-                            temp_hot_water,
-                            vol_hot_water_equiv_elec_shower,
-                            t_it,
-                        );
-
-                    (
-                        hw_energy_output,
-                        pw_losses_internal,
-                        pw_losses_external,
-                        gains_internal_dhw_use,
-                    )
+                if let HotWaterSource::PreHeated(_source) = &self.hot_water_sources["hw cylinder"] {
+                    unimplemented!("To be implemented as part of migration to 1_0_a1")
                 } else if let HotWaterSource::HeatBattery(
                     HeatBatteryPcmServiceWater::HeatBatteryPcmServiceWaterDirect(source),
                 ) = &self.hot_water_sources["hw cylinder"]
@@ -2479,10 +2444,12 @@ impl Corpus {
                 if let HotWaterSource::PreHeated(source) = &self.hot_water_sources["hw cylinder"] {
                     match source {
                         HotWaterStorageTank::StorageTank(storage_tank) => {
-                            storage_tank.read().to_report()
+                            unimplemented!(".to_report() no longer exists on storage tank");
+                            //storage_tank.read().to_report()
                         }
                         HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
-                            smart_hot_water_tank.read().to_report()
+                            unimplemented!(".to_report() no longer exists on storage tank");
+                            //smart_hot_water_tank.read().to_report()
                         }
                     }
                 } else {
@@ -4028,7 +3995,7 @@ impl HeatSource {
         match self {
             HeatSource::Storage(ref storage) => match storage {
                 HeatSourceWithStorageTank::Immersion(imm) => Ok(imm.lock().setpnt(simtime)),
-                HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar.lock().setpnt(simtime)),
+                HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar.lock().setpnt(&simtime)),
             },
             HeatSource::Wet(ref heat_source) => heat_source.setpnt(simtime),
         }
@@ -4535,8 +4502,8 @@ fn heat_source_from_input(
                         *power,
                         energy_supply_conn,
                         simulation_time.step_in_hours(),
-                        control_min,
-                        control_max,
+                        Some(control_min),
+                        Some(control_max),
                     ),
                 )))),
                 name.into(),
@@ -4758,10 +4725,12 @@ impl HotWaterSource {
         Ok(match self {
             HotWaterSource::PreHeated(source) => match source {
                 HotWaterStorageTank::StorageTank(storage_tank) => {
-                    storage_tank.read().get_temp_hot_water()
+                    unimplemented!("WIP - storage tank migration")
+                    // storage_tank.read().get_temp_hot_water()
                 }
                 HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
-                    smart_storage_tank.read().get_temp_hot_water()
+                    unimplemented!("WIP - storage tank migration")
+                    // smart_storage_tank.read().get_temp_hot_water()
                 }
             },
             HotWaterSource::CombiBoiler(_combi) => {
@@ -4986,11 +4955,10 @@ fn hot_water_source_from_input(
                 external_conditions,
                 Some(24),
                 primary_pipework_lst,
-                Some(EnergySupply::connection(
-                    energy_supplies.get(UNMET_DEMAND_SUPPLY_NAME).expect("Energy supply representing unmet demand was expected to have been declared.").clone(),
-                    &source_name,
-                )?),
                 *WATER,
+                None,
+                None,
+                None,
                 detailed_output_heating_cooling,
             )?));
 
@@ -5072,11 +5040,6 @@ fn hot_water_source_from_input(
                     })
                     .transpose()?
                     .as_ref(),
-                EnergySupply::connection(
-                    energy_supplies[UNMET_DEMAND_SUPPLY_NAME].clone(),
-                    &source_name,
-                )?
-                .into(),
                 energy_supply_conn_pump,
                 None,
             )?));
