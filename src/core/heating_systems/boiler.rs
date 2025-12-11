@@ -210,11 +210,10 @@ impl BoilerServiceWaterCombi {
                     + self.storage_loss_factor_2.unwrap() * (timestep / HOURS_PER_DAY as f64)
             }
             BoilerHotWaterTest::NoAdditionalTests => {
-                let default_combi_loss = 600;
-                (default_combi_loss / DAYS_PER_YEAR) as f64 * (timestep / HOURS_PER_DAY as f64)
+                let default_combi_loss = 600.;
+                (default_combi_loss / DAYS_PER_YEAR as f64) * (timestep / HOURS_PER_DAY as f64)
             }
         };
-
         self.combi_loss.store(combi_loss, Ordering::SeqCst);
 
         combi_loss
@@ -1461,6 +1460,64 @@ mod tests {
         #[rstest]
         fn test_energy_output_max(boiler_service: BoilerServiceWaterCombi) {
             assert_eq!(boiler_service.energy_output_max(), 16.85);
+        }
+
+        #[rstest]
+        fn test_boiler_combi_loss(mut boiler_service: BoilerServiceWaterCombi) {
+            boiler_service.rejected_factor_3 = Some(0.01);
+
+            // Below threshold_volume
+            boiler_service.separate_dhw_tests = BoilerHotWaterTest::MS;
+            boiler_service.daily_hot_water_usage = 50.;
+            assert_eq!(
+                boiler_service.boiler_combi_loss(200., 10.),
+                50.621558333333326
+            );
+
+            // Above S profile
+            boiler_service.daily_hot_water_usage = 150.;
+            assert_eq!(
+                boiler_service.boiler_combi_loss(200., 10.),
+                0.46155833333333335
+            );
+
+            // Below S profile
+            boiler_service.daily_hot_water_usage = 30.;
+            assert_eq!(
+                boiler_service.boiler_combi_loss(200., 10.),
+                38.92555833333333
+            );
+
+            // Above L profile
+            boiler_service.separate_dhw_tests = BoilerHotWaterTest::ML;
+            boiler_service.daily_hot_water_usage = 300.;
+            assert_eq!(
+                boiler_service.boiler_combi_loss(200., 10.),
+                -198.73844166666666
+            );
+
+            // Below L profile
+            boiler_service.daily_hot_water_usage = 30.;
+            assert_eq!(
+                boiler_service.boiler_combi_loss(200., 10.),
+                0.40555833333333335
+            );
+
+            // M only
+            boiler_service.separate_dhw_tests = BoilerHotWaterTest::MOnly;
+            boiler_service.daily_hot_water_usage = 150.;
+            assert_eq!(
+                boiler_service.boiler_combi_loss(200., 10.),
+                0.46155833333333335
+            );
+
+            // No additional tests
+            boiler_service.separate_dhw_tests = BoilerHotWaterTest::NoAdditionalTests;
+            boiler_service.daily_hot_water_usage = 150.;
+            assert_eq!(
+                boiler_service.boiler_combi_loss(200., 10.),
+                0.684931506849315
+            );
         }
     }
 
