@@ -234,7 +234,7 @@ impl BoilerServiceWaterCombi {
         self.boiler.read().energy_output_max(None, None)
     }
 
-    //TODO: review if this is needed
+    //TODO as part of migration to 1.0.01a: review if this is needed
     fn is_on(&self, _simtime: SimulationTimeIteration) -> bool {
         true
     }
@@ -271,6 +271,7 @@ impl BoilerServiceWaterRegular {
         )
     }
 
+    /// Demand energy (in kWh) from the boiler
     pub fn demand_energy(
         &self,
         mut energy_demand: f64,
@@ -1519,6 +1520,8 @@ mod tests {
                 0.684931506849315
             );
         }
+
+        // Skipping test_boiler_combi_loss_invalid_separate_dhw_tests as not possible to pass invalid enum variant in Rust
     }
 
     mod test_boiler_service_water_regular {
@@ -1620,9 +1623,10 @@ mod tests {
 
         #[rstest]
         fn test_is_on_with_control_on(boiler_service: BoilerServiceWaterRegular) {
+            // Python uses MagicMock for the control - we can simulate control being off using the correct simulation time iteration according to the control schedule
             let simulation_time_iteration = SimulationTimeIteration {
                 index: 0,
-                time: 0.,
+                time: 0., // control is on at this time
                 timestep: 1.,
             };
             assert!(boiler_service.is_on(simulation_time_iteration));
@@ -1631,9 +1635,10 @@ mod tests {
         #[rstest]
         // more accurate name would be test_is_off_with_control_off
         fn test_is_on_with_control_off(boiler_service: BoilerServiceWaterRegular) {
+            // Python uses MagicMock for the control - we can simulate control being off using the correct simulation time iteration according to the control schedule
             let simulation_time_iteration = SimulationTimeIteration {
                 index: 0,
-                time: 2.,
+                time: 2., // control is off at this time
                 timestep: 1.,
             };
             assert!(!boiler_service.is_on(simulation_time_iteration));
