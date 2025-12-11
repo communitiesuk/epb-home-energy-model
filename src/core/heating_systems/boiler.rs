@@ -1898,6 +1898,48 @@ mod tests {
                 );
             }
         }
+
+        #[rstest]
+        fn test_temp_setpnt(boiler_service: BoilerServiceSpace, simulation_time: SimulationTime) {
+            let expected_results = vec![Some(21.), Some(21.), None];
+            for iteration in simulation_time.iter() {
+                let t_idx = iteration.index;
+                assert_eq!(
+                    boiler_service.temp_setpnt(iteration),
+                    expected_results[t_idx]
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_in_required_period(
+            boiler_service: BoilerServiceSpace,
+            simulation_time: SimulationTime,
+        ) {
+            let expected_results = vec![true, true, false];
+            for iteration in simulation_time.iter() {
+                let t_idx = iteration.index;
+                assert_eq!(
+                    boiler_service.in_required_period(iteration).unwrap(),
+                    expected_results[t_idx]
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_energy_output_max(
+            boiler_service: BoilerServiceSpace,
+            simulation_time: SimulationTime,
+        ) {
+            let expected_results = vec![16.85, 16.85, 0.];
+            for iteration in simulation_time.iter() {
+                let t_idx = iteration.index;
+                assert_eq!(
+                    boiler_service.energy_output_max(20., 10., Some(0.), None, iteration),
+                    expected_results[t_idx]
+                );
+            }
+        }
     }
 
     mod test_boiler {
