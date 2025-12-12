@@ -4388,15 +4388,10 @@ pub struct HeatPumpEnergyCalculation {
 }
 
 impl HeatPumpEnergyCalculation {
-    pub fn param(&self, param: &str) -> ResultParamValue {
+    fn param(&self, param: &str) -> ResultParamValue {
         match param {
             "service_name" => ResultParamValue::String(self.service_name.clone()),
-            "service_type" => ResultParamValue::String(result_str(
-                serde_json::to_string(&self.service_type)
-                    .unwrap()
-                    .as_str()
-                    .trim_matches('"'),
-            )),
+            "service_type" => ResultParamValue::String(self.service_type.to_string().into()),
             "service_on" => ResultParamValue::Boolean(self.service_on),
             "energy_output_required" => ResultParamValue::Number(self.energy_output_required),
             "temp_output" => ResultParamValue::Number(

@@ -4222,6 +4222,12 @@ impl From<&ResultParamValue> for String {
     }
 }
 
+impl From<bool> for ResultParamValue {
+    fn from(value: bool) -> Self {
+        Self::Boolean(value)
+    }
+}
+
 impl From<String> for ResultParamValue {
     fn from(value: String) -> Self {
         Self::String(value)
@@ -4234,6 +4240,15 @@ impl From<StringOrNumber> for ResultParamValue {
             StringOrNumber::String(string) => Self::String(string),
             StringOrNumber::Float(number) => Self::Number(number),
             StringOrNumber::Integer(number) => Self::Number(number as f64),
+        }
+    }
+}
+
+impl<T: Into<ResultParamValue>> From<Option<T>> for ResultParamValue {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(value) => value.into(),
+            None => Self::Empty,
         }
     }
 }
