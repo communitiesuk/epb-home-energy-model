@@ -1,9 +1,7 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
-use crate::core::water_heat_demand::dhw_demand::{DemandVolTargetKey, VolumeReference};
-use crate::core::water_heat_demand::misc::water_demand_to_kwh;
+use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::simulation_time::SimulationTimeIteration;
-use indexmap::IndexMap;
 
 #[derive(Debug)]
 pub(crate) struct PointOfUse {
@@ -32,31 +30,39 @@ impl PointOfUse {
         &self.cold_feed
     }
 
-    pub fn get_temp_hot_water(&self) -> f64 {
-        self.temp_hot_water
+    pub fn get_temp_hot_water(
+        &self,
+        volume_req: f64,
+        _volume_req_already: Option<f64>,
+    ) -> Vec<(f64, f64)> {
+        // Always supplies the whole volume at the same temperature, so list has a single element
+        vec![(self.temp_hot_water, volume_req)]
     }
 
     pub fn demand_hot_water(
         &self,
-        volume_demanded_target: IndexMap<DemandVolTargetKey, VolumeReference>,
+        usage_events: Vec<WaterEventResult>,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> f64 {
-        let demand_temp = self.temp_hot_water;
+    ) -> anyhow::Result<f64> {
+        let mut water_energy_demand = 0.;
 
-        // TODO (from Python set required temperature rather than hard coding - also elsewhere in the code
-        let volume_demanded = volume_demanded_target
-            .get(&DemandVolTargetKey::TempHotWater)
-            .map(|volume_reference| volume_reference.warm_vol)
-            .unwrap_or(0.0);
+        for event in usage_events {
+            if is_close!(event.volume_hot, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
+                continue;
+            }
+            let list_temp_volume = self
+                .cold_feed
+                .draw_off_water(event.volume_hot, *simulation_time_iteration)?;
+            let sum_t_by_v: f64 = list_temp_volume.iter().map(|(t, v)| t * v).sum();
+            let sum_v: f64 = list_temp_volume.iter().map(|(_, v)| v).sum();
 
-        let water_energy_demand = water_demand_to_kwh(
-            volume_demanded,
-            demand_temp,
-            self.cold_feed.temperature(*simulation_time_iteration, None),
-        );
+            let temp_cold_water = sum_t_by_v / sum_v;
 
+            water_energy_demand +=
+                water_demand_to_kwh(event.volume_hot, self.temp_hot_water, temp_cold_water);
+        }
         // Assumption is that system specified has sufficient capacity to meet any realistic demand
-        self.demand_energy(water_energy_demand, simulation_time_iteration)
+        Ok(self.demand_energy(water_energy_demand, simulation_time_iteration))
     }
 
     /// Demand energy (in kWh) from the heater
@@ -80,6 +86,7 @@ impl PointOfUse {
 mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+    use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::{
         core::{
             energy_supply::energy_supply::EnergySupply,
@@ -136,32 +143,35 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         // Test when temp_hot_water is set
-        let volume_demanded_target: IndexMap<DemandVolTargetKey, VolumeReference> =
-            IndexMap::from([(
-                DemandVolTargetKey::TempHotWater,
-                VolumeReference {
-                    warm_temp: 0.0, // warm_temp not used in this test
-                    warm_vol: 60.0,
-                },
-            )]);
+        let usage_events = vec![
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                volume_hot: 60.,
+                volume_warm: 60.,
+                temperature_warm: 55.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                volume_hot: 0.,
+                volume_warm: 0.,
+                temperature_warm: 55.,
+            },
+        ];
 
         assert_relative_eq!(
-            point_of_use.demand_hot_water(
-                volume_demanded_target,
-                &simulation_time_iterator.current_iteration()
-            ),
+            point_of_use
+                .demand_hot_water(usage_events, &simulation_time_iterator.current_iteration())
+                .unwrap(),
             2.7893333333333334
         );
 
-        // Test when temp_hot_water is not set
-        let volume_demanded_target: IndexMap<DemandVolTargetKey, VolumeReference> =
-            IndexMap::from([]);
+        // Test when events list is empty
+        let usage_events = vec![];
 
         assert_relative_eq!(
-            point_of_use.demand_hot_water(
-                volume_demanded_target,
-                &simulation_time_iterator.current_iteration()
-            ),
+            point_of_use
+                .demand_hot_water(usage_events, &simulation_time_iterator.current_iteration())
+                .unwrap(),
             0.
         );
     }
@@ -197,6 +207,6 @@ mod tests {
 
     #[rstest]
     fn test_get_temp_hot_water(point_of_use: PointOfUse) {
-        assert_eq!(point_of_use.get_temp_hot_water(), 55.);
+        assert_eq!(point_of_use.get_temp_hot_water(20., None), vec![(55., 20.)]);
     }
 }

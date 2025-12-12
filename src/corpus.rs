@@ -4732,7 +4732,9 @@ impl HotWaterSource {
             HotWaterSource::CombiBoiler(_combi) => {
                 todo!("Probably gets removed/moved as part of migration to 1.0.01a")
             } // combi.get_temp_hot_water(),
-            HotWaterSource::PointOfUse(point_of_use) => point_of_use.get_temp_hot_water(),
+            HotWaterSource::PointOfUse(_point_of_use) => {
+                todo!("Probably gets removed/moved as part of migration to 1.0.01a")
+            }
             HotWaterSource::HeatNetwork(heat_network) => heat_network.temp_hot_water(),
             HotWaterSource::HeatBattery(_source) => {
                 todo!("Probably gets removed/moved as part of migration to 1.0.01a")
@@ -4756,8 +4758,8 @@ impl HotWaterSource {
             // source
             //     .demand_hot_water(vol_demand_target, simulation_time_iteration)
             //     .expect("Combi boiler could not calc demand hot water."),
-            HotWaterSource::PointOfUse(ref source) => {
-                source.demand_hot_water(vol_demand_target, &simulation_time_iteration)
+            HotWaterSource::PointOfUse(ref _source) => {
+                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
             }
             HotWaterSource::HeatNetwork(ref source) => {
                 source.demand_hot_water(vol_demand_target, simulation_time_iteration)
