@@ -109,7 +109,7 @@ pub(crate) fn apply_fhs_notional_preprocessing(
 
     // modify ventilation
     let minimum_air_change_rate =
-        minimum_air_change_rate(input, total_floor_area, total_volume, bedroom_number);
+        minimum_air_change_rate(input, total_floor_area, total_volume, bedroom_number)?;
     // convert to m3/h
     let minimum_air_flow_rate = minimum_air_change_rate * total_volume;
     edit_infiltration_ventilation(input, is_notional_a, minimum_air_flow_rate)?;

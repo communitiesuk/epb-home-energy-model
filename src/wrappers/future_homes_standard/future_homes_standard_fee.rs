@@ -39,7 +39,7 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
 
     let total_floor_area = calc_tfa(input)?;
     let req_ach =
-        minimum_air_change_rate(input, total_floor_area, total_volume, number_of_bedrooms);
+        minimum_air_change_rate(input, total_floor_area, total_volume, number_of_bedrooms)?;
     // convert to m3/h
     let design_outdoor_air_flow_rate = req_ach * total_volume;
 

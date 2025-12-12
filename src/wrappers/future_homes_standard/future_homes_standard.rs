@@ -3101,7 +3101,11 @@ pub(crate) fn minimum_air_change_rate(
     total_floor_area: f64,
     total_volume: f64,
     bedroom_number: usize,
-) -> f64 {
+) -> anyhow::Result<f64> {
+    if bedroom_number == 0 {
+        bail!("Number of bedrooms must be greater than zero for this version of FHS");
+    }
+
     // minimum ventilation rates method B
     let min_ventilation_rates_b = [19, 25, 31, 37, 43];
 
@@ -3119,8 +3123,10 @@ pub(crate) fn minimum_air_change_rate(
     let highest_min_ventilation_rate =
         f64::max(min_ventilation_rate_a, min_ventilation_rate_b as f64);
 
-    highest_min_ventilation_rate / total_volume * SECONDS_PER_HOUR as f64
-        / LITRES_PER_CUBIC_METRE as f64
+    Ok(
+        highest_min_ventilation_rate / total_volume * SECONDS_PER_HOUR as f64
+            / LITRES_PER_CUBIC_METRE as f64,
+    )
 }
 
 /// Set min and max vent opening thresholds
