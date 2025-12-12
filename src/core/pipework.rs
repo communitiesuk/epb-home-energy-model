@@ -84,7 +84,7 @@ impl PipeworkSimple {
 
     fn calculate_volume(internal_diameter: f64, length: f64) -> f64 {
         let radius = internal_diameter / 2.;
-        return PI * radius * radius * length * LITRES_PER_CUBIC_METRE as f64;
+        PI * radius * radius * length * LITRES_PER_CUBIC_METRE as f64
     }
 }
 
@@ -288,7 +288,7 @@ impl Pipework {
 
         // # TODO (from Python): Add thermal mass of pipe itself
 
-        return (c, n, thermal_mass);
+        (c, n, thermal_mass)
     }
 
     /// Return the heat loss from the pipe for the current timestep

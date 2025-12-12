@@ -64,7 +64,8 @@ impl Inverter {
         // Using Ratio of Rated Power, calculate Inverter DC to AC efficiency
         // equation was estimated based on graph from
         // https://www.researchgate.net/publication/260286647_Performance_of_PV_inverters figure 9
-        let inverter_dc_ac_efficiency = if ratio_of_rated_output == 0. {
+        
+        if ratio_of_rated_output == 0. {
             0.
         } else {
             // Empirical efficiency curve fit primarily based on SMA Sunny Boy inverters (largest market share 2018)
@@ -80,8 +81,7 @@ impl Inverter {
                 inverter_dc_ac_efficiency_2,
                 inverter_dc_ac_efficiency_3,
             ) / 100.
-        };
-        inverter_dc_ac_efficiency
+        }
     }
 
     /// Calculate energy from input power, applying efficiency and returning the energy produced
@@ -94,8 +94,8 @@ impl Inverter {
         power = min_of_2(power, self.inverter_peak_power_ac);
 
         // Convert power to energy
-        let energy_produced = power * self.simulation_time.step_in_hours();
-        energy_produced
+        
+        power * self.simulation_time.step_in_hours()
     }
 
     /// Calculate energy from input power, apply efficiency, and supply to energy supply connection

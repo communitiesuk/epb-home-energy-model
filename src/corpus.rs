@@ -2340,8 +2340,8 @@ impl Corpus {
                 hw_duration,
                 all_events: no_events,
                 hw_energy_demand,
-                usage_events,
-                vol_hot_water_equiv_elec_shower,
+                usage_events: _,
+                vol_hot_water_equiv_elec_shower: _,
             } = self
                 .domestic_hot_water_demand
                 .hot_water_demand(t_it, temp_hot_water)?;
@@ -2444,11 +2444,11 @@ impl Corpus {
             let (primary_pw_losses, storage_losses) =
                 if let HotWaterSource::PreHeated(source) = &self.hot_water_sources["hw cylinder"] {
                     match source {
-                        HotWaterStorageTank::StorageTank(storage_tank) => {
+                        HotWaterStorageTank::StorageTank(_storage_tank) => {
                             unimplemented!(".to_report() no longer exists on storage tank");
                             //storage_tank.read().to_report()
                         }
-                        HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
+                        HotWaterStorageTank::SmartHotWaterTank(_smart_hot_water_tank) => {
                             unimplemented!(".to_report() no longer exists on storage tank");
                             //smart_hot_water_tank.read().to_report()
                         }

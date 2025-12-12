@@ -1254,7 +1254,7 @@ impl StorageTank {
             .store(sum_t_by_v / sum_v, Ordering::SeqCst);
 
         let _temp_ini_n = self.temp_n.clone();
-        let temp_s3_n = self.temp_n.clone();
+        let _temp_s3_n = self.temp_n.clone();
 
         // Loop through storage layers (starting from the top)
         for (layer_index, &layer_temp) in self.temp_n.read().iter().enumerate().rev() {
@@ -1423,7 +1423,7 @@ impl StorageTank {
             {
                 for pipework_data in primary_pipework {
                     let outside_temperature = self.temp_surrounding_primary_pipework(
-                        &pipework_data,
+                        pipework_data,
                         simulation_time_iteration,
                     );
                     let cool_down_loss =
@@ -1439,7 +1439,7 @@ impl StorageTank {
                     // Primary losses for the timestep calculated from temperature difference
 
                     let outside_temperature = self.temp_surrounding_primary_pipework(
-                        &pipework_data,
+                        pipework_data,
                         simulation_time_iteration,
                     );
                     let primary_pipework_losses_w = pipework_data
@@ -2404,7 +2404,7 @@ impl SmartHotWaterTank {
         // Standby losses coefficient - W/K
         let h_sto_ls = self.storage_tank.stand_by_losses_coefficient();
 
-        let setpnt = self
+        let _setpnt = self
             .temp_setpnt_max
             .setpnt(&simtime)
             .unwrap_or(self.temp_usable);
