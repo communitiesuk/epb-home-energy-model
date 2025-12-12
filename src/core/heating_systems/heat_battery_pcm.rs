@@ -1700,7 +1700,7 @@ impl HeatBatteryPcm {
 
         // If detailed results are to be output, save the results from the current timestep
         if self.detailed_results.is_some() {
-            // TODO review as part of 1.0.0a1 migration, do we need to update?
+            // TODO after 1.0.0a1 migration
             let results = self.service_results.read().clone();
 
             self.detailed_results
@@ -2930,7 +2930,7 @@ mod tests {
             }
             _ => panic!("Expected ColdWaterSource variant"),
         }
-        // TODO Python tests with usage events here using mocking, can we replicate?
+        // Python tests with usage events here using mocking that is not easy to replicate
 
         // Test with no usage events
         let energy_no_usage = service

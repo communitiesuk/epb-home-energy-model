@@ -70,7 +70,7 @@ pub(crate) fn calculate_volume_weighted_average_temperature(
         volumes.push(volume);
     }
 
-    // TODO 1.0.0A1 - look into rust's fsum crate and use instead of sum
+    // TODO use fsum here instead?
     // Use math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
     let weighted_temp_sum = temp_volume_products.iter().sum::<f64>();
     let total_volume = volumes.iter().sum::<f64>();
