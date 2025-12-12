@@ -651,7 +651,7 @@ mod tests {
         ];
         let pv_system = PhotovoltaicSystem::new(external_conditions, panels, pv_inverter);
 
-        let expected_results = vec![
+        let expected_results = [
             -0.015826768143293042,
             -0.05,
             -0.05,

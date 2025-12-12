@@ -3295,7 +3295,7 @@ mod tests {
 
             assert_eq!(energy_req, 0.);
 
-            assert_eq!(temp_emitter_max_is_final_temp, false);
+            assert!(!temp_emitter_max_is_final_temp);
 
             assert_eq!(
                 emitters_data_for_buffer_tank
@@ -4084,7 +4084,7 @@ mod tests {
 
         // check that detailed results were recorded
         if let Some(detailed_results) = fancoil_system.output_emitter_results() {
-            assert!(detailed_results.len() > 0);
+            assert!(!detailed_results.is_empty());
         } else {
             panic!("Expected detailed results to be recorded")
         }

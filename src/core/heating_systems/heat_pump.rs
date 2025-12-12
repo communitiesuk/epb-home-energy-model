@@ -1411,8 +1411,8 @@ impl HeatPumpServiceWater {
             bail!("temp_flow is None and energy_demand is not 0")
         };
 
-        let temp_flow_k = if temp_flow.is_some() {
-            Some(celsius_to_kelvin(temp_flow.unwrap())?)
+        let temp_flow_k = if let Some(temp_flow) = temp_flow {
+            Some(celsius_to_kelvin(temp_flow)?)
         } else {
             None
         };
@@ -3059,12 +3059,12 @@ impl HeatPump {
         };
 
         // Get thermal capacity, CoP and degradation coeff at operating conditions
-        let (thermal_capacity_op_cond, cop_op_cond) = if temp_output.is_some() {
+        let (thermal_capacity_op_cond, cop_op_cond) = if let Some(temp_output) = temp_output {
             let thermal_capacity_op_cond =
-                self.thermal_capacity_op_cond(temp_output.unwrap(), temp_source)?;
+                self.thermal_capacity_op_cond(temp_output, temp_source)?;
             let cop_op_cond = self.cop_deg_coeff_op_cond(
                 service_type,
-                temp_output.unwrap(),
+                temp_output,
                 temp_source,
                 temp_spread_correction,
                 simtime,
@@ -3103,12 +3103,12 @@ impl HeatPump {
             );
         }
 
-        let use_backup_heater_only = if temp_output.is_some() {
+        let use_backup_heater_only = if let Some(temp_output) = temp_output {
             self.use_backup_heater_only(
                 cop_op_cond.unwrap(),
                 energy_output_required,
                 thermal_capacity_op_cond.unwrap(),
-                temp_output.unwrap(),
+                temp_output,
                 time_available,
                 time_start,
                 temp_return_feed,

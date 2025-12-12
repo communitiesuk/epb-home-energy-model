@@ -1373,18 +1373,22 @@ mod tests {
             boiler_service: BoilerServiceWaterCombi,
             simulation_time: SimulationTime,
         ) {
-            let usage_events_all_timesteps = vec![
+            let usage_events_all_timesteps = [
                 vec![
                     WaterEventResult {
                         event_result_type: WaterEventResultType::Other,
                         temperature_warm: 60.0,
+                        #[allow(clippy::excessive_precision)]
                         volume_warm: 34.93868988826640,
+                        #[allow(clippy::excessive_precision)]
                         volume_hot: 34.93868988826640,
                     },
                     WaterEventResult {
                         event_result_type: WaterEventResultType::Other,
                         temperature_warm: 60.0,
+                        #[allow(clippy::excessive_precision)]
                         volume_warm: 75.65325966014560,
+                        #[allow(clippy::excessive_precision)]
                         volume_hot: 75.65325966014560,
                     },
                     WaterEventResult {
@@ -1397,7 +1401,9 @@ mod tests {
                 vec![WaterEventResult {
                     event_result_type: WaterEventResultType::Other,
                     temperature_warm: 60.0,
+                    #[allow(clippy::excessive_precision)]
                     volume_warm: 32.60190808710678,
+                    #[allow(clippy::excessive_precision)]
                     volume_hot: 32.60190808710678,
                 }],
             ];
@@ -1901,7 +1907,7 @@ mod tests {
 
         #[rstest]
         fn test_temp_setpnt(boiler_service: BoilerServiceSpace, simulation_time: SimulationTime) {
-            let expected_results = vec![Some(21.), Some(21.), None];
+            let expected_results = [Some(21.), Some(21.), None];
             for iteration in simulation_time.iter() {
                 let t_idx = iteration.index;
                 assert_eq!(
@@ -1916,7 +1922,7 @@ mod tests {
             boiler_service: BoilerServiceSpace,
             simulation_time: SimulationTime,
         ) {
-            let expected_results = vec![true, true, false];
+            let expected_results = [true, true, false];
             for iteration in simulation_time.iter() {
                 let t_idx = iteration.index;
                 assert_eq!(
@@ -1931,7 +1937,7 @@ mod tests {
             boiler_service: BoilerServiceSpace,
             simulation_time: SimulationTime,
         ) {
-            let expected_results = vec![16.85, 16.85, 0.];
+            let expected_results = [16.85, 16.85, 0.];
             for iteration in simulation_time.iter() {
                 let t_idx = iteration.index;
                 assert_eq!(

@@ -2123,8 +2123,7 @@ impl SmartHotWaterTank {
             // Calculate state of charge for usable and max temperatures
             let soc_temp_usable = self.calc_state_of_charge(&temp_simulation_usable, simtime)?;
             let soc_temp_max = self.calc_state_of_charge(&temp_simulation_max, simtime)?;
-            if soc_max.is_some() {
-                let soc_max = soc_max.unwrap();
+            if let Some(soc_max) = soc_max {
                 if soc_temp_usable >= soc_max {
                     q_in_h_w[i] += energy_req_usable;
                     break;
@@ -3037,7 +3036,6 @@ mod tests {
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::material_properties::WATER;
-    use crate::core::schedule::WaterScheduleEventType;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::corpus::HeatSource;
@@ -3889,19 +3887,32 @@ mod tests {
             );
 
             let cold_water_temps = match storage_tank2.cold_feed {
-                WaterSourceWithTemperature::ColdWaterSource(ref cold_water_source) => &cold_water_source.cold_water_temps,
-                _ => unreachable!() // we know this is a cold water source
+                WaterSourceWithTemperature::ColdWaterSource(ref cold_water_source) => {
+                    &cold_water_source.cold_water_temps
+                }
+                _ => unreachable!(), // we know this is a cold water source
             };
 
-            let temp_hot = if t_idx == 0 { 60. } else { expected_temperatures_2[t_idx - 1][3] };
-            let usage_events2_for_iteration = usage_events_for_iteration.unwrap().iter().map(|event| {
-                let volume_hot = event.volume_warm * (event.temperature_warm - cold_water_temps[t_idx]) / (temp_hot - cold_water_temps[t_idx]);
-                WaterEventResult { 
-                    event_result_type: event.event_result_type.clone(),
-                    temperature_warm: event.temperature_warm, 
-                    volume_warm: event.volume_warm, 
-                    volume_hot: volume_hot }
-            }).collect_vec();
+            let temp_hot = if t_idx == 0 {
+                60.
+            } else {
+                expected_temperatures_2[t_idx - 1][3]
+            };
+            let usage_events2_for_iteration = usage_events_for_iteration
+                .unwrap()
+                .iter()
+                .map(|event| {
+                    let volume_hot = event.volume_warm
+                        * (event.temperature_warm - cold_water_temps[t_idx])
+                        / (temp_hot - cold_water_temps[t_idx]);
+                    WaterEventResult {
+                        event_result_type: event.event_result_type.clone(),
+                        temperature_warm: event.temperature_warm,
+                        volume_warm: event.volume_warm,
+                        volume_hot,
+                    }
+                })
+                .collect_vec();
 
             storage_tank2
                 .demand_hot_water(Some(usage_events2_for_iteration.clone()), t_it)
