@@ -2,12 +2,10 @@ use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
-use crate::core::material_properties::WATER;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
-use crate::core::water_heat_demand::dhw_demand::{DemandVolTargetKey, VolumeReference};
+use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
-use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
 use smartstring::alias::String;
 use std::collections::HashMap;
@@ -50,34 +48,47 @@ impl HeatNetworkServiceWaterDirect {
         &self.cold_feed
     }
 
-    pub fn temp_hot_water(&self) -> f64 {
-        self.temperature_hot_water
+    pub fn get_temp_hot_water(
+        &self,
+        volume_req: f64,
+        _volume_req_already: Option<f64>,
+    ) -> Vec<(f64, f64)> {
+        // Always supplies the whole volume at the same temperature, so list has a single element
+        vec![(self.temperature_hot_water, volume_req)]
     }
 
     /// Demand energy for hot water (in kWh) from the heat network
-    pub fn demand_hot_water(
+    pub(crate) fn demand_hot_water(
         &self,
-        volume_demanded_target: IndexMap<DemandVolTargetKey, VolumeReference>,
+        usage_events: Vec<WaterEventResult>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
-        // Calculate energy needed to meet hot water demand
-        let volume_demanded = volume_demanded_target
-            .get(&DemandVolTargetKey::TempHotWater)
-            .map(|volume_reference| volume_reference.warm_vol)
-            .unwrap_or(0.0);
-        let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kwh_per_litre(
-            self.temperature_hot_water,
-            self.cold_feed.temperature(simtime, None),
-        );
-        let energy_demand = volume_demanded * energy_content_kwh_per_litre;
+    ) -> anyhow::Result<f64> {
+        let mut energy_demand = 0.;
 
-        self.heat_network.lock().demand_energy(
+        for event in usage_events {
+            if is_close!(event.volume_hot, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
+                continue;
+            }
+            let list_temp_volume = self.cold_feed.draw_off_water(event.volume_hot, simtime)?;
+            let sum_t_by_v: f64 = list_temp_volume.iter().map(|(t, v)| t * v).sum();
+            let sum_v: f64 = list_temp_volume.iter().map(|(_, v)| v).sum();
+
+            let temp_cold_water = sum_t_by_v / sum_v;
+
+            energy_demand += water_demand_to_kwh(
+                event.volume_hot,
+                self.temperature_hot_water,
+                temp_cold_water,
+            );
+        }
+
+        Ok(self.heat_network.lock().demand_energy(
             &self.service_name,
             energy_demand,
             None,
             None,
             simtime.index,
-        )
+        ))
     }
 }
 
@@ -249,7 +260,9 @@ impl HeatNetworkServiceSpace {
 #[derive(Clone, Debug)]
 pub(crate) struct HeatNetwork {
     power_max_in_kw: f64,
-    daily_loss: f64,                         // in kWh/day
+    daily_loss: f64, // in kWh/day
+    power_circ_pump: f64,
+    power_aux: f64,
     building_level_distribution_losses: f64, // in watts
     energy_supply: Arc<RwLock<EnergySupply>>,
     energy_supply_connections: HashMap<String, EnergySupplyConnection>,
@@ -263,6 +276,8 @@ impl HeatNetwork {
     pub(crate) fn new(
         power_max_in_kw: f64,
         daily_loss: f64,
+        power_circ_pump: f64,
+        power_aux: f64,
         building_level_distribution_losses: f64,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_conn_name_auxiliary: String,
@@ -272,6 +287,8 @@ impl HeatNetwork {
         Self {
             power_max_in_kw,
             daily_loss,
+            power_circ_pump,
+            power_aux,
             building_level_distribution_losses,
             energy_supply: energy_supply.clone(),
             energy_supply_connections: Default::default(),
@@ -440,6 +457,7 @@ mod tests {
     use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+    use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
@@ -459,6 +477,8 @@ mod tests {
             0.0,
             0.0,
             0.0,
+            0.,
+            0.8,
             Arc::new(RwLock::new(
                 EnergySupplyBuilder::new(
                     FuelType::Electricity,
@@ -519,6 +539,8 @@ mod tests {
         Arc::new(Mutex::new(HeatNetwork::new(
             18.0,
             1.0,
+            0.,
+            0.,
             0.8,
             Arc::new(RwLock::new(energy_supply)),
             energy_supply_conn_name_auxiliary.into(),
@@ -556,61 +578,47 @@ mod tests {
         heat_network_service_water_direct: HeatNetworkServiceWaterDirect,
         heat_network_for_water_direct: Arc<Mutex<HeatNetwork>>,
     ) {
-        let volume_demanded = [
-            IndexMap::from([
-                (
-                    41.0.into(),
-                    VolumeReference {
-                        warm_temp: 41.0,
-                        warm_vol: 48.0,
-                    },
-                ),
-                (
-                    43.0.into(),
-                    VolumeReference {
-                        warm_temp: 43.0,
-                        warm_vol: 100.0,
-                    },
-                ),
-                (
-                    40.0.into(),
-                    VolumeReference {
-                        warm_temp: 40.0,
-                        warm_vol: 0.0,
-                    },
-                ),
-                (
-                    DemandVolTargetKey::TempHotWater,
-                    VolumeReference {
-                        warm_temp: 55.0,
-                        warm_vol: 110.59194954841298,
-                    },
-                ),
-            ]),
-            IndexMap::from([
-                (
-                    41.0.into(),
-                    VolumeReference {
-                        warm_temp: 41.0,
-                        warm_vol: 48.0,
-                    },
-                ),
-                (
-                    DemandVolTargetKey::TempHotWater,
-                    VolumeReference {
-                        warm_temp: 55.0,
-                        warm_vol: 32.60190808710678,
-                    },
-                ),
-            ]),
+        let expected_demand = [7.5834, 2.2279];
+        let usage_events = [
+            vec![
+                WaterEventResult {
+                    event_result_type: WaterEventResultType::Other,
+                    temperature_warm: 60.,
+                    #[allow(clippy::excessive_precision)]
+                    volume_warm: 34.93868988826640,
+                    #[allow(clippy::excessive_precision)]
+                    volume_hot: 34.93868988826640,
+                },
+                WaterEventResult {
+                    event_result_type: WaterEventResultType::Other,
+                    temperature_warm: 60.,
+                    #[allow(clippy::excessive_precision)]
+                    volume_warm: 75.65325966014560,
+                    #[allow(clippy::excessive_precision)]
+                    volume_hot: 75.65325966014560,
+                },
+                WaterEventResult {
+                    event_result_type: WaterEventResultType::Other,
+                    temperature_warm: 60.,
+                    volume_warm: 0.,
+                    volume_hot: 0.,
+                },
+            ],
+            vec![WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                temperature_warm: 60.,
+                volume_warm: 32.60190808710678,
+                volume_hot: 32.60190808710678,
+            }],
         ];
 
         for (t_idx, t_it) in two_len_simulation_time.iter().enumerate() {
             assert_relative_eq!(
                 heat_network_service_water_direct
-                    .demand_hot_water(volume_demanded[t_idx].clone(), t_it),
-                [7.5834, 2.2279][t_idx],
-                max_relative = 1e-4
+                    .demand_hot_water(usage_events[t_idx].clone(), t_it)
+                    .unwrap(),
+                expected_demand[t_idx],
+                max_relative = 1e-3
             );
             heat_network_for_water_direct.lock().timestep_end(t_idx);
         }
@@ -636,7 +644,10 @@ mod tests {
 
     #[rstest]
     fn test_get_temp_hot_water(heat_network_service_water_direct: HeatNetworkServiceWaterDirect) {
-        assert_eq!(heat_network_service_water_direct.temp_hot_water(), 60.);
+        assert_eq!(
+            heat_network_service_water_direct.get_temp_hot_water(12., None),
+            [(60., 12.)]
+        );
     }
 
     #[rstest]
@@ -645,10 +656,9 @@ mod tests {
         two_len_simulation_time: SimulationTime,
     ) {
         assert_eq!(
-            heat_network_service_water_direct.demand_hot_water(
-                IndexMap::new(),
-                two_len_simulation_time.iter().current_iteration(),
-            ),
+            heat_network_service_water_direct
+                .demand_hot_water(vec![], two_len_simulation_time.iter().current_iteration())
+                .unwrap(),
             0.
         );
     }
@@ -668,6 +678,8 @@ mod tests {
         Arc::new(Mutex::new(HeatNetwork::new(
             7.0,
             1.0,
+            0.,
+            0.,
             0.8,
             Arc::new(RwLock::new(energy_supply)),
             energy_supply_conn_name_auxiliary.into(),
@@ -846,6 +858,8 @@ mod tests {
         Arc::new(Mutex::new(HeatNetwork::new(
             5.0,
             1.0,
+            0.,
+            0.,
             0.8,
             Arc::new(RwLock::new(energy_supply)),
             energy_supply_conn_name_auxiliary.into(),
@@ -977,6 +991,8 @@ mod tests {
         let heat_network = Arc::new(Mutex::new(HeatNetwork::new(
             6.0,
             0.24,
+            0.08,
+            0.04,
             0.8,
             energy_supply_for_heat_network.clone(),
             energy_supply_conn_name_auxiliary.into(),
@@ -1169,6 +1185,8 @@ mod tests {
         let heat_network = Arc::new(Mutex::new(HeatNetwork::new(
             0.,
             0.24,
+            0.,
+            0.,
             0.8,
             energy_supply_for_heat_network.clone(),
             energy_supply_conn_name_auxiliary.into(),

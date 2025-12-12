@@ -4412,6 +4412,8 @@ fn heat_source_wet_from_input(
             Ok(WetHeatSource::Hiu(Arc::new(Mutex::new(HeatNetwork::new(
                 *power_max,
                 *hiu_daily_loss,
+                0.06, // TODO update during 1.0.0a1 migration
+                0.,   // TODO update during 1.0.0a1 migration
                 *building_level_distribution_losses,
                 energy_supply,
                 energy_supply_conn_name_auxiliary,
@@ -4735,7 +4737,9 @@ impl HotWaterSource {
             HotWaterSource::PointOfUse(_point_of_use) => {
                 todo!("Probably gets removed/moved as part of migration to 1.0.01a")
             }
-            HotWaterSource::HeatNetwork(heat_network) => heat_network.temp_hot_water(),
+            HotWaterSource::HeatNetwork(_heat_network) => {
+                todo!("Probably gets removed/moved as part of migration to 1.0.01a")
+            }
             HotWaterSource::HeatBattery(_source) => {
                 todo!("Probably gets removed/moved as part of migration to 1.0.01a")
             }
@@ -4744,8 +4748,8 @@ impl HotWaterSource {
 
     pub fn demand_hot_water(
         &self,
-        vol_demand_target: IndexMap<DemandVolTargetKey, VolumeReference>,
-        simulation_time_iteration: SimulationTimeIteration,
+        _vol_demand_target: IndexMap<DemandVolTargetKey, VolumeReference>,
+        _simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         Ok(match self {
             HotWaterSource::PreHeated(_) => {
@@ -4761,8 +4765,8 @@ impl HotWaterSource {
             HotWaterSource::PointOfUse(ref _source) => {
                 todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
             }
-            HotWaterSource::HeatNetwork(ref source) => {
-                source.demand_hot_water(vol_demand_target, simulation_time_iteration)
+            HotWaterSource::HeatNetwork(ref _source) => {
+                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
             }
             HotWaterSource::HeatBattery(_source) => {
                 todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
