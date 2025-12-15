@@ -125,10 +125,10 @@ fn interpolate_exhaust_air_heat_pump_test_data(
     let mut fixed_temps_and_test_letters: Option<Vec<TestDatumTempsAndTestLetters>> = None;
     for (air_flow_rate, test_data_record_list) in &test_data_by_air_flow_rate {
         // find and save all the combinations of design flow temp and test letter for this air flow rate
-        let mut fixed_temps_and_test_letters_this: Vec<TestDatumTempsAndTestLetters> =
+        let mut air_flowrate_flow_temps_test_letters: Vec<TestDatumTempsAndTestLetters> =
             Default::default();
         for test_data_record in test_data_record_list {
-            fixed_temps_and_test_letters_this.push(TestDatumTempsAndTestLetters {
+            air_flowrate_flow_temps_test_letters.push(TestDatumTempsAndTestLetters {
                 air_flow_rate: air_flow_rate.0,
                 design_flow_temp: test_data_record.design_flow_temp,
                 test_letter: test_data_record.test_letter,
@@ -140,10 +140,10 @@ fn interpolate_exhaust_air_heat_pump_test_data(
 
         match fixed_temps_and_test_letters {
             None => {
-                fixed_temps_and_test_letters = Some(fixed_temps_and_test_letters_this);
+                fixed_temps_and_test_letters = Some(air_flowrate_flow_temps_test_letters);
             }
             Some(ref fixed_temps_and_test_letters) => {
-                if fixed_temps_and_test_letters != &fixed_temps_and_test_letters_this {
+                if fixed_temps_and_test_letters != &air_flowrate_flow_temps_test_letters {
                     bail!("In heat pump test data, fixed temps and test_letters were not consistent for one air_flow_temp value");
                 }
             }
@@ -198,8 +198,7 @@ fn interpolate_exhaust_air_heat_pump_test_data(
                 temp_outlet: datum.temp_outlet,
                 temp_source: datum.temp_source,
                 temp_test: datum.temp_test,
-                eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio,
+                eahp_mixed_ext_air_ratio: ext_air_ratio,
             })
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -226,7 +225,6 @@ pub(crate) struct HeatPumpTestDatum {
     temp_source: f64,
     temp_test: f64,
     eahp_mixed_ext_air_ratio: Option<f64>,
-    ext_air_ratio: Option<f64>,
 }
 
 impl From<HeatPumpTestDatumInput> for HeatPumpTestDatum {
@@ -252,7 +250,6 @@ impl From<HeatPumpTestDatumInput> for HeatPumpTestDatum {
             temp_source,
             temp_test,
             eahp_mixed_ext_air_ratio,
-            ext_air_ratio: Default::default(),
         }
     }
 }
@@ -260,6 +257,13 @@ impl From<HeatPumpTestDatumInput> for HeatPumpTestDatum {
 //part of the thermal losses transmitted to the room
 //Taken from Storage tank module: Method A from BS EN 15316-5:2017
 const F_STO_M: f64 = 0.75;
+
+// Reference conditions for buffer tank thermal loss calculations
+const TEMP_SET_REF: f64 = 65.; // Reference temperature setpnt in °C
+const TEMP_AMB_REF: f64 = 20.; // Reference ambient temperature in °C
+
+// Temperature split factor for flow/return calculations
+const TEMP_SPLIT_FACTOR_FLOW: f64 = 0.5;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BufferTankEmittersData {
@@ -318,7 +322,7 @@ pub struct BufferTank {
     rho: f64,
     q_heat_loss_buffer_rbl: f64,
     track_buffer_loss: f64,
-    temp_ave_buffer: f64,
+    temp_average_buffer: f64,
     detailed_results: Option<Vec<Vec<BufferTankServiceResult>>>,
 }
 
@@ -330,6 +334,7 @@ impl BufferTank {
         pump_power_at_flow_rate: f64,
         number_of_zones: usize,
         simulation_timestep: f64,
+        initial_temp: f64,
         contents: MaterialProperties,
         output_detailed_results: Option<bool>,
     ) -> Self {
@@ -353,7 +358,7 @@ impl BufferTank {
             q_heat_loss_buffer_rbl: 0.0,
             track_buffer_loss: 0.0,
             // Initialisation of buffer tank temperature needed in case no power required by emitters in first step
-            temp_ave_buffer: 18.,
+            temp_average_buffer: initial_temp,
             detailed_results: output_detailed_results.then(Default::default),
         }
     }
@@ -367,15 +372,15 @@ impl BufferTank {
     }
 
     /// Thermal losses are calculated with respect to the impact of the temperature set point
-    fn thermal_losses(&mut self, temp_ave_buffer: f64, temp_rm_prev: f64) -> f64 {
-        let temp_set_ref = 65.;
-        let temp_amb_ref = 20.;
+    fn thermal_losses(&mut self, temp_average_buffer: f64, temp_rm_prev: f64) -> f64 {
         // Specific loss in W/K
-        let h_buffer_ls = (1_000. * self.daily_losses) / (24. * (temp_set_ref - temp_amb_ref));
+        let h_buffer_ls = (WATTS_PER_KILOWATT as f64 * self.daily_losses)
+            / (HOURS_PER_DAY as f64 * (TEMP_SET_REF - TEMP_AMB_REF));
         // Absolute loss in W
-        let heat_loss_buffer_w = (temp_ave_buffer - temp_rm_prev) * h_buffer_ls;
-        let heat_loss_buffer_kwh =
-            heat_loss_buffer_w / 1_000. * self.simulation_timestep / self.number_of_zones as f64;
+        let heat_loss_buffer_w = (temp_average_buffer - temp_rm_prev) * h_buffer_ls;
+        let heat_loss_buffer_kwh = heat_loss_buffer_w / WATTS_PER_KILOWATT as f64
+            * self.simulation_timestep
+            / self.number_of_zones as f64;
 
         // TODO (from Python): update when zoning sorted out. Hopefully then there will be no need to divide by the number of zones.
 
@@ -403,7 +408,7 @@ impl BufferTank {
 
         if emitters_data_for_buffer_tank.power_req_from_buffer_tank > 0.0 {
             let temp_emitter_req = emitters_data_for_buffer_tank.temp_emitter_req;
-            self.temp_ave_buffer = temp_emitter_req;
+            self.temp_average_buffer = temp_emitter_req;
 
             // call to calculate thermal losses
             let heat_loss_buffer_kwh = self.thermal_losses(temp_emitter_req, temp_rm_prev);
@@ -414,8 +419,9 @@ impl BufferTank {
                 / (self.pump_fixed_flow_rate / SECONDS_PER_MINUTE as f64))
                 / (self.cp * self.rho * KILOJOULES_PER_KILOWATT_HOUR as f64);
 
-            let buffer_flow_temp = temp_emitter_req + 0.5 * delta_t_buffer;
-            let buffer_return_temp = temp_emitter_req - 0.5 * delta_t_buffer;
+            let buffer_flow_temp = temp_emitter_req + TEMP_SPLIT_FACTOR_FLOW * delta_t_buffer;
+            let buffer_return_temp =
+                temp_emitter_req - (1. - TEMP_SPLIT_FACTOR_FLOW) * delta_t_buffer;
             let theoretical_hp_return_temp = buffer_return_temp;
 
             let mut flag = true;
@@ -456,7 +462,7 @@ impl BufferTank {
 
             // We are currently assuming that, by design, buffer tanks always work with fix pumps on the
             // tank-emitter side with higher flow than the flow in the hp-tank side.
-            if hp_flow >= self.pump_fixed_flow_rate / SECONDS_PER_MINUTE as f64 {
+            if hp_flow > self.pump_fixed_flow_rate / SECONDS_PER_MINUTE as f64 {
                 bail!("Heat pump buffer tank flow is greater than buffer tank emitter flow. Calculation aborted")
             }
 
@@ -489,14 +495,14 @@ impl BufferTank {
             }
         } else {
             // call to calculate cool down losses
-            let heat_loss_buffer_kwh = self.thermal_losses(self.temp_ave_buffer, temp_rm_prev);
+            let heat_loss_buffer_kwh = self.thermal_losses(self.temp_average_buffer, temp_rm_prev);
             let heat_capacity_buffer =
                 self.volume * (self.rho * self.cp * KILOJOULES_PER_KILOWATT_HOUR as f64);
             let temp_loss =
                 heat_loss_buffer_kwh / (heat_capacity_buffer / KILOJOULES_PER_KILOWATT_HOUR as f64);
-            let new_temp_ave_buffer = self.temp_ave_buffer - temp_loss;
+            let new_temp_average_buffer = self.temp_average_buffer - temp_loss;
 
-            self.temp_ave_buffer = new_temp_ave_buffer;
+            self.temp_average_buffer = new_temp_average_buffer;
 
             self.service_results.push(BufferTankServiceResult {
                 _service_name: result_service_name,
@@ -639,7 +645,7 @@ impl HeatPumpTestDatum {
 #[derive(Clone, Debug)]
 pub(crate) struct HeatPumpTestData {
     test_data: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
-    dsgn_flow_temps: Vec<OrderedFloat<f64>>,
+    design_flow_temps: Vec<OrderedFloat<f64>>,
     average_cap: Vec<f64>,
     temp_spread_test_conditions: Vec<f64>,
     regression_coeffs: HashMap<OrderedFloat<f64>, Vec<f64>>,
@@ -652,25 +658,25 @@ impl HeatPumpTestData {
     pub(crate) fn new(data: Vec<HeatPumpTestDatum>) -> anyhow::Result<Self> {
         // keyed by design flow temp
         let mut test_data: HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>> = Default::default();
-        let mut dsgn_flow_temps: Vec<OrderedFloat<f64>> = Default::default();
+        let mut design_flow_temps: Vec<OrderedFloat<f64>> = Default::default();
 
         // variable to count duplicate records for each design flow temp
         let mut dupl: HashMap<OrderedFloat<f64>, usize> = Default::default();
 
         for datum in data {
             let mut saved_datum = datum.clone();
-            let dsgn_flow_temp = OrderedFloat(datum.design_flow_temp);
+            let design_flow_temp = OrderedFloat(datum.design_flow_temp);
 
             // When a new design flow temp is encountered, add it to lists/ maps
-            if !dupl.contains_key(&dsgn_flow_temp) {
-                if !dsgn_flow_temps.contains(&dsgn_flow_temp) {
-                    dsgn_flow_temps.push(dsgn_flow_temp);
+            if !dupl.contains_key(&design_flow_temp) {
+                if !design_flow_temps.contains(&design_flow_temp) {
+                    design_flow_temps.push(design_flow_temp);
                 }
-                test_data.entry(dsgn_flow_temp).or_default();
+                test_data.entry(design_flow_temp).or_default();
             }
 
             let mut duplicate = false;
-            for d in test_data.get(&dsgn_flow_temp).unwrap() {
+            for d in test_data.get(&design_flow_temp).unwrap() {
                 if datum == *d {
                     duplicate = true;
                     // Increment count of number of duplicates for this design flow temp
@@ -690,11 +696,11 @@ impl HeatPumpTestData {
             // we are adding) and not 2 (the number of existing records the new
             // record duplicates).
             if duplicate {
-                *dupl.entry(dsgn_flow_temp).or_default() += 1;
+                *dupl.entry(design_flow_temp).or_default() += 1;
             }
 
             test_data
-                .entry(dsgn_flow_temp)
+                .entry(design_flow_temp)
                 .or_default()
                 .push(saved_datum);
         }
@@ -702,14 +708,14 @@ impl HeatPumpTestData {
         // Check the number of test records is as expected
         // - Up to 4 design flow temps (EN 14825:2018 defines these as 35, 45, 55, 65)
         // - 4 or 5 distinct records for each flow temp
-        if dsgn_flow_temps.is_empty() {
+        if design_flow_temps.is_empty() {
             bail!("No test data provided for heat pump performance");
-        } else if dsgn_flow_temps.len() > 4 {
-            bail!("Warning: Test data for a maximum of 4 design flow temperatures is expected. {} have been provided.", dsgn_flow_temps.len());
+        } else if design_flow_temps.len() > 4 {
+            bail!("Warning: Test data for a maximum of 4 design flow temperatures is expected. {} have been provided.", design_flow_temps.len());
         }
-        for (dsgn_flow_temp, data) in test_data.iter() {
-            if dupl.contains_key(dsgn_flow_temp) {
-                if (data.len() - dupl.get(dsgn_flow_temp).unwrap()) != 4 {
+        for (design_flow_temp, data) in test_data.iter() {
+            if dupl.contains_key(design_flow_temp) {
+                if (data.len() - dupl.get(design_flow_temp).unwrap()) != 4 {
                     bail!("Expected 4 distinct records for each design flow temperature");
                 }
             } else if data.len() != 5 {
@@ -719,7 +725,7 @@ impl HeatPumpTestData {
 
         // Check if test letters ABCDE are present as expected
         let mut test_letter_vec: Vec<char> = Default::default();
-        for temperature in &dsgn_flow_temps {
+        for temperature in &design_flow_temps {
             for test_data in &test_data[temperature] {
                 for test_letter in test_data.test_letter.to_string().chars() {
                     test_letter_vec.push(test_letter);
@@ -735,19 +741,19 @@ impl HeatPumpTestData {
             }
         }
 
-        dsgn_flow_temps.sort_by(|a, b| a.total_cmp(b));
+        design_flow_temps.sort_by(|a, b| a.total_cmp(b));
         for (_, data) in test_data.iter_mut() {
             data.sort_by(|a, b| a.temp_test.total_cmp(&b.temp_test));
         }
 
-        let average_cap = ave_capacity(&dsgn_flow_temps, &test_data);
-        let temp_spread_test_conditions = init_temp_spread_test_conditions(&dsgn_flow_temps)?;
-        let regression_coeffs = init_regression_coeffs(&dsgn_flow_temps, &test_data)?;
+        let average_cap = ave_capacity(&design_flow_temps, &test_data);
+        let temp_spread_test_conditions = init_temp_spread_test_conditions(&design_flow_temps)?;
+        let regression_coeffs = init_regression_coeffs(&design_flow_temps, &test_data)?;
 
         // Calculate derived variables for each data record which are not time-dependent
         let test_data: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>> = test_data
             .iter()
-            .map(|(dsgn_flow_temp, data)| {
+            .map(|(design_flow_temp, data)| {
                 let (carnot_cops, exergetic_effs) =
                     data.iter().fold((vec![], vec![]), |mut acc, datum| {
                         // Get the source and outlet temperatures from the test record
@@ -795,13 +801,13 @@ impl HeatPumpTestData {
                         )
                     })
                     .collect();
-                (*dsgn_flow_temp, complete_data)
+                (*design_flow_temp, complete_data)
             })
             .collect();
 
         Ok(Self {
             test_data,
-            dsgn_flow_temps,
+            design_flow_temps,
             average_cap,
             temp_spread_test_conditions,
             regression_coeffs,
@@ -813,7 +819,7 @@ impl HeatPumpTestData {
     /// Arguments:
     /// * `flow_temp` - flow temp in K
     pub fn average_capacity(&self, flow_temp: f64) -> Result<f64, BelowAbsoluteZeroError> {
-        if self.dsgn_flow_temps.len() == 1 {
+        if self.design_flow_temps.len() == 1 {
             return Ok(self.average_cap[0]);
         }
 
@@ -821,7 +827,7 @@ impl HeatPumpTestData {
         Ok(np_interp(
             flow_temp,
             &self
-                .dsgn_flow_temps
+                .design_flow_temps
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
@@ -837,7 +843,7 @@ impl HeatPumpTestData {
         &self,
         flow_temp: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
-        if self.dsgn_flow_temps.len() == 1 {
+        if self.design_flow_temps.len() == 1 {
             return Ok(self.temp_spread_test_conditions[0]);
         }
 
@@ -845,7 +851,7 @@ impl HeatPumpTestData {
         Ok(np_interp(
             flow_temp,
             &self
-                .dsgn_flow_temps
+                .design_flow_temps
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
@@ -853,12 +859,12 @@ impl HeatPumpTestData {
         ))
     }
 
-    fn find_test_record_index(&self, test_condition: &str, dsgn_flow_temp: f64) -> Option<usize> {
+    fn find_test_record_index(&self, test_condition: &str, design_flow_temp: f64) -> Option<usize> {
         if test_condition == "cld" {
             return Some(0);
         }
 
-        self.test_data[&OrderedFloat(dsgn_flow_temp)]
+        self.test_data[&OrderedFloat(design_flow_temp)]
             .iter()
             .position(|test_record| test_record.test_letter.to_string() == test_condition)
     }
@@ -870,23 +876,23 @@ impl HeatPumpTestData {
         test_condition: &str,
         flow_temp: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
-        if self.dsgn_flow_temps.len() == 1 {
+        if self.design_flow_temps.len() == 1 {
             let idx = self
-                .find_test_record_index(test_condition, self.dsgn_flow_temps[0].0)
+                .find_test_record_index(test_condition, self.design_flow_temps[0].0)
                 .expect("Expected a test condition to be found in the test data for heat pumps");
-            return Ok(self.test_data[&self.dsgn_flow_temps[0]][idx].data_item(&data_item_name));
+            return Ok(self.test_data[&self.design_flow_temps[0]][idx].data_item(&data_item_name));
         }
 
         let data_list = &self
-            .dsgn_flow_temps
+            .design_flow_temps
             .iter()
-            .map(|dsgn_flow_temp| {
+            .map(|design_flow_temp| {
                 let idx = self
-                    .find_test_record_index(test_condition, dsgn_flow_temp.0)
+                    .find_test_record_index(test_condition, design_flow_temp.0)
                     .expect(
                         "Expected a test condition to be found in the test data for heat pumps",
                     );
-                self.test_data[dsgn_flow_temp][idx].data_item(&data_item_name)
+                self.test_data[design_flow_temp][idx].data_item(&data_item_name)
             })
             .collect::<Vec<_>>();
 
@@ -894,7 +900,7 @@ impl HeatPumpTestData {
         Ok(np_interp(
             flow_temp,
             &self
-                .dsgn_flow_temps
+                .design_flow_temps
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
@@ -959,13 +965,15 @@ impl HeatPumpTestData {
         carnot_cop_op_cond: f64,
     ) -> anyhow::Result<f64> {
         let lr_op_cond_list = self
-            .dsgn_flow_temps
+            .design_flow_temps
             .iter()
-            .map(|dsgn_flow_temp| {
-                let dsgn_flow_temp = celsius_to_kelvin(dsgn_flow_temp.0)?;
-                let temp_output_cld = self.outlet_temp_at_test_condition("cld", dsgn_flow_temp)?;
-                let temp_source_cld = self.source_temp_at_test_condition("cld", dsgn_flow_temp)?;
-                let carnot_cop_cld = self.carnot_cop_at_test_condition("cld", dsgn_flow_temp)?;
+            .map(|design_flow_temp| {
+                let design_flow_temp = celsius_to_kelvin(design_flow_temp.0)?;
+                let temp_output_cld =
+                    self.outlet_temp_at_test_condition("cld", design_flow_temp)?;
+                let temp_source_cld =
+                    self.source_temp_at_test_condition("cld", design_flow_temp)?;
+                let carnot_cop_cld = self.carnot_cop_at_test_condition("cld", design_flow_temp)?;
 
                 let lr_op_cond = (carnot_cop_op_cond / carnot_cop_cld)
                     * (temp_output_cld * temp_source / (flow_temp * temp_source_cld)).powf(N_EXER);
@@ -976,7 +984,7 @@ impl HeatPumpTestData {
         Ok(np_interp(
             flow_temp,
             &self
-                .dsgn_flow_temps
+                .design_flow_temps
                 .iter()
                 .map(|temp| temp.0)
                 .collect::<Vec<_>>(),
@@ -1013,27 +1021,27 @@ impl HeatPumpTestData {
         //     self.__testdata, rather than looping over self.__testdata,
         //     which is unsorted and therefore may populate the lists in the
         //     wrong order.
-        for dsgn_flow_temp in &self.dsgn_flow_temps {
-            let dsgn_flow_temp_data = &self.test_data[dsgn_flow_temp];
+        for design_flow_temp in &self.design_flow_temps {
+            let design_flow_temp_data = &self.test_data[design_flow_temp];
             // Find the first load ratio in the test data that is greater than
             // or equal to than the load ratio at operating conditions - this
             // and the previous load ratio are the values either side of
             // operating conditions.
-            let idx = dsgn_flow_temp_data
+            let idx = design_flow_temp_data
                 .iter()
                 .position(|test_record| test_record.theoretical_load_ratio > exergy_lr_op_cond)
-                .unwrap_or(dsgn_flow_temp_data.len() - 1);
+                .unwrap_or(design_flow_temp_data.len() - 1);
             // NB. This assertion reflects an assertion in the source Python.
             assert!(idx > 0);
 
             // Look up correct load ratio and efficiency based on the idx found above
-            load_ratios_below.push(dsgn_flow_temp_data[idx - 1].theoretical_load_ratio);
-            load_ratios_above.push(dsgn_flow_temp_data[idx].theoretical_load_ratio);
-            efficiencies_below.push(dsgn_flow_temp_data[idx - 1].exergetic_eff);
-            efficiencies_above.push(dsgn_flow_temp_data[idx].exergetic_eff);
+            load_ratios_below.push(design_flow_temp_data[idx - 1].theoretical_load_ratio);
+            load_ratios_above.push(design_flow_temp_data[idx].theoretical_load_ratio);
+            efficiencies_below.push(design_flow_temp_data[idx - 1].exergetic_eff);
+            efficiencies_above.push(design_flow_temp_data[idx].exergetic_eff);
         }
 
-        if self.dsgn_flow_temps.len() == 1 {
+        if self.design_flow_temps.len() == 1 {
             return Ok((
                 load_ratios_below[0],
                 load_ratios_above[0],
@@ -1043,15 +1051,15 @@ impl HeatPumpTestData {
         }
 
         let flow_temp = kelvin_to_celsius(flow_temp)?;
-        let dsgn_temps_for_interp = &self
-            .dsgn_flow_temps
+        let design_temps_for_interp = &self
+            .design_flow_temps
             .iter()
             .map(|temp| temp.0)
             .collect::<Vec<_>>();
-        let lr_below = np_interp(flow_temp, dsgn_temps_for_interp, &load_ratios_below);
-        let lr_above = np_interp(flow_temp, dsgn_temps_for_interp, &load_ratios_above);
-        let eff_below = np_interp(flow_temp, dsgn_temps_for_interp, &efficiencies_below);
-        let eff_above = np_interp(flow_temp, dsgn_temps_for_interp, &efficiencies_above);
+        let lr_below = np_interp(flow_temp, design_temps_for_interp, &load_ratios_below);
+        let lr_above = np_interp(flow_temp, design_temps_for_interp, &load_ratios_above);
+        let eff_below = np_interp(flow_temp, design_temps_for_interp, &efficiencies_below);
+        let eff_above = np_interp(flow_temp, design_temps_for_interp, &efficiencies_above);
 
         Ok((lr_below, lr_above, eff_below, eff_above))
     }
@@ -1077,24 +1085,24 @@ impl HeatPumpTestData {
         //        which is unsorted and therefore may populate the lists in the
         //        wrong order.
         let cop_op_cond = self
-            .dsgn_flow_temps
+            .design_flow_temps
             .iter()
-            .map(|dsgn_flow_temp| {
-                let dsgn_flow_temp_data = &self.test_data[dsgn_flow_temp];
+            .map(|design_flow_temp| {
+                let design_flow_temp_data = &self.test_data[design_flow_temp];
                 // Get the source and outlet temperatures from the coldest test record
-                let temp_outlet_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_outlet)?;
-                let temp_source_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_source)?;
+                let temp_outlet_cld = celsius_to_kelvin(design_flow_temp_data[0].temp_outlet)?;
+                let temp_source_cld = celsius_to_kelvin(design_flow_temp_data[0].temp_source)?;
 
-                Ok((self.regression_coeffs[dsgn_flow_temp][0]
-                    + self.regression_coeffs[dsgn_flow_temp][1] * temp_ext_c
-                    + self.regression_coeffs[dsgn_flow_temp][2] * temp_ext_c.powi(2))
+                Ok((self.regression_coeffs[design_flow_temp][0]
+                    + self.regression_coeffs[design_flow_temp][1] * temp_ext_c
+                    + self.regression_coeffs[design_flow_temp][2] * temp_ext_c.powi(2))
                     * temp_output
                     * (temp_outlet_cld - temp_source_cld)
                     / (temp_outlet_cld * max_of_2(temp_output - temp_source, temp_diff_limit_low)))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
-        if self.dsgn_flow_temps.len() == 1 {
+        if self.design_flow_temps.len() == 1 {
             return Ok(cop_op_cond[0]);
         }
 
@@ -1103,7 +1111,7 @@ impl HeatPumpTestData {
         Ok(np_interp(
             flow_temp,
             &self
-                .dsgn_flow_temps
+                .design_flow_temps
                 .iter()
                 .map(|temp| temp.0)
                 .collect::<Vec<_>>(),
@@ -1141,23 +1149,23 @@ impl HeatPumpTestData {
         //       be needed if we change the weather data from that used in
         //       DAHPSE for SAP 2012/10.2
         let therm_cap_op_cond =
-            self.dsgn_flow_temps.iter().map(|dsgn_flow_temp| {
-                let dsgn_flow_temp_data = &self.test_data[dsgn_flow_temp];
+            self.design_flow_temps.iter().map(|design_flow_temp| {
+                let design_flow_temp_data = &self.test_data[design_flow_temp];
                 // Get the source and outlet temperatures from the coldest test record
-                let temp_outlet_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_outlet)?;
-                let temp_source_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_source)?;
+                let temp_outlet_cld = celsius_to_kelvin(design_flow_temp_data[0].temp_outlet)?;
+                let temp_source_cld = celsius_to_kelvin(design_flow_temp_data[0].temp_source)?;
                 // Get the thermal capacity from the coldest test record
-                let thermal_capacity_cld = dsgn_flow_temp_data[0].capacity;
+                let thermal_capacity_cld = design_flow_temp_data[0].capacity;
 
                 Ok(if mod_ctrl {
                     thermal_capacity_cld * ((temp_outlet_cld * temp_source) / (temp_output * temp_source_cld)).powf(N_EXER)
                 } else {
-                    let d_idx = self.find_test_record_index("D", dsgn_flow_temp.0).expect("Expected to find a test record with the condition 'D' within heat pump test data");
+                    let d_idx = self.find_test_record_index("D", design_flow_temp.0).expect("Expected to find a test record with the condition 'D' within heat pump test data");
                     // Get the source and outlet temperatures for test condition D
-                    let temp_outlet_d = celsius_to_kelvin(dsgn_flow_temp_data[d_idx].temp_outlet)?;
-                    let temp_source_d = celsius_to_kelvin(dsgn_flow_temp_data[d_idx].temp_source)?;
+                    let temp_outlet_d = celsius_to_kelvin(design_flow_temp_data[d_idx].temp_outlet)?;
+                    let temp_source_d = celsius_to_kelvin(design_flow_temp_data[d_idx].temp_source)?;
                     // Get the thermal capacity for test condition D
-                    let thermal_capacity_d = dsgn_flow_temp_data[d_idx].capacity;
+                    let thermal_capacity_d = design_flow_temp_data[d_idx].capacity;
 
                     let temp_diff_cld = temp_outlet_cld - temp_source_cld;
                     let temp_diff_d = temp_outlet_d - temp_source_d;
@@ -1172,7 +1180,7 @@ impl HeatPumpTestData {
         Ok(np_interp(
             flow_temp,
             &self
-                .dsgn_flow_temps
+                .design_flow_temps
                 .iter()
                 .map(|temp| temp.0)
                 .collect::<Vec<_>>(),
@@ -1203,10 +1211,10 @@ impl HeatPumpTestData {
         temp_spread_emitter: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
         let temp_spread_correction_list = self
-            .dsgn_flow_temps
+            .design_flow_temps
             .iter()
             .enumerate()
-            .map(|(i, _dsgn_flow_temp)| {
+            .map(|(i, _design_flow_temp)| {
                 let temp_spread_test_cond = self.temp_spread_test_conditions[i];
                 1. - ((temp_spread_test_cond - temp_spread_emitter) / 2.)
                     / (temp_output - temp_spread_test_cond / 2. + temp_diff_condenser - temp_source
@@ -1218,7 +1226,7 @@ impl HeatPumpTestData {
         Ok(np_interp(
             flow_temp,
             &self
-                .dsgn_flow_temps
+                .design_flow_temps
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
@@ -1228,16 +1236,16 @@ impl HeatPumpTestData {
 }
 
 /// The list average_cap will be in the same order as the
-/// corresponding elements in self.__dsgn_flow_temps. This behaviour
+/// corresponding elements in self.__design_flow_temps. This behaviour
 /// is relied upon elsewhere.
 fn ave_capacity(
-    dsgn_flow_temps: &[OrderedFloat<f64>],
+    design_flow_temps: &[OrderedFloat<f64>],
     test_data: &HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>>,
 ) -> Vec<f64> {
-    dsgn_flow_temps
+    design_flow_temps
         .iter()
-        .map(|dsgn_flow_temp| {
-            test_data[dsgn_flow_temp]
+        .map(|design_flow_temp| {
+            test_data[design_flow_temp]
                 .iter()
                 .filter(|datum| datum.test_letter.is_non_bivalent())
                 .map(|datum| datum.capacity)
@@ -1252,15 +1260,15 @@ const TEMP_SPREAD_AT_TEST_CONDITIONS: [(f64, f64); 5] =
 
 /// List temp spread at test conditions for the design flow temps in the test data
 fn init_temp_spread_test_conditions(
-    dsgn_flow_temps: &[OrderedFloat<f64>],
+    design_flow_temps: &[OrderedFloat<f64>],
 ) -> anyhow::Result<Vec<f64>> {
-    dsgn_flow_temps
+    design_flow_temps
         .iter()
-        .map(|dsgn_flow_temp| {
+        .map(|design_flow_temp| {
             TEMP_SPREAD_AT_TEST_CONDITIONS
                 .iter()
                 .find_map(|(temp_flow, temp_spread)| {
-                    if dsgn_flow_temp == temp_flow {
+                    if design_flow_temp == temp_flow {
                         Some(*temp_spread)
                     } else {
                         None
@@ -1272,21 +1280,21 @@ fn init_temp_spread_test_conditions(
 }
 
 fn init_regression_coeffs(
-    dsgn_flow_temps: &Vec<OrderedFloat<f64>>,
+    design_flow_temps: &Vec<OrderedFloat<f64>>,
     test_data: &HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>>,
 ) -> anyhow::Result<HashMap<OrderedFloat<f64>, Vec<f64>>> {
     let mut regression_coeffs: HashMap<OrderedFloat<f64>, Vec<f64>> = Default::default();
-    for dsgn_flow_temp in dsgn_flow_temps {
-        let temp_test_list: Vec<f64> = test_data[dsgn_flow_temp]
+    for design_flow_temp in design_flow_temps {
+        let temp_test_list: Vec<f64> = test_data[design_flow_temp]
             .iter()
             .map(|datum| datum.temp_test)
             .collect();
-        let cop_list: Vec<f64> = test_data[dsgn_flow_temp]
+        let cop_list: Vec<f64> = test_data[design_flow_temp]
             .iter()
             .map(|datum| datum.cop)
             .collect();
         regression_coeffs.insert(
-            *dsgn_flow_temp,
+            *design_flow_temp,
             polyfit(&temp_test_list, &cop_list, 2).map_err(|err| anyhow!(err))?,
         );
     }
@@ -2114,7 +2122,7 @@ impl HeatPump {
             if source_type == HeatPumpSourceType::ExhaustAirMixed {
                 let ext_air_ratio_list: Vec<_> = test_data_after_interpolation
                     .iter()
-                    .filter_map(|datum| datum.ext_air_ratio)
+                    .filter_map(|datum| datum.eahp_mixed_ext_air_ratio)
                     .collect();
                 let same_ext_air_ratio = ext_air_ratio_list
                     .iter()
@@ -2160,7 +2168,7 @@ impl HeatPump {
                 ),
             };
             let (temp_min_modulation_rate_high, min_modulation_rate_55) =
-                if test_data.dsgn_flow_temps.contains(&OrderedFloat(55.)) {
+                if test_data.design_flow_temps.contains(&OrderedFloat(55.)) {
                     (
                         Some(celsius_to_kelvin(55.)?),
                         Some(
@@ -2196,6 +2204,7 @@ impl HeatPump {
                 tank.pump_power_at_flow_rate,
                 number_of_zones,
                 simulation_timestep,
+                temp_internal_air_fn(),
                 *WATER,
                 Some(output_detailed_results),
             )
@@ -2426,7 +2435,7 @@ impl HeatPump {
 
         // Use low temperature test data for space heating - set flow temp such
         // that it matches the one used in the test
-        let temp_flow = heat_pump.lock().test_data.dsgn_flow_temps[0].0;
+        let temp_flow = heat_pump.lock().test_data.design_flow_temps[0].0;
 
         // Design temperature difference across the emitters, in deg C or K
         let temp_diff_emit_dsgn = max_of_2(
@@ -3254,7 +3263,11 @@ impl HeatPump {
             let min_modulation_rate_low = self
                 .min_modulation_rate_low
                 .expect("A min_modulation_rate_low was expected to have been set");
-            if self.test_data.dsgn_flow_temps.contains(&OrderedFloat(55.)) {
+            if self
+                .test_data
+                .design_flow_temps
+                .contains(&OrderedFloat(55.))
+            {
                 let temp_min_modulation_rate_high = self
                     .temp_min_modulation_rate_high
                     .expect("temp_min_modulation_rate_high expected to have been provided");
@@ -4535,8 +4548,7 @@ mod tests {
                 temp_outlet: 55.,
                 temp_source: 20.,
                 temp_test: -7.,
-                eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: Some(0.45),
+                eahp_mixed_ext_air_ratio: Some(0.45),
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4547,8 +4559,7 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 20.,
                 temp_test: 2.,
-                eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: Some(0.45),
+                eahp_mixed_ext_air_ratio: Some(0.45),
             },
         ];
 
@@ -4589,7 +4600,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: -7.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4601,7 +4611,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: 2.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4613,7 +4622,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: 7.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4625,7 +4633,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: 12.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4637,7 +4644,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: -7.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4649,7 +4655,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: -7.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4661,7 +4666,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: 2.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4673,7 +4677,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: 7.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4685,7 +4688,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: 12.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4697,7 +4699,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: -7.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4709,7 +4710,6 @@ mod tests {
                 temp_source: 0.,
                 temp_test: -7.,
                 eahp_mixed_ext_air_ratio: None,
-                ext_air_ratio: None,
             },
         ]
     }
@@ -4886,7 +4886,7 @@ mod tests {
         data_sorted: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
     ) {
         assert_eq!(
-            test_data.dsgn_flow_temps,
+            test_data.design_flow_temps,
             vec![OrderedFloat(35.), OrderedFloat(55.)],
             "list of design flow temps populated incorrectly"
         );
@@ -5483,6 +5483,7 @@ mod tests {
             0.040,
             2,
             simulation_time.step,
+            20.,
             *WATER,
             Some(false),
         )
