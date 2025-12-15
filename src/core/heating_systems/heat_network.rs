@@ -425,17 +425,22 @@ impl HeatNetwork {
     }
 
     /// Calculations to be done at the end of each timestep
-    pub fn timestep_end(&mut self, timestep_idx: usize) {
+    pub fn timestep_end(&mut self, timestep_idx: usize) -> anyhow::Result<()> {
         // Energy required to overcome losses
         self.energy_supply_connection_aux
-            .demand_energy(self.hiu_loss(), timestep_idx)
-            .unwrap();
+            .demand_energy(self.hiu_loss(), timestep_idx)?;
         self.energy_supply_connection_building_level_distribution_losses
-            .demand_energy(self.building_level_loss(), timestep_idx)
-            .unwrap();
+            .demand_energy(self.building_level_loss(), timestep_idx)?;
+
+        let timestep = self.simulation_timestep;
+        let time_remaining_current_timestep = timestep - self.total_time_running_current_timestep;
+
+        self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx)?;
 
         // Variables below need to be reset at the end of each timestep
         self.total_time_running_current_timestep = Default::default();
+
+        Ok(())
     }
 
     /// Standing heat loss from the HIU (heat interface unit) in kWh
@@ -448,6 +453,21 @@ impl HeatNetwork {
     pub fn building_level_loss(&self) -> f64 {
         self.building_level_distribution_losses / WATTS_PER_KILOWATT as f64
             * self.simulation_timestep
+    }
+
+    /// Calculation of energy from pump
+    fn calc_auxiliary_energy(
+        &self,
+        timestep: f64,
+        _time_remaining_current_timestep: f64,
+        timestep_idx: usize,
+    ) -> anyhow::Result<()> {
+        let mut energy_aux = self.total_time_running_current_timestep * self.power_circ_pump;
+        energy_aux += timestep * self.power_aux;
+        self.energy_supply_connection_aux
+            .demand_energy(energy_aux, timestep_idx)?;
+
+        Ok(())
     }
 }
 
@@ -620,7 +640,10 @@ mod tests {
                 expected_demand[t_idx],
                 max_relative = 1e-3
             );
-            heat_network_for_water_direct.lock().timestep_end(t_idx);
+            heat_network_for_water_direct
+                .lock()
+                .timestep_end(t_idx)
+                .unwrap();
         }
     }
 
@@ -741,7 +764,7 @@ mod tests {
                 ),
                 [7.0, 2.0][t_idx]
             );
-            heat_network.lock().timestep_end(t_idx);
+            heat_network.lock().timestep_end(t_idx).unwrap();
         }
     }
 
@@ -763,7 +786,7 @@ mod tests {
                 ),
                 [7.0, 7.0][t_idx]
             );
-            heat_network.lock().timestep_end(t_idx);
+            heat_network.lock().timestep_end(t_idx).unwrap();
         }
     }
 
@@ -896,10 +919,8 @@ mod tests {
     #[rstest]
     fn test_heat_network_service_space(
         three_len_simulation_time: SimulationTime,
-        heat_network_for_service_space: &Arc<Mutex<HeatNetwork>>,
         mut heat_network_service_space: HeatNetworkServiceSpace,
     ) {
-        let heat_network = heat_network_for_service_space.clone();
         let energy_demanded = [10.0, 2.0, 2.0];
         let temp_flow = [55.0, 65.0, 65.0];
         let temp_return = [50.0, 60.0, 60.0];
@@ -913,9 +934,8 @@ mod tests {
                     None,
                     &t_it
                 ),
-                [5.0, 2.0, 0.0][t_idx]
+                [5.0, 0.0, 0.0][t_idx]
             );
-            heat_network.lock().timestep_end(t_idx);
         }
     }
 
@@ -937,7 +957,10 @@ mod tests {
                 ),
                 [5.0, 5.0, 0.0][t_idx]
             );
-            heat_network_for_service_space.lock().timestep_end(t_idx);
+            heat_network_for_service_space
+                .lock()
+                .timestep_end(t_idx)
+                .unwrap();
         }
     }
 
@@ -1025,14 +1048,15 @@ mod tests {
                 ),
                 [2.0, 6.0][t_idx]
             );
-            heat_network.lock().timestep_end(t_idx);
+            heat_network.lock().timestep_end(t_idx).unwrap();
             assert_eq!(
                 energy_supply.read().results_by_end_user()["heat_network_test"][t_idx],
                 [2.0, 6.0][t_idx],
             );
-            assert_eq!(
+            assert_relative_eq!(
                 energy_supply.read().results_by_end_user()["heat_network_auxiliary"][t_idx],
-                [0.01, 0.01][t_idx]
+                [0.07666, 0.13][t_idx],
+                max_relative = 1e-4
             );
         }
     }
