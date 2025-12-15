@@ -746,7 +746,7 @@ impl HeatPumpTestData {
             data.sort_by(|a, b| a.temp_test.total_cmp(&b.temp_test));
         }
 
-        let average_cap = ave_capacity(&design_flow_temps, &test_data);
+        let average_cap = average_capacity(&design_flow_temps, &test_data);
         let temp_spread_test_conditions = init_temp_spread_test_conditions(&design_flow_temps)?;
         let regression_coeffs = init_regression_coeffs(&design_flow_temps, &test_data)?;
 
@@ -815,15 +815,15 @@ impl HeatPumpTestData {
     }
 
     /// Return average capacity for tests A-D, interpolated between design flow temps
-    ///
-    /// Arguments:
-    /// * `flow_temp` - flow temp in K
-    pub fn average_capacity(&self, flow_temp: f64) -> Result<f64, BelowAbsoluteZeroError> {
+    pub fn average_capacity(
+        &self,
+        design_flow_temp_op_cond: f64,
+    ) -> Result<f64, BelowAbsoluteZeroError> {
         if self.design_flow_temps.len() == 1 {
             return Ok(self.average_cap[0]);
         }
 
-        let flow_temp = kelvin_to_celsius(flow_temp)?;
+        let flow_temp = kelvin_to_celsius(design_flow_temp_op_cond)?;
         Ok(np_interp(
             flow_temp,
             &self
@@ -841,13 +841,13 @@ impl HeatPumpTestData {
     /// * `flow_temp` - flow temp in K
     pub fn temp_spread_test_conditions(
         &self,
-        flow_temp: f64,
+        design_flow_temp_op_cond: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
         if self.design_flow_temps.len() == 1 {
             return Ok(self.temp_spread_test_conditions[0]);
         }
 
-        let flow_temp = kelvin_to_celsius(flow_temp)?;
+        let flow_temp = kelvin_to_celsius(design_flow_temp_op_cond)?;
         Ok(np_interp(
             flow_temp,
             &self
@@ -859,14 +859,19 @@ impl HeatPumpTestData {
         ))
     }
 
-    fn find_test_record_index(&self, test_condition: &str, design_flow_temp: f64) -> Option<usize> {
+    fn find_test_record_index(
+        &self,
+        test_condition: &str,
+        design_flow_temp: f64,
+    ) -> anyhow::Result<usize> {
         if test_condition == "cld" {
-            return Some(0);
+            return Ok(0);
         }
 
         self.test_data[&OrderedFloat(design_flow_temp)]
             .iter()
             .position(|test_record| test_record.test_letter.to_string() == test_condition)
+            .ok_or_else(|| anyhow!("Test record index not found."))
     }
 
     /// Return value at specified test condition, interpolated between design flow temps
@@ -874,7 +879,7 @@ impl HeatPumpTestData {
         &self,
         data_item_name: DatumItem,
         test_condition: &str,
-        flow_temp: f64,
+        design_flow_temp_op_cond: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
         if self.design_flow_temps.len() == 1 {
             let idx = self
@@ -896,7 +901,7 @@ impl HeatPumpTestData {
             })
             .collect::<Vec<_>>();
 
-        let flow_temp = kelvin_to_celsius(flow_temp)?;
+        let flow_temp = kelvin_to_celsius(design_flow_temp_op_cond)?;
         Ok(np_interp(
             flow_temp,
             &self
@@ -913,9 +918,13 @@ impl HeatPumpTestData {
     fn carnot_cop_at_test_condition(
         &self,
         test_condition: &str,
-        flow_temp: f64,
+        design_flow_temp_op_cond: f64,
     ) -> anyhow::Result<f64> {
-        Ok(self.data_at_test_condition(DatumItem::CarnotCop, test_condition, flow_temp)?)
+        Ok(self.data_at_test_condition(
+            DatumItem::CarnotCop,
+            test_condition,
+            design_flow_temp_op_cond,
+        )?)
     }
 
     /// Return outlet temp, in Kelvin, at specified test condition (A, B, C, D,
@@ -923,12 +932,12 @@ impl HeatPumpTestData {
     fn outlet_temp_at_test_condition(
         &self,
         test_condition: &str,
-        flow_temp: f64,
+        design_flow_temp_op_cond: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
         celsius_to_kelvin(self.data_at_test_condition(
             DatumItem::TempOutlet,
             test_condition,
-            flow_temp,
+            design_flow_temp_op_cond,
         )?)
     }
 
@@ -937,12 +946,12 @@ impl HeatPumpTestData {
     fn source_temp_at_test_condition(
         &self,
         test_condition: &str,
-        flow_temp: f64,
+        design_flow_temp_op_cond: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
         celsius_to_kelvin(self.data_at_test_condition(
             DatumItem::TempSource,
             test_condition,
-            flow_temp,
+            design_flow_temp_op_cond,
         )?)
     }
 
@@ -952,9 +961,13 @@ impl HeatPumpTestData {
     fn capacity_at_test_condition(
         &self,
         test_condition: &str,
-        flow_temp: f64,
+        design_flow_temp_op_cond: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
-        self.data_at_test_condition(DatumItem::Capacity, test_condition, flow_temp)
+        self.data_at_test_condition(
+            DatumItem::Capacity,
+            test_condition,
+            design_flow_temp_op_cond,
+        )
     }
 
     /// Return load ratio at operating conditions
@@ -1238,7 +1251,7 @@ impl HeatPumpTestData {
 /// The list average_cap will be in the same order as the
 /// corresponding elements in self.__design_flow_temps. This behaviour
 /// is relied upon elsewhere.
-fn ave_capacity(
+fn average_capacity(
     design_flow_temps: &[OrderedFloat<f64>],
     test_data: &HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>>,
 ) -> Vec<f64> {
