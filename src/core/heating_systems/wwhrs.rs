@@ -181,6 +181,9 @@ impl WwhrsInstantaneous {
         match self.system_c_efficiencies {
             Some(_) => {
                 // Approach 1: Pre-corrected System C data
+                if self.system_c_utilisation_factor.is_none() {
+                    anyhow::bail!("system_c_utilisation_factor is required when using system_c_efficiencies")
+                }
                 todo!()
             }
             None => {
@@ -677,6 +680,35 @@ mod tests {
             None,
             None,
             Some(0.88),
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        assert!(wwhrs
+            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .is_err());
+    }
+
+    #[rstest]
+    fn test_system_c_pre_corrected_missing_utilisation_factor(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            Some(0.7),
+            None,
+            None,
+            Some(vec![38.9, 34.0, 30.3, 27.3, 24.8]),
+            None,
+            None,
+            None,
             simulation_time_iteration,
         )
             .unwrap();
