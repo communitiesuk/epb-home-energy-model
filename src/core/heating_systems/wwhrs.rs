@@ -178,6 +178,18 @@ impl WwhrsInstantaneous {
         _volume_cold_water: f64,
         _temp_hot: f64,
     ) -> anyhow::Result<f64> {
+        match self.system_c_efficiencies {
+            Some(_) => {
+                // Approach 1: Pre-corrected System C data
+                todo!()
+            }
+            None => {
+                // Approach 2: Convert from System A data
+                if self.system_c_utilisation_factor.is_none() || self.system_c_efficiency_factor.is_none() {
+                    anyhow::bail!("Both system_c_utilisation_factor and system_c_efficiency_factor are required when converting from System A data")
+                }
+            }
+        }
         todo!()
     }
 
@@ -642,6 +654,35 @@ mod tests {
 
         assert!(wwhrs
             .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
+            .is_err());
+    }
+
+    #[rstest]
+    fn test_system_c_conversion_missing_utilisation_factor_only(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            Some(0.7),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(0.88),
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        assert!(wwhrs
+            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
             .is_err());
     }
 
