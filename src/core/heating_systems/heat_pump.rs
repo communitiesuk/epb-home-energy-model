@@ -1151,11 +1151,13 @@ impl HeatPumpTestData {
     /// * `mod_ctrl` - boolean specifying whether or not the heat has controls
     ///                    capable of varying the output (as opposed to just on/off
     ///                    control)
+    /// * `design_flow_temp_op_cond` - design flow temperature of the heat pump as installed
     fn capacity_op_cond_var_flow_or_source_temp(
         &self,
         temp_output: f64,
         temp_source: f64,
         mod_ctrl: bool,
+        design_flow_temp_op_cond: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
         // In eqns below, method uses condition A rather than coldest. From
         // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.4:
@@ -1200,7 +1202,7 @@ impl HeatPumpTestData {
             }).collect::<Result<Vec<f64>, BelowAbsoluteZeroError>>()?;
 
         // Interpolate between the values found for the different design flow temperatures
-        let flow_temp = kelvin_to_celsius(temp_output)?;
+        let flow_temp = kelvin_to_celsius(design_flow_temp_op_cond)?;
         Ok(np_interp(
             flow_temp,
             &self
@@ -1453,6 +1455,7 @@ impl HeatPumpServiceWater {
         } else {
             None
         };
+        let design_flow_temp_op_cond = temp_flow_k.ok_or_else(|| anyhow!("temp_flow_k is None"))?; // TODO review when updating this method to 1.0.0a1
 
         self.heat_pump.lock().demand_energy(
             &self.service_name,
@@ -1461,6 +1464,7 @@ impl HeatPumpServiceWater {
             temp_flow_k,
             temp_return_k,
             self.temp_limit_upper_in_k,
+            design_flow_temp_op_cond,
             TIME_CONSTANT_WATER,
             service_on,
             simulation_time_iteration,
@@ -1618,6 +1622,7 @@ impl HeatPumpServiceSpace {
             Some(celsius_to_kelvin(temp_flow)?),
             celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
+            self.design_flow_temp_op_cond,
             time_constant_for_service,
             service_on,
             simulation_time_iteration,
@@ -1663,6 +1668,7 @@ impl HeatPumpServiceSpace {
             celsius_to_kelvin(temp_flow)?,
             celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
+            self.design_flow_temp_op_cond,
             time_constant_for_service,
             service_on,
             self.volume_heated,
@@ -1803,6 +1809,7 @@ impl HeatPumpServiceSpaceWarmAir {
             Some(celsius_to_kelvin(temp_flow)?),
             celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
+            self.design_flow_temp_op_cond, // TODO review 1.0.0a1
             time_constant_for_service,
             service_on,
             simulation_time_iteration,
@@ -1852,6 +1859,7 @@ impl HeatPumpServiceSpaceWarmAir {
             celsius_to_kelvin(temp_flow)?,
             celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
+            self.design_flow_temp_op_cond,
             time_constant_for_service,
             service_on,
             self.volume_heated,
@@ -2558,16 +2566,18 @@ impl HeatPump {
         &self,
         temp_output: f64,
         temp_source: f64,
+        design_flow_temp_op_cond: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
         if !matches!(self.source_type, HeatPumpSourceType::OutsideAir)
             && !self.var_flow_temp_ctrl_during_test
         {
-            self.test_data.average_capacity(temp_output)
+            self.test_data.average_capacity(design_flow_temp_op_cond)
         } else {
             self.test_data.capacity_op_cond_var_flow_or_source_temp(
                 temp_output,
                 temp_source,
                 self.modulating_ctrl,
+                design_flow_temp_op_cond,
             )
         }
     }
@@ -2713,7 +2723,7 @@ impl HeatPump {
             let power_max_hp = if outside_operating_limits {
                 0.0
             } else {
-                self.thermal_capacity_op_cond(temp_output, temp_source)?
+                self.thermal_capacity_op_cond(temp_output, temp_source, design_flow_temp_op_cond)?
             };
 
             match (
@@ -3034,6 +3044,7 @@ impl HeatPump {
         temp_output: Option<f64>,
         temp_return_feed: f64,
         temp_limit_upper: f64,
+        design_flow_temp_op_cond: f64,
         time_constant_for_service: f64,
         service_on: bool,
         simtime: SimulationTimeIteration,
@@ -3103,13 +3114,13 @@ impl HeatPump {
         // Get thermal capacity, CoP and degradation coeff at operating conditions
         let (thermal_capacity_op_cond, cop_op_cond) = if let Some(temp_output) = temp_output {
             let thermal_capacity_op_cond =
-                self.thermal_capacity_op_cond(temp_output, temp_source)?;
+                self.thermal_capacity_op_cond(temp_output, temp_source, design_flow_temp_op_cond)?;
             let cop_op_cond = self.cop_op_cond(
                 service_type,
                 temp_output,
                 temp_source,
                 temp_spread_correction,
-                1., //TODO update during 1.0.0a1 migration
+                design_flow_temp_op_cond,
                 simtime,
             )?;
             (Some(thermal_capacity_op_cond), Some(cop_op_cond))
@@ -3418,6 +3429,7 @@ impl HeatPump {
         temp_output: Option<f64>,
         temp_return_feed: f64,
         temp_limit_upper: f64,
+        design_flow_temp_op_cond: f64,
         time_constant_for_service: f64,
         service_on: bool,
         simtime: SimulationTimeIteration,
@@ -3436,6 +3448,7 @@ impl HeatPump {
             temp_output,
             temp_return_feed,
             temp_limit_upper,
+            design_flow_temp_op_cond,
             time_constant_for_service,
             service_on,
             simtime,
@@ -3523,6 +3536,7 @@ impl HeatPump {
         temp_output: f64,
         temp_return_feed: f64,
         temp_limit_upper: f64,
+        design_flow_temp_op_cond: f64,
         time_constant_for_service: f64,
         service_on: bool,
         volume_heated_by_service: f64,
@@ -3538,6 +3552,7 @@ impl HeatPump {
             Some(temp_output),
             temp_return_feed,
             temp_limit_upper,
+            design_flow_temp_op_cond,
             time_constant_for_service,
             service_on,
             simtime,
@@ -5304,11 +5319,11 @@ mod tests {
     #[rstest]
     pub fn test_capacity_op_cond_var_flow_or_source_temp(test_data: HeatPumpTestData) {
         let results = [
-            9.26595980986965,
-            8.18090909090909,
+            10.390871958470573,
+            8.241818181818182,
             8.95014809894768,
-            10.0098208201822,
-            8.84090909090909,
+            9.495814072084585,
+            8.830454545454547,
         ];
         let test_cases = [
             (true, 283.15, 308.15),
@@ -5319,11 +5334,14 @@ mod tests {
         ];
         for (i, (mod_ctrl, temp_source, temp_output)) in test_cases.iter().enumerate() {
             assert_relative_eq!(
-                test_data.capacity_op_cond_var_flow_or_source_temp(
-                    *temp_output,
-                    *temp_source,
-                    *mod_ctrl,
-                ).unwrap(),
+                test_data
+                    .capacity_op_cond_var_flow_or_source_temp(
+                        *temp_output,
+                        *temp_source,
+                        *mod_ctrl,
+                        design_flow_temp_op_cond_k(45.)
+                    )
+                    .unwrap(),
                 results[i],
                 max_relative = 1e-7
             );
@@ -6741,8 +6759,10 @@ mod tests {
             simulation_time_for_heat_pump,
             None,
         );
-        let result = heat_pump.thermal_capacity_op_cond(290., 260.).unwrap();
-        assert_relative_eq!(result, 8.607029286155587);
+        let result = heat_pump
+            .thermal_capacity_op_cond(290., 260., design_flow_temp_op_cond_k(55.))
+            .unwrap();
+        assert_relative_eq!(result, 10.69686174950112);
 
         // Check with ExhaustAirMixed
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: exhaust_source_capacity";
@@ -6754,7 +6774,7 @@ mod tests {
             simulation_time_for_heat_pump,
         );
         let result = heat_pump_with_exhaust
-            .thermal_capacity_op_cond(300., 270.)
+            .thermal_capacity_op_cond(300., 270., design_flow_temp_op_cond_k(55.))
             .unwrap();
         assert_relative_eq!(result, 8.70672362099314);
     }
@@ -6988,6 +7008,7 @@ mod tests {
                 Some(330.),
                 330.,
                 340.,
+                design_flow_temp_op_cond_k(55.),
                 1560.,
                 true,
                 t_it,
@@ -7467,6 +7488,7 @@ mod tests {
                         Some(320.),
                         310.,
                         340.,
+                        design_flow_temp_op_cond_k(55.),
                         1560.,
                         true,
                         t_it,
@@ -7562,6 +7584,7 @@ mod tests {
                         Some(330.),
                         330.,
                         340.,
+                        design_flow_temp_op_cond_k(55.),
                         1560.,
                         true,
                         t_it,
@@ -7725,6 +7748,7 @@ mod tests {
                         Some(330.0),
                         330.0,
                         340.0,
+                        design_flow_temp_op_cond_k(55.),
                         1560.,
                         true,
                         t_it,
@@ -7813,6 +7837,7 @@ mod tests {
                         Some(330.),
                         330.,
                         340.,
+                        design_flow_temp_op_cond_k(55.),
                         1560.,
                         false,
                         t_it,
@@ -7940,6 +7965,7 @@ mod tests {
                         Some(330.0),
                         330.0,
                         340.0,
+                        design_flow_temp_op_cond_k(55.),
                         1560.,
                         false,
                         t_it,
@@ -8103,6 +8129,7 @@ mod tests {
                         Some(330.0),
                         330.0,
                         340.0,
+                        design_flow_temp_op_cond_k(55.),
                         1560.,
                         true,
                         t_it,
@@ -8183,6 +8210,7 @@ mod tests {
                         Some(330.0),
                         330.0,
                         340.0,
+                        design_flow_temp_op_cond_k(55.),
                         1560.,
                         true,
                         t_it,
@@ -8294,6 +8322,7 @@ mod tests {
                 330.,
                 330.,
                 340.,
+                design_flow_temp_op_cond_k(55.),
                 1350.,
                 true,
                 100.,
@@ -8651,6 +8680,7 @@ mod tests {
                 Some(330.0),
                 330.0,
                 340.0,
+                design_flow_temp_op_cond_k(55.),
                 1560.,
                 true,
                 simtime,
@@ -8749,6 +8779,7 @@ mod tests {
                 Some(330.0),
                 330.0,
                 340.0,
+                design_flow_temp_op_cond_k(55.),
                 1560.,
                 true,
                 simtime,
@@ -8799,6 +8830,7 @@ mod tests {
                 Some(330.0),
                 330.0,
                 340.0,
+                design_flow_temp_op_cond_k(55.),
                 1560.,
                 true,
                 simtime,
