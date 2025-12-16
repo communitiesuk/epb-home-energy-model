@@ -182,13 +182,17 @@ impl WwhrsInstantaneous {
             Some(_) => {
                 // Approach 1: Pre-corrected System C data
                 if self.system_c_utilisation_factor.is_none() {
-                    anyhow::bail!("system_c_utilisation_factor is required when using system_c_efficiencies")
+                    anyhow::bail!(
+                        "system_c_utilisation_factor is required when using system_c_efficiencies"
+                    )
                 }
                 todo!()
             }
             None => {
                 // Approach 2: Convert from System A data
-                if self.system_c_utilisation_factor.is_none() || self.system_c_efficiency_factor.is_none() {
+                if self.system_c_utilisation_factor.is_none()
+                    || self.system_c_efficiency_factor.is_none()
+                {
                     anyhow::bail!("Both system_c_utilisation_factor and system_c_efficiency_factor are required when converting from System A data")
                 }
             }
@@ -744,11 +748,20 @@ mod tests {
             .unwrap();
 
         // System A should work
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::A).unwrap(), 44.8);
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(5., WwhrsType::A)
+                .unwrap(),
+            44.8
+        );
 
         // Systems B and C should raise errors when no efficiencies provided
-        assert!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::B).is_err());
-        assert!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::C).is_err());
+        assert!(wwhrs
+            .get_efficiency_from_flowrate(5., WwhrsType::B)
+            .is_err());
+        assert!(wwhrs
+            .get_efficiency_from_flowrate(5., WwhrsType::C)
+            .is_err());
     }
 
     #[fixture]
