@@ -64,7 +64,7 @@ impl Inverter {
         // Using Ratio of Rated Power, calculate Inverter DC to AC efficiency
         // equation was estimated based on graph from
         // https://www.researchgate.net/publication/260286647_Performance_of_PV_inverters figure 9
-        
+
         if ratio_of_rated_output == 0. {
             0.
         } else {
@@ -94,7 +94,7 @@ impl Inverter {
         power = min_of_2(power, self.inverter_peak_power_ac);
 
         // Convert power to energy
-        
+
         power * self.simulation_time.step_in_hours()
     }
 

@@ -86,8 +86,14 @@ impl WwhrsInstantaneous {
     ) -> anyhow::Result<f64> {
         let efficiencies = match system_type {
             WwhrsType::A => self.system_a_efficiencies.clone(),
-            WwhrsType::B => self.system_b_efficiencies.clone().ok_or(anyhow!("System B efficiencies expected for WWHR System B"))?,
-            WwhrsType::C => self.system_c_efficiencies.clone().ok_or(anyhow!("System C efficiencies expected for WWHR System C"))?,
+            WwhrsType::B => self
+                .system_b_efficiencies
+                .clone()
+                .ok_or(anyhow!("System B efficiencies expected for WWHR System B"))?,
+            WwhrsType::C => self
+                .system_c_efficiencies
+                .clone()
+                .ok_or(anyhow!("System C efficiencies expected for WWHR System C"))?,
         };
 
         let efficiency = if flowrate <= self.flow_rates[0] {
@@ -397,11 +403,27 @@ mod tests {
             system_b_efficiency_factor,
             system_c_efficiency_factor,
             simulation_time_iteration,
-        ).unwrap();
+        )
+        .unwrap();
 
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::A).unwrap(), 44.8);
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::B).unwrap(), 36.3);
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::C).unwrap(), 38.9);
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(5., WwhrsType::A)
+                .unwrap(),
+            44.8
+        );
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(5., WwhrsType::B)
+                .unwrap(),
+            36.3
+        );
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(5., WwhrsType::C)
+                .unwrap(),
+            38.9
+        );
     }
 
     #[fixture]
