@@ -78,6 +78,86 @@ impl WwhrsInstantaneous {
         })
     }
 
+    /// Calculate WWHRS performance based on system type.
+    ///
+    /// Args:
+    /// * `system_type`: 'A', 'B', or 'C'
+    /// * `temp_target`: Target shower temperature (T_shower)
+    /// * `flowrate_waste_water`: Flow rate of waste water
+    /// * `temp_hot`: Hot water temperature (required for Systems B and C)
+    /// * `volume_cold_water`: Not used in current implementation
+    ///
+    /// Returns:
+    ///
+    /// Dictionary with:
+    /// * `T_pre`: Pre-heated water temperature
+    /// * `T_cyl_feed`: Temperature of water feeding the cylinder
+    /// * `m_hot`: Hot water flow rate (if calculable)
+    fn calculate_performance(
+        &self,
+        system_type: WwhrsType,
+        temp_target: f64,
+        flowrate_waste_water: f64,
+        volume_cold_water: f64,
+        temp_hot: f64,
+    ) -> anyhow::Result<f64> {
+        match system_type {
+            WwhrsType::A => self.calculate_system_a(
+                temp_target,
+                flowrate_waste_water,
+                volume_cold_water,
+                temp_hot,
+            ),
+            WwhrsType::B => self.calculate_system_b(
+                temp_target,
+                flowrate_waste_water,
+                volume_cold_water,
+                temp_hot,
+            ),
+            WwhrsType::C => self.calculate_system_c(
+                temp_target,
+                flowrate_waste_water,
+                volume_cold_water,
+                temp_hot,
+            ),
+        }
+    }
+
+    /// Calculate performance for System A configuration.
+    fn calculate_system_a(
+        &self,
+        _temp_target: f64,
+        _flowrate_waste_water: f64,
+        _volume_cold_water: f64,
+        _temp_hot: f64,
+    ) -> anyhow::Result<f64> {
+        if self.system_a_utilisation_factor.is_none() {
+            anyhow::bail!("system_a_utilisation_factor is required for System A calculation");
+        }
+
+        todo!()
+    }
+
+    fn calculate_system_b(
+        &self,
+        _temp_target: f64,
+        _flowrate_waste_water: f64,
+        _volume_cold_water: f64,
+        _temp_hot: f64,
+    ) -> anyhow::Result<f64> {
+        todo!()
+    }
+
+    fn calculate_system_c(
+        &self,
+        _temp_target: f64,
+        _flowrate_waste_water: f64,
+        _volume_cold_water: f64,
+        _temp_hot: f64,
+    ) -> anyhow::Result<f64> {
+        todo!()
+    }
+
     /// Get the interpolated efficiency from the flowrate for specified system type.
     fn get_efficiency_from_flowrate(
         &self,
@@ -424,6 +504,35 @@ mod tests {
                 .unwrap(),
             38.9
         );
+    }
+
+    #[rstest]
+    fn test_system_a_missing_utilisation_factor(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+        .unwrap();
+
+        assert!(wwhrs
+            .calculate_performance(WwhrsType::A, 35., 8., 8., 55.)
+            .is_err());
     }
 
     #[fixture]
