@@ -5260,7 +5260,9 @@ fn space_heat_systems_from_input(
                                         heat_pump.clone(),
                                         &energy_supply_conn_name,
                                         temp_flow_limit_upper.expect("Expected a temp_flow_limit_upper to be present for a heat pump"),
-                                        *temp_diff_emit_dsgn, control,
+                                        *temp_diff_emit_dsgn,
+                                        1., // TODO 1.0.0a1, pass in design flow temp, should be an f64?
+                                        control,
                                         volume_heated);
 
                                     if heat_pump.lock().source_is_exhaust_air() {

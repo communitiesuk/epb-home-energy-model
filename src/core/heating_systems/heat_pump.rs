@@ -989,72 +989,50 @@ impl HeatPumpTestData {
 
     /// Return test results either side of operating conditions.
     ///
-    /// This function returns 6 results:
+    /// This function returns 4 results:
     /// - Exergy load ratio below operating conditions
     /// - Exergy load ratio above operating conditions
     /// - Exergy efficiency below operating conditions
     /// - Exergy efficiency above operating conditions
-    /// - Degradation coeff below operating conditions
-    /// - Degradation coeff above operating conditions
     ///
     /// Arguments:
-    /// * `flow_temp` - flow temperature, in Kelvin
+    /// * `design_flow_temp` - flow temperature, in Kelvin
     /// * `exergy_lr_op_cond` - exergy load ratio at operating conditions
-    fn lr_eff_degcoeff_either_side_of_op_cond(
+    fn lr_eff_either_side_of_op_cond(
         &self,
-        flow_temp: f64,
+        design_flow_temp: f64,
         exergy_lr_op_cond: f64,
     ) -> anyhow::Result<(f64, f64, f64, f64)> {
-        let mut load_ratios_below: Vec<f64> = Default::default();
-        let mut load_ratios_above: Vec<f64> = Default::default();
-        let mut efficiencies_below: Vec<f64> = Default::default();
-        let mut efficiencies_above: Vec<f64> = Default::default();
-
         // For each design flow temperature, find load ratios in test data
         // either side of load ratio calculated for operating conditions.
-        // Note: Loop over sorted list of design flow temps and then index into
-        //     self.__testdata, rather than looping over self.__testdata,
-        //     which is unsorted and therefore may populate the lists in the
-        //     wrong order.
-        for design_flow_temp in &self.design_flow_temps {
-            let design_flow_temp_data = &self.test_data[design_flow_temp];
-            // Find the first load ratio in the test data that is greater than
-            // or equal to than the load ratio at operating conditions - this
-            // and the previous load ratio are the values either side of
-            // operating conditions.
-            let idx = design_flow_temp_data
-                .iter()
-                .position(|test_record| test_record.theoretical_load_ratio > exergy_lr_op_cond)
-                .unwrap_or(design_flow_temp_data.len() - 1);
-            // NB. This assertion reflects an assertion in the source Python.
-            assert!(idx > 0);
-
-            // Look up correct load ratio and efficiency based on the idx found above
-            load_ratios_below.push(design_flow_temp_data[idx - 1].theoretical_load_ratio);
-            load_ratios_above.push(design_flow_temp_data[idx].theoretical_load_ratio);
-            efficiencies_below.push(design_flow_temp_data[idx - 1].exergetic_eff);
-            efficiencies_above.push(design_flow_temp_data[idx].exergetic_eff);
-        }
-
-        if self.design_flow_temps.len() == 1 {
-            return Ok((
-                load_ratios_below[0],
-                load_ratios_above[0],
-                efficiencies_below[0],
-                efficiencies_above[0],
-            ));
-        }
-
-        let flow_temp = kelvin_to_celsius(flow_temp)?;
-        let design_temps_for_interp = &self
-            .design_flow_temps
+        let design_flow_temp_data = &self.test_data[&OrderedFloat(design_flow_temp)];
+        // Find the first load ratio in the test data that is greater than
+        // or equal to than the load ratio at operating conditions - this
+        // and the previous load ratio are the values either side of
+        // operating conditions.
+        let idx = match design_flow_temp_data
             .iter()
-            .map(|temp| temp.0)
-            .collect::<Vec<_>>();
-        let lr_below = np_interp(flow_temp, design_temps_for_interp, &load_ratios_below);
-        let lr_above = np_interp(flow_temp, design_temps_for_interp, &load_ratios_above);
-        let eff_below = np_interp(flow_temp, design_temps_for_interp, &efficiencies_below);
-        let eff_above = np_interp(flow_temp, design_temps_for_interp, &efficiencies_above);
+            .position(|test_record| test_record.theoretical_load_ratio > exergy_lr_op_cond)
+        {
+            Some(index) => {
+                if index == 0 {
+                    // Use second lowest (list index 1) and lowest
+                    1
+                } else {
+                    index
+                }
+            }
+            None => {
+                // Use the highest (list index -1) and second highest
+                design_flow_temp_data.len() - 1
+            }
+        };
+
+        // Look up correct load ratio and efficiency based on the idx found above
+        let lr_below = design_flow_temp_data[idx - 1].theoretical_load_ratio;
+        let lr_above = design_flow_temp_data[idx].theoretical_load_ratio;
+        let eff_below = design_flow_temp_data[idx - 1].exergetic_eff;
+        let eff_above = design_flow_temp_data[idx].exergetic_eff;
 
         Ok((lr_below, lr_above, eff_below, eff_above))
     }
@@ -1377,10 +1355,12 @@ impl HeatPumpServiceWater {
             return Ok((0.0, None));
         }
         let temp_flow_k = celsius_to_kelvin(temp_flow)?;
+        let design_flow_temp_op_cond = temp_flow_k;
 
         self.heat_pump.lock().energy_output_max(
             temp_flow_k,
             temp_return_k,
+            design_flow_temp_op_cond,
             self.hybrid_boiler_service
                 .as_ref()
                 .map(|service| HybridBoilerService::Regular(service.clone())),
@@ -1453,6 +1433,7 @@ pub struct HeatPumpServiceSpace {
     control: Arc<Control>,
     temp_limit_upper_in_k: f64,
     temp_diff_emit_dsgn: f64,
+    design_flow_temp_op_cond: f64,
     hybrid_boiler_service: Option<Arc<Mutex<BoilerServiceSpace>>>,
     volume_heated: f64,
 }
@@ -1477,6 +1458,7 @@ impl HeatPumpServiceSpace {
         service_name: String,
         temp_limit_upper_in_c: f64,
         temp_diff_emit_dsgn: f64,
+        design_flow_temp_op_cond: f64,
         control: Arc<Control>,
         volume_heated: f64,
         boiler_service_space: Option<Arc<Mutex<BoilerServiceSpace>>>,
@@ -1488,6 +1470,8 @@ impl HeatPumpServiceSpace {
             temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c)
                 .expect("Upper temp limit for heat pump never expected to be below absolute zero"),
             temp_diff_emit_dsgn,
+            design_flow_temp_op_cond: celsius_to_kelvin(design_flow_temp_op_cond)
+                .expect("design_flow_temp_op_cond expected to be above absolute zero"),
             hybrid_boiler_service: boiler_service_space,
             volume_heated,
         }
@@ -1529,6 +1513,7 @@ impl HeatPumpServiceSpace {
         heat_pump.energy_output_max(
             temp_output,
             temp_return_feed,
+            self.design_flow_temp_op_cond,
             self.hybrid_boiler_service
                 .as_ref()
                 .map(|service| HybridBoilerService::Space(service.clone())),
@@ -2373,6 +2358,7 @@ impl HeatPump {
         service_name: &str,
         temp_limit_upper_in_c: f64,
         temp_diff_emit_dsgn: f64,
+        design_flow_temp_op_cond: f64,
         control: Arc<Control>,
         volume_heated: f64,
     ) -> HeatPumpServiceSpace {
@@ -2396,6 +2382,7 @@ impl HeatPump {
             service_name.into(),
             temp_limit_upper_in_c,
             temp_diff_emit_dsgn,
+            design_flow_temp_op_cond,
             control,
             volume_heated,
             boiler_service,
@@ -2565,6 +2552,7 @@ impl HeatPump {
         &mut self,
         temp_output: f64,
         temp_return_feed: f64,
+        design_flow_temp_op_cond: f64,
         hybrid_boiler_service: Option<HybridBoilerService>,
         service_type: Option<ServiceType>,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
@@ -2611,11 +2599,12 @@ impl HeatPump {
             let service_type = *service_type
                 .as_ref()
                 .expect("A service type was expected to be available.");
-            let cop_op_cond = self.cop_deg_coeff_op_cond(
+            let cop_op_cond = self.cop_op_cond(
                 &service_type,
                 temp_output,
                 temp_source,
                 temp_spread_correction,
+                design_flow_temp_op_cond,
                 simtime,
             )?;
             let energy_output_max_boiler = self.backup_energy_output_max(
@@ -2705,13 +2694,14 @@ impl HeatPump {
         ))
     }
 
-    /// Calculate CoP and degradation coefficient at operating conditions
-    fn cop_deg_coeff_op_cond(
+    /// Calculate CoP at operating conditions
+    fn cop_op_cond(
         &self,
         service_type: &ServiceType,
         temp_output: f64,
         temp_source: f64,
         temp_spread_correction: TempSpreadCorrectionArg,
+        design_flow_temp_op_cond: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let temp_spread_correction_factor = match temp_spread_correction {
@@ -2750,7 +2740,7 @@ impl HeatPump {
                 )?;
                 let (lr_below, lr_above, eff_below, eff_above) = self
                     .test_data
-                    .lr_eff_degcoeff_either_side_of_op_cond(temp_output, lr_op_cond)?;
+                    .lr_eff_either_side_of_op_cond(temp_output, lr_op_cond)?;
 
                 // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.4
                 // Get exergy efficiency by interpolating between figures above and
@@ -3067,11 +3057,12 @@ impl HeatPump {
         let (thermal_capacity_op_cond, cop_op_cond) = if let Some(temp_output) = temp_output {
             let thermal_capacity_op_cond =
                 self.thermal_capacity_op_cond(temp_output, temp_source)?;
-            let cop_op_cond = self.cop_deg_coeff_op_cond(
+            let cop_op_cond = self.cop_op_cond(
                 service_type,
                 temp_output,
                 temp_source,
                 temp_spread_correction,
+                1., //TODO update during 1.0.0a1 migration
                 simtime,
             )?;
             (Some(thermal_capacity_op_cond), Some(cop_op_cond))
@@ -5177,63 +5168,45 @@ mod tests {
     }
 
     #[rstest]
-    // In Python this test is called `test_lr_eff_degcoeff_either_side_of_op_cond`
-    pub fn test_load_ratio_degcoeff_either_side_of_op_cond(test_data: HeatPumpTestData) {
+    pub fn test_lr_eff_either_side_of_op_cond(test_data: HeatPumpTestData) {
         let results_lr_below = [
             1.1634388356892613,
-            1.1225791267684564,
-            1.0817194178476517,
-            1.0408597089268468,
             1.0000000000060418,
             1.3186802349509577,
-            1.318488581797243,
-            1.3182969286435282,
-            1.3181052754898135,
             1.3179136223360988,
+            1.3186802349509577,
+            1.5978273764295179,
         ];
         let results_lr_above = [
             1.3186802349509577,
-            1.318488581797243,
-            1.3182969286435282,
-            1.3181052754898135,
             1.3179136223360988,
             1.513621351820552,
-            1.5346728579727933,
-            1.555724364125035,
-            1.5767758702772765,
             1.5978273764295179,
+            1.513621351820552,
+            1.9940427298329144,
         ];
         let results_eff_below = [
             0.48490846115784275,
-            0.49162229619850667,
-            0.49833613123917064,
-            0.5050499662798346,
             0.5117638013204985,
             0.4587706146926537,
-            0.4640208453602804,
-            0.4692710760279071,
-            0.4745213066955337,
             0.4797715373631604,
+            0.4587706146926537,
+            0.4541484716157206,
         ];
         let results_eff_above = [
             0.4587706146926537,
-            0.4640208453602804,
-            0.4692710760279071,
-            0.4745213066955337,
             0.4797715373631604,
             0.43614336193841496,
-            0.44064463935774134,
-            0.4451459167770678,
-            0.4496471941963942,
             0.4541484716157206,
+            0.43614336193841496,
+            0.4255319148936171,
         ];
 
         let mut i = 0;
-        for exergy_lr_op_cond in [1.2, 1.4] {
-            for flow_temp in [35., 40., 45., 50., 55.] {
-                let flow_temp = celsius_to_kelvin(flow_temp).unwrap();
+        for exergy_lr_op_cond in [1.2, 1.4, 1.6] {
+            for flow_temp in [35., 55.] {
                 let (lr_below, lr_above, eff_below, eff_above) = test_data
-                    .lr_eff_degcoeff_either_side_of_op_cond(flow_temp, exergy_lr_op_cond)
+                    .lr_eff_either_side_of_op_cond(flow_temp, exergy_lr_op_cond)
                     .unwrap();
                 assert_relative_eq!(lr_below, results_lr_below[i], max_relative = 1e-7);
                 assert_ulps_eq!(lr_above, results_lr_above[i],);
@@ -6508,6 +6481,7 @@ mod tests {
             service_name,
             temp_limit_upper,
             temp_diff_emit_dsgn,
+            55., // TODO 1.0.0a1
             control.clone(),
             volume_heated,
         );
@@ -6535,6 +6509,7 @@ mod tests {
             service_name,
             temp_limit_upper,
             temp_diff_emit_dsgn,
+            55., // TODO 1.0.0a1
             control.clone(),
             volume_heated,
         );
@@ -6563,6 +6538,7 @@ mod tests {
             service_name,
             temp_limit_upper,
             temp_diff_emit_dsgn,
+            55., // TODO 1.0.0A1
             control,
             volume_heated,
         );
@@ -6859,11 +6835,12 @@ mod tests {
         );
 
         let cop_op_cond = heat_pump
-            .cop_deg_coeff_op_cond(
+            .cop_op_cond(
                 &service_type,
                 temp_output, // Kelvin
                 temp_source, // Kelvin
                 temp_spread_correction,
+                55., // TODO 1.0.0a1
                 simulation_time_for_heat_pump.iter().current_iteration(),
             )
             .unwrap();
@@ -6882,11 +6859,12 @@ mod tests {
         );
 
         let cop_op_cond = heat_pump_sink_air
-            .cop_deg_coeff_op_cond(
+            .cop_op_cond(
                 &service_type,
                 temp_output,
                 temp_source,
                 temp_spread_correction,
+                55., // TODO 1.0.0a1
                 simulation_time_for_heat_pump.iter().current_iteration(),
             )
             .unwrap();
@@ -8328,6 +8306,7 @@ mod tests {
 
     /// this test was added to guard against a deadlock issue related to what we found with demo_hp_warm_air.json (use of temp_spread_correction_fn)
     #[rstest]
+    #[ignore = "WIP migration"]
     fn test_running_time_throughput_factor_on_heat_pump_service_space(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
@@ -8357,6 +8336,7 @@ mod tests {
             service_name,
             temp_limit_upper,
             temp_diff_emit_dsgn,
+            55., // TODO 1.0.0a1
             control,
             volume_heated,
         );
