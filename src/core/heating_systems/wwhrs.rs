@@ -1,8 +1,112 @@
 use crate::simulation_time::SimulationTimeIteration;
 use crate::{core::water_heat_demand::cold_water_source::ColdWaterSource, statistics::np_interp};
+use anyhow::anyhow;
 use std::sync::Arc;
 
 /// This module provides types to model waste water heat recovery systems of different kinds.
+/// Uses a unified WWHRS class that handles all system types (A, B, C).
+// Temperature reduction of water during the shower from temp_target
+const DELTA_T_SHOWER: f64 = 6.0;
+
+/// A unified class to represent instantaneous waste water heat recovery systems
+///
+/// This class can handle all three system configurations (A, B, C) based on the
+/// system type specified when calling the calculation methods. Each physical WWHRS
+/// unit is defined once and can be connected to multiple showers with different
+/// configurations.
+struct WwhrsInstantaneous {
+    cold_water_source: ColdWaterSource,
+    flow_rates: Vec<f64>,
+    system_a_efficiencies: Vec<f64>,
+    system_a_utilisation_factor: Option<f64>,
+    system_b_efficiencies: Option<Vec<f64>>,
+    system_b_utilisation_factor: Option<f64>,
+    system_b_efficiency_factor: Option<f64>,
+    system_c_efficiencies: Option<Vec<f64>>,
+    system_c_utilisation_factor: Option<f64>,
+    system_c_efficiency_factor: Option<f64>,
+    stored_temperature: f64,
+    last_used_time: Option<f64>,
+}
+
+impl WwhrsInstantaneous {
+    /// Iitialize the WWHRS with efficiency data for all system types.
+    ///
+    /// Args:
+    /// * `flow_rates`: List of test flow rates (e.g., [5, 7, 9, 11, 13])
+    /// * `system_a_efficiencies`: Measured efficiencies for System A at test flow rates
+    /// * `cold_water_source`: Cold water source object
+    /// * `system_a_utilisation_factor`: Utilisation factor for System A
+    /// * `system_b_efficiencies`: Efficiencies for System B (optional, will use reduction factor if not provided)
+    /// * `system_b_utilisation_factor`: Utilisation factor for System B
+    /// * `system_c_efficiencies`: Efficiencies for System C (optional, will use reduction factor if not provided)
+    /// * `system_c_utilisation_factor`: Utilisation factor for System C
+    /// * `system_b_efficiency_factor`: Reduction factor for System B (default 0.81)
+    /// * `system_c_efficiency_factor`: Reduction factor for System C (default 0.88)
+    fn new(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        cold_water_source: ColdWaterSource,
+        system_a_utilisation_factor: Option<f64>,
+        system_b_efficiencies: Option<Vec<f64>>,
+        system_b_utilisation_factor: Option<f64>,
+        system_c_efficiencies: Option<Vec<f64>>,
+        system_c_utilisation_factor: Option<f64>,
+        system_b_efficiency_factor: Option<f64>,
+        system_c_efficiency_factor: Option<f64>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<Self> {
+        //  Storage for temperature (used by some systems)
+        let list_temp_vol =
+            cold_water_source.get_temp_cold_water(1.0, simulation_time_iteration)?;
+        let stored_temperature = list_temp_vol.iter().map(|(t, v)| t * v).sum::<f64>()
+            / list_temp_vol.iter().map(|(_, v)| v).sum::<f64>();
+        let last_used_time = None; // Future expansion - track last use time
+        Ok(Self {
+            cold_water_source,
+            flow_rates,
+            system_a_efficiencies,
+            system_a_utilisation_factor,
+            system_b_efficiencies,
+            system_b_utilisation_factor,
+            system_b_efficiency_factor,
+            system_c_efficiencies,
+            system_c_utilisation_factor,
+            system_c_efficiency_factor,
+            stored_temperature,
+            last_used_time,
+        })
+    }
+
+    /// Get the interpolated efficiency from the flowrate for specified system type.
+    fn get_efficiency_from_flowrate(
+        &self,
+        flowrate: f64,
+        system_type: WwhrsType,
+    ) -> anyhow::Result<f64> {
+        let efficiencies = match system_type {
+            WwhrsType::A => self.system_a_efficiencies.clone(),
+            WwhrsType::B => self.system_b_efficiencies.clone().ok_or(anyhow!("System B efficiencies expected for WWHR System B"))?,
+            WwhrsType::C => self.system_c_efficiencies.clone().ok_or(anyhow!("System C efficiencies expected for WWHR System C"))?,
+        };
+
+        let efficiency = if flowrate <= self.flow_rates[0] {
+            efficiencies[0]
+        } else if flowrate >= self.flow_rates[self.flow_rates.len() - 1] {
+            efficiencies[self.flow_rates.len() - 1]
+        } else {
+            np_interp(flowrate, &self.flow_rates, &efficiencies)
+        };
+
+        Ok(efficiency)
+    }
+}
+
+pub(crate) enum WwhrsType {
+    A,
+    B,
+    C,
+}
 
 #[derive(Clone, Debug)]
 pub enum Wwhrs {
@@ -243,6 +347,61 @@ mod tests {
     #[fixture]
     fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 3., 1.)
+    }
+
+    #[fixture]
+    fn cold_water_source() -> ColdWaterSource {
+        ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0)
+    }
+
+    #[fixture]
+    fn flow_rates() -> Vec<f64> {
+        vec![5., 7., 9., 11., 13.]
+    }
+
+    #[fixture]
+    fn system_a_efficiencies() -> Vec<f64> {
+        vec![44.8, 39.1, 34.8, 31.4, 28.6]
+    }
+
+    #[fixture]
+    fn system_a_utilisation_factor() -> Option<f64> {
+        Some(0.7)
+    }
+
+    #[rstest]
+    fn test_init_with_all_parameters(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        cold_water_source: ColdWaterSource,
+        system_a_utilisation_factor: Option<f64>,
+        simulation_time: SimulationTime,
+    ) {
+        let system_b_efficiencies = Some(vec![36.3, 31.7, 28.2, 25.4, 23.2]);
+        let system_b_utilisation_factor = Some(0.65);
+        let system_c_efficiencies = Some(vec![38.9, 34.0, 30.3, 27.3, 24.8]);
+        let system_c_utilisation_factor = Some(0.68);
+        let system_b_efficiency_factor = Some(0.81);
+        let system_c_efficiency_factor = Some(0.88);
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            system_b_efficiencies,
+            system_b_utilisation_factor,
+            system_c_efficiencies,
+            system_c_utilisation_factor,
+            system_b_efficiency_factor,
+            system_c_efficiency_factor,
+            simulation_time_iteration,
+        ).unwrap();
+
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::A).unwrap(), 44.8);
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::B).unwrap(), 36.3);
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::C).unwrap(), 38.9);
     }
 
     #[fixture]
