@@ -718,6 +718,39 @@ mod tests {
             .is_err());
     }
 
+    #[rstest]
+    fn test_init_with_reduction_factors(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        cold_water_source: ColdWaterSource,
+        system_a_utilisation_factor: Option<f64>,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        // System A should work
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::A).unwrap(), 44.8);
+
+        // Systems B and C should raise errors when no efficiencies provided
+        assert!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::B).is_err());
+        assert!(wwhrs.get_efficiency_from_flowrate(5., WwhrsType::C).is_err());
+    }
+
     #[fixture]
     fn wwhrs_b() -> WWHRSInstantaneousSystemB {
         let cold_water_source = Arc::from(ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0));
