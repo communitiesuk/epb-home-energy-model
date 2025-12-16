@@ -1094,12 +1094,14 @@ impl HeatPumpTestData {
     ///                because regression coeffs were calculated using temperature in Celsius.
     /// * `temp_source` - source temperature, in Kelvin
     /// * `temp_output` - output temperature, in Kelvin
+    /// * `design_flow_temp_op_cond` - design flow temperature of the heat pump as installed
     fn cop_op_cond_if_not_air_source(
         &self,
         temp_diff_limit_low: f64,
         temp_ext_c: f64,
         temp_source: f64,
         temp_output: f64,
+        design_flow_temp_op_cond: f64,
     ) -> anyhow::Result<f64> {
         // For each design flow temperature, calculate CoP at operating conditions
         // Note: Loop over sorted list of design flow temps and then index into
@@ -1129,7 +1131,7 @@ impl HeatPumpTestData {
         }
 
         // Interpolate between the values found for the different design flow temperatures
-        let flow_temp = kelvin_to_celsius(temp_output)?;
+        let flow_temp = kelvin_to_celsius(design_flow_temp_op_cond)?;
         Ok(np_interp(
             flow_temp,
             &self
@@ -1224,6 +1226,8 @@ impl HeatPumpTestData {
     /// * `temp_spread_emitter`
     ///     - temperature spread on condenser side in operation due to design
     ///               of heat emission system
+    /// * `design_flow_temp_op_cond`
+    ///     - design flow temperature of the heat pump as installed
     fn temp_spread_correction(
         &self,
         temp_source: f64,
@@ -1231,6 +1235,7 @@ impl HeatPumpTestData {
         temp_diff_evaporator: f64,
         temp_diff_condenser: f64,
         temp_spread_emitter: f64,
+        design_flow_temp_op_cond: f64,
     ) -> Result<f64, BelowAbsoluteZeroError> {
         let temp_spread_correction_list = self
             .design_flow_temps
@@ -1244,7 +1249,7 @@ impl HeatPumpTestData {
             })
             .collect::<Vec<_>>();
 
-        let flow_temp = kelvin_to_celsius(temp_output)?;
+        let flow_temp = kelvin_to_celsius(design_flow_temp_op_cond)?;
         Ok(np_interp(
             flow_temp,
             &self
@@ -1672,7 +1677,7 @@ impl HeatPumpServiceSpace {
     fn temp_spread_correction_fn(
         &self,
         source_type: HeatPumpSourceType,
-    ) -> Box<dyn Fn(f64, f64, HeatPumpTestData) -> f64> {
+    ) -> Box<dyn Fn(f64, f64, f64, HeatPumpTestData) -> f64> {
         // Average temperature difference between heat transfer medium and
         // refrigerant in condenser
         let temp_diff_condenser = 5.0;
@@ -1688,13 +1693,17 @@ impl HeatPumpServiceSpace {
         let temp_diff_emit_dsgn = self.temp_diff_emit_dsgn;
 
         Box::new(
-            move |temp_output, temp_source, test_data: HeatPumpTestData| {
+            move |temp_output,
+                  temp_source,
+                  design_flow_temp_op_cond,
+                  test_data: HeatPumpTestData| {
                 test_data.temp_spread_correction(
                     temp_source,
                     temp_output,
                     temp_diff_evaporator,
                     temp_diff_condenser,
                     temp_diff_emit_dsgn,
+                    design_flow_temp_op_cond,
                 ).expect("Did not expect temp spread correction function to encounter an illegal temperature")
             },
         )
@@ -1712,6 +1721,7 @@ pub struct HeatPumpServiceSpaceWarmAir {
     control: Arc<Control>,
     temp_limit_upper_in_k: f64,
     temp_diff_emit_dsgn: f64,
+    design_flow_temp_op_cond: f64,
     frac_convective: f64,
     temp_flow: f64,
     temp_return: f64,
@@ -1723,6 +1733,7 @@ impl HeatPumpServiceSpaceWarmAir {
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: &str,
         temp_diff_emit_dsgn: f64,
+        design_flow_temp_op_cond: f64,
         control: Arc<Control>,
         temp_flow: f64,
         frac_convective: f64,
@@ -1738,6 +1749,7 @@ impl HeatPumpServiceSpaceWarmAir {
                 "Upper limit given for heat pump never expceted to be below absolute zero.",
             ),
             temp_diff_emit_dsgn,
+            design_flow_temp_op_cond,
             frac_convective,
             temp_flow,
             temp_return: temp_flow,
@@ -1855,7 +1867,7 @@ impl HeatPumpServiceSpaceWarmAir {
     fn temp_spread_correction_fn(
         &self,
         source_type: HeatPumpSourceType,
-    ) -> Box<dyn Fn(f64, f64, HeatPumpTestData) -> f64> {
+    ) -> Box<dyn Fn(f64, f64, f64, HeatPumpTestData) -> f64> {
         // Average temperature difference between heat transfer medium and
         // refrigerant in condenser
         let temp_diff_condenser = 5.0;
@@ -1871,13 +1883,17 @@ impl HeatPumpServiceSpaceWarmAir {
         let temp_diff_emit_dsgn = self.temp_diff_emit_dsgn;
 
         Box::new(
-            move |temp_output, temp_source, test_data: HeatPumpTestData| {
+            move |temp_output,
+                  temp_source,
+                  design_flow_temp_op_cond,
+                  test_data: HeatPumpTestData| {
                 test_data.temp_spread_correction(
                     temp_source,
                     temp_output,
                     temp_diff_evaporator,
                     temp_diff_condenser,
                     temp_diff_emit_dsgn,
+                    design_flow_temp_op_cond,
                 ).expect("Temp spread correction never expects to encounter temperature below absolute zero")
             },
         )
@@ -2467,7 +2483,7 @@ impl HeatPump {
         // Use low temperature test data for space heating - set flow temp such
         // that it matches the one used in the test
         let temp_flow = heat_pump.lock().test_data.design_flow_temps[0].0;
-
+        let design_flow_temp_op_cond = temp_flow;
         // Design temperature difference across the emitters, in deg C or K
         let temp_diff_emit_dsgn = max_of_2(
             temp_flow / 7.,
@@ -2482,6 +2498,7 @@ impl HeatPump {
             heat_pump,
             service_name,
             temp_diff_emit_dsgn,
+            design_flow_temp_op_cond,
             control,
             temp_flow,
             frac_convective,
@@ -2746,7 +2763,7 @@ impl HeatPump {
     /// Calculate CoP at operating conditions
     fn cop_op_cond(
         &self,
-        service_type: &ServiceType,
+        _service_type: &ServiceType,
         temp_output: f64,
         temp_source: f64,
         temp_spread_correction: TempSpreadCorrectionArg,
@@ -2755,9 +2772,12 @@ impl HeatPump {
     ) -> anyhow::Result<f64> {
         let temp_spread_correction_factor = match temp_spread_correction {
             TempSpreadCorrectionArg::Float(correction) => correction,
-            TempSpreadCorrectionArg::Callable(callable) => {
-                callable(temp_output, temp_source, self.test_data.clone())
-            }
+            TempSpreadCorrectionArg::Callable(callable) => callable(
+                temp_output,
+                temp_source,
+                design_flow_temp_op_cond,
+                self.test_data.clone(),
+            ),
         };
 
         Ok(
@@ -2771,6 +2791,7 @@ impl HeatPump {
                             .air_temp(&simulation_time_iteration),
                         temp_source,
                         temp_output,
+                        design_flow_temp_op_cond,
                     )?
             } else {
                 let carnot_cop_op_cond = carnot_cop(
@@ -2778,44 +2799,21 @@ impl HeatPump {
                     temp_output,
                     Some(HEAT_PUMP_TEMP_DIFF_LIMIT_LOW),
                 );
-                // Get exergy load ratio at operating conditions and exergy load ratio,
-                // exergy efficiency and degradation coeff at test conditions above and
-                // below operating conditions
-                let lr_op_cond = self.test_data.load_ratio_at_operating_conditions(
+                let exer_eff_op_cond = self.test_data.exer_eff_op_cond(
                     temp_output,
                     temp_source,
                     carnot_cop_op_cond,
-                    1., // TODO 1.0.0a1
+                    design_flow_temp_op_cond,
                 )?;
-                let (lr_below, lr_above, eff_below, eff_above) = self
-                    .test_data
-                    .lr_eff_either_side_of_op_cond(&OrderedFloat(temp_output), lr_op_cond)?;
-
-                // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.4
-                // Get exergy efficiency by interpolating between figures above and
-                // below operating conditions
-                let exer_eff_op_cond = eff_below
-                    + (eff_below - eff_above) * (lr_op_cond - lr_below) / (lr_below - lr_above);
 
                 // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.5
                 // Note: DAHPSE method document section 4.5.5 doesn't have
                 // temp_spread_correction_factor in formula below. However, section 4.5.7
                 // states that the correction factor is to be applied to the CoP.
-                let cop_op_cond = max_of_2(
+                max_of_2(
                     1.0,
                     exer_eff_op_cond * carnot_cop_op_cond * temp_spread_correction_factor,
-                );
-
-                let (_limit_upper, _limit_lower) =
-                    if matches!(self.sink_type, HeatPumpSinkType::Air)
-                        && !matches!(service_type, ServiceType::Water)
-                    {
-                        (0.25, 0.0)
-                    } else {
-                        (1.0, 0.9)
-                    };
-
-                cop_op_cond
+                )
             },
         )
     }
@@ -4173,7 +4171,7 @@ fn result_str(string: &str) -> String {
 
 pub(crate) enum TempSpreadCorrectionArg {
     Float(f64),
-    Callable(Box<dyn Fn(f64, f64, HeatPumpTestData) -> f64>),
+    Callable(Box<dyn Fn(f64, f64, f64, HeatPumpTestData) -> f64>),
 }
 
 impl Debug for TempSpreadCorrectionArg {
@@ -5191,15 +5189,16 @@ mod tests {
         ]
     }
 
+    fn design_flow_temp_op_cond_k(design_flow_temp_op_cond: f64) -> f64 {
+        design_flow_temp_op_cond + 273.15
+    }
+
     #[rstest]
     // In Python this test is called `test_lr_op_cond`
     pub fn test_load_ratio_under_operational_conditions(
         test_data: HeatPumpTestData,
         lr_op_cond_cases: Vec<[f64; 4]>,
     ) {
-        let design_flow_temp_op_cond = 45.;
-        let design_flow_temp_op_cond_k = design_flow_temp_op_cond + 273.15;
-
         for [flow_temp, temp_source, carnot_cop_op_cond, result] in lr_op_cond_cases {
             assert_relative_eq!(
                 test_data
@@ -5207,7 +5206,7 @@ mod tests {
                         celsius_to_kelvin(flow_temp).unwrap(),
                         temp_source,
                         carnot_cop_op_cond,
-                        design_flow_temp_op_cond_k,
+                        design_flow_temp_op_cond_k(45.),
                     )
                     .unwrap(),
                 result,
@@ -5269,11 +5268,11 @@ mod tests {
     #[rstest]
     pub fn test_cop_op_cond_if_not_air_source(test_data: HeatPumpTestData) {
         let results = [
-            6.5629213163133,
-            8.09149749487405,
+            6.717150897917277,
+            8.121968575142535,
             4.60977003063163,
-            5.92554693808559,
-            3.76414827675397,
+            5.748091483057522,
+            3.579953030724001,
         ];
         let temp_cases = [
             [8.0, 0.00, 283.15, 308.15],
@@ -5293,6 +5292,7 @@ mod tests {
                         *temp_ext,
                         *temp_source,
                         *temp_output,
+                        design_flow_temp_op_cond_k(45.),
                     )
                     .unwrap(),
                 results[i],
@@ -5333,11 +5333,11 @@ mod tests {
     #[rstest]
     pub fn test_temp_spread_correction(test_data: HeatPumpTestData) {
         let results = [
-            1.1219512195122,
-            1.08394607843137,
+            1.0872913992297817,
+            1.0698529411764706,
             1.05822498586772,
-            1.03966445733223,
-            1.02564102564103,
+            1.0499171499585749,
+            1.043684710351377,
         ];
         let temp_source = 275.15;
         let temp_diff_evaporator = -15.0;
@@ -5353,6 +5353,7 @@ mod tests {
                         temp_diff_evaporator,
                         temp_diff_condenser,
                         temp_spread_emitter,
+                        design_flow_temp_op_cond_k(45.)
                     )
                     .unwrap(),
                 results[i],
@@ -6530,7 +6531,7 @@ mod tests {
             service_name,
             temp_limit_upper,
             temp_diff_emit_dsgn,
-            55., // TODO 1.0.0a1
+            55.,
             control.clone(),
             volume_heated,
         );
@@ -6558,7 +6559,7 @@ mod tests {
             service_name,
             temp_limit_upper,
             temp_diff_emit_dsgn,
-            55., // TODO 1.0.0a1
+            55.,
             control.clone(),
             volume_heated,
         );
@@ -6587,7 +6588,7 @@ mod tests {
             service_name,
             temp_limit_upper,
             temp_diff_emit_dsgn,
-            55., // TODO 1.0.0A1
+            55.,
             control,
             volume_heated,
         );
@@ -6865,8 +6866,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "WIP migration"]
-    fn test_cop_deg_coeff_op_cond(
+    fn test_cop_op_cond(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
@@ -6889,12 +6889,12 @@ mod tests {
                 temp_output, // Kelvin
                 temp_source, // Kelvin
                 temp_spread_correction,
-                55., // TODO 1.0.0a1
+                design_flow_temp_op_cond_k(55.),
                 simulation_time_for_heat_pump.iter().current_iteration(),
             )
             .unwrap();
 
-        assert_relative_eq!(cop_op_cond, 3.5280895101045804);
+        assert_relative_eq!(cop_op_cond, 3.4835975137798934);
 
         // Check with sink type 'AIR'
         let temp_spread_correction = TempSpreadCorrectionArg::Float(1.);
@@ -6913,12 +6913,12 @@ mod tests {
                 temp_output,
                 temp_source,
                 temp_spread_correction,
-                55., // TODO 1.0.0a1
+                design_flow_temp_op_cond_k(55.),
                 simulation_time_for_heat_pump.iter().current_iteration(),
             )
             .unwrap();
 
-        assert_relative_eq!(cop_op_cond, 3.6209597192830136);
+        assert_relative_eq!(cop_op_cond, 4.384741326956177);
     }
 
     #[rstest]
@@ -6964,7 +6964,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "WIP migration"]
     /// Check if backup heater is available or still in delay period
     fn test_backup_heater_delay_time_elapsed(
         external_conditions: Arc<ExternalConditions>,
@@ -8265,7 +8264,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "WIP migration"]
     fn test_running_time_throughput_factor(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
@@ -8311,7 +8309,6 @@ mod tests {
 
     /// this test was added to guard against a deadlock issue with demo_hp_warm_air.json (use of temp_spread_correction_fn)
     #[rstest]
-    #[ignore = "WIP migration"]
     fn test_demand_energy_on_heat_pump_service_space_warm_air(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
@@ -8355,7 +8352,6 @@ mod tests {
 
     /// this test was added to guard against a deadlock issue related to what we found with demo_hp_warm_air.json (use of temp_spread_correction_fn)
     #[rstest]
-    #[ignore = "WIP migration"]
     fn test_running_time_throughput_factor_on_heat_pump_service_space(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
