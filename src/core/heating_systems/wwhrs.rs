@@ -616,6 +616,35 @@ mod tests {
             .is_err());
     }
 
+    #[rstest]
+    fn test_system_b_conversion_missing_utilisation_factor_only(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            Some(0.7),
+            None,
+            None,
+            None,
+            None,
+            Some(0.81),
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        assert!(wwhrs
+            .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
+            .is_err());
+    }
+
     #[fixture]
     fn wwhrs_b() -> WWHRSInstantaneousSystemB {
         let cold_water_source = Arc::from(ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0));
