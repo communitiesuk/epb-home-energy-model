@@ -151,6 +151,12 @@ impl WwhrsInstantaneous {
         // Determine which approach to use based on available data
         match self.system_b_efficiencies {
             Some(_) => {
+                // Approach 1: Pre-corrected System B data
+                if self.system_b_utilisation_factor.is_none() {
+                    anyhow::bail!(
+                        "system_b_utilisation_factor is required when using system_b_efficiencies"
+                    );
+                }
                 todo!()
             }
             None => {
@@ -567,6 +573,35 @@ mod tests {
             cold_water_source,
             Some(0.7),
             None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        assert!(wwhrs
+            .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
+            .is_err());
+    }
+
+    #[rstest]
+    fn test_system_b_pre_corrected_missing_utilisation_factor(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            Some(0.7),
+            Some(vec![36.3, 31.7, 28.2, 25.4, 23.2]),
             None,
             None,
             None,
