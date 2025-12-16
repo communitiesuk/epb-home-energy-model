@@ -100,6 +100,7 @@ impl WwhrsInstantaneous {
         flowrate_waste_water: f64,
         volume_cold_water: f64,
         temp_hot: f64,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match system_type {
             WwhrsType::A => self.calculate_system_a(
@@ -113,6 +114,7 @@ impl WwhrsInstantaneous {
                 flowrate_waste_water,
                 volume_cold_water,
                 temp_hot,
+                simulation_time_iteration,
             ),
             WwhrsType::C => self.calculate_system_c(
                 temp_target,
@@ -144,7 +146,22 @@ impl WwhrsInstantaneous {
         _flowrate_waste_water: f64,
         _volume_cold_water: f64,
         _temp_hot: f64,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
+        // Determine which approach to use based on available data
+        match self.system_b_efficiencies {
+            Some(_) => {
+                todo!()
+            }
+            None => {
+                if self.system_b_utilisation_factor.is_none()
+                    || self.system_b_efficiencies.is_none()
+                {
+                    anyhow::bail!("Both system_b_utilisation_factor and system_b_efficiency_factor are required when converting from System A data");
+                }
+            }
+        }
+
         todo!()
     }
 
@@ -531,7 +548,36 @@ mod tests {
         .unwrap();
 
         assert!(wwhrs
-            .calculate_performance(WwhrsType::A, 35., 8., 8., 55.)
+            .calculate_performance(WwhrsType::A, 35., 8., 8., 55., simulation_time_iteration)
+            .is_err());
+    }
+
+    #[rstest]
+    fn test_system_b_conversion_missing_parameters(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            Some(0.7),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        assert!(wwhrs
+            .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
             .is_err());
     }
 
