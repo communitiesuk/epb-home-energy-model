@@ -1000,12 +1000,12 @@ impl HeatPumpTestData {
     /// * `exergy_lr_op_cond` - exergy load ratio at operating conditions
     fn lr_eff_either_side_of_op_cond(
         &self,
-        design_flow_temp: f64,
+        design_flow_temp: &OrderedFloat<f64>,
         exergy_lr_op_cond: f64,
     ) -> anyhow::Result<(f64, f64, f64, f64)> {
         // For each design flow temperature, find load ratios in test data
         // either side of load ratio calculated for operating conditions.
-        let design_flow_temp_data = &self.test_data[&OrderedFloat(design_flow_temp)];
+        let design_flow_temp_data = &self.test_data[design_flow_temp];
         // Find the first load ratio in the test data that is greater than
         // or equal to than the load ratio at operating conditions - this
         // and the previous load ratio are the values either side of
@@ -1035,6 +1035,55 @@ impl HeatPumpTestData {
         let eff_above = design_flow_temp_data[idx].exergetic_eff;
 
         Ok((lr_below, lr_above, eff_below, eff_above))
+    }
+
+    fn exer_eff_op_cond(
+        &self,
+        temp_output: f64,
+        temp_source: f64,
+        carnot_cop_op_cond: f64,
+        design_flow_temp_op_cond: f64,
+    ) -> anyhow::Result<f64> {
+        let mut exer_eff_op_cond_list: Vec<f64> = Default::default();
+
+        for design_flow_temp in &self.design_flow_temps {
+            // Get exergy load ratio at operating conditions
+            // Get exergy load ratio and exergy efficiency at test conditions
+            // above and below operating conditions
+            let lr_op_cond = self.load_ratio_at_operating_conditions(
+                temp_output,
+                temp_source,
+                carnot_cop_op_cond,
+                **design_flow_temp,
+            )?;
+            let (lr_below, lr_above, eff_below, eff_above) =
+                self.lr_eff_either_side_of_op_cond(design_flow_temp, lr_op_cond)?;
+
+            // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.4
+            // Get exergy efficiency by interpolating between figures above and
+            // below operating conditions
+            let exer_eff_op_cond = if lr_below == lr_above {
+                eff_below
+            } else {
+                eff_below
+                    + (eff_below - eff_above) * (lr_op_cond - lr_below) / (lr_below - lr_above)
+            };
+
+            exer_eff_op_cond_list.push(exer_eff_op_cond);
+        }
+
+        let flow_temp = kelvin_to_celsius(design_flow_temp_op_cond)?;
+        let design_temps_for_interp = &self
+            .design_flow_temps
+            .iter()
+            .map(|temp| temp.0)
+            .collect::<Vec<_>>();
+
+        Ok(np_interp(
+            flow_temp,
+            design_temps_for_interp,
+            &exer_eff_op_cond_list,
+        ))
     }
 
     /// Calculate CoP at operating conditions when heat pump is not air-source
@@ -2740,7 +2789,7 @@ impl HeatPump {
                 )?;
                 let (lr_below, lr_above, eff_below, eff_above) = self
                     .test_data
-                    .lr_eff_either_side_of_op_cond(temp_output, lr_op_cond)?;
+                    .lr_eff_either_side_of_op_cond(&OrderedFloat(temp_output), lr_op_cond)?;
 
                 // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.4
                 // Get exergy efficiency by interpolating between figures above and
@@ -5206,7 +5255,7 @@ mod tests {
         for exergy_lr_op_cond in [1.2, 1.4, 1.6] {
             for flow_temp in [35., 55.] {
                 let (lr_below, lr_above, eff_below, eff_above) = test_data
-                    .lr_eff_either_side_of_op_cond(flow_temp, exergy_lr_op_cond)
+                    .lr_eff_either_side_of_op_cond(&OrderedFloat(flow_temp), exergy_lr_op_cond)
                     .unwrap();
                 assert_relative_eq!(lr_below, results_lr_below[i], max_relative = 1e-7);
                 assert_ulps_eq!(lr_above, results_lr_above[i],);
