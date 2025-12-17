@@ -1603,11 +1603,11 @@ impl HeatPumpServiceSpace {
             return Ok((0.0, None));
         }
 
-        let temp_output = celsius_to_kelvin(temp_output)?;
+        let temp_output_k = celsius_to_kelvin(temp_output)?;
         let mut heat_pump = self.heat_pump.lock();
         let source_type = heat_pump.source_type;
         heat_pump.energy_output_max(
-            temp_output,
+            temp_output_k,
             temp_return_feed,
             self.design_flow_temp_op_cond,
             self.hybrid_boiler_service
@@ -1734,7 +1734,7 @@ impl HeatPumpServiceSpace {
             _ => panic!("impossible heat pump source type encountered"),
         };
 
-        let temp_diff_emit_dsgn = self.temp_diff_emit_design;
+        let temp_diff_emit_design = self.temp_diff_emit_design;
 
         Box::new(
             move |temp_output,
@@ -1746,7 +1746,7 @@ impl HeatPumpServiceSpace {
                     temp_output,
                     temp_diff_evaporator,
                     temp_diff_condenser,
-                    temp_diff_emit_dsgn,
+                    temp_diff_emit_design,
                     design_flow_temp_op_cond,
                 ).expect("Did not expect temp spread correction function to encounter an illegal temperature")
             },
@@ -1765,7 +1765,7 @@ pub struct HeatPumpServiceSpaceWarmAir {
     control: Arc<Control>,
     emitter_type: HeatPumpEmitterType,
     temp_limit_upper_in_k: f64,
-    temp_diff_emit_dsgn: f64,
+    temp_diff_emit_design: f64,
     design_flow_temp_op_cond: f64,
     frac_convective: f64,
     temp_flow: f64,
@@ -1777,7 +1777,7 @@ impl HeatPumpServiceSpaceWarmAir {
     pub(crate) fn new(
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: &str,
-        temp_diff_emit_dsgn: f64,
+        temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
         control: Arc<Control>,
         temp_flow: f64,
@@ -1792,9 +1792,9 @@ impl HeatPumpServiceSpaceWarmAir {
             emitter_type: HeatPumpEmitterType::WarmAir,
             control,
             temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c).expect(
-                "Upper limit given for heat pump never expceted to be below absolute zero.",
+                "Upper limit given for heat pump never expected to be below absolute zero.",
             ),
-            temp_diff_emit_dsgn,
+            temp_diff_emit_design,
             design_flow_temp_op_cond,
             frac_convective,
             temp_flow,
@@ -1849,7 +1849,7 @@ impl HeatPumpServiceSpaceWarmAir {
             Some(celsius_to_kelvin(temp_flow)?),
             celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
-            self.design_flow_temp_op_cond, // TODO review 1.0.0a1
+            self.design_flow_temp_op_cond,
             time_constant_for_service,
             service_on,
             simulation_time_iteration,
@@ -1928,7 +1928,7 @@ impl HeatPumpServiceSpaceWarmAir {
             _ => panic!("impossible heat pump source type encountered"),
         };
 
-        let temp_diff_emit_dsgn = self.temp_diff_emit_dsgn;
+        let temp_diff_emit_dsgn = self.temp_diff_emit_design;
 
         Box::new(
             move |temp_output,
@@ -1976,7 +1976,7 @@ pub struct HeatPump {
     external_conditions: Arc<ExternalConditions>,
     // litres/ second
     service_results: Arc<RwLock<Vec<ServiceResult>>>,
-    total_time_running_current_timestep: f64,
+    total_time_running_current_timestep_full_load: f64,
     time_running_continuous: f64,
     source_type: HeatPumpSourceType,
     sink_type: HeatPumpSinkType,
@@ -2066,7 +2066,7 @@ impl HeatPump {
         )?);
 
         let service_results = Default::default();
-        let total_time_running_current_timestep = Default::default();
+        let total_time_running_current_timestep_full_load = Default::default();
         let time_running_continuous = Default::default();
 
         let (
@@ -2181,24 +2181,24 @@ impl HeatPump {
 
         // Exhaust air HP requires different/additional initialisation, which is implemented here
         let (overvent_ratio, volume_heated_all_services, test_data_after_interpolation) =
-            if source_type.is_exhaust_air() {
-                let (lowest_air_flow_rate_in_test_data, test_data_after_interpolation) =
-                    interpolate_exhaust_air_heat_pump_test_data(
-                        throughput_exhaust_air
-                            .expect("expected throughput_exhaust_air to have been set here"),
-                        &test_data,
-                        source_type,
-                    )?;
-                (
-                    max_of_2(
-                        1.0,
-                        lowest_air_flow_rate_in_test_data / throughput_exhaust_air.unwrap(),
-                    ),
-                    Some(f64::default()),
-                    test_data_after_interpolation,
-                )
-            } else {
-                (1.0, None, test_data.into_iter().map(Into::into).collect())
+            match throughput_exhaust_air {
+                Some(throughput_exhaust_air) if source_type.is_exhaust_air() => {
+                    let (lowest_air_flow_rate_in_test_data, test_data_after_interpolation) =
+                        interpolate_exhaust_air_heat_pump_test_data(
+                            throughput_exhaust_air,
+                            &test_data,
+                            source_type,
+                        )?;
+                    (
+                        max_of_2(
+                            1.0,
+                            lowest_air_flow_rate_in_test_data / throughput_exhaust_air,
+                        ),
+                        Some(f64::default()),
+                        test_data_after_interpolation,
+                    )
+                }
+                _ => (1.0, None, test_data.into_iter().map(Into::into).collect()),
             };
 
         // TODO (from Python) For now, disable exhaust air heat pump when conditions are out of
@@ -2310,7 +2310,7 @@ impl HeatPump {
             simulation_timestep,
             external_conditions,
             service_results,
-            total_time_running_current_timestep,
+            total_time_running_current_timestep_full_load,
             time_running_continuous,
             source_type,
             sink_type,
@@ -2438,7 +2438,7 @@ impl HeatPump {
         control_min: Arc<Control>,
         control_max: Arc<Control>,
     ) -> anyhow::Result<HeatPumpServiceWater> {
-        Self::create_service_connection(heat_pump.clone(), service_name).unwrap();
+        Self::create_service_connection(heat_pump.clone(), service_name)?;
         let boiler_service = heat_pump
             .lock()
             .boiler
@@ -2636,7 +2636,7 @@ impl HeatPump {
         let time_elapsed_hp = match self.backup_ctrl {
             HeatPumpBackupControlType::TopUp => None,
             HeatPumpBackupControlType::None | HeatPumpBackupControlType::Substitute => {
-                Some(self.total_time_running_current_timestep)
+                Some(self.total_time_running_current_timestep_full_load)
             }
         };
 
@@ -3053,7 +3053,9 @@ impl HeatPump {
         // reduction of the overall time available, not simply a subtraction
         let additional_time_unavailable = additional_time_unavailable.unwrap_or(0.);
 
-        (timestep - self.total_time_running_current_timestep - additional_time_unavailable)
+        (timestep
+            - self.total_time_running_current_timestep_full_load
+            - additional_time_unavailable)
             * (1. - time_start / timestep)
     }
 
@@ -3513,7 +3515,7 @@ impl HeatPump {
             let time_elapsed_hp = match self.backup_ctrl {
                 HeatPumpBackupControlType::TopUp => None,
                 HeatPumpBackupControlType::Substitute | HeatPumpBackupControlType::None => {
-                    Some(self.total_time_running_current_timestep)
+                    Some(self.total_time_running_current_timestep_full_load)
                 }
             };
 
@@ -3546,7 +3548,7 @@ impl HeatPump {
             };
             if self.backup_ctrl == HeatPumpBackupControlType::Substitute && update_heat_source_state
             {
-                self.total_time_running_current_timestep += time_running_boiler
+                self.total_time_running_current_timestep_full_load += time_running_boiler
                     .expect("hybrid_service_bool was true so value expected here");
             }
 
@@ -3562,7 +3564,7 @@ impl HeatPump {
             self.service_results
                 .write()
                 .push(ServiceResult::Full(Box::new(service_results)));
-            self.total_time_running_current_timestep += time_running;
+            self.total_time_running_current_timestep_full_load += time_running;
         }
 
         Ok(energy_delivered_total + energy_output_delivered_boiler)
@@ -3630,7 +3632,7 @@ impl HeatPump {
     }
 
     pub fn throughput_factor(&self) -> f64 {
-        self.calc_throughput_factor(self.total_time_running_current_timestep)
+        self.calc_throughput_factor(self.total_time_running_current_timestep_full_load)
     }
 
     fn calc_energy_input(&self, t_idx: usize) -> anyhow::Result<()> {
@@ -3879,10 +3881,11 @@ impl HeatPump {
         self.calc_energy_input(timestep_idx).unwrap();
 
         let timestep = self.simulation_timestep;
-        let time_remaining_current_timestep = timestep - self.total_time_running_current_timestep;
+        let time_remaining_current_timestep =
+            timestep - self.total_time_running_current_timestep_full_load;
 
         if time_remaining_current_timestep == 0.0 {
-            self.time_running_continuous += self.total_time_running_current_timestep;
+            self.time_running_continuous += self.total_time_running_current_timestep_full_load;
         } else {
             self.time_running_continuous = 0.;
         }
@@ -3908,7 +3911,7 @@ impl HeatPump {
         }
 
         // Variables below need to be reset at the end of each timestep.
-        self.total_time_running_current_timestep = Default::default();
+        self.total_time_running_current_timestep_full_load = Default::default();
         self.service_results = Default::default();
 
         Ok(())
@@ -4239,7 +4242,7 @@ impl Debug for TempSpreadCorrectionArg {
             match self {
                 TempSpreadCorrectionArg::Float(f) => format!("float: {f}"),
                 TempSpreadCorrectionArg::Callable(_) =>
-                    "A callable taking two f64 values and returning an f64.".to_owned(),
+                    "A callable taking three f64 values and returning an f64.".to_owned(),
             }
         )
     }
@@ -8890,7 +8893,7 @@ mod tests {
             .unwrap();
 
         assert_relative_eq!(
-            heat_pump.total_time_running_current_timestep,
+            heat_pump.total_time_running_current_timestep_full_load,
             0.5939882810928845
         );
 
@@ -8932,7 +8935,7 @@ mod tests {
         // Call the method under test
         heat_pump.timestep_end(0).unwrap();
 
-        assert_eq!(heat_pump.total_time_running_current_timestep, 0.);
+        assert_eq!(heat_pump.total_time_running_current_timestep_full_load, 0.);
         assert_eq!(*heat_pump.service_results.read().deref(), []);
     }
 
