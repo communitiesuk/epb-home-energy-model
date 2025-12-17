@@ -206,7 +206,9 @@ impl WwhrsInstantaneous {
                         "system_b_utilisation_factor is required when using system_b_efficiencies"
                     );
                 }
-                todo!()
+
+                let efficiency_adjusted = self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::B)? / 100.0;
+                efficiency_adjusted * self.system_b_utilisation_factor.unwrap()
             }
             None => {
                 // Approach 2: Convert from System A data
