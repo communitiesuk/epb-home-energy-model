@@ -127,6 +127,7 @@ impl WwhrsInstantaneous {
                 flowrate_waste_water,
                 volume_cold_water,
                 temp_hot,
+                simulation_time_iteration
             ),
         }
     }
@@ -207,7 +208,8 @@ impl WwhrsInstantaneous {
                     );
                 }
 
-                let efficiency_adjusted = self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::B)? / 100.0;
+                let efficiency_adjusted =
+                    self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::B)? / 100.0;
                 efficiency_adjusted * self.system_b_utilisation_factor.unwrap()
             }
             None => {
@@ -218,8 +220,10 @@ impl WwhrsInstantaneous {
                     anyhow::bail!("Both system_b_utilisation_factor and system_b_efficiency_factor are required when converting from System A data");
                 }
 
-                let base_efficiency = self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::A)? / 100.0;
-                let efficiency_adjusted = base_efficiency * self.system_b_efficiency_factor.unwrap();
+                let base_efficiency =
+                    self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::A)? / 100.0;
+                let efficiency_adjusted =
+                    base_efficiency * self.system_b_efficiency_factor.unwrap();
                 efficiency_adjusted * self.system_b_utilisation_factor.unwrap()
             }
         };
@@ -228,7 +232,7 @@ impl WwhrsInstantaneous {
         let temp_drain = temp_target - DELTA_T_SHOWER;
 
         // Implement algebraic solution from Technical Recommendations
-        let temp_pre = if is_close!(temp_hot, temp_target, abs_tol=1e-10) {
+        let temp_pre = if is_close!(temp_hot, temp_target, abs_tol = 1e-10) {
             temp_main
         } else {
             let temp = eta_uf * (temp_drain - temp_main) / (temp_hot - temp_target);
@@ -236,7 +240,7 @@ impl WwhrsInstantaneous {
         };
 
         // For System B: m_hot = flowrate_waste_water * (T_target - T_pre_B) / (temp_hot - T_pre_B)
-        let flowrate_hot = if is_close!(temp_hot, temp_pre, abs_tol=1e-10) {
+        let flowrate_hot = if is_close!(temp_hot, temp_pre, abs_tol = 1e-10) {
             None
         } else {
             Some(flowrate_waste_water * (temp_target - temp_pre) / (temp_hot - temp_pre))
@@ -250,12 +254,23 @@ impl WwhrsInstantaneous {
 
     fn calculate_system_c(
         &self,
-        _temp_target: f64,
-        _flowrate_waste_water: f64,
-        _volume_cold_water: f64,
-        _temp_hot: f64,
+        temp_target: f64,
+        flowrate_waste_water: f64,
+        volume_cold_water: f64,
+        temp_hot: f64,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<PerformanceCalculationResult> {
-        match self.system_c_efficiencies {
+        let list_temp_vol = self
+            .cold_water_source
+            .get_temp_cold_water(volume_cold_water, simulation_time_iteration)?;
+        let temp_main = list_temp_vol
+            .clone()
+            .into_iter()
+            .map(|(t, v)| t * v)
+            .sum::<f64>()
+            / list_temp_vol.into_iter().map(|(_, v)| v).sum::<f64>();
+
+        let eta_uf = match self.system_c_efficiencies {
             Some(_) => {
                 // Approach 1: Pre-corrected System C data
                 if self.system_c_utilisation_factor.is_none() {
@@ -272,9 +287,35 @@ impl WwhrsInstantaneous {
                 {
                     anyhow::bail!("Both system_c_utilisation_factor and system_c_efficiency_factor are required when converting from System A data")
                 }
+                let base_efficiency = self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::A)? / 100.0;
+                let efficiency_adjusted = base_efficiency * self.system_c_efficiency_factor.unwrap();
+                efficiency_adjusted * self.system_c_utilisation_factor.unwrap()
             }
-        }
-        todo!()
+        };
+
+        // Calculate drain temperature
+        let temp_drain = temp_target - DELTA_T_SHOWER;
+
+        // Direct calculation for System C
+        let temp_pre = if is_close!(temp_target, temp_main, abs_tol = 1e-10) {
+            temp_main
+        } else {
+            temp_main
+                + eta_uf * (temp_drain - temp_main) * (temp_hot - temp_main)
+                / (temp_target - temp_main)
+        };
+
+        // For System C: m_hot = flowrate_waste_water * (T_target - T_main) / (temp_hot - T_main)
+        let flowrate_hot = if is_close!(temp_hot, temp_main, abs_tol=1e-10) {
+            None
+        } else {
+            Some(flowrate_waste_water * (temp_target - temp_main) / (temp_hot - temp_main))
+        };
+
+        Ok(PerformanceCalculationResult {
+            t_cyl_feed: temp_pre,
+            flowrate_hot,
+        })
     }
 
     /// Get the interpolated efficiency from the flowrate for specified system type.
@@ -903,7 +944,7 @@ mod tests {
             .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
             .unwrap();
 
-        // For System A, cylinder is not fed pre-heated water
+        // For System B, both shower and cylinder get pre-heated water
         assert_eq!(result.t_cyl_feed, 17.); // Same as cold water
         assert!(result.flowrate_hot.is_some());
     }
@@ -938,6 +979,40 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.flowrate_hot.unwrap(), 8.); // Equal to flowrate_waste_water
+    }
+
+    #[rstest]
+    fn test_calculate_performance_system_c(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            None,
+            None,
+            Some(0.68),
+            None,
+            Some(0.88),
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        let result = wwhrs
+            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .unwrap();
+
+        // For System C, only cylinder gets pre-heated water
+        assert_eq!(result.t_cyl_feed, 22.601422933333335);
+        assert!(result.flowrate_hot.is_some());
     }
 
     #[fixture]
