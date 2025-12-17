@@ -1337,6 +1337,7 @@ impl PartialEq for HeatPumpTestDatum {
     }
 }
 
+// Values for time constant from BS EN 15316-4-2:2017 Table 13
 const TIME_CONSTANT_WATER: f64 = 1560.;
 
 /// An object to represent a water heating service provided by a heat pump to e.g. a cylinder.
@@ -1388,11 +1389,24 @@ impl HeatPumpServiceWater {
     pub(crate) fn setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> (Option<f64>, Option<f64>) {
-        (
+    ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
+        let is_valid = |c: &Control| {
+            matches!(
+                c,
+                Control::CombinationTime { .. } | Control::SetpointTime { .. }
+            )
+        };
+        // TODO review - do we need this check?
+        if !(is_valid(&self.control_min) && is_valid(&self.control_max)) {
+            bail!(
+                "Expected control_min and control_max to be combination or setpoint time controls"
+            );
+        }
+
+        Ok((
             self.control_min.setpnt(&simulation_time_iteration),
             self.control_max.setpnt(&simulation_time_iteration),
-        )
+        ))
     }
 
     const SERVICE_TYPE: ServiceType = ServiceType::Water;
