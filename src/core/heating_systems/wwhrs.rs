@@ -1053,6 +1053,80 @@ mod tests {
         assert_eq!(result.t_cyl_feed, 35.); // Equal to flowrate_waste_water
     }
 
+    #[rstest]
+    fn test_get_efficiency_from_flowrate_interpolation(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        // Test exact match
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(5.0, WwhrsType::A).unwrap(), 44.8);
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(13.0, WwhrsType::A).unwrap(), 28.6);
+
+        // Test interpolation
+        let efficiency_8 = wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::A).unwrap();
+        assert!(efficiency_8 > 34.8);  // > efficiency at 9
+        assert!(efficiency_8 < 39.1);  // < efficiency at 7
+
+        // Test below minimum
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(3.0, WwhrsType::A).unwrap(), 44.8);
+
+        // Test above maximum
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(15.0, WwhrsType::A).unwrap(), 28.6);
+    }
+
+    #[rstest]
+    fn test_get_efficiency_from_flowrate_all_systems(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+        let system_b_efficiencies = vec![36.3, 31.7, 28.2, 25.4, 23.2];
+        let system_c_efficiencies = vec![38.9, 34.0, 30.3, 27.3, 24.8];
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            Some(system_b_efficiencies),
+            None,
+            Some(system_c_efficiencies),
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        // Test all systems
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(5.0, WwhrsType::A).unwrap(), 44.8);
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(5.0, WwhrsType::B).unwrap(), 36.3);
+        assert_eq!(wwhrs.get_efficiency_from_flowrate(5.0, WwhrsType::C).unwrap(), 38.9);
+    }
+
     #[fixture]
     fn wwhrs_b() -> WWHRSInstantaneousSystemB {
         let cold_water_source = Arc::from(ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0));
