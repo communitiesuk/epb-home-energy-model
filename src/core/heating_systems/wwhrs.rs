@@ -361,6 +361,20 @@ impl WwhrsInstantaneous {
     fn get_temp_cold_water(&self, volume_needed: f64) -> (f64, f64) {
         (self.stored_temperature, volume_needed)
     }
+
+    fn draw_off_water() {
+        todo!()
+    }
+
+    /// Set the time when this WWHRS was last used (for future expansion).
+    fn set_last_used_time(&mut self, time: f64) {
+        self.last_used_time = Some(time)
+    }
+
+    /// Get the time when this WWHRS was last used (for future expansion).
+    fn get_last_used_time(&self) -> Option<f64> {
+        self.last_used_time
+    }
 }
 
 pub(crate) enum WwhrsType {
@@ -1206,6 +1220,45 @@ mod tests {
         // Test setting temperature
         wwhrs.set_temperature_for_return(20.0);
         assert_eq!(wwhrs.get_temp_cold_water(12.0), (20.0, 12.0));
+    }
+
+    #[rstest]
+    fn test_last_used_time_tracking(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let mut wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        // Initially should be None
+        assert!(wwhrs.get_last_used_time().is_none());
+
+        // Set last used time
+        let test_time = 123.45;
+        wwhrs.set_last_used_time(test_time);
+        assert_eq!(wwhrs.get_last_used_time().unwrap(), test_time);
+
+        // Update to new time
+        let new_time = 456.78;
+        wwhrs.set_last_used_time(new_time);
+        assert_eq!(wwhrs.get_last_used_time().unwrap(), new_time);
     }
 
     #[fixture]
