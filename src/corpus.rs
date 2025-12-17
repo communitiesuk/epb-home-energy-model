@@ -4781,6 +4781,24 @@ impl HotWaterSource {
             }
         })
     }
+    
+    pub(crate) fn get_temp_hot_water(&self, volume_required: f64, volume_required_already: f64) -> Vec<(f64, f64)> {
+        match self {
+            HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
+                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().get_temp_hot_water(volume_required, Some(volume_required_already)),
+                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock.read().get_temp_hot_water(volume_required, Some(volume_required_already)),
+            },
+            HotWaterSource::CombiBoiler(boiler_service_water_combi) => boiler_service_water_combi.get_temp_hot_water(volume_required, Some(volume_required_already)),
+            HotWaterSource::PointOfUse(point_of_use) => point_of_use.get_temp_hot_water(volume_required, Some(volume_required_already)),
+            HotWaterSource::HeatNetwork(heat_network_service_water_direct) => heat_network_service_water_direct.get_temp_hot_water(volume_required, Some(volume_required_already)),
+            // TODO this is the only Result - for now we're using unwrap. In future we could improve this.
+            // This is also the only implementation which returns a Vec<(Option<f64>, f64)> instead of Vec<(f64, f64)>
+            HotWaterSource::HeatBattery(heat_battery_pcm_service_water_direct) => {
+                todo!("Align heat_battery_pcm_service_water_direct with other HotWaterSource implementations");
+                // heat_battery_pcm_service_water_direct.get_temp_hot_water(volume_required, Some(volume_required_already)),
+            }
+        }
+    }
 }
 
 fn hot_water_source_from_input(

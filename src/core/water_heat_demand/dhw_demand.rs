@@ -8,9 +8,9 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
 use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
-use crate::corpus::{ColdWaterSources, EventSchedule};
+use crate::corpus::{ColdWaterSources, EventSchedule, HotWaterSource};
 use crate::input::{
-    BathDetails, Baths as BathInput, HotWaterSource, OtherWaterUse, OtherWaterUses as OtherWaterUseInput, PipeworkContents, Shower as ShowerInput, Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterDistribution, WaterPipeworkSimple
+    BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput, PipeworkContents, Shower as ShowerInput, Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterDistribution, WaterPipeworkSimple
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -18,7 +18,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
-use serde_json::map;
 use smartstring::alias::String;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -67,7 +66,7 @@ impl DomesticHotWaterDemand {
     // Time of finalisation of the previous hot water event
     // __time_end_previous_event = 0.0
 
-    pub fn new(
+    pub(crate) fn new(
         showers_input: ShowersInput,
         bath_input: BathInput,
         other_hot_water_input: OtherWaterUseInput,
@@ -202,6 +201,15 @@ impl DomesticHotWaterDemand {
         }
 
         mapping
+    }
+
+    pub(crate) fn temp_hot_water(&self, hot_water_source: HotWaterSource, volume_required_already: f64, volume_required: f64) -> f64 {
+        let list_temperature_for_required_volume = hot_water_source.get_temp_hot_water(volume_required, volume_required_already);
+        let sum_t_by_v: f64 = list_temperature_for_required_volume.iter().map(|(t,v)| { t * v } ).sum();
+        let sum_v: f64 = list_temperature_for_required_volume.iter().map(|(_, v)| { v }).sum();
+
+        // Return average hot water temperature for the required volume
+        sum_t_by_v / sum_v
     }
 
 
