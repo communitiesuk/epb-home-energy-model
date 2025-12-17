@@ -4,6 +4,10 @@ use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 #[cfg(test)]
 use serde_json::Value;
 
+// This module provides ways to define schedules which can be expressed concisely
+// and built from sub-schedules (e.g. construct a weekly schedule from daily schedules)
+// in input files.
+
 pub fn reject_nulls<T>(vec_of_options: Vec<Option<T>>) -> anyhow::Result<Vec<T>> {
     vec_of_options
         .into_iter()
@@ -157,12 +161,12 @@ pub(crate) fn expand_events_from_json_values(
 /// * `event_type` - type of the events being processed (e.g., "Shower", "Bath", "Others")
 /// * `schedule` - the existing schedule dictionary to update
 pub fn expand_events(
-    events: Vec<ScheduleEvent>,
+    events: Vec<ScheduleEvent>, // todo: review type as part of migration to 1.0.0a1, in Python: list[dict[str, Any]],
     simulation_timestep: f64,
     total_timesteps: usize,
     name: &str,
     event_type: WaterScheduleEventType,
-    mut schedule: Vec<Option<Vec<TypedScheduleEvent>>>,
+    mut schedule: Vec<Option<Vec<TypedScheduleEvent>>>, // todo: review type as part of migration to 1.0.0a1, in Python: dict[int, Any]
 ) -> anyhow::Result<Vec<Option<Vec<TypedScheduleEvent>>>> {
     for event in events {
         let starting_timestep = (event.start / simulation_timestep).floor() as usize;
@@ -170,8 +174,8 @@ pub fn expand_events(
         if starting_timestep < total_timesteps {
             let event_with_type_name =
                 TypedScheduleEvent::from_simple_event(event, name.to_string(), event_type)?;
-
-            match schedule.get_mut(starting_timestep).unwrap() {
+            let existing_event = schedule.get_mut(starting_timestep).unwrap();
+            match existing_event {
                 Some(events) => {
                     // Insert the event into the correct position to maintain order by 'start' time
                     let mut inserted = false;
@@ -588,8 +592,9 @@ mod tests {
     fn events() -> Vec<Value> {
         json!([
             {"start": 2, "duration": 6, "temperature": 52},
-            {"start": 2.1, "duration": 6, "temperature": 52},
+            {"start": 2.2, "duration": 6, "temperature": 52},
             {"start": 3, "duration": 6, "temperature": 52},
+            {"start": 2.1, "duration": 6, "temperature": 52},
         ])
         .as_array()
         .unwrap()
@@ -626,6 +631,16 @@ mod tests {
                 },
                 TypedScheduleEvent {
                     start: 2.1,
+                    duration: Some(6.0),
+                    temperature: 52.0,
+                    name: "name".to_string(),
+                    event_type: WaterScheduleEventType::Shower,
+                    volume: None,
+                    warm_volume: None,
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 2.2,
                     duration: Some(6.0),
                     temperature: 52.0,
                     name: "name".to_string(),
