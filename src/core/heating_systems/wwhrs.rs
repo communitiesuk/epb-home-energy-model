@@ -279,7 +279,8 @@ impl WwhrsInstantaneous {
                     )
                 }
 
-                let efficiency_adjusted = self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::C)? / 100.0;
+                let efficiency_adjusted =
+                    self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::C)? / 100.0;
                 efficiency_adjusted * self.system_c_utilisation_factor.unwrap()
             }
             None => {
@@ -349,6 +350,16 @@ impl WwhrsInstantaneous {
         };
 
         Ok(efficiency)
+    }
+
+    /// Set the stored temperature (used by systems C and A).
+    fn set_temperature_for_return(&mut self, water_temperature: f64) {
+        self.stored_temperature = water_temperature;
+    }
+
+    /// Get the stored temperature
+    fn get_temp_cold_water(&self, volume_needed: f64) -> (f64, f64) {
+        (self.stored_temperature, volume_needed)
     }
 }
 
@@ -1043,7 +1054,7 @@ mod tests {
             Some(0.88),
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         let result = wwhrs
             .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
@@ -1076,22 +1087,44 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         // Test exact match
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(5.0, WwhrsType::A).unwrap(), 44.8);
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(13.0, WwhrsType::A).unwrap(), 28.6);
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(5.0, WwhrsType::A)
+                .unwrap(),
+            44.8
+        );
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(13.0, WwhrsType::A)
+                .unwrap(),
+            28.6
+        );
 
         // Test interpolation
-        let efficiency_8 = wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::A).unwrap();
-        assert!(efficiency_8 > 34.8);  // > efficiency at 9
-        assert!(efficiency_8 < 39.1);  // < efficiency at 7
+        let efficiency_8 = wwhrs
+            .get_efficiency_from_flowrate(8.0, WwhrsType::A)
+            .unwrap();
+        assert!(efficiency_8 > 34.8); // > efficiency at 9
+        assert!(efficiency_8 < 39.1); // < efficiency at 7
 
         // Test below minimum
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(3.0, WwhrsType::A).unwrap(), 44.8);
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(3.0, WwhrsType::A)
+                .unwrap(),
+            44.8
+        );
 
         // Test above maximum
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(15.0, WwhrsType::A).unwrap(), 28.6);
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(15.0, WwhrsType::A)
+                .unwrap(),
+            28.6
+        );
     }
 
     #[rstest]
@@ -1119,12 +1152,60 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         // Test all systems
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(5.0, WwhrsType::A).unwrap(), 44.8);
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(5.0, WwhrsType::B).unwrap(), 36.3);
-        assert_eq!(wwhrs.get_efficiency_from_flowrate(5.0, WwhrsType::C).unwrap(), 38.9);
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(5.0, WwhrsType::A)
+                .unwrap(),
+            44.8
+        );
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(5.0, WwhrsType::B)
+                .unwrap(),
+            36.3
+        );
+        assert_eq!(
+            wwhrs
+                .get_efficiency_from_flowrate(5.0, WwhrsType::C)
+                .unwrap(),
+            38.9
+        );
+    }
+
+    #[rstest]
+    fn test_temperature_methods(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let mut wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+        .unwrap();
+
+        // Initial temperature should be from cold water source
+        assert_eq!(wwhrs.get_temp_cold_water(10.0), (17.0, 10.0));
+
+        // Test setting temperature
+        wwhrs.set_temperature_for_return(20.0);
+        assert_eq!(wwhrs.get_temp_cold_water(12.0), (20.0, 12.0));
     }
 
     #[fixture]
