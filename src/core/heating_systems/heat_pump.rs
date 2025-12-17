@@ -80,6 +80,13 @@ pub enum ServiceType {
     Space,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) enum HeatPumpEmitterType {
+    RadiatorsUfh,
+    FanCoils,
+    WarmAir,
+}
+
 /// Calculate Carnot CoP based on source and outlet temperatures (in Kelvin)
 fn carnot_cop(temp_source: f64, temp_outlet: f64, temp_diff_limit_low: Option<f64>) -> f64 {
     let mut temp_diff = temp_outlet - temp_source;
@@ -1505,17 +1512,19 @@ impl HeatPumpServiceWater {
     }
 }
 
-const TIME_CONSTANT_SPACE_WATER: f64 = 1370.;
-const TIME_CONSTANT_SPACE_AIR: f64 = 120.;
-const TIME_CONSTANT_SPACE_GLYCOL25: f64 = 1370.;
+// Values for time constant from BS EN 15316-4-2:2017 Table 13
+const TIME_CONSTANT_SPACE_UFH: f64 = 1370.;
+const TIME_CONSTANT_SPACE_FAN_COILS: f64 = 360.;
+const TIME_CONSTANT_SPACE_WARM_AIR: f64 = 120.;
 
 #[derive(Clone, Debug)]
 pub struct HeatPumpServiceSpace {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
+    emitter_type: HeatPumpEmitterType,
     control: Arc<Control>,
     temp_limit_upper_in_k: f64,
-    temp_diff_emit_dsgn: f64,
+    temp_diff_emit_design: f64,
     design_flow_temp_op_cond: f64,
     hybrid_boiler_service: Option<Arc<Mutex<BoilerServiceSpace>>>,
     volume_heated: f64,
@@ -1531,28 +1540,32 @@ impl HeatPumpServiceSpace {
     /// Arguments:
     /// * `heat_pump` - reference to the HeatPump object providing the service
     /// * `service_name` - name of the service demanding energy from the heat pump
+    /// * `emitter_type` - type of emitters that this space heating service is serving
     /// * `temp_limit_upper` - upper operating limit for temperature, in deg C
-    /// * `temp_diff_emit_dsgn` - design temperature difference across the emitters, in deg C or K
+    /// * `temp_diff_emit_design` - design temperature difference across the emitters, in deg C or K
+    /// * `design_flow_temp_op_cond` - design flow temperature of the heat pump as installed
     /// * `control` - reference to a control object which must implement is_on() and setpnt() funcs
     /// * `volume_heated` - volume of zones heated (required for exhaust air HPs only), in m3
     /// * `boiler_service_space` - reference to the BoilerServiceWaterSpace object that is backing up or supplementing the heat pump service
     pub(crate) fn new(
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: String,
+        emitter_type: HeatPumpEmitterType,
         temp_limit_upper_in_c: f64,
-        temp_diff_emit_dsgn: f64,
+        temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>,
+        control: Arc<Control>, // TODO 1.0.0a1 optional now?
         volume_heated: f64,
         boiler_service_space: Option<Arc<Mutex<BoilerServiceSpace>>>,
     ) -> Self {
         Self {
             heat_pump,
             service_name,
+            emitter_type,
             control,
             temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c)
                 .expect("Upper temp limit for heat pump never expected to be below absolute zero"),
-            temp_diff_emit_dsgn,
+            temp_diff_emit_design,
             design_flow_temp_op_cond: celsius_to_kelvin(design_flow_temp_op_cond)
                 .expect("design_flow_temp_op_cond expected to be above absolute zero"),
             hybrid_boiler_service: boiler_service_space,
@@ -1634,10 +1647,10 @@ impl HeatPumpServiceSpace {
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
         let mut heat_pump = self.heat_pump.lock();
-        let time_constant_for_service = match heat_pump.sink_type {
-            HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
-            HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
-            HeatPumpSinkType::Glycol25 => TIME_CONSTANT_SPACE_GLYCOL25,
+        let time_constant_for_service = match self.emitter_type {
+            HeatPumpEmitterType::RadiatorsUfh => TIME_CONSTANT_SPACE_UFH,
+            HeatPumpEmitterType::FanCoils => TIME_CONSTANT_SPACE_FAN_COILS,
+            HeatPumpEmitterType::WarmAir => TIME_CONSTANT_SPACE_WARM_AIR,
         };
         let source_type = heat_pump.source_type;
         heat_pump.demand_energy(
@@ -1678,10 +1691,10 @@ impl HeatPumpServiceSpace {
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
         let mut heat_pump = self.heat_pump.lock();
-        let time_constant_for_service = match heat_pump.sink_type {
-            HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
-            HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
-            HeatPumpSinkType::Glycol25 => TIME_CONSTANT_SPACE_GLYCOL25,
+        let time_constant_for_service = match self.emitter_type {
+            HeatPumpEmitterType::RadiatorsUfh => TIME_CONSTANT_SPACE_UFH,
+            HeatPumpEmitterType::FanCoils => TIME_CONSTANT_SPACE_FAN_COILS,
+            HeatPumpEmitterType::WarmAir => TIME_CONSTANT_SPACE_WARM_AIR,
         };
         let source_type = heat_pump.source_type;
 
@@ -1721,7 +1734,7 @@ impl HeatPumpServiceSpace {
             _ => panic!("impossible heat pump source type encountered"),
         };
 
-        let temp_diff_emit_dsgn = self.temp_diff_emit_dsgn;
+        let temp_diff_emit_dsgn = self.temp_diff_emit_design;
 
         Box::new(
             move |temp_output,
@@ -1750,6 +1763,7 @@ pub struct HeatPumpServiceSpaceWarmAir {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
     control: Arc<Control>,
+    emitter_type: HeatPumpEmitterType,
     temp_limit_upper_in_k: f64,
     temp_diff_emit_dsgn: f64,
     design_flow_temp_op_cond: f64,
@@ -1775,6 +1789,7 @@ impl HeatPumpServiceSpaceWarmAir {
         Self {
             heat_pump,
             service_name: service_name.into(),
+            emitter_type: HeatPumpEmitterType::WarmAir,
             control,
             temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c).expect(
                 "Upper limit given for heat pump never expceted to be below absolute zero.",
@@ -1819,10 +1834,10 @@ impl HeatPumpServiceSpaceWarmAir {
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
         let mut pump = self.heat_pump.lock();
-        let time_constant_for_service = match pump.sink_type {
-            HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
-            HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
-            HeatPumpSinkType::Glycol25 => TIME_CONSTANT_SPACE_GLYCOL25,
+        let time_constant_for_service = match self.emitter_type {
+            HeatPumpEmitterType::RadiatorsUfh => TIME_CONSTANT_SPACE_UFH,
+            HeatPumpEmitterType::FanCoils => TIME_CONSTANT_SPACE_FAN_COILS,
+            HeatPumpEmitterType::WarmAir => TIME_CONSTANT_SPACE_WARM_AIR,
         };
 
         let source_type = pump.source_type;
@@ -1868,10 +1883,10 @@ impl HeatPumpServiceSpaceWarmAir {
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        let time_constant_for_service = match self.heat_pump.lock().sink_type {
-            HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
-            HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
-            HeatPumpSinkType::Glycol25 => TIME_CONSTANT_SPACE_GLYCOL25,
+        let time_constant_for_service = match self.emitter_type {
+            HeatPumpEmitterType::RadiatorsUfh => TIME_CONSTANT_SPACE_UFH,
+            HeatPumpEmitterType::FanCoils => TIME_CONSTANT_SPACE_FAN_COILS,
+            HeatPumpEmitterType::WarmAir => TIME_CONSTANT_SPACE_WARM_AIR,
         };
         let mut pump = self.heat_pump.lock();
         let source_type = pump.source_type;
@@ -2454,6 +2469,7 @@ impl HeatPump {
     pub(crate) fn create_service_space_heating(
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
+        emitter_type: HeatPumpEmitterType,
         temp_limit_upper_in_c: f64,
         temp_diff_emit_dsgn: f64,
         design_flow_temp_op_cond: f64,
@@ -2478,6 +2494,7 @@ impl HeatPump {
         HeatPumpServiceSpace::new(
             heat_pump,
             service_name.into(),
+            emitter_type,
             temp_limit_upper_in_c,
             temp_diff_emit_dsgn,
             design_flow_temp_op_cond,
@@ -6572,6 +6589,7 @@ mod tests {
         let service_space_heating = HeatPump::create_service_space_heating(
             heat_pump.clone(),
             service_name,
+            HeatPumpEmitterType::RadiatorsUfh,
             temp_limit_upper,
             temp_diff_emit_dsgn,
             55.,
@@ -6600,6 +6618,7 @@ mod tests {
         HeatPump::create_service_space_heating(
             heat_pump_with_boiler.clone(),
             service_name,
+            HeatPumpEmitterType::RadiatorsUfh,
             temp_limit_upper,
             temp_diff_emit_dsgn,
             55.,
@@ -6629,6 +6648,7 @@ mod tests {
         HeatPump::create_service_space_heating(
             heat_pump_exhaust.clone(),
             service_name,
+            HeatPumpEmitterType::RadiatorsUfh,
             temp_limit_upper,
             temp_diff_emit_dsgn,
             55.,
@@ -8433,6 +8453,7 @@ mod tests {
         let heat_pump_service_space = HeatPump::create_service_space_heating(
             heat_pump_with_exhaust.clone(),
             service_name,
+            HeatPumpEmitterType::RadiatorsUfh,
             temp_limit_upper,
             temp_diff_emit_dsgn,
             55., // TODO 1.0.0a1

@@ -21,7 +21,9 @@ use crate::core::heating_systems::heat_battery_pcm::{
     HeatBatteryPcm, HeatBatteryPcmServiceWaterDirect,
 };
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
-use crate::core::heating_systems::heat_pump::{HeatPump, HeatPumpHotWaterOnly};
+use crate::core::heating_systems::heat_pump::{
+    HeatPump, HeatPumpEmitterType, HeatPumpHotWaterOnly,
+};
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
@@ -73,7 +75,8 @@ use crate::input::{
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
     ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput, VentilationLeaks,
     WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
-    WaterPipework, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis, MAIN_REFERENCE,
+    WaterPipework, WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
+    MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::StringOrNumber;
@@ -5248,6 +5251,12 @@ fn space_heat_systems_from_input(
                                 WetHeatSource::HeatPump(heat_pump) => {
                                     // TODO (from Python) If EAHP, feed zone volume into function below
 
+                                    // For HPs, need to know emitter type for inertia calculations
+                                    let emitter_type = if emitters.iter().any(|e| matches!(e, WetEmitter::Fancoil { .. })) {
+                                        HeatPumpEmitterType::FanCoils
+                                    } else {
+                                        HeatPumpEmitterType::RadiatorsUfh
+                                    };
                                     // For HPs, checking if there's a buffer tank to inform both the service space heating
                                     // and the emitters of its presence.
                                     if heat_sources_wet_with_buffer_tank.contains(heat_source_name) {
@@ -5259,6 +5268,7 @@ fn space_heat_systems_from_input(
                                     let heat_source_service = HeatPump::create_service_space_heating(
                                         heat_pump.clone(),
                                         &energy_supply_conn_name,
+                                        emitter_type,
                                         temp_flow_limit_upper.expect("Expected a temp_flow_limit_upper to be present for a heat pump"),
                                         *temp_diff_emit_dsgn,
                                         1., // TODO 1.0.0a1, pass in design flow temp, should be an f64?
