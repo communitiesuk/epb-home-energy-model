@@ -175,7 +175,7 @@ impl WwhrsInstantaneous {
         // For System A, both shower and cylinder are fed with pre-heated water
         Ok(PerformanceCalculationResult {
             t_cyl_feed: temp_pre,
-            flowrate_hot: flowrate_hot,
+            flowrate_hot,
         })
     }
 
