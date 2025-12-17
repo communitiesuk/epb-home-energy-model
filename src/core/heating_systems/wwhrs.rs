@@ -383,6 +383,7 @@ pub(crate) enum WwhrsType {
     C,
 }
 
+// TODO: delete below code as part of migration to 1.0.0a1
 #[derive(Clone, Debug)]
 pub enum Wwhrs {
     WWHRSInstantaneousSystemB(WWHRSInstantaneousSystemB),
