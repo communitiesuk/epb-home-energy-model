@@ -127,7 +127,7 @@ impl WwhrsInstantaneous {
                 flowrate_waste_water,
                 volume_cold_water,
                 temp_hot,
-                simulation_time_iteration
+                simulation_time_iteration,
             ),
         }
     }
@@ -287,8 +287,10 @@ impl WwhrsInstantaneous {
                 {
                     anyhow::bail!("Both system_c_utilisation_factor and system_c_efficiency_factor are required when converting from System A data")
                 }
-                let base_efficiency = self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::A)? / 100.0;
-                let efficiency_adjusted = base_efficiency * self.system_c_efficiency_factor.unwrap();
+                let base_efficiency =
+                    self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::A)? / 100.0;
+                let efficiency_adjusted =
+                    base_efficiency * self.system_c_efficiency_factor.unwrap();
                 efficiency_adjusted * self.system_c_utilisation_factor.unwrap()
             }
         };
@@ -302,11 +304,11 @@ impl WwhrsInstantaneous {
         } else {
             temp_main
                 + eta_uf * (temp_drain - temp_main) * (temp_hot - temp_main)
-                / (temp_target - temp_main)
+                    / (temp_target - temp_main)
         };
 
         // For System C: m_hot = flowrate_waste_water * (T_target - T_main) / (temp_hot - T_main)
-        let flowrate_hot = if is_close!(temp_hot, temp_main, abs_tol=1e-10) {
+        let flowrate_hot = if is_close!(temp_hot, temp_main, abs_tol = 1e-10) {
             None
         } else {
             Some(flowrate_waste_water * (temp_target - temp_main) / (temp_hot - temp_main))
@@ -717,7 +719,7 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         assert!(wwhrs
             .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
@@ -746,7 +748,7 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         assert!(wwhrs
             .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
@@ -775,7 +777,7 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         assert!(wwhrs
             .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
@@ -804,7 +806,7 @@ mod tests {
             Some(0.88),
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         assert!(wwhrs
             .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
@@ -833,7 +835,7 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         assert!(wwhrs
             .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
@@ -863,7 +865,7 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         // System A should work
         assert_eq!(
@@ -905,7 +907,7 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         let result = wwhrs
             .calculate_performance(WwhrsType::A, 35., 8., 8., 55., simulation_time_iteration)
@@ -938,7 +940,7 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         let result = wwhrs
             .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
@@ -972,7 +974,7 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         let result = wwhrs
             .calculate_performance(WwhrsType::B, 35., 8., 8., 35., simulation_time_iteration)
@@ -1004,7 +1006,7 @@ mod tests {
             Some(0.88),
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         let result = wwhrs
             .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
