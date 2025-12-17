@@ -731,6 +731,9 @@ impl Corpus {
             simulation_time_iterator.as_ref(),
         )?;
 
+        let hot_water_sources = todo!();
+        let pre_heated_water_sources = todo!();
+        
         let domestic_hot_water_demand = DomesticHotWaterDemand::new(
             input.hot_water_demand.shower.clone(),
             input.hot_water_demand.bath.clone(),
@@ -744,6 +747,8 @@ impl Corpus {
             &wwhrs,
             &energy_supplies,
             event_schedules,
+            hot_water_sources,
+            pre_heated_water_sources
         )?;
 
         let total_volume = input.zone.values().map(|zone| zone.volume).sum::<f64>();
