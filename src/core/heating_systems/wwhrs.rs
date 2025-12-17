@@ -1017,6 +1017,40 @@ mod tests {
         assert!(result.flowrate_hot.is_some());
     }
 
+    #[rstest]
+    fn test_calculate_performance_system_c_division_by_zero(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        simulation_time: SimulationTime,
+    ) {
+        // Create cold water source with temp matching target
+        let cold_water_source = ColdWaterSource::new(vec![35.0, 35.0, 35.0], 0, 1.0);
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            None,
+            None,
+            Some(0.68),
+            None,
+            Some(0.88),
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        let result = wwhrs
+            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .unwrap();
+
+        // Should return temp_main when division by zero would occur
+        assert_eq!(result.t_cyl_feed, 35.); // Equal to flowrate_waste_water
+    }
+
     #[fixture]
     fn wwhrs_b() -> WWHRSInstantaneousSystemB {
         let cold_water_source = Arc::from(ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0));
