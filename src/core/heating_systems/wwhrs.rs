@@ -377,6 +377,7 @@ impl WwhrsInstantaneous {
     }
 }
 
+#[derive(Eq, Hash, PartialEq, Clone)]
 pub(crate) enum WwhrsType {
     A,
     B,
@@ -617,7 +618,6 @@ impl WWHRSInstantaneousSystemA {
 mod tests {
     use super::*;
     use crate::simulation_time::SimulationTime;
-    use approx::assert_relative_eq;
     use rstest::*;
 
     #[fixture]
@@ -1294,8 +1294,15 @@ mod tests {
 
         // Verify it uses specific efficiencies, not reduction factor
         // Efficiency at 8 L/min should be interpolated from system_b_efficiencies
-        let efficiency_8 = wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::B).unwrap();
-        assert_ne!(efficiency_8, wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::A).unwrap());
+        let efficiency_8 = wwhrs
+            .get_efficiency_from_flowrate(8.0, WwhrsType::B)
+            .unwrap();
+        assert_ne!(
+            efficiency_8,
+            wwhrs
+                .get_efficiency_from_flowrate(8.0, WwhrsType::A)
+                .unwrap()
+        );
     }
 
     #[rstest]
@@ -1329,8 +1336,15 @@ mod tests {
             .unwrap();
 
         // Verify it uses specific efficiencies, not reduction factor
-        let efficiency_8 = wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::C).unwrap();
-        assert_ne!(efficiency_8, wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::A).unwrap());
+        let efficiency_8 = wwhrs
+            .get_efficiency_from_flowrate(8.0, WwhrsType::C)
+            .unwrap();
+        assert_ne!(
+            efficiency_8,
+            wwhrs
+                .get_efficiency_from_flowrate(8.0, WwhrsType::A)
+                .unwrap()
+        );
     }
 
     #[rstest]
@@ -1398,7 +1412,14 @@ mod tests {
 
         // Set up conditions where temp_hot will equal temp_pre
         let result = wwhrs
-            .calculate_performance(WwhrsType::A, 35., 8., 8., 20.1038, simulation_time_iteration)
+            .calculate_performance(
+                WwhrsType::A,
+                35.,
+                8.,
+                8.,
+                20.1038,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         assert!(result.flowrate_hot.is_none())
@@ -1470,5 +1491,119 @@ mod tests {
         let result = wwhrs.draw_off_water(volume);
         let expected = wwhrs.get_temp_cold_water(volume);
         assert_eq!(result, expected);
+    }
+
+    mod test_wwhrs_integration_scenarios {
+        use super::*;
+        use indexmap::IndexMap;
+
+        #[fixture]
+        fn simulation_time() -> SimulationTime {
+            SimulationTime::new(0., 3., 1.)
+        }
+
+        #[fixture]
+        fn cold_water_source() -> ColdWaterSource {
+            ColdWaterSource::new(vec![5.0, 10.0, 15.0], 0, 1.0)
+        }
+
+        #[fixture]
+        fn flow_rates() -> Vec<f64> {
+            vec![5., 7., 9., 11., 13.]
+        }
+
+        #[fixture]
+        fn efficiencies() -> Vec<f64> {
+            vec![44.8, 39.1, 34.8, 31.4, 28.6]
+        }
+
+        #[rstest]
+        fn test_realistic_shower_scenario(
+            flow_rates: Vec<f64>,
+            efficiencies: Vec<f64>,
+            cold_water_source: ColdWaterSource,
+            simulation_time: SimulationTime,
+        ) {
+            let simulation_time_iteration = simulation_time.iter().next().unwrap();
+            let wwhrs = WwhrsInstantaneous::new(
+                flow_rates,
+                efficiencies,
+                cold_water_source,
+                Some(0.7),
+                None,
+                Some(0.65),
+                None,
+                Some(0.68),
+                Some(0.81),
+                Some(0.88),
+                simulation_time_iteration,
+            )
+                .unwrap();
+
+            // Typical shower parameters
+            let shower_temp = 38.;
+            let shower_flow = 10.0;
+            let hot_water_temp = 60.0;
+
+            // Test all three systems
+            let mut results: IndexMap<WwhrsType, PerformanceCalculationResult> = IndexMap::new();
+            for system in [WwhrsType::A, WwhrsType::B, WwhrsType::C] {
+                let result = wwhrs
+                    .calculate_performance(
+                        system.clone(),
+                        shower_temp,
+                        shower_flow,
+                        8.0,
+                        hot_water_temp,
+                        simulation_time_iteration,
+                    )
+                    .unwrap();
+                results.insert(system, result);
+            }
+
+            assert!(results[0].flowrate_hot.is_some());
+            assert!(results[1].flowrate_hot.is_some());
+            assert!(results[2].flowrate_hot.is_some());
+        }
+
+        #[rstest]
+        fn test_extreme_conditions(
+            flow_rates: Vec<f64>,
+            efficiencies: Vec<f64>,
+            simulation_time: SimulationTime,
+        ) {
+            let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+            // Very low temperature difference
+            let cold_water_source_warm = ColdWaterSource::new(vec![35.0, 35.0, 35.0], 0, 1.0);
+            let wwhrs_warm = WwhrsInstantaneous::new(
+                flow_rates,
+                efficiencies,
+                cold_water_source_warm,
+                Some(0.7),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                simulation_time_iteration,
+            )
+                .unwrap();
+
+            let result_low_diff = wwhrs_warm
+                .calculate_performance(
+                    WwhrsType::A,
+                    36.0, // Only 1°C above cold water
+                    8.0,
+                    8.0,
+                    55.0,
+                    simulation_time_iteration,
+                )
+                .unwrap();
+
+            // Should still calculate but effect will be minimal
+            assert_eq!(result_low_diff.t_cyl_feed, 33.70675);
+        }
     }
 }
