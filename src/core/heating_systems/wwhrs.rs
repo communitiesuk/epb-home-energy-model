@@ -1332,6 +1332,113 @@ mod tests {
         assert_ne!(efficiency_8, wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::A).unwrap());
     }
 
+    #[rstest]
+    fn test_edge_cases_flowrate_cold_water(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            Some(0.65),
+            None,
+            None,
+            Some(0.81),
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        // System B uses flowrate_cold_water if provided
+        let result = wwhrs
+            .calculate_performance(WwhrsType::B, 35., 8., 6., 55., simulation_time_iteration)
+            .unwrap();
+
+        assert_eq!(result.flowrate_hot.unwrap(), 3.297999789473684) // Should use provided value
+    }
+
+    #[test]
+    fn test_module_constant() {
+        assert_eq!(DELTA_T_SHOWER, 6.0);
+    }
+
+    #[rstest]
+    fn test_system_a_temp_hot_equals_temp_pre(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        // Set up conditions where temp_hot will equal temp_pre
+        let result = wwhrs
+            .calculate_performance(WwhrsType::A, 35., 8., 8., 20.1038, simulation_time_iteration)
+            .unwrap();
+
+        assert!(result.flowrate_hot.is_none())
+    }
+
+    // skipping test_system_b_missing_temp_hot as we decided to type temp_hot as required (not as an Option)
+    // skipping test_system_b_temp_hot_equals_temp_pre as patch difficult to replicate in Rust
+    // skipping test_system_c_missing_temp_hot as we decided to type temp_hot as required (not as an Option)
+
+    #[rstest]
+    fn test_system_c_temp_hot_equals_temp_main(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+        let cold_water_source = ColdWaterSource::new(vec![55.0, 55.0, 55.0], 0, 1.0);
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            None,
+            None,
+            Some(0.88),
+            None,
+            Some(0.68),
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        let result = wwhrs
+            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .unwrap();
+
+        assert!(result.flowrate_hot.is_none())
+    }
+
     #[fixture]
     fn wwhrs_b() -> WWHRSInstantaneousSystemB {
         let cold_water_source = Arc::from(ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0));
