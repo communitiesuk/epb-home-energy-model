@@ -1261,6 +1261,77 @@ mod tests {
         assert_eq!(wwhrs.get_last_used_time().unwrap(), new_time);
     }
 
+    #[rstest]
+    fn test_system_b_with_specific_efficiencies(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+        let system_b_efficiencies = vec![36.3, 31.7, 28.2, 25.4, 23.2];
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            Some(system_b_efficiencies),
+            Some(0.65),
+            None,
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        wwhrs
+            .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
+            .unwrap();
+
+        // Verify it uses specific efficiencies, not reduction factor
+        // Efficiency at 8 L/min should be interpolated from system_b_efficiencies
+        let efficiency_8 = wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::B).unwrap();
+        assert_ne!(efficiency_8, wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::A).unwrap());
+    }
+
+    #[rstest]
+    fn test_system_c_with_specific_efficiencies(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+        let system_c_efficiencies = vec![38.9, 34.0, 30.3, 27.3, 24.8];
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            None,
+            Some(system_c_efficiencies),
+            Some(0.68),
+            None,
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        wwhrs
+            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .unwrap();
+
+        // Verify it uses specific efficiencies, not reduction factor
+        let efficiency_8 = wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::C).unwrap();
+        assert_ne!(efficiency_8, wwhrs.get_efficiency_from_flowrate(8.0, WwhrsType::A).unwrap());
+    }
+
     #[fixture]
     fn wwhrs_b() -> WWHRSInstantaneousSystemB {
         let cold_water_source = Arc::from(ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0));
