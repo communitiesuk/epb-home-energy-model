@@ -1420,6 +1420,10 @@ impl HeatPumpServiceWater {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<BufferTankEmittersDataWithResult>)> {
         // In the Python, temp_return has been updated to optional in 0.34 but update may be erroneous so leaving as non-optional for now
+        // In 1.0.0a1 it looks like making temp_return optional is more intentional/correct due to a check of whether it's None at the beginning of this method before it's used:
+        //         if not self.is_on() or temp_return is None:
+        //             return 0.0
+        // but wherever it's called, a float(non-optional) is passed in so leaving non-optional TODO review in later migrations
         let temp_return_k = celsius_to_kelvin(temp_return)?;
         if !self.is_on(simulation_time_iteration) {
             return Ok((0.0, None));
@@ -1453,11 +1457,10 @@ impl HeatPumpServiceWater {
     ) -> anyhow::Result<f64> {
         // In the Python, temp_return has been updated to optional in 0.34 but update may be erroneous so leaving as non-optional for now
         // (it's passed from here through methods to run_demand_energy_calc, where it is treated as non-optional and will cause an error if none
+        // above is still the case in 1.0.0a1 TODO review in later migrations
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        let temp_cold_water =
-            celsius_to_kelvin(self.cold_feed.temperature(simulation_time_iteration, None))?;
         let temp_return_k = celsius_to_kelvin(temp_return)?;
 
         if temp_flow.is_none() && energy_demand != 0. {
@@ -1469,7 +1472,15 @@ impl HeatPumpServiceWater {
         } else {
             None
         };
-        let design_flow_temp_op_cond = temp_flow_k.ok_or_else(|| anyhow!("temp_flow_k is None"))?; // TODO review when updating this method to 1.0.0a1
+        let design_flow_temp_op_cond = temp_flow_k.ok_or_else(|| anyhow!("temp_flow_k is None"))?; // TODO review 1.0.0a1 - design_flow_temp_op_cond is not optional in the methods it's passed to
+
+        // TODO (from Python) Arbitrary volume used here for reference cold water temperature
+        let list_temp_vol = self
+            .cold_feed
+            .get_temp_cold_water(1., simulation_time_iteration)?;
+        let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| t * v).sum();
+        let sum_v: f64 = list_temp_vol.iter().map(|(_, v)| v).sum();
+        let temp_cold_water = celsius_to_kelvin(sum_t_by_v / sum_v)?;
 
         self.heat_pump.lock().demand_energy(
             &self.service_name,
