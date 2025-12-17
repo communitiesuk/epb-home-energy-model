@@ -278,7 +278,9 @@ impl WwhrsInstantaneous {
                         "system_c_utilisation_factor is required when using system_c_efficiencies"
                     )
                 }
-                todo!()
+
+                let efficiency_adjusted = self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::C)? / 100.0;
+                efficiency_adjusted * self.system_c_utilisation_factor.unwrap()
             }
             None => {
                 // Approach 2: Convert from System A data
