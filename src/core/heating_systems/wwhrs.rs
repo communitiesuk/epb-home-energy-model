@@ -362,8 +362,8 @@ impl WwhrsInstantaneous {
         (self.stored_temperature, volume_needed)
     }
 
-    fn draw_off_water() {
-        todo!()
+    fn draw_off_water(&self, volume: f64) -> (f64, f64) {
+        self.get_temp_cold_water(volume)
     }
 
     /// Set the time when this WWHRS was last used (for future expansion).
@@ -1437,6 +1437,38 @@ mod tests {
             .unwrap();
 
         assert!(result.flowrate_hot.is_none())
+    }
+
+    #[rstest]
+    fn test_draw_off_water_method(
+        flow_rates: Vec<f64>,
+        system_a_efficiencies: Vec<f64>,
+        system_a_utilisation_factor: Option<f64>,
+        cold_water_source: ColdWaterSource,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time_iteration = simulation_time.iter().next().unwrap();
+
+        let wwhrs = WwhrsInstantaneous::new(
+            flow_rates,
+            system_a_efficiencies,
+            cold_water_source,
+            system_a_utilisation_factor,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            simulation_time_iteration,
+        )
+            .unwrap();
+
+        // Test draw_off_water returns same as get_temp_cold_water
+        let volume = 15.0;
+        let result = wwhrs.draw_off_water(volume);
+        let expected = wwhrs.get_temp_cold_water(volume);
+        assert_eq!(result, expected);
     }
 
     #[fixture]
