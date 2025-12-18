@@ -18,9 +18,9 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
-use smartstring::alias::String;
 use std::collections::HashMap;
 use std::sync::Arc;
+use smartstring::alias::String;
 
 const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
 
@@ -50,6 +50,13 @@ impl From<f64> for DemandVolTargetKey {
     fn from(value: f64) -> Self {
         Self::Number(OrderedFloat(value))
     }
+}
+
+// Note this type is not in Python
+pub enum TappingPoint<'a> {
+    Shower(&'a Shower),
+    Bath(&'a Bath),
+    Other(&'a OtherHotWater)
 }
 
 #[derive(Eq, Hash, PartialEq, Debug)]
@@ -153,7 +160,7 @@ impl DomesticHotWaterDemand {
                 ShowerInput::MixerShower { hot_water_source, .. } => {
                     match hot_water_source {
                         Some(hot_water_source ) => { 
-                            mapping.insert((OutletType::Shower, shower_name.into()), hot_water_source.clone());
+                            mapping.insert((OutletType::Shower, shower_name.into()), hot_water_source.clone().into());
                         }
                         None => {
                             if hot_water_sources.len() == 1 {
@@ -171,7 +178,7 @@ impl DomesticHotWaterDemand {
         for (bath_name, bath) in baths_dict.0.iter() {
             match &bath.hot_water_source {
                 Some(hot_water_source ) => { 
-                    mapping.insert((OutletType::Shower, bath_name.into()), hot_water_source.clone());
+                    mapping.insert((OutletType::Shower, bath_name.into()), hot_water_source.clone().into());
                 }
                 None => {
                     if hot_water_sources.len() == 1 {
@@ -187,7 +194,7 @@ impl DomesticHotWaterDemand {
         for (other_name, other) in other_hw_users_dict.0.iter() {
             match &other.hot_water_source {
                 Some(hot_water_source ) => { 
-                    mapping.insert((OutletType::Shower, other_name.into()), hot_water_source.clone());
+                    mapping.insert((OutletType::Shower, other_name.into()), hot_water_source.clone().into());
                 }
                 None => {
                     if hot_water_sources.len() == 1 {
@@ -212,6 +219,24 @@ impl DomesticHotWaterDemand {
         sum_t_by_v / sum_v
     }
 
+    pub fn get_tapping_point_for_event(&'_ self, event: TypedScheduleEvent) -> (TappingPoint<'_>, OutletType, String) {
+        // TODO Results instead of panics
+        match event.event_type {
+            WaterScheduleEventType::Shower => {
+                let shower = self.showers.get(&*event.name).unwrap_or_else(|| panic!("Tapping point not found for event"));
+                (TappingPoint::Shower(shower), OutletType::Shower, event.name.into())
+            },
+            WaterScheduleEventType::Bath => {
+                let bath = self.baths.get(&*event.name).unwrap_or_else(|| panic!("Tapping point not found for event"));
+                (TappingPoint::Bath(bath), OutletType::Bath, event.name.into())
+            },
+            WaterScheduleEventType::Other => 
+            {
+                let other = self.other.get(&*event.name).unwrap_or_else(|| panic!("Tapping point not found for event"));
+                (TappingPoint::Other(other), OutletType::Other, event.name.into())
+            },
+        }
+    }
 
     pub fn hot_water_demand(
         &self,
@@ -233,7 +258,7 @@ impl DomesticHotWaterDemand {
         // source (tank). The first event that starts is Served before the second event
         // is considered even if this starts before the previous event has finished.
 
-        let mut usage_events = self.event_schedules[simtime.index].clone();
+        let mut usage_events: Option<Vec<TypedScheduleEvent>> = self.event_schedules[simtime.index].clone();
 
         if let Some(usage_events) = &mut usage_events {
             for event in usage_events.iter_mut() {
