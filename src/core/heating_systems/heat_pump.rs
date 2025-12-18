@@ -280,7 +280,7 @@ pub struct BufferTankEmittersData {
     pub target_flow_temp: f64,
     pub temp_rm_prev: f64,
     pub variable_flow: bool,
-    pub temp_diff_emit_dsgn: f64,
+    pub temp_diff_emit_design: f64,
     pub min_flow_rate: f64,
     pub max_flow_rate: f64,
 }
@@ -435,7 +435,7 @@ impl BufferTank {
             let mut hp_flow;
             let mut theoretical_hp_flow_temp: Option<f64> = None;
             if emitters_data_for_buffer_tank.variable_flow {
-                let delta_t_hp_to_buffer = emitters_data_for_buffer_tank.temp_diff_emit_dsgn;
+                let delta_t_hp_to_buffer = emitters_data_for_buffer_tank.temp_diff_emit_design;
                 theoretical_hp_flow_temp = Some(theoretical_hp_return_temp + delta_t_hp_to_buffer);
                 hp_flow = (emitters_data_for_buffer_tank.power_req_from_buffer_tank
                     + heat_loss_buffer_kwh / self.simulation_timestep)
@@ -1928,7 +1928,7 @@ impl HeatPumpServiceSpaceWarmAir {
             _ => panic!("impossible heat pump source type encountered"),
         };
 
-        let temp_diff_emit_dsgn = self.temp_diff_emit_design;
+        let temp_diff_emit_design = self.temp_diff_emit_design;
 
         Box::new(
             move |temp_output,
@@ -1940,7 +1940,7 @@ impl HeatPumpServiceSpaceWarmAir {
                     temp_output,
                     temp_diff_evaporator,
                     temp_diff_condenser,
-                    temp_diff_emit_dsgn,
+                    temp_diff_emit_design,
                     design_flow_temp_op_cond,
                 ).expect("Temp spread correction never expects to encounter temperature below absolute zero")
             },
@@ -2471,7 +2471,7 @@ impl HeatPump {
         service_name: &str,
         emitter_type: HeatPumpEmitterType,
         temp_limit_upper_in_c: f64,
-        temp_diff_emit_dsgn: f64,
+        temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
         control: Arc<Control>,
         volume_heated: f64,
@@ -2496,7 +2496,7 @@ impl HeatPump {
             service_name.into(),
             emitter_type,
             temp_limit_upper_in_c,
-            temp_diff_emit_dsgn,
+            temp_diff_emit_design,
             design_flow_temp_op_cond,
             control,
             volume_heated,
@@ -2535,7 +2535,7 @@ impl HeatPump {
         let temp_flow = heat_pump.lock().test_data.design_flow_temps[0].0;
         let design_flow_temp_op_cond = temp_flow;
         // Design temperature difference across the emitters, in deg C or K
-        let temp_diff_emit_dsgn = max_of_2(
+        let temp_diff_emit_design = max_of_2(
             temp_flow / 7.,
             heat_pump
                 .lock()
@@ -2547,7 +2547,7 @@ impl HeatPump {
         Ok(HeatPumpServiceSpaceWarmAir::new(
             heat_pump,
             service_name,
-            temp_diff_emit_dsgn,
+            temp_diff_emit_design,
             design_flow_temp_op_cond,
             control,
             temp_flow,
@@ -5587,7 +5587,7 @@ mod tests {
                 target_flow_temp: 48.54166666666667,
                 temp_rm_prev: 22.488371468978006,
                 variable_flow: true,
-                temp_diff_emit_dsgn: 10.,
+                temp_diff_emit_design: 10.,
                 min_flow_rate: 0.05,
                 max_flow_rate: 0.3,
             },
@@ -5598,7 +5598,7 @@ mod tests {
                 target_flow_temp: 48.54166666666667,
                 temp_rm_prev: 22.61181775388348,
                 variable_flow: true,
-                temp_diff_emit_dsgn: 10.,
+                temp_diff_emit_design: 10.,
                 min_flow_rate: 0.05,
                 max_flow_rate: 0.3,
             },
@@ -5609,7 +5609,7 @@ mod tests {
                 target_flow_temp: 49.375,
                 temp_rm_prev: 17.736483875769345,
                 variable_flow: true,
-                temp_diff_emit_dsgn: 10.,
+                temp_diff_emit_design: 10.,
                 min_flow_rate: 0.05,
                 max_flow_rate: 0.3,
             },
@@ -5620,7 +5620,7 @@ mod tests {
                 target_flow_temp: 49.375,
                 temp_rm_prev: 16.85636993835381,
                 variable_flow: true,
-                temp_diff_emit_dsgn: 10.,
+                temp_diff_emit_design: 10.,
                 min_flow_rate: 0.05,
                 max_flow_rate: 0.3,
             },
@@ -5631,7 +5631,7 @@ mod tests {
                 target_flow_temp: 48.75,
                 temp_rm_prev: 17.22290169647781,
                 variable_flow: true,
-                temp_diff_emit_dsgn: 10.,
+                temp_diff_emit_design: 10.,
                 min_flow_rate: 0.05,
                 max_flow_rate: 0.3,
             },
@@ -5642,7 +5642,7 @@ mod tests {
                 target_flow_temp: 48.22916666666667,
                 temp_rm_prev: 21.897823675853978,
                 variable_flow: true,
-                temp_diff_emit_dsgn: 10.,
+                temp_diff_emit_design: 10.,
                 min_flow_rate: 0.05,
                 max_flow_rate: 0.3,
             },
@@ -5653,7 +5653,7 @@ mod tests {
                 target_flow_temp: 48.4375,
                 temp_rm_prev: 22.36470513987037,
                 variable_flow: true,
-                temp_diff_emit_dsgn: 10.,
+                temp_diff_emit_design: 10.,
                 min_flow_rate: 0.05,
                 max_flow_rate: 0.3,
             },
@@ -5664,7 +5664,7 @@ mod tests {
                 target_flow_temp: 48.4375,
                 temp_rm_prev: 22.425363294403255,
                 variable_flow: true,
-                temp_diff_emit_dsgn: 10.,
+                temp_diff_emit_design: 10.,
                 min_flow_rate: 0.05,
                 max_flow_rate: 0.3,
             },
@@ -6576,7 +6576,7 @@ mod tests {
     ) {
         let service_name = "service_space";
         let temp_limit_upper = 50.0;
-        let temp_diff_emit_dsgn = 50.0;
+        let temp_diff_emit_design = 50.0;
         let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![], 0, 0.)));
         let volume_heated = 250.0;
 
@@ -6594,7 +6594,7 @@ mod tests {
             service_name,
             HeatPumpEmitterType::RadiatorsUfh,
             temp_limit_upper,
-            temp_diff_emit_dsgn,
+            temp_diff_emit_design,
             55.,
             control.clone(),
             volume_heated,
@@ -6623,7 +6623,7 @@ mod tests {
             service_name,
             HeatPumpEmitterType::RadiatorsUfh,
             temp_limit_upper,
-            temp_diff_emit_dsgn,
+            temp_diff_emit_design,
             55.,
             control.clone(),
             volume_heated,
@@ -6653,7 +6653,7 @@ mod tests {
             service_name,
             HeatPumpEmitterType::RadiatorsUfh,
             temp_limit_upper,
-            temp_diff_emit_dsgn,
+            temp_diff_emit_design,
             55.,
             control,
             volume_heated,
@@ -8445,7 +8445,7 @@ mod tests {
 
         let service_name = "service_space";
         let temp_limit_upper = 50.0;
-        let temp_diff_emit_dsgn = 50.0;
+        let temp_diff_emit_design = 50.0;
         let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(
             vec![Some(true)],
             0,
@@ -8458,7 +8458,7 @@ mod tests {
             service_name,
             HeatPumpEmitterType::RadiatorsUfh,
             temp_limit_upper,
-            temp_diff_emit_dsgn,
+            temp_diff_emit_design,
             55., // TODO 1.0.0a1
             control,
             volume_heated,

@@ -1175,7 +1175,7 @@ impl Emitters {
                         target_flow_temp: self.target_flow_temp.load(Ordering::SeqCst),
                         temp_rm_prev,
                         variable_flow: self.variable_flow_data.into(),
-                        temp_diff_emit_dsgn: self.temp_diff_emit_dsgn,
+                        temp_diff_emit_design: self.temp_diff_emit_dsgn,
                         min_flow_rate: self.min_flow_rate,
                         max_flow_rate: self.max_flow_rate,
                     }
