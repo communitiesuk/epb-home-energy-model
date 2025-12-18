@@ -10,7 +10,9 @@ use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
 use crate::corpus::{ColdWaterSources, EventSchedule, HotWaterSource};
 use crate::input::{
-    BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput, PipeworkContents, Shower as ShowerInput, Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterDistribution, WaterPipeworkSimple
+    BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput,
+    PipeworkContents, Shower as ShowerInput, Showers as ShowersInput,
+    WaterDistribution as WaterDistributionInput, WaterDistribution, WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -18,9 +20,9 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
+use smartstring::alias::String;
 use std::collections::HashMap;
 use std::sync::Arc;
-use smartstring::alias::String;
 
 const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
 
@@ -56,14 +58,14 @@ impl From<f64> for DemandVolTargetKey {
 pub enum TappingPoint<'a> {
     Shower(&'a Shower),
     Bath(&'a Bath),
-    Other(&'a OtherHotWater)
+    Other(&'a OtherHotWater),
 }
 
 #[derive(Eq, Hash, PartialEq, Debug)]
 pub enum OutletType {
     Shower,
     Bath,
-    Other
+    Other,
 }
 
 impl DomesticHotWaterDemand {
@@ -137,7 +139,12 @@ impl DomesticHotWaterDemand {
             })
             .collect::<anyhow::Result<Vec<PipeworkSimple>>>()?;
 
-        let source_supplying_outlet = Self::init_outlet_to_source_mapping(showers_input, bath_input, other_hot_water_input, hot_water_sources);
+        let source_supplying_outlet = Self::init_outlet_to_source_mapping(
+            showers_input,
+            bath_input,
+            other_hot_water_input,
+            hot_water_sources,
+        );
 
         Ok(Self {
             showers,
@@ -149,41 +156,61 @@ impl DomesticHotWaterDemand {
         })
     }
 
-    fn init_outlet_to_source_mapping(showers_dict: ShowersInput, baths_dict: BathInput, other_hw_users_dict: OtherWaterUseInput, hot_water_sources: IndexMap<String, HotWaterSource>) -> HashMap<(OutletType, String), String> {
+    fn init_outlet_to_source_mapping(
+        showers_dict: ShowersInput,
+        baths_dict: BathInput,
+        other_hw_users_dict: OtherWaterUseInput,
+        hot_water_sources: IndexMap<String, HotWaterSource>,
+    ) -> HashMap<(OutletType, String), String> {
         let mut mapping = HashMap::<(OutletType, String), String>::default();
         for (shower_name, shower) in showers_dict.0.iter() {
             match shower {
                 ShowerInput::InstantElectricShower { .. } => {
-                    mapping.insert((OutletType::Shower, shower_name.into()), ELECTRIC_SHOWERS_HWS_NAME.into());
+                    mapping.insert(
+                        (OutletType::Shower, shower_name.into()),
+                        ELECTRIC_SHOWERS_HWS_NAME.into(),
+                    );
                     continue;
-                },
-                ShowerInput::MixerShower { hot_water_source, .. } => {
-                    match hot_water_source {
-                        Some(hot_water_source ) => { 
-                            mapping.insert((OutletType::Shower, shower_name.into()), hot_water_source.clone().into());
-                        }
-                        None => {
-                            if hot_water_sources.len() == 1 {
-                                let default_hot_water_source = hot_water_sources.first().unwrap().0;
-                                mapping.insert((OutletType::Shower, shower_name.into()), default_hot_water_source.clone());
-                            } else {
-                                panic!("HotWaterSource not specified for tapping point")
-                            }
+                }
+                ShowerInput::MixerShower {
+                    hot_water_source, ..
+                } => match hot_water_source {
+                    Some(hot_water_source) => {
+                        mapping.insert(
+                            (OutletType::Shower, shower_name.into()),
+                            hot_water_source.clone().into(),
+                        );
+                    }
+                    None => {
+                        if hot_water_sources.len() == 1 {
+                            let default_hot_water_source = hot_water_sources.first().unwrap().0;
+                            mapping.insert(
+                                (OutletType::Shower, shower_name.into()),
+                                default_hot_water_source.clone(),
+                            );
+                        } else {
+                            panic!("HotWaterSource not specified for tapping point")
                         }
                     }
-                }
+                },
             }
         }
 
         for (bath_name, bath) in baths_dict.0.iter() {
             match &bath.hot_water_source {
-                Some(hot_water_source ) => { 
-                    mapping.insert((OutletType::Shower, bath_name.into()), hot_water_source.clone().into());
+                Some(hot_water_source) => {
+                    mapping.insert(
+                        (OutletType::Shower, bath_name.into()),
+                        hot_water_source.clone().into(),
+                    );
                 }
                 None => {
                     if hot_water_sources.len() == 1 {
                         let default_hot_water_source = hot_water_sources.first().unwrap().0;
-                        mapping.insert((OutletType::Shower, bath_name.into()), default_hot_water_source.clone());
+                        mapping.insert(
+                            (OutletType::Shower, bath_name.into()),
+                            default_hot_water_source.clone(),
+                        );
                     } else {
                         panic!("HotWaterSource not specified for tapping point")
                     }
@@ -193,13 +220,19 @@ impl DomesticHotWaterDemand {
 
         for (other_name, other) in other_hw_users_dict.0.iter() {
             match &other.hot_water_source {
-                Some(hot_water_source ) => { 
-                    mapping.insert((OutletType::Shower, other_name.into()), hot_water_source.clone().into());
+                Some(hot_water_source) => {
+                    mapping.insert(
+                        (OutletType::Shower, other_name.into()),
+                        hot_water_source.clone().into(),
+                    );
                 }
                 None => {
                     if hot_water_sources.len() == 1 {
                         let default_hot_water_source = hot_water_sources.first().unwrap().0;
-                        mapping.insert((OutletType::Shower, other_name.into()), default_hot_water_source.clone());
+                        mapping.insert(
+                            (OutletType::Shower, other_name.into()),
+                            default_hot_water_source.clone(),
+                        );
                     } else {
                         panic!("HotWaterSource not specified for tapping point")
                     }
@@ -210,31 +243,66 @@ impl DomesticHotWaterDemand {
         mapping
     }
 
-    pub(crate) fn temp_hot_water(&self, hot_water_source: HotWaterSource, volume_required_already: f64, volume_required: f64) -> f64 {
-        let list_temperature_for_required_volume = hot_water_source.get_temp_hot_water(volume_required, volume_required_already);
-        let sum_t_by_v: f64 = list_temperature_for_required_volume.iter().map(|(t,v)| { t * v } ).sum();
-        let sum_v: f64 = list_temperature_for_required_volume.iter().map(|(_, v)| { v }).sum();
+    pub(crate) fn temp_hot_water(
+        &self,
+        hot_water_source: HotWaterSource,
+        volume_required_already: f64,
+        volume_required: f64,
+    ) -> f64 {
+        let list_temperature_for_required_volume =
+            hot_water_source.get_temp_hot_water(volume_required, volume_required_already);
+        let sum_t_by_v: f64 = list_temperature_for_required_volume
+            .iter()
+            .map(|(t, v)| t * v)
+            .sum();
+        let sum_v: f64 = list_temperature_for_required_volume
+            .iter()
+            .map(|(_, v)| v)
+            .sum();
 
         // Return average hot water temperature for the required volume
         sum_t_by_v / sum_v
     }
 
-    pub fn get_tapping_point_for_event(&'_ self, event: TypedScheduleEvent) -> (TappingPoint<'_>, OutletType, String) {
+    pub fn get_tapping_point_for_event(
+        &'_ self,
+        event: TypedScheduleEvent,
+    ) -> (TappingPoint<'_>, OutletType, String) {
         // TODO Results instead of panics
         match event.event_type {
             WaterScheduleEventType::Shower => {
-                let shower = self.showers.get(&*event.name).unwrap_or_else(|| panic!("Tapping point not found for event"));
-                (TappingPoint::Shower(shower), OutletType::Shower, event.name.into())
-            },
+                let shower = self
+                    .showers
+                    .get(&*event.name)
+                    .unwrap_or_else(|| panic!("Tapping point not found for event"));
+                (
+                    TappingPoint::Shower(shower),
+                    OutletType::Shower,
+                    event.name.into(),
+                )
+            }
             WaterScheduleEventType::Bath => {
-                let bath = self.baths.get(&*event.name).unwrap_or_else(|| panic!("Tapping point not found for event"));
-                (TappingPoint::Bath(bath), OutletType::Bath, event.name.into())
-            },
-            WaterScheduleEventType::Other => 
-            {
-                let other = self.other.get(&*event.name).unwrap_or_else(|| panic!("Tapping point not found for event"));
-                (TappingPoint::Other(other), OutletType::Other, event.name.into())
-            },
+                let bath = self
+                    .baths
+                    .get(&*event.name)
+                    .unwrap_or_else(|| panic!("Tapping point not found for event"));
+                (
+                    TappingPoint::Bath(bath),
+                    OutletType::Bath,
+                    event.name.into(),
+                )
+            }
+            WaterScheduleEventType::Other => {
+                let other = self
+                    .other
+                    .get(&*event.name)
+                    .unwrap_or_else(|| panic!("Tapping point not found for event"));
+                (
+                    TappingPoint::Other(other),
+                    OutletType::Other,
+                    event.name.into(),
+                )
+            }
         }
     }
 
@@ -258,7 +326,8 @@ impl DomesticHotWaterDemand {
         // source (tank). The first event that starts is Served before the second event
         // is considered even if this starts before the previous event has finished.
 
-        let mut usage_events: Option<Vec<TypedScheduleEvent>> = self.event_schedules[simtime.index].clone();
+        let mut usage_events: Option<Vec<TypedScheduleEvent>> =
+            self.event_schedules[simtime.index].clone();
 
         if let Some(usage_events) = &mut usage_events {
             for event in usage_events.iter_mut() {
@@ -523,10 +592,10 @@ fn shower_from_input(
             cold_water_source,
             wwhrs_config,
             flowrate,
-            hot_water_source
+            hot_water_source,
         } => {
             let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
-            let wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = wwhrs_config
+            let _wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = wwhrs_config
                 .as_ref()
                 .map(|config| &config.waste_water_heat_recovery_system)
                 .and_then(|w| wwhrs.get(w).cloned());
@@ -534,7 +603,8 @@ fn shower_from_input(
             Shower::MixerShower(MixerShower::new(
                 *flowrate,
                 cold_water_source,
-                wwhrs_instance
+                None, // TODO (migration 1.0.0a1)
+                None, // TODO (migration 1.0.0a1)
             ))
         }
         ShowerInput::InstantElectricShower {

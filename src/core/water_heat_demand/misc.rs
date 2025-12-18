@@ -43,6 +43,15 @@ pub fn water_demand_to_kwh(litres_demand: f64, demand_temp: f64, cold_temp: f64)
     WATER.volumetric_energy_content_kwh_per_litre(demand_temp, cold_temp) * litres_demand
 }
 
+pub(crate) fn volume_hot_water_required(
+    _volume_warm_water: f64,
+    _temperature_target: f64,
+    _func_temperature_hot_water: Option<f64>, // TODO, migration 1.0.0a1: implement equivalent type to: Callable[[float], float]
+    _func_temperature_cold_water: Option<f64>, // TODO migration 1.0.0a1: implement equivalent type to: Callable[[float], list[tuple[float, float]]]
+) -> Option<f64> {
+    todo!("as part of migratin to 1.0.0a1")
+}
+
 /// Calculate volume-weighted average temperature from list of (temperature, volume) pairs.
 ///
 /// Arguments:

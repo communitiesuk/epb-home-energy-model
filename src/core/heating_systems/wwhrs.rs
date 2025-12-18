@@ -8,13 +8,25 @@ use std::sync::Arc;
 // Temperature reduction of water during the shower from temp_target
 const DELTA_T_SHOWER: f64 = 6.0;
 
+#[derive(Eq, Hash, PartialEq, Clone, Debug)]
+/// WWHRS system configuration
+/// A - Both shower and water heating system get pre-heated water
+/// B - Only shower gets pre-heated water
+/// C - Only water heating system gets pre-heated water
+pub(crate) enum WwhrsConfiguration {
+    AShowerAndWaterHeatingSystem,
+    BShower,
+    CWaterHeatingSystem,
+}
+
 /// A unified class to represent instantaneous waste water heat recovery systems
 ///
 /// This class can handle all three system configurations (A, B, C) based on the
 /// system type specified when calling the calculation methods. Each physical WWHRS
 /// unit is defined once and can be connected to multiple showers with different
 /// configurations.
-struct WwhrsInstantaneous {
+#[derive(Debug)]
+pub(crate) struct WwhrsInstantaneous {
     cold_water_source: ColdWaterSource,
     flow_rates: Vec<f64>,
     system_a_efficiencies: Vec<f64>,
@@ -29,7 +41,7 @@ struct WwhrsInstantaneous {
     last_used_time: Option<f64>,
 }
 
-struct PerformanceCalculationResult {
+pub(crate) struct PerformanceCalculationResult {
     t_cyl_feed: f64,
     flowrate_hot: Option<f64>,
 }
@@ -48,7 +60,7 @@ impl WwhrsInstantaneous {
     /// * `system_c_utilisation_factor`: Utilisation factor for System C
     /// * `system_b_efficiency_factor`: Reduction factor for System B (default 0.81)
     /// * `system_c_efficiency_factor`: Reduction factor for System C (default 0.88)
-    fn new(
+    pub(crate) fn new(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         cold_water_source: ColdWaterSource,
@@ -98,9 +110,9 @@ impl WwhrsInstantaneous {
     /// * `T_pre`: Pre-heated water temperature
     /// * `T_cyl_feed`: Temperature of water feeding the cylinder
     /// * `m_hot`: Hot water flow rate (if calculable)
-    fn calculate_performance(
+    pub(crate) fn calculate_performance(
         &self,
-        system_type: WwhrsType,
+        system_type: WwhrsConfiguration,
         temp_target: f64,
         flowrate_waste_water: f64,
         volume_cold_water: f64,
@@ -108,21 +120,21 @@ impl WwhrsInstantaneous {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<PerformanceCalculationResult> {
         match system_type {
-            WwhrsType::A => self.calculate_system_a(
+            WwhrsConfiguration::AShowerAndWaterHeatingSystem => self.calculate_system_a(
                 temp_target,
                 flowrate_waste_water,
                 volume_cold_water,
                 temp_hot,
                 simulation_time_iteration,
             ),
-            WwhrsType::B => self.calculate_system_b(
+            WwhrsConfiguration::BShower => self.calculate_system_b(
                 temp_target,
                 flowrate_waste_water,
                 volume_cold_water,
                 temp_hot,
                 simulation_time_iteration,
             ),
-            WwhrsType::C => self.calculate_system_c(
+            WwhrsConfiguration::CWaterHeatingSystem => self.calculate_system_c(
                 temp_target,
                 flowrate_waste_water,
                 volume_cold_water,
@@ -156,8 +168,10 @@ impl WwhrsInstantaneous {
             / list_temp_vol.into_iter().map(|(_, v)| v).sum::<f64>();
 
         // Get efficiency for System A
-        let efficiency =
-            self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::A)? / 100.;
+        let efficiency = self.get_efficiency_from_flowrate(
+            flowrate_waste_water,
+            WwhrsConfiguration::AShowerAndWaterHeatingSystem,
+        )? / 100.;
         let eta_uf = efficiency * self.system_a_utilisation_factor.unwrap();
 
         // Calculate drain temperature
@@ -208,8 +222,10 @@ impl WwhrsInstantaneous {
                     );
                 }
 
-                let efficiency_adjusted =
-                    self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::B)? / 100.0;
+                let efficiency_adjusted = self.get_efficiency_from_flowrate(
+                    flowrate_waste_water,
+                    WwhrsConfiguration::BShower,
+                )? / 100.0;
                 efficiency_adjusted * self.system_b_utilisation_factor.unwrap()
             }
             None => {
@@ -220,8 +236,10 @@ impl WwhrsInstantaneous {
                     anyhow::bail!("Both system_b_utilisation_factor and system_b_efficiency_factor are required when converting from System A data");
                 }
 
-                let base_efficiency =
-                    self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::A)? / 100.0;
+                let base_efficiency = self.get_efficiency_from_flowrate(
+                    flowrate_waste_water,
+                    WwhrsConfiguration::AShowerAndWaterHeatingSystem,
+                )? / 100.0;
                 let efficiency_adjusted =
                     base_efficiency * self.system_b_efficiency_factor.unwrap();
                 efficiency_adjusted * self.system_b_utilisation_factor.unwrap()
@@ -279,8 +297,10 @@ impl WwhrsInstantaneous {
                     )
                 }
 
-                let efficiency_adjusted =
-                    self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::C)? / 100.0;
+                let efficiency_adjusted = self.get_efficiency_from_flowrate(
+                    flowrate_waste_water,
+                    WwhrsConfiguration::CWaterHeatingSystem,
+                )? / 100.0;
                 efficiency_adjusted * self.system_c_utilisation_factor.unwrap()
             }
             None => {
@@ -290,8 +310,10 @@ impl WwhrsInstantaneous {
                 {
                     anyhow::bail!("Both system_c_utilisation_factor and system_c_efficiency_factor are required when converting from System A data")
                 }
-                let base_efficiency =
-                    self.get_efficiency_from_flowrate(flowrate_waste_water, WwhrsType::A)? / 100.0;
+                let base_efficiency = self.get_efficiency_from_flowrate(
+                    flowrate_waste_water,
+                    WwhrsConfiguration::AShowerAndWaterHeatingSystem,
+                )? / 100.0;
                 let efficiency_adjusted =
                     base_efficiency * self.system_c_efficiency_factor.unwrap();
                 efficiency_adjusted * self.system_c_utilisation_factor.unwrap()
@@ -327,15 +349,15 @@ impl WwhrsInstantaneous {
     fn get_efficiency_from_flowrate(
         &self,
         flowrate: f64,
-        system_type: WwhrsType,
+        system_type: WwhrsConfiguration,
     ) -> anyhow::Result<f64> {
         let efficiencies = match system_type {
-            WwhrsType::A => self.system_a_efficiencies.clone(),
-            WwhrsType::B => self
+            WwhrsConfiguration::AShowerAndWaterHeatingSystem => self.system_a_efficiencies.clone(),
+            WwhrsConfiguration::BShower => self
                 .system_b_efficiencies
                 .clone()
                 .ok_or(anyhow!("System B efficiencies expected for WWHR System B"))?,
-            WwhrsType::C => self
+            WwhrsConfiguration::CWaterHeatingSystem => self
                 .system_c_efficiencies
                 .clone()
                 .ok_or(anyhow!("System C efficiencies expected for WWHR System C"))?,
@@ -375,13 +397,6 @@ impl WwhrsInstantaneous {
     fn get_last_used_time(&self) -> Option<f64> {
         self.last_used_time
     }
-}
-
-#[derive(Eq, Hash, PartialEq, Clone)]
-pub(crate) enum WwhrsType {
-    A,
-    B,
-    C,
 }
 
 // TODO: delete below code as part of migration to 1.0.0a1
@@ -678,19 +693,19 @@ mod tests {
 
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(5., WwhrsType::A)
+                .get_efficiency_from_flowrate(5., WwhrsConfiguration::AShowerAndWaterHeatingSystem)
                 .unwrap(),
             44.8
         );
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(5., WwhrsType::B)
+                .get_efficiency_from_flowrate(5., WwhrsConfiguration::BShower)
                 .unwrap(),
             36.3
         );
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(5., WwhrsType::C)
+                .get_efficiency_from_flowrate(5., WwhrsConfiguration::CWaterHeatingSystem)
                 .unwrap(),
             38.9
         );
@@ -721,7 +736,14 @@ mod tests {
         .unwrap();
 
         assert!(wwhrs
-            .calculate_performance(WwhrsType::A, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::AShowerAndWaterHeatingSystem,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration
+            )
             .is_err());
     }
 
@@ -750,7 +772,14 @@ mod tests {
         .unwrap();
 
         assert!(wwhrs
-            .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::BShower,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration
+            )
             .is_err());
     }
 
@@ -779,7 +808,14 @@ mod tests {
         .unwrap();
 
         assert!(wwhrs
-            .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::BShower,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration
+            )
             .is_err());
     }
 
@@ -808,7 +844,14 @@ mod tests {
         .unwrap();
 
         assert!(wwhrs
-            .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::BShower,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration
+            )
             .is_err());
     }
 
@@ -837,7 +880,14 @@ mod tests {
         .unwrap();
 
         assert!(wwhrs
-            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::CWaterHeatingSystem,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration
+            )
             .is_err());
     }
 
@@ -866,7 +916,14 @@ mod tests {
         .unwrap();
 
         assert!(wwhrs
-            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::CWaterHeatingSystem,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration
+            )
             .is_err());
     }
 
@@ -898,17 +955,17 @@ mod tests {
         // System A should work
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(5., WwhrsType::A)
+                .get_efficiency_from_flowrate(5., WwhrsConfiguration::AShowerAndWaterHeatingSystem)
                 .unwrap(),
             44.8
         );
 
         // Systems B and C should raise errors when no efficiencies provided
         assert!(wwhrs
-            .get_efficiency_from_flowrate(5., WwhrsType::B)
+            .get_efficiency_from_flowrate(5., WwhrsConfiguration::BShower)
             .is_err());
         assert!(wwhrs
-            .get_efficiency_from_flowrate(5., WwhrsType::C)
+            .get_efficiency_from_flowrate(5., WwhrsConfiguration::CWaterHeatingSystem)
             .is_err());
     }
 
@@ -938,7 +995,14 @@ mod tests {
         .unwrap();
 
         let result = wwhrs
-            .calculate_performance(WwhrsType::A, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::AShowerAndWaterHeatingSystem,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         // For System A, cylinder is not fed pre-heated water
@@ -971,7 +1035,14 @@ mod tests {
         .unwrap();
 
         let result = wwhrs
-            .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::BShower,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         // For System B, both shower and cylinder get pre-heated water
@@ -1005,7 +1076,14 @@ mod tests {
         .unwrap();
 
         let result = wwhrs
-            .calculate_performance(WwhrsType::B, 35., 8., 8., 35., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::BShower,
+                35.,
+                8.,
+                8.,
+                35.,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         assert_eq!(result.flowrate_hot.unwrap(), 8.); // Equal to flowrate_waste_water
@@ -1037,7 +1115,14 @@ mod tests {
         .unwrap();
 
         let result = wwhrs
-            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::CWaterHeatingSystem,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         // For System C, only cylinder gets pre-heated water
@@ -1072,7 +1157,14 @@ mod tests {
         .unwrap();
 
         let result = wwhrs
-            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::CWaterHeatingSystem,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         // Should return temp_main when division by zero would occur
@@ -1107,20 +1199,23 @@ mod tests {
         // Test exact match
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(5.0, WwhrsType::A)
+                .get_efficiency_from_flowrate(5.0, WwhrsConfiguration::AShowerAndWaterHeatingSystem)
                 .unwrap(),
             44.8
         );
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(13.0, WwhrsType::A)
+                .get_efficiency_from_flowrate(
+                    13.0,
+                    WwhrsConfiguration::AShowerAndWaterHeatingSystem
+                )
                 .unwrap(),
             28.6
         );
 
         // Test interpolation
         let efficiency_8 = wwhrs
-            .get_efficiency_from_flowrate(8.0, WwhrsType::A)
+            .get_efficiency_from_flowrate(8.0, WwhrsConfiguration::AShowerAndWaterHeatingSystem)
             .unwrap();
         assert!(efficiency_8 > 34.8); // > efficiency at 9
         assert!(efficiency_8 < 39.1); // < efficiency at 7
@@ -1128,7 +1223,7 @@ mod tests {
         // Test below minimum
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(3.0, WwhrsType::A)
+                .get_efficiency_from_flowrate(3.0, WwhrsConfiguration::AShowerAndWaterHeatingSystem)
                 .unwrap(),
             44.8
         );
@@ -1136,7 +1231,10 @@ mod tests {
         // Test above maximum
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(15.0, WwhrsType::A)
+                .get_efficiency_from_flowrate(
+                    15.0,
+                    WwhrsConfiguration::AShowerAndWaterHeatingSystem
+                )
                 .unwrap(),
             28.6
         );
@@ -1172,19 +1270,19 @@ mod tests {
         // Test all systems
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(5.0, WwhrsType::A)
+                .get_efficiency_from_flowrate(5.0, WwhrsConfiguration::AShowerAndWaterHeatingSystem)
                 .unwrap(),
             44.8
         );
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(5.0, WwhrsType::B)
+                .get_efficiency_from_flowrate(5.0, WwhrsConfiguration::BShower)
                 .unwrap(),
             36.3
         );
         assert_eq!(
             wwhrs
-                .get_efficiency_from_flowrate(5.0, WwhrsType::C)
+                .get_efficiency_from_flowrate(5.0, WwhrsConfiguration::CWaterHeatingSystem)
                 .unwrap(),
             38.9
         );
@@ -1246,7 +1344,7 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         // Initially should be None
         assert!(wwhrs.get_last_used_time().is_none());
@@ -1286,21 +1384,28 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         wwhrs
-            .calculate_performance(WwhrsType::B, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::BShower,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         // Verify it uses specific efficiencies, not reduction factor
         // Efficiency at 8 L/min should be interpolated from system_b_efficiencies
         let efficiency_8 = wwhrs
-            .get_efficiency_from_flowrate(8.0, WwhrsType::B)
+            .get_efficiency_from_flowrate(8.0, WwhrsConfiguration::BShower)
             .unwrap();
         assert_ne!(
             efficiency_8,
             wwhrs
-                .get_efficiency_from_flowrate(8.0, WwhrsType::A)
+                .get_efficiency_from_flowrate(8.0, WwhrsConfiguration::AShowerAndWaterHeatingSystem)
                 .unwrap()
         );
     }
@@ -1329,20 +1434,27 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         wwhrs
-            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::CWaterHeatingSystem,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         // Verify it uses specific efficiencies, not reduction factor
         let efficiency_8 = wwhrs
-            .get_efficiency_from_flowrate(8.0, WwhrsType::C)
+            .get_efficiency_from_flowrate(8.0, WwhrsConfiguration::CWaterHeatingSystem)
             .unwrap();
         assert_ne!(
             efficiency_8,
             wwhrs
-                .get_efficiency_from_flowrate(8.0, WwhrsType::A)
+                .get_efficiency_from_flowrate(8.0, WwhrsConfiguration::AShowerAndWaterHeatingSystem)
                 .unwrap()
         );
     }
@@ -1370,11 +1482,18 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         // System B uses flowrate_cold_water if provided
         let result = wwhrs
-            .calculate_performance(WwhrsType::B, 35., 8., 6., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::BShower,
+                35.,
+                8.,
+                6.,
+                55.,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         assert_eq!(result.flowrate_hot.unwrap(), 3.297999789473684) // Should use provided value
@@ -1408,12 +1527,12 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         // Set up conditions where temp_hot will equal temp_pre
         let result = wwhrs
             .calculate_performance(
-                WwhrsType::A,
+                WwhrsConfiguration::AShowerAndWaterHeatingSystem,
                 35.,
                 8.,
                 8.,
@@ -1452,10 +1571,17 @@ mod tests {
             Some(0.68),
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         let result = wwhrs
-            .calculate_performance(WwhrsType::C, 35., 8., 8., 55., simulation_time_iteration)
+            .calculate_performance(
+                WwhrsConfiguration::CWaterHeatingSystem,
+                35.,
+                8.,
+                8.,
+                55.,
+                simulation_time_iteration,
+            )
             .unwrap();
 
         assert!(result.flowrate_hot.is_none())
@@ -1484,7 +1610,7 @@ mod tests {
             None,
             simulation_time_iteration,
         )
-            .unwrap();
+        .unwrap();
 
         // Test draw_off_water returns same as get_temp_cold_water
         let volume = 15.0;
@@ -1538,7 +1664,7 @@ mod tests {
                 Some(0.88),
                 simulation_time_iteration,
             )
-                .unwrap();
+            .unwrap();
 
             // Typical shower parameters
             let shower_temp = 38.;
@@ -1546,8 +1672,13 @@ mod tests {
             let hot_water_temp = 60.0;
 
             // Test all three systems
-            let mut results: IndexMap<WwhrsType, PerformanceCalculationResult> = IndexMap::new();
-            for system in [WwhrsType::A, WwhrsType::B, WwhrsType::C] {
+            let mut results: IndexMap<WwhrsConfiguration, PerformanceCalculationResult> =
+                IndexMap::new();
+            for system in [
+                WwhrsConfiguration::AShowerAndWaterHeatingSystem,
+                WwhrsConfiguration::BShower,
+                WwhrsConfiguration::CWaterHeatingSystem,
+            ] {
                 let result = wwhrs
                     .calculate_performance(
                         system.clone(),
@@ -1589,11 +1720,11 @@ mod tests {
                 None,
                 simulation_time_iteration,
             )
-                .unwrap();
+            .unwrap();
 
             let result_low_diff = wwhrs_warm
                 .calculate_performance(
-                    WwhrsType::A,
+                    WwhrsConfiguration::AShowerAndWaterHeatingSystem,
                     36.0, // Only 1°C above cold water
                     8.0,
                     8.0,
