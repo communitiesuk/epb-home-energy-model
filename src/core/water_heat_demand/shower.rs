@@ -175,13 +175,10 @@ impl InstantElectricShower {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::heating_systems::wwhrs::WWHRSInstantaneousSystemA;
     use crate::core::heating_systems::wwhrs::WWHRSInstantaneousSystemB;
     use crate::core::heating_systems::wwhrs::WWHRSInstantaneousSystemC;
-    use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
-    use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
     use std::sync::Arc;
@@ -199,10 +196,7 @@ mod tests {
     }
 
     #[rstest]
-    fn should_calculate_correct_hot_water_demand_for_mixer(
-        simulation_time: SimulationTime,
-        mixer_shower: MixerShower,
-    ) {
+    fn test_hot_water_demand(simulation_time: SimulationTime, mixer_shower: MixerShower) {
         let expected_demands = [24.7, 24.54081632653061, 24.375];
         for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
@@ -309,31 +303,45 @@ mod tests {
         }
     }
 
-    #[rstest]
-    fn should_calculate_correct_hot_water_demand_for_instant(simulation_time: SimulationTime) {
-        let cold_water_temps = [2.0, 3.0, 4.0];
-        let cold_water_source = ColdWaterSource::new(cold_water_temps.into(), 0, 1.0);
-        let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
-        ));
-        let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), "shower").unwrap();
-        let instant_shower =
-            InstantElectricShower::new(50.0, cold_water_source.into(), energy_supply_conn);
-        let expected_results_by_end_user = [5.0, 10.0, 15.0];
-        let expected_demands = [86.04206500956023, 175.59605103991885, 268.8814531548757];
-        for (idx, t_it) in simulation_time.iter().enumerate() {
-            instant_shower.hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, t_it);
-            assert_eq!(
-                energy_supply.read().results_by_end_user()["shower"][idx],
-                expected_results_by_end_user[idx],
-                "correct electricity demand not returned"
-            );
-            assert_eq!(
-                instant_shower
-                    .hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, t_it)
-                    .0,
-                expected_demands[idx]
-            );
+    mod test_instant_elec_shower {
+        use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+        use crate::core::water_heat_demand::shower::InstantElectricShower;
+        use crate::hem_core::simulation_time::SimulationTime;
+        use crate::input::FuelType;
+        use parking_lot::RwLock;
+        use rstest::rstest;
+        use std::sync::Arc;
+
+        #[rstest]
+        fn test_hot_water_demand() {
+            let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
+            let cold_water_temps = [2.0, 3.0, 4.0];
+            let cold_water_source = ColdWaterSource::new(cold_water_temps.into(), 0, 1.0);
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
+                    .build(),
+            ));
+            let energy_supply_conn =
+                EnergySupply::connection(energy_supply.clone(), "shower").unwrap();
+            let instant_shower =
+                InstantElectricShower::new(50.0, cold_water_source.into(), energy_supply_conn);
+            let expected_results_by_end_user = [5.0, 10.0, 15.0];
+            let expected_demands = [86.04206500956023, 175.59605103991885, 268.8814531548757];
+            for (idx, t_it) in simulation_time.iter().enumerate() {
+                instant_shower.hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, t_it);
+                pretty_assertions::assert_eq!(
+                    energy_supply.read().results_by_end_user()["shower"][idx],
+                    expected_results_by_end_user[idx],
+                    "correct electricity demand not returned"
+                );
+                pretty_assertions::assert_eq!(
+                    instant_shower
+                        .hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, t_it)
+                        .0,
+                    expected_demands[idx]
+                );
+            }
         }
     }
 }
