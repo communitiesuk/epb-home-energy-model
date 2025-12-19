@@ -87,9 +87,7 @@ impl AirConditioning {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::{
-        CombinationOrSetpointTimeControl, SetpointTimeControl,
-    };
+    use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
@@ -104,14 +102,14 @@ mod tests {
 
     #[fixture]
     pub fn aircon(simulation_time: SimulationTime) -> (AirConditioning, Arc<RwLock<EnergySupply>>) {
-        let control = CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
+        let control = SetpointTimeControl::new(
             vec![Some(21.0), Some(21.0), None, Some(21.0)],
             0,
             1.0,
             Default::default(),
             Default::default(),
             1.0,
-        ));
+        );
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
         ));
@@ -123,7 +121,7 @@ mod tests {
                 0.4,
                 energy_supply_conn,
                 simulation_time.step,
-                Arc::new(Control::CombinationOrSetpointTime(control)),
+                Arc::new(Control::SetpointTime(control)),
             ),
             energy_supply,
         )

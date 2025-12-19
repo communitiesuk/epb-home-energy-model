@@ -1,9 +1,7 @@
 use crate::compare_floats::min_of_2;
 /// This module provides object(s) to model the behaviour of heat batteries.
 use crate::core::common::WaterSourceWithTemperature;
-use crate::core::controls::time_control::{
-    per_control, CombinationOrSetpointTimeControl, Control, ControlBehaviour,
-};
+use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
@@ -48,9 +46,9 @@ pub struct HeatBatteryPcmServiceWaterRegular {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
     cold_feed: WaterSourceWithTemperature,
-    control: Option<Arc<CombinationOrSetpointTimeControl>>,
-    _control_min: Option<Arc<CombinationOrSetpointTimeControl>>,
-    control_max: Option<Arc<CombinationOrSetpointTimeControl>>,
+    control: Option<Arc<Control>>,
+    _control_min: Option<Arc<Control>>,
+    control_max: Option<Arc<Control>>,
 }
 
 impl HeatBatteryPcmServiceWaterRegular {
@@ -64,8 +62,8 @@ impl HeatBatteryPcmServiceWaterRegular {
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
         cold_feed: WaterSourceWithTemperature,
-        control_min: Option<Arc<CombinationOrSetpointTimeControl>>,
-        control_max: Option<Arc<CombinationOrSetpointTimeControl>>,
+        control_min: Option<Arc<Control>>,
+        control_max: Option<Arc<Control>>,
     ) -> Self {
         let control = control_min.clone();
 
@@ -141,7 +139,7 @@ impl HeatBatteryPcmServiceWaterRegular {
 
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> anyhow::Result<bool> {
         if let Some(control) = &self.control {
-            Ok(control.is_on(&simulation_time_iteration))
+            Ok(control.is_on(simulation_time_iteration))
         } else {
             Ok(true)
         }
@@ -662,8 +660,8 @@ impl HeatBatteryPcm {
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         cold_feed: WaterSourceWithTemperature,
-        control_min: Option<Arc<CombinationOrSetpointTimeControl>>,
-        control_max: Option<Arc<CombinationOrSetpointTimeControl>>,
+        control_min: Option<Arc<Control>>,
+        control_max: Option<Arc<Control>>,
     ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterRegular::new(
@@ -2199,15 +2197,7 @@ mod tests {
     }
 
     fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
-        Control::CombinationOrSetpointTime(CombinationOrSetpointTimeControl::SetpointTime(
-            SetpointTimeControl::new(schedule, 0, 1., Default::default(), Default::default(), 1.),
-        ))
-    }
-
-    fn create_combination_or_setpoint_control_setpoint(
-        schedule: Vec<Option<f64>>,
-    ) -> CombinationOrSetpointTimeControl {
-        CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
+        Control::SetpointTime(SetpointTimeControl::new(
             schedule,
             0,
             1.,
@@ -2302,7 +2292,7 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) -> HeatBatteryPcmServiceWaterRegular {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control);
-        let control_min = create_combination_or_setpoint_control_setpoint(vec![
+        let control_min = create_setpoint_time_control(vec![
             Some(52.),
             None,
             None,
@@ -2312,7 +2302,7 @@ mod tests {
             Some(52.),
             Some(52.),
         ]);
-        let control_max = create_combination_or_setpoint_control_setpoint(vec![
+        let control_max = create_setpoint_time_control(vec![
             Some(55.),
             Some(55.),
             Some(55.),
@@ -2394,8 +2384,7 @@ mod tests {
         let temp_flow = 55.;
         let temp_return = 40.;
 
-        let service_control_off =
-            Arc::new(create_combination_or_setpoint_control_setpoint(vec![None]));
+        let service_control_off = Arc::new(create_setpoint_time_control(vec![None]));
 
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
         let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);

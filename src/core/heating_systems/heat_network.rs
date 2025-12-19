@@ -1,8 +1,6 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
-use crate::core::controls::time_control::{
-    per_control, CombinationOrSetpointTimeControl, Control, ControlBehaviour,
-};
+use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
@@ -102,9 +100,9 @@ impl HeatNetworkServiceWaterDirect {
 pub struct HeatNetworkServiceWaterStorage {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,
-    control: Arc<CombinationOrSetpointTimeControl>,
-    _control_min: Arc<CombinationOrSetpointTimeControl>,
-    control_max: Arc<CombinationOrSetpointTimeControl>,
+    control: Arc<Control>,
+    _control_min: Arc<Control>,
+    control_max: Arc<Control>,
 }
 
 impl HeatNetworkServiceWaterStorage {
@@ -116,8 +114,8 @@ impl HeatNetworkServiceWaterStorage {
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
-        control_min: Arc<CombinationOrSetpointTimeControl>,
-        control_max: Arc<CombinationOrSetpointTimeControl>,
+        control_min: Arc<Control>,
+        control_max: Arc<Control>,
     ) -> Self {
         let control = control_min.clone();
 
@@ -175,7 +173,7 @@ impl HeatNetworkServiceWaterStorage {
     }
 
     fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        self.control.is_on(&simulation_time_iteration)
+        per_control!(self.control.as_ref(), ctrl => { ctrl.is_on(simulation_time_iteration) })
     }
 }
 
@@ -351,8 +349,8 @@ impl HeatNetwork {
     pub(crate) fn create_service_hot_water_storage(
         heat_network: Arc<Mutex<Self>>,
         service_name: &str,
-        control_min: Arc<CombinationOrSetpointTimeControl>,
-        control_max: Arc<CombinationOrSetpointTimeControl>,
+        control_min: Arc<Control>,
+        control_max: Arc<Control>,
     ) -> HeatNetworkServiceWaterStorage {
         Self::create_service_connection(heat_network.clone(), service_name).unwrap();
 
@@ -476,7 +474,7 @@ impl HeatNetwork {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
@@ -519,29 +517,29 @@ mod tests {
         two_len_simulation_time: SimulationTime,
         dummy_heat_network: Arc<Mutex<HeatNetwork>>,
     ) {
-        let control = CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
+        let control = SetpointTimeControl::new(
             vec![Some(21.0), Some(21.0), None],
             0,
             1.0,
             Default::default(),
             Default::default(),
             two_len_simulation_time.step,
-        ));
+        );
 
         // there is no base call in Rust so use one of the concrete implementations
         let heat_network_service = HeatNetworkServiceWaterStorage::new(
             dummy_heat_network.clone(),
             SERVICE_NAME.into(),
-            Arc::new(control.clone()),
-            Arc::new(control.clone()),
+            Arc::new(Control::SetpointTime(control.clone())),
+            Arc::new(Control::SetpointTime(control.clone())),
         );
         assert!(heat_network_service.is_on(&two_len_simulation_time.iter().next().unwrap()));
 
         let heat_network_service_no_control = HeatNetworkServiceWaterStorage::new(
             dummy_heat_network,
             SERVICE_NAME.into(),
-            Arc::new(control.clone()),
-            Arc::new(control.clone()),
+            Arc::new(Control::SetpointTime(control.clone())),
+            Arc::new(Control::SetpointTime(control.clone())),
         );
         assert!(
             heat_network_service_no_control.is_on(&two_len_simulation_time.iter().next().unwrap())
@@ -722,29 +720,29 @@ mod tests {
 
         let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
 
-        let control_min = CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
+        let control_min = SetpointTimeControl::new(
             vec![Some(52.), Some(52.), None],
             0,
             1.0,
             Default::default(),
             Default::default(),
             two_len_simulation_time.step,
-        ));
+        );
 
-        let control_max = CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
+        let control_max = SetpointTimeControl::new(
             vec![Some(60.), Some(60.), None],
             0,
             1.0,
             Default::default(),
             Default::default(),
             two_len_simulation_time.step,
-        ));
+        );
 
         HeatNetworkServiceWaterStorage::new(
             heat_network.clone(),
             "heat_network_test".into(),
-            Arc::new(control_min),
-            Arc::new(control_max),
+            Arc::new(Control::SetpointTime(control_min)),
+            Arc::new(Control::SetpointTime(control_max)),
         )
     }
 
@@ -797,30 +795,23 @@ mod tests {
         heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
         two_len_simulation_time: SimulationTime,
     ) {
-        let control_off = Arc::new(CombinationOrSetpointTimeControl::SetpointTime(
-            SetpointTimeControl::new(
-                vec![None],
-                0,
-                1.,
-                None,
-                Default::default(),
-                Default::default(),
-            ),
-        ));
-        let control_max = Arc::new(CombinationOrSetpointTimeControl::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(60.), Some(60.), None],
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                two_len_simulation_time.step,
-            ),
-        ));
+        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(false), Some(false)],
+            0,
+            1.,
+        )));
+        let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(60.), Some(60.), None],
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            two_len_simulation_time.step,
+        )));
         let heat_network_service_water_storage = HeatNetworkServiceWaterStorage::new(
             heat_network_for_water_storage.clone(),
             "heat_network_test".into(),
-            control_off,
+            control,
             control_max,
         );
 
@@ -840,30 +831,23 @@ mod tests {
         heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
         two_len_simulation_time: SimulationTime,
     ) {
-        let control_off = Arc::new(CombinationOrSetpointTimeControl::SetpointTime(
-            SetpointTimeControl::new(
-                vec![None],
-                0,
-                1.,
-                None,
-                Default::default(),
-                Default::default(),
-            ),
-        ));
-        let control_max = Arc::new(CombinationOrSetpointTimeControl::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(60.), Some(60.), None],
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                two_len_simulation_time.step,
-            ),
-        ));
+        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(false), Some(false)],
+            0,
+            1.,
+        )));
+        let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(60.), Some(60.), None],
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            two_len_simulation_time.step,
+        )));
         let heat_network_service_water_storage = HeatNetworkServiceWaterStorage::new(
             heat_network_for_water_storage.clone(),
             "heat_network_test".into(),
-            control_off,
+            control,
             control_max,
         );
 
@@ -916,16 +900,14 @@ mod tests {
 
         let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
 
-        let control = Control::CombinationOrSetpointTime(
-            CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
-                vec![Some(21.0), Some(21.0), None],
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                three_len_simulation_time.step,
-            )),
-        );
+        let control = Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(21.0), Some(21.0), None],
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            three_len_simulation_time.step,
+        ));
 
         HeatNetworkServiceSpace::new(
             heat_network.clone(),
@@ -1158,16 +1140,14 @@ mod tests {
         HeatNetwork::create_service_space_heating(
             heat_network.clone(),
             service_name,
-            Arc::new(Control::CombinationOrSetpointTime(
-                CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
-                    vec![Some(21.0), Some(21.0), None],
-                    0,
-                    1.0,
-                    Default::default(),
-                    Default::default(),
-                    three_len_simulation_time.step,
-                )),
-            )),
+            Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                vec![Some(21.0), Some(21.0), None],
+                0,
+                1.0,
+                Default::default(),
+                Default::default(),
+                three_len_simulation_time.step,
+            ))),
         );
 
         assert!(heat_network
@@ -1187,27 +1167,23 @@ mod tests {
         three_len_simulation_time: SimulationTime,
         heat_network: &Arc<Mutex<HeatNetwork>>,
     ) {
-        let control_min = Arc::new(CombinationOrSetpointTimeControl::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(52.), Some(52.), None],
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                three_len_simulation_time.step,
-            ),
-        ));
+        let control_min = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(52.), Some(52.), None],
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            three_len_simulation_time.step,
+        )));
 
-        let control_max = Arc::new(CombinationOrSetpointTimeControl::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(60.), Some(60.), None],
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                three_len_simulation_time.step,
-            ),
-        ));
+        let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(60.), Some(60.), None],
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            three_len_simulation_time.step,
+        )));
 
         let water_storage = HeatNetwork::create_service_hot_water_storage(
             heat_network.clone(),

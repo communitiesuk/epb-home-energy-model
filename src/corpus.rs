@@ -1,8 +1,7 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
-    ChargeControl, CombinationOrSetpointTimeControl, CombinationTimeControl, Control,
-    ControlBehaviour, HeatSourceControl, OnOffMinimisingTimeControl, OnOffTimeControl,
-    SetpointTimeControl, SmartApplianceControl,
+    ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl,
+    OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl, SmartApplianceControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
@@ -193,15 +192,13 @@ fn single_control_from_details(
             setpoint_bounds,
             schedule,
             ..
-        } => Control::CombinationOrSetpointTime(CombinationOrSetpointTimeControl::SetpointTime(
-            SetpointTimeControl::new(
-                expand_numeric_schedule(schedule),
-                *start_day,
-                *time_series_step,
-                *setpoint_bounds,
-                advanced_start.unwrap_or(0.),
-                simulation_time_iterator.step_in_hours(),
-            ),
+        } => Control::SetpointTime(SetpointTimeControl::new(
+            expand_numeric_schedule(schedule),
+            *start_day,
+            *time_series_step,
+            *setpoint_bounds,
+            advanced_start.unwrap_or(0.),
+            simulation_time_iterator.step_in_hours(),
         ))
         .into(),
         ControlDetails::ChargeTarget {
@@ -371,9 +368,10 @@ fn single_control_from_details(
                 simulation_time_iterator,
             )?;
 
-            Control::CombinationOrSetpointTime(CombinationOrSetpointTimeControl::CombinationTime(
-                CombinationTimeControl::new(combination.clone(), resolved_controls)?,
-            ))
+            Control::CombinationTime(CombinationTimeControl::new(
+                combination.clone(),
+                resolved_controls,
+            )?)
             .into()
         }
     })
@@ -4607,13 +4605,6 @@ fn heat_source_from_input(
                 )
             })?;
             let mut heat_source_wet_clone = heat_source_wet.clone();
-
-            let extract_combination_or_setpoint = |control: Arc<Control>| match &*control {
-                Control::CombinationOrSetpointTime(control) => Ok(control.clone()),
-                _ => bail!("Expected a combination or setpoint time control"),
-            };
-            let control_min = Arc::from(extract_combination_or_setpoint(control_min)?);
-            let control_max = Arc::from(extract_combination_or_setpoint(control_max)?);
 
             Ok((
                 match heat_source_wet_clone {

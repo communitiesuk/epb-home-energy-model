@@ -2920,9 +2920,7 @@ fn r_si_for_pitch(pitch: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::{
-        CombinationOrSetpointTimeControl, OnOffTimeControl, SetpointTimeControl,
-    };
+    use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
@@ -4655,16 +4653,14 @@ mod tests {
     }
 
     fn create_setpoint_time_control(setpnt: f64) -> Arc<Control> {
-        Arc::new(Control::CombinationOrSetpointTime(
-            CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
-                vec![Some(setpnt)], // causes control.setpnt() to return specified value
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                1.0,
-            )),
-        ))
+        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(setpnt)], // causes control.setpnt() to return specified value
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            1.0,
+        )))
     }
 
     #[rstest]

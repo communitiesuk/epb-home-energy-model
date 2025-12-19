@@ -1,8 +1,6 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
-use crate::core::controls::time_control::{
-    CombinationOrSetpointTimeControl, Control, ControlBehaviour,
-};
+use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{
@@ -246,16 +244,16 @@ impl BoilerServiceWaterCombi {
 pub struct BoilerServiceWaterRegular {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
-    control_min: Arc<CombinationOrSetpointTimeControl>,
-    _control_max: Arc<CombinationOrSetpointTimeControl>,
+    control_min: Arc<Control>,
+    _control_max: Arc<Control>,
 }
 
 impl BoilerServiceWaterRegular {
     pub(crate) fn new(
         boiler: Arc<RwLock<Boiler>>,
         service_name: String,
-        control_min: Arc<CombinationOrSetpointTimeControl>,
-        control_max: Arc<CombinationOrSetpointTimeControl>,
+        control_min: Arc<Control>, // In Python this can be one of SetpointTimeControl or CombinationTimeControl
+        control_max: Arc<Control>, // In Python this can be one of SetpointTimeControl or CombinationTimeControl
     ) -> anyhow::Result<Self> {
         Ok(Self {
             boiler,
@@ -322,7 +320,7 @@ impl BoilerServiceWaterRegular {
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control_min.is_on(&simtime)
+        self.control_min.is_on(simtime)
     }
 }
 
@@ -641,8 +639,8 @@ impl Boiler {
     pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control_min: Arc<CombinationOrSetpointTimeControl>,
-        control_max: Arc<CombinationOrSetpointTimeControl>,
+        control_min: Arc<Control>,
+        control_max: Arc<Control>,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
         BoilerServiceWaterRegular::new(
@@ -1534,9 +1532,7 @@ mod tests {
     }
 
     mod test_boiler_service_water_regular {
-        use crate::core::controls::time_control::{
-            CombinationOrSetpointTimeControl, SetpointTimeControl,
-        };
+        use crate::core::controls::time_control::{Control, SetpointTimeControl};
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterRegular};
@@ -1594,38 +1590,34 @@ mod tests {
         }
 
         #[fixture]
-        fn control_min() -> Arc<CombinationOrSetpointTimeControl> {
-            Arc::new(CombinationOrSetpointTimeControl::SetpointTime(
-                SetpointTimeControl::new(
-                    vec![Some(52.), Some(52.), None],
-                    0,
-                    1.,
-                    Default::default(),
-                    Default::default(),
-                    1.,
-                ),
-            ))
+        fn control_min() -> Arc<Control> {
+            Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                vec![Some(52.), Some(52.), None],
+                0,
+                1.,
+                Default::default(),
+                Default::default(),
+                1.,
+            )))
         }
 
         #[fixture]
-        fn control_max() -> Arc<CombinationOrSetpointTimeControl> {
-            Arc::new(CombinationOrSetpointTimeControl::SetpointTime(
-                SetpointTimeControl::new(
-                    vec![Some(60.), Some(60.)],
-                    0,
-                    1.,
-                    Default::default(),
-                    Default::default(),
-                    1.,
-                ),
-            ))
+        fn control_max() -> Arc<Control> {
+            Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                vec![Some(60.), Some(60.)],
+                0,
+                1.,
+                Default::default(),
+                Default::default(),
+                1.,
+            )))
         }
 
         #[fixture]
         fn boiler_service<'a>(
             boiler: Boiler,
-            control_min: Arc<CombinationOrSetpointTimeControl>,
-            control_max: Arc<CombinationOrSetpointTimeControl>,
+            control_min: Arc<Control>,
+            control_max: Arc<Control>,
         ) -> BoilerServiceWaterRegular {
             BoilerServiceWaterRegular::new(
                 Arc::new(RwLock::new(boiler)),
@@ -1780,9 +1772,7 @@ mod tests {
     }
 
     mod test_boiler_service_space {
-        use crate::core::controls::time_control::{
-            CombinationOrSetpointTimeControl, Control, SetpointTimeControl,
-        };
+        use crate::core::controls::time_control::{Control, SetpointTimeControl};
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::external_conditions;
         use crate::core::heating_systems::boiler::{Boiler, BoilerServiceSpace};
@@ -1847,15 +1837,13 @@ mod tests {
 
         #[fixture]
         fn control() -> Control {
-            Control::CombinationOrSetpointTime(CombinationOrSetpointTimeControl::SetpointTime(
-                SetpointTimeControl::new(
-                    vec![Some(21.0), Some(21.0), None],
-                    0,
-                    1.0,
-                    Default::default(),
-                    Default::default(),
-                    1.0,
-                ),
+            Control::SetpointTime(SetpointTimeControl::new(
+                vec![Some(21.0), Some(21.0), None],
+                0,
+                1.0,
+                Default::default(),
+                Default::default(),
+                1.0,
             ))
         }
 
@@ -1962,9 +1950,7 @@ mod tests {
 
     mod test_boiler {
         use crate::core::common::WaterSourceWithTemperature;
-        use crate::core::controls::time_control::{
-            CombinationOrSetpointTimeControl, Control, SetpointTimeControl,
-        };
+        use crate::core::controls::time_control::{Control, SetpointTimeControl};
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::ServiceType;
@@ -2085,26 +2071,22 @@ mod tests {
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
         ) {
             let service_name = "service_hot_water_regular";
-            let control_min = Arc::new(CombinationOrSetpointTimeControl::SetpointTime(
-                SetpointTimeControl::new(
-                    vec![None, None],
-                    0,
-                    1.0,
-                    Default::default(),
-                    Default::default(),
-                    1.0,
-                ),
-            ));
-            let control_max = Arc::new(CombinationOrSetpointTimeControl::SetpointTime(
-                SetpointTimeControl::new(
-                    vec![None, None],
-                    0,
-                    1.0,
-                    Default::default(),
-                    Default::default(),
-                    1.0,
-                ),
-            ));
+            let control_min = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                vec![None, None],
+                0,
+                1.0,
+                Default::default(),
+                Default::default(),
+                1.0,
+            )));
+            let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                vec![None, None],
+                0,
+                1.0,
+                Default::default(),
+                Default::default(),
+                1.0,
+            )));
 
             let boiler = Arc::new(RwLock::new(boiler));
 
@@ -2126,16 +2108,14 @@ mod tests {
             let boiler_service_space_heating = Boiler::create_service_space_heating(
                 boiler,
                 "BoilerServiceSpace",
-                Arc::new(Control::CombinationOrSetpointTime(
-                    CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
-                        vec![None, None],
-                        0,
-                        1.0,
-                        Default::default(),
-                        Default::default(),
-                        1.0,
-                    )),
-                )),
+                Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                    vec![None, None],
+                    0,
+                    1.0,
+                    Default::default(),
+                    Default::default(),
+                    1.0,
+                ))),
             );
             pretty_assertions::assert_eq!(
                 type_of(boiler_service_space_heating),
