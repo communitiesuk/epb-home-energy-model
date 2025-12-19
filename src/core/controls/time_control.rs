@@ -21,13 +21,19 @@ use std::iter::repeat;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+#[derive(Debug, Clone)]
+pub(crate) enum CombinationOrSetpointTimeControl {
+    SetpointTime(SetpointTimeControl),
+    CombinationTime(CombinationTimeControl),
+}
+
 #[derive(Debug)]
 pub(crate) enum Control {
     OnOffTime(OnOffTimeControl),
     Charge(ChargeControl),
     OnOffMinimisingTime(OnOffMinimisingTimeControl),
-    SetpointTime(SetpointTimeControl),
     CombinationTime(CombinationTimeControl),
+    CombinationOrSetpointTime(CombinationOrSetpointTimeControl),
 }
 
 // macro so accessing individual controls through the enum isn't so repetitive
@@ -41,9 +47,9 @@ macro_rules! per_control {
             #[allow(noop_method_call)]
             Control::OnOffMinimisingTime($pattern) => $res,
             #[allow(noop_method_call)]
-            Control::SetpointTime($pattern) => $res,
-            #[allow(noop_method_call)]
             Control::CombinationTime($pattern) => $res,
+            #[allow(noop_method_call)]
+            Control::CombinationOrSetpointTime($pattern) => $res,
         }
     };
 }
@@ -276,11 +282,8 @@ impl ChargeControl {
     ) -> anyhow::Result<f64> {
         // Calculate target charge nominal when unit is on
         let mut target_charge_nominal = if self.is_on(&simtime) {
-            self.charge_level[simtime.time_series_idx_days(
-                self.start_day,
-                self.time_series_step,
-                Option::Some(21.),
-            )]
+            self.charge_level
+                [simtime.time_series_idx_days(self.start_day, self.time_series_step, Some(21.))]
             .unwrap_or_default()
         } else {
             // If unit is off send 0.0 for target charge
@@ -543,6 +546,46 @@ impl OnOffMinimisingTimeControl {
 }
 
 impl ControlBehaviour for OnOffMinimisingTimeControl {}
+
+impl CombinationOrSetpointTimeControl {
+    pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+        match self {
+            CombinationOrSetpointTimeControl::SetpointTime(setpoint_time) => {
+                setpoint_time.is_on(timestep)
+            }
+            CombinationOrSetpointTimeControl::CombinationTime(combination_time) => {
+                combination_time.is_on(timestep)
+            }
+        }
+    }
+
+    pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
+        match self {
+            CombinationOrSetpointTimeControl::SetpointTime(setpoint_ctrl) => {
+                setpoint_ctrl.setpnt(simtime)
+            }
+            CombinationOrSetpointTimeControl::CombinationTime(combination_ctrl) => {
+                combination_ctrl.setpnt(simtime)
+            }
+        }
+    }
+}
+
+impl ControlBehaviour for CombinationOrSetpointTimeControl {
+    fn in_required_period(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<bool> {
+        match self {
+            CombinationOrSetpointTimeControl::SetpointTime(setpoint_ctrl) => {
+                setpoint_ctrl.in_required_period(simulation_time_iteration)
+            }
+            CombinationOrSetpointTimeControl::CombinationTime(combination_ctrl) => {
+                combination_ctrl.in_required_period(simulation_time_iteration)
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct SetpointTimeControl {
@@ -943,7 +986,7 @@ impl SmartApplianceControl {
 
 impl ControlBehaviour for SmartApplianceControl {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct CombinationTimeControl {
     combinations: ControlCombinations,
     controls: IndexMap<String, Arc<Control>>,
@@ -1051,10 +1094,14 @@ impl CombinationTimeControl {
             c @ Control::OnOffTime(_)
             | c @ Control::Charge(_)
             | c @ Control::OnOffMinimisingTime(_) => c.is_on(simtime),
-            Control::SetpointTime(c) => c
-                .in_required_period(&simtime)
-                .expect("SetpointTimeControl in_required_period() method will always return Some"),
-            _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
+            Control::CombinationOrSetpointTime(c) => {
+                match c {
+                    CombinationOrSetpointTimeControl::SetpointTime(setpoint_ctrl) => setpoint_ctrl.in_required_period(&simtime)
+                        .expect("SetpointTimeControl in_required_period() method will always return Some"),
+                    _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
+                }
+            }
+            _=> unreachable!("TODO REMOVE COMBINATION TIME CONTROL FROM CONTROL ENUM")
         }
     }
 
@@ -1088,10 +1135,15 @@ impl CombinationTimeControl {
                     | Control::OnOffMinimisingTime(_) => {
                         has_on_off.store(true, Ordering::SeqCst);
                     }
-                    Control::SetpointTime(_) => {
-                        has_setpoint.store(true, Ordering::SeqCst);
+                    Control::CombinationOrSetpointTime(c) => {
+                        match c {
+                            CombinationOrSetpointTimeControl::SetpointTime(_) => {
+                                has_setpoint.store(true, Ordering::SeqCst);
+                            }
+                            _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
+                        }
                     }
-                    _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
+                    _=> unreachable!("TODO REMOVE COMBINATION TIME CONTROL FROM CONTROL ENUM")
                 }
                 self.evaluate_control_in_req_period(control, simtime)
             })
@@ -1164,8 +1216,15 @@ impl CombinationTimeControl {
             c @ Control::OnOffTime(_)
             | c @ Control::Charge(_)
             | c @ Control::OnOffMinimisingTime(_) => SetpointOrBoolean::Boolean(c.is_on(simtime)),
-            Control::SetpointTime(c) => SetpointOrBoolean::Setpoint(c.setpnt(&simtime)),
-            _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
+                Control::CombinationOrSetpointTime(c) => {
+                    match c {
+                        CombinationOrSetpointTimeControl::SetpointTime(setpoint_ctrl) => {
+                            SetpointOrBoolean::Setpoint(setpoint_ctrl.setpnt(&simtime))
+                        }
+                        _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
+                    }
+                },
+            _ => unreachable!("TODO remove combination from control enum"),
         }
     }
 
@@ -1197,10 +1256,15 @@ impl CombinationTimeControl {
                         | Control::OnOffMinimisingTime(_) => {
                             has_on_off.store(true, Ordering::SeqCst);
                         }
-                        Control::SetpointTime(_) => {
-                            has_setpoint.store(true, Ordering::SeqCst);
+                        Control::CombinationOrSetpointTime(c) => {
+                            match c {
+                                CombinationOrSetpointTimeControl::SetpointTime(_) => {
+                                    has_setpoint.store(true, Ordering::SeqCst);
+                                }
+                                _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
+                            }
                         }
-                        _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
+                        _ => unreachable!("TODO remove combination from control enum"),
                     }
                     self.evaluate_control_setpnt(control_name, simtime)
                 })
@@ -2153,31 +2217,35 @@ mod tests {
             ),
             (
                 "ctrl4".into(),
-                Control::SetpointTime(SetpointTimeControl::new(
-                    [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                    Default::default(),
-                    Default::default(),
-                    1.,
+                Control::CombinationOrSetpointTime(CombinationOrSetpointTimeControl::SetpointTime(
+                    SetpointTimeControl::new(
+                        [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                        Default::default(),
+                        Default::default(),
+                        1.,
+                    ),
                 ))
                 .into(),
             ),
             (
                 "ctrl5".into(),
-                Control::SetpointTime(SetpointTimeControl::new(
-                    [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                    Default::default(),
-                    Default::default(),
-                    1.,
+                Control::CombinationOrSetpointTime(CombinationOrSetpointTimeControl::SetpointTime(
+                    SetpointTimeControl::new(
+                        [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                        Default::default(),
+                        Default::default(),
+                        1.,
+                    ),
                 ))
                 .into(),
             ),
@@ -2219,22 +2287,24 @@ mod tests {
             ),
             (
                 "ctrl9".into(),
-                Control::SetpointTime(SetpointTimeControl::new(
-                    vec![
-                        Some(45.0),
-                        None,
-                        Some(50.0),
-                        Some(48.0),
-                        Some(48.0),
-                        None,
-                        Some(48.0),
-                        Some(48.0),
-                    ],
-                    0,
-                    1.,
-                    Default::default(),
-                    Default::default(),
-                    1.,
+                Control::CombinationOrSetpointTime(CombinationOrSetpointTimeControl::SetpointTime(
+                    SetpointTimeControl::new(
+                        vec![
+                            Some(45.0),
+                            None,
+                            Some(50.0),
+                            Some(48.0),
+                            Some(48.0),
+                            None,
+                            Some(48.0),
+                            Some(48.0),
+                        ],
+                        0,
+                        1.,
+                        Default::default(),
+                        Default::default(),
+                        1.,
+                    ),
                 ))
                 .into(),
             ),

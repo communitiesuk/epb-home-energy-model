@@ -2,7 +2,9 @@
 // The calculations are based on Method 1 of BS EN 16798-7.
 
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::controls::time_control::{Control, ControlBehaviour};
+use crate::core::controls::time_control::{
+    CombinationOrSetpointTimeControl, Control, ControlBehaviour,
+};
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::AIR;
@@ -2620,7 +2622,14 @@ impl InfiltrationVentilation {
                 .control
                 .as_ref()
                 .and_then(|ctrl_name| controls.get_with_string(ctrl_name))
-                .filter(|ctrl| matches!(&**ctrl, Control::SetpointTime(_)))
+                .filter(|ctrl| {
+                    matches!(
+                        &**ctrl,
+                        Control::CombinationOrSetpointTime(
+                            CombinationOrSetpointTimeControl::SetpointTime(_)
+                        )
+                    )
+                })
                 .map(|ctrl| ctrl.clone() as Arc<dyn ControlBehaviour>);
             let energy_supply = energy_supplies
                 .get(&mech_vents_data.energy_supply)
@@ -2888,7 +2897,7 @@ pub struct InternalReferencePressureCalculationError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::Control::{OnOffTime, SetpointTime};
+    use crate::core::controls::time_control::Control::{CombinationOrSetpointTime, OnOffTime};
     use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::space_heat_demand::ventilation::FacadeDirection::{
@@ -3502,13 +3511,8 @@ mod tests {
         .unwrap();
         let energy_supplies =
             IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
-        let control1 = SetpointTime(SetpointTimeControl::new(
-            vec![],
-            0,
-            1.,
-            Default::default(),
-            Default::default(),
-            1.,
+        let control1 = CombinationOrSetpointTime(CombinationOrSetpointTimeControl::SetpointTime(
+            SetpointTimeControl::new(vec![], 0, 1., Default::default(), Default::default(), 1.),
         ));
         let control2 = OnOffTime(OnOffTimeControl::new(vec![], 0, 1.));
         let controls: Controls = Controls::new(

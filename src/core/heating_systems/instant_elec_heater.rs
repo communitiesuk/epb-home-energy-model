@@ -86,7 +86,9 @@ impl InstantElecHeater {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::controls::time_control::{
+        CombinationOrSetpointTimeControl, SetpointTimeControl,
+    };
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
@@ -101,14 +103,16 @@ mod tests {
 
     #[fixture]
     pub fn instant_elec_heater(simulation_time: SimulationTime) -> InstantElecHeater {
-        let control = Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(21.0), Some(21.0), None, Some(21.0)],
-            0,
-            1.,
-            Default::default(),
-            Default::default(),
-            simulation_time.step,
-        ));
+        let control = Control::CombinationOrSetpointTime(
+            CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
+                vec![Some(21.0), Some(21.0), None, Some(21.0)],
+                0,
+                1.,
+                Default::default(),
+                Default::default(),
+                simulation_time.step,
+            )),
+        );
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
         ));

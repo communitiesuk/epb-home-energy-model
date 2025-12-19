@@ -4,7 +4,9 @@
 /// BS EN 15316-4-2:2017 and is described in the SAP calculation method CALCM-01.
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
-use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
+use crate::core::controls::time_control::{
+    per_control, CombinationOrSetpointTimeControl, Control, ControlBehaviour,
+};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::boiler::{BoilerServiceSpace, BoilerServiceWaterRegular};
@@ -1355,9 +1357,9 @@ const TIME_CONSTANT_WATER: f64 = 1560.;
 pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
-    control: Arc<Control>,
-    control_min: Arc<Control>,
-    control_max: Arc<Control>,
+    control: Arc<CombinationOrSetpointTimeControl>,
+    control_min: Arc<CombinationOrSetpointTimeControl>,
+    control_max: Arc<CombinationOrSetpointTimeControl>,
     temp_limit_upper_in_k: f64,
     cold_feed: Arc<WaterSourceWithTemperature>,
     hybrid_boiler_service: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
@@ -1369,8 +1371,8 @@ impl HeatPumpServiceWater {
         service_name: String,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<WaterSourceWithTemperature>,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Arc<CombinationOrSetpointTimeControl>,
+        control_max: Arc<CombinationOrSetpointTimeControl>,
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
     ) -> Self {
         let control = control_min.clone();
@@ -1389,7 +1391,7 @@ impl HeatPumpServiceWater {
     }
 
     pub fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control.is_on(simtime)
+        self.control.is_on(&simtime)
     }
 
     /// Return water heating setpoint (not necessarily temperature)
@@ -1397,19 +1399,7 @@ impl HeatPumpServiceWater {
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        let is_valid = |c: &Control| {
-            matches!(
-                c,
-                Control::CombinationTime { .. } | Control::SetpointTime { .. }
-            )
-        };
-        // TODO review - do we need this check?
-        if !(is_valid(&self.control_min) && is_valid(&self.control_max)) {
-            bail!(
-                "Expected control_min and control_max to be combination or setpoint time controls"
-            );
-        }
-
+        // TODO change return type back to non result
         Ok((
             self.control_min.setpnt(&simulation_time_iteration),
             self.control_max.setpnt(&simulation_time_iteration),
@@ -2435,8 +2425,8 @@ impl HeatPump {
         service_name: &str,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<WaterSourceWithTemperature>,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Arc<CombinationOrSetpointTimeControl>,
+        control_max: Arc<CombinationOrSetpointTimeControl>,
     ) -> anyhow::Result<HeatPumpServiceWater> {
         Self::create_service_connection(heat_pump.clone(), service_name)?;
         let boiler_service = heat_pump
@@ -6383,7 +6373,15 @@ mod tests {
     }
 
     fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
-        Control::SetpointTime(SetpointTimeControl::new(
+        Control::CombinationOrSetpointTime(CombinationOrSetpointTimeControl::SetpointTime(
+            SetpointTimeControl::new(schedule, 0, 1., Default::default(), Default::default(), 1.),
+        ))
+    }
+
+    fn create_combination_or_setpoint_control_setpoint(
+        schedule: Vec<Option<f64>>,
+    ) -> CombinationOrSetpointTimeControl {
+        CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
             schedule,
             0,
             1.,
@@ -6518,13 +6516,13 @@ mod tests {
             ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step).into(),
         );
 
-        let control_min = Arc::new(create_setpoint_time_control(vec![
+        let control_min = Arc::new(create_combination_or_setpoint_control_setpoint(vec![
             Some(52.),
             Some(52.),
             None,
             Some(52.),
         ]));
-        let control_max = Arc::new(create_setpoint_time_control(vec![
+        let control_max = Arc::new(create_combination_or_setpoint_control_setpoint(vec![
             Some(60.),
             Some(60.),
             Some(60.),
@@ -6892,14 +6890,16 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = Arc::from(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(21.), Some(22.)],
-            0,
-            1.,
-            Default::default(),
-            Default::default(),
-            simulation_time_for_heat_pump.step,
-        )));
+        let control = Arc::from(Control::CombinationOrSetpointTime(
+            CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
+                vec![Some(21.), Some(22.)],
+                0,
+                1.,
+                Default::default(),
+                Default::default(),
+                simulation_time_for_heat_pump.step,
+            )),
+        ));
 
         let boiler_service_space =
             Boiler::create_service_space_heating(boiler.clone(), "service_boilerspace", control);
@@ -7437,18 +7437,18 @@ mod tests {
             simulation_time_for_heat_pump,
             energy_supply_conn_name_auxiliary,
         )));
-        let control = SetpointTimeControl::new(
+        let control = CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
             vec![Some(21.), Some(22.)],
             0,
             1.0,
             Default::default(),
             Default::default(),
             1.0,
-        );
+        ));
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace",
-            Arc::new(Control::SetpointTime(control)),
+            Arc::new(Control::CombinationOrSetpointTime(control)),
         )));
 
         let heat_pump_input = create_heat_pump_input_from_json(None);
@@ -7913,14 +7913,16 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let ctrl = Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(21.0), Some(22.0)],
-            0,
-            1.0,
-            Default::default(),
-            Default::default(),
-            1.0,
-        ));
+        let ctrl = Control::CombinationOrSetpointTime(
+            CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
+                vec![Some(21.0), Some(22.0)],
+                0,
+                1.0,
+                Default::default(),
+                Default::default(),
+                1.0,
+            )),
+        );
 
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
@@ -8211,14 +8213,16 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let ctrl = Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(21.0), Some(22.0)],
-            0,
-            1.0,
-            Default::default(),
-            Default::default(),
-            1.0,
-        ));
+        let ctrl = Control::CombinationOrSetpointTime(
+            CombinationOrSetpointTimeControl::SetpointTime(SetpointTimeControl::new(
+                vec![Some(21.0), Some(22.0)],
+                0,
+                1.0,
+                Default::default(),
+                Default::default(),
+                1.0,
+            )),
+        );
 
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
