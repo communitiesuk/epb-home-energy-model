@@ -32,7 +32,6 @@ pub(crate) enum Control {
     OnOffTime(OnOffTimeControl),
     Charge(ChargeControl),
     OnOffMinimisingTime(OnOffMinimisingTimeControl),
-    CombinationTime(CombinationTimeControl),
     CombinationOrSetpointTime(CombinationOrSetpointTimeControl),
 }
 
@@ -46,8 +45,6 @@ macro_rules! per_control {
             Control::Charge($pattern) => $res,
             #[allow(noop_method_call)]
             Control::OnOffMinimisingTime($pattern) => $res,
-            #[allow(noop_method_call)]
-            Control::CombinationTime($pattern) => $res,
             #[allow(noop_method_call)]
             Control::CombinationOrSetpointTime($pattern) => $res,
         }
@@ -550,11 +547,11 @@ impl ControlBehaviour for OnOffMinimisingTimeControl {}
 impl CombinationOrSetpointTimeControl {
     pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         match self {
-            CombinationOrSetpointTimeControl::SetpointTime(setpoint_time) => {
-                setpoint_time.is_on(timestep)
+            CombinationOrSetpointTimeControl::SetpointTime(setpoint_ctrl) => {
+                setpoint_ctrl.is_on(timestep)
             }
-            CombinationOrSetpointTimeControl::CombinationTime(combination_time) => {
-                combination_time.is_on(timestep)
+            CombinationOrSetpointTimeControl::CombinationTime(combination_ctrl) => {
+                combination_ctrl.is_on(timestep)
             }
         }
     }
@@ -1101,7 +1098,6 @@ impl CombinationTimeControl {
                     _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
                 }
             }
-            _=> unreachable!("TODO REMOVE COMBINATION TIME CONTROL FROM CONTROL ENUM")
         }
     }
 
@@ -1143,7 +1139,6 @@ impl CombinationTimeControl {
                             _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
                         }
                     }
-                    _=> unreachable!("TODO REMOVE COMBINATION TIME CONTROL FROM CONTROL ENUM")
                 }
                 self.evaluate_control_in_req_period(control, simtime)
             })
@@ -1224,7 +1219,6 @@ impl CombinationTimeControl {
                         _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
                     }
                 },
-            _ => unreachable!("TODO remove combination from control enum"),
         }
     }
 
@@ -1264,7 +1258,6 @@ impl CombinationTimeControl {
                                 _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
                             }
                         }
-                        _ => unreachable!("TODO remove combination from control enum"),
                     }
                     self.evaluate_control_setpnt(control_name, simtime)
                 })
