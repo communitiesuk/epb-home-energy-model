@@ -5361,8 +5361,94 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_init_no_temps() {
+        assert!(HeatPumpTestData::new(vec![]).is_err());
+    }
+
+    #[rstest]
+    fn test_init_expected_five_letters(data_unsorted: Vec<HeatPumpTestDatum>) {
+        // Test that init throws if there aren't 5 records for each design flow temperature
+        let mut data = data_unsorted.clone();
+        data.truncate(9);
+
+        assert!(HeatPumpTestData::new(data).is_err());
+    }
+
+    #[rstest]
+    fn test_init_maximum_design_flow() {
+        // Test that initialising with more than 4 design flow temperatures errors
+        let design_flow_temps = [35., 45., 55., 20., 65.];
+
+        let base_values = [
+            (TestLetter::A, 8.4, 4.6, 34., 0., -7.),
+            (TestLetter::B, 8.3, 4.9, 30., 0., 2.),
+            (TestLetter::C, 8.3, 5.1, 27., 0., 7.),
+            (TestLetter::D, 8.2, 5.4, 24., 0., 12.),
+            (TestLetter::F, 8.4, 4.6, 34., 0., -7.),
+        ];
+
+        let data: Vec<HeatPumpTestDatum> = design_flow_temps
+            .iter()
+            .flat_map(|design_flow_temp| {
+                base_values.iter().map(
+                    |&(test_letter, capacity, cop, temp_outlet, temp_source, temp_test)| {
+                        HeatPumpTestDatum {
+                            air_flow_rate: None,
+                            test_letter,
+                            capacity,
+                            cop,
+                            design_flow_temp: *design_flow_temp,
+                            temp_outlet,
+                            temp_source,
+                            temp_test,
+                            eahp_mixed_ext_air_ratio: None,
+                        }
+                    },
+                )
+            })
+            .collect();
+
+        assert!(HeatPumpTestData::new(data).is_err());
+    }
+
+    #[rstest]
+    fn test_init_expected_letter(data_unsorted: Vec<HeatPumpTestDatum>) {
+        // Test that initialisation errors when test letter F is missing
+        let mut data: Vec<HeatPumpTestDatum> = data_unsorted.clone();
+        data.truncate(9);
+        data.push(HeatPumpTestDatum {
+            air_flow_rate: None,
+            test_letter: TestLetter::A, // In Python this is "E"
+            capacity: 8.5,
+            cop: 4.3,
+            design_flow_temp: 55.,
+            temp_outlet: 30.,
+            temp_source: 0.,
+            temp_test: 12.,
+            eahp_mixed_ext_air_ratio: None,
+        });
+
+        assert!(HeatPumpTestData::new(data).is_err());
+    }
+
+    #[rstest]
+    fn test_init_four_distinct_records(data_unsorted: Vec<HeatPumpTestDatum>) {
+        // Test that initialisation errors if there aren't four distinct records for each design flow temperature
+        let mut data = data_unsorted.clone();
+        data.truncate(5);
+
+        data[0].temp_test = 1.;
+        data[1].temp_test = 1.;
+        data[2].temp_test = 1.;
+        data[3].temp_test = 1.;
+        data[4].temp_test = 1.;
+
+        assert!(HeatPumpTestData::new(data).is_err());
+    }
+
     #[fixture]
-    pub fn expected_init_regression_coeffs() -> HashMap<OrderedFloat<f64>, Vec<f64>> {
+    fn expected_init_regression_coeffs() -> HashMap<OrderedFloat<f64>, Vec<f64>> {
         let mut expected: HashMap<_, _> = Default::default();
         expected.insert(
             OrderedFloat(35.),
@@ -5384,7 +5470,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_init_regression_coeffs(
+    fn test_init_regression_coeffs(
         test_data: HeatPumpTestData,
         expected_init_regression_coeffs: HashMap<OrderedFloat<f64>, Vec<f64>>,
     ) {
@@ -5403,7 +5489,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_average_capacity(test_data: HeatPumpTestData) {
+    fn test_average_capacity(test_data: HeatPumpTestData) {
         let results = [8.3, 8.375, 8.45, 8.525, 8.6];
         for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
             assert_ulps_eq!(
@@ -5416,7 +5502,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_temp_spread_test_conditions(test_data: HeatPumpTestData) {
+    fn test_temp_spread_test_conditions(test_data: HeatPumpTestData) {
         let results = [5.0, 5.75, 6.5, 7.25, 8.0];
         for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
             assert_eq!(
@@ -5427,6 +5513,11 @@ mod tests {
                 "incorrect temp spread at test conditions returned"
             );
         }
+    }
+
+    #[rstest]
+    fn test_find_test_record_index(test_data: HeatPumpTestData) {
+        assert!(test_data.find_test_record_index("x", 55.).is_err());
     }
 
     #[fixture]
@@ -5672,6 +5763,19 @@ mod tests {
                 i += 1;
             }
         }
+
+        // first load ratio in the test data cannot be greater than the load ratio at operating conditions
+        assert_eq!(
+            test_data
+                .lr_eff_either_side_of_op_cond(&OrderedFloat(55.), 0.9)
+                .unwrap(),
+            (
+                1.,
+                1.0000000000030207,
+                0.5117638013224666,
+                0.5117638013214826
+            )
+        );
     }
 
     #[rstest]
