@@ -141,9 +141,12 @@ impl HeatSourceWet {
             HeatSourceWet::HeatPumpWater(water) => {
                 water.demand_energy(energy_demand, temp_flow, temperature, simtime)
             }
-            HeatSourceWet::HeatPumpWaterOnly(water_only) => {
-                Ok(water_only.demand_energy(energy_demand, temperature, simtime))
-            }
+            HeatSourceWet::HeatPumpWaterOnly(water_only) => Ok(water_only.demand_energy(
+                energy_demand,
+                Default::default(),
+                temperature,
+                simtime,
+            )),
         }
     }
 
@@ -166,7 +169,7 @@ impl HeatSourceWet {
             HeatSourceWet::HeatBatteryHotWater(battery) => battery.setpnt(simtime)?,
             HeatSourceWet::HeatPumpWater(heat_pump_water) => heat_pump_water.setpnt(simtime)?,
             HeatSourceWet::HeatPumpWaterOnly(heat_pump_water_only) => {
-                heat_pump_water_only.setpnt(simtime)
+                heat_pump_water_only.setpnt(simtime)?
             }
         })
     }

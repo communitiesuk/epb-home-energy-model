@@ -1403,7 +1403,7 @@ impl HeatPumpServiceWater {
                 Control::CombinationTime { .. } | Control::SetpointTime { .. }
             )
         };
-        // TODO review - do we need this check?
+        // TODO review - this check may be able to be removed in future if we validate control earlier
         if !(is_valid(&self.control_min) && is_valid(&self.control_max)) {
             bail!(
                 "Expected control_min and control_max to be combination or setpoint time controls"
@@ -4378,7 +4378,7 @@ pub struct HeatPumpHotWaterOnly {
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
     control_min: Arc<Control>,
-    _control_max: Arc<Control>,
+    control_max: Arc<Control>,
     initial_efficiency: f64,
     tank_volume: f64,
     daily_losses: f64,
@@ -4446,7 +4446,7 @@ impl HeatPumpHotWaterOnly {
             energy_supply_connection,
             simulation_timestep,
             control_min,
-            _control_max: control_max,
+            control_max,
             initial_efficiency: Self::init_efficiency(&efficiencies, vol_daily_average),
             tank_volume,
             daily_losses,
@@ -4519,17 +4519,30 @@ impl HeatPumpHotWaterOnly {
     pub(crate) fn setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> (Option<f64>, Option<f64>) {
-        (
+    ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
+        let is_valid = |c: &Control| {
+            matches!(
+                c,
+                Control::CombinationTime { .. } | Control::SetpointTime { .. }
+            )
+        };
+        // TODO review - this check may be able to be removed in future if we validate control earlier
+        if !(is_valid(&self.control_min) && is_valid(&self.control_max)) {
+            bail!(
+                "Expected control_min and control_max to be combination or setpoint time controls"
+            );
+        }
+        Ok((
             self.control_min.setpnt(&simulation_time_iteration),
-            self._control_max.setpnt(&simulation_time_iteration),
-        )
+            self.control_max.setpnt(&simulation_time_iteration),
+        ))
     }
 
     /// Demand energy (in kWh) from the heat pump
     pub fn demand_energy(
         &self,
         energy_demand: f64,
+        _temp_flow: f64,
         _temp_return: f64,
         simtime: SimulationTimeIteration,
     ) -> f64 {
@@ -8939,9 +8952,11 @@ mod tests {
         assert_eq!(*heat_pump.service_results.read().deref(), []);
     }
 
-    // In Python below test is in a new/separate class called TestHeatPump_HWOnly
-    #[rstest]
-    fn test_calc_efficiency(energy_supply: EnergySupply) {
+    // In Python below tests are in a separate class called TestHeatPump_HWOnly
+    fn create_heat_pump_hw_only(
+        energy_supply: EnergySupply,
+        vol_daily_average: Option<f64>,
+    ) -> HeatPumpHotWaterOnly {
         let test_data: HeatPumpHotWaterTestData = HeatPumpHotWaterTestData {
             l: Some(HeatPumpHotWaterOnlyTestDatum {
                 cop_dhw: 2.5,
@@ -8960,7 +8975,7 @@ mod tests {
         };
 
         let power_max = 3.0;
-        let vol_daily_average = 150.0;
+        let vol_daily_average = vol_daily_average.unwrap_or(150.);
         let tank_volume = 200.0;
         let daily_losses = 1.5;
         let heat_exchanger_surface_area = 1.2;
@@ -8971,7 +8986,7 @@ mod tests {
 
         let energy_supply_connection = EnergySupplyConnection::new(
             Arc::from(RwLock::from(energy_supply)),
-            "HeatPump: hp".into(),
+            "end_user_name".into(),
         );
         let control_min = Arc::new(create_setpoint_time_control(vec![
             Some(52.),
@@ -8986,7 +9001,7 @@ mod tests {
             Some(60.),
         ]));
 
-        let heat_pump = HeatPumpHotWaterOnly::new(
+        HeatPumpHotWaterOnly::new(
             power_max,
             energy_supply_connection,
             &test_data,
@@ -9001,12 +9016,127 @@ mod tests {
             1.,
             control_min,
             control_max,
-        );
+        )
+    }
+
+    #[rstest]
+    fn test_init_efficiencies() {
+        // todo
+    }
+
+    // skipping Python's test_init_efficiencies_invalid as test_data can't be empty in Rust
+
+    #[rstest]
+    fn test_calc_efficiency(energy_supply: EnergySupply) {
+        let heat_pump = create_heat_pump_hw_only(energy_supply, None);
 
         assert_relative_eq!(
             heat_pump.calc_efficiency(),
             1.738556406,
             max_relative = 1e-7
         );
+    }
+
+    #[rstest]
+    fn test_calc_efficiency_criteria(energy_supply: EnergySupply) {
+        let mut heat_pump = create_heat_pump_hw_only(energy_supply, None);
+        heat_pump.daily_losses = 1.1;
+
+        assert_relative_eq!(heat_pump.calc_efficiency(), 2.8975940100903292);
+    }
+
+    #[rstest]
+    fn test_setpnt(energy_supply: EnergySupply, simulation_time_for_heat_pump: SimulationTime) {
+        let simtime = simulation_time_for_heat_pump.iter().current_iteration();
+        let heat_pump = create_heat_pump_hw_only(energy_supply, None);
+
+        let (minsetpnt, maxsetpnt) = heat_pump.setpnt(simtime).unwrap();
+
+        assert_eq!(minsetpnt, Some(52.));
+        assert_eq!(maxsetpnt, Some(60.));
+    }
+
+    #[rstest]
+    fn test_setpnt_errors(
+        energy_supply: EnergySupply,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let simtime = simulation_time_for_heat_pump.iter().current_iteration();
+        let heat_pump = create_heat_pump_hw_only(energy_supply, None);
+
+        let mut hp1 = heat_pump.clone();
+        hp1.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(true)],
+            0,
+            1.,
+        )));
+
+        assert!(hp1.setpnt(simtime).is_err());
+
+        let mut hp2 = heat_pump.clone();
+        hp2.control_max = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(true)],
+            0,
+            1.,
+        )));
+
+        assert!(hp2.setpnt(simtime).is_err());
+    }
+
+    #[rstest]
+    #[ignore = "WIP migration"]
+    fn test_demand_energy_for_hw_only(
+        energy_supply: EnergySupply,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let simtime = simulation_time_for_heat_pump.iter().current_iteration();
+        let heat_pump = create_heat_pump_hw_only(energy_supply, None);
+
+        assert_relative_eq!(heat_pump.demand_energy(10., 50., 40., simtime), 3.);
+    }
+
+    #[rstest]
+    #[ignore = "WIP migration"]
+    fn test_demand_energy_off_for_hw_only(
+        energy_supply: EnergySupply,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let simtime = simulation_time_for_heat_pump.iter().current_iteration();
+        let mut heat_pump = create_heat_pump_hw_only(energy_supply, None);
+        heat_pump.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(false)],
+            0,
+            1.,
+        )));
+
+        assert_relative_eq!(heat_pump.demand_energy(10., 50., 40., simtime), 0.);
+    }
+
+    #[rstest]
+    fn test_energy_output_max(
+        energy_supply: EnergySupply,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let simtime = simulation_time_for_heat_pump.iter().current_iteration();
+        let heat_pump = create_heat_pump_hw_only(energy_supply, None);
+
+        assert_relative_eq!(heat_pump.energy_output_max(50., simtime), 3.);
+    }
+
+    #[rstest]
+    fn test_energy_output_max_off(
+        energy_supply: EnergySupply,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let simtime = simulation_time_for_heat_pump.iter().current_iteration();
+        let mut heat_pump = create_heat_pump_hw_only(energy_supply, None);
+
+        heat_pump.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(false)],
+            0,
+            1.,
+        )));
+
+        assert_relative_eq!(heat_pump.energy_output_max(50., simtime), 0.);
     }
 }
