@@ -1554,7 +1554,7 @@ impl HeatPumpServiceSpace {
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>, // TODO 1.0.0a1 optional now?
+        control: Arc<Control>, // TODO 1.0.0a1 optional now? in Python 1.0.0a1 this is TimeControl | None
         volume_heated: f64,
         boiler_service_space: Option<Arc<Mutex<BoilerServiceSpace>>>,
     ) -> Self {
@@ -1779,7 +1779,7 @@ impl HeatPumpServiceSpaceWarmAir {
         service_name: &str,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>,
+        control: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl | None
         temp_flow: f64,
         frac_convective: f64,
         volume_heated: f64,
@@ -2473,7 +2473,7 @@ impl HeatPump {
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>,
+        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl | None
         volume_heated: f64,
     ) -> HeatPumpServiceSpace {
         let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
@@ -2507,7 +2507,7 @@ impl HeatPump {
     pub(crate) fn create_service_space_heating_warm_air(
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
-        control: Arc<Control>,
+        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl | None
         frac_convective: f64,
         volume_heated: f64,
     ) -> anyhow::Result<HeatPumpServiceSpaceWarmAir> {

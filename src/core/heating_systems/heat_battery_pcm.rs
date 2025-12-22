@@ -62,8 +62,8 @@ impl HeatBatteryPcmServiceWaterRegular {
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
         cold_feed: WaterSourceWithTemperature,
-        control_min: Option<Arc<Control>>,
-        control_max: Option<Arc<Control>>,
+        control_min: Option<Arc<Control>>, // TODO in Python this is SetpointTimeControl | CombinationTimeControl
+        control_max: Option<Arc<Control>>, // TODO in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> Self {
         let control = control_min.clone();
 
@@ -305,7 +305,7 @@ impl HeatBatteryPcmServiceSpace {
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
-        control: Arc<Control>,
+        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
     ) -> Self {
         Self {
             heat_battery,
@@ -660,8 +660,8 @@ impl HeatBatteryPcm {
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         cold_feed: WaterSourceWithTemperature,
-        control_min: Option<Arc<Control>>,
-        control_max: Option<Arc<Control>>,
+        control_min: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control_max: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
     ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterRegular::new(
@@ -704,7 +704,7 @@ impl HeatBatteryPcm {
     pub(crate) fn create_service_space_heating(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
-        control: Arc<Control>,
+        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
     ) -> anyhow::Result<HeatBatteryPcmServiceSpace> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceSpace::new(

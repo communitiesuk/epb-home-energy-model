@@ -114,8 +114,8 @@ impl HeatNetworkServiceWaterStorage {
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is ControlSetPoint
+        control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is ControlSetPoint
     ) -> Self {
         let control = control_min.clone();
 
@@ -188,7 +188,7 @@ impl HeatNetworkServiceSpace {
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
-        control: Arc<Control>,
+        control: Arc<Control>, // // TODO in Python 1.0.0a1 this is ControlSetPoint
     ) -> Self {
         Self {
             heat_network,
@@ -349,8 +349,8 @@ impl HeatNetwork {
     pub(crate) fn create_service_hot_water_storage(
         heat_network: Arc<Mutex<Self>>,
         service_name: &str,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is ControlSetPoint
+        control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is ControlSetPoint
     ) -> HeatNetworkServiceWaterStorage {
         Self::create_service_connection(heat_network.clone(), service_name).unwrap();
 
@@ -365,7 +365,7 @@ impl HeatNetwork {
     pub(crate) fn create_service_space_heating(
         heat_network: Arc<Mutex<Self>>,
         service_name: &str,
-        control: Arc<Control>,
+        control: Arc<Control>, // TODO in Python 1.0.0a1 this is ControlSetPoint
     ) -> HeatNetworkServiceSpace {
         Self::create_service_connection(heat_network.clone(), service_name).unwrap();
 
