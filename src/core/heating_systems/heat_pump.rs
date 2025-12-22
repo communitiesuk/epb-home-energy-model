@@ -1369,8 +1369,8 @@ impl HeatPumpServiceWater {
         service_name: String,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<WaterSourceWithTemperature>,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl
+        control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
     ) -> Self {
         let control = control_min.clone();
@@ -2435,8 +2435,8 @@ impl HeatPump {
         service_name: &str,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<WaterSourceWithTemperature>,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
     ) -> anyhow::Result<HeatPumpServiceWater> {
         Self::create_service_connection(heat_pump.clone(), service_name)?;
         let boiler_service = heat_pump
@@ -2540,7 +2540,7 @@ impl HeatPump {
             heat_pump
                 .lock()
                 .test_data
-                .temp_spread_test_conditions(temp_flow)?,
+                .temp_spread_test_conditions(design_flow_temp_op_cond)?,
         );
 
         Self::create_service_connection(heat_pump.clone(), service_name)?;
@@ -8523,7 +8523,7 @@ mod tests {
                     energy_output_required: 1.0,
                     temp_output: Some(330.0),
                     temp_source: 273.15,
-                    cop_op_cond: Some(2.9706605881515196),
+                    cop_op_cond: Some(3.1824426759289044),
                     thermal_capacity_op_cond: Some(8.417674488123662),
                     time_running: 0.11879765621857688,
                     time_constant_for_service: 1560.,
@@ -8552,7 +8552,7 @@ mod tests {
                     energy_output_required: 1.0,
                     temp_output: Some(330.0),
                     temp_source: 275.65,
-                    cop_op_cond: Some(3.107305509409639),
+                    cop_op_cond: Some(3.197134104416267),
                     thermal_capacity_op_cond: Some(8.650924134797519),
                     time_running: 0.11559458670751663,
                     time_constant_for_service: 1560.,
@@ -8942,83 +8942,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "to be migrated to 1.0.0a1"]
-    fn test_calc_ancillary_energy(
-        external_conditions: Arc<ExternalConditions>,
-        simulation_time_for_heat_pump: SimulationTime,
-    ) {
-        let heat_pump = Arc::new(Mutex::new(create_default_heat_pump(
-            None,
-            external_conditions,
-            simulation_time_for_heat_pump,
-            None,
-        )));
-
-        HeatPump::create_service_connection(heat_pump.clone(), "service_anc_energy").unwrap();
-
-        let mut heat_pump = heat_pump.lock();
-
-        let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-
-        heat_pump
-            .demand_energy(
-                "service_anc_energy",
-                &ServiceType::Water,
-                1.0,
-                Some(330.0),
-                330.0,
-                340.0,
-                design_flow_temp_op_cond_k(55.),
-                1560.,
-                true,
-                simtime,
-                Some(TempSpreadCorrectionArg::Float(1.0)),
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-
-        heat_pump.calc_energy_input(0).unwrap();
-
-        let (energy_input_hp, energy_input_total) =
-            if let ServiceResult::Full(calc) = &heat_pump.service_results.read()[0] {
-                let HeatPumpEnergyCalculation {
-                    energy_input_hp,
-                    energy_input_total,
-                    ..
-                } = **calc;
-
-                (energy_input_hp, energy_input_total)
-            } else {
-                unreachable!()
-            };
-        assert_eq!(energy_input_hp, 0.33789047423833063);
-        assert_eq!(energy_input_total, 0.34086041564379504);
-
-        heat_pump.calc_ancillary_energy(1., 0.5, 0).unwrap();
-
-        // Check if the energy_input_HP and energy_input_total were updated correctly
-        let (energy_input_hp, energy_input_total) =
-            if let ServiceResult::Full(calc) = &heat_pump.service_results.read()[0] {
-                let HeatPumpEnergyCalculation {
-                    energy_input_hp,
-                    energy_input_total,
-                    ..
-                } = **calc;
-
-                (energy_input_hp, energy_input_total)
-            } else {
-                unreachable!()
-            };
-
-        assert_eq!(energy_input_hp, 0.39541428732143846);
-        assert_eq!(energy_input_total, 0.3983842287269028);
-    }
-
-    #[rstest]
     fn test_calc_auxiliary_energy(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
@@ -9143,7 +9066,7 @@ mod tests {
             energy_output_required: 5.0,
             temp_output: Some(330.0),
             temp_source: 273.15,
-            cop_op_cond: Some(2.9706605881515196),
+            cop_op_cond: Some(3.1824426759289044),
             thermal_capacity_op_cond: Some(8.417674488123662),
             time_running: 0.5939882810928845,
             time_constant_for_service: 1560.,
