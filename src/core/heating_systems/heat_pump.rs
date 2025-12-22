@@ -300,7 +300,7 @@ pub struct BufferTankEmittersDataWithResult {
     pub result: BufferTankServiceResult,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct BufferTankServiceResult {
     _service_name: String,
     _power_req_from_buffer_tank: f64,
@@ -4597,6 +4597,325 @@ mod tests {
     use rstest::*;
     use serde_json::{json, Value};
 
+    #[fixture]
+    fn simulation_time() -> SimulationTime {
+        SimulationTime::new(0., 8., 1.)
+    }
+
+    #[fixture]
+    fn buffer_tank(simulation_time: SimulationTime) -> BufferTank {
+        BufferTank::new(
+            1.68,
+            50.,
+            15.,
+            0.040,
+            2,
+            simulation_time.step,
+            20.,
+            *WATER,
+            Some(true),
+        )
+    }
+
+    // emitters data needed to run buffer tank calculations
+    const EMITTERS_DATA_FOR_BUFFER_TANK: [BufferTankEmittersData; 8] = [
+        BufferTankEmittersData {
+            temp_emitter_req: 43.32561228292832,
+            power_req_from_buffer_tank: 6.325422354229758,
+            design_flow_temp: 55.,
+            target_flow_temp: 48.54166666666667,
+            temp_rm_prev: 22.488371468978006,
+            variable_flow: true,
+            temp_diff_emit_design: 10.,
+            min_flow_rate: 0.05,
+            max_flow_rate: 0.3,
+        },
+        BufferTankEmittersData {
+            temp_emitter_req: 30.778566169260767,
+            power_req_from_buffer_tank: 4.036801431329545,
+            design_flow_temp: 55.,
+            target_flow_temp: 48.54166666666667,
+            temp_rm_prev: 22.61181775388348,
+            variable_flow: true,
+            temp_diff_emit_design: 10.,
+            min_flow_rate: 0.05,
+            max_flow_rate: 0.3,
+        },
+        BufferTankEmittersData {
+            temp_emitter_req: 50.248361664005266,
+            power_req_from_buffer_tank: 8.808940459526795,
+            design_flow_temp: 55.,
+            target_flow_temp: 49.375,
+            temp_rm_prev: 17.736483875769345,
+            variable_flow: true,
+            temp_diff_emit_design: 10.,
+            min_flow_rate: 0.05,
+            max_flow_rate: 0.3,
+        },
+        BufferTankEmittersData {
+            temp_emitter_req: 30.723032018863076,
+            power_req_from_buffer_tank: 6.444185473658857,
+            design_flow_temp: 55.,
+            target_flow_temp: 49.375,
+            temp_rm_prev: 16.85636993835381,
+            variable_flow: true,
+            temp_diff_emit_design: 10.,
+            min_flow_rate: 0.05,
+            max_flow_rate: 0.3,
+        },
+        BufferTankEmittersData {
+            temp_emitter_req: 29.646908204800425,
+            power_req_from_buffer_tank: 5.00550934831923,
+            design_flow_temp: 55.,
+            target_flow_temp: 48.75,
+            temp_rm_prev: 17.22290169647781,
+            variable_flow: true,
+            temp_diff_emit_design: 10.,
+            min_flow_rate: 0.05,
+            max_flow_rate: 0.3,
+        },
+        BufferTankEmittersData {
+            temp_emitter_req: 30.42417311801241,
+            power_req_from_buffer_tank: 2.5923631086027457,
+            design_flow_temp: 55.,
+            target_flow_temp: 48.22916666666667,
+            temp_rm_prev: 21.897823675853978,
+            variable_flow: true,
+            temp_diff_emit_design: 10.,
+            min_flow_rate: 0.05,
+            max_flow_rate: 0.3,
+        },
+        BufferTankEmittersData {
+            temp_emitter_req: 39.38823309970535,
+            power_req_from_buffer_tank: 1.9107311055974638,
+            design_flow_temp: 55.,
+            target_flow_temp: 48.4375,
+            temp_rm_prev: 22.36470513987037,
+            variable_flow: true,
+            temp_diff_emit_design: 10.,
+            min_flow_rate: 0.05,
+            max_flow_rate: 0.3,
+        },
+        BufferTankEmittersData {
+            temp_emitter_req: 28.934946810199524,
+            power_req_from_buffer_tank: 1.711635686322881,
+            design_flow_temp: 55.,
+            target_flow_temp: 48.4375,
+            temp_rm_prev: 22.425363294403255,
+            variable_flow: true,
+            temp_diff_emit_design: 10.,
+            min_flow_rate: 0.05,
+            max_flow_rate: 0.3,
+        },
+    ];
+
+    #[rstest]
+    fn test_buffer_loss(mut buffer_tank: BufferTank, simulation_time: SimulationTime) {
+        // temperatures required to calculate buffer tank thermal losses
+        let temp_ave_buffer = [
+            42.13174056962889,
+            39.15850036184071,
+            47.90592627854362,
+            46.396261107092855,
+            44.393784168519964,
+            41.113688636784985,
+            38.05323632350841,
+            34.94802876725388,
+            37.658992822855524,
+            34.3155583742916,
+        ];
+        let temp_rm_prev = [
+            22.503414923272768,
+            22.629952417028925,
+            18.606533490587633,
+            17.3014761483025,
+            16.89603650204302,
+            22.631060393299737,
+            22.434635318905773,
+            22.736995736582873,
+            22.603763288379653,
+            22.89241467168529,
+        ];
+        // Expected results
+        let heat_loss_buffer_kwh = [
+            0.01620674285529469,
+            0.0063519154341823356,
+            0.025287016057516827,
+            0.010785181618173873,
+            0.009663116173139813,
+            0.0066316051216787795,
+            0.01324052174653832,
+            0.005063009401174876,
+        ];
+        let flow_temp_increase_due_to_buffer = [
+            3.952751095382638,
+            6.140725209053976,
+            1.5784508035116716,
+            3.8392108282420097,
+            5.2146182138439485,
+            7.521641387569073,
+            7.370102324208936,
+            6.569653721125626,
+        ];
+        let expected_thermal_losses = [
+            0.015266475502721427,
+            0.012855537290409166,
+            0.022788416612854655,
+            0.02262927719017028,
+            0.02138713707392651,
+            0.014375377522710748,
+            0.012147800781357604,
+            0.00949747013496634,
+        ];
+        let expected_internal_gains = [
+            24.31011428294203,
+            9.527873151273504,
+            37.93052408627524,
+            16.17777242726081,
+            14.494674259709718,
+            9.947407682518168,
+            19.86078261980748,
+            7.594514101762314,
+        ];
+
+        // Simulate updating buffer loss over time
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            let buffer_results = buffer_tank
+                .calc_buffer_tank("test service", EMITTERS_DATA_FOR_BUFFER_TANK[t_idx])
+                .unwrap()
+                .to_owned();
+            let internal_gains = buffer_tank.internal_gains();
+            let thermal_losses =
+                buffer_tank.thermal_losses(temp_ave_buffer[t_idx], temp_rm_prev[t_idx]);
+
+            assert_relative_eq!(
+                buffer_results[t_idx].heat_loss_buffer_kwh,
+                heat_loss_buffer_kwh[t_idx],
+                max_relative = 1e-6
+            );
+            assert_relative_eq!(
+                buffer_results[t_idx].flow_temp_increase_due_to_buffer,
+                flow_temp_increase_due_to_buffer[t_idx],
+                max_relative = 1e-6
+            );
+            assert_relative_eq!(
+                thermal_losses,
+                expected_thermal_losses[t_idx],
+                max_relative = 1e-6
+            );
+            assert_relative_eq!(
+                internal_gains,
+                expected_internal_gains[t_idx],
+                max_relative = 1e-6
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_update_buffer_loss(mut buffer_tank: BufferTank) {
+        buffer_tank.update_buffer_loss(5.);
+
+        assert_eq!(buffer_tank.buffer_loss(), 5.);
+    }
+
+    #[rstest]
+    fn test_calc_buffer_tank_over_max_flow(mut buffer_tank: BufferTank) {
+        let mut data = EMITTERS_DATA_FOR_BUFFER_TANK[0];
+        data.max_flow_rate = 0.1;
+
+        let expected = &BufferTankServiceResult {
+            _service_name: "new_service_buffer_tank".into(),
+            _power_req_from_buffer_tank: 6.325422354229758,
+            _temp_emitter_req: 43.32561228292832,
+            _buffer_emitter_circ_flow_rate: 15.,
+            flow_temp_increase_due_to_buffer: 9.109608401991274,
+            pump_power_at_flow_rate: 0.04,
+            heat_loss_buffer_kwh: 0.01620674285529469,
+        };
+
+        let result = &buffer_tank.calc_buffer_tank("new_service", data).unwrap()[0];
+
+        assert_eq!(expected, result);
+    }
+
+    #[rstest]
+    fn test_calc_buffer_tank_over_variable_flow(mut buffer_tank: BufferTank) {
+        let mut data = EMITTERS_DATA_FOR_BUFFER_TANK[0];
+        data.variable_flow = false;
+
+        let expected = &BufferTankServiceResult {
+            _service_name: "new_service_buffer_tank".into(),
+            _power_req_from_buffer_tank: 6.325422354229758,
+            _temp_emitter_req: 43.32561228292832,
+            _buffer_emitter_circ_flow_rate: 15.,
+            flow_temp_increase_due_to_buffer: 24.26646570859991,
+            pump_power_at_flow_rate: 0.04,
+            heat_loss_buffer_kwh: 0.01620674285529469,
+        };
+
+        let result = &buffer_tank.calc_buffer_tank("new_service", data).unwrap()[0];
+
+        assert_eq!(expected, result);
+    }
+
+    #[rstest]
+    fn test_calc_buffer_tank_no_power_req(mut buffer_tank: BufferTank) {
+        let mut data = EMITTERS_DATA_FOR_BUFFER_TANK[0];
+
+        data.power_req_from_buffer_tank = 0.;
+
+        let expected = &BufferTankServiceResult {
+            _service_name: "new_service_buffer_tank".into(),
+            _power_req_from_buffer_tank: 0.,
+            _temp_emitter_req: 43.32561228292832,
+            _buffer_emitter_circ_flow_rate: 15.,
+            flow_temp_increase_due_to_buffer: 0.,
+            pump_power_at_flow_rate: 0.,
+            heat_loss_buffer_kwh: -0.0019354000314273378,
+        };
+
+        let result = &buffer_tank.calc_buffer_tank("new_service", data).unwrap()[0];
+
+        assert_eq!(expected, result);
+    }
+
+    #[rstest]
+    fn test_calc_buffer_tank_over_emitter_flow(mut buffer_tank: BufferTank) {
+        let mut data = EMITTERS_DATA_FOR_BUFFER_TANK[0];
+        data.variable_flow = false;
+        data.max_flow_rate = 5.;
+        data.min_flow_rate = 10.;
+
+        assert!(buffer_tank.calc_buffer_tank("new_service", data).is_err());
+    }
+
+    #[rstest]
+    fn test_calc_buffer_tank_detailed_results(mut buffer_tank: BufferTank) {
+        let data = EMITTERS_DATA_FOR_BUFFER_TANK[0];
+
+        buffer_tank.calc_buffer_tank("new_service", data).unwrap();
+
+        assert!(buffer_tank.detailed_results.is_some());
+
+        let results = buffer_tank.detailed_results.unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].len(), 1);
+
+        let expected = &BufferTankServiceResult {
+            _service_name: "new_service_buffer_tank".into(),
+            _power_req_from_buffer_tank: 6.325422354229758,
+            _temp_emitter_req: 43.32561228292832,
+            _buffer_emitter_circ_flow_rate: 15.,
+            flow_temp_increase_due_to_buffer: 3.952751095382638,
+            pump_power_at_flow_rate: 0.04,
+            heat_loss_buffer_kwh: 0.01620674285529469,
+        };
+        let result = &results[0][0];
+
+        assert_eq!(expected, result);
+    }
+
     #[rstest]
     pub fn test_interpolate_exhaust_air_heat_pump_test_data() {
         let data_eahp = vec![
@@ -5564,220 +5883,6 @@ mod tests {
                 serde_json::from_str::<HeatPumpSinkType>(format!("\"{strval}\"").as_str()).unwrap(),
                 result,
                 "incorrect source type mapped"
-            );
-        }
-    }
-
-    #[fixture]
-    fn simulation_time() -> SimulationTime {
-        SimulationTime::new(0., 8., 1.)
-    }
-
-    #[fixture]
-    fn buffer_tank(simulation_time: SimulationTime) -> BufferTank {
-        BufferTank::new(
-            1.68,
-            50.,
-            15.,
-            0.040,
-            2,
-            simulation_time.step,
-            20.,
-            *WATER,
-            Some(false),
-        )
-    }
-
-    // In Python the below test is in test_buffer_tank.py
-    #[rstest]
-    fn test_buffer_loss(mut buffer_tank: BufferTank, simulation_time: SimulationTime) {
-        // emitters data needed to run buffer tank calculations
-        let emitters_data_for_buffer_tank = [
-            BufferTankEmittersData {
-                temp_emitter_req: 43.32561228292832,
-                power_req_from_buffer_tank: 6.325422354229758,
-                design_flow_temp: 55.,
-                target_flow_temp: 48.54166666666667,
-                temp_rm_prev: 22.488371468978006,
-                variable_flow: true,
-                temp_diff_emit_design: 10.,
-                min_flow_rate: 0.05,
-                max_flow_rate: 0.3,
-            },
-            BufferTankEmittersData {
-                temp_emitter_req: 30.778566169260767,
-                power_req_from_buffer_tank: 4.036801431329545,
-                design_flow_temp: 55.,
-                target_flow_temp: 48.54166666666667,
-                temp_rm_prev: 22.61181775388348,
-                variable_flow: true,
-                temp_diff_emit_design: 10.,
-                min_flow_rate: 0.05,
-                max_flow_rate: 0.3,
-            },
-            BufferTankEmittersData {
-                temp_emitter_req: 50.248361664005266,
-                power_req_from_buffer_tank: 8.808940459526795,
-                design_flow_temp: 55.,
-                target_flow_temp: 49.375,
-                temp_rm_prev: 17.736483875769345,
-                variable_flow: true,
-                temp_diff_emit_design: 10.,
-                min_flow_rate: 0.05,
-                max_flow_rate: 0.3,
-            },
-            BufferTankEmittersData {
-                temp_emitter_req: 30.723032018863076,
-                power_req_from_buffer_tank: 6.444185473658857,
-                design_flow_temp: 55.,
-                target_flow_temp: 49.375,
-                temp_rm_prev: 16.85636993835381,
-                variable_flow: true,
-                temp_diff_emit_design: 10.,
-                min_flow_rate: 0.05,
-                max_flow_rate: 0.3,
-            },
-            BufferTankEmittersData {
-                temp_emitter_req: 29.646908204800425,
-                power_req_from_buffer_tank: 5.00550934831923,
-                design_flow_temp: 55.,
-                target_flow_temp: 48.75,
-                temp_rm_prev: 17.22290169647781,
-                variable_flow: true,
-                temp_diff_emit_design: 10.,
-                min_flow_rate: 0.05,
-                max_flow_rate: 0.3,
-            },
-            BufferTankEmittersData {
-                temp_emitter_req: 30.42417311801241,
-                power_req_from_buffer_tank: 2.5923631086027457,
-                design_flow_temp: 55.,
-                target_flow_temp: 48.22916666666667,
-                temp_rm_prev: 21.897823675853978,
-                variable_flow: true,
-                temp_diff_emit_design: 10.,
-                min_flow_rate: 0.05,
-                max_flow_rate: 0.3,
-            },
-            BufferTankEmittersData {
-                temp_emitter_req: 39.38823309970535,
-                power_req_from_buffer_tank: 1.9107311055974638,
-                design_flow_temp: 55.,
-                target_flow_temp: 48.4375,
-                temp_rm_prev: 22.36470513987037,
-                variable_flow: true,
-                temp_diff_emit_design: 10.,
-                min_flow_rate: 0.05,
-                max_flow_rate: 0.3,
-            },
-            BufferTankEmittersData {
-                temp_emitter_req: 28.934946810199524,
-                power_req_from_buffer_tank: 1.711635686322881,
-                design_flow_temp: 55.,
-                target_flow_temp: 48.4375,
-                temp_rm_prev: 22.425363294403255,
-                variable_flow: true,
-                temp_diff_emit_design: 10.,
-                min_flow_rate: 0.05,
-                max_flow_rate: 0.3,
-            },
-        ];
-        // temperatures required to calculate buffer tank thermal losses
-        let temp_ave_buffer = [
-            42.13174056962889,
-            39.15850036184071,
-            47.90592627854362,
-            46.396261107092855,
-            44.393784168519964,
-            41.113688636784985,
-            38.05323632350841,
-            34.94802876725388,
-            37.658992822855524,
-            34.3155583742916,
-        ];
-        let temp_rm_prev = [
-            22.503414923272768,
-            22.629952417028925,
-            18.606533490587633,
-            17.3014761483025,
-            16.89603650204302,
-            22.631060393299737,
-            22.434635318905773,
-            22.736995736582873,
-            22.603763288379653,
-            22.89241467168529,
-        ];
-        // Expected results
-        let heat_loss_buffer_kwh = [
-            0.01620674285529469,
-            0.0063519154341823356,
-            0.025287016057516827,
-            0.010785181618173873,
-            0.009663116173139813,
-            0.0066316051216787795,
-            0.01324052174653832,
-            0.005063009401174876,
-        ];
-        let flow_temp_increase_due_to_buffer = [
-            3.952751095382638,
-            6.140725209053976,
-            1.5784508035116716,
-            3.8392108282420097,
-            5.2146182138439485,
-            7.521641387569073,
-            7.370102324208936,
-            6.569653721125626,
-        ];
-        let expected_thermal_losses = [
-            0.015266475502721427,
-            0.012855537290409166,
-            0.022788416612854655,
-            0.02262927719017028,
-            0.02138713707392651,
-            0.014375377522710748,
-            0.012147800781357604,
-            0.00949747013496634,
-        ];
-        let expected_internal_gains = [
-            24.31011428294203,
-            9.527873151273504,
-            37.93052408627524,
-            16.17777242726081,
-            14.494674259709718,
-            9.947407682518168,
-            19.86078261980748,
-            7.594514101762314,
-        ];
-
-        // Simulate updating buffer loss over time
-        for (t_idx, _) in simulation_time.iter().enumerate() {
-            let buffer_results = buffer_tank
-                .calc_buffer_tank("test service", emitters_data_for_buffer_tank[t_idx])
-                .unwrap()
-                .to_owned();
-            let internal_gains = buffer_tank.internal_gains();
-            let thermal_losses =
-                buffer_tank.thermal_losses(temp_ave_buffer[t_idx], temp_rm_prev[t_idx]);
-
-            assert_relative_eq!(
-                buffer_results[t_idx].heat_loss_buffer_kwh,
-                heat_loss_buffer_kwh[t_idx],
-                max_relative = 1e-6
-            );
-            assert_relative_eq!(
-                buffer_results[t_idx].flow_temp_increase_due_to_buffer,
-                flow_temp_increase_due_to_buffer[t_idx],
-                max_relative = 1e-6
-            );
-            assert_relative_eq!(
-                thermal_losses,
-                expected_thermal_losses[t_idx],
-                max_relative = 1e-6
-            );
-            assert_relative_eq!(
-                internal_gains,
-                expected_internal_gains[t_idx],
-                max_relative = 1e-6
             );
         }
     }
