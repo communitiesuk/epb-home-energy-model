@@ -4917,8 +4917,8 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_interpolate_exhaust_air_heat_pump_test_data() {
-        let data_eahp = vec![
+    fn test_interpolate_exhaust_air_heat_pump_test_data() {
+        let mut data_eahp = vec![
             HeatPumpTestDatumInput {
                 air_flow_rate: Some(100.0),
                 test_letter: TestLetter::A,
@@ -5005,6 +5005,23 @@ mod tests {
             data_eahp_func_result, data_eahp_interpolated,
             "incorrect interpolation of exhaust air heat pump test data"
         );
+        data_eahp[1].temp_source = 21.;
+        assert!(interpolate_exhaust_air_heat_pump_test_data(
+            140.,
+            &data_eahp,
+            HeatPumpSourceType::ExhaustAirMixed
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_interpolate_exhaust_air_heat_pump_test_data_error() {
+        assert!(interpolate_exhaust_air_heat_pump_test_data(
+            140.,
+            &vec![],
+            HeatPumpSourceType::ExhaustAirMixed,
+        )
+        .is_err());
     }
 
     // NOTE from Python:
