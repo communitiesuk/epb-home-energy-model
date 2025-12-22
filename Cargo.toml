@@ -43,7 +43,7 @@ serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
 serde_json = { version = "1.0.145", features = ["preserve_order"] }
 serde_repr = "0.1.20"
-serde_valid = "2.0.0"
+serde_valid = "2.0.1"
 smartstring = { version = "1.0.1", features = ["arbitrary", "serde"] }
 statrs = "0.18.0"
 strum = { version = "0.27.1", features = ["derive"] }
