@@ -62,8 +62,8 @@ impl HeatBatteryPcmServiceWaterRegular {
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
         cold_feed: WaterSourceWithTemperature,
-        control_min: Option<Arc<Control>>, // TODO in Python this is SetpointTimeControl | CombinationTimeControl
-        control_max: Option<Arc<Control>>, // TODO in Python this is SetpointTimeControl | CombinationTimeControl
+        control_min: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control_max: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
     ) -> Self {
         let control = control_min.clone();
 

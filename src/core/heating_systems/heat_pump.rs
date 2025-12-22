@@ -4403,8 +4403,8 @@ impl HeatPumpHotWaterOnly {
         heat_exchanger_surface_area_declared: f64,
         daily_losses_declared: f64,
         simulation_timestep: f64,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl
+        control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl
     ) -> Self {
         let efficiencies = Efficiencies {
             l: test_data.l.as_ref().map(|profile_data| {
@@ -8954,10 +8954,13 @@ mod tests {
 
     // In Python below tests are in a separate class called TestHeatPump_HWOnly
     fn create_heat_pump_hw_only(
-        energy_supply: EnergySupply,
+        // energy_supply: EnergySupply,
         vol_daily_average: Option<f64>,
+        test_data: Option<HeatPumpHotWaterTestData>,
+        simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPumpHotWaterOnly {
-        let test_data: HeatPumpHotWaterTestData = HeatPumpHotWaterTestData {
+        let energy_supply = energy_supply(simulation_time_for_heat_pump);
+        let test_data: HeatPumpHotWaterTestData = test_data.unwrap_or(HeatPumpHotWaterTestData {
             l: Some(HeatPumpHotWaterOnlyTestDatum {
                 cop_dhw: 2.5,
                 hw_tapping_prof_daily_total: 11.655,
@@ -8972,7 +8975,7 @@ mod tests {
                 power_standby: 0.02,
                 hw_vessel_loss_daily: 1.18,
             },
-        };
+        });
 
         let power_max = 3.0;
         let vol_daily_average = vol_daily_average.unwrap_or(150.);
@@ -9020,15 +9023,36 @@ mod tests {
     }
 
     #[rstest]
-    fn test_init_efficiencies() {
-        // todo
+    fn test_init_efficiencies(simulation_time_for_heat_pump: SimulationTime) {
+        let test_data: HeatPumpHotWaterTestData = HeatPumpHotWaterTestData {
+            l: None,
+            m: HeatPumpHotWaterOnlyTestDatum {
+                cop_dhw: 2.7,
+                hw_tapping_prof_daily_total: 5.845,
+                energy_input_measured: 2.15,
+                power_standby: 0.02,
+                hw_vessel_loss_daily: 1.18,
+            },
+        };
+        let heat_pump =
+            create_heat_pump_hw_only(None, Some(test_data), simulation_time_for_heat_pump);
+
+        assert_eq!(heat_pump.initial_efficiency, 3.0478653375963884);
+
+        let heat_pump = create_heat_pump_hw_only(Some(90.), None, simulation_time_for_heat_pump);
+
+        assert_eq!(heat_pump.initial_efficiency, 3.0478653375963884);
+
+        let heat_pump = create_heat_pump_hw_only(Some(200.), None, simulation_time_for_heat_pump);
+
+        assert_eq!(heat_pump.initial_efficiency, 2.7473226825842696);
     }
 
     // skipping Python's test_init_efficiencies_invalid as test_data can't be empty in Rust
 
     #[rstest]
-    fn test_calc_efficiency(energy_supply: EnergySupply) {
-        let heat_pump = create_heat_pump_hw_only(energy_supply, None);
+    fn test_calc_efficiency(simulation_time_for_heat_pump: SimulationTime) {
+        let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
 
         assert_relative_eq!(
             heat_pump.calc_efficiency(),
@@ -9038,17 +9062,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calc_efficiency_criteria(energy_supply: EnergySupply) {
-        let mut heat_pump = create_heat_pump_hw_only(energy_supply, None);
+    fn test_calc_efficiency_criteria(simulation_time_for_heat_pump: SimulationTime) {
+        let mut heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
         heat_pump.daily_losses = 1.1;
 
         assert_relative_eq!(heat_pump.calc_efficiency(), 2.8975940100903292);
     }
 
     #[rstest]
-    fn test_setpnt(energy_supply: EnergySupply, simulation_time_for_heat_pump: SimulationTime) {
+    fn test_setpnt(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let heat_pump = create_heat_pump_hw_only(energy_supply, None);
+        let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
 
         let (minsetpnt, maxsetpnt) = heat_pump.setpnt(simtime).unwrap();
 
@@ -9057,12 +9081,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_setpnt_errors(
-        energy_supply: EnergySupply,
-        simulation_time_for_heat_pump: SimulationTime,
-    ) {
+    fn test_setpnt_errors(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let heat_pump = create_heat_pump_hw_only(energy_supply, None);
+        let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
 
         let mut hp1 = heat_pump.clone();
         hp1.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
@@ -9085,24 +9106,18 @@ mod tests {
 
     #[rstest]
     #[ignore = "WIP migration"]
-    fn test_demand_energy_for_hw_only(
-        energy_supply: EnergySupply,
-        simulation_time_for_heat_pump: SimulationTime,
-    ) {
+    fn test_demand_energy_for_hw_only(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let heat_pump = create_heat_pump_hw_only(energy_supply, None);
+        let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
 
         assert_relative_eq!(heat_pump.demand_energy(10., 50., 40., simtime), 3.);
     }
 
     #[rstest]
     #[ignore = "WIP migration"]
-    fn test_demand_energy_off_for_hw_only(
-        energy_supply: EnergySupply,
-        simulation_time_for_heat_pump: SimulationTime,
-    ) {
+    fn test_demand_energy_off_for_hw_only(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let mut heat_pump = create_heat_pump_hw_only(energy_supply, None);
+        let mut heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
         heat_pump.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
             vec![Some(false)],
             0,
@@ -9113,23 +9128,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_energy_output_max(
-        energy_supply: EnergySupply,
-        simulation_time_for_heat_pump: SimulationTime,
-    ) {
+    fn test_energy_output_max(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let heat_pump = create_heat_pump_hw_only(energy_supply, None);
+        let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
 
         assert_relative_eq!(heat_pump.energy_output_max(50., simtime), 3.);
     }
 
     #[rstest]
-    fn test_energy_output_max_off(
-        energy_supply: EnergySupply,
-        simulation_time_for_heat_pump: SimulationTime,
-    ) {
+    fn test_energy_output_max_off(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let mut heat_pump = create_heat_pump_hw_only(energy_supply, None);
+        let mut heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
 
         heat_pump.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
             vec![Some(false)],
