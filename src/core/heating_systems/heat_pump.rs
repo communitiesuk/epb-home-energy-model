@@ -3343,6 +3343,7 @@ impl HeatPump {
             cop_op_cond,
             thermal_capacity_op_cond,
             time_running_full_load: time_running_current_service_full_load,
+            time_running_part_load: None,
             time_available_for_capacity_calc,
             time_available_for_load_ratio_calc,
             time_constant_for_service,
@@ -3445,67 +3446,80 @@ impl HeatPump {
         use_backup_heater_only: bool,
         hp_operating_in_onoff_mode: bool,
         energy_delivered_hp: f64,
+        energy_delivered_hp_aggregated: f64,
         thermal_capacity_op_cond: Option<f64>,
         cop_op_cond: f64,
-        time_running_current_service: f64,
+        time_available_for_current_service: f64,
         load_ratio: f64,
         load_ratio_continuous_min: f64,
         time_constant_for_service: f64,
-        service_type: ServiceType,
-    ) -> (f64, Option<f64>, f64) {
-        if thermal_capacity_op_cond.is_none() {
-            return (0., Some(1.), 0.);
-        }
+        _service_type: ServiceType,
+    ) -> (f64, f64) {
+        let Some(thermal_capacity_op_cond) = thermal_capacity_op_cond else {
+            return (0.0, 0.0);
+        };
 
-        let compressor_power_full_load = thermal_capacity_op_cond.unwrap() / cop_op_cond;
+        let compressor_power_full_load = thermal_capacity_op_cond / cop_op_cond;
 
         // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.10, step 1:
         let compressor_power_min_load = compressor_power_full_load * load_ratio_continuous_min;
 
-        let mut energy_input_hp = 0.;
-        let mut energy_input_hp_divisor = None;
+        let energy_input_hp = if !self.compressor_is_running(service_on, use_backup_heater_only) {
+            0.
+        } else if hp_operating_in_onoff_mode {
+            // BS EN 15316-4-2:2017 equation 28
+            let power_used_due_to_inertia_effects = compressor_power_min_load
+                * self.time_constant_onoff_operation
+                * load_ratio
+                * (1. - load_ratio)
+                / time_constant_for_service;
 
-        if self.compressor_is_running(service_on, use_backup_heater_only) {
-            if hp_operating_in_onoff_mode {
-                // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.10, step 2:
-                let power_used_due_to_inertia_effects = compressor_power_min_load
-                    * self.time_constant_onoff_operation
-                    * load_ratio
-                    * (1. - load_ratio)
-                    / time_constant_for_service;
+            // Based on BS EN 15316-4-2:2017 equations 25 and 26, with
+            // addition of weighting factor to handle existence of more than
+            // one space heating service
+            let compressor_power_part_load_average = compressor_power_full_load * load_ratio;
 
-                // TODO (from Python) Why does the divisor below differ for DHW from warm air HPs?
-                // allowing same output arms until this is corrected for 1.0.0a1
-                energy_input_hp_divisor = if service_type == ServiceType::Water
-                    && self.sink_type == HeatPumpSinkType::Air
-                {
-                    None // TODO: correct all this logic for 1.0.0a1
-                         // Some(1. - deg_coeff_op_cond * (1. - load_ratio / load_ratio_continuous_min))
-                } else {
-                    Some(1.)
-                };
-                // Note: Energy_ancillary_when_off should also be included in the
-                // energy input for on/off operation, but at this stage we have
-                // not calculated whether a lower-priority service will run
-                // instead, so this will need to be calculated later and
-                // (energy_ancillary_when_off / eqn_denom) added to the energy
-                // input
-                energy_input_hp = ((compressor_power_full_load * (1. + HEAT_PUMP_F_AUX)
-                    + power_used_due_to_inertia_effects)
-                    * time_running_current_service)
-                    / energy_input_hp_divisor.unwrap();
-            } else {
-                // If not operating in on/off mode
-                energy_input_hp = energy_delivered_hp / cop_op_cond;
-                energy_input_hp_divisor = None;
-            }
-        }
+            // Based on BS EN 15316-4-2:2017 equation 29
+            // Note: The variable t_H in equation 29 of EN 15316-4-2:2017 is
+            // implied to be the running time required at full load, but
+            // this is not consistent with the use of part-load compressor
+            // power (P_gen,comp,LR) and leads to very low cycling energy
+            // when multiplied by the cycling power (P_gen,comp,ONOF,LR) for
+            // oversized heat pumps because the running time required at
+            // full load for oversized heat pumps is relatively low.
+            // Using the part-load running time (i.e. the time the heat pump
+            // would run at the relevant load ratio) also does not make
+            // sense given that both P_(gen,comp,LR) (from equations 25 and
+            // 26)  and P_(gen,comp,ONOF,LR) (from equation 28) already
+            // account for load ratio based on the time available after
+            // water heating. In other words, both power variables are
+            // already averaged over the time available rather than being
+            // the power output only during the “on” part of the on-off
+            // cycle.
+            // Therefore, the approach used here is to use the time
+            // available after running higher-priority services in equation
+            // 29.
+            let mut energy_input_hp_temp = (compressor_power_part_load_average
+                * (1. + HEAT_PUMP_F_AUX)
+                + power_used_due_to_inertia_effects)
+                * time_available_for_current_service;
 
-        (
-            energy_input_hp,
-            energy_input_hp_divisor,
-            compressor_power_min_load,
-        )
+            // As the time available for space heating applies to all space
+            // heating services combined, we need to avoid double-counting
+            // by apportioning it between the space heating services in
+            // proportion to the energy delivered for each space heating
+            // service
+            let weighting_factor = energy_delivered_hp / energy_delivered_hp_aggregated;
+
+            energy_input_hp_temp *= weighting_factor;
+
+            energy_input_hp_temp
+        } else {
+            // If not operating in on/off mode
+            energy_delivered_hp / cop_op_cond
+        };
+
+        (energy_input_hp, compressor_power_min_load)
     }
 
     /// Calculate energy required by heat pump to satisfy demand for the service indicated.
@@ -3685,18 +3699,34 @@ impl HeatPump {
     }
 
     fn calc_energy_input(&self, t_idx: usize) -> anyhow::Result<()> {
-        let time_running_for_space_service_type = self
+        // Aggregate space heating services
+        // TODO (from Python) This is only necessary because the model cannot handle an
+        //  emitter circuit that serves more than one zone. If/when this
+        //  capability is added, there will no longer be separate space
+        //  heating services for each zone and this aggregation can be
+        //  removed as it will not be necessary. At that point, the other
+        //  contents of this function could also be moved back to their
+        //  original locations
+        let space_service_aggregates = self
             .service_results
             .read()
             .iter()
-            .filter_map(|x| {
-                if let ServiceResult::Full(x) = x {
-                    (x.service_type == ServiceType::Space).then_some(x.time_running_full_load)
-                } else {
-                    None
-                }
+            .filter_map(|result| match result {
+                ServiceResult::Full(x) if x.service_type == ServiceType::Space => Some(x),
+                _ => None,
             })
-            .sum::<f64>();
+            .fold(None, |acc, x| match acc {
+                None => Some((
+                    x.time_running_full_load,
+                    x.time_available_for_load_ratio_calc,
+                    x.energy_delivered_hp,
+                )),
+                Some((run_sum, avail_max, energy_sum)) => Some((
+                    run_sum + x.time_running_full_load,
+                    avail_max.max(x.time_available_for_load_ratio_calc),
+                    energy_sum + x.energy_delivered_hp,
+                )),
+            });
 
         for service_data in self.service_results.write().iter_mut() {
             if let ServiceResult::Full(service_data) = service_data {
@@ -3707,40 +3737,72 @@ impl HeatPump {
                 let energy_heating_circ_pump = service_data.energy_heating_circ_pump;
                 let energy_source_circ_pump = service_data.energy_source_circ_pump;
                 let energy_heating_warm_air_fan = service_data.energy_heating_warm_air_fan;
+                let use_backup_heater_only = service_data.use_backup_heater_only;
 
-                // Aggregate space heating services
-                // TODO (from Python) This is only necessary because the model cannot handle an
-                //  emitter circuit that serves more than one zone. If/when this
-                //  capability is added, there will no longer be separate space
-                //  heating services for each zone and this aggregation can be
-                //  removed as it will not be necessary. At that point, the other
-                //  contents of this function could also be moved back to their
-                //  original locations
-
-                let time_running_for_load_ratio = match service_data.service_type {
-                    ServiceType::Space => time_running_for_space_service_type,
-                    _ => service_data.time_running_full_load,
-                };
-                // TODO (from Python) Check that certain parameters are the same across all space heating services
-                let (load_ratio, load_ratio_continuous_min, hp_operating_in_onoff_mode) =
-                    self.load_ratio_and_mode(time_running_for_load_ratio, 1., temp_output)?;
-
-                let (energy_input_hp, energy_input_hp_divisor, compressor_power_min_load) = self
-                    .energy_input_compressor(
-                        service_data.service_on,
-                        service_data.use_backup_heater_only,
-                        hp_operating_in_onoff_mode,
+                let (
+                    load_ratio,
+                    load_ratio_continuous_min,
+                    hp_operating_in_onoff_mode,
+                    time_available_for_current_service,
+                    energy_delivered_hp_aggregated,
+                ) = match service_data.service_type {
+                    ServiceType::Water => (
+                        1.,
+                        1.,
+                        false,
+                        service_data.time_available_for_load_ratio_calc,
                         service_data.energy_delivered_hp,
-                        service_data.thermal_capacity_op_cond,
-                        service_data
-                            .cop_op_cond
-                            .ok_or_else(|| anyhow::anyhow!("Expected cop_op_cond to be set"))?,
-                        service_data.time_running_full_load,
-                        load_ratio,
-                        load_ratio_continuous_min,
-                        service_data.time_constant_for_service,
-                        service_data.service_type,
+                    ),
+                    ServiceType::Space => {
+                        let (
+                            time_running_for_load_ratio,
+                            time_available_for_current_service,
+                            energy_delivered_hp_aggregated,
+                        ) = space_service_aggregates
+                            .expect("Space service found but aggregates missing");
+                        // TODO (from Python) Check that certain parameters are the same across all space heating services
+                        let (load_ratio, load_ratio_continuous_min, hp_operating_in_onoff_mode) =
+                            self.load_ratio_and_mode(
+                                time_running_for_load_ratio,
+                                time_available_for_current_service,
+                                temp_output,
+                            )?;
+
+                        (
+                            load_ratio,
+                            load_ratio_continuous_min,
+                            hp_operating_in_onoff_mode,
+                            time_available_for_current_service,
+                            energy_delivered_hp_aggregated,
+                        )
+                    }
+                };
+
+                if use_backup_heater_only {
+                    service_data.time_running_part_load = Some(service_data.time_running_full_load)
+                } else {
+                    service_data.time_running_part_load = Some(
+                        service_data.time_running_full_load
+                            / max_of_2(load_ratio, load_ratio_continuous_min),
                     );
+                }
+
+                let (energy_input_hp, compressor_power_min_load) = self.energy_input_compressor(
+                    service_data.service_on,
+                    service_data.use_backup_heater_only,
+                    hp_operating_in_onoff_mode,
+                    service_data.energy_delivered_hp,
+                    energy_delivered_hp_aggregated,
+                    service_data.thermal_capacity_op_cond,
+                    service_data
+                        .cop_op_cond
+                        .ok_or_else(|| anyhow::anyhow!("Expected cop_op_cond to be set"))?,
+                    time_available_for_current_service,
+                    load_ratio,
+                    load_ratio_continuous_min,
+                    service_data.time_constant_for_service,
+                    service_data.service_type,
+                );
 
                 let energy_input_total = energy_input_hp
                     + energy_input_backup
@@ -3752,7 +3814,6 @@ impl HeatPump {
                 service_data.load_ratio_continuous_min = load_ratio_continuous_min;
                 service_data.load_ratio = load_ratio;
                 service_data.hp_operating_in_onoff_mode = hp_operating_in_onoff_mode;
-                service_data.energy_input_hp_divisor = energy_input_hp_divisor;
                 service_data.energy_input_hp = energy_input_hp;
                 service_data.energy_input_total = energy_input_total;
 
@@ -4320,6 +4381,7 @@ pub struct HeatPumpEnergyCalculation {
     cop_op_cond: Option<f64>,
     thermal_capacity_op_cond: Option<f64>,
     time_running_full_load: f64,
+    time_running_part_load: Option<f64>,
     time_available_for_capacity_calc: f64,
     time_available_for_load_ratio_calc: f64,
     time_constant_for_service: f64,
@@ -7713,7 +7775,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "WIP migration"]
     fn test_run_demand_energy_calc(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
@@ -7763,9 +7824,10 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(320.0),
                 temp_source: 273.15,
-                cop_op_cond: Some(3.4215259607351367), // 3.421525960735136 in Python
-                thermal_capacity_op_cond: Some(8.496784419801095),
-                time_running_full_load: 0.11769158196712368,
+                cop_op_cond: Some(3.395194725645021), // 3.39519472564502 in Python
+                thermal_capacity_op_cond: Some(9.231749514150996),
+                time_running_full_load: 0.10832182984028522,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -7781,8 +7843,8 @@ mod tests {
                 energy_delivered_backup: 0.0,
                 energy_input_total: Default::default(),
                 energy_delivered_total: 1.0,
-                energy_heating_circ_pump: 0.001765373729506855,
-                energy_source_circ_pump: 0.0011769158196712369,
+                energy_heating_circ_pump: 0.0016248274476042782,
+                energy_source_circ_pump: 0.0010832182984028523,
                 energy_output_required_boiler: 0.0,
                 energy_heating_warm_air_fan: 0.,
                 energy_output_delivered_boiler: None,
@@ -7794,9 +7856,10 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(320.0),
                 temp_source: 275.65,
-                cop_op_cond: Some(3.566917590730003), // 3.566917590730002 in Python
-                thermal_capacity_op_cond: Some(8.73222616402377), // 8.732226164023768 in Python
-                time_running_full_load: 0.1145183348685972, // 0.11451833486859722 in Python
+                cop_op_cond: Some(3.515322632524056), // 3.5153226325240556 in Python
+                thermal_capacity_op_cond: Some(9.487556781989081),
+                time_running_full_load: 0.10540121371377431,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -7812,8 +7875,8 @@ mod tests {
                 energy_delivered_backup: Default::default(),
                 energy_input_total: Default::default(),
                 energy_delivered_total: 1.0,
-                energy_heating_circ_pump: 0.0017177750230289578, // 0.0017177750230289582 in Python
-                energy_source_circ_pump: 0.001145183348685972,   // 0.0011451833486859722 in Python
+                energy_heating_circ_pump: 0.0015810182057066145,
+                energy_source_circ_pump: 0.0010540121371377432,
                 energy_output_required_boiler: 0.0,
                 energy_heating_warm_air_fan: 0.,
                 energy_output_delivered_boiler: None,
@@ -7863,9 +7926,10 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: Some(2.9706605881515196),
+                cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running_full_load: 0.11879765621857688,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -7894,9 +7958,10 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: Some(3.107305509409639),
+                cop_op_cond: Some(3.1971341044162673), // 3.197134104416267 in Python
                 thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running_full_load: 0.11559458670751663,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -8031,9 +8096,10 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: Some(2.955763623095467),
+                cop_op_cond: Some(3.9929681311183423),
                 thermal_capacity_op_cond: Some(8.857000000000003),
                 time_running_full_load: 0.11290504685559441,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -8062,9 +8128,10 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: Some(3.091723311370327),
+                cop_op_cond: Some(4.089173762601537),
                 thermal_capacity_op_cond: Some(8.807000000000002),
                 time_running_full_load: 0.1135460429204042,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -8124,9 +8191,10 @@ mod tests {
                 energy_output_required: 50.,
                 temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: Some(2.9706605881515196),
+                cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running_full_load: 0.0,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -8155,9 +8223,10 @@ mod tests {
                 energy_output_required: 50.,
                 temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: Some(3.107305509409639),
+                cop_op_cond: Some(3.1971341044162673), // 3.197134104416267 in Python
                 thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running_full_load: 0.0,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -8256,9 +8325,10 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: Some(2.9706605881515196),
+                cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running_full_load: 0.0,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -8287,9 +8357,10 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: Some(3.107305509409639),
+                cop_op_cond: Some(3.1971341044162673), // 3.197134104416267 in Python
                 thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running_full_load: 0.0,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -8424,9 +8495,10 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: Some(2.955763623095467),
+                cop_op_cond: Some(3.9929681311183423),
                 thermal_capacity_op_cond: Some(6.773123981338176),
                 time_running_full_load: 0.1476423586450323,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -8455,9 +8527,10 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: Some(3.091723311370327),
+                cop_op_cond: Some(4.089173762601537),
                 thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running_full_load: 0.1436615668300253,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 1.,
                 time_available_for_load_ratio_calc: 1.,
                 time_constant_for_service: 1560.,
@@ -8510,7 +8583,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "WIP migration"]
     fn test_demand_energy(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
@@ -8598,9 +8670,10 @@ mod tests {
                     energy_output_required: 1.0,
                     temp_output: Some(330.0),
                     temp_source: 273.15,
-                    cop_op_cond: Some(3.1824426759289044),
+                    cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
                     thermal_capacity_op_cond: Some(8.417674488123662),
                     time_running_full_load: 0.11879765621857688,
+                    time_running_part_load: None,
                     time_available_for_capacity_calc: 1.,
                     time_available_for_load_ratio_calc: 1.,
                     time_constant_for_service: 1560.,
@@ -8629,9 +8702,10 @@ mod tests {
                     energy_output_required: 1.0,
                     temp_output: Some(330.0),
                     temp_source: 275.65,
-                    cop_op_cond: Some(3.197134104416267),
+                    cop_op_cond: Some(3.1971341044162673), // 3.197134104416267 in Python
                     thermal_capacity_op_cond: Some(8.650924134797519),
                     time_running_full_load: 0.11559458670751663,
+                    time_running_part_load: None,
                     time_available_for_capacity_calc: 0.8812023437814231,
                     time_available_for_load_ratio_calc: 0.8812023437814231,
                     time_constant_for_service: 1560.,
@@ -8844,6 +8918,7 @@ mod tests {
                 cop_op_cond: Some(2.9706605881515196),
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running_full_load: 0.11879765621857688,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 0.5,
                 time_available_for_load_ratio_calc: 0.5,
                 time_constant_for_service: 1560.,
@@ -8874,7 +8949,8 @@ mod tests {
                 temp_source: 275.65,
                 cop_op_cond: Some(3.091723311370327),
                 thermal_capacity_op_cond: Some(6.9608039370972525),
-                time_running_full_load: 0.1476423586450323,
+                time_running_full_load: 0.07,
+                time_running_part_load: None,
                 time_available_for_capacity_calc: 0.38120234378142312,
                 time_available_for_load_ratio_calc: 0.38120234378142312,
                 time_constant_for_service: 1560.,
@@ -8905,7 +8981,8 @@ mod tests {
                 temp_source: 275.65,
                 cop_op_cond: Some(3.091723311370327),
                 thermal_capacity_op_cond: Some(6.9608039370972525),
-                time_running_full_load: 0.1436615668300253,
+                time_running_full_load: 0.05,
+                time_running_part_load: None,
                 #[allow(clippy::excessive_precision)]
                 time_available_for_capacity_calc: 0.23355998513639082,
                 #[allow(clippy::excessive_precision)]
@@ -8944,20 +9021,21 @@ mod tests {
                 cop_op_cond: Some(2.9706605881515196),
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running_full_load: 0.11879765621857688,
+                time_running_part_load: Some(0.11879765621857688),
                 time_available_for_capacity_calc: 0.5,
                 time_available_for_load_ratio_calc: 0.5,
                 time_constant_for_service: 1560.,
-                compressor_power_min_load: 1.133441433423604,
-                load_ratio_continuous_min: 0.4,
-                load_ratio: 0.11879765621857688,
+                compressor_power_min_load: 2.83360358355901,
+                load_ratio_continuous_min: 1.,
+                load_ratio: 1.,
                 use_backup_heater_only: false,
-                hp_operating_in_onoff_mode: true,
-                energy_input_hp_divisor: Some(1.),
-                energy_input_hp: 0.33789047423833063,
+                hp_operating_in_onoff_mode: false,
+                energy_input_hp_divisor: None,
+                energy_input_hp: 0.33662546437937074,
                 energy_delivered_hp: 0.9999999999999999,
                 energy_input_backup: 0.0,
                 energy_delivered_backup: 0.0,
-                energy_input_total: 0.34086041564379504,
+                energy_input_total: 0.33959540578483516,
                 energy_delivered_total: 0.9999999999999999,
                 energy_heating_circ_pump: 0.001781964843278653,
                 energy_source_circ_pump: 0.0011879765621857687,
@@ -8974,21 +9052,22 @@ mod tests {
                 temp_source: 275.65,
                 cop_op_cond: Some(3.091723311370327),
                 thermal_capacity_op_cond: Some(6.9608039370972525),
-                time_running_full_load: 0.1476423586450323,
+                time_running_full_load: 0.07,
+                time_running_part_load: Some(0.17500000000000002),
                 time_available_for_capacity_calc: 0.38120234378142315,
                 time_available_for_load_ratio_calc: 0.38120234378142315,
                 time_constant_for_service: 1560.,
                 compressor_power_min_load: 0.9005726885711587,
                 load_ratio_continuous_min: 0.4,
-                load_ratio: 0.29130392547505757,
+                load_ratio: 0.3147934475156495,
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: true,
-                energy_input_hp_divisor: Some(1.),
-                energy_input_hp: 0.3348701158353444,
+                energy_input_hp_divisor: None,
+                energy_input_hp: 0.13840863263212141,
                 energy_delivered_hp: 1.,
                 energy_input_backup: 0.0,
                 energy_delivered_backup: 0.0,
-                energy_input_total: 0.3385611748014702,
+                energy_input_total: 0.1420996915982472,
                 energy_delivered_total: 1.,
                 energy_heating_circ_pump: 0.0022146353796754846,
                 energy_source_circ_pump: 0.0014764235864503231,
@@ -9005,21 +9084,22 @@ mod tests {
                 temp_source: 275.65,
                 cop_op_cond: Some(3.091723311370327),
                 thermal_capacity_op_cond: Some(6.9608039370972525),
-                time_running_full_load: 0.1436615668300253,
+                time_running_full_load: 0.05,
+                time_running_part_load: Some(0.125),
                 time_available_for_capacity_calc: 0.2335599851363908,
                 time_available_for_load_ratio_calc: 0.2335599851363908,
                 compressor_power_min_load: 0.9005726885711587,
                 load_ratio_continuous_min: 0.4,
-                load_ratio: 0.29130392547505757,
+                load_ratio: 0.3147934475156495,
                 time_constant_for_service: 1560.,
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: true,
-                energy_input_hp_divisor: Some(1.),
-                energy_input_hp: 0.3258412149938673,
+                energy_input_hp_divisor: None,
+                energy_input_hp: 0.13840863263212141,
                 energy_delivered_hp: 1.0,
                 energy_input_backup: 0.0,
                 energy_delivered_backup: 0.0,
-                energy_input_total: 0.329432754164618,
+                energy_input_total: 0.14200017180287205,
                 energy_delivered_total: 1.0,
                 energy_heating_circ_pump: 0.002154923502450379,
                 energy_source_circ_pump: 0.0014366156683002528,
@@ -9106,7 +9186,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "WIP migration"]
     fn test_timestep_end(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
@@ -9159,9 +9238,10 @@ mod tests {
             energy_output_required: 5.0,
             temp_output: Some(330.0),
             temp_source: 273.15,
-            cop_op_cond: Some(3.1824426759289044),
+            cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
             thermal_capacity_op_cond: Some(8.417674488123662),
             time_running_full_load: 0.5939882810928845,
+            time_running_part_load: None,
             time_available_for_capacity_calc: 1.,
             time_available_for_load_ratio_calc: 1.,
             time_constant_for_service: 1560.,
