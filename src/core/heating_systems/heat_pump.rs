@@ -3352,7 +3352,6 @@ impl HeatPump {
             load_ratio: Default::default(),
             use_backup_heater_only,
             hp_operating_in_onoff_mode: Default::default(),
-            energy_input_hp_divisor: None,
             energy_input_hp: Default::default(),
             energy_delivered_hp,
             energy_input_backup,
@@ -3826,95 +3825,6 @@ impl HeatPump {
         Ok(())
     }
 
-    fn calc_ancillary_energy(
-        &mut self,
-        _timestep: f64,
-        _time_remaining_current_timestep: f64,
-        timestep_index: usize,
-    ) -> anyhow::Result<()> {
-        // we need to collect times running separately before the main iteration as we cannot look into the service
-        // results while iterating over mutable values
-        let mut service_results = self.service_results.write();
-        let times_running_subsequent_services = service_results
-            .iter()
-            .filter(|r| matches!(r, ServiceResult::Full(_)))
-            .enumerate()
-            .map(|(service_no, _)| {
-                service_results[(service_no + 1)..]
-                    .iter()
-                    .filter(|r| matches!(r, ServiceResult::Full(_)))
-                    .map(|result| {
-                        if let ServiceResult::Full(result) = result {
-                            result.time_running_full_load
-                        } else {
-                            panic!("full calculation expected")
-                        }
-                    })
-                    .sum::<f64>()
-            })
-            .collect::<Vec<f64>>();
-
-        for (service_no, service_data) in service_results.iter_mut().enumerate() {
-            // we always expect full results here, but to be explicit:
-            if let ServiceResult::Full(ref mut service_data) = service_data {
-                // Unpack results of previous calculations for this service
-                let service_name = service_data.service_name.as_str();
-                let service_type = service_data.service_type;
-                let service_on = service_data.service_on;
-                let time_running_current_service = service_data.time_running_full_load;
-                let _compressor_power_min_load = service_data.compressor_power_min_load;
-                let _load_ratio_continuous_min = service_data.load_ratio_continuous_min;
-                let _load_ratio = service_data.load_ratio;
-                let use_backup_heater_only = service_data.use_backup_heater_only;
-                let hp_operating_in_onoff_mode = service_data.hp_operating_in_onoff_mode;
-                let energy_input_hp_divisor = service_data.energy_input_hp_divisor;
-
-                let time_running_subsequent_services =
-                    times_running_subsequent_services[service_no];
-
-                #[allow(clippy::neg_cmp_op_on_partial_ord)]
-                let energy_ancillary_when_off = if service_on
-                    && time_running_current_service > 0.
-                    && !(time_running_subsequent_services > 0.)
-                    && !(matches!(self.sink_type, HeatPumpSinkType::Air)
-                        && matches!(service_type, ServiceType::Water))
-                {
-                    // TODO: correct logic for 1.0.0a1
-                    // (1. - deg_coeff_op_cond
-                    //     .ok_or_else(|| anyhow!("Expected deg_coeff_op_cond to be set"))?)
-                    //     * (compressor_power_min_load / load_ratio_continuous_min)
-                    //     * max_of_2(
-                    //         time_remaining_current_timestep
-                    //             - load_ratio / load_ratio_continuous_min * timestep,
-                    //         0.,
-                    //     )
-                    0.
-                } else {
-                    0.
-                };
-
-                let energy_input_hp = if self
-                    .compressor_is_running(service_on, use_backup_heater_only)
-                    && hp_operating_in_onoff_mode
-                {
-                    energy_ancillary_when_off
-                        / energy_input_hp_divisor
-                            .expect("expected energy_input_hp_divisor to be set in a test record")
-                } else {
-                    0.
-                };
-
-                self.energy_supply_connections[service_name]
-                    .demand_energy(energy_input_hp, timestep_index)
-                    .unwrap();
-                service_data.energy_input_hp += energy_input_hp;
-                service_data.energy_input_total += energy_input_hp;
-            }
-        }
-
-        Ok(())
-    }
-
     /// Calculate auxiliary energy according to CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.7
     fn calc_auxiliary_energy(
         &self,
@@ -4000,7 +3910,6 @@ impl HeatPump {
             self.time_running_continuous = 0.;
         }
 
-        self.calc_ancillary_energy(timestep, time_remaining_current_timestep, timestep_idx)?;
         let (energy_standby, energy_crankcase_heater_mode, energy_off_mode) =
             self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx);
 
@@ -4390,7 +4299,6 @@ pub struct HeatPumpEnergyCalculation {
     load_ratio: f64,
     use_backup_heater_only: bool,
     hp_operating_in_onoff_mode: bool,
-    energy_input_hp_divisor: Option<f64>,
     energy_input_hp: f64,
     energy_delivered_hp: f64,
     energy_input_backup: f64,
@@ -7836,7 +7744,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 1.0,
                 energy_input_backup: 0.0,
@@ -7868,7 +7775,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 1.0,
                 energy_input_backup: 0.0,
@@ -7938,7 +7844,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 0.9999999999999999,
                 energy_input_backup: 0.0,
@@ -7970,7 +7875,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 1.0,
                 energy_input_backup: 0.0,
@@ -8108,7 +8012,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 1.0,
                 energy_input_backup: 0.0,
@@ -8140,7 +8043,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 1.0,
                 energy_input_backup: 0.0,
@@ -8203,7 +8105,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 0.0,
                 energy_input_backup: 0.0,
@@ -8235,7 +8136,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 0.0,
                 energy_input_backup: 0.0,
@@ -8337,7 +8237,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 0.0,
                 energy_input_backup: 0.0,
@@ -8369,7 +8268,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 0.0,
                 energy_input_backup: 0.0,
@@ -8507,7 +8405,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 1.0,
                 energy_input_backup: 0.0,
@@ -8539,7 +8436,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 1.0,
                 energy_input_backup: 0.0,
@@ -8682,7 +8578,6 @@ mod tests {
                     load_ratio: Default::default(),
                     use_backup_heater_only: false,
                     hp_operating_in_onoff_mode: Default::default(),
-                    energy_input_hp_divisor: None,
                     energy_input_hp: Default::default(),
                     energy_delivered_hp: 0.9999999999999999,
                     energy_input_backup: 0.0,
@@ -8714,7 +8609,6 @@ mod tests {
                     load_ratio: Default::default(),
                     use_backup_heater_only: false,
                     hp_operating_in_onoff_mode: Default::default(),
-                    energy_input_hp_divisor: None,
                     energy_input_hp: Default::default(),
                     energy_delivered_hp: 1.0,
                     energy_input_backup: 0.0,
@@ -8927,7 +8821,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 0.9999999999999999,
                 energy_input_backup: 0.0,
@@ -8959,7 +8852,6 @@ mod tests {
                 load_ratio: Default::default(),
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 1.,
                 energy_input_backup: 0.0,
@@ -8993,7 +8885,6 @@ mod tests {
                 time_constant_for_service: 1560.,
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: Default::default(),
-                energy_input_hp_divisor: None,
                 energy_input_hp: Default::default(),
                 energy_delivered_hp: 1.0,
                 energy_input_backup: 0.0,
@@ -9030,7 +8921,6 @@ mod tests {
                 load_ratio: 1.,
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: false,
-                energy_input_hp_divisor: None,
                 energy_input_hp: 0.33662546437937074,
                 energy_delivered_hp: 0.9999999999999999,
                 energy_input_backup: 0.0,
@@ -9062,7 +8952,6 @@ mod tests {
                 load_ratio: 0.3147934475156495,
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: true,
-                energy_input_hp_divisor: None,
                 energy_input_hp: 0.13840863263212141,
                 energy_delivered_hp: 1.,
                 energy_input_backup: 0.0,
@@ -9094,7 +8983,6 @@ mod tests {
                 time_constant_for_service: 1560.,
                 use_backup_heater_only: false,
                 hp_operating_in_onoff_mode: true,
-                energy_input_hp_divisor: None,
                 energy_input_hp: 0.13840863263212141,
                 energy_delivered_hp: 1.0,
                 energy_input_backup: 0.0,
@@ -9250,7 +9138,6 @@ mod tests {
             load_ratio: Default::default(),
             use_backup_heater_only: false,
             hp_operating_in_onoff_mode: false,
-            energy_input_hp_divisor: None,
             energy_input_hp: Default::default(),
             energy_delivered_hp: 5.0,
             energy_input_backup: Default::default(),
