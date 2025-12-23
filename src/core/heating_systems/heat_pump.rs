@@ -3369,10 +3369,29 @@ impl HeatPump {
     fn load_ratio_and_mode(
         &self,
         time_running_current_service: f64,
+        time_available_for_current_service: f64,
         temp_output: f64,
-    ) -> (f64, f64, bool) {
+    ) -> anyhow::Result<(f64, f64, bool)> {
         // Calculate load ratio
-        let load_ratio = time_running_current_service / self.simulation_timestep;
+        let load_ratio = if is_close!(
+            time_available_for_current_service,
+            0.,
+            rel_tol = 1e-09,
+            abs_tol = 1e-10
+        ) {
+            if !is_close!(
+                time_running_current_service,
+                0.,
+                rel_tol = 1e-09,
+                abs_tol = 1e-10
+            ) {
+                bail!("Calculated time running is not zero despite no time being available")
+            }
+            0.
+        } else {
+            time_running_current_service / time_available_for_current_service
+        };
+
         let load_ratio_continuous_min = if self.modulating_ctrl {
             let min_modulation_rate_low = self
                 .min_modulation_rate_low
@@ -3405,13 +3424,15 @@ impl HeatPump {
             1.0
         };
         // Determine whether HP is operating in on/off mode
-        let hp_operating_in_onoff_mode = load_ratio > 0.0 && load_ratio < load_ratio_continuous_min;
+        let hp_operating_in_onoff_mode = load_ratio > 0.
+            && !is_close!(load_ratio, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+            && load_ratio < load_ratio_continuous_min;
 
-        (
+        Ok((
             load_ratio,
             load_ratio_continuous_min,
             hp_operating_in_onoff_mode,
-        )
+        ))
     }
 
     fn compressor_is_running(&self, service_on: bool, use_backup_heater_only: bool) -> bool {
@@ -3702,7 +3723,7 @@ impl HeatPump {
                 };
                 // TODO (from Python) Check that certain parameters are the same across all space heating services
                 let (load_ratio, load_ratio_continuous_min, hp_operating_in_onoff_mode) =
-                    self.load_ratio_and_mode(time_running_for_load_ratio, temp_output);
+                    self.load_ratio_and_mode(time_running_for_load_ratio, 1., temp_output)?;
 
                 let (energy_input_hp, energy_input_hp_divisor, compressor_power_min_load) = self
                     .energy_input_compressor(
