@@ -2713,32 +2713,28 @@ impl HeatPump {
             Default::default()
         };
 
-        let hp_cost_effective = if self.cost_schedule_hybrid_hp.is_some() {
-            let service_type = *service_type
-                .as_ref()
-                .expect("A service type was expected to be available.");
-            let cop_op_cond = self.cop_op_cond(
-                &service_type,
-                temp_output,
-                temp_source,
-                temp_spread_correction,
-                design_flow_temp_op_cond,
-                simtime,
-            )?;
-            let energy_output_max_boiler = self.backup_energy_output_max(
-                temp_output,
-                temp_return_feed,
-                time_available,
-                time_start,
-                hybrid_boiler_service.clone(),
-                simtime,
-            )?;
-            let boiler_eff = self
-                .boiler
-                .as_ref()
-                .expect("A boiler was expected to be present.")
-                .read()
-                .calc_boiler_eff(
+        let hp_cost_effective = match (&self.cost_schedule_hybrid_hp, &self.boiler) {
+            (Some(_), Some(boiler)) => {
+                let service_type = *service_type
+                    .as_ref()
+                    .expect("A service type was expected to be available.");
+                let cop_op_cond = self.cop_op_cond(
+                    &service_type,
+                    temp_output,
+                    temp_source,
+                    temp_spread_correction,
+                    design_flow_temp_op_cond,
+                    simtime,
+                )?;
+                let energy_output_max_boiler = self.backup_energy_output_max(
+                    temp_output,
+                    temp_return_feed,
+                    time_available,
+                    time_start,
+                    hybrid_boiler_service.clone(),
+                    simtime,
+                )?;
+                let boiler_eff = boiler.read().calc_boiler_eff(
                     false,
                     kelvin_to_celsius(temp_return_feed)?,
                     energy_output_max_boiler,
@@ -2746,9 +2742,9 @@ impl HeatPump {
                     Some(timestep),
                     simtime,
                 )?;
-            self.is_heat_pump_cost_effective(cop_op_cond, boiler_eff, simtime)
-        } else {
-            true
+                self.is_heat_pump_cost_effective(cop_op_cond, boiler_eff, simtime)
+            }
+            _ => true,
         };
 
         let energy_max = if !hp_cost_effective {
