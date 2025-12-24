@@ -7399,6 +7399,10 @@ mod tests {
         assert_eq!(result, true)
     }
 
+    // TODO test_outside_operating_limits_sinktypes
+    // TODO test_load_ratio_and_mode
+    // TODO test_energy_input_compressor
+
     #[rstest]
     fn test_inadequate_capacity(
         external_conditions: ExternalConditions,
@@ -8508,6 +8512,8 @@ mod tests {
         }
     }
 
+    // TODO test_run_demand_energy_calc_other
+
     #[rstest]
     fn test_demand_energy(
         external_conditions: ExternalConditions,
@@ -8654,6 +8660,9 @@ mod tests {
             ]
         );
     }
+
+    // TODO test_demand_energy_hybrid_boiler_service
+    // TODO test_throughput_factor
 
     #[rstest]
     fn test_running_time_throughput_factor(
@@ -9031,6 +9040,8 @@ mod tests {
 
         assert_eq!(*heat_pump.service_results.read().deref(), expected_results);
     }
+
+    // TODO test_calculate_energy_input_error
 
     #[rstest]
     fn test_calc_auxiliary_energy(
