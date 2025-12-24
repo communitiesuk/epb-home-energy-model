@@ -134,7 +134,7 @@ pub(crate) enum ShadingObjectType {
 
 #[derive(Clone, Debug)]
 pub struct ExternalConditions {
-    air_temps: Vec<f64>,
+    pub(crate) air_temps: Vec<f64>,
     wind_speeds: Vec<f64>,
     wind_directions: Vec<f64>,
     diffuse_horizontal_radiations: Vec<f64>,

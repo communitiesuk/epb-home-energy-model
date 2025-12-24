@@ -1667,8 +1667,8 @@ impl HeatPumpServiceSpace {
             Some(TempSpreadCorrectionArg::Callable(
                 self.temp_spread_correction_fn(source_type),
             )),
-            Some(time_start),
             None,
+            Some(time_start),
             self.hybrid_boiler_service
                 .as_ref()
                 .map(|service| HybridBoilerService::Space(service.clone())),
@@ -6069,9 +6069,7 @@ mod tests {
     }
 
     #[fixture]
-    fn external_conditions(
-        simulation_time_for_heat_pump: SimulationTime,
-    ) -> Arc<ExternalConditions> {
+    fn external_conditions(simulation_time_for_heat_pump: SimulationTime) -> ExternalConditions {
         let simulation_time_iterator = simulation_time_for_heat_pump.iter();
         let wind_speeds = vec![3.7, 3.8];
         let wind_directions = vec![200., 220.];
@@ -6091,7 +6089,7 @@ mod tests {
             },
         ]
         .into();
-        Arc::new(ExternalConditions::new(
+        ExternalConditions::new(
             &simulation_time_iterator,
             air_temps,
             wind_speeds,
@@ -6110,7 +6108,7 @@ mod tests {
             false,
             false,
             shading_segments,
-        ))
+        )
     }
 
     fn create_temp_internal_air_fn(canned_value: f64) -> TempInternalAirFn {
@@ -6127,7 +6125,7 @@ mod tests {
     }
 
     fn create_boiler(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         energy_supply: EnergySupply,
         simulation_time_for_heat_pump: SimulationTime,
         energy_supply_conn_name_auxiliary: &str,
@@ -6157,7 +6155,7 @@ mod tests {
             boiler_details,
             energy_supply,
             energy_supply_conn_aux,
-            external_conditions,
+            Arc::new(external_conditions),
             simulation_time_for_heat_pump.step,
         )
         .unwrap()
@@ -6526,7 +6524,7 @@ mod tests {
         boiler: Option<Arc<RwLock<Boiler>>>,
         throughput_exhaust_air: Option<f64>,
         temp_internal_air: Option<f64>,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
         cost_schedule_hybrid_hp: Option<Value>,
     ) -> HeatPump {
@@ -6540,7 +6538,7 @@ mod tests {
             Arc::from(RwLock::from(energy_supply)),
             energy_supply_conn_name_auxiliary,
             simulation_time_for_heat_pump.step,
-            external_conditions,
+            Arc::new(external_conditions),
             number_of_zones,
             throughput_exhaust_air,
             energy_supply_heat_source,
@@ -6554,7 +6552,7 @@ mod tests {
 
     fn create_default_heat_pump(
         energy_supply_conn_name_auxiliary: Option<&str>,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
         backup_ctrl_type: Option<&str>,
     ) -> HeatPump {
@@ -6578,7 +6576,7 @@ mod tests {
 
     fn create_heat_pump_with_boiler(
         energy_supply_conn_name_auxiliary: &str,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
         let boiler = Arc::from(RwLock::from(create_boiler(
@@ -6607,7 +6605,7 @@ mod tests {
         energy_supply_conn_name_auxiliary: &str,
         time_delay_backup: Option<f64>,
         temp_return_feed_max: Option<u32>,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
         let time_delay_backup = time_delay_backup.unwrap_or(2.);
@@ -6630,7 +6628,7 @@ mod tests {
 
     fn create_heat_pump_sink_air(
         energy_supply_conn_name_auxiliary: &str,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
         let input = create_heat_pump_sink_air_input_from_json();
@@ -6649,7 +6647,7 @@ mod tests {
 
     fn create_heat_pump_with_energy_supply_heat_source(
         energy_supply_conn_name_auxiliary: &str,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
         let energy_supply_heat_source = RwLock::from(
@@ -6687,7 +6685,7 @@ mod tests {
 
     #[rstest]
     fn test_create_service_connection(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let service_name = "new_service";
@@ -6740,7 +6738,7 @@ mod tests {
     #[rstest]
     fn test_create_service_hot_water_combi(
         simulation_time_for_heat_pump: SimulationTime,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
     ) {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: boiler";
         let heat_pump_with_boiler = create_heat_pump_with_boiler(
@@ -6793,7 +6791,7 @@ mod tests {
     #[rstest]
     fn test_create_service_hot_water(
         simulation_time_for_heat_pump: SimulationTime,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
     ) {
         let heat_pump = create_default_heat_pump(
             Some("HeatPump_auxiliary: HotWater"),
@@ -6863,7 +6861,7 @@ mod tests {
 
     #[rstest]
     fn test_create_service_space_heating(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let service_name = "service_space";
@@ -6959,7 +6957,7 @@ mod tests {
 
     #[rstest]
     fn test_create_service_space_heating_warm_air(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let heat_pump = create_default_heat_pump(
@@ -7042,7 +7040,7 @@ mod tests {
 
     #[rstest]
     fn test_get_temp_source(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let heat_pump = create_default_heat_pump(
@@ -7089,7 +7087,7 @@ mod tests {
 
     #[rstest]
     fn test_thermal_capacity_op_cond(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         // Check with source_type OutsideAir
@@ -7121,7 +7119,7 @@ mod tests {
 
     #[rstest]
     fn test_backup_energy_output_max(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         // With TopUp backup control
@@ -7227,7 +7225,7 @@ mod tests {
 
     #[rstest]
     fn test_cop_op_cond(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         // Check with type service type SPACE
@@ -7284,7 +7282,7 @@ mod tests {
     #[rstest]
     /// Check energy output limited by upper temperature
     fn test_energy_output_limited(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let energy_output_required = 1.5;
@@ -7326,7 +7324,7 @@ mod tests {
     #[rstest]
     /// Check if backup heater is available or still in delay period
     fn test_backup_heater_delay_time_elapsed(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let heat_pump = create_default_heat_pump(
@@ -7370,7 +7368,7 @@ mod tests {
 
     #[rstest]
     fn test_outside_operating_limits(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let heat_pump = create_default_heat_pump(
@@ -7403,7 +7401,7 @@ mod tests {
 
     #[rstest]
     fn test_inadequate_capacity(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let heat_pump = create_default_heat_pump(
@@ -7437,7 +7435,7 @@ mod tests {
 
     #[rstest]
     fn test_inadequate_capacity_topup(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let mut heat_pump = create_default_heat_pump(
@@ -7475,7 +7473,7 @@ mod tests {
 
     #[rstest]
     fn test_inadequate_capacity_substitute(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let mut heat_pump = create_default_heat_pump(
@@ -7513,7 +7511,7 @@ mod tests {
 
     #[rstest]
     fn test_inadequate_capacity_no_delay_elapsed(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let mut heat_pump = create_default_heat_pump(
@@ -7551,7 +7549,7 @@ mod tests {
 
     #[rstest]
     fn test_inadequate_capacity_insufficient_backup(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let mut heat_pump = create_default_heat_pump(
@@ -7589,7 +7587,7 @@ mod tests {
 
     #[rstest]
     fn test_is_heat_pump_cost_effective_equal_cost(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let cop_op_cond = 3.;
@@ -7641,7 +7639,7 @@ mod tests {
 
     #[rstest]
     fn test_use_backup_heater_only(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let cop_op_cond = 3.0;
@@ -7716,7 +7714,7 @@ mod tests {
 
     #[rstest]
     fn test_run_demand_energy_calc(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         // Test with hybrid_boiler_service and boiler_eff
@@ -8512,7 +8510,7 @@ mod tests {
 
     #[rstest]
     fn test_demand_energy(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
         energy_supply: EnergySupply,
     ) {
@@ -8659,7 +8657,7 @@ mod tests {
 
     #[rstest]
     fn test_running_time_throughput_factor(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let temp_internal_air = 30.;
@@ -8705,7 +8703,7 @@ mod tests {
     /// this test was added to guard against a deadlock issue with demo_hp_warm_air.json (use of temp_spread_correction_fn)
     #[rstest]
     fn test_demand_energy_on_heat_pump_service_space_warm_air(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: sink_air";
@@ -8748,7 +8746,7 @@ mod tests {
     /// this test was added to guard against a deadlock issue related to what we found with demo_hp_warm_air.json (use of temp_spread_correction_fn)
     #[rstest]
     fn test_running_time_throughput_factor_on_heat_pump_service_space(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: with_exhaust";
@@ -8805,7 +8803,7 @@ mod tests {
 
     #[rstest]
     fn test_calc_throughput_factor(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let heat_pump = create_default_heat_pump(
@@ -8820,7 +8818,7 @@ mod tests {
 
     #[rstest]
     fn test_calc_energy_input(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let heat_pump = Arc::new(Mutex::new(create_default_heat_pump(
@@ -9036,7 +9034,7 @@ mod tests {
 
     #[rstest]
     fn test_calc_auxiliary_energy(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let heat_pump = create_default_heat_pump(
@@ -9056,7 +9054,7 @@ mod tests {
 
     #[rstest]
     fn test_extract_energy_from_source(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp1";
@@ -9107,7 +9105,7 @@ mod tests {
 
     #[rstest]
     fn test_timestep_end(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         // Call demand_energy function to record the state of variables
@@ -9193,6 +9191,142 @@ mod tests {
 
         assert_eq!(heat_pump.total_time_running_current_timestep_full_load, 0.);
         assert_eq!(*heat_pump.service_results.read().deref(), []);
+    }
+
+    // skipping Python's test_timestep_end_extract_energy due to mocking
+
+    #[rstest]
+    fn test_backup_only_operation(
+        mut external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let temp_limit_upper = 65.;
+        let control = Arc::new(create_setpoint_time_control(vec![Some(20.), Some(20.)]));
+        external_conditions.air_temps = vec![-10., 2.5];
+        let heat_pump_input = create_heat_pump_input_from_json(Some("Substitute"));
+        let heat_pump = Arc::new(Mutex::new(create_heat_pump(
+            heat_pump_input,
+            "hp_aux",
+            None,
+            None,
+            Some(101.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        )));
+        let hp_service_space1 = HeatPump::create_service_space_heating(
+            heat_pump.clone(),
+            "hp_space_heating_1",
+            HeatPumpEmitterType::RadiatorsUfh,
+            temp_limit_upper,
+            5.,
+            55.,
+            control.clone(),
+            120.,
+        );
+        let hp_service_space2 = HeatPump::create_service_space_heating(
+            heat_pump.clone(),
+            "hp_space_heating_2",
+            HeatPumpEmitterType::RadiatorsUfh,
+            temp_limit_upper,
+            5.,
+            55.,
+            control,
+            120.,
+        );
+        hp_service_space1
+            .demand_energy(
+                2.,
+                35.,
+                30.,
+                Some(0.),
+                None,
+                None,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
+        hp_service_space2
+            .demand_energy(
+                2.,
+                35.,
+                30.,
+                Some(0.25),
+                None,
+                None,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
+
+        let expected_results = vec![
+            ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
+                service_name: "hp_space_heating_1".into(),
+                service_type: ServiceType::Space,
+                service_on: true,
+                energy_output_required: 2.0,
+                temp_output: Some(308.15),
+                temp_source: 263.15,
+                cop_op_cond: Some(3.317191947724431), // 3.3171919477244307 in Python
+                thermal_capacity_op_cond: Some(9.243872347406562),
+                time_running_full_load: 0.6666666666666666,
+                time_running_part_load: None,
+                time_available_for_capacity_calc: 1.,
+                time_available_for_load_ratio_calc: 1.,
+                time_constant_for_service: 1370.,
+                compressor_power_min_load: Default::default(),
+                load_ratio_continuous_min: Default::default(),
+                load_ratio: Default::default(),
+                use_backup_heater_only: true,
+                hp_operating_in_onoff_mode: Default::default(),
+                energy_input_hp: Default::default(),
+                energy_delivered_hp: 0.,
+                energy_input_backup: 2.,
+                energy_delivered_backup: 2.,
+                energy_input_total: Default::default(),
+                energy_delivered_total: 2.,
+                energy_heating_circ_pump: 0.009999999999999998,
+                energy_source_circ_pump: 0.,
+                energy_output_required_boiler: 0.,
+                energy_heating_warm_air_fan: 0.,
+                energy_output_delivered_boiler: Some(0.),
+            })),
+            ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
+                service_name: "hp_space_heating_2".into(),
+                service_type: ServiceType::Space,
+                service_on: true,
+                energy_output_required: 2.0,
+                temp_output: Some(308.15),
+                temp_source: 263.15,
+                cop_op_cond: Some(3.317191947724431), // 3.3171919477244307 in Python
+                thermal_capacity_op_cond: Some(9.243872347406562),
+                time_running_full_load: 0.25,
+                time_running_part_load: None,
+                time_available_for_capacity_calc: 0.25,
+                time_available_for_load_ratio_calc: 0.33333333333333337,
+                time_constant_for_service: 1370.,
+                compressor_power_min_load: Default::default(),
+                load_ratio_continuous_min: Default::default(),
+                load_ratio: Default::default(),
+                use_backup_heater_only: true,
+                hp_operating_in_onoff_mode: Default::default(),
+                energy_input_hp: Default::default(),
+                energy_delivered_hp: 0.,
+                energy_input_backup: 0.75,
+                energy_delivered_backup: 0.75,
+                energy_input_total: Default::default(),
+                energy_delivered_total: 0.75,
+                energy_heating_circ_pump: 0.00375,
+                energy_source_circ_pump: 0.,
+                energy_output_required_boiler: 0.,
+                energy_heating_warm_air_fan: 0.,
+                energy_output_delivered_boiler: Some(0.),
+            })),
+        ];
+
+        assert_eq!(
+            *heat_pump.lock().service_results.read().deref(),
+            expected_results
+        );
     }
 
     // In Python below tests are in a separate class called TestHeatPump_HWOnly
