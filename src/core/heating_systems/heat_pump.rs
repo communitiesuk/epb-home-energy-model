@@ -3569,7 +3569,7 @@ impl HeatPump {
         let energy_output_delivered_boiler = if let Some(hybrid_boiler) = hybrid_boiler_service {
             // Call demand function for boiler and
             // return the boiler running time so that it can be added to the total running time
-            let hybrid_service_bool = true;
+            let is_hybrid_service = true;
 
             let time_elapsed_hp = match self.backup_ctrl {
                 HeatPumpBackupControlType::TopUp => None,
@@ -3586,7 +3586,7 @@ impl HeatPump {
                             temp_output.ok_or_else(|| anyhow!("Expected temp_output to be set"))?,
                         )?,
                         Some(kelvin_to_celsius(temp_return_feed)?),
-                        Some(hybrid_service_bool),
+                        Some(is_hybrid_service),
                         time_elapsed_hp,
                         Some(update_heat_source_state),
                         simtime,
@@ -3599,7 +3599,7 @@ impl HeatPump {
                     )?,
                     Some(kelvin_to_celsius(temp_return_feed)?),
                     time_start,
-                    Some(hybrid_service_bool),
+                    Some(is_hybrid_service),
                     time_elapsed_hp,
                     Some(update_heat_source_state),
                     simtime,
@@ -3829,7 +3829,7 @@ impl HeatPump {
     fn calc_auxiliary_energy(
         &self,
         timestep: f64,
-        time_remaining_current_timestep: f64,
+        time_remaining_current_timestep_part_load: f64,
         timestep_idx: usize,
     ) -> (f64, f64, f64) {
         // Retrieve control settings for this timestep
@@ -3854,12 +3854,12 @@ impl HeatPump {
         let mut energy_crankcase_heater_mode = 0.0;
         match (heating_profile_on, water_profile_on) {
             (true, _) => {
-                energy_standby = time_remaining_current_timestep * self.power_standby;
+                energy_standby = time_remaining_current_timestep_part_load * self.power_standby;
                 energy_crankcase_heater_mode =
-                    time_remaining_current_timestep * self.power_crankcase_heater_mode;
+                    time_remaining_current_timestep_part_load * self.power_crankcase_heater_mode;
             }
             (false, true) => {
-                energy_standby = time_remaining_current_timestep * self.power_standby;
+                energy_standby = time_remaining_current_timestep_part_load * self.power_standby;
             }
             (false, false) => {
                 energy_off_mode = timestep * self.power_off_mode;
@@ -3879,7 +3879,7 @@ impl HeatPump {
     }
 
     /// If HP uses heat network as source, calculate energy extracted from heat network
-    fn extract_energy_from_source(&self, timestep_idx: usize) {
+    fn extract_energy_from_source(&self, timestep_idx: usize) -> anyhow::Result<()> {
         for service_data in self.service_results.read().iter() {
             if let ServiceResult::Full(service_data) = service_data {
                 let HeatPumpEnergyCalculation {
@@ -3889,32 +3889,55 @@ impl HeatPump {
                     ..
                 } = service_data.as_ref();
                 let energy_extracted_hp = energy_delivered_hp - energy_input_hp;
+
+                if energy_extracted_hp < 0.
+                    && !is_close!(energy_extracted_hp, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+                {
+                    bail!("Energy extracted from source ({energy_extracted_hp}) by heat pump should not be negative for service: {service_name}")
+                }
                 self.energy_supply_heat_source_connections[service_name.as_str()]
-                    .demand_energy(energy_extracted_hp, timestep_idx)
-                    .unwrap();
+                    .demand_energy(energy_extracted_hp, timestep_idx)?;
             }
         }
+        Ok(())
     }
 
     /// Calculations to be done at the end of each timestep
     pub fn timestep_end(&mut self, timestep_idx: usize) -> anyhow::Result<()> {
-        self.calc_energy_input(timestep_idx).unwrap();
+        self.calc_energy_input(timestep_idx)?;
 
         let timestep = self.simulation_timestep;
-        let time_remaining_current_timestep =
+        let time_remaining_current_timestep_full_load =
             timestep - self.total_time_running_current_timestep_full_load;
+        let part_load_sum: f64 = self
+            .service_results
+            .read()
+            .iter()
+            .filter_map(|result| {
+                if let ServiceResult::Full(heat_pump_calc) = result {
+                    heat_pump_calc.time_running_part_load
+                } else {
+                    None
+                }
+            })
+            .sum();
+        let time_remaining_current_timestep_part_load = timestep - part_load_sum;
 
-        if time_remaining_current_timestep == 0.0 {
+        if time_remaining_current_timestep_full_load == 0.0 {
             self.time_running_continuous += self.total_time_running_current_timestep_full_load;
         } else {
             self.time_running_continuous = 0.;
         }
 
-        let (energy_standby, energy_crankcase_heater_mode, energy_off_mode) =
-            self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx);
+        let (energy_standby, energy_crankcase_heater_mode, energy_off_mode) = self
+            .calc_auxiliary_energy(
+                timestep,
+                time_remaining_current_timestep_part_load,
+                timestep_idx,
+            );
 
         if self.energy_supply_heat_source.is_some() {
-            self.extract_energy_from_source(timestep_idx);
+            self.extract_energy_from_source(timestep_idx)?;
         }
 
         // If detailed results are to be output, save the results from the current timestep
@@ -3994,7 +4017,7 @@ impl HeatPump {
             *results_per_timestep
                 .get_mut(service_name)
                 .unwrap()
-                .entry(("energy_delivered_H4".into(), "kWh".into()))
+                .entry(("energy_delivered_H5".into(), "kWh".into()))
                 .or_default() = if matches!(
                 match &self.detailed_results.as_ref().unwrap()[0].read()[service_idx] {
                     ServiceResult::Full(calc) => calc.service_type,
@@ -4178,7 +4201,7 @@ impl HeatPump {
     }
 }
 
-const OUTPUT_PARAMETERS: [(&str, Option<&str>, bool); 21] = [
+const OUTPUT_PARAMETERS: [(&str, Option<&str>, bool); 22] = [
     ("service_name", None, false),
     ("service_type", None, false),
     ("service_on", None, false),
@@ -4187,7 +4210,8 @@ const OUTPUT_PARAMETERS: [(&str, Option<&str>, bool); 21] = [
     ("temp_source", Some("K"), false),
     ("thermal_capacity_op_cond", Some("kW"), false),
     ("cop_op_cond", None, false),
-    ("time_running", Some("hours"), true),
+    ("time_running_full_load", Some("hours"), true),
+    ("time_running_part_load", Some("hours"), true),
     ("load_ratio", None, false),
     ("hp_operating_in_onoff_mode", None, false),
     ("energy_delivered_HP", Some("kWh"), true),
@@ -9066,7 +9090,7 @@ mod tests {
 
         let test_service_results = heat_pump_with_nw.service_results.read().clone();
         // Call the method under test
-        heat_pump_with_nw.extract_energy_from_source(0);
+        heat_pump_with_nw.extract_energy_from_source(0).unwrap();
         let actual_service_results = heat_pump_with_nw.service_results.read().clone();
         assert_eq!(actual_service_results, test_service_results);
 
