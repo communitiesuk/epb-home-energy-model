@@ -4160,13 +4160,11 @@ impl HeatPump {
             + &results_totals[&("energy_delivered_backup".into(), "kWh".into())].clone();
         let cop_h3_denominator = &cop_h2_denominator
             + &results_totals[&("energy_input_backup".into(), "kWh".into())].clone();
-        let cop_h4_numerator =
-            results_totals[&("energy_delivered_H5".into(), "kWh".into())].clone();
+        let cop_h4_numerator = cop_h3_numerator.clone();
         let cop_h4_denominator = &cop_h3_denominator
             + &results_totals[&("energy_heating_circ_pump".into(), "kWh".into())].clone();
-
-        let cop_h4_note =
-            "Note: For water heating services, only valid when HP is only heat source";
+        let _cop_h5_numerator = &results_totals[&("energy_delivered_H5".into(), "kWh".into())];
+        let _cop_h5_denominator = cop_h4_denominator.clone();
 
         results_totals.insert(
             ("CoP (H1)".into(), "".into()),
@@ -4195,9 +4193,19 @@ impl HeatPump {
         let (h4_division, h4_subkey) = if cop_h4_denominator == 0.0 {
             (0.0.into(), "")
         } else {
-            (cop_h4_numerator / cop_h4_denominator, cop_h4_note)
+            (cop_h4_numerator / cop_h4_denominator, "")
         };
         results_totals.insert(("CoP (H4)".into(), h4_subkey.into()), h4_division);
+
+        // TODO 1.0.0a1 migration
+        // if cop_h5_denominator == 0.0:
+        //     results_totals[("CoP (H5)", None)] = 0.0
+        // elif cop_h5_numerator is None:
+        //     cop_h5_note = "Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank"
+        // results_totals[("CoP (H5)", cop_h5_note)] = None
+        // else:
+        // cop_h5_note = "Note: For water heating services, only valid when HP is only heat source"
+        // results_totals[("CoP (H5)", cop_h5_note)] = cop_h5_numerator / cop_h5_denominator
     }
 }
 
