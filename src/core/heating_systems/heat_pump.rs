@@ -4048,7 +4048,7 @@ impl HeatPump {
         );
         results_annual.insert("auxiliary".into(), Default::default());
         results_annual.get_mut("Overall").unwrap().insert(
-            ("energy_delivered_H4".into(), "kWh".into()),
+            ("energy_delivered_H5".into(), "kWh".into()),
             ResultParamValue::Number(0.0),
         );
         // Report auxiliary parameters (not specific to a service)
@@ -4104,19 +4104,19 @@ impl HeatPump {
             *results_annual
                 .get_mut(service_name)
                 .unwrap()
-                .get_mut(&("energy_delivered_H4".into(), "kWh".into()))
+                .get_mut(&("energy_delivered_H5".into(), "kWh".into()))
                 .unwrap() = results_per_timestep[service_name.as_str()]
-                [&("energy_delivered_H4".into(), "kWh".into())]
+                [&("energy_delivered_H5".into(), "kWh".into())]
                 .iter()
                 .cloned()
                 .sum::<ResultParamValue>();
             let service_energy_delivered_results = results_annual[service_name.as_str()]
-                [&("energy_delivered_H4".into(), "kWh".into())]
+                [&("energy_delivered_H5".into(), "kWh".into())]
                 .clone();
             *results_annual
                 .get_mut("Overall")
                 .unwrap()
-                .get_mut(&("energy_delivered_H4".into(), "kWh".into()))
+                .get_mut(&("energy_delivered_H5".into(), "kWh".into()))
                 .unwrap() += service_energy_delivered_results;
             self.calc_service_cop(results_annual.get_mut(service_name).unwrap(), None);
         }
@@ -4161,7 +4161,7 @@ impl HeatPump {
         let cop_h3_denominator = &cop_h2_denominator
             + &results_totals[&("energy_input_backup".into(), "kWh".into())].clone();
         let cop_h4_numerator =
-            results_totals[&("energy_delivered_H4".into(), "kWh".into())].clone();
+            results_totals[&("energy_delivered_H5".into(), "kWh".into())].clone();
         let cop_h4_denominator = &cop_h3_denominator
             + &results_totals[&("energy_heating_circ_pump".into(), "kWh".into())].clone();
 
