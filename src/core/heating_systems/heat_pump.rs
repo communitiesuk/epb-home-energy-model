@@ -9101,6 +9101,16 @@ mod tests {
         assert_eq!(actual_service_results, test_service_results);
 
         // upstream uses mock to now check demand_energy is delegated to - was not considered that this is useful enough test to migrate
+
+        // Test error when energy_delivered_hp < energy_input_hp
+        if let Some(ServiceResult::Full(result)) =
+            heat_pump_with_nw.service_results.write().get_mut(0)
+        {
+            result.energy_delivered_hp = 30.;
+            result.energy_input_hp = 100.;
+        }
+
+        assert!(heat_pump_with_nw.extract_energy_from_source(0).is_err());
     }
 
     #[rstest]
@@ -9194,6 +9204,10 @@ mod tests {
     }
 
     // skipping Python's test_timestep_end_extract_energy due to mocking
+
+    // TODO test_output_detailed_results_water
+    // TODO test_output_detailed_results_space
+    // TODO test_calc_service_cop_zero_values
 
     #[rstest]
     fn test_backup_only_operation(
