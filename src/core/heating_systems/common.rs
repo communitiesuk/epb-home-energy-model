@@ -259,7 +259,9 @@ impl SpaceHeatSystem {
 
     pub(crate) fn output_emitter_results(&self) -> Option<Vec<EmittersDetailedResult>> {
         if let SpaceHeatSystem::WetDistribution(emitters) = self {
-            emitters.output_emitter_results()
+            emitters
+                .output_emitter_results()
+                .and_then(|results| results.into_iter().collect())
         } else {
             None
         }

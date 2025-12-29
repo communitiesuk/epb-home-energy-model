@@ -5398,6 +5398,7 @@ fn space_heat_systems_from_input(
                             external_conditions.clone(),
                             *ecodesign_controller,
                             *design_flow_temp as f64,
+                            simulation_time.total_steps(),
                             energy_supply_fc_conn,
                             detailed_output_heating_cooling.into(),
                             with_buffer_tank.into(),
