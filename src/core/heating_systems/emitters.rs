@@ -72,7 +72,7 @@ pub(crate) struct Emitters {
     temp_emitter_prev: AtomicF64,
     target_flow_temp: AtomicF64, // In Python this is set from inside demand energy and does not exist before then
     output_detailed_results: bool,
-    emitters_detailed_results: Option<Arc<RwLock<Vec<EmittersDetailedResult>>>>,
+    emitters_detailed_results: Option<Arc<RwLock<Vec<Option<EmittersDetailedResult>>>>>,
     energy_supply_fan_coil_conn: Option<Arc<EnergySupplyConnection>>,
     min_flow_rate: f64,
     max_flow_rate: f64,
@@ -296,6 +296,7 @@ impl Emitters {
         ecodesign_controller: EcoDesignController,
         design_flow_temp: f64,
         initial_temp: f64,
+        simulation_timestep_count: usize,
         energy_supply_fan_coil_conn: Option<Arc<EnergySupplyConnection>>,
         output_detailed_results: Option<bool>,
         with_buffer_tank: Option<bool>,
@@ -513,7 +514,8 @@ impl Emitters {
             temp_emitter_prev: initial_temp.into(),
             target_flow_temp: 20.0.into(), // initial value, though expected to be updated before being used
             output_detailed_results,
-            emitters_detailed_results: output_detailed_results.then(Default::default),
+            emitters_detailed_results: output_detailed_results
+                .then(|| Arc::new(RwLock::new(vec![None; simulation_timestep_count]))),
             energy_supply_fan_coil_conn,
             min_flow_rate,
             max_flow_rate,
@@ -1579,11 +1581,12 @@ impl Emitters {
                 energy_req_from_heat_source,
                 fan_energy_kwh,
             };
+
             self.emitters_detailed_results
                 .as_ref()
                 .unwrap()
                 .write()
-                .insert(simtime.index, result);
+                .insert(simtime.index, result.into());
         }
 
         Ok((energy_released_from_emitters, energy_req_from_heat_source))
@@ -1873,7 +1876,7 @@ impl Emitters {
     //     )
     // }
 
-    pub(crate) fn output_emitter_results(&self) -> Option<Vec<EmittersDetailedResult>> {
+    pub(crate) fn output_emitter_results(&self) -> Option<Vec<Option<EmittersDetailedResult>>> {
         self.emitters_detailed_results
             .as_ref()
             .map(|results| results.read().clone())
@@ -2089,6 +2092,7 @@ mod tests {
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
         ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
         override_ecodesign_controller: Option<EcoDesignController>,
         with_buffer_tank: Option<bool>,
         min_max_flow: Option<(f64, f64)>,
@@ -2145,6 +2149,7 @@ mod tests {
             ecodesign_controller,
             design_flow_temp,
             20.,
+            simulation_time.total_steps(),
             None,
             false.into(),
             with_buffer_tank.into(),
@@ -2158,12 +2163,14 @@ mod tests {
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
         ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
     ) -> Emitters {
         emitters_fixture(
             heat_source,
             external_conditions,
             zone,
             ecodesign_controller,
+            simulation_time,
             None,
             None,
             None,
@@ -2229,6 +2236,7 @@ mod tests {
         ecodesign_controller: EcoDesignController,
         energy_supply_conn: EnergySupplyConnection,
         fancoil_test_data: Value,
+        simulation_time: SimulationTime,
     ) -> Emitters {
         let emitters = vec![serde_json::from_value(json!({
             "wet_emitter_type": "fancoil",
@@ -2254,6 +2262,7 @@ mod tests {
             ecodesign_controller,
             55.0,
             20.,
+            simulation_time.total_steps(),
             Some(Arc::new(energy_supply_conn)),
             None,
             None,
@@ -2271,6 +2280,7 @@ mod tests {
         zone: Arc<dyn SimpleZone>,
         external_conditions: ExternalConditions,
         ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
     ) {
         assert!(fancoil.output_emitter_results().is_none());
 
@@ -2290,6 +2300,7 @@ mod tests {
             ecodesign_controller,
             55.0,
             20.,
+            simulation_time.total_steps(),
             None,
             Some(true),
             None,
@@ -2305,6 +2316,7 @@ mod tests {
         external_conditions: ExternalConditions,
         ecodesign_controller: EcoDesignController,
         fancoil_test_data: Value,
+        simulation_time: SimulationTime,
     ) {
         // Test that the constructor errors if thermal mass is None for a radiator type
         let emitters = [WetEmitterInput::Radiator {
@@ -2328,6 +2340,7 @@ mod tests {
             ecodesign_controller,
             55.0,
             20.,
+            simulation_time.total_steps(),
             None,
             Some(true),
             None,
@@ -2357,6 +2370,7 @@ mod tests {
             ecodesign_controller,
             55.0,
             20.,
+            simulation_time.total_steps(),
             None,
             Some(true),
             None,
@@ -2385,6 +2399,7 @@ mod tests {
             ecodesign_controller,
             55.0,
             20.,
+            simulation_time.total_steps(),
             None,
             Some(true),
             None,
@@ -2416,6 +2431,7 @@ mod tests {
             ecodesign_controller,
             55.0,
             20.,
+            simulation_time.total_steps(),
             None,
             Some(true),
             None,
@@ -2451,6 +2467,7 @@ mod tests {
             ecodesign_controller,
             55.0,
             20.,
+            simulation_time.total_steps(),
             None,
             Some(true),
             None,
@@ -2488,6 +2505,7 @@ mod tests {
             ecodesign_controller,
             55.0,
             20.,
+            simulation_time.total_steps(),
             None,
             Some(true),
             None,
@@ -2562,6 +2580,7 @@ mod tests {
             ecodesign_controller,
             55.0,
             20.,
+            simulation_time_iterator.total_steps(),
             None,
             Some(true),
             None,
@@ -2618,6 +2637,7 @@ mod tests {
             ecodesign_controller,
             60.0,
             20.,
+            simulation_time_iterator.total_steps(),
             None,
             Some(true),
             None,
@@ -2673,6 +2693,7 @@ mod tests {
             ecodesign_controller,
             10.,
             20.,
+            simulation_time_iterator.total_steps(),
             None,
             Some(true),
             None,
@@ -2720,6 +2741,7 @@ mod tests {
             ecodesign_controller,
             80.,
             20.,
+            simulation_time_iterator.total_steps(),
             None,
             Some(true),
             None,
@@ -2785,6 +2807,7 @@ mod tests {
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
+        simulation_time: SimulationTime,
     ) -> Emitters {
         let ecodesign_controller = EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassII,
@@ -2798,6 +2821,7 @@ mod tests {
             external_conditions,
             zone,
             ecodesign_controller,
+            simulation_time,
             None,
             None,
             None,
@@ -2812,6 +2836,7 @@ mod tests {
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
+        simulation_time: SimulationTime,
     ) -> Emitters {
         let ecodesign_controller = EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassIV,
@@ -2825,6 +2850,7 @@ mod tests {
             external_conditions,
             zone,
             ecodesign_controller,
+            simulation_time,
             None,
             None,
             None,
@@ -2909,6 +2935,7 @@ mod tests {
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
+        simulation_time: SimulationTime,
     ) {
         let ecodesign_controller = EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassII,
@@ -2922,6 +2949,7 @@ mod tests {
             external_conditions,
             zone,
             ecodesign_controller,
+            simulation_time,
             None,
             None,
             None,
@@ -2943,6 +2971,7 @@ mod tests {
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
+        simulation_time: SimulationTime,
     ) -> Emitters {
         let thermal_mass = 0.14;
         let temp_diff_emit_dsgn = 10.0;
@@ -2978,6 +3007,7 @@ mod tests {
             ecodesign_controller,
             55.0,
             20., // default value for now - replace!!
+            simulation_time.total_steps(),
             None,
             None,
             None,
@@ -3170,12 +3200,14 @@ mod tests {
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
         ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
     ) -> Emitters {
         let emitters = emitters_fixture(
             heat_source,
             external_conditions,
             zone,
             ecodesign_controller,
+            simulation_time,
             None,
             Some(true),
             None,
@@ -3357,12 +3389,14 @@ mod tests {
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
         ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
     ) -> Emitters {
         emitters_fixture(
             heat_source,
             external_conditions,
             zone,
             ecodesign_controller,
+            simulation_time,
             None,
             Some(true),
             Some((0.01, 0.02)),
@@ -3399,12 +3433,14 @@ mod tests {
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
         ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
     ) -> Emitters {
         emitters_fixture(
             heat_source,
             external_conditions,
             zone,
             ecodesign_controller,
+            simulation_time,
             None,
             Some(true),
             None,
@@ -3461,12 +3497,14 @@ mod tests {
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
         ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
     ) -> Emitters {
         emitters_fixture(
             heat_source,
             external_conditions,
             zone,
             ecodesign_controller,
+            simulation_time,
             None,
             Some(true),
             None,
@@ -3523,6 +3561,7 @@ mod tests {
             ecodesign_controller,
             55.,
             20.,
+            simulation_time_iterator.total_steps(),
             Some(Arc::new(energy_supply_conn)),
             None,
             Some(true),
@@ -3575,6 +3614,7 @@ mod tests {
             ecodesign_controller,
             55.,
             20.,
+            simulation_time_iterator.total_steps(),
             Some(Arc::new(energy_supply_conn)),
             Some(true),
             Some(true),
@@ -3600,7 +3640,7 @@ mod tests {
 
         assert_eq!(
             result,
-            EmittersDetailedResult {
+            Some(EmittersDetailedResult {
                 timestep_index: 0,
                 energy_demand: 0.0,
                 temp_emitter_req: 45.,
@@ -3614,7 +3654,7 @@ mod tests {
                 temp_emitter_max_is_final_temp: false,
                 energy_req_from_heat_source: 0.0,
                 fan_energy_kwh: 0.0,
-            }
+            })
         );
     }
 
@@ -3643,6 +3683,7 @@ mod tests {
         external_conditions: ExternalConditions,
         ecodesign_controller: EcoDesignController,
         energy_supply_conn: EnergySupplyConnection,
+        simulation_time: SimulationTime,
     ) {
         let emitters = [WetEmitterInput::Fancoil {
             n_units: 1,
@@ -3678,6 +3719,7 @@ mod tests {
             ecodesign_controller,
             55.,
             20.,
+            simulation_time.total_steps(),
             Some(Arc::new(energy_supply_conn)),
             None,
             None,
@@ -3696,6 +3738,7 @@ mod tests {
         external_conditions: ExternalConditions,
         ecodesign_controller: EcoDesignController,
         energy_supply_conn: EnergySupplyConnection,
+        simulation_time: SimulationTime,
     ) {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
@@ -3730,6 +3773,7 @@ mod tests {
             ecodesign_controller,
             55.,
             20.,
+            simulation_time.total_steps(),
             Some(Arc::new(energy_supply_conn)),
             None,
             None,
@@ -3748,6 +3792,7 @@ mod tests {
         external_conditions: ExternalConditions,
         ecodesign_controller: EcoDesignController,
         energy_supply_conn: EnergySupplyConnection,
+        simulation_time: SimulationTime,
     ) {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
@@ -3784,6 +3829,7 @@ mod tests {
             ecodesign_controller,
             55.,
             20.,
+            simulation_time.total_steps(),
             Some(Arc::new(energy_supply_conn)),
             None,
             None,
@@ -3819,6 +3865,7 @@ mod tests {
         external_conditions: ExternalConditions,
         ecodesign_controller: EcoDesignController,
         energy_supply_conn: EnergySupplyConnection,
+        simulation_time: SimulationTime,
     ) {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
@@ -3853,6 +3900,7 @@ mod tests {
             ecodesign_controller,
             55.,
             20.,
+            simulation_time.total_steps(),
             Some(Arc::new(energy_supply_conn)),
             None,
             None,
@@ -3872,6 +3920,7 @@ mod tests {
         external_conditions: ExternalConditions,
         ecodesign_controller: EcoDesignController,
         energy_supply_conn: EnergySupplyConnection,
+        simulation_time: SimulationTime,
     ) {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
@@ -3928,6 +3977,7 @@ mod tests {
             ecodesign_controller,
             55.,
             20.,
+            simulation_time.total_steps(),
             Some(Arc::new(energy_supply_conn)),
             None,
             None,
@@ -3994,6 +4044,7 @@ mod tests {
             ecodesign_controller,
             55.,
             20.,
+            simulation_time_iterator.total_steps(),
             Some(Arc::new(energy_supply_conn)),
             None,
             None,
@@ -4061,6 +4112,7 @@ mod tests {
             ecodesign_controller,
             55.,
             20.,
+            simulation_time_iterator.total_steps(),
             Some(Arc::new(energy_supply_conn)),
             Some(true),
             None,

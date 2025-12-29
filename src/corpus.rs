@@ -5371,6 +5371,7 @@ fn space_heat_systems_from_input(
                             *ecodesign_controller,
                             *design_flow_temp as f64,
                             20., // replace!!!!! this uses a function to provide an initial value
+                            simulation_time.total_steps(),
                             energy_supply_fc_conn,
                             detailed_output_heating_cooling.into(),
                             with_buffer_tank.into(),
