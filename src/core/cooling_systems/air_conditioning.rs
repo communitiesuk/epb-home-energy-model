@@ -1,6 +1,6 @@
+use super::space_cool_system_base::SpaceCoolSystem;
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
-use crate::core::cooling_systems::SpaceCoolSystem;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
