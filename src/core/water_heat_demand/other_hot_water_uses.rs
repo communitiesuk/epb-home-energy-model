@@ -1,5 +1,5 @@
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::core::water_heat_demand::misc::frac_hot_water;
+use crate::core::water_heat_demand::misc::calc_fraction_hot_water;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
 
@@ -41,16 +41,17 @@ impl OtherHotWater {
         temp_hot_water: f64,
         total_demand_duration: f64,
         simtime: SimulationTimeIteration,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         let temp_cold = self.cold_water_source.temperature(simtime);
 
         // TODO (from Python) Account for behavioural variation factor fbeh (sic)
         let vol_warm_water = self.flowrate * total_demand_duration;
         // ^^^ litres = litres/minute * minutes
 
-        let vol_hot_water = vol_warm_water * frac_hot_water(temp_target, temp_hot_water, temp_cold);
+        let vol_hot_water =
+            vol_warm_water * calc_fraction_hot_water(temp_target, temp_hot_water, temp_cold)?;
 
-        (vol_hot_water, vol_warm_water)
+        Ok((vol_hot_water, vol_warm_water))
     }
 }
 
@@ -93,7 +94,10 @@ mod tests {
         let expected_demands = [15.2, 15.102, 15.0];
         for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                other_water.hot_water_demand(40.0, 52.0, 4.0, t_it).0,
+                other_water
+                    .hot_water_demand(40.0, 52.0, 4.0, t_it)
+                    .unwrap()
+                    .0,
                 expected_demands[idx],
                 max_relative = 1e-3
             );

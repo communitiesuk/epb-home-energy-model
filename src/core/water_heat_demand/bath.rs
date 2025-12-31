@@ -1,5 +1,5 @@
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::core::water_heat_demand::misc::frac_hot_water;
+use crate::core::water_heat_demand::misc::calc_fraction_hot_water;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
 
@@ -50,14 +50,15 @@ impl Bath {
         temp_hot_water: f64,
         vol_warm_water: f64,
         simtime: SimulationTimeIteration,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         let temp_cold = self.cold_water_source.temperature(simtime);
 
         let vol_warm_water = vol_warm_water.min(self.size_in_litres);
 
-        let vol_hot_water = vol_warm_water * frac_hot_water(temp_target, temp_hot_water, temp_cold);
+        let vol_hot_water =
+            vol_warm_water * calc_fraction_hot_water(temp_target, temp_hot_water, temp_cold)?;
 
-        (vol_hot_water, vol_warm_water)
+        Ok((vol_hot_water, vol_warm_water))
     }
 }
 
@@ -98,12 +99,14 @@ mod tests {
         let simulation_time = SimulationTime::new(0.0, 3.0, 1.0);
 
         assert_eq!(
-            bath.hot_water_demand(40.0, 52.0, 75.0, simulation_time.iter().next().unwrap()),
+            bath.hot_water_demand(40.0, 52.0, 75.0, simulation_time.iter().next().unwrap())
+                .unwrap(),
             (57.0, 75.0),
             "incorrect hot water demand returned"
         );
         assert_eq!(
-            bath.hot_water_demand(40.0, 52.0, 200.0, simulation_time.iter().next().unwrap()),
+            bath.hot_water_demand(40.0, 52.0, 200.0, simulation_time.iter().next().unwrap())
+                .unwrap(),
             (76.0, 100.0),
             "incorrect hot water demand returned for bath fill volume > bath tub volume"
         );

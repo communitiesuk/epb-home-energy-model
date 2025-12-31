@@ -1,11 +1,18 @@
 use crate::core::material_properties::WATER;
+use crate::hem_core::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
+use format_num::format_num;
+use fsum::FSum;
+use itertools::Itertools;
+use smartstring::alias::String;
 
 // Fraction of domestic hot water energy that becomes internal gains
 // This applies to both hot water usage and combi boiler losses
 pub(crate) const FRAC_DHW_ENERGY_INTERNAL_GAINS: f64 = 0.25;
 
-#[derive(Clone)]
+pub(crate) type CallableGetHotWaterTemperature = Box<dyn Fn(f64) -> f64>;
+
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum WaterEventResultType {
     Shower,
     Bath,
@@ -13,13 +20,57 @@ pub(crate) enum WaterEventResultType {
     PipeFlush,
 }
 
-#[derive(Clone)]
+impl WaterEventResultType {
+    fn abbreviation(&self) -> &'static str {
+        match self {
+            Self::Shower => "S",
+            Self::Bath => "B",
+            Self::Other => "O",
+            Self::PipeFlush => "P",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 /// Result of processing a single water use event
 pub(crate) struct WaterEventResult {
     pub(crate) event_result_type: WaterEventResultType,
     pub(crate) temperature_warm: f64, // Temperature of water at outlet (Celsius)
     pub(crate) volume_warm: f64,      // Volume of water at outlet (litres)
     pub(crate) volume_hot: f64,       // Hot water demand volume (litres)
+}
+
+impl WaterEventResult {
+    pub(crate) fn format_event(&self) -> String {
+        let hot_volume = self.volume_hot;
+        let warm_volume = self.volume_warm;
+        let temperature = self.temperature_warm;
+        let abbrev = self.event_result_type.abbreviation();
+
+        format!(
+            "{abbrev}: {} ({} @ {})",
+            format_num!(".10g", hot_volume),
+            format_num!(".10g", warm_volume),
+            format_num!(".10g", temperature)
+        )
+        .into()
+    }
+}
+
+pub(crate) fn summarise_events(events: &[WaterEventResult]) -> String {
+    events
+        .iter()
+        .map(|event| event.format_event())
+        .join(" | ")
+        .into()
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Cannot achieve temperature {temperature_target} by mixing water at {temperature_cold} and {temperature_hot}")]
+pub(crate) struct UnachievableTemperatureByMixingError {
+    temperature_target: f64,
+    temperature_hot: f64,
+    temperature_cold: f64,
 }
 
 /// Calculate the fraction of hot water required when mixing hot and cold
@@ -29,8 +80,23 @@ pub(crate) struct WaterEventResult {
 /// * `temp_target` -- temperature to be achieved, in any units
 /// * `temp_hot`    -- temperature of hot water to be mixed, in same units as temp_target
 /// * `temp_cold`   -- temperature of cold water to be mixed, in same units as temp_target
-pub fn frac_hot_water(temp_target: f64, temp_hot: f64, temp_cold: f64) -> f64 {
-    (temp_target - temp_cold) / (temp_hot - temp_cold)
+pub fn calc_fraction_hot_water(
+    temperature_target: f64,
+    temperature_hot: f64,
+    temperature_cold: f64,
+) -> Result<f64, UnachievableTemperatureByMixingError> {
+    let fraction = (temperature_target - temperature_cold) / (temperature_hot - temperature_cold);
+    if (fraction < 0.0 && !is_close!(fraction, 0.0, abs_tol = 1e-10))
+        || (fraction > 1.0 && !is_close!(fraction, 1.0, abs_tol = 1e-10))
+    {
+        return Err(UnachievableTemperatureByMixingError {
+            temperature_target,
+            temperature_hot,
+            temperature_cold,
+        });
+    }
+
+    Ok(fraction)
 }
 
 /// Calculates the kWh energy content of the hot water demand.
@@ -39,17 +105,71 @@ pub fn frac_hot_water(temp_target: f64, temp_hot: f64, temp_cold: f64) -> f64 {
 /// * `litres_demand`  -- hot water demand in litres
 /// * `demand_temp`    -- temperature of hot water inside the pipe, in degrees C
 /// * `cold_temp`     -- temperature outside the pipe, in degrees C
-pub fn water_demand_to_kwh(litres_demand: f64, demand_temp: f64, cold_temp: f64) -> f64 {
-    WATER.volumetric_energy_content_kwh_per_litre(demand_temp, cold_temp) * litres_demand
+pub fn water_demand_to_kwh(
+    litres_demand: f64,
+    demand_temperature: f64,
+    cold_temperature: f64,
+) -> f64 {
+    WATER.volumetric_energy_content_kwh_per_litre(demand_temperature, cold_temperature)
+        * litres_demand
 }
 
-pub(crate) fn volume_hot_water_required(
-    _volume_warm_water: f64,
-    _temperature_target: f64,
-    _func_temperature_hot_water: Option<f64>, // TODO, migration 1.0.0a1: implement equivalent type to: Callable[[float], float]
-    _func_temperature_cold_water: Option<f64>, // TODO migration 1.0.0a1: implement equivalent type to: Callable[[float], list[tuple[float, float]]]
-) -> Option<f64> {
-    todo!("as part of migratin to 1.0.0a1")
+pub(crate) fn volume_hot_water_required<
+    T: Fn(f64) -> f64,
+    U: Fn(f64, SimulationTimeIteration) -> anyhow::Result<Vec<(f64, f64)>>,
+>(
+    volume_warm_water: f64,
+    temperature_target: f64,
+    func_temperature_hot_water: T,
+    func_temperature_cold_water: U,
+    simtime: SimulationTimeIteration,
+) -> anyhow::Result<Option<f64>> {
+    let mut temperature_hot_water = func_temperature_hot_water(volume_warm_water * 0.5);
+    let mut list_temperature_volume =
+        func_temperature_cold_water(volume_warm_water * 0.5, simtime)?;
+    let mut temperature_cold_water = list_temperature_volume
+        .iter()
+        .map(|(t, v)| t * v)
+        .sum::<f64>()
+        / list_temperature_volume.iter().map(|(_, v)| v).sum::<f64>();
+    let mut temperature_warm_water = temperature_hot_water;
+    let mut volume_hot_water: f64 = Default::default();
+    let mut was_in_loop = false;
+
+    while !is_close!(temperature_warm_water, temperature_target, abs_tol = 1e-10) {
+        was_in_loop = true;
+        // Calculate the volume of hot/cold water needed if heating from cold water source
+        if temperature_target > temperature_hot_water {
+            return Ok(None);
+        }
+        volume_hot_water = volume_warm_water
+            * calc_fraction_hot_water(
+                temperature_target,
+                temperature_hot_water,
+                temperature_cold_water,
+            )?;
+        let volume_cold_water = volume_warm_water - volume_hot_water;
+        // Calculate the temperature of hot and warm (mixed) water given the volumes calculated
+        temperature_hot_water = func_temperature_hot_water(volume_hot_water);
+        let _ = std::mem::replace(
+            &mut list_temperature_volume,
+            func_temperature_cold_water(volume_cold_water, simtime)?,
+        );
+        temperature_cold_water = list_temperature_volume
+            .iter()
+            .map(|(t, v)| t * v)
+            .sum::<f64>()
+            / list_temperature_volume.iter().map(|(_, v)| v).sum::<f64>();
+        temperature_warm_water = (volume_hot_water * temperature_hot_water
+            + volume_cold_water * temperature_cold_water)
+            / volume_warm_water;
+    }
+
+    Ok(if was_in_loop {
+        Some(volume_hot_water)
+    } else {
+        None
+    })
 }
 
 /// Calculate volume-weighted average temperature from list of (temperature, volume) pairs.
@@ -79,10 +199,9 @@ pub(crate) fn calculate_volume_weighted_average_temperature(
         volumes.push(volume);
     }
 
-    // TODO use fsum here instead?
-    // Use math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
-    let weighted_temp_sum = temp_volume_products.iter().sum::<f64>();
-    let total_volume = volumes.iter().sum::<f64>();
+    // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
+    let weighted_temp_sum = FSum::with_all(&temp_volume_products).value();
+    let total_volume = FSum::with_all(&volumes).value();
 
     if total_volume == 0. {
         bail!("Cannot calculate weighted average: total volume is zero");
@@ -105,16 +224,19 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn should_calculate_correct_frac_hot_water() {
+    fn test_frac_hot_water() {
         assert_eq!(
-            frac_hot_water(40.0, 55.0, 5.0),
+            calc_fraction_hot_water(40.0, 55.0, 5.0).unwrap(),
             0.7,
             "incorrect fraction of hot water returned"
         );
+
+        assert!(matches!(calc_fraction_hot_water(60.0, 55.0, 5.0), Err(_)));
+        assert!(matches!(calc_fraction_hot_water(0.0, 55.0, 5.0), Err(_)));
     }
 
     #[test]
-    fn should_calculate_correct_water_demand_to_kwh() {
+    fn test_water_demand_to_kwh() {
         let litres_demand = [5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0];
         let demand_temp = [40.0, 35.0, 37.0, 39.0, 40.0, 38.0, 39.0, 40.0];
         let cold_temp = [5.0, 4.0, 5.0, 6.0, 5.0, 4.0, 3.0, 4.0];

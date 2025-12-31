@@ -353,7 +353,7 @@ impl DomesticHotWaterDemand {
                                 temp_hot_water,
                                 shower_duration,
                                 simtime,
-                            );
+                            )?;
 
                             if let Shower::InstantElectricShower(_) = shower {
                                 vol_hot_water_equiv_elec_shower += hw_demand_i;
@@ -399,7 +399,7 @@ impl DomesticHotWaterDemand {
                                 temp_hot_water,
                                 other_duration,
                                 simtime,
-                            );
+                            )?;
                             event.warm_volume = Some(hw_demand_target_i);
                             hw_demand_vol_target
                                 .entry(label_temp)
@@ -453,7 +453,7 @@ impl DomesticHotWaterDemand {
                                 temp_hot_water,
                                 bath_volume,
                                 simtime,
-                            );
+                            )?;
                             event.warm_volume = Some(hw_demand_target_i);
                             hw_demand_vol_target
                                 .entry(label_temp)

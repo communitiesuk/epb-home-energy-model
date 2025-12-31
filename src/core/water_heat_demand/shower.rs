@@ -4,8 +4,10 @@ use crate::core::material_properties::WATER;
 use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::core::water_heat_demand::misc::frac_hot_water;
 use crate::core::water_heat_demand::misc::volume_hot_water_required;
+use crate::core::water_heat_demand::misc::{
+    calc_fraction_hot_water, CallableGetHotWaterTemperature,
+};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
 use parking_lot::Mutex;
@@ -31,7 +33,7 @@ impl Shower {
         temp_hot_water: f64,
         total_shower_duration: f64,
         simtime: SimulationTimeIteration,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         match self {
             Shower::MixerShower(_s) => {
                 todo!("as part of migration to 1.0.0a1");
@@ -92,8 +94,8 @@ impl MixerShower {
     pub fn hot_water_demand(
         &self,
         event: TypedScheduleEvent,
-        _func_temp_hot_water: Option<f64>, // TODO, migration 1.0.0a1: update type to be function (CallableGetHotWaterTemperature)
-        _simtime: SimulationTimeIteration,
+        func_temp_hot_water: CallableGetHotWaterTemperature,
+        simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64)> {
         let total_shower_duration = event
             .duration
@@ -103,9 +105,14 @@ impl MixerShower {
         // TODO (Python) Account for behavioural variation factor fbeh
         let volume_warm_water = self.flowrate * total_shower_duration;
         // ^^^ litres = litres/minute * minutes
-        let volume_hot_water =
-            volume_hot_water_required(volume_warm_water, temperature_target, None, None); // TODO, migration 1.0.0a1 call with correct arguments
-                                                                                          // first calculate the volume of hot water needed if heating from cold water source
+        let volume_hot_water = volume_hot_water_required(
+            volume_warm_water,
+            temperature_target,
+            func_temp_hot_water,
+            |x, simtime| self.cold_water_source.get_temp_cold_water(x, simtime),
+            simtime,
+        )?;
+        // first calculate the volume of hot water needed if heating from cold water source
 
         if volume_hot_water.is_none() {
             // Unmet demand
@@ -165,7 +172,7 @@ impl InstantElectricShower {
         temp_hot_water: f64,
         total_shower_duration: f64,
         simtime: SimulationTimeIteration,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         let temp_cold = self.cold_water_source.temperature(simtime);
 
         let elec_demand =
@@ -174,13 +181,13 @@ impl InstantElectricShower {
             elec_demand / WATER.volumetric_energy_content_kwh_per_litre(temp_target, temp_cold);
 
         let vol_hot_water_equiv =
-            vol_warm_water * frac_hot_water(temp_target, temp_hot_water, temp_cold);
+            vol_warm_water * calc_fraction_hot_water(temp_target, temp_hot_water, temp_cold)?;
 
         self.energy_supply_connection
             .demand_energy(elec_demand, simtime.index)
             .unwrap();
 
-        (vol_hot_water_equiv, vol_warm_water)
+        Ok((vol_hot_water_equiv, vol_warm_water))
     }
 }
 
@@ -364,7 +371,7 @@ mod tests {
             let expected_results_by_end_user = [5.0, 10.0, 15.0];
             let expected_demands = [86.04206500956023, 175.59605103991885, 268.8814531548757];
             for (idx, t_it) in simulation_time.iter().enumerate() {
-                instant_shower.hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, t_it);
+                let _ = instant_shower.hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, t_it);
                 pretty_assertions::assert_eq!(
                     energy_supply.read().results_by_end_user()["shower"][idx],
                     expected_results_by_end_user[idx],
@@ -373,6 +380,7 @@ mod tests {
                 pretty_assertions::assert_eq!(
                     instant_shower
                         .hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, t_it)
+                        .unwrap()
                         .0,
                     expected_demands[idx]
                 );
