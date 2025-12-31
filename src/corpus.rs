@@ -11,6 +11,7 @@ use crate::core::energy_supply::energy_supply::{
     ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME, UNMET_DEMAND_SUPPLY_NAME,
 };
 use crate::core::energy_supply::inverter::Inverter;
+use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
 use crate::core::energy_supply::pv::{PhotovoltaicPanel, PhotovoltaicSystem};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem, SpaceHeatingService};
@@ -70,14 +71,14 @@ use crate::input::{
     HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
     HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
-    InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
-    PhotovoltaicInputs, PhotovoltaicSystem as PhotovoltaicSystemInput,
-    SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
-    SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput, VentilationLeaks,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
-    WaterPipework, WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
-    MAIN_REFERENCE,
+    InternalGains as InternalGainsInput, InternalGainsDetails,
+    OnSiteGeneration as OnSiteGenerationInput, PhotovoltaicInputs,
+    PhotovoltaicSystem as PhotovoltaicSystemInput, SpaceCoolSystem as SpaceCoolSystemInput,
+    SpaceCoolSystemDetails, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
+    SystemReference, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput,
+    VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
+    WaterHeatingEvents, WaterPipework, WetEmitter, ZoneDictionary, ZoneInput,
+    ZoneTemperatureControlBasis, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::StringOrNumber;
@@ -5463,7 +5464,7 @@ fn space_cool_systems_from_input(
 }
 
 fn on_site_generation_from_input(
-    input: &OnSiteGeneration,
+    input: &OnSiteGenerationInput,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     external_conditions: Arc<ExternalConditions>,
     simulation_time_iterator: &SimulationTimeIterator,

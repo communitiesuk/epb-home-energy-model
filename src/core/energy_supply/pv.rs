@@ -1,4 +1,5 @@
 use crate::core::energy_supply::inverter::Inverter;
+use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
 use crate::core::space_heat_demand::building_element::projected_height;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::external_conditions::{
@@ -298,16 +299,13 @@ impl PhotovoltaicSystem {
             }
         }
     }
+}
 
-    /// Return whether this unit is considered inside the building or not
-    pub(crate) fn inverter_is_inside(&self) -> bool {
-        self.inverter.is_inside()
-    }
-
+impl OnSiteGeneration for PhotovoltaicSystem {
     /// Produce electrical energy (in kWh) from the PV system
     /// according to BS EN 15316-4-3:2017
     #[allow(unused_assignments)] // Python overwrites weighted_f_sh_dir without using it (reported to DESNZ 2025-11-21) - remove this attribute when corrected in future bug fix
-    pub(crate) fn produce_energy(
+    fn produce_energy(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
@@ -360,7 +358,13 @@ impl PhotovoltaicSystem {
 
         Ok((total_energy_delivered, total_energy_lost))
     }
+
+    /// Return whether this unit is considered inside the building or not
+    fn inverter_is_inside(&self) -> bool {
+        self.inverter.is_inside()
+    }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
