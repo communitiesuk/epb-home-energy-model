@@ -4,6 +4,7 @@ use crate::core::controls::time_control::{
     OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl, SmartApplianceControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
+use crate::core::cooling_systems::SpaceCoolSystem;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
     EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, EnergySupplyTariffInput,

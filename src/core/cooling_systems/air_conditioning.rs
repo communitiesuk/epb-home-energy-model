@@ -1,5 +1,6 @@
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
+use crate::core::cooling_systems::SpaceCoolSystem;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
@@ -43,27 +44,29 @@ impl AirConditioning {
             control,
         }
     }
+}
 
-    pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+impl SpaceCoolSystem for AirConditioning {
+    fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
         per_control!(self.control.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) })
     }
 
-    pub fn in_required_period(
+    fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
         per_control!(self.control.as_ref(), ctrl => { ctrl.in_required_period(simulation_time_iteration) })
     }
 
-    pub fn frac_convective(&self) -> f64 {
+    fn frac_convective(&self) -> f64 {
         self.frac_convective
     }
 
-    pub(crate) fn energy_output_min(&self) -> f64 {
+    fn energy_output_min(&self) -> f64 {
         0.0
     }
 
-    pub fn demand_energy(&self, cooling_demand: f64, simtime: SimulationTimeIteration) -> f64 {
+    fn demand_energy(&self, cooling_demand: f64, simtime: SimulationTimeIteration) -> f64 {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
