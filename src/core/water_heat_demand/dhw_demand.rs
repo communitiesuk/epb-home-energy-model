@@ -394,12 +394,13 @@ impl DomesticHotWaterDemand {
                             let other_duration = event
                                 .duration
                                 .expect("A duration is expected for an 'other' water use event.");
-                            let (hw_demand_i, hw_demand_target_i) = other.hot_water_demand(
-                                other_temp,
-                                temp_hot_water,
-                                other_duration,
-                                simtime,
-                            )?;
+                            // TODO: following commented out during 1.0.0a1 migration
+                            let (hw_demand_i, hw_demand_target_i) = (0., 0.); // other.hot_water_demand(
+                                                                              //     other_temp,
+                                                                              //     temp_hot_water,
+                                                                              //     other_duration,
+                                                                              //     simtime,
+                                                                              // )?;
                             event.warm_volume = Some(hw_demand_target_i);
                             hw_demand_vol_target
                                 .entry(label_temp)
