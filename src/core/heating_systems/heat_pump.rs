@@ -4039,23 +4039,22 @@ impl HeatPump {
                     .get_mut(&(param_index.0.into(), param_index.1.into()))
                     .unwrap() += param_total_for_overall;
             }
-            *results_annual
-                .get_mut(service_name)
-                .unwrap()
-                .get_mut(&("energy_delivered_H4".into(), "kWh".into()))
-                .unwrap() = results_per_timestep[service_name.as_str()]
-                [&("energy_delivered_H4".into(), "kWh".into())]
-                .iter()
-                .cloned()
-                .sum::<ResultParamValue>();
+            results_annual.get_mut(service_name).unwrap().insert(
+                ("energy_delivered_H4".into(), "kWh".into()),
+                results_per_timestep[service_name.as_str()]
+                    [&("energy_delivered_H4".into(), "kWh".into())]
+                    .iter()
+                    .cloned()
+                    .sum::<ResultParamValue>(),
+            );
             let service_energy_delivered_results = results_annual[service_name.as_str()]
                 [&("energy_delivered_H4".into(), "kWh".into())]
                 .clone();
             *results_annual
                 .get_mut("Overall")
                 .unwrap()
-                .get_mut(&("energy_delivered_H4".into(), "kWh".into()))
-                .unwrap() += service_energy_delivered_results;
+                .entry(("energy_delivered_H4".into(), "kWh".into()))
+                .or(ResultParamValue::Number(0.)) += service_energy_delivered_results;
             self.calc_service_cop(results_annual.get_mut(service_name).unwrap(), None);
         }
 
