@@ -8,7 +8,7 @@ use std::sync::Arc;
 // Temperature reduction of water during the shower from temp_target
 const DELTA_T_SHOWER: f64 = 6.0;
 
-#[derive(Eq, Hash, PartialEq, Clone, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 /// WWHRS system configuration
 /// A - Both shower and water heating system get pre-heated water
 /// B - Only shower gets pre-heated water
@@ -27,7 +27,7 @@ pub(crate) enum WwhrsConfiguration {
 /// configurations.
 #[derive(Debug)]
 pub(crate) struct WwhrsInstantaneous {
-    cold_water_source: ColdWaterSource,
+    cold_water_source: Arc<ColdWaterSource>,
     flow_rates: Vec<f64>,
     system_a_efficiencies: Vec<f64>,
     system_a_utilisation_factor: Option<f64>,
@@ -42,8 +42,8 @@ pub(crate) struct WwhrsInstantaneous {
 }
 
 pub(crate) struct PerformanceCalculationResult {
-    t_cyl_feed: f64,
-    flowrate_hot: Option<f64>,
+    pub(crate) t_cyl_feed: f64,
+    pub(crate) flowrate_hot: Option<f64>,
 }
 
 impl WwhrsInstantaneous {
@@ -63,7 +63,7 @@ impl WwhrsInstantaneous {
     pub(crate) fn new(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         system_a_utilisation_factor: Option<f64>,
         system_b_efficiencies: Option<Vec<f64>>,
         system_b_utilisation_factor: Option<f64>,
@@ -375,7 +375,7 @@ impl WwhrsInstantaneous {
     }
 
     /// Set the stored temperature (used by systems C and A).
-    fn set_temperature_for_return(&mut self, water_temperature: f64) {
+    pub(crate) fn set_temperature_for_return(&mut self, water_temperature: f64) {
         self.stored_temperature = water_temperature;
     }
 
@@ -384,7 +384,7 @@ impl WwhrsInstantaneous {
         (self.stored_temperature, volume_needed)
     }
 
-    fn draw_off_water(&self, volume: f64) -> (f64, f64) {
+    pub(crate) fn draw_off_water(&self, volume: f64) -> (f64, f64) {
         self.get_temp_cold_water(volume)
     }
 
@@ -641,8 +641,8 @@ mod tests {
     }
 
     #[fixture]
-    fn cold_water_source() -> ColdWaterSource {
-        ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0)
+    fn cold_water_source() -> Arc<ColdWaterSource> {
+        ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0).into()
     }
 
     #[fixture]
@@ -664,7 +664,7 @@ mod tests {
     fn test_init_with_all_parameters(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         system_a_utilisation_factor: Option<f64>,
         simulation_time: SimulationTime,
     ) {
@@ -715,7 +715,7 @@ mod tests {
     fn test_system_a_missing_utilisation_factor(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -751,7 +751,7 @@ mod tests {
     fn test_system_b_conversion_missing_parameters(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -787,7 +787,7 @@ mod tests {
     fn test_system_b_pre_corrected_missing_utilisation_factor(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -823,7 +823,7 @@ mod tests {
     fn test_system_b_conversion_missing_utilisation_factor_only(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -859,7 +859,7 @@ mod tests {
     fn test_system_c_conversion_missing_utilisation_factor_only(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -895,7 +895,7 @@ mod tests {
     fn test_system_c_pre_corrected_missing_utilisation_factor(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -931,7 +931,7 @@ mod tests {
     fn test_init_with_reduction_factors(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         system_a_utilisation_factor: Option<f64>,
         simulation_time: SimulationTime,
     ) {
@@ -974,7 +974,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1014,7 +1014,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1055,7 +1055,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1094,7 +1094,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1144,7 +1144,7 @@ mod tests {
         let wwhrs = WwhrsInstantaneous::new(
             flow_rates,
             system_a_efficiencies,
-            cold_water_source,
+            cold_water_source.into(),
             system_a_utilisation_factor,
             None,
             None,
@@ -1176,7 +1176,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1245,7 +1245,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1293,7 +1293,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1326,7 +1326,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1365,7 +1365,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1415,7 +1415,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1464,7 +1464,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1509,7 +1509,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1556,7 +1556,7 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
-        let cold_water_source = ColdWaterSource::new(vec![55.0, 55.0, 55.0], 0, 1.0);
+        let cold_water_source = ColdWaterSource::new(vec![55.0, 55.0, 55.0], 0, 1.0).into();
 
         let wwhrs = WwhrsInstantaneous::new(
             flow_rates,
@@ -1592,7 +1592,7 @@ mod tests {
         flow_rates: Vec<f64>,
         system_a_efficiencies: Vec<f64>,
         system_a_utilisation_factor: Option<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time: SimulationTime,
     ) {
         let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1629,8 +1629,8 @@ mod tests {
         }
 
         #[fixture]
-        fn cold_water_source() -> ColdWaterSource {
-            ColdWaterSource::new(vec![5.0, 10.0, 15.0], 0, 1.0)
+        fn cold_water_source() -> Arc<ColdWaterSource> {
+            ColdWaterSource::new(vec![5.0, 10.0, 15.0], 0, 1.0).into()
         }
 
         #[fixture]
@@ -1647,7 +1647,7 @@ mod tests {
         fn test_realistic_shower_scenario(
             flow_rates: Vec<f64>,
             efficiencies: Vec<f64>,
-            cold_water_source: ColdWaterSource,
+            cold_water_source: Arc<ColdWaterSource>,
             simulation_time: SimulationTime,
         ) {
             let simulation_time_iteration = simulation_time.iter().next().unwrap();
@@ -1706,7 +1706,8 @@ mod tests {
             let simulation_time_iteration = simulation_time.iter().next().unwrap();
 
             // Very low temperature difference
-            let cold_water_source_warm = ColdWaterSource::new(vec![35.0, 35.0, 35.0], 0, 1.0);
+            let cold_water_source_warm =
+                ColdWaterSource::new(vec![35.0, 35.0, 35.0], 0, 1.0).into();
             let wwhrs_warm = WwhrsInstantaneous::new(
                 flow_rates,
                 efficiencies,
