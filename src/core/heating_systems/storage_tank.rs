@@ -302,7 +302,7 @@ impl StorageTank {
             // self.previous_event_time_end = deepcopy(time_start_current_event + (event['duration'] + 0.0) / 60.0)
 
             let (volume_used, energy_withdrawn, remaining_vols) =
-                self.extract_hot_water(event.clone(), simtime)?;
+                self.extract_hot_water(*event, simtime)?;
 
             // Determine the new temperature distribution after displacement
             // Now that pre-heated sources can be the 'cold' feed, rearrangement of temperaturs, that used to
@@ -1670,9 +1670,8 @@ impl SmartHotWaterTank {
             .store(self.storage_tank.initial_temperature, Ordering::SeqCst);
 
         for event in usage_events.iter().flatten() {
-            let (volume_used, energy_withdrawn, remaining_vols) = self
-                .storage_tank
-                .extract_hot_water(event.clone(), simtime)?;
+            let (volume_used, energy_withdrawn, remaining_vols) =
+                self.storage_tank.extract_hot_water(*event, simtime)?;
 
             let (temp_s3_n_new, rearrange) = self
                 .storage_tank
@@ -3906,7 +3905,7 @@ mod tests {
                         * (event.temperature_warm - cold_water_temps[t_idx])
                         / (temp_hot - cold_water_temps[t_idx]);
                     WaterEventResult {
-                        event_result_type: event.event_result_type.clone(),
+                        event_result_type: event.event_result_type,
                         temperature_warm: event.temperature_warm,
                         volume_warm: event.volume_warm,
                         volume_hot,

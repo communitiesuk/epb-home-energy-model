@@ -231,8 +231,8 @@ mod tests {
             "incorrect fraction of hot water returned"
         );
 
-        assert!(matches!(calc_fraction_hot_water(60.0, 55.0, 5.0), Err(_)));
-        assert!(matches!(calc_fraction_hot_water(0.0, 55.0, 5.0), Err(_)));
+        assert!(calc_fraction_hot_water(60.0, 55.0, 5.0).is_err());
+        assert!(calc_fraction_hot_water(0.0, 55.0, 5.0).is_err());
     }
 
     #[test]

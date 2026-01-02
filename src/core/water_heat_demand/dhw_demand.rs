@@ -55,7 +55,7 @@ impl From<f64> for DemandVolTargetKey {
 }
 
 // Note this type is not in Python
-pub enum TappingPoint<'a> {
+pub(crate) enum TappingPoint<'a> {
     Shower(&'a Shower),
     Bath(&'a Bath),
     Other(&'a OtherHotWater),
@@ -178,7 +178,7 @@ impl DomesticHotWaterDemand {
                     Some(hot_water_source) => {
                         mapping.insert(
                             (OutletType::Shower, shower_name.into()),
-                            hot_water_source.clone().into(),
+                            hot_water_source.clone(),
                         );
                     }
                     None => {
@@ -201,7 +201,7 @@ impl DomesticHotWaterDemand {
                 Some(hot_water_source) => {
                     mapping.insert(
                         (OutletType::Shower, bath_name.into()),
-                        hot_water_source.clone().into(),
+                        hot_water_source.clone(),
                     );
                 }
                 None => {
@@ -223,7 +223,7 @@ impl DomesticHotWaterDemand {
                 Some(hot_water_source) => {
                     mapping.insert(
                         (OutletType::Shower, other_name.into()),
-                        hot_water_source.clone().into(),
+                        hot_water_source.clone(),
                     );
                 }
                 None => {
@@ -264,7 +264,7 @@ impl DomesticHotWaterDemand {
         sum_t_by_v / sum_v
     }
 
-    pub fn get_tapping_point_for_event(
+    pub(crate) fn get_tapping_point_for_event(
         &'_ self,
         event: TypedScheduleEvent,
     ) -> (TappingPoint<'_>, OutletType, String) {

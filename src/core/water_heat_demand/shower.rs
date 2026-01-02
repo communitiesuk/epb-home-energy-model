@@ -62,7 +62,7 @@ impl MixerShower {
     /// * `cold_water_source` - reference to ColdWaterSource object representing the
     ///                     cold water feed attached to the shower
     /// * `wwhrs` - reference to WWHRS object (optional)
-    /// *`wwhrs_configuration` - WWHRS system configuration ('A', 'B', or 'C') for this shower
+    /// * `wwhrs_configuration` - WWHRS system configuration ('A', 'B', or 'C') for this shower
     pub(crate) fn new(
         flowrate: f64,
         cold_water_source: Arc<ColdWaterSource>,
@@ -262,7 +262,7 @@ mod tests {
 
         #[fixture]
         fn cold_water_source() -> ColdWaterSource {
-            ColdWaterSource::new(vec![2.0, 3.0, 4.0].into(), 0, 1.0)
+            ColdWaterSource::new(vec![2.0, 3.0, 4.0], 0, 1.0)
         }
 
         #[fixture]
@@ -438,7 +438,7 @@ mod tests {
                 .unwrap(),
             ));
             mixer_shower.wwhrs = Some(wwhrs);
-            mixer_shower.wwhrs_configuration = WwhrsConfiguration::CWaterHeatingSystem.into();
+            mixer_shower.wwhrs_configuration = WwhrsConfiguration::CWaterHeatingSystem;
 
             let expected_volumes = [24.7, 24.54081632653061, 24.375];
 
@@ -566,7 +566,7 @@ mod tests {
                     temperature: 40.0,
                     volume: None,
                 };
-                let _ = instant_shower.hot_water_demand(event.clone(), t_it);
+                let _ = instant_shower.hot_water_demand(event, t_it);
                 pretty_assertions::assert_eq!(
                     energy_supply.read().results_by_end_user()["shower"][idx],
                     expected_results_by_end_user[idx],

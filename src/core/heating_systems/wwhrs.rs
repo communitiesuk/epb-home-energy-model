@@ -1681,7 +1681,7 @@ mod tests {
             ] {
                 let result = wwhrs
                     .calculate_performance(
-                        system.clone(),
+                        system,
                         shower_temp,
                         shower_flow,
                         8.0,
