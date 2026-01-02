@@ -15,6 +15,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     let input = match event.body() {
         Body::Empty => "",
         Body::Text(text) => text.as_str(),
+        Body::Binary(_) => unimplemented!(),
         _ => unimplemented!(),
     }
     .as_bytes();
