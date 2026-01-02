@@ -1141,9 +1141,7 @@ impl ExternalConditions {
         let diffuse_irr_total = diffuse_irr_sky + diffuse_irr_hor + diffuse_irr_ref;
 
         if diffuse_irr_total == 0. {
-            return Err(anyhow!(
-                "Zero diffuse radiation with non-zero direct radiation."
-            ));
+            bail!("Zero diffuse radiation with non-zero direct radiation.");
         };
 
         // PD CEN ISO/TR 52016-2:2017 Section F.6.2 is not clearly defined and has been ignored.
@@ -5229,21 +5227,13 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "work in progress - currently does not pass"]
     #[case(1., 0., 0.626408173927592)]
-    #[ignore = "work in progress - currently does not pass"]
     #[case(1., 45., 0.5905238865770632)]
-    #[ignore = "work in progress - currently does not pass"]
     #[case(1., 90., 0.4030970346549258)]
-    #[ignore = "work in progress - currently does not pass"]
     #[case(1., 180., 0.4030970346549258)]
-    #[ignore = "work in progress - currently does not pass"]
     #[case(1.5, 0., 0.6556673434737625)]
-    #[ignore = "work in progress - currently does not pass"]
     #[case(1.5, 45., 0.5374627128732344)]
-    #[ignore = "work in progress - currently does not pass"]
     #[case(1.5, 90., 0.07492542574646884)]
-    #[ignore = "work in progress - currently does not pass"]
     #[case(1.5, 180., 0.07492542574646884)]
     fn test_diffuse_shading_reduction_factor_f_sky_tilt(
         simulation_time: SimulationTime,
@@ -5326,7 +5316,7 @@ mod tests {
             },
             ShadingSegment {
                 start: 0.,
-                end: 45.,
+                end: -45.,
                 ..Default::default()
             },
             ShadingSegment {
@@ -5383,20 +5373,22 @@ mod tests {
             Some(shading_segments),
         );
 
-        let iteration = simulation_time.iter().next().unwrap();
+        let simtime = simulation_time.iter().current_iteration();
 
-        let result = external_conditions.diffuse_shading_reduction_factor(
-            diffuse_breakdown,
-            tilt,
-            height,
-            base_height,
-            width,
-            orientation,
-            Some(&window_shading),
-            f_sky,
-            iteration,
-        );
+        let result = external_conditions
+            .diffuse_shading_reduction_factor(
+                diffuse_breakdown,
+                tilt,
+                height,
+                base_height,
+                width,
+                orientation,
+                Some(&window_shading),
+                f_sky,
+                simtime,
+            )
+            .unwrap();
 
-        assert_relative_eq!(result.unwrap(), expected, max_relative = 0.01);
+        assert_relative_eq!(result, expected, max_relative = 0.00001);
     }
 }
