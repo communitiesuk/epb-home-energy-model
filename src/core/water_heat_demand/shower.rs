@@ -27,20 +27,15 @@ impl Shower {
 
     pub(crate) fn hot_water_demand(
         &self,
-        temp_target: f64,
-        temp_hot_water: f64,
-        total_shower_duration: f64,
+        event: WaterHeatingEvent,
+        func_temp_hot_water: &CallableGetHotWaterTemperature,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    ) -> anyhow::Result<(Option<f64>, f64)> {
         match self {
-            Shower::MixerShower(_s) => {
-                todo!("as part of migration to 1.0.0a1");
-                // s.hot_water_demand(temp_target, temp_hot_water, total_shower_duration, simtime)
-            }
-            Shower::InstantElectricShower(s) => {
-                todo!("as part of migration to 1.0.0a1");
-                // s.hot_water_demand(temp_target, temp_hot_water, total_shower_duration, simtime)
-            }
+            Shower::MixerShower(s) => s.hot_water_demand(event, func_temp_hot_water, simtime),
+            Shower::InstantElectricShower(s) => s
+                .hot_water_demand(event, simtime)
+                .map(|(first, second)| (Some(first), second)),
         }
     }
 }

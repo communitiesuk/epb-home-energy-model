@@ -348,12 +348,13 @@ impl DomesticHotWaterDemand {
                                 .duration
                                 .expect("A duration is expected to be defined for a shower event.");
 
-                            let (hw_demand_i, hw_demand_target_i) = shower.hot_water_demand(
-                                shower_temp,
-                                temp_hot_water,
-                                shower_duration,
-                                simtime,
-                            )?;
+                            // TODO: correct during migration to 1.0.0a1
+                            let (hw_demand_i, hw_demand_target_i) = (0.0, 0.0); // shower.hot_water_demand(
+                                                                                //     shower_temp,
+                                                                                //     temp_hot_water,
+                                                                                //     shower_duration,
+                                                                                //     simtime,
+                                                                                // )?;
 
                             if let Shower::InstantElectricShower(_) = shower {
                                 vol_hot_water_equiv_elec_shower += hw_demand_i;
