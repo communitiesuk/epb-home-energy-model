@@ -13,6 +13,7 @@ pub const SECONDS_PER_HOUR: u32 = 3_600;
 pub const HOURS_PER_DAY: u32 = 24;
 pub const DAYS_PER_YEAR: u32 = 365;
 pub const DAYS_IN_MONTH: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+pub(crate) const KNOTS_PER_METRES_PER_SECOND: f64 = 1. / (1852. / 3600.);
 pub const MILLIMETRES_IN_METRE: u32 = 1_000;
 
 pub(crate) fn average_monthly_to_annual(list_monthly_averages: [f64; 12]) -> f64 {

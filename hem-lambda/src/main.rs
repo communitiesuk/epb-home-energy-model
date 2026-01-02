@@ -1,5 +1,5 @@
 use home_energy_model::output::Output;
-use home_energy_model::read_weather_file::weather_data_to_vec;
+use home_energy_model::read_weather_file::epw_weather_data_to_external_conditions;
 use home_energy_model::{run_project, CalculationResultsWithContext, RunInput};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
 use parking_lot::Mutex;
@@ -22,9 +22,9 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
 
     let output = LambdaOutput::new();
 
-    let external_conditions = weather_data_to_vec(BufReader::new(Cursor::new(include_str!(
-        "../../src/weather.epw"
-    ))))
+    let external_conditions = epw_weather_data_to_external_conditions(BufReader::new(Cursor::new(
+        include_str!("../../src/weather.epw"),
+    )))
     .ok();
 
     let resp = match run_project(RunInput::Read(Box::new(input)), &output, external_conditions, None, false, false) {
