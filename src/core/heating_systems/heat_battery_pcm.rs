@@ -21,6 +21,7 @@ use crate::StringOrNumber;
 use anyhow::anyhow;
 use anyhow::bail;
 use atomic_float::AtomicF64;
+use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -1223,8 +1224,9 @@ impl HeatBatteryPcm {
                 self.capillary_diameter_m,
             );
 
-            // TODO use fsum here instead?
-            let energy_charged_during_battery_time_step = energy_transf_charged.iter().sum::<f64>();
+            // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
+            let energy_charged_during_battery_time_step =
+                FSum::with_all(&energy_transf_charged).value();
 
             if outlet_temp_c < inlet_temp_c {
                 total_charge += energy_charged_during_battery_time_step;
@@ -1287,9 +1289,9 @@ impl HeatBatteryPcm {
 
         *self.zone_temp_c_dist_initial.write() = zone_temp_c_dist.clone();
 
-        // TODO use fsum here instead?
+        // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
         Ok((
-            energy_loss.iter().sum::<f64>() / KILOJOULES_PER_KILOWATT_HOUR as f64,
+            FSum::with_all(&energy_loss).value() / KILOJOULES_PER_KILOWATT_HOUR as f64,
             zone_temp_c_dist,
         ))
     }
@@ -1429,8 +1431,8 @@ impl HeatBatteryPcm {
                 self.capillary_diameter_m,
             );
 
-            // TODO use fsum here instead?
-            let energy_delivered_ts: f64 = energy_transf_delivered.iter().sum();
+            // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
+            let energy_delivered_ts = FSum::with_all(&energy_transf_delivered).value();
 
             if outlet_temp_c > temp_output {
                 // In this new method, adjust total energy to make more real with the 6 ts we have configured
@@ -1575,9 +1577,9 @@ impl HeatBatteryPcm {
                 self.capillary_diameter_m,
             );
 
-            // TODO use fsum here instead?
-            let energy_delivered_ts =
-                energy_transf_delivered.iter().sum::<f64>() / KILOJOULES_PER_KILOWATT_HOUR as f64;
+            // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
+            let energy_delivered_ts: f64 = FSum::with_all(&energy_transf_delivered).value()
+                / KILOJOULES_PER_KILOWATT_HOUR as f64;
             energy_delivered_hb += energy_delivered_ts; // demand_per_time_step_kwh
                                                         // balance = total_energy - energy_charged
             let max_instant_power = energy_delivered_ts / time_step_s;
@@ -2449,7 +2451,7 @@ mod tests {
             .energy_output_max(temp_flow, temp_return, simulation_time_iteration)
             .unwrap();
 
-        assert_eq!(result, 28882.5139822234);
+        assert_relative_eq!(result, 28882.5139822234, epsilon = 1e-7);
     }
 
     #[rstest]
