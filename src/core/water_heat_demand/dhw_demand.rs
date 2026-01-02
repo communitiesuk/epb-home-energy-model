@@ -450,12 +450,13 @@ impl DomesticHotWaterDemand {
                             };
                             let bath_temp = event.temperature;
                             let label_temp = bath_temp.into();
-                            let (hw_demand_i, hw_demand_target_i) = bath.hot_water_demand(
-                                bath_temp,
-                                temp_hot_water,
-                                bath_volume,
-                                simtime,
-                            )?;
+                            // TODO correct during migration to 1.0.0a1
+                            let (hw_demand_i, hw_demand_target_i) = (0.0, 0.0); // bath.hot_water_demand(
+                                                                                //     bath_temp,
+                                                                                //     temp_hot_water,
+                                                                                //     bath_volume,
+                                                                                //     simtime,
+                                                                                // )?;
                             event.warm_volume = Some(hw_demand_target_i);
                             hw_demand_vol_target
                                 .entry(label_temp)
