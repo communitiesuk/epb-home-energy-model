@@ -122,9 +122,9 @@ impl ElecStorageHeater {
     /// * `control`              - reference to a control object which must implement is_on() and setpnt() funcs
     /// * `charge_control`       - reference to a ChargeControl object which must implement different logic types
     ///                         for charging the Electric Storage Heaters.
-    /// * `esh_min_output`       - Data from test showing the output from the storage heater when not actively
+    /// * `dry_core_min_output`       - Data from test showing the output from the storage heater when not actively
     ///                         outputting heat, i.e. case losses only (with units kW)
-    /// * `esh_max_output`       - Data from test showing the output from the storage heater when it is actively
+    /// * `dry_core_max_output`       - Data from test showing the output from the storage heater when it is actively
     ///                         outputting heat, e.g. damper open / fan running (with units kW)
     /// * `external_conditions`  - reference to ExternalConditions object
     pub(crate) fn new(
@@ -141,8 +141,8 @@ impl ElecStorageHeater {
         simulation_time: &SimulationTimeIterator,
         control: Arc<Control>,
         charge_control: Arc<Control>,
-        esh_min_output: Vec<[f64; 2]>,
-        esh_max_output: Vec<[f64; 2]>,
+        dry_core_min_output: Vec<[f64; 2]>,
+        dry_core_max_output: Vec<[f64; 2]>,
         external_conditions: Arc<ExternalConditions>,
         output_detailed_results: Option<bool>,
     ) -> anyhow::Result<Self> {
@@ -155,12 +155,12 @@ impl ElecStorageHeater {
         let temp_air = zone_internal_air_func();
 
         // Convert ESH_max_output to NumPy arrays without sorting
-        let soc_max_array = esh_max_output.iter().map(|f| f[0]).collect_vec();
-        let power_max_array = esh_max_output.iter().map(|f| f[1]).collect_vec();
+        let soc_max_array = dry_core_max_output.iter().map(|f| f[0]).collect_vec();
+        let power_max_array = dry_core_max_output.iter().map(|f| f[1]).collect_vec();
 
         // Convert ESH_min_output to NumPy arrays without sorting
-        let soc_min_array = esh_min_output.iter().map(|f| f[0]).collect_vec();
-        let power_min_array = esh_min_output.iter().map(|f| f[1]).collect_vec();
+        let soc_min_array = dry_core_min_output.iter().map(|f| f[0]).collect_vec();
+        let power_min_array = dry_core_min_output.iter().map(|f| f[1]).collect_vec();
 
         // Validate that both SOC arrays are in strictly increasing order
         if !soc_max_array
@@ -671,8 +671,8 @@ mod tests {
     use serde_json::json;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
-    const ESH_MIN_OUTPUT: [[f64; 2]; 3] = [[0.0, 0.0], [0.5, 0.02], [1.0, 0.05]];
-    const ESH_MAX_OUTPUT: [[f64; 2]; 3] = [[0.0, 0.0], [0.5, 1.5], [1.0, 3.0]];
+    const DRY_CORE_MIN_OUTPUT: [[f64; 2]; 3] = [[0.0, 0.0], [0.5, 0.02], [1.0, 0.05]];
+    const DRY_CORE_MAX_OUTPUT: [[f64; 2]; 3] = [[0.0, 0.0], [0.5, 1.5], [1.0, 3.0]];
 
     #[fixture]
     fn simulation_time() -> SimulationTime {
@@ -808,8 +808,8 @@ mod tests {
         charge_control: Arc<Control>,
         control: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
-        esh_min_output: Vec<[f64; 2]>,
-        esh_max_output: Vec<[f64; 2]>,
+        dry_core_min_output: Vec<[f64; 2]>,
+        dry_core_max_output: Vec<[f64; 2]>,
         output_detailed_results: Option<bool>,
     ) -> ElecStorageHeater {
         let energy_supply = Arc::new(RwLock::new(
@@ -832,8 +832,8 @@ mod tests {
             &simulation_time.iter(),
             control,
             charge_control,
-            esh_min_output,
-            esh_max_output,
+            dry_core_min_output,
+            dry_core_max_output,
             external_conditions, // NOTE this is None in Python
             output_detailed_results,
         )
@@ -858,8 +858,8 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         )
     }
@@ -976,7 +976,7 @@ mod tests {
             charge_control.clone(),
             control.clone(),
             external_conditions.clone(),
-            ESH_MIN_OUTPUT.to_vec().clone(),
+            DRY_CORE_MIN_OUTPUT.to_vec().clone(),
             esh_max_output.clone(),
             Some(true),
         );
@@ -985,7 +985,7 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
             esh_max_output,
             None,
         );
@@ -1159,7 +1159,7 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
             esh_max_output,
             None,
         );
@@ -1198,8 +1198,8 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
 
@@ -1348,8 +1348,8 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
         let expected_target_elec_charge = [
@@ -1396,8 +1396,8 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
         let expected_target_elec_charge = [
@@ -1444,8 +1444,8 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
         let expected_target_elec_charge = [
@@ -1492,8 +1492,8 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
         heater.heat_retention_ratio = -0.9;
@@ -1544,8 +1544,8 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
 
@@ -1657,8 +1657,8 @@ mod tests {
             &simulation_time.iter(),
             control,
             charge_control,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             external_conditions, // NOTE this is None in Python
             Some(true),
         )
