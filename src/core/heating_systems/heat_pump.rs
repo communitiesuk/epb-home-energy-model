@@ -7190,8 +7190,11 @@ mod tests {
             simulation_time_for_heat_pump.step,
         )));
 
-        let boiler_service_space =
-            Boiler::create_service_space_heating(boiler.clone(), "service_boilerspace", control);
+        let boiler_service_space = Boiler::create_service_space_heating(
+            boiler.clone(),
+            "service_boilerspace",
+            control.clone(),
+        );
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
         let input = create_heat_pump_input_from_json(None);
@@ -7200,7 +7203,7 @@ mod tests {
             input,
             energy_supply_conn_name_auxiliary,
             None,
-            Some(boiler),
+            Some(boiler.clone()),
             None,
             None,
             external_conditions,
@@ -7220,6 +7223,31 @@ mod tests {
             .unwrap();
 
         assert_relative_eq!(result, 24.);
+
+        // Test with boiler service water regular
+        let boiler_service_water_regular = Boiler::create_service_hot_water_regular(
+            boiler,
+            "service_boilerwater",
+            control.clone(),
+            control,
+        )
+        .unwrap();
+        let hybrid_boiler_service =
+            HybridBoilerService::Regular(Arc::from(Mutex::from(boiler_service_water_regular)));
+
+        assert_relative_eq!(
+            heat_pump
+                .backup_energy_output_max(
+                    temp_output,
+                    temp_return_feed,
+                    time_available,
+                    time_start,
+                    Some(hybrid_boiler_service),
+                    simulation_time_for_heat_pump.iter().current_iteration()
+                )
+                .unwrap(),
+            24.
+        );
     }
 
     #[rstest]
