@@ -6290,8 +6290,10 @@ mod tests {
             "source_type": "ExhaustAirMixed",
             "sink_type": "Water",
             "backup_ctrl_type": "Substitute",
+            "temp_distribution_heat_network": 1.,
             "time_delay_backup": time_delay_backup,
             "modulating_control": true,
+            "min_modulation_rate_20": 20.,
             "min_modulation_rate_35": 0.35,
             "min_modulation_rate_55": 0.4,
             "time_constant_onoff_operation": 140,
@@ -7399,9 +7401,234 @@ mod tests {
         assert_eq!(result, true)
     }
 
-    // TODO test_outside_operating_limits_sinktypes
-    // TODO test_load_ratio_and_mode
-    // TODO test_energy_input_compressor
+    #[rstest]
+    fn test_outside_operating_limits_sinktypes(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+        heat_pump.sink_type = HeatPumpSinkType::Water;
+
+        assert!(!heat_pump.outside_operating_limits(
+            300.,
+            simulation_time_for_heat_pump.iter().current_iteration()
+        ));
+        assert!(heat_pump.outside_operating_limits(
+            350.,
+            simulation_time_for_heat_pump.iter().current_iteration()
+        ));
+
+        heat_pump.sink_type = HeatPumpSinkType::Air;
+
+        assert!(!heat_pump.outside_operating_limits(
+            350.,
+            simulation_time_for_heat_pump.iter().current_iteration()
+        ));
+    }
+
+    #[rstest]
+    fn test_load_ratio_and_mode(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+        // Test without modulating ctrl
+        heat_pump.modulating_ctrl = false;
+
+        let (load_ratio, load_ratio_continuous_min, hp_operating_in_onoff_mode) =
+            heat_pump.load_ratio_and_mode(1., 1., 50.).unwrap();
+
+        assert_relative_eq!(load_ratio, 1.);
+        assert_relative_eq!(load_ratio_continuous_min, 1.);
+        assert!(!hp_operating_in_onoff_mode);
+
+        // Test with modulating ctrl
+        heat_pump.modulating_ctrl = true;
+
+        let (load_ratio, load_ratio_continuous_min, hp_operating_in_onoff_mode) =
+            heat_pump.load_ratio_and_mode(0.6, 0.8, 50.).unwrap();
+
+        assert_relative_eq!(load_ratio, 0.75);
+        assert_relative_eq!(load_ratio_continuous_min, 0.35);
+        assert!(!hp_operating_in_onoff_mode);
+
+        // Test with zero time available
+        let (load_ratio, load_ratio_continuous_min, hp_operating_in_onoff_mode) =
+            heat_pump.load_ratio_and_mode(0., 0., 50.).unwrap();
+
+        assert_relative_eq!(load_ratio, 0.);
+        assert_relative_eq!(load_ratio_continuous_min, 0.35);
+        assert!(!hp_operating_in_onoff_mode);
+
+        // Test with zero time available and non-zero running time
+        assert!(heat_pump.load_ratio_and_mode(0.2, 0., 50.).is_err());
+
+        // Test HP with no test data for 55 degC design flow temp
+        let heat_pump_no_55deg_data = create_heat_pump_with_energy_supply_heat_source(
+            "arbitrary name for testing",
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+
+        let (load_ratio, load_ratio_continuous_min, hp_operating_in_onoff_mode) =
+            heat_pump_no_55deg_data
+                .load_ratio_and_mode(0.2, 0.8, 45.)
+                .unwrap();
+
+        assert_relative_eq!(load_ratio, 0.25);
+        assert_relative_eq!(load_ratio_continuous_min, 0.35);
+        assert!(hp_operating_in_onoff_mode);
+    }
+
+    #[rstest]
+    fn test_energy_input_compressor(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
+            true,
+            false,
+            false,
+            8.4,
+            8.4,
+            Some(8.4),
+            2.9,
+            1.,
+            1.,
+            0.4,
+            1560.,
+            ServiceType::Water,
+        );
+
+        assert_relative_eq!(energy_input_hp, 2.896551724137931);
+        assert_relative_eq!(compressor_power_min_load, 1.1586206896551725);
+
+        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
+            false,
+            false,
+            false,
+            8.4,
+            8.4,
+            Some(8.4),
+            2.9,
+            1.,
+            1.,
+            0.4,
+            1560.,
+            ServiceType::Water,
+        );
+
+        assert_relative_eq!(energy_input_hp, 0.);
+        assert_relative_eq!(compressor_power_min_load, 1.1586206896551725);
+
+        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
+            false,
+            false,
+            false,
+            8.4,
+            8.4,
+            None,
+            2.9,
+            1.,
+            1.,
+            0.4,
+            1560.,
+            ServiceType::Water,
+        );
+
+        assert_relative_eq!(energy_input_hp, 0.);
+        assert_relative_eq!(compressor_power_min_load, 0.);
+
+        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
+            true,
+            false,
+            true,
+            8.4,
+            8.4,
+            Some(0.4),
+            2.9,
+            1.,
+            1.,
+            0.4,
+            1560.,
+            ServiceType::Space,
+        );
+
+        assert_relative_eq!(energy_input_hp, 0.13793103448275862);
+        assert_relative_eq!(compressor_power_min_load, 0.05517241379310345);
+
+        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
+            true,
+            false,
+            true,
+            8.4,
+            8.4,
+            Some(0.4),
+            2.9,
+            1.,
+            1.,
+            0.4,
+            1560.,
+            ServiceType::Water,
+        );
+
+        assert_relative_eq!(energy_input_hp, 0.13793103448275862);
+        assert_relative_eq!(compressor_power_min_load, 0.05517241379310345);
+
+        heat_pump.sink_type = HeatPumpSinkType::Air;
+
+        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
+            true,
+            false,
+            true,
+            8.4,
+            12.,
+            Some(0.4),
+            2.9,
+            1.,
+            1.,
+            0.4,
+            1560.,
+            ServiceType::Space,
+        );
+
+        assert_relative_eq!(energy_input_hp, 0.09655172413793105);
+        assert_relative_eq!(compressor_power_min_load, 0.05517241379310345);
+
+        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
+            true,
+            false,
+            true,
+            8.4,
+            8.4,
+            Some(0.4),
+            2.9,
+            1.,
+            1.,
+            0.4,
+            1560.,
+            ServiceType::Water,
+        );
+
+        assert_relative_eq!(energy_input_hp, 0.13793103448275862);
+        assert_relative_eq!(compressor_power_min_load, 0.05517241379310345);
+    }
 
     #[rstest]
     fn test_inadequate_capacity(
