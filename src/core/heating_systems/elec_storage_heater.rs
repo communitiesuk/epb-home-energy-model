@@ -110,9 +110,9 @@ impl ElecStorageHeater {
     /// * `pwr_in` - in kW (Charging)
     /// * `rated_power_instant` - in kW (Instant backup)
     /// * `storage_capacity` - in kWh
-    /// * `air_flow_type` - string specifying type of Electric Storage Heater:
-    ///                   - fan-assisted
-    ///                   - damper-only
+    /// * `air_flow_type` - str enum specifying type of Electric Storage Heater:
+    ///     * AirFlowType.FAN_ASSISTED
+    ///     * AirFlowType.DAMPER_ONLY
     /// * `frac_convective`      - convective fraction for heating (TODO: Check if necessary)
     /// * `fan_pwr`              - Fan power [W]
     /// * `n_units`              - number of units install in zone
@@ -144,6 +144,7 @@ impl ElecStorageHeater {
         dry_core_min_output: Vec<[f64; 2]>,
         dry_core_max_output: Vec<[f64; 2]>,
         external_conditions: Arc<ExternalConditions>,
+        _state_of_charge_init: f64,
         output_detailed_results: Option<bool>,
     ) -> anyhow::Result<Self> {
         let output_detailed_results = output_detailed_results.unwrap_or(false);
@@ -834,7 +835,8 @@ mod tests {
             charge_control,
             dry_core_min_output,
             dry_core_max_output,
-            external_conditions, // NOTE this is None in Python
+            external_conditions, // NOTE this is None in Python,
+            0.,
             output_detailed_results,
         )
         .unwrap();
@@ -953,7 +955,8 @@ mod tests {
                     charge_control.clone(),
                     esh_min_output.clone(),
                     esh_max_output.clone(),
-                    external_conditions.clone(), // NOTE this is None in Python
+                    external_conditions.clone(), // NOTE this is None in Python,
+                    0.,
                     None,
                 )
                 .is_err(),
@@ -1660,6 +1663,7 @@ mod tests {
             DRY_CORE_MIN_OUTPUT.to_vec(),
             DRY_CORE_MAX_OUTPUT.to_vec(),
             external_conditions, // NOTE this is None in Python
+            0.,
             Some(true),
         )
         .unwrap();
