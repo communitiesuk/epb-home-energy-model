@@ -7282,6 +7282,40 @@ mod tests {
     }
 
     #[rstest]
+    fn test_cop_op_cond_lr_equal(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut heat_pump = create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+        for value in heat_pump.test_data.test_data.values_mut().flatten() {
+            value.theoretical_load_ratio = 1.1;
+        }
+
+        let temp_spread_correction = TempSpreadCorrectionArg::Float(1.);
+        let service_type = ServiceType::Space;
+        let temp_output = 320.;
+        let temp_source = 275.;
+
+        let cop_op_cond = heat_pump
+            .cop_op_cond(
+                &service_type,
+                temp_output,
+                temp_source,
+                temp_spread_correction,
+                design_flow_temp_op_cond_k(55.),
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
+
+        assert_relative_eq!(cop_op_cond, 3.2295002426006794);
+    }
+
+    #[rstest]
     /// Check energy output limited by upper temperature
     fn test_energy_output_limited(
         external_conditions: ExternalConditions,
