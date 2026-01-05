@@ -7321,6 +7321,34 @@ mod tests {
         );
 
         assert_relative_eq!(result, 1.4444444444444444);
+
+        let energy_output_required = 1.5;
+        let temp_output = 320.;
+        let temp_used_for_scaling = 320.;
+        let temp_limit_upper = 310.;
+
+        let result = heat_pump.energy_output_limited(
+            energy_output_required,
+            Some(temp_output),
+            temp_used_for_scaling,
+            temp_limit_upper,
+        );
+
+        assert_relative_eq!(result, 1.5);
+
+        let energy_output_required = 1.5;
+        let temp_output = 310.;
+        let temp_used_for_scaling = 320.;
+        let temp_limit_upper = 300.;
+
+        let result = heat_pump.energy_output_limited(
+            energy_output_required,
+            Some(temp_output),
+            temp_used_for_scaling,
+            temp_limit_upper,
+        );
+
+        assert_relative_eq!(result, 0.);
     }
 
     #[rstest]
