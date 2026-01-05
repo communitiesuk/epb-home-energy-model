@@ -2106,37 +2106,49 @@ mod tests {
     fn battery_control_off(
         external_conditions: ExternalConditions,
         external_sensor: ExternalSensor,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> Control {
-        create_control_with_value(false, external_conditions, external_sensor)
+        create_control_with_value(
+            false,
+            external_conditions,
+            external_sensor,
+            simulation_time_iteration,
+        )
     }
 
     #[fixture]
     fn battery_control_on(
         external_conditions: ExternalConditions,
         external_sensor: ExternalSensor,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> Control {
-        create_control_with_value(true, external_conditions, external_sensor)
+        create_control_with_value(
+            true,
+            external_conditions,
+            external_sensor,
+            simulation_time_iteration,
+        )
     }
 
     fn create_control_with_value(
         boolean: bool,
         external_conditions: ExternalConditions,
         external_sensor: ExternalSensor,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> Control {
         Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
                 vec![boolean],
-                1.,
+                &simulation_time_iteration,
                 0,
                 1.,
                 vec![Some(0.2)],
                 None,
                 None,
-                None,
-                None,
                 external_conditions.into(),
                 Some(external_sensor),
+                None,
             )
             .unwrap(),
         )
@@ -2738,16 +2750,15 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Manual,
                 vec![false],
-                1.,
+                &simulation_time_iterator.current_iteration(),
                 0,
                 1.,
                 vec![Some(0.2), Some(0.3)],
                 None,
                 None,
-                None,
-                None,
                 external_conditions.into(),
                 Some(external_sensor),
+                None,
             )
             .unwrap(),
         );
@@ -2977,6 +2988,7 @@ mod tests {
     fn test_timestep_end(
         external_sensor: ExternalSensor,
         external_conditions: ExternalConditions,
+        simulation_time_iteration: SimulationTimeIteration,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
         // not using the fixture here
@@ -2985,16 +2997,15 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Manual,
                 vec![true, true, true],
-                1.,
+                &simulation_time_iteration,
                 0,
                 1.,
                 [1.0, 1.5].into_iter().map(Into::into).collect(),
                 None,
                 None,
-                None,
-                None,
                 external_conditions.into(),
                 Some(external_sensor),
+                None,
             )
             .unwrap(),
         );
@@ -3058,16 +3069,15 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Manual,
                 vec![true, true, true],
-                1.,
+                &simulation_time_iterator.current_iteration(),
                 0,
                 1.,
                 [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
                 None,
                 None,
-                None,
-                None,
                 external_conditions.clone().into(),
                 Some(external_sensor.clone()),
+                None,
             )
             .unwrap(),
         );
@@ -3088,16 +3098,15 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Manual,
                 vec![true, true, true],
-                1.,
+                &simulation_time_iterator.current_iteration(),
                 0,
                 1.,
                 [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
                 None,
                 None,
-                None,
-                None,
                 external_conditions.into(),
                 Some(external_sensor),
+                None,
             )
             .unwrap(),
         );

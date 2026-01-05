@@ -152,19 +152,16 @@ impl ControlBehaviour for OnOffTimeControl {}
 #[derive(Debug)]
 pub(crate) struct ChargeControl {
     logic_type: ControlLogicType,
-    /// list of boolean values where true means "on" (one entry per hour)
-    pub schedule: Vec<bool>,
-    pub start_day: u32,
-    pub time_series_step: f64,
-    /// Proportion of the charge targeted for each day
-    pub charge_level: Vec<Option<f64>>,
+    schedule: Vec<bool>,
+    start_day: u32,
+    time_series_step: f64,
+    charge_level: Vec<Option<f64>>,
     temp_charge_cut: Option<f64>,
     temp_charge_cut_delta: Option<Vec<f64>>,
-    _min_target_charge_factor: Option<f64>,
-    _full_charge_temp_diff: Option<f64>,
     external_conditions: Arc<ExternalConditions>,
     external_sensor: Option<ExternalSensor>,
     hhrsh: Option<ChargeControlHhrshFields>,
+    charge_calc_time: f64,
 }
 
 #[derive(Debug)]
@@ -177,20 +174,41 @@ pub(crate) struct ChargeControlHhrshFields {
 }
 
 impl ChargeControl {
+    /// Construct a ChargeControl object
+    /// Arguments:
+    /// * `logic_type`              - ControlLogicType enum
+    /// * `schedule`                - list of boolean values where true means "on" (one entry per hour)
+    /// * `simulation_time`         - reference to SimulationTime object
+    /// * `start_day`               - first day of the time series, day of the year, 0 to 365 (single value)
+    /// * `time_series_step`        - timestep of the time series data, in hours__get_heat_cool_systems_for_zone
+    /// * `charge_level`            - Proportion of the charge targeted for each day
+    /// * `temp_charge_cut`         - Room temperature at which, if sensed during a charging hour, the control stops charging
+    ///                             (Required for AUTOMATIC, CELECT, and HHRSH logic types only)
+    /// * `temp_charge_cut_delta`   - array with values for a temperature adjustment which is applied
+    ///                                  to the nominal internal air temperature above which the control stops
+    ///                                  charging the device with heat.
+    ///                                  (Optional for AUTOMATIC, CELECT, and HHRSH logic types)
+    /// * `extcond`                 - reference to ExternalConditions object (for HHRSH and HEAT_BATTERY logic)
+    /// * `external_sensor`         - external weather sensor that acts as a limiting device to prevent storage
+    ///                                  heaters from overcharging (for AUTOMATIC and CELECT logic)
+    /// * `charge_calc_time`        - Indicates from which hour of the day the system starts to target the charge level
+    ///                             for the next day rather than the current day
     pub(crate) fn new(
         logic_type: ControlLogicType,
         schedule: Vec<bool>,
-        simulation_timestep: f64,
+        simulation_time_iteration: &SimulationTimeIteration,
         start_day: u32,
         time_series_step: f64,
         charge_level: Vec<Option<f64>>,
         temp_charge_cut: Option<f64>,
         temp_charge_cut_delta: Option<Vec<f64>>,
-        min_target_charge_factor: Option<f64>,
-        full_charge_temp_diff: Option<f64>,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: Arc<ExternalConditions>, // TODO (migration 1.0.0a1) this might need to be an option as ext cond not needed for all cases
         external_sensor: Option<ExternalSensor>,
+        charge_calc_time: Option<f64>,
     ) -> anyhow::Result<Self> {
+        let simulation_timestep = simulation_time_iteration.timestep;
+        let charge_calc_time = charge_calc_time.unwrap_or(21.);
+
         let hhrsh_fields: Option<ChargeControlHhrshFields> = match logic_type {
             ControlLogicType::Manual => {
                 // do nothing
@@ -204,15 +222,20 @@ impl ChargeControl {
             }
             ControlLogicType::Celect => {
                 if temp_charge_cut.is_none() {
-                    bail!("CElect ChargeControl definition is missing input parameters.");
+                    bail!("Celect ChargeControl definition is missing input parameters.");
                 }
                 None
             }
             ControlLogicType::Hhrsh => {
                 if temp_charge_cut.is_none() {
-                    bail!("Hhrsh ChargeControl definition is missing input parameters.");
+                    bail!("Hhrsh ChargeControl definition is missing input temp_charge_cut parameters.");
                 }
 
+                // if external_conditions.is_none() {
+                //     bail!("Hhrsh ChargeControl definition is missing external conditions.");
+                // }
+
+                // Initialize HHRSH-specific attributes
                 let steps_day = (HOURS_PER_DAY as f64 / simulation_timestep) as usize;
                 let demand = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
                     repeat(None),
@@ -226,6 +249,11 @@ impl ChargeControl {
                     repeat(Some(0.0)),
                     steps_day,
                 )));
+                for i in 0..steps_day {
+                    future_ext_temp.write().push_back(Some(
+                        external_conditions.air_temp_with_offset(simulation_time_iteration, i),
+                    ));
+                }
                 let energy_to_store = AtomicF64::new(0.0);
                 Some(ChargeControlHhrshFields {
                     steps_day,
@@ -238,25 +266,53 @@ impl ChargeControl {
                 // TODO (from Python) Consider adding solar data for HHRSH logic in addition to heating degree hours.
             }
             ControlLogicType::HeatBattery => {
-                // in the Python, energy_to_store is initialised at 0, but this value is not then accessed
-                // therefore, just eliding this field as it's defined here within ChargeControlHhrshFields
-                None
+                // Heat battery doesn't require temp_charge_cut but needs other parameters
+                // if external_conditions.is_none() {
+                //     bail!("Heat_battery ChargeControl definition is missing external conditions.");
+                // }
+
+                // Initialize heat battery-specific attributes
+                let steps_day = (HOURS_PER_DAY as f64 / simulation_timestep) as usize;
+                let demand = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
+                    repeat(None),
+                    steps_day,
+                )));
+                let past_ext_temp = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
+                    repeat(None),
+                    steps_day,
+                )));
+                let future_ext_temp = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
+                    repeat(Some(0.0)),
+                    steps_day,
+                )));
+                for i in 0..steps_day {
+                    future_ext_temp.write().push_back(Some(
+                        external_conditions.air_temp_with_offset(simulation_time_iteration, i),
+                    ));
+                }
+                let energy_to_store = AtomicF64::new(0.0);
+                Some(ChargeControlHhrshFields {
+                    steps_day,
+                    demand,
+                    past_ext_temp,
+                    future_ext_temp,
+                    energy_to_store,
+                })
             }
         };
 
         Ok(Self {
             logic_type,
-            schedule,
-            start_day,
-            time_series_step,
+            schedule,         // TODO (migration 1.0.0a1) this seems to be optional in Python
+            start_day,        // TODO (migration 1.0.0a1) this seems to be optional in Python
+            time_series_step, // TODO (migration 1.0.0a1) this seems to be optional in Python
             charge_level,
             temp_charge_cut,
             temp_charge_cut_delta,
-            _min_target_charge_factor: min_target_charge_factor,
-            _full_charge_temp_diff: full_charge_temp_diff,
-            external_conditions,
+            external_conditions, // TODO (migration 1.0.0a1) this seems to be optional in Python
             external_sensor,
             hhrsh: hhrsh_fields,
+            charge_calc_time,
         })
     }
 
@@ -1910,16 +1966,17 @@ mod tests {
         ChargeControl::new(
             ControlLogicType::Automatic,
             schedule_for_charge_control,
-            simulation_time_for_charge_control.step,
+            &simulation_time_for_charge_control
+                .iter()
+                .current_iteration(),
             0,
             1.,
             vec![Some(1.0), Some(0.8)],
             Some(15.5),
             None,
-            None,
-            None,
             external_conditions.into(),
             Some(external_sensor),
+            None,
         )
         .unwrap()
     }
@@ -2086,16 +2143,17 @@ mod tests {
         ChargeControl::new(
             ControlLogicType::Automatic,
             schedule_for_charge_control,
-            simulation_time_for_charge_control.step,
+            &simulation_time_for_charge_control
+                .iter()
+                .current_iteration(),
             0,
             1.,
             [1.0, 0.8].into_iter().map(Some).collect(),
             Some(15.5),
             None,
-            None,
-            None,
             external_conditions.into(),
             Some(external_sensor),
+            None,
         )
         .unwrap()
     }

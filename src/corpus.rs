@@ -258,16 +258,15 @@ fn single_control_from_details(
             Control::Charge(ChargeControl::new(
                 logic_type,
                 schedule,
-                simulation_time_iterator.step_in_hours(),
+                &simulation_time_iterator.current_iteration(),
                 *start_day,
                 *time_series_step,
                 charge_level_vec,
                 *temp_charge_cut,
                 temp_charge_cut_delta,
-                None,
-                None,
                 external_conditions.clone(),
                 external_sensor.clone(),
+                None, // TODO as part of migration to 1.0.0a1
             )?)
             .into()
         }
