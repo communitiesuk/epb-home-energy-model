@@ -7258,8 +7258,7 @@ mod tests {
 
         // Check with sink type 'AIR'
         let temp_spread_correction = TempSpreadCorrectionArg::Float(1.);
-
-        let energy_supply_conn_name_auxiliary = "auxillary_cop_deg_eff";
+        let energy_supply_conn_name_auxiliary = "auxillary_cop_eff";
 
         let heat_pump_sink_air = create_heat_pump_sink_air(
             energy_supply_conn_name_auxiliary,
