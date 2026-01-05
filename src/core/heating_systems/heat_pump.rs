@@ -2715,11 +2715,8 @@ impl HeatPump {
 
         let hp_cost_effective = match (&self.cost_schedule_hybrid_hp, &self.boiler) {
             (Some(_), Some(boiler)) => {
-                let service_type = *service_type
-                    .as_ref()
-                    .expect("A service type was expected to be available.");
                 let cop_op_cond = self.cop_op_cond(
-                    &service_type,
+                    service_type,
                     temp_output,
                     temp_source,
                     temp_spread_correction,
@@ -2811,7 +2808,7 @@ impl HeatPump {
     /// Calculate CoP at operating conditions
     fn cop_op_cond(
         &self,
-        _service_type: &ServiceType,
+        _service_type: Option<ServiceType>,
         temp_output: f64,
         temp_source: f64,
         temp_spread_correction: TempSpreadCorrectionArg,
@@ -3156,7 +3153,7 @@ impl HeatPump {
             let thermal_capacity_op_cond =
                 self.thermal_capacity_op_cond(temp_output, temp_source, design_flow_temp_op_cond)?;
             let cop_op_cond = self.cop_op_cond(
-                service_type,
+                Some(*service_type),
                 temp_output,
                 temp_source,
                 temp_spread_correction,
@@ -4642,7 +4639,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::DaylightSavingsConfig;
-    use crate::input::{BoilerHotWaterTest, FuelType, HeatSourceLocation};
+    use crate::input::{BoilerHotWaterTest, FuelType, HeatPumpBufferTank, HeatSourceLocation};
     use crate::simulation_time::SimulationTime;
     use crate::{core::material_properties::WATER, external_conditions::ShadingSegment};
     use approx::{assert_relative_eq, assert_ulps_eq};
@@ -7226,6 +7223,306 @@ mod tests {
     }
 
     #[rstest]
+    fn test_energy_output_max(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let temp_output = 300.;
+        let temp_return_feed = 295.;
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp";
+        let mut heat_pump = create_default_heat_pump(
+            Some(energy_supply_conn_name_auxiliary),
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+        let boiler = Arc::from(RwLock::from(create_boiler(
+            external_conditions.clone(),
+            energy_supply(simulation_time_for_heat_pump),
+            simulation_time_for_heat_pump,
+            energy_supply_conn_name_auxiliary,
+        )));
+
+        let control = Arc::from(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(0.), Some(0.)],
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            simulation_time_for_heat_pump.step,
+        )));
+
+        let hybrid_boiler_service = HybridBoilerService::Space(Arc::new(Mutex::new(
+            BoilerServiceSpace::new(boiler.clone(), "boiler_service_space".into(), control),
+        )));
+
+        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
+            assert_relative_eq!(
+                heat_pump
+                    .energy_output_max(
+                        temp_output,
+                        temp_return_feed,
+                        design_flow_temp_op_cond_k(55.),
+                        Some(hybrid_boiler_service.clone()),
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some("hp_service"),
+                        t_it
+                    )
+                    .unwrap()
+                    .0,
+                [11.203924743692589, 11.51438002341549][t_idx]
+            );
+        }
+
+        // Check with backup SUBSTITUTE
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: backup_substitute";
+        let input = create_heat_pump_with_exhaust_input_from_json(2., 70);
+        let mut heat_pump_exhaust = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            Some(101.),
+            Some(30.),
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
+            assert_relative_eq!(
+                heat_pump_exhaust
+                    .energy_output_max(
+                        temp_output,
+                        temp_return_feed,
+                        design_flow_temp_op_cond_k(55.),
+                        Some(hybrid_boiler_service.clone()),
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some("heat_pump_exhaust_service"),
+                        t_it
+                    )
+                    .unwrap()
+                    .0,
+                [10.191526455038767, 10.358981076999134][t_idx]
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_energy_output_max_buffer_tank(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let temp_output = 300.;
+        let temp_return_feed = 295.;
+        let emitters_data_for_buffer_tank = EMITTERS_DATA_FOR_BUFFER_TANK[0];
+        let mut input = create_heat_pump_input_from_json(None);
+        if let HeatSourceWetDetails::HeatPump {
+            ref mut buffer_tank,
+            ..
+        } = input
+        {
+            *buffer_tank = Some(Box::new(HeatPumpBufferTank {
+                daily_losses: 10.,
+                volume: 100.,
+                pump_fixed_flow_rate: 50.,
+                pump_power_at_flow_rate: 10.,
+            }));
+        }
+
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp";
+
+        let mut heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            Some(1000.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
+            let (energy, emitters_data_for_buffer_tank) = heat_pump
+                .energy_output_max(
+                    temp_output,
+                    temp_return_feed,
+                    emitters_data_for_buffer_tank.design_flow_temp,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(emitters_data_for_buffer_tank),
+                    Some("boiler_service_space"),
+                    t_it,
+                )
+                .unwrap();
+
+            assert_relative_eq!(energy, [8.2191174037396, 8.449538231375868][t_idx]);
+
+            let result = emitters_data_for_buffer_tank.unwrap().result;
+
+            assert_eq!(result.flow_temp_increase_due_to_buffer, 8.185825328614797);
+            assert_eq!(result.pump_power_at_flow_rate, 10.);
+            assert_eq!(result.heat_loss_buffer_kwh, 0.0964687074719922);
+        }
+    }
+
+    #[rstest]
+    fn test_energy_output_max_cost_schedule_hybrid_hp(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let temp_output = 300.;
+        let temp_return_feed = 295.;
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hybrid_boiler";
+
+        let boiler = Arc::from(RwLock::from(create_boiler(
+            external_conditions.clone(),
+            energy_supply(simulation_time_for_heat_pump),
+            simulation_time_for_heat_pump,
+            energy_supply_conn_name_auxiliary,
+        )));
+
+        let control = Arc::from(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(0.), Some(0.)],
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            simulation_time_for_heat_pump.step,
+        )));
+
+        let hybrid_boiler_service = HybridBoilerService::Space(Arc::new(Mutex::new(
+            BoilerServiceSpace::new(boiler.clone(), "boiler_service_space".into(), control),
+        )));
+
+        let cost_schedule_hybrid_hp = json!({
+           "cost_schedule_start_day": 0,
+           "cost_schedule_time_series_step": 1,
+           "cost_schedule_hp":
+               {"main": [16, 18, 24, {"value": 16, "repeat": 5}]},
+           "cost_schedule_boiler": {"main": [{"value": 4, "repeat": 8}]}
+        });
+
+        let input = create_heat_pump_input_from_json(None);
+
+        let mut heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            Some(boiler),
+            Some(1000.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            Some(cost_schedule_hybrid_hp),
+        );
+
+        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
+            let energy = heat_pump
+                .energy_output_max(
+                    temp_output,
+                    temp_return_feed,
+                    design_flow_temp_op_cond_k(55.),
+                    Some(hybrid_boiler_service.clone()),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("boiler_service_space"),
+                    t_it,
+                )
+                .unwrap()
+                .0;
+
+            assert_relative_eq!(energy, [11.203924743692589, 11.51438002341549][t_idx]);
+        }
+    }
+
+    #[rstest]
+    fn test_energy_output_max_cost_schedule_hybrid_hp_not_cost_effective(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let temp_output = 300.;
+        let temp_return_feed = 295.;
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hybrid_boiler";
+
+        let boiler = Arc::from(RwLock::from(create_boiler(
+            external_conditions.clone(),
+            energy_supply(simulation_time_for_heat_pump),
+            simulation_time_for_heat_pump,
+            energy_supply_conn_name_auxiliary,
+        )));
+
+        let control = Arc::from(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(0.), Some(0.)],
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            simulation_time_for_heat_pump.step,
+        )));
+
+        let hybrid_boiler_service = HybridBoilerService::Space(Arc::new(Mutex::new(
+            BoilerServiceSpace::new(boiler.clone(), "boiler_service_space".into(), control),
+        )));
+
+        let cost_schedule_hybrid_hp = json!({
+           "cost_schedule_start_day": 0,
+           "cost_schedule_time_series_step": 1,
+           "cost_schedule_hp":
+               {"main": [{"value": 40, "repeat": 8}]},
+           "cost_schedule_boiler": {"main": [{"value": 5, "repeat": 8}]}
+        });
+
+        let input = create_heat_pump_input_from_json(None);
+
+        let mut heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            Some(boiler),
+            Some(1000.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            Some(cost_schedule_hybrid_hp),
+        );
+
+        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
+            let energy = heat_pump
+                .energy_output_max(
+                    temp_output,
+                    temp_return_feed,
+                    design_flow_temp_op_cond_k(55.),
+                    Some(hybrid_boiler_service.clone()),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("boiler_service_space"),
+                    t_it,
+                )
+                .unwrap()
+                .0;
+
+            assert_relative_eq!(energy, [24., 24.][t_idx]);
+        }
+    }
+
+    // skipping Python's test_energy_output_max_topup due to mocking (self.extcond.air_temp.return_value = -5)
+
+    #[rstest]
     fn test_cop_op_cond(
         external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
@@ -7245,7 +7542,7 @@ mod tests {
 
         let cop_op_cond = heat_pump
             .cop_op_cond(
-                &service_type,
+                Some(service_type),
                 temp_output, // Kelvin
                 temp_source, // Kelvin
                 temp_spread_correction,
@@ -7268,7 +7565,7 @@ mod tests {
 
         let cop_op_cond = heat_pump_sink_air
             .cop_op_cond(
-                &service_type,
+                Some(service_type),
                 temp_output,
                 temp_source,
                 temp_spread_correction,
@@ -7302,7 +7599,7 @@ mod tests {
 
         let cop_op_cond = heat_pump
             .cop_op_cond(
-                &service_type,
+                Some(service_type),
                 temp_output,
                 temp_source,
                 temp_spread_correction,
@@ -9818,7 +10115,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_energy_output_max(simulation_time_for_heat_pump: SimulationTime) {
+    fn test_energy_output_max_for_hw_only(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
         let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
 
