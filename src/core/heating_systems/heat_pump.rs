@@ -4641,7 +4641,7 @@ mod tests {
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{BoilerHotWaterTest, FuelType, HeatPumpBufferTank, HeatSourceLocation};
     use crate::simulation_time::SimulationTime;
-    use crate::{core::material_properties::WATER, external_conditions::ShadingSegment};
+    use crate::{core::material_properties::WATER, external_conditions::ShadingSegment, input};
     use approx::{assert_relative_eq, assert_ulps_eq};
     use pretty_assertions::assert_eq;
     use rstest::*;
@@ -7039,6 +7039,108 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_create_service_space_heating_warm_air_exhaust_air(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut input = create_heat_pump_input_from_json(None, Some("ExhaustAirMixed"));
+        if let HeatSourceWetDetails::HeatPump {
+            ref mut eahp_mixed_min_temp,
+            ref mut eahp_mixed_max_temp,
+            ref mut test_data_en14825,
+            ..
+        } = input
+        {
+            *eahp_mixed_min_temp = Some(20.);
+            *eahp_mixed_max_temp = Some(30.);
+            *test_data_en14825 = vec![
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::A,
+                    capacity: 10.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 40.,
+                    temp_test: 40.,
+                    eahp_mixed_ext_air_ratio: Some(0.5),
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::B,
+                    capacity: 11.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 41.,
+                    temp_test: 41.,
+                    eahp_mixed_ext_air_ratio: Some(0.5),
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::C,
+                    capacity: 12.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 42.,
+                    temp_test: 42.,
+                    eahp_mixed_ext_air_ratio: Some(0.5),
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::D,
+                    capacity: 13.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 43.,
+                    temp_test: 43.,
+                    eahp_mixed_ext_air_ratio: Some(0.5),
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::F,
+                    capacity: 14.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 44.,
+                    temp_test: 44.,
+                    eahp_mixed_ext_air_ratio: Some(0.5),
+                },
+            ];
+        }
+        let mut heat_pump = create_heat_pump(
+            input,
+            "HeatPump_auxiliary: hp",
+            None,
+            None,
+            Some(1000.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        heat_pump.sink_type = HeatPumpSinkType::Air;
+        let heat_pump = Arc::from(Mutex::from(heat_pump));
+
+        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![], 0, 0.)));
+        // TODO 1.0.0a1 - in Python None is passed in for the control but this is not yet optional in Rust
+        HeatPump::create_service_space_heating_warm_air(
+            heat_pump.clone(),
+            "mains_gas",
+            control,
+            0.5,
+            100.,
+        )
+        .unwrap();
+
+        assert_eq!(heat_pump.lock().volume_heated_all_services, Some(100.));
     }
 
     #[rstest]
