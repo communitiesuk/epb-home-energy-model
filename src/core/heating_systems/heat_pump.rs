@@ -6158,12 +6158,16 @@ mod tests {
         .unwrap()
     }
 
-    fn create_heat_pump_input_from_json(backup_ctrl_type: Option<&str>) -> HeatSourceWetDetails {
+    fn create_heat_pump_input_from_json(
+        backup_ctrl_type: Option<&str>,
+        source_type: Option<&str>,
+    ) -> HeatSourceWetDetails {
         let backup_ctrl_type = backup_ctrl_type.unwrap_or("TopUp");
+        let source_type = source_type.unwrap_or("OutsideAir");
         let input = json!({
             "type": "HeatPump",
             "EnergySupply": "mains gas",
-            "source_type": "OutsideAir",
+            "source_type": source_type,
             "sink_type": "Water",
             "backup_ctrl_type": backup_ctrl_type,
             "time_delay_backup": 1,
@@ -6558,7 +6562,7 @@ mod tests {
         let energy_supply_conn_name_auxiliary =
             energy_supply_conn_name_auxiliary.unwrap_or("HeatPump_auxiliary: hp");
 
-        let heat_pump_input = create_heat_pump_input_from_json(backup_ctrl_type);
+        let heat_pump_input = create_heat_pump_input_from_json(backup_ctrl_type, None);
 
         create_heat_pump(
             heat_pump_input,
@@ -6585,7 +6589,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let input = create_heat_pump_input_from_json(None);
+        let input = create_heat_pump_input_from_json(None, None);
 
         create_heat_pump(
             input,
@@ -7085,6 +7089,139 @@ mod tests {
     }
 
     #[rstest]
+    fn test_get_temp_source_waterground(
+        mut external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        external_conditions.air_temps = vec![25.; 8760]; // Equivalent of Python: self.extcond.air_temp_annual.return_value = 25
+        let input = create_heat_pump_input_from_json(None, Some("WaterGround"));
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: heat_nw";
+
+        let heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            None,
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        assert_relative_eq!(
+            heat_pump.get_temp_source(simulation_time_for_heat_pump.iter().current_iteration()),
+            298.15
+        );
+    }
+
+    #[rstest]
+    fn test_get_temp_source_watersurface(
+        mut external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        external_conditions.air_temps = vec![26.; 8760]; // Equivalent of Python: self.extcond.air_temp_monthly.return_value = 26
+        let input = create_heat_pump_input_from_json(None, Some("WaterSurface"));
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: heat_nw";
+
+        let heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            None,
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        assert_relative_eq!(
+            heat_pump.get_temp_source(simulation_time_for_heat_pump.iter().current_iteration()),
+            299.15
+        );
+    }
+
+    #[rstest]
+    fn test_get_temp_source_airmvhr(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let input = create_heat_pump_input_from_json(None, Some("ExhaustAirMVHR"));
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: heat_nw";
+
+        let heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            None,
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        assert_relative_eq!(
+            heat_pump.get_temp_source(simulation_time_for_heat_pump.iter().current_iteration()),
+            293.15
+        );
+    }
+
+    #[rstest]
+    fn test_get_temp_source_ground(
+        mut external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        external_conditions.air_temps = vec![27.; 8760]; // Equivalent of Python: self.extcond.air_temp.return_value = 27
+        let input = create_heat_pump_input_from_json(None, Some("Ground"));
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: heat_nw";
+
+        let heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            None,
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        assert_relative_eq!(
+            heat_pump.get_temp_source(simulation_time_for_heat_pump.iter().current_iteration()),
+            281.15
+        );
+    }
+
+    #[rstest]
+    fn test_get_temp_source_airmev(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let input = create_heat_pump_input_from_json(None, Some("ExhaustAirMEV"));
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: heat_nw";
+
+        let heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            None,
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        assert_relative_eq!(
+            heat_pump.get_temp_source(simulation_time_for_heat_pump.iter().current_iteration()),
+            293.15
+        );
+    }
+
+    #[rstest]
     fn test_thermal_capacity_op_cond(
         external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
@@ -7197,7 +7334,7 @@ mod tests {
         );
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
-        let input = create_heat_pump_input_from_json(None);
+        let input = create_heat_pump_input_from_json(None, None);
 
         let heat_pump_with_boiler = create_heat_pump(
             input,
@@ -7350,7 +7487,7 @@ mod tests {
         let temp_output = 300.;
         let temp_return_feed = 295.;
         let emitters_data_for_buffer_tank = EMITTERS_DATA_FOR_BUFFER_TANK[0];
-        let mut input = create_heat_pump_input_from_json(None);
+        let mut input = create_heat_pump_input_from_json(None, None);
         if let HeatSourceWetDetails::HeatPump {
             ref mut buffer_tank,
             ..
@@ -7441,7 +7578,7 @@ mod tests {
            "cost_schedule_boiler": {"main": [{"value": 4, "repeat": 8}]}
         });
 
-        let input = create_heat_pump_input_from_json(None);
+        let input = create_heat_pump_input_from_json(None, None);
 
         let mut heat_pump = create_heat_pump(
             input,
@@ -7513,7 +7650,7 @@ mod tests {
            "cost_schedule_boiler": {"main": [{"value": 5, "repeat": 8}]}
         });
 
-        let input = create_heat_pump_input_from_json(None);
+        let input = create_heat_pump_input_from_json(None, None);
 
         let mut heat_pump = create_heat_pump(
             input,
@@ -8220,7 +8357,7 @@ mod tests {
 
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: CostSchedule";
 
-        let heat_pump_input = create_heat_pump_input_from_json(Some("Substitute"));
+        let heat_pump_input = create_heat_pump_input_from_json(Some("Substitute"), None);
 
         let heat_pump_with_cost_schedule = create_heat_pump(
             heat_pump_input,
@@ -8299,7 +8436,7 @@ mod tests {
 
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: CostSchedule_1";
 
-        let heat_pump_input = create_heat_pump_input_from_json(None);
+        let heat_pump_input = create_heat_pump_input_from_json(None, None);
 
         let heat_pump_with_cost_schedule = create_heat_pump(
             heat_pump_input,
@@ -8357,7 +8494,7 @@ mod tests {
             Arc::new(Control::SetpointTime(control)),
         )));
 
-        let heat_pump_input = create_heat_pump_input_from_json(None);
+        let heat_pump_input = create_heat_pump_input_from_json(None, None);
 
         let mut heat_pump_with_boiler = create_heat_pump(
             heat_pump_input,
@@ -8850,7 +8987,7 @@ mod tests {
             ctrl.into(),
         )));
 
-        let heat_pump_input = create_heat_pump_input_from_json(None);
+        let heat_pump_input = create_heat_pump_input_from_json(None, None);
 
         let mut heat_pump_with_boiler = create_heat_pump(
             heat_pump_input,
@@ -9157,7 +9294,7 @@ mod tests {
             Arc::new(ctrl),
         )));
 
-        let heat_pump_input = create_heat_pump_input_from_json(None);
+        let heat_pump_input = create_heat_pump_input_from_json(None, None);
 
         let heat_pump_with_boiler = Arc::new(Mutex::new(create_heat_pump(
             heat_pump_input,
@@ -9841,7 +9978,7 @@ mod tests {
         let temp_limit_upper = 65.;
         let control = Arc::new(create_setpoint_time_control(vec![Some(20.), Some(20.)]));
         external_conditions.air_temps = vec![-10., 2.5];
-        let heat_pump_input = create_heat_pump_input_from_json(Some("Substitute"));
+        let heat_pump_input = create_heat_pump_input_from_json(Some("Substitute"), None);
         let heat_pump = Arc::new(Mutex::new(create_heat_pump(
             heat_pump_input,
             "hp_aux",
