@@ -3160,6 +3160,40 @@ mod tests {
                 true
             );
         }
+
+        // TODO: proper error handling, e.g. evaluate_boolean_operation_is_on should return Result
+        #[should_panic]
+        #[rstest]
+        fn test_evaluate_boolean_operation_is_on_invalid_1(
+            combination_control_target_charge: CombinationTimeControl,
+        ) {
+            combination_control_target_charge.evaluate_boolean_operation_is_on(
+                ControlCombinationOperation::Not,
+                &mut vec![true, true].iter().map(|x| *x),
+            );
+        }
+
+        #[should_panic]
+        #[rstest]
+        fn test_evaluate_boolean_operation_is_on_invalid_2(
+            combination_control_target_charge: CombinationTimeControl,
+        ) {
+            combination_control_target_charge.evaluate_boolean_operation_is_on(
+                ControlCombinationOperation::Max,
+                &mut vec![true].iter().map(|x| *x),
+            );
+        }
+
+        #[should_panic]
+        #[rstest]
+        fn test_evaluate_boolean_operation_is_on_invalid_3(
+            combination_control_target_charge: CombinationTimeControl,
+        ) {
+            combination_control_target_charge.evaluate_boolean_operation_is_on(
+                ControlCombinationOperation::Min,
+                &mut vec![true].iter().map(|x| *x),
+            );
+        }
     }
 
     #[fixture]
