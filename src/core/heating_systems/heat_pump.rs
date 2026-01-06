@@ -6051,6 +6051,10 @@ mod tests {
         }
     }
 
+    // TODO TestHeatPumpServiceWater
+    // TODO TestHeatPumpServiceSpace
+    // TODO TestHeatPumpServiceSpaceWarmAir
+
     #[rstest]
     // In Python this test is called `test_from_string` (inside the `TestSinkType` class)
     pub fn test_sink_type_from_string() {
