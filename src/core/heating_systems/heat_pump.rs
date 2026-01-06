@@ -2354,6 +2354,10 @@ impl HeatPump {
         })
     }
 
+    pub(crate) fn backup_heater_max_power(&self) -> f64 {
+        self.power_max_backup
+    }
+
     pub fn source_is_exhaust_air(&self) -> bool {
         self.source_type.is_exhaust_air()
     }
@@ -6687,6 +6691,399 @@ mod tests {
     }
 
     #[rstest]
+    fn test_init_no_backup_ctrl_type(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let input = create_heat_pump_input_from_json(Some("None"), None);
+        let heat_pump = create_heat_pump(
+            input,
+            "HeatPump_auxiliary: hp",
+            None,
+            None,
+            None,
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+        println!("{:?}", heat_pump.backup_ctrl);
+
+        assert_eq!(heat_pump.backup_heater_max_power(), 0.);
+    }
+
+    // skipping Python's test_init_missing_heat_network as the Rust would error earlier and not reach the constructor/new function
+
+    #[rstest]
+    #[should_panic]
+    fn test_init_overvent_ratio_too_high(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        // Test that the constructor throws if the overvent ratio is above 1
+        let mut input = create_heat_pump_input_from_json(None, Some("ExhaustAirMVHR"));
+        if let HeatSourceWetDetails::HeatPump {
+            ref mut test_data_en14825,
+            ..
+        } = input
+        {
+            *test_data_en14825 = vec![
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(1050.),
+                    test_letter: TestLetter::A,
+                    capacity: 10.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 40.,
+                    temp_test: 40.,
+                    eahp_mixed_ext_air_ratio: None,
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(1050.),
+                    test_letter: TestLetter::B,
+                    capacity: 11.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 41.,
+                    temp_test: 41.,
+                    eahp_mixed_ext_air_ratio: None,
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(1050.),
+                    test_letter: TestLetter::C,
+                    capacity: 12.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 42.,
+                    temp_test: 42.,
+                    eahp_mixed_ext_air_ratio: None,
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(1050.),
+                    test_letter: TestLetter::D,
+                    capacity: 13.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 43.,
+                    temp_test: 43.,
+                    eahp_mixed_ext_air_ratio: None,
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(1050.),
+                    test_letter: TestLetter::F,
+                    capacity: 14.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 44.,
+                    temp_test: 44.,
+                    eahp_mixed_ext_air_ratio: None,
+                },
+            ];
+        }
+        create_heat_pump(
+            input,
+            "HeatPump_auxiliary: hp",
+            None,
+            None,
+            Some(1000.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+    }
+
+    #[rstest]
+    #[should_panic] // TODO this errors for a different reason to the Python and seems to relate to this comment above:
+                    // in the Python there is a check here about an air flow rate being present - decided
+                    // any validation should really happen upstream of here
+    fn test_init_air_flow_rate(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut input = create_heat_pump_input_from_json(None, Some("Ground"));
+        if let HeatSourceWetDetails::HeatPump {
+            ref mut test_data_en14825,
+            ..
+        } = input
+        {
+            *test_data_en14825 = vec![
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::A,
+                    capacity: 14.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 44.,
+                    temp_test: 44.,
+                    eahp_mixed_ext_air_ratio: None,
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::B,
+                    capacity: 14.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 44.,
+                    temp_test: 44.,
+                    eahp_mixed_ext_air_ratio: None,
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::C,
+                    capacity: 14.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 44.,
+                    temp_test: 44.,
+                    eahp_mixed_ext_air_ratio: None,
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::D,
+                    capacity: 14.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 44.,
+                    temp_test: 44.,
+                    eahp_mixed_ext_air_ratio: None,
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::F,
+                    capacity: 14.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 44.,
+                    temp_test: 44.,
+                    eahp_mixed_ext_air_ratio: None,
+                },
+            ];
+        }
+        create_heat_pump(
+            input,
+            "HeatPump_auxiliary: hp",
+            None,
+            None,
+            Some(1000.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn test_init_unique_air_ratio(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut input = create_heat_pump_input_from_json(None, Some("ExhaustAirMixed"));
+        if let HeatSourceWetDetails::HeatPump {
+            ref mut eahp_mixed_min_temp,
+            ref mut eahp_mixed_max_temp,
+            ref mut test_data_en14825,
+            ..
+        } = input
+        {
+            *eahp_mixed_min_temp = Some(20.);
+            *eahp_mixed_max_temp = Some(30.);
+            *test_data_en14825 = vec![
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::A,
+                    capacity: 10.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 40.,
+                    temp_test: 40.,
+                    eahp_mixed_ext_air_ratio: Some(0.5),
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::B,
+                    capacity: 11.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 41.,
+                    temp_test: 41.,
+                    eahp_mixed_ext_air_ratio: Some(0.5),
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::C,
+                    capacity: 12.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 42.,
+                    temp_test: 42.,
+                    eahp_mixed_ext_air_ratio: Some(0.5),
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::D,
+                    capacity: 13.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 43.,
+                    temp_test: 43.,
+                    eahp_mixed_ext_air_ratio: Some(0.5),
+                },
+                input::HeatPumpTestDatum {
+                    air_flow_rate: Some(50.),
+                    test_letter: TestLetter::F,
+                    capacity: 14.,
+                    cop: 1.,
+                    design_flow_temp: 45.,
+                    temp_outlet: 35.,
+                    temp_source: 44.,
+                    temp_test: 44.,
+                    eahp_mixed_ext_air_ratio: Some(0.6),
+                },
+            ];
+        }
+        create_heat_pump(
+            input,
+            "HeatPump_auxiliary: hp",
+            None,
+            None,
+            Some(1000.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+    }
+
+    #[rstest]
+    fn test_source_is_exhaust_air(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut heat_pump = create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+        heat_pump.source_type = HeatPumpSourceType::OutsideAir;
+
+        assert!(!heat_pump.source_is_exhaust_air());
+    }
+    #[rstest]
+    fn test_init_buffer_tank(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp";
+        let mut input = create_heat_pump_input_from_json(None, None);
+        if let HeatSourceWetDetails::HeatPump {
+            ref mut buffer_tank,
+            ..
+        } = input
+        {
+            *buffer_tank = Some(Box::new(HeatPumpBufferTank {
+                daily_losses: 10.,
+                volume: 100.,
+                pump_fixed_flow_rate: 5.,
+                pump_power_at_flow_rate: 10.,
+            }));
+        }
+
+        let heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            Some(1000.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        assert!(heat_pump.buffer_tank.is_some());
+        assert_eq!(heat_pump.buffer_tank.unwrap().volume, 100.);
+    }
+
+    #[rstest]
+    fn test_buffer_int_gains(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp";
+        let mut input = create_heat_pump_input_from_json(None, None);
+        if let HeatSourceWetDetails::HeatPump {
+            ref mut buffer_tank,
+            ..
+        } = input
+        {
+            *buffer_tank = Some(Box::new(HeatPumpBufferTank {
+                daily_losses: 10.,
+                volume: 100.,
+                pump_fixed_flow_rate: 5.,
+                pump_power_at_flow_rate: 10.,
+            }));
+        }
+
+        let mut heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            Some(1000.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+        if let Some(buffer_tank) = heat_pump.buffer_tank.as_mut() {
+            buffer_tank.q_heat_loss_buffer_rbl = 0.0015; // This makes buffer_tank.internal_gains() return 3.
+                                                         // Python does this: self.heat_pump._HeatPump__buffer_tank.internal_gains.return_value = 3
+            assert_eq!(buffer_tank.internal_gains(), 3.);
+        }
+
+        assert_eq!(heat_pump.buffer_int_gains(), 3.);
+    }
+
+    #[rstest]
+    fn test_buffer_int_gains_no_buffer_tank(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp";
+        let input = create_heat_pump_input_from_json(None, None);
+        let heat_pump = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            Some(1000.),
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        assert_eq!(heat_pump.buffer_int_gains(), 0.);
+    }
+
+    #[rstest]
     fn test_create_service_connection(
         external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
@@ -9636,7 +10033,7 @@ mod tests {
             HeatPumpEmitterType::RadiatorsUfh,
             temp_limit_upper,
             temp_diff_emit_design,
-            55., // TODO 1.0.0a1
+            55.,
             control,
             volume_heated,
         );
@@ -9893,7 +10290,7 @@ mod tests {
         assert_eq!(*heat_pump.service_results.read().deref(), expected_results);
     }
 
-    // TODO test_calculate_energy_input_error
+    // TODO skipping test_calculate_energy_input_error as HeatPump service type can only be Water or Space currently
 
     #[rstest]
     fn test_calc_auxiliary_energy(
