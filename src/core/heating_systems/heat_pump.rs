@@ -9910,8 +9910,112 @@ mod tests {
         );
     }
 
-    // TODO test_demand_energy_hybrid_boiler_service
-    // TODO test_throughput_factor
+    #[rstest]
+    fn test_demand_energy_hybrid_boiler_service(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+        energy_supply: EnergySupply,
+    ) {
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: boiler";
+
+        let boiler = Arc::new(RwLock::new(create_boiler(
+            external_conditions.clone(),
+            energy_supply,
+            simulation_time_for_heat_pump,
+            energy_supply_conn_name_auxiliary,
+        )));
+
+        let ctrl = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(21.0), Some(22.0)],
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            1.0,
+        )));
+
+        let boiler_service_water = Arc::new(Mutex::new(
+            Boiler::create_service_hot_water_regular(
+                boiler.clone(),
+                "service_water",
+                ctrl.clone(),
+                ctrl,
+            )
+            .unwrap(),
+        ));
+
+        let heat_pump_input = create_heat_pump_input_from_json(Some("Substitute"), None);
+
+        let heat_pump_with_boiler = Arc::new(Mutex::new(create_heat_pump(
+            heat_pump_input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            Some(boiler),
+            None,
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        )));
+
+        HeatPump::create_service_connection(
+            heat_pump_with_boiler.clone(),
+            "service_boiler_demand_energy",
+        )
+        .unwrap();
+
+        let results = heat_pump_with_boiler
+            .lock()
+            .demand_energy(
+                "service_boiler_demand_energy",
+                &ServiceType::Water,
+                1.0,
+                Some(330.0),
+                330.0,
+                340.0,
+                design_flow_temp_op_cond_k(55.),
+                1560.,
+                true,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+                Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                None,
+                Some(HybridBoilerService::Regular(boiler_service_water.clone())),
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_relative_eq!(results, 1.);
+        assert_eq!(
+            heat_pump_with_boiler
+                .lock()
+                .total_time_running_current_timestep_full_load,
+            0.11879765621857688
+        );
+    }
+
+    #[rstest]
+    fn test_throughput_factor(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut heat_pump = create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+        heat_pump.total_time_running_current_timestep_full_load = 2.;
+        heat_pump.overvent_ratio = 0.8;
+
+        assert_relative_eq!(heat_pump.throughput_factor(), 0.6);
+
+        heat_pump.total_time_running_current_timestep_full_load = 3.;
+        heat_pump.overvent_ratio = 0.7;
+
+        assert_relative_eq!(heat_pump.throughput_factor(), 0.09999999999999964);
+    }
 
     #[rstest]
     fn test_running_time_throughput_factor(
