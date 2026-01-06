@@ -1129,14 +1129,14 @@ impl CombinationTimeControl {
     fn evaluate_boolean_operation_is_on(
         &self,
         operation: ControlCombinationOperation,
-        control_results: &mut impl Iterator<Item = bool>,
+        control_results: &mut (impl Iterator<Item = bool> + ExactSizeIterator),
     ) -> bool {
         match operation {
             ControlCombinationOperation::And => control_results.all(|x| x),
             ControlCombinationOperation::Or => control_results.any(|x| x),
             ControlCombinationOperation::Xor => control_results.filter(|x| *x).count() % 2 == 1,
             ControlCombinationOperation::Not => {
-                if control_results.count() != 1 {
+                if control_results.len() != 1 {
                     unreachable!()
                 }
                 !control_results
@@ -2883,6 +2883,288 @@ mod tests {
         #[rstest]
         fn test_get_limit_factor_invalid(charge_control_1: ChargeControl) {
             assert!(charge_control_1.get_limit_factor(f64::NAN).is_err())
+        }
+    }
+
+    mod test_combination_time_control {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+
+        #[fixture]
+        fn simulation_time_1() -> SimulationTime {
+            SimulationTime::new(0., 24., 1.)
+        }
+
+        #[fixture]
+        fn schedule() -> Vec<bool> {
+            vec![
+                true, true, true, true, true, true, false, true, false, false, false, false, false,
+                false, false, false, true, true, true, true, false, false, false, false,
+            ]
+        }
+
+        #[fixture]
+        fn external_conditions(simulation_time_1: SimulationTime) -> ExternalConditions {
+            ExternalConditions::new(
+                &simulation_time_1.iter(),
+                vec![
+                    19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+                    19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+                ],
+                vec![
+                    3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+                    3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+                ],
+                vec![
+                    300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100.,
+                    140., 190., 200., 320., 330., 340., 350., 355., 315., 5.,
+                ],
+                vec![
+                    0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225.,
+                    198., 121., 68., 19., 0., 0., 0., 0., 0.,
+                ],
+                vec![
+                    0., 0., 0., 0., 0., 0., 7., 53., 63., 164., 339., 242., 315., 577., 385., 285.,
+                    332., 126., 7., 0., 0., 0., 0., 0.,
+                ],
+                vec![
+                    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+                    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+                ],
+                51.383,
+                -0.783,
+                0,
+                0,
+                Some(0),
+                1.,
+                Some(1),
+                Some(DaylightSavingsConfig::NotApplicable),
+                false,
+                false,
+                // following starts/ends are corrected from Python tests which erroneously use previous
+                // "start" field instead of "start360" (which has different origin for angle)
+                serde_json::from_value(json!([
+                    {"start360": 0, "end360": 45},
+                    {"start360": 45, "end360": 90},
+                    {"start360": 90, "end360": 135},
+                    {"start360": 135, "end360": 180,
+                        "shading": [
+                            {"type": "obstacle", "height": 10.5, "distance": 12}
+                        ]
+                    },
+                    {"start360": 180, "end360": 225},
+                    {"start360": 225, "end360": 270},
+                    {"start360": 270, "end360": 315},
+                    {"start360": 315, "end360": 360}
+                ]))
+                .unwrap(),
+            )
+        }
+
+        #[fixture]
+        fn external_sensor() -> ExternalSensor {
+            serde_json::from_value(json!({
+                "correlation": [
+                    {"temperature": 0.0, "max_charge": 1.0},
+                    {"temperature": 10.0, "max_charge": 0.9},
+                    {"temperature": 18.0, "max_charge": 0.0}
+                ]
+            }))
+            .unwrap()
+        }
+
+        #[fixture]
+        fn charge_control(
+            simulation_time_1: SimulationTime,
+            schedule: Vec<bool>,
+            external_conditions: ExternalConditions,
+            external_sensor: ExternalSensor,
+        ) -> ChargeControl {
+            ChargeControl::new(
+                ControlLogicType::Automatic,
+                schedule,
+                &simulation_time_1.iter().current_iteration(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
+                Some(15.5),
+                None,
+                Some(Arc::new(external_conditions)),
+                Some(external_sensor),
+                None,
+            )
+            .unwrap()
+        }
+
+        #[fixture]
+        fn controls_1(charge_control: ChargeControl) -> IndexMap<String, Arc<Control>> {
+            IndexMap::from([
+                (
+                    "ctrl11".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        [true, false, false, true, true, true, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                ("ctrl12".into(), Control::Charge(charge_control).into()),
+                (
+                    "ctrl13".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        [true, true, false, false, true, false, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+            ])
+        }
+
+        #[fixture]
+        fn combination_target_charge() -> ControlCombinations {
+            serde_json::from_value(json!({
+                "main": {"operation": "AND", "controls": ["ctrl11", "ctrl12"]},
+            }))
+            .unwrap()
+        }
+
+        #[fixture]
+        fn combination_control_target_charge(
+            combination_target_charge: ControlCombinations,
+            controls_1: IndexMap<String, Arc<Control>>,
+        ) -> CombinationTimeControl {
+            CombinationTimeControl::new(combination_target_charge, controls_1).unwrap()
+        }
+
+        #[rstest]
+        fn test_evaluate_boolean_operation_is_on(
+            combination_control_target_charge: CombinationTimeControl,
+        ) {
+            let control_results_false_false = vec![false, false];
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::And,
+                    &mut control_results_false_false.iter().map(|x| *x),
+                ),
+                false
+            );
+
+            let control_results_true_false = vec![true, false];
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::And,
+                    &mut control_results_true_false.iter().map(|x| *x),
+                ),
+                false
+            );
+
+            let control_results_false_true = vec![false, true];
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::And,
+                    &mut control_results_false_true.iter().map(|x| *x),
+                ),
+                false
+            );
+
+            let control_results_true_true = vec![true, true];
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::And,
+                    &mut control_results_true_true.iter().map(|x| *x),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Or,
+                    &mut control_results_false_false.iter().map(|x| *x),
+                ),
+                false
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Or,
+                    &mut control_results_false_true.iter().map(|x| *x),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Or,
+                    &mut control_results_true_false.iter().map(|x| *x),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Or,
+                    &mut control_results_true_true.iter().map(|x| *x),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Xor,
+                    &mut control_results_false_false.iter().map(|x| *x),
+                ),
+                false
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Xor,
+                    &mut control_results_false_true.iter().map(|x| *x),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Xor,
+                    &mut control_results_true_false.iter().map(|x| *x),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Xor,
+                    &mut control_results_true_true.iter().map(|x| *x),
+                ),
+                false
+            );
+
+            let control_results_true = vec![true];
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Not,
+                    &mut control_results_true.iter().map(|x| *x),
+                ),
+                false
+            );
+
+            let control_results_false = vec![false];
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Not,
+                    &mut control_results_false.iter().map(|x| *x),
+                ),
+                true
+            );
         }
     }
 
