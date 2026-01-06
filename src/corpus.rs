@@ -1,7 +1,7 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
     ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl,
-    OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl, SmartApplianceControl,
+    OnOffCostMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl, SmartApplianceControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::cooling_systems::space_cool_system_base::SpaceCoolSystem;
@@ -276,12 +276,12 @@ fn single_control_from_details(
             time_on_daily,
             schedule,
             ..
-        } => Control::OnOffMinimisingTime(OnOffMinimisingTimeControl::new(
+        } => Control::OnOffMinimisingTime(OnOffCostMinimisingTimeControl::new(
             reject_nulls(expand_numeric_schedule(schedule))?,
             *start_day,
             *time_series_step,
             *time_on_daily,
-        ))
+        )?)
         .into(),
         ControlDetails::CombinationTime { combination } => {
             // resolved controls needs to be: IndexMap<String, Arc<Control>>

@@ -25,7 +25,7 @@ use std::sync::Arc;
 pub(crate) enum Control {
     OnOffTime(OnOffTimeControl),
     Charge(ChargeControl),
-    OnOffMinimisingTime(OnOffMinimisingTimeControl),
+    OnOffMinimisingTime(OnOffCostMinimisingTimeControl),
     SetpointTime(SetpointTimeControl),
     CombinationTime(CombinationTimeControl),
 }
@@ -556,26 +556,36 @@ impl ChargeControl {
 impl ControlBehaviour for ChargeControl {}
 
 #[derive(Clone, Debug)]
-pub struct OnOffMinimisingTimeControl {
-    /// list of boolean values where true means "on" (one entry per hour)
-    schedule: Vec<bool>,
+pub struct OnOffCostMinimisingTimeControl {
+    schedule: Vec<f64>,
     start_day: u32,
     time_series_step: f64,
+    time_on_daily: f64,
+    on_off_schedule: Vec<bool>,
 }
 
-impl OnOffMinimisingTimeControl {
+impl OnOffCostMinimisingTimeControl {
+    /// Construct an OnOffCostMinimisingControl object
+
+    /// Arguments:
+    /// * `schedule` - list of cost values (one entry per time_series_step)
+    /// * `simulation_time` - reference to SimulationTime object
+    /// * `start_day` - first day of the time series, day of the year, 0 to 365 (single value)
+    /// * `time_series_step` - timestep of the time series data, in hours
+    /// * `time_on_daily` - number of "on" hours to be set per day
     pub fn new(
         schedule: Vec<f64>,
         start_day: u32,
         time_series_step: f64,
         time_on_daily: f64,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let timesteps_per_day = (HOURS_IN_DAY as f64 / time_series_step) as usize;
         let timesteps_on_daily = (time_on_daily / time_series_step) as usize;
         let time_series_len_days =
             ((schedule.len() as f64 * time_series_step / HOURS_IN_DAY as f64).ceil()) as usize;
 
-        let mut built_schedule: Vec<bool> = vec![];
+        // For each day of schedule, find the specified number of hours with the lowest cost
+        let mut on_off_schedule: Vec<bool> = vec![];
         for day in 0..time_series_len_days {
             // Get part of the schedule for current day
             let schedule_day_start = day * timesteps_per_day;
@@ -590,7 +600,10 @@ impl OnOffMinimisingTimeControl {
             // Initialise boolean schedule for day
             let mut schedule_onoff_day = vec![false; timesteps_per_day];
 
-            assert_eq!(schedule_onoff_day.len(), schedule_day.len());
+            if schedule_onoff_day.len() != schedule_day.len() {
+                bail!("Different lengths for schedule_onoff_day and schedule_day")
+            }
+
             let mut timesteps_to_be_allocated = timesteps_on_daily;
             for cost in schedule_day_cost_lowest.iter() {
                 for (idx, entry) in schedule_day.iter().enumerate() {
@@ -603,22 +616,26 @@ impl OnOffMinimisingTimeControl {
                     }
                 }
             }
-            built_schedule.extend(schedule_onoff_day);
+            // Add day of schedule to overall
+            on_off_schedule.extend(schedule_onoff_day);
         }
 
-        OnOffMinimisingTimeControl {
-            schedule: built_schedule,
+        Ok(OnOffCostMinimisingTimeControl {
+            schedule,
             start_day,
             time_series_step,
-        }
+            time_on_daily,
+            on_off_schedule,
+        })
     }
 
-    pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
-        self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
+    /// Return true if control will allow system to run
+    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+        self.on_off_schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
     }
 }
 
-impl ControlBehaviour for OnOffMinimisingTimeControl {}
+impl ControlBehaviour for OnOffCostMinimisingTimeControl {}
 
 #[derive(Clone, Debug)]
 pub(crate) struct SetpointTimeControl {
@@ -1549,7 +1566,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn on_off_minimising_control() -> OnOffMinimisingTimeControl {
+    pub fn on_off_minimising_control() -> OnOffCostMinimisingTimeControl {
         let schedule = [
             vec![5.0; 7],
             vec![10.0; 2],
@@ -1560,12 +1577,12 @@ mod tests {
         .to_vec()
         .concat();
         let schedule = [&schedule[..], &schedule[..]].concat();
-        OnOffMinimisingTimeControl::new(schedule, 0, 1.0, 12.0)
+        OnOffCostMinimisingTimeControl::new(schedule, 0, 1.0, 12.0).unwrap()
     }
 
     #[rstest]
     pub fn should_be_on_for_cost_minimising_control(
-        on_off_minimising_control: OnOffMinimisingTimeControl,
+        on_off_minimising_control: OnOffCostMinimisingTimeControl,
         simulation_time: SimulationTimeIterator,
     ) {
         let resulting_schedule = [
@@ -2185,12 +2202,12 @@ mod tests {
             10.0, 10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
         ];
         let cost_minimising_control =
-            Control::OnOffMinimisingTime(OnOffMinimisingTimeControl::new(
+            Control::OnOffMinimisingTime(OnOffCostMinimisingTimeControl::new(
                 cost_schedule,
                 0,
                 1.,
                 5.0, // Need 12 "on" hours
-            ));
+            ).unwrap());
 
         IndexMap::from([
             (
