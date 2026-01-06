@@ -3029,7 +3029,7 @@ mod tests {
         }
 
         #[fixture]
-        fn combination_target_charge() -> ControlCombinations {
+        fn combination_target_charge(simulation_time: SimulationTime) -> ControlCombinations {
             serde_json::from_value(json!({
                 "main": {"operation": "AND", "controls": ["ctrl11", "ctrl12"]},
             }))
@@ -3048,38 +3048,34 @@ mod tests {
         fn test_evaluate_boolean_operation_is_on(
             combination_control_target_charge: CombinationTimeControl,
         ) {
-            let control_results_false_false = vec![false, false];
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::And,
-                    &mut control_results_false_false.iter().map(|x| *x),
+                    &mut vec![false, false].iter().map(|x| *x),
                 ),
                 false
             );
 
-            let control_results_true_false = vec![true, false];
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::And,
-                    &mut control_results_true_false.iter().map(|x| *x),
+                    &mut vec![true, false].iter().map(|x| *x),
                 ),
                 false
             );
 
-            let control_results_false_true = vec![false, true];
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::And,
-                    &mut control_results_false_true.iter().map(|x| *x),
+                    &mut vec![false, true].iter().map(|x| *x),
                 ),
                 false
             );
 
-            let control_results_true_true = vec![true, true];
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::And,
-                    &mut control_results_true_true.iter().map(|x| *x),
+                    &mut vec![true, true].iter().map(|x| *x),
                 ),
                 true
             );
@@ -3087,7 +3083,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Or,
-                    &mut control_results_false_false.iter().map(|x| *x),
+                    &mut vec![false, false].iter().map(|x| *x),
                 ),
                 false
             );
@@ -3095,7 +3091,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Or,
-                    &mut control_results_false_true.iter().map(|x| *x),
+                    &mut vec![false, true].iter().map(|x| *x),
                 ),
                 true
             );
@@ -3103,7 +3099,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Or,
-                    &mut control_results_true_false.iter().map(|x| *x),
+                    &mut vec![true, false].iter().map(|x| *x),
                 ),
                 true
             );
@@ -3111,7 +3107,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Or,
-                    &mut control_results_true_true.iter().map(|x| *x),
+                    &mut vec![true, true].iter().map(|x| *x),
                 ),
                 true
             );
@@ -3119,7 +3115,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Xor,
-                    &mut control_results_false_false.iter().map(|x| *x),
+                    &mut vec![false, false].iter().map(|x| *x),
                 ),
                 false
             );
@@ -3127,7 +3123,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Xor,
-                    &mut control_results_false_true.iter().map(|x| *x),
+                    &mut vec![false, true].iter().map(|x| *x),
                 ),
                 true
             );
@@ -3135,7 +3131,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Xor,
-                    &mut control_results_true_false.iter().map(|x| *x),
+                    &mut vec![true, false].iter().map(|x| *x),
                 ),
                 true
             );
@@ -3143,25 +3139,23 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Xor,
-                    &mut control_results_true_true.iter().map(|x| *x),
+                    &mut vec![true, true].iter().map(|x| *x),
                 ),
                 false
             );
 
-            let control_results_true = vec![true];
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Not,
-                    &mut control_results_true.iter().map(|x| *x),
+                    &mut vec![true].iter().map(|x| *x),
                 ),
                 false
             );
 
-            let control_results_false = vec![false];
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Not,
-                    &mut control_results_false.iter().map(|x| *x),
+                    &mut vec![false].iter().map(|x| *x),
                 ),
                 true
             );
