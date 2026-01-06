@@ -322,10 +322,12 @@ impl ChargeControl {
         self.logic_type
     }
 
+    // In Python this is inherited from the BoolTimeControl class
     pub(crate) fn is_on(&self, iteration: &SimulationTimeIteration) -> bool {
         self.schedule[iteration.time_series_idx(self.start_day, self.time_series_step)]
     }
 
+    // In Python there is an abstract method target_charge on the ControlCharge class and a concrete implementation here
     /// Return the charge level value from the list given in inputs; one value per day
     pub(crate) fn target_charge(
         &self,
@@ -334,27 +336,27 @@ impl ChargeControl {
     ) -> anyhow::Result<f64> {
         // Calculate target charge nominal when unit is on
         let mut target_charge_nominal = if self.is_on(&simtime) {
-            self.charge_level[simtime.time_series_idx_days(
-                self.start_day,
-                self.time_series_step,
-                Option::Some(21.),
-            )]
+            self.charge_level
+                [simtime.time_series_idx_days(self.start_day, Some(self.charge_calc_time))]
             .unwrap_or_default()
         } else {
             // If unit is off send 0.0 for target charge
             0.
         };
 
-        Ok(match self.logic_type {
-            ControlLogicType::Manual | ControlLogicType::HeatBattery => target_charge_nominal,
+        let target_charge = match self.logic_type {
+            ControlLogicType::Manual => target_charge_nominal,
             _ => {
                 // automatic, celect and hhrsh control include temperature charge cut logic
-                let temp_charge_cut = self.temp_charge_cut_corr(simtime)?;
+                let temp_charge_cut = self.temp_charge_cut_corr(simtime);
 
-                if temp_air.is_some_and(|temp_air| temp_air >= temp_charge_cut) {
+                if temp_charge_cut.is_some_and(|temp_charge_cut| {
+                    temp_air.is_some_and(|temp_air| temp_air >= temp_charge_cut)
+                }) {
                     // Control logic cut when temp_air is over temp_charge cut
                     target_charge_nominal = 0.;
                 }
+
                 match self.logic_type {
                     ControlLogicType::Automatic => {
                         // Automatic charge control can be achieved using internal thermostat(s) to
@@ -397,7 +399,7 @@ impl ChargeControl {
                             target_charge_nominal
                         }
                     }
-                    ControlLogicType::Hhrsh => {
+                    ControlLogicType::Hhrsh | ControlLogicType::HeatBattery => {
                         // A ‘high heat retention storage heater’ is one with heat retention not less
                         // than 45% measured according to BS EN 60531. It incorporates a timer, electronic
                         // room thermostat and fan to control the heat output. It is also able to estimate
@@ -410,12 +412,11 @@ impl ChargeControl {
                         }
                     }
                     ControlLogicType::Manual => unreachable!(),
-                    ControlLogicType::HeatBattery => {
-                        unimplemented!("HeatBattery ChargeControl logic is not implemented yet.");
-                    }
                 }
             }
-        })
+        };
+
+        Ok(target_charge)
     }
 
     pub(crate) fn energy_to_store(
@@ -474,22 +475,24 @@ impl ChargeControl {
         energy_to_store
     }
 
-    /// Correct nominal/json temp_charge_cut with monthly table
-    pub(crate) fn temp_charge_cut_corr(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        let temp_charge_cut_delta = if let Some(temp_charge_cut_delta) =
-            self.temp_charge_cut_delta.as_ref()
-        {
-            temp_charge_cut_delta[simtime.time_series_idx(self.start_day, self.time_series_step)]
+    ///Correct nominal/json temp_charge_cut with monthly table
+    /// Arguments
+    /// returns -- temp_charge_cut (corrected)
+    pub(crate) fn temp_charge_cut_corr(&self, simtime: SimulationTimeIteration) -> Option<f64> {
+        if self.temp_charge_cut.is_none() {
+            // Return None if temp_charge_cut is not set (e.g., for heat batteries)
+            None
         } else {
-            0.0
-        };
+            let temp_charge_cut_delta =
+                if let Some(temp_charge_cut_delta) = self.temp_charge_cut_delta.as_ref() {
+                    temp_charge_cut_delta
+                        [simtime.time_series_idx(self.start_day, self.time_series_step)]
+                } else {
+                    0.0
+                };
 
-        Ok(self.temp_charge_cut.ok_or_else(|| {
-            anyhow!("temp_charge_cut in this ChargeControl was expected to be set.")
-        })? + temp_charge_cut_delta)
+            Some(self.temp_charge_cut.unwrap() + temp_charge_cut_delta)
+        }
     }
 
     fn calculate_heating_degree_hours(

@@ -150,19 +150,19 @@ impl SimulationTimeIteration {
         ((self.time - (start_day * HOURS_IN_DAY) as f64) / step) as usize
     }
 
-    pub fn time_series_idx_days(
-        &self,
-        start_day: u32,
-        step: f64,
-        charge_calc_time: Option<f64>,
-    ) -> usize {
+    /// Calculate array lookup index
+    /// * `charge_calc_time` - Indicates from which hour of the day the formula starts using the next day
+    ///                        instead of the current one
+    pub fn time_series_idx_days(&self, start_day: u32, charge_calc_time: Option<f64>) -> usize {
         let charge_calc_time = charge_calc_time.unwrap_or(21.);
-        let current_day = self.time as u32 / HOURS_IN_DAY;
+        // Index in array of time-series data is current day (relative to start
+        // of year) adjusted for the time-series step (in days) and for the start day
+        // (relative to start of year) of time-series data
 
-        if self.time.floor() >= charge_calc_time {
-            ((current_day + 1 - start_day) as f64 / step) as usize
+        if self.hour_of_day() >= charge_calc_time as u32 {
+            (self.current_day() + 1 - start_day) as usize
         } else {
-            ((current_day - start_day) as f64 / step) as usize
+            (self.current_day() - start_day) as usize
         }
     }
 }
