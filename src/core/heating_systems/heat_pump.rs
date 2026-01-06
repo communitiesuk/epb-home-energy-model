@@ -527,6 +527,11 @@ impl BufferTank {
 
         Ok(&self.service_results)
     }
+
+    #[cfg(test)]
+    pub(crate) fn set_track_buffer_loss(&mut self, buffer_loss: f64) {
+        self.track_buffer_loss = buffer_loss;
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -6707,7 +6712,6 @@ mod tests {
             simulation_time_for_heat_pump,
             None,
         );
-        println!("{:?}", heat_pump.backup_ctrl);
 
         assert_eq!(heat_pump.backup_heater_max_power(), 0.);
     }
@@ -9761,7 +9765,420 @@ mod tests {
         }
     }
 
-    // TODO test_run_demand_energy_calc_other
+    #[rstest]
+    fn test_run_demand_energy_calc_other(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+        mut buffer_tank: BufferTank,
+    ) {
+        let emitters_data_for_buffer_tank = BufferTankEmittersDataWithResult {
+            data: {
+                BufferTankEmittersData {
+                    temp_emitter_req: 43.,
+                    power_req_from_buffer_tank: 6.,
+                    design_flow_temp: 55.,
+                    target_flow_temp: 48.,
+                    temp_rm_prev: 22.,
+                    variable_flow: true,
+                    temp_diff_emit_design: 10.,
+                    min_flow_rate: 0.05,
+                    max_flow_rate: 0.3,
+                }
+            },
+            result: {
+                BufferTankServiceResult {
+                    _service_name: Default::default(),
+                    _power_req_from_buffer_tank: Default::default(),
+                    _temp_emitter_req: Default::default(),
+                    _buffer_emitter_circ_flow_rate: Default::default(),
+                    flow_temp_increase_due_to_buffer: 10.,
+                    pump_power_at_flow_rate: 20.,
+                    heat_loss_buffer_kwh: 30.,
+                }
+            },
+        };
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp";
+        let boiler = Arc::new(RwLock::new(create_boiler(
+            external_conditions.clone(),
+            energy_supply(simulation_time_for_heat_pump),
+            simulation_time_for_heat_pump,
+            energy_supply_conn_name_auxiliary,
+        )));
+        let control = create_setpoint_time_control(vec![Some(21.), Some(22.)]);
+
+        let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
+            boiler.clone(),
+            "service_boilerspace",
+            Arc::new(control),
+        )));
+        let input = create_heat_pump_input_from_json(None, None);
+        let mut heat_pump_with_boiler = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            Some(boiler),
+            None,
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        // Test with ServiceType Water
+        let results = heat_pump_with_boiler
+            .run_demand_energy_calc(
+                "service_boilerspace",
+                &ServiceType::Water,
+                1.,
+                Some(320.0),
+                310.0,
+                340.0,
+                design_flow_temp_op_cond_k(55.),
+                1560.,
+                true,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+                Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                Some(HybridBoilerService::Space(boiler_service_space.clone())),
+                Some(1.),
+                Some(0.0),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let expected_results = HeatPumpEnergyCalculation {
+            service_name: "service_boilerspace".into(),
+            service_type: ServiceType::Water,
+            service_on: true,
+            energy_output_required: 1.0,
+            temp_output: Some(320.),
+            temp_source: 273.15,
+            cop_op_cond: Some(3.395194725645021), // 3.39519472564502 in Python
+            thermal_capacity_op_cond: Some(9.231749514150996),
+            time_running_full_load: 0.10832182984028522,
+            time_running_part_load: None,
+            time_available_for_capacity_calc: 1.0,
+            time_available_for_load_ratio_calc: 1.0,
+            time_constant_for_service: 1560.,
+            compressor_power_min_load: Default::default(),
+            load_ratio_continuous_min: Default::default(),
+            load_ratio: Default::default(),
+            use_backup_heater_only: false,
+            hp_operating_in_onoff_mode: Default::default(),
+            energy_input_hp: Default::default(),
+            energy_delivered_hp: 1.0,
+            energy_input_backup: 0.0,
+            energy_delivered_backup: 0.0,
+            energy_input_total: Default::default(),
+            energy_delivered_total: 1.0,
+            energy_heating_circ_pump: 0.0016248274476042782,
+            energy_source_circ_pump: 0.0010832182984028523,
+            energy_output_required_boiler: 0.0,
+            energy_heating_warm_air_fan: 0.0,
+            energy_output_delivered_boiler: None,
+        };
+
+        assert_eq!(results, expected_results);
+
+        // Test with service_on set to false
+        let results = heat_pump_with_boiler
+            .run_demand_energy_calc(
+                "service_boilerspace",
+                &ServiceType::Water,
+                1.,
+                None,
+                310.0,
+                340.0,
+                design_flow_temp_op_cond_k(55.),
+                1560.,
+                false,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+                Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                Some(HybridBoilerService::Space(boiler_service_space.clone())),
+                Some(1.),
+                Some(0.0),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let expected_results = HeatPumpEnergyCalculation {
+            service_name: "service_boilerspace".into(),
+            service_type: ServiceType::Water,
+            service_on: false,
+            energy_output_required: 1.0,
+            temp_output: None,
+            temp_source: 273.15,
+            cop_op_cond: None,
+            thermal_capacity_op_cond: None,
+            time_running_full_load: 0.,
+            time_running_part_load: None,
+            time_available_for_capacity_calc: 1.0,
+            time_available_for_load_ratio_calc: 1.0,
+            time_constant_for_service: 1560.,
+            compressor_power_min_load: Default::default(),
+            load_ratio_continuous_min: Default::default(),
+            load_ratio: Default::default(),
+            use_backup_heater_only: false,
+            hp_operating_in_onoff_mode: Default::default(),
+            energy_input_hp: Default::default(),
+            energy_delivered_hp: 0.0,
+            energy_input_backup: 0.0,
+            energy_delivered_backup: 0.0,
+            energy_input_total: Default::default(),
+            energy_delivered_total: 0.0,
+            energy_heating_circ_pump: 0.,
+            energy_source_circ_pump: 0.,
+            energy_output_required_boiler: 0.0,
+            energy_heating_warm_air_fan: 0.0,
+            energy_output_delivered_boiler: None,
+        };
+
+        assert_eq!(results, expected_results);
+
+        // Test with HeatPumpBackupControlType.SUBSTITUTE and HeatPumpSinkType.AIR
+        heat_pump_with_boiler.backup_ctrl = HeatPumpBackupControlType::Substitute;
+        heat_pump_with_boiler.sink_type = HeatPumpSinkType::Air;
+
+        let results = heat_pump_with_boiler
+            .run_demand_energy_calc(
+                "service_boilerspace",
+                &ServiceType::Space,
+                1.,
+                Some(320.),
+                310.0,
+                340.0,
+                design_flow_temp_op_cond_k(55.),
+                1560.,
+                true,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+                Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                Some(HybridBoilerService::Space(boiler_service_space.clone())),
+                Some(1.),
+                Some(0.0),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let expected_results = HeatPumpEnergyCalculation {
+            service_name: "service_boilerspace".into(),
+            service_type: ServiceType::Space,
+            service_on: true,
+            energy_output_required: 1.0,
+            temp_output: Some(320.),
+            temp_source: 273.15,
+            cop_op_cond: Some(3.395194725645021), // 3.39519472564502 in Python
+            thermal_capacity_op_cond: Some(9.231749514150996),
+            time_running_full_load: 0.10832182984028522,
+            time_running_part_load: None,
+            time_available_for_capacity_calc: 1.0,
+            time_available_for_load_ratio_calc: 1.0,
+            time_constant_for_service: 1560.,
+            compressor_power_min_load: Default::default(),
+            load_ratio_continuous_min: Default::default(),
+            load_ratio: Default::default(),
+            use_backup_heater_only: false,
+            hp_operating_in_onoff_mode: Default::default(),
+            energy_input_hp: Default::default(),
+            energy_delivered_hp: 1.0,
+            energy_input_backup: 0.0,
+            energy_delivered_backup: 0.0,
+            energy_input_total: Default::default(),
+            energy_delivered_total: 1.0,
+            energy_heating_circ_pump: 0.,
+            energy_source_circ_pump: 0.0010832182984028523,
+            energy_output_required_boiler: 0.0,
+            energy_heating_warm_air_fan: 0.0,
+            energy_output_delivered_boiler: None,
+        };
+
+        assert_eq!(results, expected_results);
+
+        buffer_tank.set_track_buffer_loss(5.);
+        // Python sets buffer_loss return value to 5 (buffer_tank.get_buffer_loss.return_value = 5)
+        assert_eq!(buffer_tank.buffer_loss(), 5.);
+
+        heat_pump_with_boiler.buffer_tank = Some(buffer_tank.clone());
+
+        // Test with a buffer tank and emitters_data_for_buffer_tank
+        heat_pump_with_boiler.time_running_continuous = 1.;
+
+        let results = heat_pump_with_boiler
+            .run_demand_energy_calc(
+                "service_boilerspace",
+                &ServiceType::Space,
+                1.,
+                Some(320.),
+                310.0,
+                340.0,
+                design_flow_temp_op_cond_k(55.),
+                1560.,
+                true,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+                Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                Some(HybridBoilerService::Space(boiler_service_space.clone())),
+                Some(1.),
+                Some(0.0),
+                None,
+                Some(emitters_data_for_buffer_tank.clone()),
+            )
+            .unwrap();
+
+        let expected_results = HeatPumpEnergyCalculation {
+            service_name: "service_boilerspace".into(),
+            service_type: ServiceType::Space,
+            service_on: true,
+            energy_output_required: 36.0,
+            temp_output: Some(330.),
+            temp_source: 273.15,
+            cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
+            thermal_capacity_op_cond: Some(8.417674488123662),
+            time_running_full_load: 0.,
+            time_running_part_load: None,
+            time_available_for_capacity_calc: 1.0,
+            time_available_for_load_ratio_calc: 1.0,
+            time_constant_for_service: 1560.,
+            compressor_power_min_load: Default::default(),
+            load_ratio_continuous_min: Default::default(),
+            load_ratio: Default::default(),
+            use_backup_heater_only: true,
+            hp_operating_in_onoff_mode: Default::default(),
+            energy_input_hp: Default::default(),
+            energy_delivered_hp: 0.0,
+            energy_input_backup: 0.0,
+            energy_delivered_backup: 0.0,
+            energy_input_total: Default::default(),
+            energy_delivered_total: 0.0,
+            energy_heating_circ_pump: 0.,
+            energy_source_circ_pump: 0.,
+            energy_output_required_boiler: 24.0,
+            energy_heating_warm_air_fan: 0.0,
+            energy_output_delivered_boiler: None,
+        };
+
+        assert_eq!(results, expected_results);
+
+        // Test with a buffer tank and emitters_data_for_buffer_tank, and service_on set to false
+        let results = heat_pump_with_boiler
+            .run_demand_energy_calc(
+                "service_boilerspace",
+                &ServiceType::Space,
+                1.,
+                Some(320.),
+                310.0,
+                340.0,
+                design_flow_temp_op_cond_k(55.),
+                1560.,
+                false,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+                Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                Some(HybridBoilerService::Space(boiler_service_space.clone())),
+                Some(1.),
+                Some(0.0),
+                None,
+                Some(emitters_data_for_buffer_tank.clone()),
+            )
+            .unwrap();
+
+        let expected_results = HeatPumpEnergyCalculation {
+            service_name: "service_boilerspace".into(),
+            service_type: ServiceType::Space,
+            service_on: false,
+            energy_output_required: 1.0,
+            temp_output: Some(330.),
+            temp_source: 273.15,
+            cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
+            thermal_capacity_op_cond: Some(8.417674488123662),
+            time_running_full_load: 0.,
+            time_running_part_load: None,
+            time_available_for_capacity_calc: 1.0,
+            time_available_for_load_ratio_calc: 1.0,
+            time_constant_for_service: 1560.,
+            compressor_power_min_load: Default::default(),
+            load_ratio_continuous_min: Default::default(),
+            load_ratio: Default::default(),
+            use_backup_heater_only: false,
+            hp_operating_in_onoff_mode: Default::default(),
+            energy_input_hp: Default::default(),
+            energy_delivered_hp: 0.0,
+            energy_input_backup: 0.0,
+            energy_delivered_backup: 0.0,
+            energy_input_total: Default::default(),
+            energy_delivered_total: 0.0,
+            energy_heating_circ_pump: 0.,
+            energy_source_circ_pump: 0.,
+            energy_output_required_boiler: 0.0,
+            energy_heating_warm_air_fan: 0.0,
+            energy_output_delivered_boiler: None,
+        };
+
+        assert_eq!(results, expected_results);
+
+        // Test with a buffer tank and energy delivered greater than buffer heat loss
+        heat_pump_with_boiler.buffer_tank = Some(buffer_tank.clone());
+
+        let results = heat_pump_with_boiler
+            .run_demand_energy_calc(
+                "TEST",
+                &ServiceType::Space,
+                1.,
+                Some(100.),
+                310.0,
+                340.0,
+                design_flow_temp_op_cond_k(55.),
+                1560.,
+                true,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+                Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                Some(HybridBoilerService::Space(boiler_service_space.clone())),
+                Some(1.),
+                Some(0.0),
+                None,
+                Some(emitters_data_for_buffer_tank),
+            )
+            .unwrap();
+
+        let expected_results = HeatPumpEnergyCalculation {
+            service_name: "TEST".into(),
+            service_type: ServiceType::Space,
+            service_on: true,
+            energy_output_required: 36.0,
+            temp_output: Some(110.),
+            temp_source: 273.15,
+            cop_op_cond: Some(1.),
+            thermal_capacity_op_cond: Some(227.27721117933888),
+            time_running_full_load: 0.1583968749581025,
+            time_running_part_load: None,
+            time_available_for_capacity_calc: 1.0,
+            time_available_for_load_ratio_calc: 1.0,
+            time_constant_for_service: 1560.,
+            compressor_power_min_load: Default::default(),
+            load_ratio_continuous_min: Default::default(),
+            load_ratio: Default::default(),
+            use_backup_heater_only: false,
+            hp_operating_in_onoff_mode: Default::default(),
+            energy_input_hp: Default::default(),
+            energy_delivered_hp: 36.0,
+            energy_input_backup: 0.0,
+            energy_delivered_backup: 0.0,
+            energy_input_total: Default::default(),
+            energy_delivered_total: 1.0,
+            energy_heating_circ_pump: 0.,
+            energy_source_circ_pump: 0.0015839687495810251,
+            energy_output_required_boiler: 0.0,
+            energy_heating_warm_air_fan: 0.0,
+            energy_output_delivered_boiler: None,
+        };
+
+        assert_eq!(results, expected_results);
+    }
 
     #[rstest]
     fn test_demand_energy(
