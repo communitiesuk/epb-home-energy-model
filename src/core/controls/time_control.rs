@@ -158,7 +158,7 @@ pub(crate) struct ChargeControl {
     charge_level: Vec<Option<f64>>,
     temp_charge_cut: Option<f64>,
     temp_charge_cut_delta: Option<Vec<f64>>,
-    external_conditions: Arc<ExternalConditions>,
+    external_conditions: Option<Arc<ExternalConditions>>,
     external_sensor: Option<ExternalSensor>,
     hhrsh: Option<ChargeControlHhrshFields>,
     charge_calc_time: f64,
@@ -202,7 +202,7 @@ impl ChargeControl {
         charge_level: Vec<Option<f64>>,
         temp_charge_cut: Option<f64>,
         temp_charge_cut_delta: Option<Vec<f64>>,
-        external_conditions: Arc<ExternalConditions>, // TODO (migration 1.0.0a1) this might need to be an option as ext cond not needed for all cases
+        external_conditions: Option<Arc<ExternalConditions>>,
         external_sensor: Option<ExternalSensor>,
         charge_calc_time: Option<f64>,
     ) -> anyhow::Result<Self> {
@@ -231,9 +231,10 @@ impl ChargeControl {
                     bail!("Hhrsh ChargeControl definition is missing input temp_charge_cut parameters.");
                 }
 
-                // if external_conditions.is_none() {
-                //     bail!("Hhrsh ChargeControl definition is missing external conditions.");
-                // }
+                if external_conditions.is_none() {
+                    bail!("Hhrsh ChargeControl definition is missing external conditions.");
+                }
+                let external_conditions = external_conditions.as_ref().unwrap(); // we know it exists at this point
 
                 // Initialize HHRSH-specific attributes
                 let steps_day = (HOURS_PER_DAY as f64 / simulation_timestep) as usize;
@@ -267,9 +268,10 @@ impl ChargeControl {
             }
             ControlLogicType::HeatBattery => {
                 // Heat battery doesn't require temp_charge_cut but needs other parameters
-                // if external_conditions.is_none() {
-                //     bail!("Heat_battery ChargeControl definition is missing external conditions.");
-                // }
+                if external_conditions.is_none() {
+                    bail!("Heat_battery ChargeControl definition is missing external conditions.");
+                }
+                let external_conditions = external_conditions.as_ref().unwrap(); // we know it exists at this point
 
                 // Initialize heat battery-specific attributes
                 let steps_day = (HOURS_PER_DAY as f64 / simulation_timestep) as usize;
@@ -309,7 +311,7 @@ impl ChargeControl {
             charge_level,
             temp_charge_cut,
             temp_charge_cut_delta,
-            external_conditions, // TODO (migration 1.0.0a1) this seems to be optional in Python
+            external_conditions,
             external_sensor,
             hhrsh: hhrsh_fields,
             charge_calc_time,
@@ -360,9 +362,13 @@ impl ChargeControl {
 
                         // Controls can also be supplemented by an external weather sensor,
                         // which tends to act as a limiting device to prevent the storage heaters from overcharging.
-                        if self.external_sensor.is_some() {
-                            let limit =
-                                self.get_limit_factor(self.external_conditions.air_temp(&simtime))?;
+                        if self.external_sensor.is_some() && self.external_conditions.is_some() {
+                            let limit = self.get_limit_factor(
+                                self.external_conditions
+                                    .as_ref()
+                                    .unwrap()
+                                    .air_temp(&simtime),
+                            )?;
                             target_charge_nominal * limit
                         } else {
                             target_charge_nominal
@@ -379,9 +385,13 @@ impl ChargeControl {
                         //
                         // Controls can also be supplemented by an external weather sensor,
                         // which tends to act as a limiting device to prevent the storage heaters from overcharging.
-                        if self.external_sensor.is_some() {
-                            let limit =
-                                self.get_limit_factor(self.external_conditions.air_temp(&simtime))?;
+                        if self.external_sensor.is_some() && self.external_conditions.is_some() {
+                            let limit = self.get_limit_factor(
+                                self.external_conditions
+                                    .as_ref()
+                                    .unwrap()
+                                    .air_temp(&simtime),
+                            )?;
                             target_charge_nominal * limit
                         } else {
                             target_charge_nominal
@@ -426,13 +436,20 @@ impl ChargeControl {
             energy_to_store: energy_to_store_atomic,
         } = self.hhrsh.as_ref().expect("HHRSH fields should be set.");
         demand.write().push_front(Some(energy_demand));
-        future_ext_temp.write().push_front(Some(
-            self.external_conditions
-                .air_temp_with_offset(&simtime, *steps_day),
-        ));
-        past_ext_temp
-            .write()
-            .push_front(Some(self.external_conditions.air_temp(&simtime)));
+        if self.external_conditions.is_some() {
+            future_ext_temp.write().push_front(Some(
+                self.external_conditions
+                    .as_ref()
+                    .unwrap()
+                    .air_temp_with_offset(&simtime, *steps_day),
+            ));
+            past_ext_temp.write().push_front(Some(
+                self.external_conditions
+                    .as_ref()
+                    .unwrap()
+                    .air_temp(&simtime),
+            ));
+        }
 
         let future_hdh =
             self.calculate_heating_degree_hours(future_ext_temp.read().as_ref(), base_temp);
@@ -1974,7 +1991,7 @@ mod tests {
             vec![Some(1.0), Some(0.8)],
             Some(15.5),
             None,
-            external_conditions.into(),
+            Some(external_conditions.into()),
             Some(external_sensor),
             None,
         )
@@ -2151,7 +2168,7 @@ mod tests {
             [1.0, 0.8].into_iter().map(Some).collect(),
             Some(15.5),
             None,
-            external_conditions.into(),
+            Some(external_conditions.into()),
             Some(external_sensor),
             None,
         )

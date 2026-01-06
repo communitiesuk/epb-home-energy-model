@@ -781,7 +781,7 @@ mod tests {
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                external_conditions,
+                Some(external_conditions),
                 Some(external_sensor),
                 None,
             )
@@ -1339,7 +1339,7 @@ mod tests {
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                external_conditions.clone(),
+                Some(external_conditions.clone()),
                 Some(external_sensor),
                 None,
             )
@@ -1386,7 +1386,7 @@ mod tests {
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                external_conditions.clone(),
+                Some(external_conditions.clone()),
                 Some(external_sensor),
                 None,
             )
@@ -1433,7 +1433,7 @@ mod tests {
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                external_conditions.clone(),
+                Some(external_conditions.clone()),
                 Some(external_sensor),
                 None,
             )
@@ -1480,7 +1480,7 @@ mod tests {
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                external_conditions.clone(),
+                Some(external_conditions.clone()),
                 Some(external_sensor),
                 None,
             )
@@ -1531,7 +1531,7 @@ mod tests {
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                external_conditions.clone(),
+                Some(external_conditions.clone()),
                 Some(external_sensor),
                 None,
             )

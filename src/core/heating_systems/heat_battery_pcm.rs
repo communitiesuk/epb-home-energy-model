@@ -2146,7 +2146,7 @@ mod tests {
                 vec![Some(0.2)],
                 None,
                 None,
-                external_conditions.into(),
+                Some(external_conditions.into()),
                 Some(external_sensor),
                 None,
             )
@@ -2756,7 +2756,7 @@ mod tests {
                 vec![Some(0.2), Some(0.3)],
                 None,
                 None,
-                external_conditions.into(),
+                Some(external_conditions.into()),
                 Some(external_sensor),
                 None,
             )
@@ -3003,7 +3003,7 @@ mod tests {
                 [1.0, 1.5].into_iter().map(Into::into).collect(),
                 None,
                 None,
-                external_conditions.into(),
+                Some(external_conditions.into()),
                 Some(external_sensor),
                 None,
             )
@@ -3075,7 +3075,7 @@ mod tests {
                 [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
                 None,
                 None,
-                external_conditions.clone().into(),
+                Some(external_conditions.clone().into()),
                 Some(external_sensor.clone()),
                 None,
             )
@@ -3104,7 +3104,7 @@ mod tests {
                 [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
                 None,
                 None,
-                external_conditions.into(),
+                Some(external_conditions.into()),
                 Some(external_sensor),
                 None,
             )

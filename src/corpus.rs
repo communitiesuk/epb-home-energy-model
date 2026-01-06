@@ -264,7 +264,7 @@ fn single_control_from_details(
                 charge_level_vec,
                 *temp_charge_cut,
                 temp_charge_cut_delta,
-                external_conditions.clone(),
+                Some(external_conditions.clone()), // TODO review as part of migration to 1.0.0a1
                 external_sensor.clone(),
                 None, // TODO as part of migration to 1.0.0a1
             )?)
