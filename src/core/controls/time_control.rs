@@ -3029,7 +3029,7 @@ mod tests {
         }
 
         #[fixture]
-        fn combination_target_charge(simulation_time: SimulationTime) -> ControlCombinations {
+        fn combination_target_charge() -> ControlCombinations {
             serde_json::from_value(json!({
                 "main": {"operation": "AND", "controls": ["ctrl11", "ctrl12"]},
             }))
