@@ -590,6 +590,14 @@ impl OnOffCostMinimisingTimeControl {
             // Get part of the schedule for current day
             let schedule_day_start = day * timesteps_per_day;
             let schedule_day_end = schedule_day_start + timesteps_per_day;
+
+            // Added below check in the Rust before we try to access `schedule` elements by range
+            // just below. This ensures that we handle the case when the end of the range is greater
+            // than the length of the schedule (otherwise we'd get a panic in Rust). Python is more
+            // lenient and will assume access elements up to the last one and will not error.
+            if schedule.len() < schedule_day_end {
+                bail!("There is a mismatch between the schedule length and the time_series_step")
+            }
             let schedule_day = schedule[schedule_day_start..schedule_day_end].to_vec();
 
             // Find required number of timesteps with lowest costs
@@ -1577,7 +1585,7 @@ mod tests {
     use serde_json::json;
 
     #[fixture]
-    pub fn simulation_time() -> SimulationTimeIterator {
+    fn simulation_time() -> SimulationTimeIterator {
         SimulationTime::new(0.0, 8.0, 1.0).iter()
     }
 
@@ -1586,7 +1594,7 @@ mod tests {
         use pretty_assertions::assert_eq;
 
         #[test]
-        pub fn test_is_on() {
+        fn test_is_on() {
             let simulation_time_iterator = SimulationTime::new(0.0, 8.0, 1.0).iter();
             let schedule = [true, false, true, true, false, true, false, false];
             let time_control =
@@ -1595,6 +1603,26 @@ mod tests {
             for iteration in simulation_time_iterator {
                 assert_eq!(time_control.is_on(&iteration), schedule[iteration.index]);
             }
+        }
+    }
+
+    mod test_on_off_cost_minimising_time_control {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[test]
+        fn test_init_invalid_schedule_length() {
+            let cost_schedule = [vec![5.0; 7], vec![10.0; 2], vec![7.5; 8], vec![15.0; 6]]
+                .to_vec()
+                .concat();
+            let cost_schedule = [&cost_schedule[..], &cost_schedule[..]].concat();
+            let control = OnOffCostMinimisingTimeControl::new(cost_schedule, 0, 1.0, 12.0);
+            assert!(control.is_err());
+            let error = control.unwrap_err().to_string();
+            assert_eq!(
+                error,
+                "There is a mismatch between the schedule length and the time_series_step"
+            );
         }
     }
 
