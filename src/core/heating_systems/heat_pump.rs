@@ -4,7 +4,7 @@
 /// BS EN 15316-4-2:2017 and is described in the SAP calculation method CALCM-01.
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
-use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
+use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::boiler::{BoilerServiceSpace, BoilerServiceWaterRegular};
@@ -38,7 +38,6 @@ use serde_enum_str::Serialize_enum_str;
 use smartstring::alias::String;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::ops::Deref;
 use std::sync::Arc;
 
 const N_EXER: f64 = 3.0;
@@ -1555,7 +1554,7 @@ impl HeatPumpServiceSpace {
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>, // TODO 1.0.0a1 optional now? in Python 1.0.0a1 this is TimeControl | None
+        control: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl | None (not making this optional in Rust 1.0.0a1 as there will always be a control)
         volume_heated: f64,
         boiler_service_space: Option<Arc<Mutex<BoilerServiceSpace>>>,
     ) -> Self {
@@ -1795,7 +1794,7 @@ impl HeatPumpServiceSpaceWarmAir {
         service_name: &str,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl | None
+        control: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl | None (not making this optional in Rust 1.0.0a1 as there will always be a control)
         temp_flow: f64,
         frac_convective: f64,
         volume_heated: f64,
@@ -1826,12 +1825,27 @@ impl HeatPumpServiceSpaceWarmAir {
     pub fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
-        per_control!(&self.control.as_ref(), ctrl => { <_ as ControlBehaviour>::in_required_period(ctrl.deref(), simulation_time_iteration) })
+    ) -> anyhow::Result<Option<bool>> {
+        // TODO review - this check may be able to be removed in future if we validate control earlier
+        match self.control.as_ref() {
+            Control::CombinationTime { .. } | Control::SetpointTime { .. } => {
+                Ok(self.control.in_required_period(simulation_time_iteration))
+            }
+            _ => bail!("Expected control to be combination or setpoint time control"),
+        }
     }
 
-    pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        per_control!(&self.control.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) })
+    pub fn temp_setpnt(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> anyhow::Result<Option<f64>> {
+        // TODO review - this check may be able to be removed in future if we validate control earlier
+        match self.control.as_ref() {
+            Control::CombinationTime { .. } | Control::SetpointTime { .. } => {
+                Ok(self.control.setpnt(simulation_time_iteration))
+            }
+            _ => bail!("Expected control to be combination or setpoint time control"),
+        }
     }
 
     pub(crate) fn energy_output_min(&self) -> f64 {
@@ -2493,7 +2507,7 @@ impl HeatPump {
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl | None
+        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust 1.0.0a1 as there will always be a control)
         volume_heated: f64,
     ) -> HeatPumpServiceSpace {
         let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
@@ -2527,7 +2541,7 @@ impl HeatPump {
     pub(crate) fn create_service_space_heating_warm_air(
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl | None
+        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust 1.0.0a1 as there will always be a control)
         frac_convective: f64,
         volume_heated: f64,
     ) -> anyhow::Result<HeatPumpServiceSpaceWarmAir> {

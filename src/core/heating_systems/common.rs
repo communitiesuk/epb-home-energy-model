@@ -195,9 +195,7 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::Instant(instant) => {
                 Ok(instant.temp_setpnt(&simulation_time_iteration))
             }
-            SpaceHeatSystem::WarmAir(warm_air) => {
-                Ok(warm_air.temp_setpnt(&simulation_time_iteration))
-            }
+            SpaceHeatSystem::WarmAir(warm_air) => warm_air.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
                 wet_distribution.temp_setpnt(&simulation_time_iteration)
             }
@@ -266,7 +264,7 @@ impl SpaceHeatSystem {
                 Ok(instant.in_required_period(&simulation_time_iteration))
             }
             SpaceHeatSystem::WarmAir(warm_air) => {
-                Ok(warm_air.in_required_period(&simulation_time_iteration))
+                warm_air.in_required_period(&simulation_time_iteration)
             }
             SpaceHeatSystem::WetDistribution(emitters) => {
                 emitters.in_required_period(&simulation_time_iteration)
