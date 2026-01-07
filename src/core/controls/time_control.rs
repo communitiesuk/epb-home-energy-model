@@ -868,20 +868,20 @@ pub(crate) struct SmartApplianceControl {
 }
 
 impl SmartApplianceControl {
+    /// Construct a SmartApplianceControl object
+    ///
     /// Arguments:
-    /// * `power_timeseries`  - dictionary of lists containing expected power for appliances
-    ///                         for each energy supply, for the entire length of the simulation
-    /// * `weight_timeseries` - dictionary of lists containing demand weight for each
-    ///                         energy supply, for the entire length of the simulation
-    /// * `timeseries_step`   - timestep of weight and demand timeseries
-    ///                         (not necessarily equal to simulation_time.timestep())
-    /// * `simulation_time`   - reference to a SimulationTime object
+    /// * `power_timeseries` - dictionary of lists containing expected power for appliances
+    ///                        for each energy supply, for the entire length of the simulation
+    /// * `timeseries_step` - timestep of the power timeseries
+    ///                       (not necessarily equal to simulation_time.timestep())
+    /// * `simulation_time` - reference to a SimulationTime object
     /// * `non_appliance_demand_24hr` - dictionary of lists containing 24 hour buffers of
     ///                                 demand per end user for each energy supply
-    /// * `battery_24hr`      - dictionary of lists containing 24 hour buffers of
-    ///                         battery state of charge for each energy supply
-    /// * `energy_supplies`   - dictionary of energy supply objects in the simulation
-    /// * `appliance_names`   - list of names of all appliance objects in the simulation
+    /// * `battery_24hr` - dictionary of lists containing 24 hour buffers of
+    ///                    battery state of charge for each energy supply
+    /// * `energysupplies` - dictionary of energysupply objects in the simulation
+    /// * `appliances` - list of names of all appliance objects in the simulation
     pub(crate) fn new(
         power_timeseries: &IndexMap<String, Vec<f64>>,
         timeseries_step: f64,
@@ -1064,12 +1064,19 @@ impl SmartApplianceControl {
 impl ControlBehaviour for SmartApplianceControl {}
 
 #[derive(Debug)]
+/// An object to model a control with nested combinations of other control types
 pub(crate) struct CombinationTimeControl {
     combinations: ControlCombinations,
     controls: IndexMap<String, Arc<Control>>,
 }
 
 impl CombinationTimeControl {
+    /// Construct a CombinationTimeControl object
+    ///
+    /// Arguments:
+    /// * `combination` - mapping of combination names to combination configurations (read-only)
+    /// * `controls` - mapping of control names to control instances (read-only)
+    /// * `simulation_time` - reference to SimulationTime object
     pub(crate) fn new(
         combinations: ControlCombinations,
         controls: IndexMap<String, Arc<Control>>,
@@ -1129,6 +1136,7 @@ impl CombinationTimeControl {
         control.is_on(simtime)
     }
 
+    /// Evaluate a combination of controls
     fn evaluate_combination_is_on(
         &self,
         combination_name: &str,
@@ -1142,8 +1150,11 @@ impl CombinationTimeControl {
 
         let mut results = controls.iter().map(|control| {
             if self.combinations.contains_key(control) {
+                // If the control is a combination, recursively evaluate it
+                // Infinite recursion has been avoided by adding checks during control object creation
                 self.evaluate_combination_is_on(control, simtime)
             } else {
+                // Otherwise, evaluate a single control
                 self.evaluate_control_is_on(control, simtime)
             }
         });
@@ -1156,7 +1167,7 @@ impl CombinationTimeControl {
             }
             ControlCombinationOperation::Max
             | ControlCombinationOperation::Min
-            | ControlCombinationOperation::Mean => results.all(|x| x),
+            | ControlCombinationOperation::Mean => results.any(|x| x),
         }
     }
 
@@ -1178,10 +1189,8 @@ impl CombinationTimeControl {
         }
     }
 
-    /// This function processes a combination of control elements,
-    /// applying boolean logic (AND, OR, XOR, etc.) to their evaluation results.
-    /// It checks the type of controls, validates allowed
-    /// combinations and returns the evaluation result based on the specified operation.
+    /// This function processes a combination of control elements applying boolean logic (AND, OR, XOR, etc.) to their evaluation results.
+    /// It checks the type of controls , validates allowed combinations and returns the evaluation result based on the specified operation.
     /// Unsupported combinations or operations raise an error.
     fn evaluate_combination_in_req_period(
         &self,
@@ -1227,6 +1236,7 @@ impl CombinationTimeControl {
                     if !matches!(operation, ControlCombinationOperation::And) {
                         bail!("OnOff + Setpoint combination in_req_period() only supports the AND operation")
                     }
+                    // Combine results using AND for OnOff + Setpoint combination
                     results
                         .into_iter()
                         .process_results(|mut iter| iter.all(|x| x))?
@@ -1268,7 +1278,7 @@ impl CombinationTimeControl {
                         }
                     }
                 }
-                _ => bail!("Invalid combination of controls encountered"),
+                _ => bail!("Invalid combination of controls encountered. No OnOff or Setpoint in in_req_period()"),
             },
         )
     }
