@@ -1576,29 +1576,24 @@ mod tests {
     use rstest::*;
     use serde_json::json;
 
-    const ON_OFF_SCHEDULE: [bool; 8] = [true, false, true, true, false, true, false, false];
-
     #[fixture]
     pub fn simulation_time() -> SimulationTimeIterator {
         SimulationTime::new(0.0, 8.0, 1.0).iter()
     }
 
-    #[fixture]
-    pub fn on_off_time_control() -> OnOffTimeControl {
-        OnOffTimeControl::new(
-            ON_OFF_SCHEDULE.iter().map(|&v| Some(v)).collect_vec(),
-            0,
-            1.0,
-        )
-    }
+    mod test_on_off_time_control {
+        use super::*;
+        use pretty_assertions::assert_eq;
 
-    #[rstest]
-    pub fn should_be_on_for_on_off_time_control(
-        on_off_time_control: OnOffTimeControl,
-        simulation_time: SimulationTimeIterator,
-    ) {
-        for it in simulation_time {
-            assert_eq!(on_off_time_control.is_on(&it), ON_OFF_SCHEDULE[it.index]);
+        #[rstest]
+        pub fn test_is_on(simulation_time: SimulationTimeIterator) {
+            let schedule: [bool; 8] = [true, false, true, true, false, true, false, false];
+            let time_control =
+                OnOffTimeControl::new(schedule.iter().map(|&v| Some(v)).collect_vec(), 0, 1.0);
+
+            for it in simulation_time {
+                assert_eq!(time_control.is_on(&it), schedule[it.index]);
+            }
         }
     }
 
