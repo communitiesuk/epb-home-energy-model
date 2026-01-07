@@ -11403,12 +11403,11 @@ mod tests {
 
     // In Python below tests are in a separate class called TestHeatPump_HWOnly
     fn create_heat_pump_hw_only(
-        // energy_supply: EnergySupply,
         vol_daily_average: Option<f64>,
         test_data: Option<HeatPumpHotWaterTestData>,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPumpHotWaterOnly {
-        let energy_supply = energy_supply(simulation_time_for_heat_pump);
+        let mut energy_supply = energy_supply(simulation_time_for_heat_pump);
         let test_data: HeatPumpHotWaterTestData = test_data.unwrap_or(HeatPumpHotWaterTestData {
             l: Some(HeatPumpHotWaterOnlyTestDatum {
                 cop_dhw: 2.5,
@@ -11436,6 +11435,7 @@ mod tests {
         let heat_exchanger_surface_area_declared = 1.0;
         let daily_losses_declared = 1.2;
 
+        energy_supply.register_end_user_name("end_user_name".into());
         let energy_supply_connection = EnergySupplyConnection::new(
             Arc::from(RwLock::from(energy_supply)),
             "end_user_name".into(),
@@ -11554,7 +11554,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "WIP migration"]
     fn test_demand_energy_for_hw_only(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
         let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
@@ -11563,7 +11562,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "WIP migration"]
     fn test_demand_energy_off_for_hw_only(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
         let mut heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
