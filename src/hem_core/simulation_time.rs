@@ -146,7 +146,7 @@ impl SimulationTimeIteration {
         )
     }
 
-    pub fn time_series_idx(&self, start_day: u32, step: f64) -> usize {
+    pub(crate) fn time_series_idx(&self, start_day: u32, step: f64) -> usize {
         ((self.time - (start_day * HOURS_IN_DAY) as f64) / step) as usize
     }
 

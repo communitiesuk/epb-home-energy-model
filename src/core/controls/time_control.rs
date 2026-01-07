@@ -684,6 +684,9 @@ impl SetpointTimeControl {
         }
     }
 
+    // in_required_period method can be found here in Python, in Rust it's part of the
+    // implementation block of ControlBehaviour further down
+
     pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
 
@@ -772,14 +775,18 @@ impl From<Option<SetpointBoundsInput>> for SetpointBounds {
 }
 
 impl ControlBehaviour for SetpointTimeControl {
+    /// Return true if current time is inside specified time for heating/cooling
+    ///
+    /// (not including timesteps where system is only on due to min or max
+    /// setpoint or advanced start)
     fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
         let schedule_idx =
             simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
-
-        Some(self.schedule[schedule_idx].is_some())
+        let setpnt = self.schedule[schedule_idx];
+        Some(setpnt.is_some())
     }
 
     fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
