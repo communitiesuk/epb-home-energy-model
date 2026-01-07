@@ -7808,7 +7808,7 @@ mod tests {
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
         let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![], 0, 0.)));
-        // TODO 1.0.0a1 - in Python None is passed in for the control but this is not yet optional in Rust
+        // in Python None is passed in for the control but this is not optional in Rust
         HeatPump::create_service_space_heating_warm_air(
             heat_pump.clone(),
             "mains_gas",
