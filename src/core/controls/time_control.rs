@@ -1585,14 +1585,15 @@ mod tests {
         use super::*;
         use pretty_assertions::assert_eq;
 
-        #[rstest]
-        pub fn test_is_on(simulation_time: SimulationTimeIterator) {
-            let schedule: [bool; 8] = [true, false, true, true, false, true, false, false];
+        #[test]
+        pub fn test_is_on() {
+            let simulation_time_iterator = SimulationTime::new(0.0, 8.0, 1.0).iter();
+            let schedule = [true, false, true, true, false, true, false, false];
             let time_control =
                 OnOffTimeControl::new(schedule.iter().map(|&v| Some(v)).collect_vec(), 0, 1.0);
 
-            for it in simulation_time {
-                assert_eq!(time_control.is_on(&it), schedule[it.index]);
+            for iteration in simulation_time_iterator {
+                assert_eq!(time_control.is_on(&iteration), schedule[iteration.index]);
             }
         }
     }
