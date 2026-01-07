@@ -73,6 +73,7 @@ impl HeatPumpSourceType {
     }
 }
 
+// Python 1.0.0a1 uses the HeatingServiceType enum
 #[derive(Copy, Clone, Debug, PartialEq, Serialize_enum_str)]
 pub enum ServiceType {
     DomesticHotWaterRegular,
