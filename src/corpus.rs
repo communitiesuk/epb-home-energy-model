@@ -2424,6 +2424,7 @@ impl Corpus {
             let mut gains_internal_dhw = (pw_losses_internal + gains_internal_dhw_use)
                 * WATTS_PER_KILOWATT as f64
                 / t_it.timestep;
+
             match self.hot_water_sources.get("hw cylinder").unwrap() {
                 HotWaterSource::PreHeated(ref source) => match source {
                     HotWaterStorageTank::StorageTank(storage_tank) => {
@@ -4701,7 +4702,7 @@ fn heat_source_from_input(
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum HotWaterSource {
     PreHeated(HotWaterStorageTank),
     CombiBoiler(BoilerServiceWaterCombi),

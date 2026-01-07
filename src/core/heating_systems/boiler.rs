@@ -27,7 +27,7 @@ pub enum ServiceType {
     Space,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct BoilerServiceWaterCombi {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
@@ -39,7 +39,7 @@ pub(crate) struct BoilerServiceWaterCombi {
     rejected_factor_3: Option<f64>,
     daily_hot_water_usage: f64,
     simulation_timestep: f64,
-    combi_loss: AtomicF64,
+    combi_loss: Arc<RwLock<AtomicF64>>,
 }
 
 #[derive(Debug)]
@@ -95,7 +95,7 @@ impl BoilerServiceWaterCombi {
                     daily_hot_water_usage,
                     cold_feed,
                     simulation_timestep,
-                    combi_loss: Default::default(),
+                    combi_loss: Arc::new(RwLock::new(Default::default()))
                 })
             }
             _ => Err(IncorrectBoilerDataType),
@@ -214,18 +214,18 @@ impl BoilerServiceWaterCombi {
                 (default_combi_loss / DAYS_PER_YEAR as f64) * (timestep / HOURS_PER_DAY as f64)
             }
         };
-        self.combi_loss.store(combi_loss, Ordering::SeqCst);
+        self.combi_loss.read().store(combi_loss, Ordering::SeqCst);
 
         combi_loss
     }
 
     pub(crate) fn internal_gains(&self) -> f64 {
         let gain_internal = FRAC_DHW_ENERGY_INTERNAL_GAINS
-            * self.combi_loss.load(Ordering::SeqCst)
+            * self.combi_loss.read().load(Ordering::SeqCst)
             * WATTS_PER_KILOWATT as f64
             / self.simulation_timestep;
 
-        self.combi_loss.store(Default::default(), Ordering::SeqCst);
+        self.combi_loss.read().store(Default::default(), Ordering::SeqCst);
 
         gain_internal
     }
@@ -1461,7 +1461,7 @@ mod tests {
 
         #[rstest]
         fn test_internal_gains(mut boiler_service: BoilerServiceWaterCombi) {
-            boiler_service.combi_loss = 10.0.into();
+            boiler_service.combi_loss = Arc::new(RwLock::new(10.0.into()));
             assert_eq!(boiler_service.internal_gains(), 2500.);
         }
 

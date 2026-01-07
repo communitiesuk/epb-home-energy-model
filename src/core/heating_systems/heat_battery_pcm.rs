@@ -150,7 +150,7 @@ impl HeatBatteryPcmServiceWaterRegular {
 /// An object to represent a direct water heating service provided by a heat battery.
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct HeatBatteryPcmServiceWaterDirect {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,

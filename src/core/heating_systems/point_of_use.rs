@@ -3,7 +3,7 @@ use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::simulation_time::SimulationTimeIteration;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct PointOfUse {
     efficiency: f64,
     energy_supply_connection: EnergySupplyConnection,

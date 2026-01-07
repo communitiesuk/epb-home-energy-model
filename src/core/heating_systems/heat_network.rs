@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HeatNetworkServiceWaterDirect {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,

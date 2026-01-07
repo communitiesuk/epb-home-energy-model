@@ -4,7 +4,7 @@ use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
 use crate::core::schedule::{TypedScheduleEvent, WaterScheduleEventType};
 use crate::core::units::MILLIMETRES_IN_METRE;
 use crate::core::water_heat_demand::bath::Bath;
-use crate::core::water_heat_demand::misc::water_demand_to_kwh;
+use crate::core::water_heat_demand::misc::{WaterEventResult, water_demand_to_kwh};
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
 use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
@@ -31,6 +31,7 @@ pub struct DomesticHotWaterDemand {
     showers: HashMap<String, Shower>,
     baths: HashMap<String, Bath>,
     other: HashMap<String, OtherHotWater>,
+    hot_water_sources: IndexMap<String, HotWaterSource>,
     source_supplying_outlet: HashMap<(OutletType, String), String>,
     hot_water_distribution_pipework: Vec<PipeworkSimple>,
     event_schedules: EventSchedule,
@@ -143,13 +144,14 @@ impl DomesticHotWaterDemand {
             showers_input,
             bath_input,
             other_hot_water_input,
-            hot_water_sources,
+            &hot_water_sources,
         );
 
         Ok(Self {
             showers,
             baths,
             other,
+            hot_water_sources: hot_water_sources.clone(),
             source_supplying_outlet,
             hot_water_distribution_pipework,
             event_schedules,
@@ -160,7 +162,7 @@ impl DomesticHotWaterDemand {
         showers_dict: ShowersInput,
         baths_dict: BathInput,
         other_hw_users_dict: OtherWaterUseInput,
-        hot_water_sources: IndexMap<String, HotWaterSource>,
+        hot_water_sources: &IndexMap<String, HotWaterSource>,
     ) -> HashMap<(OutletType, String), String> {
         let mut mapping = HashMap::<(OutletType, String), String>::default();
         for (shower_name, shower) in showers_dict.0.iter() {
@@ -328,6 +330,11 @@ impl DomesticHotWaterDemand {
 
         let mut usage_events: Option<Vec<TypedScheduleEvent>> =
             self.event_schedules[simtime.index].clone();
+
+        let hot_water_source_keys = self.hot_water_sources.keys();
+        
+        let mut usage_events_with_flushes: IndexMap<String, Vec<WaterEventResult>> = hot_water_source_keys.map(|key| { (key.clone(), vec![]) } ).collect();
+        usage_events_with_flushes.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), vec![]);
 
         if let Some(usage_events) = &mut usage_events {
             for event in usage_events.iter_mut() {
