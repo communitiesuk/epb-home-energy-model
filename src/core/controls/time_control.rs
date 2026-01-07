@@ -48,7 +48,7 @@ macro_rules! per_control {
     };
 }
 
-use crate::compare_floats::min_of_2;
+use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::energy_supply::energy_supply::EnergySupply;
 pub(crate) use per_control;
 
@@ -687,7 +687,8 @@ impl SetpointTimeControl {
     // in_required_period method can be found here in Python, in Rust it's part of the
     // implementation block of ControlBehaviour further down
 
-    pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+    /// Return true if control will allow system to run
+    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
 
         self.is_on_for_timestep_idx(schedule_idx)
@@ -697,17 +698,23 @@ impl SetpointTimeControl {
         let setpnt = self.schedule[schedule_idx];
 
         if setpnt.is_none() {
+            // Look ahead for duration of warmup period: system is on if setpoint
+            // is not None heating period if found
             for timesteps_ahead in 1..(self.timesteps_advstart + 1) {
                 let timesteps_ahead = timesteps_ahead as usize;
                 if self.schedule.len() <= (schedule_idx + timesteps_ahead) {
+                    // Stop looking ahead if we have reached the end of the schedule
                     break;
                 }
                 if self.schedule[schedule_idx + timesteps_ahead].is_some() {
+                    // If heating period starts within duration of warmup period
+                    // from now, system is on
                     return true;
                 }
             }
         }
 
+        // For this type of control, system is always on if min or max are set
         !(setpnt.is_none() && matches!(self.setpoint_bounds, SetpointBounds::NoSetpoints))
     }
 }
@@ -789,6 +796,7 @@ impl ControlBehaviour for SetpointTimeControl {
         Some(setpnt.is_some())
     }
 
+    /// Return setpoint for the current timestep
     fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
         let schedule_idx =
             simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
@@ -796,19 +804,25 @@ impl ControlBehaviour for SetpointTimeControl {
         let mut setpnt = self.schedule[schedule_idx];
 
         if setpnt.is_none() {
+            // Look ahead for duration of warmup period and use setpoint from
+            // start of heating period if found
             for timesteps_ahead in 1..(self.timesteps_advstart + 1) {
                 let timesteps_ahead = timesteps_ahead as usize;
                 if self.schedule.len() <= (schedule_idx + timesteps_ahead) {
+                    // Stop looking ahead if we have reached the end of the schedule
                     break;
                 }
                 if let Some(s) = self.schedule[schedule_idx + timesteps_ahead] {
+                    // If heating period starts within duration of warmup period
+                    // from now, use setpoint from start of heating period
                     setpnt = Some(s);
                 }
             }
         }
 
         match (setpnt, self.setpoint_bounds) {
-            (None, SetpointBounds::NoSetpoints) => None,
+            // If no setpoint value is in the schedule, use the min/max if set
+            (None, SetpointBounds::NoSetpoints) => None, // Use setpnt None
             (None, SetpointBounds::MaxOnly { setpoint_max }) => Some(setpoint_max),
             (None, SetpointBounds::MinOnly { setpoint_min }) => Some(setpoint_min),
             (
@@ -826,18 +840,13 @@ impl ControlBehaviour for SetpointTimeControl {
                 let mut setpnt = s;
 
                 if let Some(setpoint_max) = self.setpoint_bounds.setpoint_max() {
-                    setpnt = match setpoint_max < setpnt {
-                        true => setpoint_max,
-                        false => setpnt,
-                    }
+                    // If there is a maximum limit, take the lower of this and the schedule value
+                    setpnt = min_of_2(setpoint_max, setpnt);
                 }
                 if let Some(setpoint_min) = self.setpoint_bounds.setpoint_min() {
-                    setpnt = match setpoint_min > setpnt {
-                        true => setpoint_min,
-                        false => setpnt,
-                    }
+                    // If there is a minimum limit, take the higher of this and the schedule value
+                    setpnt = max_of_2(setpoint_min, setpnt);
                 }
-
                 Some(setpnt)
             }
         }
