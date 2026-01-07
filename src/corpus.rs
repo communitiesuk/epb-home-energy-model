@@ -1273,7 +1273,7 @@ impl Corpus {
         &self,
         z_name: &str,
         simtime: SimulationTimeIteration,
-    ) -> (Vec<String>, Vec<String>, SetpointsAndConvectiveFractions) {
+    ) -> anyhow::Result<(Vec<String>, Vec<String>, SetpointsAndConvectiveFractions)> {
         let SetpointsAndConvectiveFractions {
             temp_setpnt_heat: temp_setpnt_heat_system,
             temp_setpnt_cool: temp_setpnt_cool_system,
@@ -1283,7 +1283,7 @@ impl Corpus {
             &self.heat_system_name_for_zone[z_name],
             &self.cool_system_name_for_zone[z_name],
             simtime,
-        );
+        )?;
 
         // Sort heating and cooling systems by setpoint (highest first for
         // heating, lowest first for cooling)
@@ -1301,7 +1301,7 @@ impl Corpus {
             .map(|x| x.0.to_owned())
             .collect();
 
-        (
+        Ok((
             h_name_list_sorted,
             c_name_list_sorted,
             SetpointsAndConvectiveFractions {
@@ -1310,7 +1310,7 @@ impl Corpus {
                 frac_convective_heat: frac_convective_heat_system,
                 frac_convective_cool: frac_convective_cool_system,
             },
-        )
+        ))
     }
 
     fn setpoints_and_convective_fractions(
@@ -1318,7 +1318,7 @@ impl Corpus {
         h_name_list: &Vec<String>,
         c_name_list: &Vec<String>,
         simtime: SimulationTimeIteration,
-    ) -> SetpointsAndConvectiveFractions {
+    ) -> anyhow::Result<SetpointsAndConvectiveFractions> {
         let mut frac_convective_heat: IndexMap<String, f64> = Default::default();
         let mut frac_convective_cool: IndexMap<String, f64> = Default::default();
         let mut temp_setpnt_heat: IndexMap<String, f64> = Default::default();
@@ -1337,7 +1337,7 @@ impl Corpus {
                     temp_setpnt_heat.insert(
                         (*h_name).into(),
                         space_heat_system
-                            .temp_setpnt(simtime)
+                            .temp_setpnt(simtime)?
                             .unwrap_or_else(temp_setpnt_heat_none),
                     );
                 }
@@ -1363,12 +1363,12 @@ impl Corpus {
             }
         }
 
-        SetpointsAndConvectiveFractions {
+        Ok(SetpointsAndConvectiveFractions {
             temp_setpnt_heat,
             temp_setpnt_cool,
             frac_convective_heat,
             frac_convective_cool,
-        }
+        })
     }
 
     fn gains_heat_cool(
@@ -1658,7 +1658,7 @@ impl Corpus {
                     frac_convective_heat: frac_convective_heat_zone_system_current,
                     frac_convective_cool: frac_convective_cool_zone_system_current,
                 },
-            ) = self.heat_cool_systems_for_zone(z_name, simtime);
+            ) = self.heat_cool_systems_for_zone(z_name, simtime)?;
 
             h_name_list_sorted_zone.insert(z_name, h_name_list_sorted_zone_current);
             c_name_list_sorted_zone.insert(z_name, c_name_list_sorted_zone_current);

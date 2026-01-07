@@ -1582,8 +1582,22 @@ impl HeatPumpServiceSpace {
         self.control.is_on(simtime)
     }
 
-    pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        per_control!(&self.control.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) })
+    pub fn temp_setpnt(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> anyhow::Result<Option<f64>> {
+        let is_valid = |c: &Control| {
+            matches!(
+                c,
+                Control::CombinationTime { .. } | Control::SetpointTime { .. }
+            )
+        };
+        // TODO review - this check may be able to be removed in future if we validate control earlier
+        if !is_valid(&self.control) {
+            bail!("Expected control to be combination or setpoint time control");
+        }
+
+        Ok(self.control.setpnt(simulation_time_iteration))
     }
 
     pub fn in_required_period(
@@ -6052,8 +6066,114 @@ mod tests {
     }
 
     // TODO TestHeatPumpServiceWater
-    // TODO TestHeatPumpServiceSpace
-    // TODO TestHeatPumpServiceSpaceWarmAir
+
+    // TestHeatPumpServiceSpace
+    #[fixture]
+    fn heat_pump_service_space(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) -> HeatPumpServiceSpace {
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+        let control = create_setpoint_time_control(vec![Some(20.), None]);
+
+        HeatPumpServiceSpace::new(
+            Arc::new(Mutex::new(heat_pump)),
+            "new_service".into(),
+            HeatPumpEmitterType::RadiatorsUfh,
+            50.,
+            Default::default(),
+            55.,
+            Arc::new(control),
+            100.,
+            None,
+        )
+    }
+
+    #[rstest]
+    fn test_setpnt_for_service_space(
+        heat_pump_service_space: HeatPumpServiceSpace,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        assert_eq!(
+            heat_pump_service_space
+                .temp_setpnt(&simulation_time_for_heat_pump.iter().current_iteration())
+                .unwrap(),
+            Some(20.)
+        );
+    }
+
+    #[rstest]
+    fn test_in_required_period(
+        heat_pump_service_space: HeatPumpServiceSpace,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
+            assert_eq!(
+                heat_pump_service_space.in_required_period(&t_it),
+                [Some(true), Some(false)][t_idx]
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_control_errors(
+        mut heat_pump_service_space: HeatPumpServiceSpace,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        heat_pump_service_space.control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(true)],
+            0,
+            1.,
+        )));
+
+        assert!(heat_pump_service_space
+            .temp_setpnt(&simulation_time_for_heat_pump.iter().current_iteration())
+            .is_err());
+    }
+
+    // TestHeatPumpServiceSpaceWarmAir
+    #[fixture]
+    fn heat_pump_service_space_warm_air(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) -> HeatPumpServiceSpaceWarmAir {
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+        let control = create_setpoint_time_control(vec![]);
+
+        HeatPumpServiceSpaceWarmAir::new(
+            Arc::new(Mutex::new(heat_pump)),
+            "new_service",
+            10.,
+            25.,
+            Arc::new(control),
+            10.,
+            0.7,
+            12.,
+        )
+    }
+
+    #[rstest]
+    fn test_energy_output_min(heat_pump_service_space_warm_air: HeatPumpServiceSpaceWarmAir) {
+        assert_eq!(heat_pump_service_space_warm_air.energy_output_min(), 0.);
+    }
+
+    // skipping Python's test_demand_energy due to mocking
+    // skipping Python's test_running_time_throughput_factor due to mocking
+
+    #[rstest]
+    fn test_frac_convective(heat_pump_service_space_warm_air: HeatPumpServiceSpaceWarmAir) {
+        assert_eq!(heat_pump_service_space_warm_air.frac_convective(), 0.7);
+    }
 
     #[rstest]
     // In Python this test is called `test_from_string` (inside the `TestSinkType` class)

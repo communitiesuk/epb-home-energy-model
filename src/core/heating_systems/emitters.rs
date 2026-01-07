@@ -556,20 +556,25 @@ impl Emitters {
         }
     }
 
-    pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+    pub fn temp_setpnt(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> anyhow::Result<Option<f64>> {
         match self.heat_source.read().deref() {
             SpaceHeatingService::HeatPump(heat_pump) => {
                 heat_pump.temp_setpnt(simulation_time_iteration)
             }
-            SpaceHeatingService::Boiler(boiler) => boiler.temp_setpnt(*simulation_time_iteration),
+            SpaceHeatingService::Boiler(boiler) => {
+                Ok(boiler.temp_setpnt(*simulation_time_iteration))
+            }
             SpaceHeatingService::HeatNetwork(heat_network) => {
-                heat_network.temperature_setpnt(simulation_time_iteration)
+                Ok(heat_network.temperature_setpnt(simulation_time_iteration))
             }
             SpaceHeatingService::HeatBattery(heat_battery) => {
-                heat_battery.temp_setpnt(*simulation_time_iteration)
+                Ok(heat_battery.temp_setpnt(*simulation_time_iteration))
             }
             #[cfg(test)]
-            SpaceHeatingService::Mock => Some(20.),
+            SpaceHeatingService::Mock => Ok(Some(20.)),
         }
     }
 
@@ -2516,7 +2521,11 @@ mod tests {
     #[rstest]
     fn test_temp_setpnt(simulation_time_iterator: SimulationTimeIterator, fancoil: Emitters) {
         for step in simulation_time_iterator {
-            assert_relative_eq!(fancoil.temp_setpnt(&step).unwrap(), 20., epsilon = 1e-5);
+            assert_relative_eq!(
+                fancoil.temp_setpnt(&step).unwrap().unwrap(),
+                20.,
+                epsilon = 1e-5
+            );
         }
     }
 
