@@ -6153,11 +6153,26 @@ mod tests {
     // skipping Python's test_energy_output_max due to mocking
 
     #[rstest]
-    fn test_energy_output_max_off_for_service_space(mut heat_pump_service_space: HeatPumpServiceSpace, simulation_time_for_heat_pump: SimulationTime) {
+    fn test_energy_output_max_off_for_service_space(
+        mut heat_pump_service_space: HeatPumpServiceSpace,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
         let control = create_setpoint_time_control(vec![None]);
         heat_pump_service_space.control = Arc::new(control);
 
-        assert_eq!(heat_pump_service_space.energy_output_max(50., 40., None, None, simulation_time_for_heat_pump.iter().current_iteration()).unwrap().0, 0.);
+        assert_eq!(
+            heat_pump_service_space
+                .energy_output_max(
+                    50.,
+                    40.,
+                    None,
+                    None,
+                    simulation_time_for_heat_pump.iter().current_iteration()
+                )
+                .unwrap()
+                .0,
+            0.
+        );
     }
 
     // skipping Python's test_demand_energy due to mocking
