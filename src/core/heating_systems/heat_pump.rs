@@ -6076,7 +6076,115 @@ mod tests {
         }
     }
 
-    // TODO TestHeatPumpServiceWater
+    // TestHeatPumpService
+    #[rstest]
+    fn test_is_on_for_service_water(
+        heat_pump_service_water: HeatPumpServiceWater,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        assert!(
+            heat_pump_service_water.is_on(simulation_time_for_heat_pump.iter().current_iteration())
+        )
+    }
+
+    #[rstest]
+    fn test_is_on_for_service_space(
+        heat_pump_service_space: HeatPumpServiceSpace,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        assert!(
+            heat_pump_service_space.is_on(simulation_time_for_heat_pump.iter().current_iteration())
+        )
+    }
+
+    #[rstest]
+    fn test_is_on_for_service_space_warm_air(
+        mut heat_pump_service_space_warm_air: HeatPumpServiceSpaceWarmAir,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        heat_pump_service_space_warm_air.control =
+            Arc::new(create_setpoint_time_control(vec![Some(10.)]));
+
+        assert!(heat_pump_service_space_warm_air
+            .is_on(simulation_time_for_heat_pump.iter().current_iteration()))
+    }
+
+    // TestHeatPumpServiceWater
+    #[fixture]
+    fn heat_pump_service_water(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) -> HeatPumpServiceWater {
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+        let control_min = create_setpoint_time_control(vec![Some(10.)]);
+        let control_max = create_setpoint_time_control(vec![Some(20.)]);
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(
+            ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step).into(),
+        ); // Python uses a mock for cold_feed
+
+        HeatPumpServiceWater::new(
+            Arc::new(Mutex::new(heat_pump)),
+            "new_service".into(),
+            30.,
+            Arc::new(cold_feed),
+            Arc::new(control_min),
+            Arc::new(control_max),
+            None,
+        )
+    }
+
+    #[rstest]
+    fn test_setpnt_for_service_water(
+        heat_pump_service_water: HeatPumpServiceWater,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let (setpnt_min, setpnt_max) = heat_pump_service_water
+            .setpnt(simulation_time_for_heat_pump.iter().current_iteration())
+            .unwrap();
+
+        assert_eq!(setpnt_min, Some(10.));
+        assert_eq!(setpnt_max, Some(20.));
+    }
+
+    #[rstest]
+    fn test_setpnt_errors_for_service_water(
+        mut heat_pump_service_water: HeatPumpServiceWater,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        heat_pump_service_water.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(true)],
+            0,
+            1.,
+        )));
+
+        assert!(heat_pump_service_water
+            .setpnt(simulation_time_for_heat_pump.iter().current_iteration())
+            .is_err());
+
+        heat_pump_service_water.control_min =
+            Arc::new(create_setpoint_time_control(vec![Some(10.)]));
+
+        heat_pump_service_water.control_max = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(true)],
+            0,
+            1.,
+        )));
+
+        assert!(heat_pump_service_water
+            .setpnt(simulation_time_for_heat_pump.iter().current_iteration())
+            .is_err());
+    }
+
+    // skipping Python's test_energy_output_max due to mocking
+    // skipping Python's test_energy_output_max_no_temp_return due to mocking
+    // skipping Python's test_demand_energy due to mocking
+    // skipping Python's test_demand_energy_no_temp_return due to mocking
+    // skipping Python's test_demand_energy_no_temp_flow due to mocking
 
     // TestHeatPumpServiceSpace
     #[fixture]
