@@ -566,7 +566,7 @@ pub struct OnOffCostMinimisingTimeControl {
 
 impl OnOffCostMinimisingTimeControl {
     /// Construct an OnOffCostMinimisingControl object
-
+    ///
     /// Arguments:
     /// * `schedule` - list of cost values (one entry per time_series_step)
     /// * `simulation_time` - reference to SimulationTime object
@@ -638,6 +638,7 @@ impl OnOffCostMinimisingTimeControl {
 impl ControlBehaviour for OnOffCostMinimisingTimeControl {}
 
 #[derive(Clone, Debug)]
+/// An object to model a control with a setpoint which varies per timestep
 pub(crate) struct SetpointTimeControl {
     /// list of float values (one entry per hour)
     schedule: Vec<Option<f64>>,
@@ -651,23 +652,33 @@ pub(crate) struct SetpointTimeControl {
     timesteps_advstart: u32,
 }
 
-/// Return true if current time is inside specified time for heating/cooling
-///
-/// (not including timesteps where system is only on due to min or max
-/// setpoint or advanced start)
 impl SetpointTimeControl {
+    /// Construct a SetpointTimeControl object
+    ///
+    /// Arguments:
+    /// * `schedule` - list of float values (one entry per hour)
+    /// * `simulation_time` - reference to SimulationTime object
+    /// * `start_day` - first day of the time series, day of the year, 0 to 365 (single value)
+    /// * `time_series_step` - timestep of the time series data, in hours
+    /// * `setpoint_min` - min setpoint allowed
+    /// * `setpoint_max` - max setpoint allowed
+    /// * `default_to_max` - if both min and max limits are set but setpoint isn't,
+    ///                      whether to default to min (False) or max (True)
+    /// * `duration_advanced_start` - how long before heating period the system
+    ///                               should switch on, in hours
     pub(crate) fn new(
         schedule: Vec<Option<f64>>,
         start_day: u32,
         time_series_step: f64,
         setpoint_bounds: Option<SetpointBoundsInput>,
-        duration_advanced_start: f64,
+        duration_advanced_start: Option<f64>,
         timestep: f64,
     ) -> Self {
+        let duration_advanced_start = duration_advanced_start.unwrap_or(0.0);
         Self {
-            schedule,
-            start_day,
-            time_series_step,
+            schedule, // in Python now part of initialising base class (FloatOrNoneTimeControl > BaseTimeControl)
+            start_day, // in Python now part of initialising base class (FloatOrNoneTimeControl > BaseTimeControl)
+            time_series_step, // in Python now part of initialising base class (FloatOrNoneTimeControl > BaseTimeControl)
             setpoint_bounds: setpoint_bounds.into(),
             timesteps_advstart: (duration_advanced_start / timestep).round() as u32,
         }
@@ -1658,7 +1669,7 @@ mod tests {
             0,
             1.0,
             SetpointBoundsInput::MaxOnly { setpoint_max: 24.0 }.into(),
-            0.0,
+            None,
             simulation_time.step_in_hours(),
         )
     }
@@ -1693,7 +1704,7 @@ mod tests {
             0,
             1.0,
             Default::default(),
-            1.0,
+            Some(1.0),
             simulation_time.step_in_hours(),
         )
     }
@@ -1713,7 +1724,7 @@ mod tests {
                 default_to_max: false,
             }
             .into(),
-            1.0,
+            Some(1.0),
             simulation_time.step_in_hours(),
         )
     }
@@ -2201,13 +2212,15 @@ mod tests {
             5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0,
             10.0, 10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
         ];
-        let cost_minimising_control =
-            Control::OnOffMinimisingTime(OnOffCostMinimisingTimeControl::new(
+        let cost_minimising_control = Control::OnOffMinimisingTime(
+            OnOffCostMinimisingTimeControl::new(
                 cost_schedule,
                 0,
                 1.,
                 5.0, // Need 12 "on" hours
-            ).unwrap());
+            )
+            .unwrap(),
+        );
 
         IndexMap::from([
             (

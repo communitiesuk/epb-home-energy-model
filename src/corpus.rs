@@ -199,7 +199,7 @@ fn single_control_from_details(
             *start_day,
             *time_series_step,
             *setpoint_bounds,
-            advanced_start.unwrap_or(0.),
+            *advanced_start,
             simulation_time_iterator.step_in_hours(),
         ))
         .into(),

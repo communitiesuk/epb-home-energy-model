@@ -4766,7 +4766,7 @@ mod tests {
             0,
             1.,
             Default::default(),
-            0.,
+            None,
             1.,
         )));
         let cold_water_temps = vec![10.0, 10.1, 10.2, 10.5, 10.6, 11.0, 11.5, 12.1];
@@ -4792,7 +4792,7 @@ mod tests {
             0,
             1.,
             Default::default(),
-            0.,
+            None,
             1.,
         ));
         let control_max = Control::SetpointTime(SetpointTimeControl::new(
@@ -4809,7 +4809,7 @@ mod tests {
             0,
             1.,
             Default::default(),
-            0.,
+            None,
             1.,
         ));
         let immersion_heater = ImmersionHeater::new(
