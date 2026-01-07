@@ -1402,23 +1402,19 @@ impl HeatPumpServiceWater {
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        let is_valid = |c: &Control| {
-            matches!(
-                c,
-                Control::CombinationTime { .. } | Control::SetpointTime { .. }
-            )
-        };
         // TODO review - this check may be able to be removed in future if we validate control earlier
-        if !(is_valid(&self.control_min) && is_valid(&self.control_max)) {
-            bail!(
+        match (&self.control_min.as_ref(), &self.control_max.as_ref()) {
+            (
+                Control::CombinationTime { .. } | Control::SetpointTime { .. },
+                Control::CombinationTime { .. } | Control::SetpointTime { .. },
+            ) => Ok((
+                self.control_min.setpnt(&simulation_time_iteration),
+                self.control_max.setpnt(&simulation_time_iteration),
+            )),
+            _ => bail!(
                 "Expected control_min and control_max to be combination or setpoint time controls"
-            );
+            ),
         }
-
-        Ok((
-            self.control_min.setpnt(&simulation_time_iteration),
-            self.control_max.setpnt(&simulation_time_iteration),
-        ))
     }
 
     const SERVICE_TYPE: ServiceType = ServiceType::Water;
@@ -1586,36 +1582,26 @@ impl HeatPumpServiceSpace {
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<Option<f64>> {
-        let is_valid = |c: &Control| {
-            matches!(
-                c,
-                Control::CombinationTime { .. } | Control::SetpointTime { .. }
-            )
-        };
         // TODO review - this check may be able to be removed in future if we validate control earlier
-        if !is_valid(&self.control) {
-            bail!("Expected control to be combination or setpoint time control");
+        match self.control.as_ref() {
+            Control::CombinationTime { .. } | Control::SetpointTime { .. } => {
+                Ok(self.control.setpnt(simulation_time_iteration))
+            }
+            _ => bail!("Expected control to be combination or setpoint time control"),
         }
-
-        Ok(self.control.setpnt(simulation_time_iteration))
     }
 
     pub fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<Option<bool>> {
-        let is_valid = |c: &Control| {
-            matches!(
-                c,
-                Control::CombinationTime { .. } | Control::SetpointTime { .. }
-            )
-        };
         // TODO review - this check may be able to be removed in future if we validate control earlier
-        if !is_valid(&self.control) {
-            bail!("Expected control to be combination or setpoint time control");
+        match self.control.as_ref() {
+            Control::CombinationTime { .. } | Control::SetpointTime { .. } => {
+                Ok(self.control.in_required_period(simulation_time_iteration))
+            }
+            _ => bail!("Expected control to be combination or setpoint time control"),
         }
-
-        Ok(self.control.in_required_period(simulation_time_iteration))
     }
 
     /// Calculate the maximum energy output of the HP, accounting for time
@@ -4604,22 +4590,19 @@ impl HeatPumpHotWaterOnly {
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        let is_valid = |c: &Control| {
-            matches!(
-                c,
-                Control::CombinationTime { .. } | Control::SetpointTime { .. }
-            )
-        };
         // TODO review - this check may be able to be removed in future if we validate control earlier
-        if !(is_valid(&self.control_min) && is_valid(&self.control_max)) {
-            bail!(
+        match (&self.control_min.as_ref(), &self.control_max.as_ref()) {
+            (
+                Control::CombinationTime { .. } | Control::SetpointTime { .. },
+                Control::CombinationTime { .. } | Control::SetpointTime { .. },
+            ) => Ok((
+                self.control_min.setpnt(&simulation_time_iteration),
+                self.control_max.setpnt(&simulation_time_iteration),
+            )),
+            _ => bail!(
                 "Expected control_min and control_max to be combination or setpoint time controls"
-            );
+            ),
         }
-        Ok((
-            self.control_min.setpnt(&simulation_time_iteration),
-            self.control_max.setpnt(&simulation_time_iteration),
-        ))
     }
 
     /// Demand energy (in kWh) from the heat pump
