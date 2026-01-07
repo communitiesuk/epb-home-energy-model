@@ -75,7 +75,7 @@ impl HeatPumpSourceType {
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize_enum_str)]
 pub enum ServiceType {
-    Water,
+    DomesticHotWaterRegular,
     Space,
 }
 
@@ -1416,7 +1416,7 @@ impl HeatPumpServiceWater {
         }
     }
 
-    const SERVICE_TYPE: ServiceType = ServiceType::Water;
+    const SERVICE_TYPE: ServiceType = ServiceType::DomesticHotWaterRegular;
 
     /// Calculate the maximum energy output of the HP, accounting for time
     /// spent on higher-priority services
@@ -3776,7 +3776,7 @@ impl HeatPump {
                     time_available_for_current_service,
                     energy_delivered_hp_aggregated,
                 ) = match service_data.service_type {
-                    ServiceType::Water => (
+                    ServiceType::DomesticHotWaterRegular => (
                         1.,
                         1.,
                         false,
@@ -3872,7 +3872,7 @@ impl HeatPump {
                     ServiceType::Space => {
                         heating_profile_on = calculation.service_on;
                     }
-                    ServiceType::Water => {
+                    ServiceType::DomesticHotWaterRegular => {
                         water_profile_on = calculation.service_on;
                     }
                 }
@@ -4054,7 +4054,7 @@ impl HeatPump {
                     ServiceResult::Full(calc) => calc.service_type,
                     ServiceResult::Aux(_) => unreachable!(),
                 },
-                ServiceType::Water
+                ServiceType::DomesticHotWaterRegular
             ) {
                 hot_water_energy_output.clone()
             } else {
@@ -8646,7 +8646,7 @@ mod tests {
         for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
             let _ = heat_pump.lock().demand_energy(
                 service_name,
-                &ServiceType::Water,
+                &ServiceType::DomesticHotWaterRegular,
                 500.,
                 Some(330.),
                 330.,
@@ -8816,7 +8816,7 @@ mod tests {
             1.,
             0.4,
             1560.,
-            ServiceType::Water,
+            ServiceType::DomesticHotWaterRegular,
         );
 
         assert_relative_eq!(energy_input_hp, 2.896551724137931);
@@ -8834,7 +8834,7 @@ mod tests {
             1.,
             0.4,
             1560.,
-            ServiceType::Water,
+            ServiceType::DomesticHotWaterRegular,
         );
 
         assert_relative_eq!(energy_input_hp, 0.);
@@ -8852,7 +8852,7 @@ mod tests {
             1.,
             0.4,
             1560.,
-            ServiceType::Water,
+            ServiceType::DomesticHotWaterRegular,
         );
 
         assert_relative_eq!(energy_input_hp, 0.);
@@ -8888,7 +8888,7 @@ mod tests {
             1.,
             0.4,
             1560.,
-            ServiceType::Water,
+            ServiceType::DomesticHotWaterRegular,
         );
 
         assert_relative_eq!(energy_input_hp, 0.13793103448275862);
@@ -8926,7 +8926,7 @@ mod tests {
             1.,
             0.4,
             1560.,
-            ServiceType::Water,
+            ServiceType::DomesticHotWaterRegular,
         );
 
         assert_relative_eq!(energy_input_hp, 0.13793103448275862);
@@ -9291,7 +9291,7 @@ mod tests {
         let expected_energy_calcs: [HeatPumpEnergyCalculation; 2] = [
             HeatPumpEnergyCalculation {
                 service_name: "service_boilerspace".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: true,
                 energy_output_required: 1.0,
                 temp_output: Some(320.0),
@@ -9322,7 +9322,7 @@ mod tests {
             },
             HeatPumpEnergyCalculation {
                 service_name: "service_boilerspace".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: true,
                 energy_output_required: 1.0,
                 temp_output: Some(320.0),
@@ -9358,7 +9358,7 @@ mod tests {
                 heat_pump_with_boiler
                     .run_demand_energy_calc(
                         "service_boilerspace",
-                        &ServiceType::Water,
+                        &ServiceType::DomesticHotWaterRegular,
                         1.,
                         Some(320.),
                         310.,
@@ -9391,7 +9391,7 @@ mod tests {
         let expected_energy_calcs: [HeatPumpEnergyCalculation; 2] = [
             HeatPumpEnergyCalculation {
                 service_name: "service_no_boiler".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: true,
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
@@ -9422,7 +9422,7 @@ mod tests {
             },
             HeatPumpEnergyCalculation {
                 service_name: "service_no_boiler".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: true,
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
@@ -9458,7 +9458,7 @@ mod tests {
                 heat_pump
                     .run_demand_energy_calc(
                         "service_no_boiler",
-                        &ServiceType::Water,
+                        &ServiceType::DomesticHotWaterRegular,
                         1.,
                         Some(330.),
                         330.,
@@ -9559,7 +9559,7 @@ mod tests {
         let expected_modcontrol_calcs = [
             HeatPumpEnergyCalculation {
                 service_name: "service_backup_modctrl".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: true,
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
@@ -9590,7 +9590,7 @@ mod tests {
             },
             HeatPumpEnergyCalculation {
                 service_name: "service_backup_modctrl".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: true,
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
@@ -9626,7 +9626,7 @@ mod tests {
                 heat_pump_mod_ctrl
                     .run_demand_energy_calc(
                         "service_backup_modctrl",
-                        &ServiceType::Water,
+                        &ServiceType::DomesticHotWaterRegular,
                         1.0,
                         Some(330.0),
                         330.0,
@@ -9652,7 +9652,7 @@ mod tests {
         let expected_energy_calcs: [HeatPumpEnergyCalculation; 2] = [
             HeatPumpEnergyCalculation {
                 service_name: "service_energy_output_required".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: false,
                 energy_output_required: 50.,
                 temp_output: Some(330.0),
@@ -9683,7 +9683,7 @@ mod tests {
             },
             HeatPumpEnergyCalculation {
                 service_name: "service_energy_output_required".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: false,
                 energy_output_required: 50.,
                 temp_output: Some(330.0),
@@ -9719,7 +9719,7 @@ mod tests {
                 heat_pump
                     .run_demand_energy_calc(
                         "service_energy_output_required",
-                        &ServiceType::Water,
+                        &ServiceType::DomesticHotWaterRegular,
                         50.,
                         Some(330.),
                         330.,
@@ -9784,7 +9784,7 @@ mod tests {
         let expected_off_with_boiler_calcs = [
             HeatPumpEnergyCalculation {
                 service_name: "service_boilerspace_service_off".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: false,
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
@@ -9815,7 +9815,7 @@ mod tests {
             },
             HeatPumpEnergyCalculation {
                 service_name: "service_boilerspace_service_off".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: false,
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
@@ -9851,7 +9851,7 @@ mod tests {
                 heat_pump_with_boiler
                     .run_demand_energy_calc(
                         "service_boilerspace_service_off",
-                        &ServiceType::Water,
+                        &ServiceType::DomesticHotWaterRegular,
                         1.0,
                         Some(330.0),
                         330.0,
@@ -10105,7 +10105,7 @@ mod tests {
         let results = heat_pump_with_boiler
             .run_demand_energy_calc(
                 "service_boilerspace",
-                &ServiceType::Water,
+                &ServiceType::DomesticHotWaterRegular,
                 1.,
                 Some(320.0),
                 310.0,
@@ -10126,7 +10126,7 @@ mod tests {
 
         let expected_results = HeatPumpEnergyCalculation {
             service_name: "service_boilerspace".into(),
-            service_type: ServiceType::Water,
+            service_type: ServiceType::DomesticHotWaterRegular,
             service_on: true,
             energy_output_required: 1.0,
             temp_output: Some(320.),
@@ -10162,7 +10162,7 @@ mod tests {
         let results = heat_pump_with_boiler
             .run_demand_energy_calc(
                 "service_boilerspace",
-                &ServiceType::Water,
+                &ServiceType::DomesticHotWaterRegular,
                 1.,
                 None,
                 310.0,
@@ -10183,7 +10183,7 @@ mod tests {
 
         let expected_results = HeatPumpEnergyCalculation {
             service_name: "service_boilerspace".into(),
-            service_type: ServiceType::Water,
+            service_type: ServiceType::DomesticHotWaterRegular,
             service_on: false,
             energy_output_required: 1.0,
             temp_output: None,
@@ -10514,7 +10514,7 @@ mod tests {
                 heat_pump_with_boiler
                     .demand_energy(
                         "service_boiler_demand_energy",
-                        &ServiceType::Water,
+                        &ServiceType::DomesticHotWaterRegular,
                         1.0,
                         Some(330.0),
                         330.0,
@@ -10540,7 +10540,7 @@ mod tests {
             vec![
                 ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
                     service_name: "service_boiler_demand_energy".into(),
-                    service_type: ServiceType::Water,
+                    service_type: ServiceType::DomesticHotWaterRegular,
                     service_on: true,
                     energy_output_required: 1.0,
                     temp_output: Some(330.0),
@@ -10571,7 +10571,7 @@ mod tests {
                 })),
                 ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
                     service_name: "service_boiler_demand_energy".into(),
-                    service_type: ServiceType::Water,
+                    service_type: ServiceType::DomesticHotWaterRegular,
                     service_on: true,
                     energy_output_required: 1.0,
                     temp_output: Some(330.0),
@@ -10662,7 +10662,7 @@ mod tests {
             .lock()
             .demand_energy(
                 "service_boiler_demand_energy",
-                &ServiceType::Water,
+                &ServiceType::DomesticHotWaterRegular,
                 1.0,
                 Some(330.0),
                 330.0,
@@ -10737,7 +10737,7 @@ mod tests {
             .running_time_throughput_factor(
                 0.,
                 "service_runtime_throughput",
-                &ServiceType::Water,
+                &ServiceType::DomesticHotWaterRegular,
                 1.,
                 330.,
                 330.,
@@ -10890,7 +10890,7 @@ mod tests {
         let service_results = vec![
             ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
                 service_name: "service_test".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: true,
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
@@ -10990,7 +10990,7 @@ mod tests {
         let expected_results = vec![
             ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
                 service_name: "service_test".into(),
-                service_type: ServiceType::Water,
+                service_type: ServiceType::DomesticHotWaterRegular,
                 service_on: true,
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
@@ -11134,7 +11134,7 @@ mod tests {
         heat_pump_with_nw
             .demand_energy(
                 "service_extract_energy",
-                &ServiceType::Water,
+                &ServiceType::DomesticHotWaterRegular,
                 1.0,
                 Some(330.0),
                 330.0,
@@ -11194,7 +11194,7 @@ mod tests {
         heat_pump
             .demand_energy(
                 "servicetimestep_demand_energy",
-                &ServiceType::Water,
+                &ServiceType::DomesticHotWaterRegular,
                 5.0,
                 Some(330.0),
                 330.0,
@@ -11219,7 +11219,7 @@ mod tests {
 
         let expected_service_results = [ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
             service_name: "servicetimestep_demand_energy".into(),
-            service_type: ServiceType::Water,
+            service_type: ServiceType::DomesticHotWaterRegular,
             service_on: true,
             energy_output_required: 5.0,
             temp_output: Some(330.0),
