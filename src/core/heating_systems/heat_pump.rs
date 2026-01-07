@@ -1603,8 +1603,19 @@ impl HeatPumpServiceSpace {
     pub fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
-        per_control!(&self.control.as_ref(), ctrl => { <_ as ControlBehaviour>::in_required_period(ctrl.deref(), simulation_time_iteration) })
+    ) -> anyhow::Result<Option<bool>> {
+        let is_valid = |c: &Control| {
+            matches!(
+                c,
+                Control::CombinationTime { .. } | Control::SetpointTime { .. }
+            )
+        };
+        // TODO review - this check may be able to be removed in future if we validate control earlier
+        if !is_valid(&self.control) {
+            bail!("Expected control to be combination or setpoint time control");
+        }
+
+        Ok(self.control.in_required_period(simulation_time_iteration))
     }
 
     /// Calculate the maximum energy output of the HP, accounting for time
@@ -6114,7 +6125,7 @@ mod tests {
     ) {
         for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
             assert_eq!(
-                heat_pump_service_space.in_required_period(&t_it),
+                heat_pump_service_space.in_required_period(&t_it).unwrap(),
                 [Some(true), Some(false)][t_idx]
             );
         }
@@ -6133,6 +6144,9 @@ mod tests {
 
         assert!(heat_pump_service_space
             .temp_setpnt(&simulation_time_for_heat_pump.iter().current_iteration())
+            .is_err());
+        assert!(heat_pump_service_space
+            .in_required_period(&simulation_time_for_heat_pump.iter().current_iteration())
             .is_err());
     }
 

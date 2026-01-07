@@ -2083,12 +2083,12 @@ impl Corpus {
         hc_name_list_sorted: &[String],
         space_heat_cool_systems: SpaceHeatCoolSystems,
         simtime: SimulationTimeIteration,
-    ) -> Option<String> {
+    ) -> anyhow::Result<Option<String>> {
         let mut hc_name_highest_req = Default::default();
         for hc_name in hc_name_list_sorted {
             if !hc_name.is_empty()
                 && space_heat_cool_systems
-                    .in_required_period_for_name(hc_name, simtime)
+                    .in_required_period_for_name(hc_name, simtime)?
                     .unwrap_or(false)
             {
                 hc_name_highest_req = Some(hc_name.to_owned());
@@ -2096,7 +2096,7 @@ impl Corpus {
             }
         }
 
-        hc_name_highest_req
+        Ok(hc_name_highest_req)
     }
 
     /// Calculate how much space heating / cooling demand is unmet
@@ -2144,12 +2144,12 @@ impl Corpus {
             h_name_list_sorted,
             SpaceHeatCoolSystems::Heat(&self.space_heat_systems),
             simtime,
-        );
+        )?;
         let c_name_highest_req = self.highest_priority_required_system(
             c_name_list_sorted,
             SpaceHeatCoolSystems::Cool(&self.space_cool_systems),
             simtime,
-        );
+        )?;
 
         let gains_heat = h_name_list_sorted
             .iter()
@@ -2944,12 +2944,12 @@ impl SpaceHeatCoolSystems<'_> {
         &self,
         system_name: &str,
         simtime: SimulationTimeIteration,
-    ) -> Option<bool> {
+    ) -> anyhow::Result<Option<bool>> {
         match self {
             SpaceHeatCoolSystems::Heat(heat) => {
                 heat[system_name].lock().in_required_period(simtime)
             }
-            SpaceHeatCoolSystems::Cool(cool) => cool[system_name].in_required_period(&simtime),
+            SpaceHeatCoolSystems::Cool(cool) => Ok(cool[system_name].in_required_period(&simtime)),
         }
     }
 }

@@ -257,16 +257,16 @@ impl SpaceHeatSystem {
     pub fn in_required_period(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> Option<bool> {
+    ) -> anyhow::Result<Option<bool>> {
         match self {
             SpaceHeatSystem::ElecStorage(elec_storage) => {
-                elec_storage.in_required_period(&simulation_time_iteration)
+                Ok(elec_storage.in_required_period(&simulation_time_iteration))
             }
             SpaceHeatSystem::Instant(instant) => {
-                instant.in_required_period(&simulation_time_iteration)
+                Ok(instant.in_required_period(&simulation_time_iteration))
             }
             SpaceHeatSystem::WarmAir(warm_air) => {
-                warm_air.in_required_period(&simulation_time_iteration)
+                Ok(warm_air.in_required_period(&simulation_time_iteration))
             }
             SpaceHeatSystem::WetDistribution(emitters) => {
                 emitters.in_required_period(&simulation_time_iteration)
