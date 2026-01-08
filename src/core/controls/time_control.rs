@@ -603,11 +603,16 @@ impl OnOffCostMinimisingTimeControl {
             // Find required number of timesteps with lowest costs
             let mut schedule_day_cost_lowest = schedule_day.clone();
             schedule_day_cost_lowest.sort_by(f64::total_cmp);
-            let schedule_day_cost_lowest = schedule_day_cost_lowest[0..timesteps_on_daily].to_vec();
+            let schedule_day_cost_lowest = schedule_day_cost_lowest[0..timesteps_on_daily]
+                .iter()
+                .dedup()
+                .collect_vec();
 
             // Initialise boolean schedule for day
             let mut schedule_onoff_day = vec![false; timesteps_per_day];
 
+            // Set lowest cost times to True, then next lowest etc. until required
+            // number of timesteps have been set to True
             if schedule_onoff_day.len() != schedule_day.len() {
                 bail!("Different lengths for schedule_onoff_day and schedule_day")
             }
@@ -618,7 +623,7 @@ impl OnOffCostMinimisingTimeControl {
                     if timesteps_to_be_allocated < 1 {
                         break;
                     }
-                    if entry == cost {
+                    if entry == *cost {
                         schedule_onoff_day[idx] = true;
                         timesteps_to_be_allocated -= 1;
                     }
@@ -1644,8 +1649,8 @@ mod tests {
     #[rstest]
     pub fn should_be_on_for_cost_minimising_control(
         on_off_minimising_control: OnOffCostMinimisingTimeControl,
-        simulation_time: SimulationTimeIterator,
     ) {
+        let simulation_time = SimulationTime::new(0.0, 48.0, 1.0).iter();
         let resulting_schedule = [
             vec![true; 7],
             vec![false; 2],
