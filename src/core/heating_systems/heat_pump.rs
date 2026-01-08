@@ -2385,6 +2385,7 @@ impl HeatPump {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn backup_heater_max_power(&self) -> f64 {
         self.power_max_backup
     }
