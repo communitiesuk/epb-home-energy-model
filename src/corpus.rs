@@ -4135,8 +4135,7 @@ impl WetHeatSource {
 
 pub type ResultsPerTimestep =
     IndexMap<String, IndexMap<(String, Option<String>), Vec<ResultParamValue>>>;
-pub type ResultsAnnual =
-    IndexMap<String, IndexMap<(String, Option<String>), Vec<ResultParamValue>>>;
+pub type ResultsAnnual = IndexMap<String, IndexMap<(String, Option<String>), ResultParamValue>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ResultParamValue {

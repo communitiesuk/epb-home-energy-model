@@ -2006,9 +2006,7 @@ pub(crate) fn to_corpus_results_annual(results: ResultsAnnual) -> CorpusResultsA
                 key,
                 value
                     .into_iter()
-                    .map(|((key1, key2), value)| {
-                        ((key1, key2), vec![ResultParamValue::from(value)])
-                    })
+                    .map(|((key1, key2), value)| ((key1, key2), ResultParamValue::from(value)))
                     .collect(),
             )
         })

@@ -4346,7 +4346,7 @@ pub(crate) fn to_corpus_results_annual(results: ResultsAnnual) -> CorpusResultsA
                 key,
                 value
                     .into_iter()
-                    .map(|((key1, key2), value)| ((key1, Some(key2)), vec![value]))
+                    .map(|((key1, key2), value)| ((key1, Some(key2)), value))
                     .collect(),
             )
         })
