@@ -1473,7 +1473,7 @@ impl HeatPumpServiceWater {
         } else {
             None
         };
-        let design_flow_temp_op_cond = temp_flow_k.ok_or_else(|| anyhow!("temp_flow_k is None"))?; // TODO review 1.0.0a1 - design_flow_temp_op_cond is not optional in the methods it's passed to
+        let design_flow_temp_op_cond = temp_flow_k.ok_or_else(|| anyhow!("temp_flow_k is None"))?;
 
         // TODO (from Python) Arbitrary volume used here for reference cold water temperature
         let list_temp_vol = self
@@ -11134,7 +11134,46 @@ mod tests {
         assert_eq!(*heat_pump.service_results.read().deref(), expected_results);
     }
 
-    // TODO skipping test_calculate_energy_input_error as HeatPump service type can only be Water or Space currently
+    #[rstest]
+    fn test_calculate_energy_input_error(external_conditions: ExternalConditions,
+                                         simulation_time_for_heat_pump: SimulationTime, ) {
+        let mut heat_pump = create_default_heat_pump(None, external_conditions,
+                                                     simulation_time_for_heat_pump, None);
+        heat_pump.service_results = Arc::new(RwLock::new(vec![
+            ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
+                service_name: "service_water".into(),
+                service_type: HeatingServiceType::DomesticHotWaterCombi,
+                service_on: true,
+                energy_output_required: 1.0,
+                temp_output: Some(330.0),
+                temp_source: 273.15,
+                cop_op_cond: Some(2.9706605881515196),
+                thermal_capacity_op_cond: Some(8.417674488123662),
+                time_running_full_load: 0.11879765621857688,
+                time_running_part_load: None,
+                time_available_for_capacity_calc: 0.5,
+                time_available_for_load_ratio_calc: 0.5,
+                time_constant_for_service: 1560.,
+                compressor_power_min_load: Default::default(),
+                load_ratio_continuous_min: Default::default(),
+                load_ratio: Default::default(),
+                use_backup_heater_only: false,
+                hp_operating_in_onoff_mode: Default::default(),
+                energy_input_hp: Default::default(),
+                energy_delivered_hp: 0.9999999999999999,
+                energy_input_backup: 0.0,
+                energy_delivered_backup: 0.0,
+                energy_input_total: Default::default(),
+                energy_delivered_total: 0.9999999999999999,
+                energy_heating_circ_pump: 0.001781964843278653,
+                energy_source_circ_pump: 0.0011879765621857687,
+                energy_output_required_boiler: 0.0,
+                energy_heating_warm_air_fan: 0.,
+                energy_output_delivered_boiler: Some(0.),
+            }))]));
+
+        assert!(heat_pump.calc_energy_input(0).is_err());
+    }
 
     #[rstest]
     fn test_calc_auxiliary_energy(

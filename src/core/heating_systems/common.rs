@@ -22,6 +22,7 @@ use serde_enum_str::Serialize_enum_str;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize_enum_str)]
 pub(crate) enum HeatingServiceType {
+    DomesticHotWaterCombi,
     DomesticHotWaterRegular,
     Space,
     DomesticHotWaterDirect,
