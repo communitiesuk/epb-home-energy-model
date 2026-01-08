@@ -18,8 +18,9 @@ use crate::core::heating_systems::heat_pump::{
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{bail, Error};
+use serde_enum_str::Serialize_enum_str;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize_enum_str)]
 pub(crate) enum HeatingServiceType {
     DomesticHotWaterRegular,
     Space,
