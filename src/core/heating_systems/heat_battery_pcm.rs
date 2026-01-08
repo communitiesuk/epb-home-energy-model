@@ -11,13 +11,9 @@ use crate::core::units::{
 use crate::core::water_heat_demand::misc::{
     calculate_volume_weighted_average_temperature, water_demand_to_kwh, WaterEventResult,
 };
-use crate::corpus::{
-    ResultParamValue, ResultsAnnual as CorpusResultsAnnual,
-    ResultsPerTimestep as CorpusResultsPerTimestep,
-};
+use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
 use crate::input::{HeatBattery as HeatBatteryInput, HeatSourceWetDetails};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
-use crate::StringOrNumber;
 use anyhow::anyhow;
 use anyhow::bail;
 use atomic_float::AtomicF64;
@@ -1824,7 +1820,7 @@ impl HeatBatteryPcm {
 
         // For each service, report required output parameters
         for (service_idx, service_name) in self.energy_supply_connections.keys().enumerate() {
-            let mut current_results: IndexMap<(String, Option<String>), Vec<StringOrNumber>> =
+            let mut current_results: IndexMap<(String, Option<String>), Vec<ResultParamValue>> =
                 Default::default();
 
             // Look up each required parameter
@@ -1900,7 +1896,7 @@ impl HeatBatteryPcm {
                     .filter_map(|(parameter, param_units, incl_in_manual)| {
                         incl_in_manual.then_some((
                             (String::from(*parameter), param_units.map(String::from)),
-                            0.0,
+                            0.0f64.into(),
                         ))
                     })
                     .collect(),
@@ -1908,7 +1904,10 @@ impl HeatBatteryPcm {
             ("auxiliary".into(), Default::default()),
         ]
         .into();
-        results_annual["Overall"].insert(("energy_delivered_H4".into(), Some("kWh".into())), 0.0);
+        results_annual["Overall"].insert(
+            ("energy_delivered_H4".into(), Some("kWh".into())),
+            0.0f64.into(),
+        );
         // Report auxiliary parameters (not specific to a service)
         for (parameter, param_unit, incl_in_annual) in aux_parameters.iter() {
             if *incl_in_annual {
@@ -1918,14 +1917,13 @@ impl HeatBatteryPcm {
                         [&(String::from(*parameter), String::from(*param_unit).into())]
                         .iter()
                         .cloned()
-                        .map(f64::from)
-                        .sum::<f64>(),
+                        .sum::<ResultParamValue>(),
                 );
             }
         }
         // For each service, report required output parameters
         for service_name in self.energy_supply_connections.keys() {
-            let mut current_annual_results: IndexMap<(String, Option<String>), f64> =
+            let mut current_annual_results: IndexMap<(String, Option<String>), ResultParamValue> =
                 Default::default();
             for (parameter, param_unit, incl_in_annual) in output_parameters.iter() {
                 if *incl_in_annual {
@@ -1933,11 +1931,10 @@ impl HeatBatteryPcm {
                         [&(String::from(*parameter), param_unit.map(String::from))]
                         .iter()
                         .cloned()
-                        .map(f64::from)
-                        .sum::<f64>();
+                        .sum::<ResultParamValue>();
                     current_annual_results.insert(
                         (String::from(*parameter), param_unit.map(String::from)),
-                        parameter_annual_total,
+                        parameter_annual_total.clone(),
                     );
                     results_annual["Overall"]
                         [&(String::from(*parameter), param_unit.map(String::from))] +=
@@ -1950,11 +1947,13 @@ impl HeatBatteryPcm {
                     [&("energy_delivered_H4".into(), Some("kWh".into()))]
                     .iter()
                     .cloned()
-                    .map(f64::from)
-                    .sum::<f64>(),
+                    .sum::<ResultParamValue>(),
             );
+            let service_energy_delivered = results_annual[service_name]
+                [&("energy_delivered_H4".into(), Some("kWh".into()))]
+                .clone();
             results_annual["Overall"][&("energy_delivered_H4".into(), Some("kWh".into()))] +=
-                results_annual[service_name][&("energy_delivered_H4".into(), Some("kWh".into()))];
+                service_energy_delivered;
 
             results_annual.insert(service_name.to_owned(), current_annual_results);
         }
@@ -1970,47 +1969,6 @@ impl HeatBatteryPcm {
             _ => unreachable!(),
         }
     }
-}
-
-pub(crate) type ResultsPerTimestep =
-    IndexMap<String, IndexMap<(String, Option<String>), Vec<StringOrNumber>>>;
-pub(crate) type ResultsAnnual = IndexMap<String, IndexMap<(String, Option<String>), f64>>;
-
-pub(crate) fn to_corpus_results_per_timestep(
-    results: ResultsPerTimestep,
-) -> CorpusResultsPerTimestep {
-    results
-        .into_iter()
-        .map(|(key, value)| {
-            (
-                key,
-                value
-                    .into_iter()
-                    .map(|((key1, key2), value)| {
-                        (
-                            (key1, key2),
-                            value.into_iter().map(ResultParamValue::from).collect(),
-                        )
-                    })
-                    .collect(),
-            )
-        })
-        .collect()
-}
-
-pub(crate) fn to_corpus_results_annual(results: ResultsAnnual) -> CorpusResultsAnnual {
-    results
-        .into_iter()
-        .map(|(key, value)| {
-            (
-                key,
-                value
-                    .into_iter()
-                    .map(|((key1, key2), value)| ((key1, key2), ResultParamValue::from(value)))
-                    .collect(),
-            )
-        })
-        .collect()
 }
 
 #[cfg(test)]

@@ -4099,10 +4099,13 @@ impl WetHeatSource {
             WetHeatSource::HeatPump(heat_pump) => {
                 let (results_per_timestep, results_annual) =
                     heat_pump.lock().clone().output_detailed_results(
-                        &IndexMap::from([("".into(), hot_water_energy_output // TODO 1.0.0a1 migration - pass in correct string for key
-                            .iter()
-                            .map(|&x| x.into())
-                            .collect_vec())]),
+                        &IndexMap::from([(
+                            "".into(),
+                            hot_water_energy_output // TODO 1.0.0a1 migration - pass in correct string for key
+                                .iter()
+                                .map(|&x| x.into())
+                                .collect_vec(),
+                        )]),
                         &IndexMap::from([("".into(), "".into())]), // TODO 1.0.0a1 migration - pass in correct strings for key and value
                     );
                 Some((
@@ -4117,17 +4120,7 @@ impl WetHeatSource {
             WetHeatSource::HeatBattery(heat_battery) => heat_battery
                 .read()
                 .output_detailed_results(hot_water_energy_output)
-                .ok()
-                .map(|(results_per_timestep, results_annual)| {
-                    (
-                        crate::core::heating_systems::heat_battery_pcm::to_corpus_results_per_timestep(
-                            results_per_timestep,
-                        ),
-                        crate::core::heating_systems::heat_battery_pcm::to_corpus_results_annual(
-                            results_annual,
-                        ),
-                    )
-                }),
+                .ok(),
             _ => None,
         }
     }
@@ -4206,6 +4199,12 @@ impl PartialEq<f64> for ResultParamValue {
 impl From<f64> for ResultParamValue {
     fn from(value: f64) -> Self {
         Self::Number(value)
+    }
+}
+
+impl From<&f64> for ResultParamValue {
+    fn from(value: &f64) -> Self {
+        Self::Number(*value)
     }
 }
 
