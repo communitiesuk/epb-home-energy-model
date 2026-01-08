@@ -4138,7 +4138,7 @@ pub type ResultsPerTimestep =
 pub type ResultsAnnual =
     IndexMap<String, IndexMap<(String, Option<String>), Vec<ResultParamValue>>>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ResultParamValue {
     String(String),
     Number(f64),

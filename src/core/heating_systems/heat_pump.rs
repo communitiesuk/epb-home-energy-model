@@ -40,6 +40,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
+
 const N_EXER: f64 = 3.0;
 
 impl HeatPumpSourceType {
@@ -4152,23 +4153,42 @@ impl HeatPump {
                     .get_mut(&(param_index.0.into(), param_index.1.into()))
                     .unwrap() += param_total_for_overall;
             }
-            *results_annual
-                .get_mut(service_name)
-                .unwrap()
-                .get_mut(&("energy_delivered_H5".into(), "kWh".into()))
-                .unwrap() = results_per_timestep[service_name.as_str()]
-                [&("energy_delivered_H5".into(), "kWh".into())]
-                .iter()
-                .cloned()
-                .sum::<ResultParamValue>();
-            let service_energy_delivered_results = results_annual[service_name.as_str()]
-                [&("energy_delivered_H5".into(), "kWh".into())]
-                .clone();
-            *results_annual
-                .get_mut("Overall")
-                .unwrap()
-                .get_mut(&("energy_delivered_H5".into(), "kWh".into()))
-                .unwrap() += service_energy_delivered_results;
+
+            if results_per_timestep[service_name][&("energy_delivered_H5".into(), "kWh".into())].contains(&ResultParamValue::Empty) {
+                *results_annual
+                    .get_mut(service_name)
+                    .unwrap()
+                    .get_mut(&("energy_delivered_H5".into(), "kWh".into()))
+                    .unwrap() = ResultParamValue::Empty;
+                *results_annual
+                    .get_mut("Overall")
+                    .unwrap()
+                    .get_mut(&("energy_delivered_H5".into(), "kWh".into()))
+                    .unwrap() = ResultParamValue::Empty;
+            } else {
+                *results_annual
+                    .get_mut(service_name)
+                    .unwrap()
+                    .get_mut(&("energy_delivered_H5".into(), "kWh".into()))
+                    .unwrap() = results_per_timestep[service_name.as_str()]
+                    [&("energy_delivered_H5".into(), "kWh".into())]
+                    .iter()
+                    .cloned()
+                    .sum::<ResultParamValue>();
+            }
+
+            if results_annual["Overall"][&("energy_delivered_H5".into(), "kWh".into())] != ResultParamValue::Empty {
+                let service_energy_delivered_results = results_annual[service_name.as_str()]
+                    [&("energy_delivered_H5".into(), "kWh".into())]
+                    .clone();
+
+                *results_annual
+                    .get_mut("Overall")
+                    .unwrap()
+                    .get_mut(&("energy_delivered_H5".into(), "kWh".into()))
+                    .unwrap() += service_energy_delivered_results;
+            }
+
             self.calc_service_cop(results_annual.get_mut(service_name).unwrap(), None);
         }
 
