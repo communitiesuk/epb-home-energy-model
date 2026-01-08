@@ -1629,44 +1629,40 @@ mod tests {
                 "There is a mismatch between the schedule length and the timesteps per day (hours_per_day / time_series_step)"
             );
         }
-    }
 
-    #[fixture]
-    pub fn on_off_minimising_control() -> OnOffCostMinimisingTimeControl {
-        let schedule = [
-            vec![5.0; 7],
-            vec![10.0; 2],
-            vec![7.5; 8],
-            vec![15.0; 6],
-            vec![5.0],
-        ]
-        .to_vec()
-        .concat();
-        let schedule = [&schedule[..], &schedule[..]].concat();
-        OnOffCostMinimisingTimeControl::new(schedule, 0, 1.0, 12.0).unwrap()
-    }
+        #[rstest]
+        fn test_is_on() {
+            let schedule = [
+                vec![5.0; 7],
+                vec![10.0; 2],
+                vec![7.5; 8],
+                vec![15.0; 6],
+                vec![5.0],
+            ]
+                .to_vec()
+                .concat();
+            let schedule = [&schedule[..], &schedule[..]].concat();
+            let cost_minimising_ctrl =
+                OnOffCostMinimisingTimeControl::new(schedule, 0, 1.0, 12.0).unwrap();
 
-    #[rstest]
-    pub fn should_be_on_for_cost_minimising_control(
-        on_off_minimising_control: OnOffCostMinimisingTimeControl,
-    ) {
-        let simulation_time = SimulationTime::new(0.0, 48.0, 1.0).iter();
-        let resulting_schedule = [
-            vec![true; 7],
-            vec![false; 2],
-            vec![true; 4],
-            vec![false; 4],
-            vec![false; 6],
-            vec![true],
-        ]
-        .to_vec()
-        .concat();
-        let resulting_schedule = [&resulting_schedule[..], &resulting_schedule[..]].concat();
-        for it in simulation_time {
-            assert_eq!(
-                on_off_minimising_control.is_on(&it),
-                resulting_schedule[it.index]
-            );
+            let resulting_schedule = [
+                vec![true; 7],
+                vec![false; 2],
+                vec![true; 4],
+                vec![false; 4],
+                vec![false; 6],
+                vec![true],
+            ]
+                .to_vec()
+                .concat();
+            let resulting_schedule = [&resulting_schedule[..], &resulting_schedule[..]].concat();
+            let simulation_time_iterator = SimulationTime::new(0.0, 48.0, 1.0).iter();
+            for iteration in simulation_time_iterator {
+                pretty_assertions::assert_eq!(
+                    cost_minimising_ctrl.is_on(&iteration),
+                    resulting_schedule[iteration.index]
+                );
+            }
         }
     }
 
