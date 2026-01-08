@@ -4099,10 +4099,11 @@ impl WetHeatSource {
             WetHeatSource::HeatPump(heat_pump) => {
                 let (results_per_timestep, results_annual) =
                     heat_pump.lock().clone().output_detailed_results(
-                        hot_water_energy_output
+                        &IndexMap::from([("".into(), hot_water_energy_output // TODO 1.0.0a1 migration - pass in correct string for key
                             .iter()
                             .map(|&x| x.into())
-                            .collect_vec(),
+                            .collect_vec())]),
+                        &IndexMap::from([("".into(), "".into())]), // TODO 1.0.0a1 migration - pass in correct strings for key and value
                     );
                 Some((
                     crate::core::heating_systems::heat_pump::to_corpus_results_per_timestep(
@@ -4142,6 +4143,7 @@ pub enum ResultParamValue {
     String(String),
     Number(f64),
     Boolean(bool),
+    Empty,
 }
 
 impl ResultParamValue {
@@ -4245,6 +4247,7 @@ impl Display for ResultParamValue {
                 ResultParamValue::String(string) => string.to_string(),
                 ResultParamValue::Number(number) => number.to_string(),
                 ResultParamValue::Boolean(boolean) => boolean.to_string(),
+                ResultParamValue::Empty => "".to_string(),
             }
         )
     }

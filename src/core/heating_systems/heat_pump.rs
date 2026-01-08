@@ -3994,7 +3994,8 @@ impl HeatPump {
 
     pub fn output_detailed_results(
         &self,
-        hot_water_energy_output: Vec<ResultParamValue>,
+        hot_water_energy_output: &IndexMap<String, Vec<ResultParamValue>>,
+        hot_water_source_name_for_heat_pump_service: &IndexMap<String, String>,
     ) -> (ResultsPerTimestep, ResultsAnnual) {
         let detailed_results = self.detailed_results.as_ref().expect(
             "Detailed results cannot be output when the option to collect them was not selected",
@@ -4047,22 +4048,39 @@ impl HeatPump {
                 }
             }
             // For water heating service, record hot water energy delivered from tank
-            *results_per_timestep
-                .get_mut(service_name)
-                .unwrap()
-                .entry(("energy_delivered_H5".into(), "kWh".into()))
-                .or_default() = if matches!(
+            if matches!(
                 match &self.detailed_results.as_ref().unwrap()[0].read()[service_idx] {
                     ServiceResult::Full(calc) => calc.service_type,
                     ServiceResult::Aux(_) => unreachable!(),
                 },
                 ServiceType::DomesticHotWaterRegular
             ) {
-                hot_water_energy_output.clone()
+                let energy_delivered_total_len = results_per_timestep[service_name]
+                    [&("energy_delivered_total".into(), "kWh".into())]
+                    .len();
+                results_per_timestep.get_mut(service_name).unwrap().insert(
+                    ("energy_delivered_H5".into(), "kWh".into()),
+                    {
+                        // For DHW, need to include storage and primary circuit losses.
+                        // Can do this by replacing H5 numerator with total energy
+                        // draw-off from hot water cylinder.
+                        let hws_name = &hot_water_source_name_for_heat_pump_service[service_name];
+                        if !hot_water_energy_output.contains_key(hws_name) {
+                            vec![ResultParamValue::Empty; energy_delivered_total_len]
+                        } else {
+                            hot_water_energy_output[hws_name].clone()
+                        }
+                    },
+                );
             } else {
-                results_per_timestep[service_name][&("energy_delivered_total".into(), "kWh".into())]
-                    .clone()
-            };
+                let energy_delivered_total_results = results_per_timestep[service_name]
+                    [&("energy_delivered_total".into(), "kWh".into())]
+                    .clone();
+                results_per_timestep.get_mut(service_name).unwrap().insert(
+                    ("energy_delivered_H5".into(), "kWh".into()),
+                    energy_delivered_total_results,
+                );
+            }
         }
 
         let mut results_annual: ResultsAnnual = Default::default();
