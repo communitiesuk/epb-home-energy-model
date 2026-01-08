@@ -4108,14 +4108,7 @@ impl WetHeatSource {
                         )]),
                         &IndexMap::from([("".into(), "".into())]), // TODO 1.0.0a1 migration - pass in correct strings for key and value
                     );
-                Some((
-                    crate::core::heating_systems::heat_pump::to_corpus_results_per_timestep(
-                        results_per_timestep,
-                    ),
-                    crate::core::heating_systems::heat_pump::to_corpus_results_annual(
-                        results_annual,
-                    ),
-                ))
+                Some((results_per_timestep, results_annual))
             }
             WetHeatSource::HeatBattery(heat_battery) => heat_battery
                 .read()
