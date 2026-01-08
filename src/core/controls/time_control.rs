@@ -596,7 +596,7 @@ impl OnOffCostMinimisingTimeControl {
             // than the length of the schedule (otherwise we'd get a panic in Rust). Python is more
             // lenient and will assume access elements up to the last one and will not error.
             if schedule.len() < schedule_day_end {
-                bail!("There is a mismatch between the schedule length and the time_series_step")
+                bail!("There is a mismatch between the schedule length and the timesteps per day (hours_per_day / time_series_step)")
             }
             let schedule_day = schedule[schedule_day_start..schedule_day_end].to_vec();
 
@@ -1621,7 +1621,7 @@ mod tests {
             let error = control.unwrap_err().to_string();
             assert_eq!(
                 error,
-                "There is a mismatch between the schedule length and the time_series_step"
+                "There is a mismatch between the schedule length and the timesteps per day (hours_per_day / time_series_step)"
             );
         }
     }
