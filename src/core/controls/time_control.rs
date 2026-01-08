@@ -1639,8 +1639,8 @@ mod tests {
                 vec![15.0; 6],
                 vec![5.0],
             ]
-                .to_vec()
-                .concat();
+            .to_vec()
+            .concat();
             let schedule = [&schedule[..], &schedule[..]].concat();
             let cost_minimising_ctrl =
                 OnOffCostMinimisingTimeControl::new(schedule, 0, 1.0, 12.0).unwrap();
@@ -1653,8 +1653,8 @@ mod tests {
                 vec![false; 6],
                 vec![true],
             ]
-                .to_vec()
-                .concat();
+            .to_vec()
+            .concat();
             let resulting_schedule = [&resulting_schedule[..], &resulting_schedule[..]].concat();
             let simulation_time_iterator = SimulationTime::new(0.0, 48.0, 1.0).iter();
             for iteration in simulation_time_iterator {

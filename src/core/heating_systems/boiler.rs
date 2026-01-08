@@ -95,7 +95,7 @@ impl BoilerServiceWaterCombi {
                     daily_hot_water_usage,
                     cold_feed,
                     simulation_timestep,
-                    combi_loss: Arc::new(RwLock::new(Default::default()))
+                    combi_loss: Arc::new(RwLock::new(Default::default())),
                 })
             }
             _ => Err(IncorrectBoilerDataType),
@@ -225,7 +225,9 @@ impl BoilerServiceWaterCombi {
             * WATTS_PER_KILOWATT as f64
             / self.simulation_timestep;
 
-        self.combi_loss.read().store(Default::default(), Ordering::SeqCst);
+        self.combi_loss
+            .read()
+            .store(Default::default(), Ordering::SeqCst);
 
         gain_internal
     }

@@ -40,7 +40,6 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
-
 const N_EXER: f64 = 3.0;
 
 impl HeatPumpSourceType {
@@ -3330,21 +3329,23 @@ impl HeatPump {
             time_running_current_service_full_load * self.power_source_circ_pump
         };
 
-        let (energy_heating_warm_air_fan, energy_heating_circ_pump) =
-            if *service_type == HeatingServiceType::Space && self.sink_type == HeatPumpSinkType::Air {
-                // If warm air distribution add electricity for warm air fan
-                (
-                    time_running_current_service_full_load * self.power_heating_warm_air_fan,
-                    0.,
-                )
-            } else {
-                // if wet distribution add electricity for wet distribution
-                (
-                    0.,
-                    time_running_current_service_full_load
-                        * (self.power_heating_circ_pump + power_buffer_tank_pump),
-                )
-            };
+        let (energy_heating_warm_air_fan, energy_heating_circ_pump) = if *service_type
+            == HeatingServiceType::Space
+            && self.sink_type == HeatPumpSinkType::Air
+        {
+            // If warm air distribution add electricity for warm air fan
+            (
+                time_running_current_service_full_load * self.power_heating_warm_air_fan,
+                0.,
+            )
+        } else {
+            // if wet distribution add electricity for wet distribution
+            (
+                0.,
+                time_running_current_service_full_load
+                    * (self.power_heating_circ_pump + power_buffer_tank_pump),
+            )
+        };
 
         // Calculate total energy delivered and input
         let mut energy_delivered_total = energy_delivered_hp + energy_delivered_backup;
@@ -4148,7 +4149,9 @@ impl HeatPump {
                     .unwrap() += param_total_for_overall;
             }
 
-            if results_per_timestep[service_name][&("energy_delivered_H5".into(), "kWh".into())].contains(&ResultParamValue::Empty) {
+            if results_per_timestep[service_name][&("energy_delivered_H5".into(), "kWh".into())]
+                .contains(&ResultParamValue::Empty)
+            {
                 *results_annual
                     .get_mut(service_name)
                     .unwrap()
@@ -4171,7 +4174,9 @@ impl HeatPump {
                     .sum::<ResultParamValue>();
             }
 
-            if results_annual["Overall"][&("energy_delivered_H5".into(), "kWh".into())] != ResultParamValue::Empty {
+            if results_annual["Overall"][&("energy_delivered_H5".into(), "kWh".into())]
+                != ResultParamValue::Empty
+            {
                 let service_energy_delivered_results = results_annual[service_name.as_str()]
                     [&("energy_delivered_H5".into(), "kWh".into())]
                     .clone();
@@ -4228,7 +4233,8 @@ impl HeatPump {
         let cop_h4_numerator = cop_h3_numerator.clone();
         let cop_h4_denominator = &cop_h3_denominator
             + &results_totals[&("energy_heating_circ_pump".into(), "kWh".into())].clone();
-        let cop_h5_numerator = results_totals[&("energy_delivered_H5".into(), "kWh".into())].clone();
+        let cop_h5_numerator =
+            results_totals[&("energy_delivered_H5".into(), "kWh".into())].clone();
         let cop_h5_denominator = cop_h4_denominator.clone();
 
         results_totals.insert(
@@ -4271,7 +4277,8 @@ impl HeatPump {
 
             (cop_h5_note, ResultParamValue::Empty)
         } else {
-            let cop_h5_note = "Note: For water heating services, only valid when HP is only heat source";
+            let cop_h5_note =
+                "Note: For water heating services, only valid when HP is only heat source";
 
             (cop_h5_note, cop_h5_numerator / cop_h5_denominator)
         };

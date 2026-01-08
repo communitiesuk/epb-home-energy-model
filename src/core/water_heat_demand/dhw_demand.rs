@@ -4,7 +4,7 @@ use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
 use crate::core::schedule::{TypedScheduleEvent, WaterScheduleEventType};
 use crate::core::units::MILLIMETRES_IN_METRE;
 use crate::core::water_heat_demand::bath::Bath;
-use crate::core::water_heat_demand::misc::{WaterEventResult, water_demand_to_kwh};
+use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
 use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
@@ -332,8 +332,11 @@ impl DomesticHotWaterDemand {
             self.event_schedules[simtime.index].clone();
 
         let hot_water_source_keys = self.hot_water_sources.keys();
-        
-        let mut usage_events_with_flushes: IndexMap<String, Vec<WaterEventResult>> = hot_water_source_keys.map(|key| { (key.clone(), vec![]) } ).collect();
+
+        let mut usage_events_with_flushes: IndexMap<String, Vec<WaterEventResult>> =
+            hot_water_source_keys
+                .map(|key| (key.clone(), vec![]))
+                .collect();
         usage_events_with_flushes.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), vec![]);
 
         if let Some(usage_events) = &mut usage_events {
