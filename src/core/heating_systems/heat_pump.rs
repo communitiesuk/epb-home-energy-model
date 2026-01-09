@@ -4269,18 +4269,21 @@ impl HeatPump {
         );
 
         let (subkey, value) = if cop_h5_denominator == 0. {
-            ("", ResultParamValue::from(0.))
+            (None, ResultParamValue::from(0.))
         } else if cop_h5_numerator == ResultParamValue::Empty {
             let cop_h5_note = "Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank";
 
-            (cop_h5_note, ResultParamValue::Empty)
+            (Some(cop_h5_note.into()), ResultParamValue::Empty)
         } else {
             let cop_h5_note =
                 "Note: For water heating services, only valid when HP is only heat source";
 
-            (cop_h5_note, cop_h5_numerator / cop_h5_denominator)
+            (
+                Some(cop_h5_note.into()),
+                cop_h5_numerator / cop_h5_denominator,
+            )
         };
-        results_totals.insert(("CoP (H5)".into(), Some(subkey.into())), value);
+        results_totals.insert(("CoP (H5)".into(), subkey), value);
     }
 }
 
@@ -11438,13 +11441,6 @@ mod tests {
             },
         };
 
-        let (results_per_timestep, results_annual) = heat_pump.lock().output_detailed_results(
-            &indexmap! { "hwsname".into() => vec![100.0.into()] },
-            &indexmap! { "servicetimestep_demand_energy".into() => "hwsname".into() },
-        );
-
-        assert_eq!(results_per_timestep, expected_results_per_timestep);
-
         let mut expected_results_annual: ResultsAnnual = indexmap! {
             "Overall".into() => indexmap! {
                 ("energy_output_required".into(), Some("kWh".into())) => 10.0.into(),
@@ -11495,6 +11491,12 @@ mod tests {
             },
         };
 
+        let (results_per_timestep, results_annual) = heat_pump.lock().output_detailed_results(
+            &indexmap! { "hwsname".into() => vec![100.0.into()] },
+            &indexmap! { "servicetimestep_demand_energy".into() => "hwsname".into() },
+        );
+
+        assert_eq!(results_per_timestep, expected_results_per_timestep);
         assert_eq!(results_annual, expected_results_annual);
 
         // Test case where hot water source is not in hot water energy source data
@@ -11643,13 +11645,6 @@ mod tests {
             },
         };
 
-        let (results_per_timestep, results_annual) = heat_pump.lock().output_detailed_results(
-            &indexmap! { "hwsname".into() => vec![100.0.into()] },
-            &indexmap! {},
-        );
-
-        assert_eq!(results_per_timestep, expected_results_per_timestep);
-
         let expected_results_annual: ResultsAnnual = indexmap! {
             "Overall".into() => indexmap! {
                 ("energy_output_required".into(), Some("kWh".into())) => 10.0.into(),
@@ -11700,10 +11695,59 @@ mod tests {
             },
         };
 
+        let (results_per_timestep, results_annual) = heat_pump.lock().output_detailed_results(
+            &indexmap! { "hwsname".into() => vec![100.0.into()] },
+            &indexmap! {},
+        );
+
+        assert_eq!(results_per_timestep, expected_results_per_timestep);
         assert_eq!(results_annual, expected_results_annual);
     }
 
-    // TODO test_calc_service_cop_zero_values
+    #[rstest]
+    fn test_calc_service_cop_zero_values(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+        energy_supply: EnergySupply,
+    ) {
+        let input = create_heat_pump_input_from_json(None, None);
+        let heat_pump = Arc::new(Mutex::new(
+            HeatPump::new(
+                &input,
+                Arc::from(RwLock::from(energy_supply)),
+                "HeatPump_auxiliary: hp",
+                simulation_time_for_heat_pump.step,
+                Arc::new(external_conditions),
+                2,
+                None,
+                None,
+                true,
+                None,
+                None,
+                create_temp_internal_air_fn(20.),
+            )
+                .unwrap(),
+        ));
+
+        let mut results_totals: ResultAnnual = indexmap! {
+            ("energy_delivered_HP".into(), Some("kWh".into())) => 0.0.into(),
+            ("energy_input_HP".into(), Some("kWh".into())) => 0.0.into(),
+            ("energy_source_circ_pump".into(), Some("kWh".into())) => 0.0.into(),
+            ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+            ("energy_input_backup".into(), Some("kWh".into())) => 0.0.into(),
+            ("energy_delivered_H5".into(), Some("kWh".into())) => 0.0.into(),
+            ("energy_heating_circ_pump".into(), Some("kWh".into())) => 0.0.into(),
+            ("energy_heating_warm_air_fan".into(), Some("kWh".into())) => 0.0.into(),
+        };
+
+        heat_pump.lock().calc_service_cop(&mut results_totals, None);
+
+        assert_eq!(results_totals[&("CoP (H1)".into(), None)], 0.);
+        assert_eq!(results_totals[&("CoP (H2)".into(), None)], 0.);
+        assert_eq!(results_totals[&("CoP (H3)".into(), None)], 0.);
+        assert_eq!(results_totals[&("CoP (H4)".into(), None)], 0.);
+        assert_eq!(results_totals[&("CoP (H5)".into(), None)], 0.);
+    }
 
     #[rstest]
     fn test_backup_only_operation(
