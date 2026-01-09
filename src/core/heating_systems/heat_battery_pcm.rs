@@ -1732,8 +1732,13 @@ impl HeatBatteryPcm {
     /// Output detailed results of heat battery calculation
     pub(crate) fn output_detailed_results(
         &self,
-        hot_water_energy_output: &[f64],
+        hot_water_energy_output: &IndexMap<String, Vec<ResultParamValue>>,
+        hot_water_source_name_for_heat_battery_service: &IndexMap<String, String>,
     ) -> anyhow::Result<(ResultsPerTimestep, ResultsAnnual)> {
+        let detailed_results = self.detailed_results.as_ref().expect(
+            "Detailed results cannot be output when the option to collect them was not selected",
+        );
+
         // Define parameters to output
         // Last element of each tuple controls whether item is summed for annual total
 
@@ -1768,13 +1773,7 @@ impl HeatBatteryPcm {
         for (parameter, param_unit, _) in aux_parameters.iter() {
             if ["Temps_after_losses", "hb_after_only_charge_zone_temp"].contains(parameter) {
                 let mut labels: Option<Vec<String>> = Default::default();
-                for service_results in self
-                    .detailed_results
-                    .as_ref()
-                    .expect("Detailed results accessed on heat battery when none collected.")
-                    .read()
-                    .iter()
-                {
+                for service_results in detailed_results.read().iter() {
                     let summary = &service_results.summary;
                     let param_values = match *parameter {
                         "Temps_after_losses" => &summary.temps_after_losses,
@@ -1871,12 +1870,19 @@ impl HeatBatteryPcm {
                 // For DHW, need to include storage and primary circuit losses.
                 // Can do this by replacing H4 numerator with total energy
                 // draw-off from hot water cylinder.
-                // TODO (from Python) Note that the below assumes that there is only one water
-                //       heating service and therefore that all hot water energy
-                //       output is assigned to that service. If the model changes in
-                //       future to allow more than one hot water system, this code may
-                //       need to be revised to handle that scenario.
-                hot_water_energy_output.iter().map(|x| x.into()).collect()
+                // TODO (from Python) Need to default to None here because HeatingServiceType.DOMESTIC_HOT_WATER_REGULAR
+                //      is being used for direct hot water service as well. This is a bug that is
+                //      being addressed on another branch.
+                // TODO look into whether above comment is relevant in Rust
+                let energy_delivered_total_len = results_per_timestep[service_name]
+                    [&("energy_delivered_total".into(), Some("kWh".into()))]
+                    .len();
+                let hws_name = &hot_water_source_name_for_heat_battery_service[service_name];
+                if !hot_water_energy_output.contains_key(hws_name) {
+                    vec![ResultParamValue::Empty; energy_delivered_total_len]
+                } else {
+                    hot_water_energy_output[hws_name].clone()
+                }
             } else {
                 // TODO (from Python) Note that the below assumes there is no buffer tank for
                 //       space heating, which is not currently included in the
@@ -1941,21 +1947,40 @@ impl HeatBatteryPcm {
                         parameter_annual_total;
                 }
             }
-            current_annual_results.insert(
-                ("energy_delivered_H4".into(), Some("kWh".into())),
-                results_per_timestep[service_name]
-                    [&("energy_delivered_H4".into(), Some("kWh".into()))]
-                    .iter()
-                    .cloned()
-                    .sum::<ResultParamValue>(),
-            );
-            let service_energy_delivered = results_annual[service_name]
+            if results_per_timestep[service_name]
                 [&("energy_delivered_H4".into(), Some("kWh".into()))]
-                .clone();
-            results_annual["Overall"][&("energy_delivered_H4".into(), Some("kWh".into()))] +=
-                service_energy_delivered;
+                .contains(&ResultParamValue::Empty)
+            {
+                current_annual_results.insert(
+                    ("energy_delivered_H4".into(), Some("kWh".into())),
+                    ResultParamValue::Empty,
+                );
+                results_annual.get_mut("Overall").unwrap().insert(
+                    ("energy_delivered_H4".into(), Some("kWh".into())),
+                    ResultParamValue::Empty,
+                );
+            } else {
+                current_annual_results.insert(
+                    ("energy_delivered_H4".into(), Some("kWh".into())),
+                    results_per_timestep[service_name]
+                        [&("energy_delivered_H4".into(), Some("kWh".into()))]
+                        .iter()
+                        .cloned()
+                        .sum::<ResultParamValue>(),
+                );
+                results_annual.insert(service_name.to_owned(), current_annual_results);
 
-            results_annual.insert(service_name.to_owned(), current_annual_results);
+                if results_annual["Overall"][&("energy_delivered_H4".into(), Some("kWh".into()))]
+                    != ResultParamValue::Empty
+                {
+                    let service_energy_delivered = results_annual[service_name]
+                        [&("energy_delivered_H4".into(), Some("kWh".into()))]
+                        .clone();
+                    results_annual["Overall"]
+                        [&("energy_delivered_H4".into(), Some("kWh".into()))] +=
+                        service_energy_delivered;
+                }
+            }
         }
 
         Ok((results_per_timestep, results_annual))
@@ -2113,6 +2138,7 @@ mod tests {
     fn create_heat_battery(
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         control: Control,
+        output_detailed_results: Option<bool>,
     ) -> Arc<RwLock<HeatBatteryPcm>> {
         let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
             battery: HeatBatteryInput::Pcm {
@@ -2158,7 +2184,7 @@ mod tests {
             Some(20.),
             None,
             None,
-            None,
+            output_detailed_results,
         )));
 
         HeatBatteryPcm::create_service_connection(heat_battery.clone(), SERVICE_NAME).unwrap();
@@ -2197,7 +2223,7 @@ mod tests {
         // Test when controlvent is provided and returns True
         let service_control_on: Control = create_setpoint_time_control(vec![Some(21.0)]);
 
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
 
         let heat_battery_service = HeatBatteryPcmServiceSpace::new(
             heat_battery.clone(),
@@ -2223,7 +2249,7 @@ mod tests {
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) -> HeatBatteryPcmServiceWaterDirect {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(vec![1.0, 1.2], 0, 1.),
         ));
@@ -2261,7 +2287,7 @@ mod tests {
         battery_control: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) -> HeatBatteryPcmServiceWaterRegular {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control, None);
         let control_min = create_setpoint_time_control(vec![
             Some(52.),
             None,
@@ -2356,7 +2382,7 @@ mod tests {
 
         let service_control_off = Arc::new(create_setpoint_time_control(vec![None]));
 
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
         let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
         let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
             HeatBatteryPcmServiceWaterRegular::new(
@@ -2430,7 +2456,7 @@ mod tests {
     ) {
         let first_scheduled_temp = Some(21.);
         let ctrl: Control = create_setpoint_time_control(vec![first_scheduled_temp]);
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let heat_battery_space =
             HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
 
@@ -2447,7 +2473,7 @@ mod tests {
         battery_control_off: Control,
     ) {
         let ctrl: Control = create_setpoint_time_control(vec![Some(21.)]);
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let heat_battery_space =
             HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
 
@@ -2468,7 +2494,7 @@ mod tests {
         let temp_flow = 1.;
         let time_start = 0.2;
         let ctrl: Control = create_setpoint_time_control(vec![None]);
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let heat_battery_space =
             HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
         let result = heat_battery_space
@@ -2495,7 +2521,7 @@ mod tests {
     ) {
         let temp_output = 70.;
         let temp_return = 40.;
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
         let service_control_off: Control = create_setpoint_time_control(vec![None]);
 
         let heat_battery_service: HeatBatteryPcmServiceSpace = HeatBatteryPcmServiceSpace::new(
@@ -2516,7 +2542,7 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         battery_control_on: Control,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
         let create_connection_result =
             HeatBatteryPcm::create_service_connection(heat_battery.clone(), "new service");
         assert!(create_connection_result.is_ok());
@@ -2534,7 +2560,7 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         battery_control_on: Control,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(vec![1.0, 1.2], 0, 1.),
         ));
@@ -2571,7 +2597,7 @@ mod tests {
         battery_control_off: Control,
     ) {
         let control = Arc::new(create_setpoint_time_control(vec![Some(21.0)]));
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let service = HeatBatteryPcm::create_service_space_heating(
             heat_battery.clone(),
             "new_service",
@@ -2594,12 +2620,12 @@ mod tests {
     ) {
         // electric charge should be 0 when battery control is off
         let heat_battery =
-            create_heat_battery(simulation_time_iterator.clone(), battery_control_off);
+            create_heat_battery(simulation_time_iterator.clone(), battery_control_off, None);
         assert_relative_eq!(heat_battery.read().electric_charge(), 0.0);
 
         // electric charge should be calculated when battery control is on
         let heat_battery =
-            create_heat_battery(simulation_time_iterator.clone(), battery_control_on);
+            create_heat_battery(simulation_time_iterator.clone(), battery_control_on, None);
         assert_relative_eq!(heat_battery.read().electric_charge(), 20.0);
     }
 
@@ -2609,7 +2635,7 @@ mod tests {
         battery_control_on: Control,
         simulation_time: SimulationTime,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
         for (t_idx, _) in simulation_time.iter().enumerate() {
             heat_battery.read().first_call();
 
@@ -2625,7 +2651,7 @@ mod tests {
         simulation_time: SimulationTime,
         battery_control_on: Control,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
 
         let expected_zone_temp_c_dist = [
             vec![
@@ -2718,7 +2744,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let heat_battery = create_heat_battery(simulation_time_iterator, control);
+        let heat_battery = create_heat_battery(simulation_time_iterator, control, None);
         HeatBatteryPcm::create_service_connection(heat_battery.clone(), "new_service").unwrap();
 
         heat_battery
@@ -2731,7 +2757,7 @@ mod tests {
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         assert_relative_eq!(
             heat_battery
                 .read()
@@ -2876,7 +2902,7 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         simulation_time_iteration: SimulationTimeIteration,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(vec![1.0, 1.2], 0, 1.),
         ));
@@ -2916,7 +2942,7 @@ mod tests {
         battery_control_on: Control,
     ) {
         let heat_battery =
-            create_heat_battery(simulation_time_iterator.clone(), battery_control_on);
+            create_heat_battery(simulation_time_iterator.clone(), battery_control_on, None);
 
         heat_battery
             .read()
@@ -2966,7 +2992,7 @@ mod tests {
             .unwrap(),
         );
 
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
         let service_name = "new_timestep_end_service";
         HeatBatteryPcm::create_service_connection(heat_battery.clone(), service_name).unwrap();
 
@@ -3039,7 +3065,7 @@ mod tests {
         );
 
         let heat_battery =
-            create_heat_battery(simulation_time_iterator.clone(), battery_control_on);
+            create_heat_battery(simulation_time_iterator.clone(), battery_control_on, None);
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
@@ -3066,7 +3092,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
@@ -3084,7 +3110,7 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
         // Test that get_zone_properties returns the correct energy_transf with losses model
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let (energy_transf, _, _, _) = heat_battery.read().get_zone_properties(
             0,
             &HeatBatteryPcmOperationMode::Losses,
@@ -3106,7 +3132,7 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
         // Test that get_zone_properties returns energy_transf as 0 with losses model and higher zone_temp_c_start than inlet_temp_c
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let (energy_transf, _, _, _) = heat_battery.read().get_zone_properties(
             0,
             &HeatBatteryPcmOperationMode::Losses,
@@ -3129,7 +3155,7 @@ mod tests {
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
 
         let required = heat_battery.read().calculate_zone_energy_required(50., 80.);
 
@@ -3179,7 +3205,7 @@ mod tests {
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
 
         let (q_max_kj, energy_charged, energy_transf) = heat_battery
             .read()
@@ -3230,7 +3256,7 @@ mod tests {
         #[case] energy_transf: f64,
         #[case] expected: f64,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let result = heat_battery
             .read()
             .calculate_new_zone_temperature(zone_temp_c_start, energy_transf);
@@ -3243,7 +3269,7 @@ mod tests {
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
 
         assert_relative_eq!(
             heat_battery.write()._charge_battery_hydraulic(70.).unwrap(),
@@ -3264,7 +3290,7 @@ mod tests {
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
 
         assert_relative_eq!(
             heat_battery
@@ -3298,7 +3324,27 @@ mod tests {
 
     // skipping python's test_energy_output_max_negative as unable to replicate patch object
 
-    // TODO (implementation not yet updated) test_output_detailed_results_water_regular
+    #[rstest]
+    fn test_output_detailed_results_water_regular(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let control_true = create_setpoint_time_control(vec![Some(21.), Some(20.)]);
+        let heat_battery = create_heat_battery(simulation_time_iterator, control_true, Some(true));
+        let service_name = "new_service";
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+            ColdWaterSource::new(vec![1.0, 1.2], 0, 1.),
+        ));
+
+        HeatBatteryPcm::create_service_hot_water_regular(
+            heat_battery.clone(),
+            service_name,
+            cold_feed.clone(),
+            None,
+            None,
+        )
+        .unwrap();
+        //TODO
+    }
     // TODO (implementation not yet updated) test_output_detailed_results_space
     // TODO (implementation not yet updated) test_output_detailed_results_none
 
@@ -3307,7 +3353,7 @@ mod tests {
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         heat_battery
             .write()
             .energy_supply
@@ -3353,7 +3399,7 @@ mod tests {
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let service_name = "test_service";
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(vec![1.0, 1.2], 0, 1.),
@@ -3391,7 +3437,7 @@ mod tests {
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
 
         // Test with very low output temperature
         let result = heat_battery
@@ -3418,7 +3464,7 @@ mod tests {
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
 
         // Test with zero energy transfer
         let result = heat_battery.read().calculate_new_zone_temperature(50., 0.);
@@ -3432,7 +3478,7 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
         // Request high output temperature that no zone can provide
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
 
         let result = heat_battery
             .read()

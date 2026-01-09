@@ -4112,7 +4112,16 @@ impl WetHeatSource {
             }
             WetHeatSource::HeatBattery(heat_battery) => heat_battery
                 .read()
-                .output_detailed_results(hot_water_energy_output)
+                .output_detailed_results(
+                    &IndexMap::from([(
+                        "".into(),
+                        hot_water_energy_output // TODO 1.0.0a1 migration - pass in correct string for key
+                            .iter()
+                            .map(|&x| x.into())
+                            .collect_vec(),
+                    )]),
+                    &IndexMap::from([("".into(), "".into())]), // TODO 1.0.0a1 migration - pass in correct strings for key and value
+                )
                 .ok(),
             _ => None,
         }
