@@ -4269,7 +4269,7 @@ impl HeatPump {
         );
 
         let (subkey, value) = if cop_h5_denominator == 0. {
-            ("".into(), ResultParamValue::from(0.))
+            ("", ResultParamValue::from(0.))
         } else if cop_h5_numerator == ResultParamValue::Empty {
             let cop_h5_note = "Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank";
 
