@@ -11542,7 +11542,167 @@ mod tests {
         assert_eq!(results_annual, expected_results_annual);
     }
 
-    // TODO test_output_detailed_results_space
+    #[rstest]
+    fn test_output_detailed_results_space(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+        energy_supply: EnergySupply,
+    ) {
+        let input = create_heat_pump_input_from_json(None, None);
+        let heat_pump = Arc::new(Mutex::new(
+            HeatPump::new(
+                &input,
+                Arc::from(RwLock::from(energy_supply)),
+                "HeatPump_auxiliary: hp",
+                simulation_time_for_heat_pump.step,
+                Arc::new(external_conditions),
+                2,
+                None,
+                None,
+                true,
+                None,
+                None,
+                create_temp_internal_air_fn(20.),
+            )
+                .unwrap(),
+        ));
+
+        HeatPump::create_service_connection(heat_pump.clone(), "servicetimestep_demand_energy")
+            .unwrap();
+
+        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
+            heat_pump
+                .lock()
+                .demand_energy(
+                    "servicetimestep_demand_energy",
+                    &HeatingServiceType::Space,
+                    5.,
+                    Some(330.),
+                    330.,
+                    340.,
+                    design_flow_temp_op_cond_k(55.),
+                    1560.,
+                    true,
+                    t_it,
+                    Some(TempSpreadCorrectionArg::Float(1.)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+
+            heat_pump.lock().timestep_end(t_idx).unwrap();
+        }
+
+        let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
+            "auxiliary".into() => indexmap! {
+                ("energy_standby".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+                ("energy_crankcase_heater_mode".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+                ("energy_off_mode".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+            },
+            "servicetimestep_demand_energy".into() => indexmap! {
+                ("service_name".into(), None) => vec![ResultParamValue::String("servicetimestep_demand_energy".into()); 2],
+                ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::Space.to_string().into()); 2],
+                ("service_on".into(), None) => vec![ResultParamValue::Boolean(true); 2],
+                ("energy_output_required".into(), Some("kWh".into())) => vec![5.0.into(); 2],
+                ("temp_output".into(), Some("K".into())) => vec![330.0.into(); 2],
+                ("temp_source".into(), Some("K".into())) => vec![273.15.into(), 275.65.into()],
+                ("thermal_capacity_op_cond".into(), Some("kW".into())) => vec![8.417674488123662.into(), 8.650924134797519.into()],
+                ("cop_op_cond".into(), None) => vec![
+                    3.182442675928905.into(), // 3.1824426759289044 in Python
+                    3.1971341044162673.into(), // 3.197134104416267 in Python
+                ],
+                ("time_running_full_load".into(), Some("hours".into())) => vec![0.5939882810928845.into(), 0.5779729335375832.into()],
+                ("time_running_part_load".into(), Some("hours".into())) => vec![1.0.into(), 1.0.into()],
+                ("load_ratio".into(), None) => vec![0.5939882810928845.into(), 0.5779729335375832.into()],
+                ("hp_operating_in_onoff_mode".into(), None) => vec![ResultParamValue::Boolean(false); 2],
+                ("energy_delivered_HP".into(), Some("kWh".into())) => vec![
+                    5.0.into(),
+                    5.000000000000001.into()
+                ],
+                ("energy_delivered_backup".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("energy_delivered_total".into(), Some("kWh".into())) => vec![
+                    5.0.into(),
+                    5.000000000000001.into()
+                ],
+                ("energy_input_HP".into(), Some("kWh".into())) => vec![
+                    1.5711202083288363.into(), // 1.5711202083288365 in Python
+                    1.5639006174603054.into()], // 1.5639006174603056 in Python
+                ("energy_input_backup".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("energy_heating_circ_pump".into(), Some("kWh".into())) => vec![0.008909824216393266.into(), 0.008669594003063746.into()],
+                ("energy_source_circ_pump".into(), Some("kWh".into())) => vec![0.005939882810928845.into(), 0.005779729335375832.into()],
+                ("energy_heating_warm_air_fan".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("energy_input_total".into(), Some("kWh".into())) => vec![
+                    1.5859699153561584.into(), // 1.5859699153561586 in Python
+                    1.578349940798745.into() // 1.5783499407987451 in Python
+                ],
+                ("energy_output_delivered_boiler".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("energy_delivered_H5".into(), Some("kWh".into())) => vec![5.0.into(), 5.000000000000001.into()],
+            },
+        };
+
+        let (results_per_timestep, results_annual) = heat_pump.lock().output_detailed_results(
+            &indexmap! { "hwsname".into() => vec![100.0.into()] },
+            &indexmap! {},
+        );
+
+        assert_eq!(results_per_timestep, expected_results_per_timestep);
+
+        let expected_results_annual: ResultsAnnual = indexmap! {
+            "Overall".into() => indexmap! {
+                ("energy_output_required".into(), Some("kWh".into())) => 10.0.into(),
+                ("time_running_full_load".into(), Some("hours".into())) => 1.1719612146304677.into(),
+                ("time_running_part_load".into(), Some("hours".into())) => 2.0.into(),
+                ("energy_delivered_HP".into(), Some("kWh".into())) => 10.0.into(),
+                ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.0.into(),
+                ("energy_input_HP".into(), Some("kWh".into())) => 3.135020825789142.into(),
+                ("energy_input_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_heating_circ_pump".into(), Some("kWh".into())) => 0.017579418219457014.into(),
+                ("energy_source_circ_pump".into(), Some("kWh".into())) => 0.011719612146304677.into(),
+                ("energy_heating_warm_air_fan".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_input_total".into(), Some("kWh".into())) => 3.1643198561549033.into(), // 3.1643198561549037 in Python
+                ("energy_output_delivered_boiler".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_H5".into(), Some("kWh".into())) => 10.0.into(),
+                ("CoP (H1)".into(), None) => 3.1897714738411085.into(),
+                ("CoP (H2)".into(), None) => 3.1778915983807448.into(),
+                ("CoP (H3)".into(), None) => 3.1778915983807448.into(),
+                ("CoP (H4)".into(), None) => 3.160236782178972.into(),
+                ("CoP (H5)".into(), Some("Note: For water heating services, only valid when HP is only heat source".into())) => 3.160236782178972.into(),
+            },
+            "auxiliary".into() => indexmap! {
+                ("energy_standby".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_crankcase_heater_mode".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_off_mode".into(), Some("kWh".into())) => 0.0.into(),
+            },
+            "servicetimestep_demand_energy".into() => indexmap! {
+                ("energy_output_required".into(), Some("kWh".into())) => 10.0.into(),
+                ("time_running_full_load".into(), Some("hours".into())) => 1.1719612146304677.into(),
+                ("time_running_part_load".into(), Some("hours".into())) => 2.0.into(),
+                ("energy_delivered_HP".into(), Some("kWh".into())) => 10.0.into(),
+                ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.0.into(),
+                ("energy_input_HP".into(), Some("kWh".into())) => 3.135020825789142.into(),
+                ("energy_input_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_heating_circ_pump".into(), Some("kWh".into())) => 0.017579418219457014.into(),
+                ("energy_source_circ_pump".into(), Some("kWh".into())) => 0.011719612146304677.into(),
+                ("energy_heating_warm_air_fan".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_input_total".into(), Some("kWh".into())) => 3.1643198561549033.into(), // 3.1643198561549037 in Python
+                ("energy_output_delivered_boiler".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_H5".into(), Some("kWh".into())) => 10.0.into(),
+                ("CoP (H1)".into(), None) => 3.1897714738411085.into(),
+                ("CoP (H2)".into(), None) => 3.1778915983807448.into(),
+                ("CoP (H3)".into(), None) => 3.1778915983807448.into(),
+                ("CoP (H4)".into(), None) => 3.160236782178972.into(),
+                ("CoP (H5)".into(), Some("Note: For water heating services, only valid when HP is only heat source".into())) => 3.160236782178972.into(),
+            },
+        };
+
+        assert_eq!(results_annual, expected_results_annual);
+    }
+
     // TODO test_calc_service_cop_zero_values
 
     #[rstest]
