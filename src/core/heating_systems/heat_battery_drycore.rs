@@ -1210,6 +1210,7 @@ impl HeatBatteryDryCore {
         Ok(())
     }
 
+    /// Return a HeatBatteryDryCoreServiceWaterRegular object for DHW.
     pub(crate) fn create_service_hot_water_regular(
         battery: Arc<Self>,
         service_name: &str,
@@ -1228,14 +1229,37 @@ impl HeatBatteryDryCore {
         ))
     }
 
-    // pub(crate) fn create_service_hot_water_direct(battery: Arc<Self>,service_name: &str,
-    //                                               cold_feed: Arc<ColdWaterSource>,
-    //                                               control_min: Arc<Control>,
-    //                                               control_max: Arc<Control>,) -> anyhow::Result<HeatBatteryDryCoreServiceWaterDirect> {
-    //     //
-    // }
+    /// Return a HeatBatteryDryCoreServiceWaterDirect object and create an EnergySupplyConnection for it
+    pub(crate) fn create_service_hot_water_direct(
+        battery: Arc<Self>,
+        service_name: &str,
+        setpoint_temp: f64,
+        cold_feed: Arc<ColdWaterSource>,
+    ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterDirect> {
+        battery.create_service_connection(service_name)?;
 
-    // TODO implement missing create_* methods
+        Ok(HeatBatteryDryCoreServiceWaterDirect::new(
+            battery.clone(),
+            service_name.into(),
+            setpoint_temp,
+            cold_feed,
+        ))
+    }
+
+    /// Return a HeatBatteryDryCoreServiceSpace object for space heating.
+    pub(crate) fn create_service_space_heating(
+        battery: Arc<Self>,
+        service_name: &str,
+        control: Option<Arc<Control>>,
+    ) -> anyhow::Result<HeatBatteryDryCoreServiceSpace> {
+        battery.create_service_connection(service_name)?;
+
+        Ok(HeatBatteryDryCoreServiceSpace::new(
+            battery.clone(),
+            service_name,
+            control,
+        ))
+    }
 
     fn get_battery_losses(&self) -> f64 {
         let battery_losses = self.battery_losses.load(Ordering::SeqCst) * self.n_units() as f64;
