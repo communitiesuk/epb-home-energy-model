@@ -11362,7 +11362,7 @@ mod tests {
                 None,
                 create_temp_internal_air_fn(20.),
             )
-                .unwrap(),
+            .unwrap(),
         ));
 
         HeatPump::create_service_connection(heat_pump.clone(), "servicetimestep_demand_energy")
@@ -11566,7 +11566,7 @@ mod tests {
                 None,
                 create_temp_internal_air_fn(20.),
             )
-                .unwrap(),
+            .unwrap(),
         ));
 
         HeatPump::create_service_connection(heat_pump.clone(), "servicetimestep_demand_energy")
@@ -11726,7 +11726,7 @@ mod tests {
                 None,
                 create_temp_internal_air_fn(20.),
             )
-                .unwrap(),
+            .unwrap(),
         ));
 
         let mut results_totals: ResultAnnual = indexmap! {
