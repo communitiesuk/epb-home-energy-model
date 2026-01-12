@@ -2670,8 +2670,12 @@ impl HotWaterStorageTank {
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match &self {
-            HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().demand_hot_water(usage_events, simtime),
-            HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock.read().demand_hot_water(usage_events, simtime),
+            HotWaterStorageTank::StorageTank(rw_lock) => {
+                rw_lock.read().demand_hot_water(usage_events, simtime)
+            }
+            HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
+                rw_lock.read().demand_hot_water(usage_events, simtime)
+            }
         }
     }
 }
