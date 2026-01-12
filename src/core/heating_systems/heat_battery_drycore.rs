@@ -1556,6 +1556,24 @@ impl HeatBatteryDryCore {
 
         (results_per_timestep, results_annual)
     }
+
+    pub(crate) fn set_state_of_charge(&self, state_of_charge: f64) {
+        self.storage.read().set_state_of_charge(state_of_charge);
+    }
+
+    pub(crate) fn state_of_charge(&self) -> f64 {
+        self.storage.read().state_of_charge()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn get_storage_capacity(&self) -> f64 {
+        self.storage.read().storage_capacity
+    }
+
+    #[cfg(test)]
+    pub(crate) fn get_pwr_in(&self) -> f64 {
+        self.storage.read().pwr_in
+    }
 }
 
 impl HeatBatteryDryCoreCommonBehaviour for HeatBatteryDryCore {
@@ -1904,5 +1922,352 @@ impl DetailedResult {
             "non_service_charge" => self.non_service_charge.into(),
             _ => panic!("Parameter {param} not recognised"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::controls::time_control::{ChargeControl, MockControl, SetpointTimeControl};
+    use crate::hem_core::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+    use crate::hem_core::simulation_time::SimulationTime;
+    use crate::input::{ExternalSensor, ExternalSensorCorrelation, FuelType};
+    use approx::assert_relative_eq;
+    use rstest::*;
+
+    #[fixture]
+    fn simulation_time() -> SimulationTime {
+        SimulationTime::new(0., 5., 1.)
+    }
+
+    #[fixture]
+    fn schedule() -> Vec<bool> {
+        vec![true; 24]
+    }
+
+    #[fixture]
+    fn external_conditions(simulation_time: SimulationTime) -> Arc<ExternalConditions> {
+        ExternalConditions::new(
+            &simulation_time.iter(),
+            vec![15.0; 24],
+            vec![4.0; 24],
+            vec![180.; 24],
+            vec![100.; 24],
+            vec![200.; 24],
+            vec![0.2; 24],
+            51.5,
+            -0.1,
+            0,
+            0,
+            0.into(),
+            1.,
+            1.into(),
+            DaylightSavingsConfig::NotApplicable.into(),
+            false,
+            false,
+            vec![].into(),
+        )
+        .into()
+    }
+
+    #[fixture]
+    fn external_sensor() -> ExternalSensor {
+        ExternalSensor {
+            correlation: vec![
+                ExternalSensorCorrelation {
+                    temperature: 0.0,
+                    max_charge: 1.0,
+                },
+                ExternalSensorCorrelation {
+                    temperature: 10.0,
+                    max_charge: 0.9,
+                },
+                ExternalSensorCorrelation {
+                    temperature: 18.0,
+                    max_charge: 0.5,
+                },
+            ],
+        }
+    }
+
+    #[fixture]
+    fn charge_control(
+        schedule: Vec<bool>,
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+    ) -> Arc<Control> {
+        Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::HeatBattery,
+                schedule,
+                &simulation_time.iter().current_iteration(),
+                0,
+                1.,
+                vec![Some(1.0), Some(1.8)],
+                Some(22.),
+                None,
+                external_conditions.into(),
+                external_sensor.into(),
+                None,
+            )
+            .unwrap(),
+        ))
+    }
+
+    #[fixture]
+    fn charge_control_target_0(
+        schedule: Vec<bool>,
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+    ) -> Arc<Control> {
+        Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::HeatBattery,
+                schedule,
+                &simulation_time.iter().current_iteration(),
+                0,
+                1.,
+                vec![Some(0.0), Some(0.0)],
+                Some(22.),
+                None,
+                external_conditions.into(),
+                external_sensor.into(),
+                None,
+            )
+            .unwrap(),
+        ))
+    }
+
+    #[fixture]
+    fn energy_supply(simulation_time: SimulationTime) -> Arc<RwLock<EnergySupply>> {
+        Arc::new(RwLock::new(
+            EnergySupply::new(
+                FuelType::Electricity,
+                simulation_time.total_steps(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        ))
+    }
+
+    #[fixture]
+    fn energy_supply_connection(
+        energy_supply: Arc<RwLock<EnergySupply>>,
+    ) -> Arc<EnergySupplyConnection> {
+        EnergySupply::connection(energy_supply, "heat_battery")
+            .unwrap()
+            .into()
+    }
+
+    #[fixture]
+    fn heat_battery_input() -> HeatBattery {
+        HeatBattery::DryCore {
+            control_charge: Default::default(),
+            energy_supply: "heat_battery".into(),
+            electricity_circ_pump: 0.05,
+            electricity_standby: 0.02,
+            pwr_in: 3.0,
+            state_of_charge_init: 0.0,
+            rated_power_instant: 2.0,
+            heat_storage_capacity: 12.0,
+            number_of_units: 1,
+            dry_core_min_output: vec![[0.0, 0.0], [0.5, 0.03], [1.0, 0.06]],
+            dry_core_max_output: vec![[0.0, 0.0], [0.5, 2.0], [1.0, 4.0]],
+            fan_power: 0.02,
+        }
+    }
+
+    #[fixture]
+    fn heat_battery_input1() -> HeatBattery {
+        HeatBattery::DryCore {
+            control_charge: Default::default(),
+            energy_supply: "heat_battery".into(),
+            electricity_circ_pump: 0.05,
+            electricity_standby: 0.02,
+            pwr_in: 3.0,
+            state_of_charge_init: 0.0,
+            rated_power_instant: 0.0,
+            heat_storage_capacity: 12.0,
+            number_of_units: 1,
+            dry_core_min_output: vec![[0.0, 0.0], [0.5, 0.03], [1.0, 0.06]],
+            dry_core_max_output: vec![[0.0, 0.0], [0.5, 2.0], [1.0, 4.0]],
+            fan_power: 0.02,
+        }
+    }
+
+    #[fixture]
+    fn heat_battery(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        simulation_time: SimulationTime,
+    ) -> Arc<HeatBatteryDryCore> {
+        let n_units: u32 = match heat_battery_input {
+            HeatBattery::DryCore {
+                number_of_units, ..
+            } => number_of_units as u32,
+            _ => unreachable!(),
+        };
+        let battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            n_units.into(),
+            simulation_time.step,
+            true.into(),
+        )
+        .unwrap();
+
+        battery.set_state_of_charge(0.7);
+
+        battery
+    }
+
+    #[fixture]
+    fn heat_battery1(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        simulation_time: SimulationTime,
+    ) -> Arc<HeatBatteryDryCore> {
+        let n_units: u32 = match heat_battery_input {
+            HeatBattery::DryCore {
+                number_of_units, ..
+            } => number_of_units as u32,
+            _ => unreachable!(),
+        };
+
+        HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            n_units.into(),
+            simulation_time.step,
+            true.into(),
+        )
+        .unwrap()
+    }
+
+    #[fixture]
+    fn mock_control_dhw() -> Arc<Control> {
+        Arc::new(Control::Mock(MockControl::with_is_on(true)))
+    }
+
+    #[fixture]
+    fn mock_control_dhw_off() -> Arc<Control> {
+        Arc::new(Control::Mock(MockControl::with_is_on(false)))
+    }
+
+    #[fixture]
+    fn mock_control_space() -> Arc<Control> {
+        Arc::new(Control::Mock(MockControl::new(
+            Some(21.0),
+            Some(true),
+            Some(true),
+        )))
+    }
+
+    #[fixture]
+    fn default_control_max(simulation_time: SimulationTime) -> Arc<Control> {
+        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(65.), Some(66.)],
+            0,
+            0.0,
+            None,
+            None,
+            simulation_time.step,
+        )))
+    }
+
+    // redundant to port Python tests for abstract methods
+
+    #[rstest]
+    fn heat_battery_initialization(heat_battery: Arc<HeatBatteryDryCore>) {
+        assert_eq!(heat_battery.state_of_charge(), 0.7);
+        assert_eq!(heat_battery.get_storage_capacity(), 12.0);
+        assert_eq!(heat_battery.get_pwr_in(), 3.0);
+        assert!(!heat_battery.detailed_results.is_none());
+    }
+
+    #[rstest]
+    #[ignore = "until ode solving code is corrected in heat battery drycore module"]
+    fn test_create_service_hot_water_regular(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        mock_control_dhw_off: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        let control_min = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(45.), Some(46.)],
+            0,
+            1.,
+            None,
+            None,
+            simulation_time.step,
+        )));
+        let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(65.), Some(66.)],
+            0,
+            1.,
+            None,
+            None,
+            simulation_time.step,
+        )));
+        let mock_cold_feed = Arc::new(ColdWaterSource::new(
+            vec![70.; simulation_time.total_steps()],
+            0,
+            1.,
+        )); // we can just set up a normal cold water source here - it isn't used
+        let service = HeatBatteryDryCore::create_service_hot_water_regular(
+            heat_battery.clone(),
+            "dhw_service",
+            mock_cold_feed.clone(),
+            control_min,
+            control_max.clone(),
+        )
+        .unwrap();
+
+        let simtime = simulation_time.iter().current_iteration();
+
+        assert_eq!(service.service_name, "dhw_service");
+        let (setpntmin, setpntmax) = service.setpnt(simtime);
+        assert_eq!(setpntmin.unwrap(), 45.);
+        assert_eq!(setpntmax.unwrap(), 65.);
+        // Demand energy
+        assert_relative_eq!(
+            service.energy_output_max(55., 34., simtime).unwrap(),
+            4.829918824420231
+        );
+        assert_relative_eq!(
+            service
+                .demand_energy(4.829918824420231, 55., 34., None, simtime)
+                .unwrap(),
+            4.787470041454905
+        );
+
+        let service1 = HeatBatteryDryCore::create_service_hot_water_regular(
+            heat_battery,
+            "dhw_service1",
+            mock_cold_feed,
+            mock_control_dhw_off,
+            control_max,
+        )
+        .unwrap();
+        // Demand energy
+        assert_eq!(service1.energy_output_max(55., 34., simtime).unwrap(), 0.0);
+        assert_eq!(
+            service1
+                .demand_energy(100., 55., 34., None, simtime)
+                .unwrap(),
+            0.0
+        );
     }
 }
