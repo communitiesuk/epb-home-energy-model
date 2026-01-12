@@ -6,13 +6,18 @@ use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
 use crate::core::schedule::{TypedScheduleEvent, WaterScheduleEventType};
 use crate::core::units::MILLIMETRES_IN_METRE;
 use crate::core::water_heat_demand::bath::Bath;
-use crate::core::water_heat_demand::misc::{CallableGetHotWaterTemperature, water_demand_to_kwh, WaterEventResult};
+use crate::core::water_heat_demand::misc::{
+    water_demand_to_kwh, CallableGetHotWaterTemperature, WaterEventResult,
+};
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
 use crate::core::water_heat_demand::shower::{self, Shower};
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
 use crate::corpus::{ColdWaterSources, EventSchedule, HotWaterSource};
 use crate::input::{
-    BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput, PipeworkContents, Shower as ShowerInput, Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterDistribution, WaterHeatingEvent, WaterPipeworkSimple
+    BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput,
+    PipeworkContents, Shower as ShowerInput, Showers as ShowersInput,
+    WaterDistribution as WaterDistributionInput, WaterDistribution, WaterHeatingEvent,
+    WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -64,7 +69,6 @@ pub(crate) enum TappingPoint<'a> {
 }
 
 impl TappingPoint<'_> {
-
     pub fn hot_water_demand(
         &self,
         event: WaterHeatingEvent,
@@ -72,9 +76,13 @@ impl TappingPoint<'_> {
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64)> {
         match self {
-            TappingPoint::Shower(shower) => shower.hot_water_demand(event, func_temp_hot_water, simtime),
+            TappingPoint::Shower(shower) => {
+                shower.hot_water_demand(event, func_temp_hot_water, simtime)
+            }
             TappingPoint::Bath(bath) => bath.hot_water_demand(event, func_temp_hot_water, simtime),
-            TappingPoint::Other(other_hot_water) => other_hot_water.hot_water_demand(&event, func_temp_hot_water, simtime)
+            TappingPoint::Other(other_hot_water) => {
+                other_hot_water.hot_water_demand(&event, func_temp_hot_water, simtime)
+            }
         }
     }
 }
@@ -171,11 +179,16 @@ impl DomesticHotWaterDemand {
 
         // Set up unmet demand connection for each hot water source
 
-        let energy_supply_conn_unmet_demand: IndexMap<String, EnergySupplyConnection> = hot_water_sources.keys().map(|name| {
-            let energy_supply = energy_supplies.get("unmet_demand").unwrap();
-            let energy_suppy_conn_unmet_demand = EnergySupply::connection(energy_supply.clone(), &name).unwrap(); // TODO avoid unwrap here
-            (name.clone(), energy_suppy_conn_unmet_demand)
-        }).collect();
+        let energy_supply_conn_unmet_demand: IndexMap<String, EnergySupplyConnection> =
+            hot_water_sources
+                .keys()
+                .map(|name| {
+                    let energy_supply = energy_supplies.get("unmet_demand").unwrap();
+                    let energy_suppy_conn_unmet_demand =
+                        EnergySupply::connection(energy_supply.clone(), &name).unwrap(); // TODO avoid unwrap here
+                    (name.clone(), energy_suppy_conn_unmet_demand)
+                })
+                .collect();
 
         let source_supplying_outlet = Self::init_outlet_to_source_mapping(
             showers_input,
@@ -346,18 +359,21 @@ impl DomesticHotWaterDemand {
         }
     }
 
-    pub fn hot_water_demand(
+    pub fn hot_water_demand<'a>(
         &self,
         simtime: SimulationTimeIteration,
         temp_hot_water: f64,
     ) -> anyhow::Result<DomesticHotWaterDemandData> {
-
         let hot_water_source_keys = self.hot_water_sources.keys();
 
-        let hw_demand_volume: IndexMap<String, f64> =  hot_water_source_keys.map(|key| { (key.clone(), 0.) } ).collect();
-        let hw_energy_demand: IndexMap<String, f64> =  hot_water_source_keys.map(|key| { (key.clone(), 0.) } ).collect();
-        let hw_duration: IndexMap<String, f64> =  hot_water_source_keys.map(|key| { (key.clone(), 0.) } ).collect();
-        let all_events: IndexMap<String, f64> =  hot_water_source_keys.map(|key| { (key.clone(), 0.) } ).collect();
+        let mut hw_demand_volume: IndexMap<String, f64> =
+            hot_water_source_keys.clone().map(|key| (key.clone(), 0.)).collect();
+        let mut hw_energy_demand: IndexMap<String, f64> =
+            hot_water_source_keys.clone().map(|key| (key.clone(), 0.)).collect();
+        let mut hw_duration: IndexMap<String, f64> =
+            hot_water_source_keys.clone().map(|key| (key.clone(), 0.)).collect();
+        let mut all_events: IndexMap<String, f64> =
+            hot_water_source_keys.clone().map(|key| (key.clone(), 0.)).collect();
 
         hw_demand_volume.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), 0.);
         hw_energy_demand.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), 0.);
@@ -383,36 +399,73 @@ impl DomesticHotWaterDemand {
         usage_events_with_flushes.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), vec![]);
 
         if let Some(usage_events) = &mut usage_events {
-            for event in usage_events.iter_mut() {
-                let (tapping_point, tapping_point_type, tapping_point_name) = self.get_tapping_point_for_event(event);
+            for event in usage_events.iter() {
+                let (tapping_point, tapping_point_type, tapping_point_name) =
+                    self.get_tapping_point_for_event(event.clone());
 
-                let (hot_water_source_name, hw_demand_i, hw_demand_target_i, energy_supply_conn_unmet_demand) =  match tapping_point {
-                    TappingPoint::Shower(shower) if matches!(shower, Shower::InstantElectricShower(_)) => {
-                        let hot_water_source_name = ELECTRIC_SHOWERS_HWS_NAME;
+                let (
+                    hot_water_source_name,
+                    hw_demand_i,
+                    hw_demand_target_i,
+                    energy_supply_conn_unmet_demand,
+                ): (String, Option<f64>, f64, Option<&EnergySupplyConnection>) =
+                    match tapping_point {
+                        TappingPoint::Shower(shower)
+                            if matches!(shower, Shower::InstantElectricShower(_)) =>
+                        {
+                            let hot_water_source_name = ELECTRIC_SHOWERS_HWS_NAME;
 
-                        if let Shower::InstantElectricShower(instant_electric_shower) = shower {
-                            let (hw_demand_i, hw_demand_target_i) = instant_electric_shower.hot_water_demand(event, simtime)?;
-                            (hot_water_source_name, hw_demand_i, hw_demand_target_i, None)
-                        } else {
-                            unreachable!()
+                            if let Shower::InstantElectricShower(instant_electric_shower) = shower {
+                                let (hw_demand_i, hw_demand_target_i) = instant_electric_shower
+                                    .hot_water_demand(event.into(), simtime)?;
+                                (
+                                    hot_water_source_name.into(),
+                                    Some(hw_demand_i),
+                                    hw_demand_target_i,
+                                    None,
+                                )
+                            } else {
+                                unreachable!()
+                            }
                         }
-                    },
-                    _ => {
-                        let hot_water_source_name = self.source_supplying_outlet.get(&(tapping_point_type, tapping_point_name));
-                        let hot_water_source = self.hot_water_sources.get(&hot_water_source_name.into()).unwrap();
+                        _ => {
+                            let hot_water_source_name = self
+                                .source_supplying_outlet
+                                .get(&(tapping_point_type, tapping_point_name))
+                                .unwrap();
+                            let hot_water_source = self
+                                .hot_water_sources
+                                .get(hot_water_source_name)
+                                .unwrap();
 
-                        let energy_supply_conn_unmet_demand = self.energy_supply_conn_unmet_demand.get(&hot_water_source_name.into());
-                        
-                        let func_temp_hot_water: Box<dyn Fn(f64) -> f64>  = Box::new(move |volume_required: f64| { 
-                            let volume_required_already = hw_demand_volume[hot_water_source_name.into()];
-                            self.temp_hot_water(*hot_water_source, volume_required_already, volume_required)
-                         });
-                        let (hw_demand_i, hw_demand_target_i) = tapping_point.hot_water_demand(event, &func_temp_hot_water, simtime)?;
-                        todo!()
-                    }
-                };
+                            let energy_supply_conn_unmet_demand = self
+                                .energy_supply_conn_unmet_demand
+                                .get(hot_water_source_name);
 
-                // TODO ...
+                            let volume_required_already = hw_demand_volume[hot_water_source_name];
+
+                            let func = move |volume_required:f64| -> f64 {
+                                self.temp_hot_water(
+                                        hot_water_source.clone(),
+                                        volume_required_already,
+                                        volume_required.clone())
+                            };
+
+                            let func_temp_hot_water: Box<dyn Fn(f64) -> f64> = Box::new(func);
+
+                            let (hw_demand_i, hw_demand_target_i) = tapping_point
+                                .hot_water_demand(event.into(), &func_temp_hot_water, simtime)?;
+
+                            (
+                                hot_water_source_name.clone(),
+                                hw_demand_i,
+                                hw_demand_target_i,
+                                energy_supply_conn_unmet_demand,
+                            )
+                        }
+                    };
+
+                
             }
         }
 
