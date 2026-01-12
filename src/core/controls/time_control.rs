@@ -1974,6 +1974,58 @@ mod tests {
                 20.
             );
         }
+
+        #[rstest]
+        fn test_setpnt_minmax(simulation_time_iterator: SimulationTimeIterator) {
+            let schedule = vec![None; 24];
+            let control = create_time_control(
+                Some(schedule.clone()),
+                SetpointBoundsInput::MinOnly { setpoint_min: 10. }.into(),
+                None,
+            );
+            assert_eq!(
+                control
+                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .unwrap(),
+                10.
+            );
+
+            // skip assertion as not possible to replicate (Rust is more prescriptive here, so not a problem)
+
+            let control = create_time_control(
+                Some(schedule.clone()),
+                SetpointBoundsInput::MinAndMax {
+                    setpoint_min: 10.,
+                    setpoint_max: 20.,
+                    default_to_max: true,
+                }
+                .into(),
+                Some(30.),
+            );
+            assert_eq!(
+                control
+                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .unwrap(),
+                20.
+            );
+
+            let control = create_time_control(
+                Some(schedule.clone()),
+                SetpointBoundsInput::MinAndMax {
+                    setpoint_min: 10.,
+                    setpoint_max: 20.,
+                    default_to_max: false,
+                }
+                .into(),
+                Some(30.),
+            );
+            assert_eq!(
+                control
+                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .unwrap(),
+                10.
+            );
+        }
     }
 
     #[fixture]
