@@ -52,7 +52,7 @@ use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::energy_supply::energy_supply::EnergySupply;
 pub(crate) use per_control;
 
-pub trait ControlBehaviour: Send + Sync {
+pub(crate) trait ControlBehaviour: Send + Sync {
     fn in_required_period(
         &self,
         _simulation_time_iteration: &SimulationTimeIteration,
@@ -73,7 +73,7 @@ impl Debug for dyn ControlBehaviour {
 }
 
 impl Control {
-    pub fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
+    pub(crate) fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
         per_control!(self, c => {c.is_on(&simulation_time_iteration)})
     }
 }
@@ -119,7 +119,7 @@ impl HeatSourceControl {
 
 /// An object to model a time-only control with on/off (not modulating) operation
 #[derive(Clone, Debug)]
-pub struct OnOffTimeControl {
+pub(crate) struct OnOffTimeControl {
     /// list of boolean values where true means "on" (one entry per hour)
     schedule: Vec<Option<bool>>,
     start_day: u32,
@@ -127,7 +127,7 @@ pub struct OnOffTimeControl {
 }
 
 impl OnOffTimeControl {
-    pub fn new(
+    pub(crate) fn new(
         schedule: Vec<Option<bool>>,
         start_day: u32,
         time_series_step: f64,
@@ -556,7 +556,7 @@ impl ChargeControl {
 impl ControlBehaviour for ChargeControl {}
 
 #[derive(Clone, Debug)]
-pub struct OnOffCostMinimisingTimeControl {
+pub(crate) struct OnOffCostMinimisingTimeControl {
     schedule: Vec<f64>,
     start_day: u32,
     time_series_step: f64,
@@ -573,7 +573,7 @@ impl OnOffCostMinimisingTimeControl {
     /// * `start_day` - first day of the time series, day of the year, 0 to 365 (single value)
     /// * `time_series_step` - timestep of the time series data, in hours
     /// * `time_on_daily` - number of "on" hours to be set per day
-    pub fn new(
+    pub(crate) fn new(
         schedule: Vec<f64>,
         start_day: u32,
         time_series_step: f64,
@@ -1866,7 +1866,7 @@ mod tests {
         }
 
         #[rstest]
-        pub fn test_setpnt(
+        fn test_setpnt(
             time_control: SetpointTimeControl,
             time_control_min: SetpointTimeControl,
             time_control_max: SetpointTimeControl,
@@ -1966,7 +1966,7 @@ mod tests {
         }
 
         #[rstest]
-        pub fn test_setpnt_lookahead(simulation_time_iterator: SimulationTimeIterator) {
+        fn test_setpnt_lookahead(simulation_time_iterator: SimulationTimeIterator) {
             let schedule = vec![None; 24];
             let control = create_time_control(Some(schedule), None, Some(30.));
             assert!(control
