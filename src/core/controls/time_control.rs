@@ -160,12 +160,12 @@ pub(crate) struct ChargeControl {
     temp_charge_cut_delta: Option<Vec<f64>>,
     external_conditions: Option<Arc<ExternalConditions>>,
     external_sensor: Option<ExternalSensor>,
-    hhrsh: Option<ChargeControlHhrshFields>,
+    heat_retention_data: Option<ChargeControlHeatRetentionFields>,
     charge_calc_time: f64,
 }
 
 #[derive(Debug)]
-pub(crate) struct ChargeControlHhrshFields {
+pub(crate) struct ChargeControlHeatRetentionFields {
     steps_day: usize,
     demand: Arc<RwLock<BoundedVecDeque<Option<f64>>>>,
     past_ext_temp: Arc<RwLock<BoundedVecDeque<Option<f64>>>>,
@@ -209,7 +209,7 @@ impl ChargeControl {
         let simulation_timestep = simulation_time_iteration.timestep;
         let charge_calc_time = charge_calc_time.unwrap_or(21.);
 
-        let hhrsh_fields: Option<ChargeControlHhrshFields> = match logic_type {
+        let heat_retention_data: Option<ChargeControlHeatRetentionFields> = match logic_type {
             ControlLogicType::Manual => {
                 // do nothing
                 None
@@ -256,7 +256,7 @@ impl ChargeControl {
                     ));
                 }
                 let energy_to_store = AtomicF64::new(0.0);
-                Some(ChargeControlHhrshFields {
+                Some(ChargeControlHeatRetentionFields {
                     steps_day,
                     demand,
                     past_ext_temp,
@@ -293,7 +293,7 @@ impl ChargeControl {
                     ));
                 }
                 let energy_to_store = AtomicF64::new(0.0);
-                Some(ChargeControlHhrshFields {
+                Some(ChargeControlHeatRetentionFields {
                     steps_day,
                     demand,
                     past_ext_temp,
@@ -313,7 +313,7 @@ impl ChargeControl {
             temp_charge_cut_delta,
             external_conditions,
             external_sensor,
-            hhrsh: hhrsh_fields,
+            heat_retention_data,
             charge_calc_time,
         })
     }
@@ -425,17 +425,21 @@ impl ChargeControl {
         base_temp: f64,
         simtime: SimulationTimeIteration,
     ) -> f64 {
-        // ugly, but this method cannot be called when control does not have HHRSH logic type
-        if !matches!(self.logic_type, ControlLogicType::Hhrsh) {
-            unreachable!("energy_to_store() should not be called when control does not have HHRSH logic type.");
-        }
-        let ChargeControlHhrshFields {
+        // ugly, but this method cannot be called when control does not have HHRSH or Heat Battery logic type
+        let heat_retention_data = if let Some(heat_retention_data) =
+            self.heat_retention_data.as_ref()
+        {
+            heat_retention_data
+        } else {
+            unreachable!("energy_to_store() should not be called when control does not have HHRSH or HeatBattery logic type.");
+        };
+        let ChargeControlHeatRetentionFields {
             steps_day,
             demand,
             past_ext_temp,
             future_ext_temp,
             energy_to_store: energy_to_store_atomic,
-        } = self.hhrsh.as_ref().expect("HHRSH fields should be set.");
+        } = heat_retention_data;
         demand.write().push_front(Some(energy_demand));
         if self.external_conditions.is_some() {
             future_ext_temp.write().push_front(Some(
