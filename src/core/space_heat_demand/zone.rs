@@ -1701,6 +1701,7 @@ impl HeatBalance {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::controls::time_control::{Control, MockControl};
     use crate::core::space_heat_demand::building_element::{
         BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple,
         BuildingElementGround, BuildingElementOpaque, BuildingElementTransparent,
@@ -2568,18 +2569,14 @@ mod tests {
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
     }
 
-    struct FakeControl(Option<f64>);
-
-    impl ControlBehaviour for FakeControl {
-        fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-            self.0
-        }
+    fn fake_control_with_setpnt(setpnt: Option<f64>) -> Arc<dyn ControlBehaviour> {
+        Arc::new(Control::Mock(MockControl::with_setpnt(setpnt)))
     }
 
     #[rstest]
     fn test_space_heat_cool_demand_3(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let fake_control = Arc::new(FakeControl(Some(25.)));
+        let fake_control = fake_control_with_setpnt(Some(25.));
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
             .space_heat_cool_demand(
@@ -2607,7 +2604,7 @@ mod tests {
 
     #[rstest]
     fn test_space_heat_cool_demand_4(thermal_bridging_objects: ThermalBridging) {
-        let fake_control = Arc::new(FakeControl(Some(20.)));
+        let fake_control = fake_control_with_setpnt(Some(20.));
         let zone = zone(thermal_bridging_objects, Some(fake_control));
         // In the Python test the error is raised when space_cool_heat_demand is called.
         // In Rust we get the error earlier, when creating the Zone with the fake Control.
@@ -2622,7 +2619,7 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_5(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let fake_control = Arc::new(FakeControl(None));
+        let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
             .space_heat_cool_demand(
@@ -2651,7 +2648,7 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_6(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let fake_control = Arc::new(FakeControl(None));
+        let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let space_heat_cool_demand = zone.space_heat_cool_demand(
             0.5,
@@ -2675,7 +2672,7 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_7(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let fake_control = Arc::new(FakeControl(None));
+        let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
             .space_heat_cool_demand(
@@ -2704,7 +2701,7 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_8(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let fake_control = Arc::new(FakeControl(None));
+        let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
             .space_heat_cool_demand(
@@ -2733,7 +2730,7 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_9(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let fake_control = Arc::new(FakeControl(None));
+        let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
             .space_heat_cool_demand(
@@ -2762,7 +2759,7 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_10(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let fake_control = Arc::new(FakeControl(None));
+        let fake_control = fake_control_with_setpnt(None);
         let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
             .space_heat_cool_demand(
@@ -2791,7 +2788,7 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_11(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let fake_control = Arc::new(FakeControl(None));
+        let fake_control = fake_control_with_setpnt(None);
         let mut zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
 
@@ -2822,7 +2819,7 @@ mod tests {
     #[rstest]
     fn test_space_heat_cool_demand_12(thermal_bridging_objects: ThermalBridging) {
         let simulation_time_iteration = simulation_time().iter().next().unwrap();
-        let fake_control = Arc::new(FakeControl(None));
+        let fake_control = fake_control_with_setpnt(None);
         let mut zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
         zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
 

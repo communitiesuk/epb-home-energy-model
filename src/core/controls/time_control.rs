@@ -28,6 +28,8 @@ pub(crate) enum Control {
     OnOffMinimisingTime(OnOffCostMinimisingTimeControl),
     SetpointTime(SetpointTimeControl),
     CombinationTime(CombinationTimeControl),
+    #[cfg(test)]
+    Mock(MockControl),
 }
 
 // macro so accessing individual controls through the enum isn't so repetitive
@@ -44,6 +46,9 @@ macro_rules! per_control {
             Control::SetpointTime($pattern) => $res,
             #[allow(noop_method_call)]
             Control::CombinationTime($pattern) => $res,
+            #[cfg(test)]
+            #[allow(noop_method_call)]
+            Control::Mock($pattern) => $res,
         }
     };
 }
@@ -1541,6 +1546,59 @@ impl ControlBehaviour for CombinationTimeControl {
 
     fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
         self.evaluate_combination_is_on(MAIN_REFERENCE, *simtime)
+    }
+}
+
+#[cfg(test)]
+#[derive(Copy, Clone, Debug, Default)]
+/// A mock control implementation that allows setting canned responses for common control methods.
+pub(crate) struct MockControl {
+    canned_setpnt: Option<f64>,
+    canned_is_on: Option<bool>,
+    canned_in_req_period: Option<bool>,
+}
+
+#[cfg(test)]
+impl MockControl {
+    pub(crate) fn new(
+        canned_setpnt: Option<f64>,
+        canned_is_on: Option<bool>,
+        canned_in_req_period: Option<bool>,
+    ) -> Self {
+        Self {
+            canned_setpnt,
+            canned_is_on,
+            canned_in_req_period,
+        }
+    }
+
+    pub(crate) fn with_setpnt(setpnt: Option<f64>) -> Self {
+        Self {
+            canned_setpnt: setpnt,
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn with_is_on(is_on: bool) -> Self {
+        Self {
+            canned_is_on: Some(is_on),
+            ..Default::default()
+        }
+    }
+}
+
+#[cfg(test)]
+impl ControlBehaviour for MockControl {
+    fn in_required_period(&self, _simtime: &SimulationTimeIteration) -> Option<bool> {
+        self.canned_in_req_period
+    }
+
+    fn setpnt(&self, _simtime: &SimulationTimeIteration) -> Option<f64> {
+        self.canned_setpnt
+    }
+
+    fn is_on(&self, _simtime: &SimulationTimeIteration) -> bool {
+        self.canned_is_on.unwrap_or(true)
     }
 }
 

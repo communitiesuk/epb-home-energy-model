@@ -4271,12 +4271,10 @@ mod tests {
         assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);
     }
 
-    struct MockControl(Option<f64>);
-
-    impl ControlBehaviour for MockControl {
-        fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-            self.0
-        }
+    fn mock_control_with_setpnt(setpnt: Option<f64>) -> Arc<dyn ControlBehaviour> {
+        Arc::new(Control::Mock(
+            crate::core::controls::time_control::MockControl::with_setpnt(setpnt),
+        ))
     }
 
     #[rstest]
@@ -4296,7 +4294,8 @@ mod tests {
         );
 
         mechanical_ventilation.vent_type = MechVentType::IntermittentMev;
-        mechanical_ventilation.ctrl_intermittent_mev = Some(Arc::new(MockControl(Some(setpoint))));
+        mechanical_ventilation.ctrl_intermittent_mev =
+            Some(mock_control_with_setpnt(Some(setpoint)));
         assert_eq!(
             mechanical_ventilation
                 .f_op_v(&simulation_time_iterator.current_iteration())
@@ -4304,7 +4303,8 @@ mod tests {
             0.5
         );
 
-        mechanical_ventilation.ctrl_intermittent_mev = Some(Arc::new(MockControl(Some(setpoint))));
+        mechanical_ventilation.ctrl_intermittent_mev =
+            Some(mock_control_with_setpnt(Some(setpoint)));
         mechanical_ventilation
             .f_op_v(&simulation_time_iterator.current_iteration())
             .unwrap();
@@ -4332,7 +4332,7 @@ mod tests {
             90.,
             2.,
             3.,
-            Some(Arc::new(MockControl(None))),
+            Some(mock_control_with_setpnt(None)),
             Some(0.),
             Some(1.1),
             Some(180.),
