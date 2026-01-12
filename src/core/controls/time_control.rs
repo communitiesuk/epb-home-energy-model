@@ -1674,22 +1674,25 @@ mod tests {
         fn simulation_time_iterator() -> SimulationTimeIterator {
             SimulationTime::new(0.0, 8.0, 1.0).iter()
         }
+        fn default_schedule() -> Vec<Option<f64>> {
+            vec![
+                Some(21.0),
+                None,
+                None,
+                Some(21.0),
+                None,
+                Some(21.0),
+                Some(25.0),
+                Some(15.0),
+            ]
+        }
 
         fn create_time_control(
             schedule: Option<Vec<Option<f64>>>,
             setpoint_bounds: Option<SetpointBoundsInput>,
             duration_advanced_start: Option<f64>,
         ) -> SetpointTimeControl {
-            let schedule = schedule.unwrap_or(vec![
-                Some(21.),
-                None,
-                None,
-                Some(21.),
-                None,
-                Some(21.),
-                Some(25.),
-                Some(15.),
-            ]);
+            let schedule = schedule.unwrap_or(default_schedule());
             SetpointTimeControl::new(
                 schedule,
                 0,
@@ -1861,219 +1864,105 @@ mod tests {
             let control = create_time_control(Some(schedule), None, None);
             assert!(control.is_on(&simulation_time_iterator.current_iteration()));
         }
-    }
 
-    #[fixture]
-    pub fn setpoint_schedule() -> Vec<Option<f64>> {
-        vec![
-            Some(21.0),
-            None,
-            None,
-            Some(21.0),
-            None,
-            Some(21.0),
-            Some(25.0),
-            Some(15.0),
-        ]
-    }
-
-    #[fixture]
-    pub fn setpoint_time_control(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            Default::default(),
-            Default::default(),
-            simulation_time.step_in_hours(),
-        )
-    }
-
-    #[fixture]
-    pub fn setpoint_time_control_min(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            SetpointBoundsInput::MinOnly { setpoint_min: 16.0 }.into(),
-            Default::default(),
-            simulation_time.step_in_hours(),
-        )
-    }
-
-    #[fixture]
-    pub fn setpoint_time_control_max(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            SetpointBoundsInput::MaxOnly { setpoint_max: 24.0 }.into(),
-            None,
-            simulation_time.step_in_hours(),
-        )
-    }
-
-    #[fixture]
-    pub fn setpoint_time_control_minmax(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            SetpointBoundsInput::MinAndMax {
-                setpoint_min: 16.0,
-                setpoint_max: 24.0,
-                default_to_max: false,
+        #[rstest]
+        pub fn test_setpnt(
+            time_control: SetpointTimeControl,
+            time_control_min: SetpointTimeControl,
+            time_control_max: SetpointTimeControl,
+            time_control_min_max: SetpointTimeControl,
+            time_control_advstart: SetpointTimeControl,
+            time_control_advstart_min_max: SetpointTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let results_min: [Option<f64>; 8] = [
+                Some(21.0),
+                Some(16.0),
+                Some(16.0),
+                Some(21.0),
+                Some(16.0),
+                Some(21.0),
+                Some(25.0),
+                Some(16.0),
+            ];
+            let results_max: [Option<f64>; 8] = [
+                Some(21.0),
+                Some(24.0),
+                Some(24.0),
+                Some(21.0),
+                Some(24.0),
+                Some(21.0),
+                Some(24.0),
+                Some(15.0),
+            ];
+            let results_minmax: [Option<f64>; 8] = [
+                Some(21.0),
+                Some(16.0),
+                Some(16.0),
+                Some(21.0),
+                Some(16.0),
+                Some(21.0),
+                Some(24.0),
+                Some(16.0),
+            ];
+            let results_advstart: [Option<f64>; 8] = [
+                Some(21.0),
+                None,
+                Some(21.0),
+                Some(21.0),
+                Some(21.0),
+                Some(21.0),
+                Some(25.0),
+                Some(15.0),
+            ];
+            let results_advstart_minmax: [Option<f64>; 8] = [
+                Some(21.0),
+                Some(16.0),
+                Some(21.0),
+                Some(21.0),
+                Some(21.0),
+                Some(21.0),
+                Some(24.0),
+                Some(16.0),
+            ];
+            for t_it in simulation_time {
+                assert_eq!(
+                    time_control.setpnt(&t_it),
+                    default_schedule()[t_it.index],
+                    "incorrect schedule returned for control with no min or max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_min.setpnt(&t_it),
+                    results_min[t_it.index],
+                    "incorrect schedule returned for control with min set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_max.setpnt(&t_it),
+                    results_max[t_it.index],
+                    "incorrect schedule returned for control with max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_min_max.setpnt(&t_it),
+                    results_minmax[t_it.index],
+                    "incorrect schedule returned for control with min and max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_advstart.setpnt(&t_it),
+                    results_advstart[t_it.index],
+                    "incorrect schedule returned for control with advanced start, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_advstart_min_max.setpnt(&t_it),
+                    results_advstart_minmax[t_it.index],
+                    "incorrect schedule returned for control with advanced start and min and max set, iteration {}",
+                    t_it.index + 1
+                );
             }
-            .into(),
-            Default::default(),
-            simulation_time.step_in_hours(),
-        )
-    }
-
-    #[fixture]
-    pub fn setpoint_time_control_advstart(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            Default::default(),
-            Some(1.0),
-            simulation_time.step_in_hours(),
-        )
-    }
-
-    #[fixture]
-    pub fn setpoint_time_control_advstart_minmax(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            SetpointBoundsInput::MinAndMax {
-                setpoint_min: 16.0,
-                setpoint_max: 24.0,
-                default_to_max: false,
-            }
-            .into(),
-            Some(1.0),
-            simulation_time.step_in_hours(),
-        )
-    }
-
-    #[rstest]
-    pub fn should_have_correct_setpnt(
-        setpoint_time_control: SetpointTimeControl,
-        setpoint_time_control_min: SetpointTimeControl,
-        setpoint_time_control_max: SetpointTimeControl,
-        setpoint_time_control_minmax: SetpointTimeControl,
-        setpoint_time_control_advstart: SetpointTimeControl,
-        setpoint_time_control_advstart_minmax: SetpointTimeControl,
-        simulation_time: SimulationTimeIterator,
-    ) {
-        let results_min: [Option<f64>; 8] = [
-            Some(21.0),
-            Some(16.0),
-            Some(16.0),
-            Some(21.0),
-            Some(16.0),
-            Some(21.0),
-            Some(25.0),
-            Some(16.0),
-        ];
-        let results_max: [Option<f64>; 8] = [
-            Some(21.0),
-            Some(24.0),
-            Some(24.0),
-            Some(21.0),
-            Some(24.0),
-            Some(21.0),
-            Some(24.0),
-            Some(15.0),
-        ];
-        let results_minmax: [Option<f64>; 8] = [
-            Some(21.0),
-            Some(16.0),
-            Some(16.0),
-            Some(21.0),
-            Some(16.0),
-            Some(21.0),
-            Some(24.0),
-            Some(16.0),
-        ];
-        let results_advstart: [Option<f64>; 8] = [
-            Some(21.0),
-            None,
-            Some(21.0),
-            Some(21.0),
-            Some(21.0),
-            Some(21.0),
-            Some(25.0),
-            Some(15.0),
-        ];
-        let results_advstart_minmax: [Option<f64>; 8] = [
-            Some(21.0),
-            Some(16.0),
-            Some(21.0),
-            Some(21.0),
-            Some(21.0),
-            Some(21.0),
-            Some(24.0),
-            Some(16.0),
-        ];
-        for it in simulation_time {
-            assert_eq!(
-                setpoint_time_control.setpnt(&it),
-                setpoint_schedule()[it.index],
-                "incorrect schedule returned for control with no min or max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_min.setpnt(&it),
-                results_min[it.index],
-                "incorrect schedule returned for control with min set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_max.setpnt(&it),
-                results_max[it.index],
-                "incorrect schedule returned for control with max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_minmax.setpnt(&it),
-                results_minmax[it.index],
-                "incorrect schedule returned for control with min and max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart.setpnt(&it),
-                results_advstart[it.index],
-                "incorrect schedule returned for control with advanced start, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart_minmax.setpnt(&it),
-                results_advstart_minmax[it.index],
-                "incorrect schedule returned for control with advanced start and min and max set, iteration {}",
-                it.index + 1
-            );
         }
     }
 
