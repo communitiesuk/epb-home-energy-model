@@ -2088,6 +2088,7 @@ mod tests {
     mod test_smart_appliance_control {
         use super::*;
         use crate::core::energy_supply::elec_battery::ElectricBattery;
+        use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
         use crate::input::{BatteryLocation, FuelType};
         use approx::assert_relative_eq;
         use pretty_assertions::assert_eq;
@@ -2249,6 +2250,37 @@ mod tests {
         ) {
             assert_relative_eq!(smart_appliance_control.get_demand(0, "mains elec"), -0.3);
             assert_relative_eq!(smart_appliance_control.get_demand(1, "mains elec"), -0.2);
+        }
+
+        #[rstest]
+        fn test_get_demand_no_battery(mut simulation_time_iterator: SimulationTimeIterator) {
+            let smart_appliance_control = SmartApplianceControl::new(
+                &IndexMap::from([("mains elec".into(), vec![100.; 12])]),
+                2.,
+                &simulation_time_iterator,
+                IndexMap::from([("mains elec".into(), vec![[0.1, 0.2]; 12].into_flattened())]),
+                SmartApplianceBattery {
+                    battery_state_of_charge: IndexMap::new(),
+                    energy_into_battery_from_generation: IndexMap::new(),
+                    energy_into_battery_from_grid: IndexMap::new(),
+                    energy_out_of_battery: IndexMap::new(),
+                },
+                &IndexMap::from([(
+                    "mains elec".into(),
+                    Arc::new(RwLock::new(
+                        EnergySupplyBuilder::new(
+                            FuelType::Electricity,
+                            simulation_time_iterator.total_steps(),
+                        )
+                        .build(),
+                    )),
+                )]),
+                vec!["Clothes_drying".into()],
+            )
+            .unwrap();
+
+            assert_relative_eq!(smart_appliance_control.get_demand(0, "mains elec"), 0.2);
+            assert_relative_eq!(smart_appliance_control.get_demand(1, "mains elec"), 0.3);
         }
     }
 
