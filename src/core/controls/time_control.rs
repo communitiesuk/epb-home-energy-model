@@ -1793,7 +1793,56 @@ mod tests {
                 );
             }
         }
+
+        #[rstest]
+        fn test_is_on(
+            simulation_time_iterator: SimulationTimeIterator,
+            time_control: SetpointTimeControl,
+            time_control_min: SetpointTimeControl,
+            time_control_max: SetpointTimeControl,
+            time_control_min_max: SetpointTimeControl,
+            time_control_advstart: SetpointTimeControl,
+            time_control_advstart_min_max: SetpointTimeControl,
+        ) {
+            for t_it in simulation_time_iterator {
+                assert_eq!(time_control.is_on(&t_it),
+                           [true, false, false, true, false, true, true, true][t_it.index],
+                           "incorrect is_on value returned for control with no min or max set, iteration {}",
+                           t_it.index + 1 );
+                assert_eq!(
+                    time_control_min.is_on(&t_it),
+                    true, // Should always be true for this type of control
+                    "incorrect is_on value returned for control with min set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_max.is_on(&t_it),
+                    true, // Should always be true for this type of control
+                    "incorrect is_on value returned for control with max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_min_max.is_on(&t_it),
+                    true, // Should always be true for this type of control
+                    "incorrect is_on value returned for control with min and max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_advstart.is_on(&t_it),
+                    [true, false, true, true, true, true, true, true][t_it.index],
+                    "incorrect is_on value returned for control with advanced start, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_advstart_min_max.is_on(&t_it),
+                    true,
+                    "incorrect is_on value returned for control with advanced start and min/max, iteration {}",
+                    t_it.index + 1
+                );
+            }
+        }
     }
+
     #[fixture]
     pub fn setpoint_schedule() -> Vec<Option<f64>> {
         vec![
@@ -1906,107 +1955,6 @@ mod tests {
             Some(1.0),
             simulation_time.step_in_hours(),
         )
-    }
-
-    #[rstest]
-    pub fn should_be_in_required_time_for_setpoint_control(
-        setpoint_time_control: SetpointTimeControl,
-        setpoint_time_control_min: SetpointTimeControl,
-        setpoint_time_control_max: SetpointTimeControl,
-        setpoint_time_control_minmax: SetpointTimeControl,
-        setpoint_time_control_advstart: SetpointTimeControl,
-        setpoint_time_control_advstart_minmax: SetpointTimeControl,
-        simulation_time: SimulationTimeIterator,
-    ) {
-        let results: [bool; 8] = [true, false, false, true, false, true, true, true];
-        for it in simulation_time {
-            assert_eq!(
-                setpoint_time_control.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with no min or max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_min.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with min set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_max.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_minmax.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with min and max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with advanced start, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart_minmax.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with advanced start and min/max, iteration {}",
-                it.index + 1
-            );
-        }
-    }
-
-    #[rstest]
-    pub fn should_be_on_for_setpoint_control(
-        setpoint_time_control: SetpointTimeControl,
-        setpoint_time_control_min: SetpointTimeControl,
-        setpoint_time_control_max: SetpointTimeControl,
-        setpoint_time_control_minmax: SetpointTimeControl,
-        setpoint_time_control_advstart: SetpointTimeControl,
-        setpoint_time_control_advstart_minmax: SetpointTimeControl,
-        simulation_time: SimulationTimeIterator,
-    ) {
-        for it in simulation_time {
-            assert_eq!(
-                setpoint_time_control.is_on(&it),
-                [true, false, false, true, false, true, true, true][it.index],
-                "incorrect is_on value returned for control with no min or max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_min.is_on(&it),
-                true, // Should always be true for this type of control
-                "incorrect is_on value returned for control with min set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_max.is_on(&it),
-                true, // Should always be true for this type of control
-                "incorrect is_on value returned for control with max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_minmax.is_on(&it),
-                true, // Should always be true for this type of control
-                "incorrect is_on value returned for control with min and max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart.is_on(&it),
-                [true, false, true, true, true, true, true, true][it.index],
-                "incorrect is_on value returned for control with advanced start, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart_minmax.is_on(&it),
-                true,
-                "incorrect is_on value returned for control with advanced start and min/max, iteration {}",
-                it.index + 1
-            );
-        }
     }
 
     #[rstest]
