@@ -2089,7 +2089,7 @@ mod tests {
         use super::*;
         use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
         use crate::input::FuelType;
-        // use pretty_assertions::assert_eq;
+        use pretty_assertions::assert_eq;
 
         #[fixture]
         fn simulation_time_iterator() -> SimulationTimeIterator {
@@ -2101,6 +2101,36 @@ mod tests {
             Arc::new(RwLock::new(
                 EnergySupplyBuilder::new(FuelType::Electricity, 24).build(),
             ))
+        }
+
+        #[fixture]
+        fn smart_appliance_control(
+            simulation_time_iterator: SimulationTimeIterator,
+            energy_supply: Arc<RwLock<EnergySupply>>,
+        ) -> SmartApplianceControl {
+            let power_timeseries = &IndexMap::from([("mains elec".into(), vec![100.; 12])]);
+            let non_appliance_demand_24hr =
+                IndexMap::from([("mains elec".into(), vec![[0.1, 0.2]; 6].into_flattened())]);
+            let battery_state_of_charge: IndexMap<String, Vec<f64>> =
+                IndexMap::from([("mains elec".into(), vec![0.5; 12])]);
+            let battery_24hr = SmartApplianceBattery {
+                battery_state_of_charge,
+                energy_into_battery_from_generation: IndexMap::new(),
+                energy_into_battery_from_grid: IndexMap::new(),
+                energy_out_of_battery: IndexMap::new(),
+            };
+            let energy_supplies = &IndexMap::from([("mains elec".into(), energy_supply)]);
+
+            SmartApplianceControl::new(
+                power_timeseries,
+                2.,
+                &simulation_time_iterator,
+                non_appliance_demand_24hr,
+                battery_24hr,
+                energy_supplies,
+                vec!["Clothes_drying".into()],
+            )
+            .unwrap()
         }
 
         #[rstest]
@@ -2127,6 +2157,13 @@ mod tests {
             );
 
             assert!(smart_appliance_control.is_err());
+        }
+
+        #[rstest]
+        fn test_ts_step(smart_appliance_control: SmartApplianceControl) {
+            assert_eq!(smart_appliance_control.ts_step(0), 0);
+            assert_eq!(smart_appliance_control.ts_step(23), 11);
+            assert_eq!(smart_appliance_control.ts_step(24), 12);
         }
     }
 
