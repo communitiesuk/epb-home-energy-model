@@ -2032,6 +2032,51 @@ mod tests {
         }
     }
 
+    mod test_smart_appliance_control {
+        use super::*;
+        use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+        use crate::input::FuelType;
+        // use pretty_assertions::assert_eq;
+
+        #[fixture]
+        fn simulation_time_iterator() -> SimulationTimeIterator {
+            SimulationTime::new(0., 24., 1.).iter()
+        }
+
+        #[fixture]
+        fn energy_supply() -> Arc<RwLock<EnergySupply>> {
+            Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::Electricity, 24).build(),
+            ))
+        }
+
+        #[rstest]
+        fn test_init_invalid_length(
+            simulation_time_iterator: SimulationTimeIterator,
+            energy_supply: Arc<RwLock<EnergySupply>>,
+        ) {
+            let battery_state_of_charge: IndexMap<String, Vec<f64>> =
+                IndexMap::from([("mains elec".into(), vec![0.; 12])]);
+            let battery_24hr = SmartApplianceBattery {
+                battery_state_of_charge,
+                energy_into_battery_from_generation: IndexMap::new(),
+                energy_into_battery_from_grid: IndexMap::new(),
+                energy_out_of_battery: IndexMap::new(),
+            };
+            let smart_appliance_control = SmartApplianceControl::new(
+                &IndexMap::from([("mains elec".into(), vec![100.; 11])]),
+                2.,
+                &simulation_time_iterator,
+                IndexMap::from([("mains elec".into(), vec![[0.1, 0.2]; 12].into_flattened())]),
+                battery_24hr,
+                &IndexMap::from([("mains elec".into(), energy_supply)]),
+                vec!["Clothes_drying".into()],
+            );
+
+            assert!(smart_appliance_control.is_err());
+        }
+    }
+
     #[fixture]
     fn simulation_time_for_charge_control() -> SimulationTime {
         SimulationTime::new(0.0, 24.0, 1.0)
