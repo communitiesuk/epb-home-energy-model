@@ -1847,15 +1847,7 @@ mod tests {
         }
 
         #[rstest]
-        fn test_is_on_lookahead(
-            simulation_time_iterator: SimulationTimeIterator,
-            time_control: SetpointTimeControl,
-            time_control_min: SetpointTimeControl,
-            time_control_max: SetpointTimeControl,
-            time_control_min_max: SetpointTimeControl,
-            time_control_advstart: SetpointTimeControl,
-            time_control_advstart_min_max: SetpointTimeControl,
-        ) {
+        fn test_is_on_lookahead(simulation_time_iterator: SimulationTimeIterator) {
             let schedule = vec![None; 24];
             let control = create_time_control(Some(schedule), None, Some(30.));
             assert!(!control.is_on(&simulation_time_iterator.current_iteration()));
