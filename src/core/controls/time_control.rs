@@ -2089,6 +2089,7 @@ mod tests {
         use super::*;
         use crate::core::energy_supply::elec_battery::ElectricBattery;
         use crate::input::{BatteryLocation, FuelType};
+        use approx::assert_relative_eq;
         use pretty_assertions::assert_eq;
 
         #[fixture]
@@ -2225,6 +2226,29 @@ mod tests {
             let iteration = simulation_time_iterator.nth(5).unwrap();
             smart_appliance_control.add_appliance_demand(iteration, 100., "mains elec");
             assert_eq!(smart_appliance_control.get_demand(5, "mains elec"), -9950.2);
+        }
+
+        #[rstest]
+        fn test_update_demand_buffer(
+            smart_appliance_control: SmartApplianceControl,
+            mut simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            for t_it in simulation_time_iterator {
+                smart_appliance_control.update_demand_buffer(t_it);
+                assert_eq!(
+                    smart_appliance_control.get_demand(t_it.index, "mains elec"),
+                    0.1
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_get_demand(
+            smart_appliance_control: SmartApplianceControl,
+            mut simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            assert_relative_eq!(smart_appliance_control.get_demand(0, "mains elec"), -0.3);
+            assert_relative_eq!(smart_appliance_control.get_demand(1, "mains elec"), -0.2);
         }
     }
 
