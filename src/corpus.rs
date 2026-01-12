@@ -4833,6 +4833,31 @@ impl HotWaterSource {
             }
         }
     }
+    
+    // Calls internal_gains on hot water source where available
+    pub(crate) fn internal_gains(&self) -> Option<f64> {
+        match &self {
+            HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
+                HotWaterStorageTank::StorageTank(rw_lock) => Some(rw_lock.read().internal_gains()),
+                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => Some(rw_lock.read().internal_gains()),
+            },
+            HotWaterSource::CombiBoiler(boiler_service_water_combi) => Some(boiler_service_water_combi.internal_gains()),
+            HotWaterSource::PointOfUse(_) => None,
+            HotWaterSource::HeatNetwork(_) => None,
+            HotWaterSource::HeatBattery(_) => None,
+        }
+    }
+    
+    // Calls get_losses_from_primary_pipework_and_storage on hot water source where available, otherwise returns 0s.
+    pub(crate) fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+        match &self {
+            HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
+                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().get_losses_from_primary_pipework_and_storage(),
+                _ => (0., 0.),
+            },
+            _ => (0., 0.)
+        };
+    }
 }
 
 fn hot_water_source_from_input(
