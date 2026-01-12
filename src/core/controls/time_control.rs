@@ -63,18 +63,16 @@ pub(crate) trait ControlBehaviour: Send + Sync {
     fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
         None
     }
+
+    fn is_on(&self, _simulation_time_iteration: &SimulationTimeIteration) -> bool {
+        true
+    }
 }
 
 impl Debug for dyn ControlBehaviour {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // if we can downcast self to e.g. Control (if it is one), which we know is Debug, this would be better
         write!(f, "A control object")
-    }
-}
-
-impl Control {
-    pub(crate) fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
-        per_control!(self, c => {c.is_on(&simulation_time_iteration)})
     }
 }
 
@@ -88,6 +86,10 @@ impl ControlBehaviour for Control {
 
     fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
         per_control!(self, c => { c.setpnt(simulation_time_iteration) })
+    }
+
+    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
+        per_control!(self, c => {c.is_on(&simulation_time_iteration)})
     }
 }
 
@@ -138,14 +140,14 @@ impl OnOffTimeControl {
             time_series_step,
         }
     }
+}
 
-    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+impl ControlBehaviour for OnOffTimeControl {
+    fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
             .unwrap_or(false)
     }
 }
-
-impl ControlBehaviour for OnOffTimeControl {}
 
 /// An object to model a control that governs electrical charging of a heat storage device
 /// that can respond to signals from the grid, for example when carbon intensity is low
@@ -320,11 +322,6 @@ impl ChargeControl {
 
     pub(crate) fn logic_type(&self) -> ControlLogicType {
         self.logic_type
-    }
-
-    // In Python this is inherited from the BoolTimeControl class
-    pub(crate) fn is_on(&self, iteration: &SimulationTimeIteration) -> bool {
-        self.schedule[iteration.time_series_idx(self.start_day, self.time_series_step)]
     }
 
     // In Python there is an abstract method target_charge on the ControlCharge class and a concrete implementation here
@@ -557,7 +554,12 @@ impl ChargeControl {
     }
 }
 
-impl ControlBehaviour for ChargeControl {}
+impl ControlBehaviour for ChargeControl {
+    // In Python this is inherited from the BoolTimeControl class
+    fn is_on(&self, iteration: &SimulationTimeIteration) -> bool {
+        self.schedule[iteration.time_series_idx(self.start_day, self.time_series_step)]
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct OnOffCostMinimisingTimeControl {
@@ -645,14 +647,14 @@ impl OnOffCostMinimisingTimeControl {
             on_off_schedule,
         })
     }
+}
 
+impl ControlBehaviour for OnOffCostMinimisingTimeControl {
     /// Return true if control will allow system to run
-    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+    fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.on_off_schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
     }
 }
-
-impl ControlBehaviour for OnOffCostMinimisingTimeControl {}
 
 #[derive(Clone, Debug)]
 /// An object to model a control with a setpoint which varies per timestep
@@ -703,13 +705,6 @@ impl SetpointTimeControl {
 
     // in_required_period method can be found here in Python, in Rust it's part of the
     // implementation block of ControlBehaviour further down
-
-    /// Return true if control will allow system to run
-    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
-        let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
-
-        self.is_on_for_timestep_idx(schedule_idx)
-    }
 
     fn is_on_for_timestep_idx(&self, schedule_idx: usize) -> bool {
         let setpnt = self.schedule[schedule_idx];
@@ -867,6 +862,13 @@ impl ControlBehaviour for SetpointTimeControl {
                 Some(setpnt)
             }
         }
+    }
+
+    /// Return true if control will allow system to run
+    fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+        let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
+
+        self.is_on_for_timestep_idx(schedule_idx)
     }
 }
 
@@ -1069,13 +1071,6 @@ impl SmartApplianceControl {
             }
         }
     }
-
-    /// Controls generally have this method, though this control does not in Python implementation.
-    /// Defaulting to returning true for a fallback implementation here.
-    #[allow(dead_code)]
-    pub(crate) fn is_on(&self, _simtime: &SimulationTimeIteration) -> bool {
-        true
-    }
 }
 
 impl ControlBehaviour for SmartApplianceControl {}
@@ -1150,7 +1145,7 @@ impl CombinationTimeControl {
     /// Evaluate a single control
     fn evaluate_control_is_on(&self, control_name: &str, simtime: SimulationTimeIteration) -> bool {
         let control = self.controls[control_name].as_ref();
-        control.is_on(simtime)
+        control.is_on(&simtime)
     }
 
     /// Evaluate a combination of controls
@@ -1198,7 +1193,7 @@ impl CombinationTimeControl {
         match control {
             c @ Control::OnOffTime(_)
             | c @ Control::Charge(_)
-            | c @ Control::OnOffMinimisingTime(_) => c.is_on(simtime),
+            | c @ Control::OnOffMinimisingTime(_) => c.is_on(&simtime),
             Control::SetpointTime(c) => c
                 .in_required_period(&simtime)
                 .expect("SetpointTimeControl in_required_period() method will always return Some"),
@@ -1310,7 +1305,7 @@ impl CombinationTimeControl {
         match control {
             c @ Control::OnOffTime(_)
             | c @ Control::Charge(_)
-            | c @ Control::OnOffMinimisingTime(_) => SetpointOrBoolean::Boolean(c.is_on(simtime)),
+            | c @ Control::OnOffMinimisingTime(_) => SetpointOrBoolean::Boolean(c.is_on(&simtime)),
             Control::SetpointTime(c) => SetpointOrBoolean::Setpoint(c.setpnt(&simtime)),
             _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
         }
@@ -1516,10 +1511,6 @@ impl CombinationTimeControl {
         })
     }
 
-    pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
-        self.evaluate_combination_is_on(MAIN_REFERENCE, *simtime)
-    }
-
     #[cfg(test)]
     fn target_charge(
         &self,
@@ -1546,6 +1537,10 @@ impl ControlBehaviour for CombinationTimeControl {
                     None
                 }
             })
+    }
+
+    fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
+        self.evaluate_combination_is_on(MAIN_REFERENCE, *simtime)
     }
 }
 

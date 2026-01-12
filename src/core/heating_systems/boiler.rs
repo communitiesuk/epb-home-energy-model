@@ -322,7 +322,7 @@ impl BoilerServiceWaterRegular {
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control_min.is_on(simtime)
+        self.control_min.is_on(&simtime)
     }
 }
 
@@ -406,7 +406,7 @@ impl BoilerServiceSpace {
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control.is_on(simtime)
+        self.control.is_on(&simtime)
     }
 }
 

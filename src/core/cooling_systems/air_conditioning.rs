@@ -70,7 +70,7 @@ impl SpaceCoolSystem for AirConditioning {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
-        let cooling_supplied = if self.control.is_on(simtime) {
+        let cooling_supplied = if self.control.is_on(&simtime) {
             max_of_2(
                 cooling_demand,
                 -self.cooling_capacity_in_kw * self.simulation_timestep,

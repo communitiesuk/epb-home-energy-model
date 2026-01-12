@@ -652,13 +652,13 @@ impl Window {
     fn calculate_window_opening_free_area(
         &self,
         r_w_arg: f64,
-        simulation_time_iteration: SimulationTimeIteration,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
         // Assume windows are shut if the control object is empty
         match &self.on_off_ctrl_obj {
             None => 0.,
             Some(ctrl) => {
-                if ctrl.is_on(simulation_time_iteration) {
+                if ctrl.is_on(&simtime) {
                     r_w_arg * self.a_w_max
                 } else {
                     0.
@@ -674,14 +674,14 @@ impl Window {
     fn calculate_flow_coeff_for_window(
         &self,
         r_w_arg: f64,
-        simulation_time: SimulationTimeIteration,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
         // Assume windows are shut if the control object is empty
         match &self.on_off_ctrl_obj {
             None => 0.,
             Some(ctrl) => {
-                if ctrl.is_on(simulation_time) {
-                    let a_w = self.calculate_window_opening_free_area(r_w_arg, simulation_time);
+                if ctrl.is_on(&simtime) {
+                    let a_w = self.calculate_window_opening_free_area(r_w_arg, simtime);
                     3600. * self.c_d_w * a_w * (2. / p_a_ref()).powf(self.n_w)
                 } else {
                     0.
@@ -711,13 +711,13 @@ impl Window {
         f_cross: bool,
         shield_class: VentilationShieldClass,
         r_w_arg: Option<f64>,
-        simulation_time: SimulationTimeIteration,
+        simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
         // Assume windows are shut if the control object is empty
         let r_w_arg = match &self.on_off_ctrl_obj {
             None => 0.,
             Some(control) => {
-                if !control.is_on(simulation_time) {
+                if !control.is_on(&simtime) {
                     0.
                 } else {
                     r_w_arg.expect("r_w_arg was None")
@@ -735,7 +735,7 @@ impl Window {
         )?;
 
         // Airflow coefficient of the window
-        let c_w_path = self.calculate_flow_coeff_for_window(r_w_arg, simulation_time);
+        let c_w_path = self.calculate_flow_coeff_for_window(r_w_arg, simtime);
 
         //  Sum airflow through each window part entering and leaving - based on Equation 56 and 57
         let mut qv_in_through_window_opening = 0.;

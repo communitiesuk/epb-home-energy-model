@@ -134,9 +134,9 @@ impl HeatBatteryPcmServiceWaterRegular {
         self.heat_battery.read().energy_output_max(temp_flow, None)
     }
 
-    fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> anyhow::Result<bool> {
+    fn is_on(&self, simtime: SimulationTimeIteration) -> anyhow::Result<bool> {
         if let Some(control) = &self.control {
-            Ok(control.is_on(simulation_time_iteration))
+            Ok(control.is_on(&simtime))
         } else {
             Ok(true)
         }
@@ -1684,7 +1684,7 @@ impl HeatBatteryPcm {
         // Charging battery for the remaining of the timestep
         let (end_of_ts_charge, zone_temp_c_after_charging) = if self
             .charge_control
-            .is_on(self.simulation_time.current_iteration())
+            .is_on(&self.simulation_time.current_iteration())
         {
             self.charge_battery()?
         } else {

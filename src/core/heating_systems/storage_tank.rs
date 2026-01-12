@@ -2614,7 +2614,7 @@ impl ImmersionHeater {
         };
 
         let energy_supplied =
-            if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(simtime) {
+            if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(&simtime) {
                 min_of_2(energy_demand, self.pwr * self.simulation_timestep)
             } else {
                 0.
@@ -2638,7 +2638,7 @@ impl ImmersionHeater {
         simtime: SimulationTimeIteration,
         ignore_standard_control: bool,
     ) -> f64 {
-        if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(simtime)
+        if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(&simtime)
             || ignore_standard_control
         {
             self.pwr * self.simulation_timestep

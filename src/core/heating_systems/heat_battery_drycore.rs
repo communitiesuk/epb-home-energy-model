@@ -826,7 +826,7 @@ impl HeatBatteryDryCoreService {
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
         if let Some(control) = &self.control {
-            control.is_on(simtime)
+            control.is_on(&simtime)
         } else {
             true
         }

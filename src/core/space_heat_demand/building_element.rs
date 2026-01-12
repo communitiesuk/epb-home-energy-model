@@ -2626,7 +2626,7 @@ impl BuildingElementTransparent {
                 let ctrl_open: Option<bool> = treatment
                     .open_control
                     .as_ref()
-                    .map(|ctrl| ctrl.is_on(simtime));
+                    .map(|ctrl| ctrl.is_on(&simtime));
                 let closing_irrad_threshold: Option<f64> = treatment
                     .closing_irradiance_control
                     .as_ref()

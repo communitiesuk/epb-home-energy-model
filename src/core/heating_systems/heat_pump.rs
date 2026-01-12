@@ -1384,7 +1384,7 @@ impl HeatPumpServiceWater {
     }
 
     pub fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control.is_on(simtime)
+        self.control.is_on(&simtime)
     }
 
     /// Return water heating setpoint (not necessarily temperature)
@@ -1565,7 +1565,7 @@ impl HeatPumpServiceSpace {
     }
 
     pub fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control.is_on(simtime)
+        self.control.is_on(&simtime)
     }
 
     pub fn temp_setpnt(
@@ -1810,7 +1810,7 @@ impl HeatPumpServiceSpaceWarmAir {
     }
 
     pub fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control.is_on(simtime)
+        self.control.is_on(&simtime)
     }
 
     pub fn in_required_period(
@@ -4653,7 +4653,7 @@ impl HeatPumpHotWaterOnly {
     ) -> f64 {
         // Account for time control. In the Python they also check here whether control_min is None
         // but this is not possible as it's a required field for a HeatPumpHotWaterOnly object.
-        let energy_supplied = if self.control_min.as_ref().is_on(simtime) {
+        let energy_supplied = if self.control_min.as_ref().is_on(&simtime) {
             min_of_2(energy_demand, self.power_in_kw * self.simulation_timestep)
         } else {
             0.0
@@ -4671,7 +4671,7 @@ impl HeatPumpHotWaterOnly {
     pub fn energy_output_max(&self, _temp_return: f64, simtime: SimulationTimeIteration) -> f64 {
         // Account for time control. In the Python they also check here whether control_min is None
         // but this is not possible as it's a required field for a HeatPumpHotWaterOnly object.
-        if self.control_min.as_ref().is_on(simtime) {
+        if self.control_min.as_ref().is_on(&simtime) {
             self.power_in_kw * self.simulation_timestep
         } else {
             0.0

@@ -66,7 +66,7 @@ impl InstantElecHeater {
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
         let energy_supplied =
-            if self.control.as_ref().is_none() || self.control.as_ref().unwrap().is_on(simtime) {
+            if self.control.as_ref().is_none() || self.control.as_ref().unwrap().is_on(&simtime) {
                 min_of_2(
                     energy_demand,
                     self.rated_power_in_kw * self.simulation_timestep,
