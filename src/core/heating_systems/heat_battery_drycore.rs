@@ -697,7 +697,7 @@ impl System<Time, EnergyOutputStateWithLosses> for EnergyOutputWithLossesSocOdeF
             .map(|s| np_interp(*s, self.soc_array, self.power_array))
             .collect_vec();
         let loss_rate =
-            np_interp_with_extrapolate(soc, &self.soc_min_array, &power_min_func_result_arr);
+            np_interp_with_extrapolate(soc, self.soc_min_array, &power_min_func_result_arr);
         let mut dlost_dt = loss_rate;
 
         // Calculate the active discharge rate
@@ -724,12 +724,10 @@ impl System<Time, EnergyOutputStateWithLosses> for EnergyOutputWithLossesSocOdeF
 
         let dcharged_dt = if soc < self.soc_max {
             self.charge_rate
+        } else if self.target_charge > 0. {
+            (ddelivered_dt + dlost_dt).min(self.charge_rate)
         } else {
-            if self.target_charge > 0. {
-                (ddelivered_dt + dlost_dt).min(self.charge_rate)
-            } else {
-                0.0
-            }
+            0.0
         };
 
         // Net SOC rate of change
@@ -745,7 +743,7 @@ impl System<Time, EnergyOutputStateWithLosses> for EnergyOutputWithLossesSocOdeF
 /// A trait that will need to be implemented by any type that uses HeatBatteryDryCore in
 /// every case. This is written as the equivalent of the mechanism in the upstream Python
 /// whereby there are abstract methods that are called within HeatBatteryDryCore.
-pub(crate) trait HeatBatteryDryCoreCommonBehaviour {
+pub(crate) trait HeatBatteryDryCoreCommonBehaviour: Send + Sync {
     /// Get temperature for charge control calculations
     fn get_temp_for_charge_control(&self) -> Option<f64>;
 
@@ -1240,7 +1238,7 @@ impl HeatBatteryDryCore {
 
         Ok(HeatBatteryDryCoreServiceWaterDirect::new(
             battery.clone(),
-            service_name.into(),
+            service_name,
             setpoint_temp,
             cold_feed,
         ))

@@ -46,7 +46,6 @@ use erased_serde::Serialize as ErasedSerialize;
 use hem_core::external_conditions;
 use hem_core::simulation_time;
 use indexmap::IndexMap;
-use itertools::Itertools;
 use serde::{Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use smartstring::alias::String;
