@@ -1873,7 +1873,7 @@ mod tests {
             time_control_min_max: SetpointTimeControl,
             time_control_advstart: SetpointTimeControl,
             time_control_advstart_min_max: SetpointTimeControl,
-            simulation_time: SimulationTimeIterator,
+            simulation_time_iterator: SimulationTimeIterator,
         ) {
             let results_min: [Option<f64>; 8] = [
                 Some(21.0),
@@ -1925,7 +1925,7 @@ mod tests {
                 Some(24.0),
                 Some(16.0),
             ];
-            for t_it in simulation_time {
+            for t_it in simulation_time_iterator {
                 assert_eq!(
                     time_control.setpnt(&t_it),
                     default_schedule()[t_it.index],
@@ -1963,6 +1963,24 @@ mod tests {
                     t_it.index + 1
                 );
             }
+        }
+
+        #[rstest]
+        pub fn test_setpnt_lookahead(simulation_time_iterator: SimulationTimeIterator) {
+            let schedule = vec![None; 24];
+            let control = create_time_control(Some(schedule), None, Some(30.));
+            assert!(control
+                .setpnt(&simulation_time_iterator.current_iteration())
+                .is_none());
+
+            let schedule = vec![Some(20.); 24];
+            let control = create_time_control(Some(schedule), None, Some(30.));
+            assert_eq!(
+                control
+                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .unwrap(),
+                20.
+            );
         }
     }
 
