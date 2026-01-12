@@ -2087,8 +2087,8 @@ mod tests {
 
     mod test_smart_appliance_control {
         use super::*;
-        use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
-        use crate::input::FuelType;
+        use crate::core::energy_supply::elec_battery::ElectricBattery;
+        use crate::input::{BatteryLocation, FuelType};
         use pretty_assertions::assert_eq;
 
         #[fixture]
@@ -2097,9 +2097,60 @@ mod tests {
         }
 
         #[fixture]
-        fn energy_supply() -> Arc<RwLock<EnergySupply>> {
+        // create dummy external conditions
+        fn external_conditions(
+            simulation_time_iterator: SimulationTimeIterator,
+        ) -> ExternalConditions {
+            ExternalConditions::new(
+                &simulation_time_iterator,
+                vec![0.0; 24],
+                vec![3.7; 24],
+                vec![200.; 24],
+                vec![333.; 24],
+                vec![0.; 24],
+                vec![0.2; 8760],
+                51.42,
+                -0.75,
+                0,
+                0,
+                None,
+                1.,
+                None,
+                None,
+                false,
+                false,
+                None,
+            )
+        }
+
+        #[fixture]
+        fn energy_supply(
+            simulation_time_iterator: SimulationTimeIterator,
+            external_conditions: ExternalConditions,
+        ) -> Arc<RwLock<EnergySupply>> {
+            let electric_battery = ElectricBattery::new(
+                100., // significant for test_add_appliance_demand, in Python Magic Mock is used instead
+                1., // significant for test_add_appliance_demand, in Python Magic Mock is used instead
+                0., // significant for test_add_appliance_demand, in Python Magic Mock is used instead
+                0.001,
+                1.5,
+                -100., // significant for test_add_appliance_demand, in Python Magic Mock is used instead
+                BatteryLocation::Inside, // significant for test_add_appliance_demand, in Python Magic Mock is used instead
+                false,
+                simulation_time_iterator.step_in_hours(),
+                Arc::new(external_conditions),
+            );
+
             Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, 24).build(),
+                EnergySupply::new(
+                    FuelType::Electricity,
+                    simulation_time_iterator.total_steps(),
+                    None,
+                    Some(electric_battery),
+                    None,
+                    None,
+                )
+                .unwrap(),
             ))
         }
 
@@ -2164,6 +2215,16 @@ mod tests {
             assert_eq!(smart_appliance_control.ts_step(0), 0);
             assert_eq!(smart_appliance_control.ts_step(23), 11);
             assert_eq!(smart_appliance_control.ts_step(24), 12);
+        }
+
+        #[rstest]
+        fn test_add_appliance_demand(
+            smart_appliance_control: SmartApplianceControl,
+            mut simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            let iteration = simulation_time_iterator.nth(5).unwrap();
+            smart_appliance_control.add_appliance_demand(iteration, 100., "mains elec");
+            assert_eq!(smart_appliance_control.get_demand(5, "mains elec"), -9950.2);
         }
     }
 
