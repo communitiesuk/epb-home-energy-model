@@ -1666,6 +1666,122 @@ mod tests {
         }
     }
 
+    mod test_setpoint_time_control {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[fixture]
+        fn simulation_time_iterator() -> SimulationTimeIterator {
+            SimulationTime::new(0.0, 8.0, 1.0).iter()
+        }
+
+        fn create_time_control(
+            setpoint_bounds: Option<SetpointBoundsInput>,
+            duration_advanced_start: Option<f64>,
+        ) -> SetpointTimeControl {
+            let schedule = vec![
+                Some(21.),
+                None,
+                None,
+                Some(21.),
+                None,
+                Some(21.),
+                Some(25.),
+                Some(15.),
+            ];
+            SetpointTimeControl::new(
+                schedule,
+                0,
+                1.,
+                setpoint_bounds,
+                duration_advanced_start,
+                1.,
+            )
+        }
+
+        #[fixture]
+        fn time_control() -> SetpointTimeControl {
+            create_time_control(None, None)
+        }
+
+        #[fixture]
+        fn time_control_min() -> SetpointTimeControl {
+            let setpoint_bounds = SetpointBoundsInput::MinOnly { setpoint_min: 16. };
+            create_time_control(Some(setpoint_bounds), None)
+        }
+
+        #[fixture]
+        fn time_control_max() -> SetpointTimeControl {
+            let setpoint_bounds = SetpointBoundsInput::MaxOnly { setpoint_max: 24. };
+            create_time_control(Some(setpoint_bounds), None)
+        }
+
+        #[fixture]
+        fn time_control_min_max() -> SetpointTimeControl {
+            let setpoint_bounds = SetpointBoundsInput::MinAndMax {
+                setpoint_min: 16.,
+                setpoint_max: 24.,
+                default_to_max: false,
+            };
+            create_time_control(Some(setpoint_bounds), None)
+        }
+
+        #[fixture]
+        fn time_control_advstart() -> SetpointTimeControl {
+            create_time_control(None, Some(1.))
+        }
+
+        #[fixture]
+        fn time_control_advstart_min_max() -> SetpointTimeControl {
+            let setpoint_bounds = SetpointBoundsInput::MinAndMax {
+                setpoint_min: 16.,
+                setpoint_max: 24.,
+                default_to_max: false,
+            };
+            create_time_control(Some(setpoint_bounds), Some(1.))
+        }
+
+        #[rstest]
+        fn test_in_required_period(
+            simulation_time_iterator: SimulationTimeIterator,
+            time_control: SetpointTimeControl,
+            time_control_min: SetpointTimeControl,
+            time_control_max: SetpointTimeControl,
+            time_control_min_max: SetpointTimeControl,
+            time_control_advstart: SetpointTimeControl,
+            time_control_advstart_min_max: SetpointTimeControl,
+        ) {
+            let expected = [true, false, false, true, false, true, true, true];
+            for t_it in simulation_time_iterator {
+                assert_eq!(
+                    time_control.in_required_period(&t_it).unwrap(),
+                    expected[t_it.index]
+                );
+                assert_eq!(
+                    time_control_min.in_required_period(&t_it).unwrap(),
+                    expected[t_it.index]
+                );
+                assert_eq!(
+                    time_control_max.in_required_period(&t_it).unwrap(),
+                    expected[t_it.index]
+                );
+                assert_eq!(
+                    time_control_min_max.in_required_period(&t_it).unwrap(),
+                    expected[t_it.index]
+                );
+                assert_eq!(
+                    time_control_advstart.in_required_period(&t_it).unwrap(),
+                    expected[t_it.index]
+                );
+                assert_eq!(
+                    time_control_advstart_min_max
+                        .in_required_period(&t_it)
+                        .unwrap(),
+                    expected[t_it.index]
+                );
+            }
+        }
+    }
     #[fixture]
     pub fn setpoint_schedule() -> Vec<Option<f64>> {
         vec![
