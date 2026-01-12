@@ -1695,7 +1695,7 @@ mod tests {
                 1.,
                 setpoint_bounds,
                 duration_advanced_start,
-                1.,
+                1., // simulation_time.step_in_hours()
             )
         }
 
@@ -1755,29 +1755,41 @@ mod tests {
             for t_it in simulation_time_iterator {
                 assert_eq!(
                     time_control.in_required_period(&t_it).unwrap(),
-                    expected[t_it.index]
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with no min or max set, iteration {}",
+                    t_it.index + 1
                 );
                 assert_eq!(
                     time_control_min.in_required_period(&t_it).unwrap(),
-                    expected[t_it.index]
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with min set, iteration {}",
+                    t_it.index + 1
                 );
                 assert_eq!(
                     time_control_max.in_required_period(&t_it).unwrap(),
-                    expected[t_it.index]
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with max set, iteration {}",
+                    t_it.index + 1
                 );
                 assert_eq!(
                     time_control_min_max.in_required_period(&t_it).unwrap(),
-                    expected[t_it.index]
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with min and max set, iteration {}",
+                    t_it.index + 1
                 );
                 assert_eq!(
                     time_control_advstart.in_required_period(&t_it).unwrap(),
-                    expected[t_it.index]
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with advanced start, iteration {}",
+                    t_it.index + 1
                 );
                 assert_eq!(
                     time_control_advstart_min_max
                         .in_required_period(&t_it)
                         .unwrap(),
-                    expected[t_it.index]
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with advanced start, iteration {}",
+                    t_it.index + 1
                 );
             }
         }
