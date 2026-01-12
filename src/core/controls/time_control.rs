@@ -1676,10 +1676,11 @@ mod tests {
         }
 
         fn create_time_control(
+            schedule: Option<Vec<Option<f64>>>,
             setpoint_bounds: Option<SetpointBoundsInput>,
             duration_advanced_start: Option<f64>,
         ) -> SetpointTimeControl {
-            let schedule = vec![
+            let schedule = schedule.unwrap_or(vec![
                 Some(21.),
                 None,
                 None,
@@ -1688,7 +1689,7 @@ mod tests {
                 Some(21.),
                 Some(25.),
                 Some(15.),
-            ];
+            ]);
             SetpointTimeControl::new(
                 schedule,
                 0,
@@ -1701,19 +1702,19 @@ mod tests {
 
         #[fixture]
         fn time_control() -> SetpointTimeControl {
-            create_time_control(None, None)
+            create_time_control(None, None, None)
         }
 
         #[fixture]
         fn time_control_min() -> SetpointTimeControl {
             let setpoint_bounds = SetpointBoundsInput::MinOnly { setpoint_min: 16. };
-            create_time_control(Some(setpoint_bounds), None)
+            create_time_control(None, Some(setpoint_bounds), None)
         }
 
         #[fixture]
         fn time_control_max() -> SetpointTimeControl {
             let setpoint_bounds = SetpointBoundsInput::MaxOnly { setpoint_max: 24. };
-            create_time_control(Some(setpoint_bounds), None)
+            create_time_control(None, Some(setpoint_bounds), None)
         }
 
         #[fixture]
@@ -1723,12 +1724,12 @@ mod tests {
                 setpoint_max: 24.,
                 default_to_max: false,
             };
-            create_time_control(Some(setpoint_bounds), None)
+            create_time_control(None, Some(setpoint_bounds), None)
         }
 
         #[fixture]
         fn time_control_advstart() -> SetpointTimeControl {
-            create_time_control(None, Some(1.))
+            create_time_control(None, None, Some(1.))
         }
 
         #[fixture]
@@ -1738,7 +1739,7 @@ mod tests {
                 setpoint_max: 24.,
                 default_to_max: false,
             };
-            create_time_control(Some(setpoint_bounds), Some(1.))
+            create_time_control(None, Some(setpoint_bounds), Some(1.))
         }
 
         #[rstest]
@@ -1840,6 +1841,25 @@ mod tests {
                     t_it.index + 1
                 );
             }
+        }
+
+        #[rstest]
+        fn test_is_on_lookahead(
+            simulation_time_iterator: SimulationTimeIterator,
+            time_control: SetpointTimeControl,
+            time_control_min: SetpointTimeControl,
+            time_control_max: SetpointTimeControl,
+            time_control_min_max: SetpointTimeControl,
+            time_control_advstart: SetpointTimeControl,
+            time_control_advstart_min_max: SetpointTimeControl,
+        ) {
+            let schedule = vec![None; 24];
+            let control = create_time_control(Some(schedule), None, Some(30.));
+            assert!(!control.is_on(&simulation_time_iterator.current_iteration()));
+
+            let schedule = vec![Some(20.); 24];
+            let control = create_time_control(Some(schedule), None, None);
+            assert!(control.is_on(&simulation_time_iterator.current_iteration()));
         }
     }
 
