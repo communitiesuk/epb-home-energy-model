@@ -4162,14 +4162,14 @@ impl HeatPump {
                     .get_mut(&("energy_delivered_H5".into(), Some("kWh".into())))
                     .unwrap() = ResultParamValue::Empty;
             } else {
-                results_annual
-                    .get_mut(service_name)
-                    .unwrap()
-                    .insert(("energy_delivered_H5".into(), Some("kWh".into())), results_per_timestep[service_name.as_str()]
+                results_annual.get_mut(service_name).unwrap().insert(
+                    ("energy_delivered_H5".into(), Some("kWh".into())),
+                    results_per_timestep[service_name.as_str()]
                         [&("energy_delivered_H5".into(), Some("kWh".into()))]
                         .iter()
                         .cloned()
-                        .sum::<ResultParamValue>());
+                        .sum::<ResultParamValue>(),
+                );
 
                 if results_annual["Overall"][&("energy_delivered_H5".into(), Some("kWh".into()))]
                     != ResultParamValue::Empty
@@ -4410,7 +4410,11 @@ impl HeatPumpEnergyCalculation {
                     .expect("The cop op cond value is expected to have been calculated."),
             ),
             "time_running_full_load" => ResultParamValue::Number(self.time_running_full_load),
-            "time_running_part_load" => ResultParamValue::Number(self.time_running_part_load.expect("The time_running_part_load value is expected to have been calculated.")),
+            "time_running_part_load" => {
+                ResultParamValue::Number(self.time_running_part_load.expect(
+                    "The time_running_part_load value is expected to have been calculated.",
+                ))
+            }
             "load_ratio" => ResultParamValue::Number(self.load_ratio),
             "hp_operating_in_onoff_mode" => {
                 ResultParamValue::Boolean(self.hp_operating_in_onoff_mode)
@@ -11320,28 +11324,55 @@ mod tests {
     // skipping Python's test_timestep_end_extract_energy due to mocking
 
     #[rstest]
-    fn test_output_detailed_results_water(external_conditions: ExternalConditions,
-                                          simulation_time_for_heat_pump: SimulationTime, energy_supply: EnergySupply) {
+    fn test_output_detailed_results_water(
+        external_conditions: ExternalConditions,
+        simulation_time_for_heat_pump: SimulationTime,
+        energy_supply: EnergySupply,
+    ) {
         let input = create_heat_pump_input_from_json(None, None);
-        let heat_pump = Arc::new(Mutex::new(HeatPump::new(
-            &input,
-            Arc::from(RwLock::from(energy_supply)),
-            "HeatPump_auxiliary: hp",
-            simulation_time_for_heat_pump.step,
-            Arc::new(external_conditions),
-            2,
-            None,
-            None,
-            true,
-            None,
-            None,
-            create_temp_internal_air_fn(20.),
-        ).unwrap()));
+        let heat_pump = Arc::new(Mutex::new(
+            HeatPump::new(
+                &input,
+                Arc::from(RwLock::from(energy_supply)),
+                "HeatPump_auxiliary: hp",
+                simulation_time_for_heat_pump.step,
+                Arc::new(external_conditions),
+                2,
+                None,
+                None,
+                true,
+                None,
+                None,
+                create_temp_internal_air_fn(20.),
+            )
+            .unwrap(),
+        ));
 
-        HeatPump::create_service_connection(heat_pump.clone(), "servicetimestep_demand_energy").unwrap();
+        HeatPump::create_service_connection(heat_pump.clone(), "servicetimestep_demand_energy")
+            .unwrap();
 
         for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
-            heat_pump.lock().demand_energy("servicetimestep_demand_energy", &HeatingServiceType::DomesticHotWaterRegular, 5., Some(330.), 330., 340., design_flow_temp_op_cond_k(55.), 1560., true, t_it, Some(TempSpreadCorrectionArg::Float(1.)), None, None, None, None, None).unwrap();
+            heat_pump
+                .lock()
+                .demand_energy(
+                    "servicetimestep_demand_energy",
+                    &HeatingServiceType::DomesticHotWaterRegular,
+                    5.,
+                    Some(330.),
+                    330.,
+                    340.,
+                    design_flow_temp_op_cond_k(55.),
+                    1560.,
+                    true,
+                    t_it,
+                    Some(TempSpreadCorrectionArg::Float(1.)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
 
             heat_pump.lock().timestep_end(t_idx).unwrap();
         }

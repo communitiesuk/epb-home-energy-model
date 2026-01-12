@@ -93,6 +93,17 @@ impl TypedScheduleEvent {
     }
 }
 
+impl From<&TypedScheduleEvent> for WaterHeatingEvent {
+    fn from(item: &TypedScheduleEvent) -> WaterHeatingEvent {
+        WaterHeatingEvent {
+            start: item.start,
+            duration: item.duration,
+            volume: item.volume,
+            temperature: item.temperature,
+        }
+    }
+}
+
 #[cfg(test)]
 impl TryFrom<&Value> for ScheduleEvent {
     type Error = anyhow::Error;
