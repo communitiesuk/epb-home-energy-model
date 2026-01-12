@@ -1,15 +1,12 @@
-use crate::core::energy_supply;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
-use crate::core::heating_systems::instant_elec_heater;
-use crate::core::heating_systems::storage_tank::{HotWaterStorageTank, StorageTank};
 use crate::core::heating_systems::wwhrs::Wwhrs;
-use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
+use crate::core::pipework::{self, PipeworkLocation, PipeworkSimple, Pipeworkesque};
 use crate::core::schedule::{TypedScheduleEvent, WaterScheduleEventType};
 use crate::core::units::{MILLIMETRES_IN_METRE, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::bath::Bath;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::{
-    water_demand_to_kwh, CallableGetHotWaterTemperature, WaterEventResult,
+    water_demand_to_kwh, CallableGetHotWaterTemperature, WaterEventResult, WaterEventResultType,
 };
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
 use crate::core::water_heat_demand::shower::Shower;
@@ -43,7 +40,7 @@ pub struct DomesticHotWaterDemand {
     source_supplying_outlet: HashMap<(OutletType, String), String>,
     hot_water_distribution_pipework: Vec<PipeworkSimple>,
     event_schedules: EventSchedule,
-    pre_heated_water_sources: IndexMap<String, HotWaterSource>
+    pre_heated_water_sources: IndexMap<String, HotWaterSource>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -88,7 +85,7 @@ impl TappingPoint<'_> {
             }
         }
     }
-    
+
     pub fn get_cold_water_source(&self) -> &ColdWaterSource {
         match self {
             TappingPoint::Shower(shower) => shower.get_cold_water_source(),
@@ -217,7 +214,7 @@ impl DomesticHotWaterDemand {
             source_supplying_outlet,
             hot_water_distribution_pipework,
             event_schedules,
-            pre_heated_water_sources
+            pre_heated_water_sources,
         })
     }
 
@@ -374,24 +371,44 @@ impl DomesticHotWaterDemand {
     pub fn hot_water_demand<'a>(
         &self,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(IndexMap<String, f64>, IndexMap<String, f64>, IndexMap<String, u32>, IndexMap<String, f64>, IndexMap<String, Vec<WaterEventResult>>)> {
+    ) -> anyhow::Result<(
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, u32>,
+        IndexMap<String, f64>,
+        IndexMap<String, Vec<WaterEventResult>>,
+    )> {
         let hot_water_source_keys = self.hot_water_sources.keys();
 
-        let mut hw_demand_volume: IndexMap<String, f64> =
-            hot_water_source_keys.clone().map(|key| (key.clone(), 0.)).collect();
-        let mut hw_energy_demand: IndexMap<String, f64> =
-            hot_water_source_keys.clone().map(|key| (key.clone(), 0.)).collect();
-        let mut hw_duration: IndexMap<String, f64> =
-            hot_water_source_keys.clone().map(|key| (key.clone(), 0.)).collect();
-        let mut all_events: IndexMap<String, u32> =
-            hot_water_source_keys.clone().map(|key| (key.clone(), 0)).collect();
+        let mut hw_demand_volume: IndexMap<String, f64> = hot_water_source_keys
+            .clone()
+            .map(|key| (key.clone(), 0.))
+            .collect();
+        let mut hw_energy_demand: IndexMap<String, f64> = hot_water_source_keys
+            .clone()
+            .map(|key| (key.clone(), 0.))
+            .collect();
+        let mut hw_duration: IndexMap<String, f64> = hot_water_source_keys
+            .clone()
+            .map(|key| (key.clone(), 0.))
+            .collect();
+        let mut all_events: IndexMap<String, u32> = hot_water_source_keys
+            .clone()
+            .map(|key| (key.clone(), 0))
+            .collect();
 
         hw_demand_volume.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), 0.);
         hw_energy_demand.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), 0.);
         hw_duration.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), 0.);
         all_events.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), 0);
 
-        // TODO volume_hot_water_left_in_pipework
+        let mut volume_hot_water_left_in_pipework: IndexMap<String, f64> = hot_water_source_keys
+            .clone()
+            .map(|key| (key.clone(), 0.))
+            .collect();
+        for hws_name in self.hot_water_sources.keys() {
+            todo!("hot_water_distribution_pipework has changed from a vec to an indexmap")
+        }
 
         // Events have been organised now so that they are structured by simple step t_idx and
         // sorted for each time step from start to end.
@@ -416,10 +433,17 @@ impl DomesticHotWaterDemand {
 
                 let (
                     hot_water_source_name,
+                    hot_water_source,
                     hw_demand_i,
                     hw_demand_target_i,
                     energy_supply_conn_unmet_demand,
-                ): (String, Option<f64>, f64, Option<&EnergySupplyConnection>) =
+                ): (
+                    String,
+                    Option<&HotWaterSource>,
+                    Option<f64>,
+                    f64,
+                    Option<&EnergySupplyConnection>,
+                ) =
                     match tapping_point {
                         TappingPoint::Shower(shower)
                             if matches!(shower, Shower::InstantElectricShower(_)) =>
@@ -431,6 +455,7 @@ impl DomesticHotWaterDemand {
                                     .hot_water_demand(event.into(), simtime)?;
                                 (
                                     hot_water_source_name.into(),
+                                    None,
                                     Some(hw_demand_i),
                                     hw_demand_target_i,
                                     None,
@@ -444,10 +469,9 @@ impl DomesticHotWaterDemand {
                                 .source_supplying_outlet
                                 .get(&(tapping_point_type, tapping_point_name))
                                 .unwrap();
-                            let hot_water_source = self
-                                .hot_water_sources
-                                .get(hot_water_source_name)
-                                .unwrap();
+
+                            let hot_water_source =
+                                self.hot_water_sources.get(hot_water_source_name).unwrap();
 
                             let energy_supply_conn_unmet_demand = self
                                 .energy_supply_conn_unmet_demand
@@ -455,11 +479,12 @@ impl DomesticHotWaterDemand {
 
                             let volume_required_already = hw_demand_volume[hot_water_source_name];
 
-                            let func = move |volume_required:f64| -> f64 {
+                            let func = move |volume_required: f64| -> f64 {
                                 self.temp_hot_water(
-                                        hot_water_source.clone(),
-                                        volume_required_already,
-                                        volume_required.clone())
+                                    hot_water_source.clone(),
+                                    volume_required_already,
+                                    volume_required.clone(),
+                                )
                             };
 
                             let func_temp_hot_water: Box<dyn Fn(f64) -> f64> = todo!(); // Box::new(func);
@@ -469,6 +494,7 @@ impl DomesticHotWaterDemand {
 
                             (
                                 hot_water_source_name.clone(),
+                                Some(hot_water_source),
                                 hw_demand_i,
                                 hw_demand_target_i,
                                 energy_supply_conn_unmet_demand,
@@ -476,57 +502,86 @@ impl DomesticHotWaterDemand {
                         }
                     };
 
-                    let cold_water_source = tapping_point.get_cold_water_source();
+                let cold_water_source = tapping_point.get_cold_water_source();
 
-                    let cold_water_temperature = if hw_demand_i.is_some() {
-                        let hw_demand_i = hw_demand_i.unwrap();
-                        *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() += hw_demand_i;
-                        let list_temperature_volume = cold_water_source.get_temp_cold_water(hw_demand_target_i - hw_demand_i, simtime)?;
-                        let sum_t_by_v: f64 = list_temperature_volume.iter().map(|(t, v)| { t * v }).sum();
-                        let sum_v: f64 = list_temperature_volume.iter().map(|(t, v)| { v }).sum();
-                        sum_t_by_v / sum_v
-                    } else {
-                        let list_temperature_volume = cold_water_source.get_temp_cold_water(hw_demand_target_i, simtime)?;
-                        let sum_t_by_v: f64 = list_temperature_volume.iter().map(|(t, v)| { t * v }).sum();
-                        let sum_v: f64 = list_temperature_volume.iter().map(|(t, v)| { v }).sum();
-                        sum_t_by_v / sum_v
-                    };
+                let cold_water_temperature = if hw_demand_i.is_some() {
+                    let hw_demand_i = hw_demand_i.unwrap();
+                    *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() += hw_demand_i;
+                    let list_temperature_volume = cold_water_source
+                        .get_temp_cold_water(hw_demand_target_i - hw_demand_i, simtime)?;
+                    let sum_t_by_v: f64 = list_temperature_volume.iter().map(|(t, v)| t * v).sum();
+                    let sum_v: f64 = list_temperature_volume.iter().map(|(t, v)| v).sum();
+                    sum_t_by_v / sum_v
+                } else {
+                    let list_temperature_volume =
+                        cold_water_source.get_temp_cold_water(hw_demand_target_i, simtime)?;
+                    let sum_t_by_v: f64 = list_temperature_volume.iter().map(|(t, v)| t * v).sum();
+                    let sum_v: f64 = list_temperature_volume.iter().map(|(t, v)| v).sum();
+                    sum_t_by_v / sum_v
+                };
 
-                    let hw_energy_demand_i = water_demand_to_kwh(hw_demand_target_i, event.temperature, cold_water_temperature);
-                    *hw_duration.get_mut(&hot_water_source_name).unwrap() += event.duration.unwrap();
-                    *all_events.get_mut(&hot_water_source_name).unwrap() += 1;
+                let hw_energy_demand_i = water_demand_to_kwh(
+                    hw_demand_target_i,
+                    event.temperature,
+                    cold_water_temperature,
+                );
+                *hw_duration.get_mut(&hot_water_source_name).unwrap() += event.duration.unwrap();
+                *all_events.get_mut(&hot_water_source_name).unwrap() += 1;
 
-                    if hw_demand_i.is_none() && energy_supply_conn_unmet_demand.is_some() {
-                        // TODO check simtime.index is correct to pass here
-                        energy_supply_conn_unmet_demand.unwrap().demand_energy(hw_energy_demand_i, simtime.index)?;
-                    }
-
-                    // If event demand cannot be met, skip to the next one
-                    if hw_demand_i.is_none() {
-                        continue;
-                    }
-
-                    let event_result = WaterEventResult {
-                        event_result_type: event.event_type,
-                        temperature_warm: event.temperature,
-                        volume_warm: hw_demand_target_i,
-                        volume_hot: hw_demand_i.unwrap(),
-                    };
-
-                    // Add pipework flushes after every event (except for IES)
-                    let volume_hot_water_left = volume_hot_water_left_in_pipework.get(hot_water_source_name)
-                    usage_events_with_flushes.get_mut(&hot_water_source_name).unwrap().push(event.into());
-
-                    if event_result.volume_hot.abs() > 1e-10 && volume_hot_water_left > 0. && hot_water_source.is_some() {
-                        let volume_required_already = hw_demand_volume.get(&hot_water_source_name).unwrap();
-                        let volume_required = volume_hot_water_left;
-                        let temperature_pipe_flush = self.temp_hot_water(hot_water_source.unwrap(), volume_required_already, volume_required)
-                        usage_events_with_flushes.get_mut(hot_water_source_name).unwrap().push(WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: temperature_pipe_flush, volume_warm: volume_required, volume_hot: volume_required })
-                    }
-                    //  TODO (from Python)   Enhance analysis for overlapping events
-                    // Part of draft code for future overlapping analysis of events
-                    // For pipework losses count only none overlapping events
+                if hw_demand_i.is_none() && energy_supply_conn_unmet_demand.is_some() {
+                    // TODO check simtime.index is correct to pass here
+                    energy_supply_conn_unmet_demand
+                        .unwrap()
+                        .demand_energy(hw_energy_demand_i, simtime.index)?;
                 }
+
+                // If event demand cannot be met, skip to the next one
+                if hw_demand_i.is_none() {
+                    continue;
+                }
+
+                let event_result = WaterEventResult {
+                    event_result_type: event.event_type.into(),
+                    temperature_warm: event.temperature,
+                    volume_warm: hw_demand_target_i,
+                    volume_hot: hw_demand_i.unwrap(),
+                };
+
+                // Add pipework flushes after every event (except for IES)
+                let volume_hot_water_left = *volume_hot_water_left_in_pipework
+                    .get(&hot_water_source_name)
+                    .unwrap();
+                usage_events_with_flushes
+                    .get_mut(&hot_water_source_name)
+                    .unwrap()
+                    .push(event.into());
+
+                if event_result.volume_hot.abs() > 1e-10
+                    && volume_hot_water_left > 0.
+                    && hot_water_source.is_some()
+                {
+                    let volume_required_already =
+                        *hw_demand_volume.get(&hot_water_source_name).unwrap();
+                    let volume_required = volume_hot_water_left;
+                    let temperature_pipe_flush = self.temp_hot_water(
+                        hot_water_source.unwrap().clone(),
+                        volume_required_already,
+                        volume_required,
+                    );
+                    usage_events_with_flushes
+                        .get_mut(&hot_water_source_name)
+                        .unwrap()
+                        .push(WaterEventResult {
+                            event_result_type: WaterEventResultType::PipeFlush,
+                            temperature_warm: temperature_pipe_flush,
+                            volume_warm: volume_required,
+                            volume_hot: volume_required,
+                        })
+                }
+                //  TODO (from Python)   Enhance analysis for overlapping events
+                // Part of draft code for future overlapping analysis of events
+                // For pipework losses count only none overlapping events
+            }
         }
 
         // TODO (from Python) Refine pipework losses by considering overlapping of events
@@ -540,7 +595,13 @@ impl DomesticHotWaterDemand {
         // - number of events in timestep
         // - hot water energy demand (kWh)
         // - usage_events updated to reflect pipework volumes and bath durations
-        Ok((hw_demand_volume, hw_duration, all_events, hw_energy_demand, usage_events_with_flushes))
+        Ok((
+            hw_demand_volume,
+            hw_duration,
+            all_events,
+            hw_energy_demand,
+            usage_events_with_flushes,
+        ))
     }
 
     pub fn calc_water_heating(
@@ -548,17 +609,36 @@ impl DomesticHotWaterDemand {
         simtime: SimulationTimeIteration,
         internal_air_temperature: f64,
         external_air_temperature: f64,
-    ) -> anyhow::Result<(IndexMap<String, f64>, IndexMap<String, f64>, IndexMap<String, u32>, IndexMap<String, f64>, IndexMap<String, f64>IndexMap<String, f64>IndexMap<String, f64>IndexMap<String, f64>IndexMap<String, f64>IndexMap<String, f64>)> {
-        let (hw_demand_vol, hw_duration, no_events, hw_energy_demand_at_tapping_points, usage_events) = self.hot_water_demand(simtime)?;
+    ) -> anyhow::Result<(
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, u32>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+    )> {
+        let (
+            hw_demand_vol,
+            hw_duration,
+            no_events,
+            hw_energy_demand_at_tapping_points,
+            usage_events,
+        ) = self.hot_water_demand(simtime)?;
 
         // Running heat sources of pre-heated tanks and updating thermal losses, etc.
         for hot_water_source in self.pre_heated_water_sources.values() {
             match hot_water_source {
                 HotWaterSource::PreHeated(storage_tank) => {
                     storage_tank.demand_hot_water(None, simtime);
-                },
+                }
                 // TODO is this true? can we just always call demand_hot_water regardless?
-                _ => { bail!("Preheated hot water sources must be storage tanks"); }
+                _ => {
+                    bail!("Preheated hot water sources must be storage tanks");
+                }
             }
         }
 
@@ -569,25 +649,51 @@ impl DomesticHotWaterDemand {
         let primary_pw_losses: IndexMap<String, f64> = Default::default();
         let storage_losses: IndexMap<String, f64> = Default::default();
 
-        let mut all_keys: Vec<&String> = self.hot_water_sources.keys().into_iter().collect();
-        all_keys.push(ELECTRIC_SHOWERS_HWS_NAME);
+        let mut all_keys: Vec<String> = self
+            .hot_water_sources
+            .keys()
+            .into_iter()
+            .map(|x| *x)
+            .collect();
+        all_keys.push(ELECTRIC_SHOWERS_HWS_NAME.into());
 
         for hws_name in all_keys {
-            let (pw_losses_internal_for_hws, pw_losses_external_for_hws, gains_internal_dhw_use_for_hws) = self.pipework_losses_and_internal_gains_from_hot_water_events();
-            pw_losses_total.insert(*hws_name, pw_losses_internal_for_hws + pw_losses_external_for_hws);
+            let (
+                pw_losses_internal_for_hws,
+                pw_losses_external_for_hws,
+                gains_internal_dhw_use_for_hws,
+            ) = self.pipework_losses_and_internal_gains_from_hot_water_events(
+                hws_name,
+                *usage_events.get(&hws_name).unwrap(),
+                internal_air_temperature,
+                external_air_temperature,
+            );
+            pw_losses_total.insert(
+                hws_name,
+                pw_losses_internal_for_hws + pw_losses_external_for_hws,
+            );
 
             // TODO check timestep is correct here
-            let gains_internal_dhw_for_hws = (pw_losses_internal_for_hws + gains_internal_dhw_use_for_hws) * WATTS_PER_KILOWATT / simtime.timestep;
-            gains_internal_dhw.insert(*hws_name,gains_internal_dhw_for_hws);
+            let gains_internal_dhw_for_hws = (pw_losses_internal_for_hws
+                + gains_internal_dhw_use_for_hws)
+                * (WATTS_PER_KILOWATT as f64)
+                / simtime.timestep;
+            gains_internal_dhw.insert(hws_name, gains_internal_dhw_for_hws);
         }
 
         for (hws_name, hws) in self.hot_water_sources {
             // Filtering out IES events that don't get added a 'hot_volume' when processing
             // the dhw_demand calculation
-            let filtered_events: Vec<&WaterEventResult> = usage_events.get(&hws_name).unwrap().iter().filter(|event| { event.volume_hot.abs() > 1e-10 }).collect();
+            let filtered_events: Vec<WaterEventResult> = usage_events
+                .get(&hws_name)
+                .unwrap()
+                .iter()
+                .filter(|event| event.volume_hot.abs() > 1e-10)
+                .map(|x| *x)
+                .collect();
 
             // TODO update demand_hot_water to accept usage_events
-            hw_energy_output.insert(hws_name, hws.demand_hot_water(filtered_events, simtime));
+            hw_energy_output.insert(hws_name, hws.demand_hot_water(filtered_events, simtime)?);
 
             // Convert from litres to kWh
             // Find underlying cold water source, ignoring pre-heat tanks
@@ -596,12 +702,19 @@ impl DomesticHotWaterDemand {
             let cold_water_source = hws.get_cold_water_source();
             hw_energy_demand_at_hot_water_source.insert(hws_name, 0.);
             for event in filtered_events {
-                let list_temperature_volume = cold_water_source.get_temp_cold_water(event.volume_hot, simtime)?;
-                let sum_t_by_v = list_temperature_volume.iter().map(|(t, v)| { t * v }).sum();
-                let sum_v = list_temperature_volume.iter().map(|(_, v)| { v }).sum();
+                let list_temperature_volume =
+                    cold_water_source.get_temp_cold_water(event.volume_hot, simtime)?;
+                let sum_t_by_v = list_temperature_volume.iter().map(|(t, v)| t * v).sum();
+                let sum_v = list_temperature_volume.iter().map(|(_, v)| v).sum();
                 let cold_water_temperature = sum_t_by_v / sum_v;
 
-                *hw_energy_demand_at_hot_water_source.get_mut(&hws_name).unwrap() += water_demand_to_kwh(event.volume_warm, event.temperature_warm, cold_water_temperature);
+                *hw_energy_demand_at_hot_water_source
+                    .get_mut(&hws_name)
+                    .unwrap() += water_demand_to_kwh(
+                    event.volume_warm,
+                    event.temperature_warm,
+                    cold_water_temperature,
+                );
             }
 
             let internal_gains = hws.internal_gains();
@@ -624,7 +737,7 @@ impl DomesticHotWaterDemand {
             pw_losses_total,
             primary_pw_losses,
             storage_losses,
-            gains_internal_dhw
+            gains_internal_dhw,
         ))
     }
 
@@ -665,6 +778,17 @@ impl DomesticHotWaterDemand {
         let pipework_heat_loss_external = no_of_hw_events as f64 * cool_down_loss_external;
 
         (pipework_heat_loss_internal, pipework_heat_loss_external)
+    }
+
+    fn pipework_losses_and_internal_gains_from_hot_water_events(
+        &self,
+        hot_water_source_name: String,
+        usage_events: Vec<WaterEventResult>,
+        internal_air_temperature: f64,
+        external_air_temperature: f64,
+    ) -> (f64, f64, f64) {
+        // not yet migrated
+        todo!();
     }
 }
 

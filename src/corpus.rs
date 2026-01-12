@@ -58,10 +58,8 @@ use crate::core::space_heat_demand::zone::{
 };
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::core::water_heat_demand::dhw_demand::{
-    DemandVolTargetKey, DomesticHotWaterDemand, DomesticHotWaterDemandData, VolumeReference,
-};
-use crate::core::water_heat_demand::misc::water_demand_to_kwh;
+use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
+use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
@@ -4776,28 +4774,25 @@ impl HotWaterSource {
 
     pub fn demand_hot_water(
         &self,
-        _vol_demand_target: IndexMap<DemandVolTargetKey, VolumeReference>,
-        _simulation_time_iteration: SimulationTimeIteration,
+        usage_events: Vec<WaterEventResult>,
+        simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         Ok(match self {
-            HotWaterSource::PreHeated(_) => {
-                // StorageTank does not match the same method signature or return type as all other Hot Water sources
-                panic!("demand_hot_water for HotWaterSource::StorageTank should be called directly on the HotWaterSource::StorageTank");
+            HotWaterSource::PreHeated(hot_water_storage_tank) => {
+                hot_water_storage_tank.demand_hot_water(Some(usage_events), simtime)?
             }
-            HotWaterSource::CombiBoiler(ref _source) => {
-                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
+            HotWaterSource::CombiBoiler(boiler_service_water_combi) => {
+                boiler_service_water_combi.demand_hot_water(usage_events, simtime)?
             }
-            // source
-            //     .demand_hot_water(vol_demand_target, simulation_time_iteration)
-            //     .expect("Combi boiler could not calc demand hot water."),
-            HotWaterSource::PointOfUse(ref _source) => {
-                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
+            HotWaterSource::PointOfUse(point_of_use) => {
+                point_of_use.demand_hot_water(usage_events, &simtime)?
             }
-            HotWaterSource::HeatNetwork(ref _source) => {
-                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
+            HotWaterSource::HeatNetwork(heat_network_service_water_direct) => {
+                heat_network_service_water_direct.demand_hot_water(usage_events, simtime)?
             }
-            HotWaterSource::HeatBattery(_source) => {
-                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
+            HotWaterSource::HeatBattery(heat_battery_pcm_service_water_direct) => {
+                heat_battery_pcm_service_water_direct
+                    .demand_hot_water(Some(usage_events), simtime)?
             }
         })
     }
@@ -4833,30 +4828,36 @@ impl HotWaterSource {
             }
         }
     }
-    
+
     // Calls internal_gains on hot water source where available
     pub(crate) fn internal_gains(&self) -> Option<f64> {
         match &self {
             HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
                 HotWaterStorageTank::StorageTank(rw_lock) => Some(rw_lock.read().internal_gains()),
-                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => Some(rw_lock.read().internal_gains()),
+                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
+                    Some(rw_lock.read().internal_gains())
+                }
             },
-            HotWaterSource::CombiBoiler(boiler_service_water_combi) => Some(boiler_service_water_combi.internal_gains()),
+            HotWaterSource::CombiBoiler(boiler_service_water_combi) => {
+                Some(boiler_service_water_combi.internal_gains())
+            }
             HotWaterSource::PointOfUse(_) => None,
             HotWaterSource::HeatNetwork(_) => None,
             HotWaterSource::HeatBattery(_) => None,
         }
     }
-    
+
     // Calls get_losses_from_primary_pipework_and_storage on hot water source where available, otherwise returns 0s.
     pub(crate) fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
         match &self {
             HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
-                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().get_losses_from_primary_pipework_and_storage(),
+                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
+                    .read()
+                    .get_losses_from_primary_pipework_and_storage(),
                 _ => (0., 0.),
             },
-            _ => (0., 0.)
-        };
+            _ => (0., 0.),
+        }
     }
 }
 

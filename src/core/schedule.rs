@@ -1,4 +1,7 @@
-use crate::input::{WaterHeatingEvent, WaterHeatingEventType};
+use crate::{
+    core::water_heat_demand::misc::WaterEventResult,
+    input::{WaterHeatingEvent, WaterHeatingEventType},
+};
 use anyhow::{anyhow, bail};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 #[cfg(test)]
@@ -100,6 +103,19 @@ impl From<&TypedScheduleEvent> for WaterHeatingEvent {
             duration: item.duration,
             volume: item.volume,
             temperature: item.temperature,
+        }
+    }
+}
+
+impl From<&TypedScheduleEvent> for WaterEventResult {
+    fn from(item: &TypedScheduleEvent) -> WaterEventResult {
+        WaterEventResult {
+            event_result_type: item.event_type.into(),
+
+            // TODO check these are correct
+            temperature_warm: item.temperature,
+            volume_warm: item.warm_volume.unwrap(),
+            volume_hot: item.warm_volume.unwrap(),
         }
     }
 }
