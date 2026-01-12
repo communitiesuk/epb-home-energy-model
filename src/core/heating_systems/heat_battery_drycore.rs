@@ -460,7 +460,44 @@ impl HeatStorageDryCore {
                     .map(|tc| tc.min(target_charge_hhrsh))
             }
             ControlLogicType::HeatBattery => {
-                unimplemented!("HeatBattery control logic not implemented for ESH")
+                // Implements the "HEAT_BATTERY" control logic
+                // A 'high heat retention storage battery' is one with heat retention not less
+                // than 45% measured according to BS EN 60531. It incorporates a timer
+                // and fan to control the heat output. It is also able to estimate
+                // the next day's heating demand based on external temperature, room temperature
+                // settings and heat demand periods.
+
+                let energy_to_store = charge_control.energy_to_store(
+                    self.demand_met() + self.demand_unmet(),
+                    self.get_zone_setpoint(),
+                    simulation_time_iteration,
+                );
+
+                // Python here allows for energy_to_store to be optional - here it's not, so skipping this logic
+
+                let target_charge_hb = if energy_to_store > 0. {
+                    let heat_retention_ratio = self.heat_retention_ratio;
+
+                    let energy_stored = self.state_of_charge() * self.storage_capacity;
+
+                    let energy_to_add = if self.heat_retention_ratio <= 0. {
+                        self.storage_capacity - energy_stored
+                    } else {
+                        (1.0 / heat_retention_ratio) * (energy_to_store - energy_stored)
+                    };
+
+                    let target_charge_hb =
+                        self.state_of_charge() + energy_to_add / self.storage_capacity;
+                    clip(target_charge_hb, 0., 1.)
+                } else {
+                    0.
+                };
+
+                // target_charge (from input, or zero when control is off) applied here
+                // is treated as an upper limit for target charge
+                charge_control
+                    .target_charge(simulation_time_iteration, None)
+                    .map(|target_charge| target_charge.min(target_charge_hb))
             }
         }
     }
@@ -512,6 +549,10 @@ impl HeatStorageDryCore {
     fn power_min_func(&self, soc: f64) -> f64 {
         // TODO: confirm this logic - it's quite different from the Python
         np_interp(soc, &self.soc_min_array, &self.power_min_array)
+    }
+
+    fn get_zone_setpoint(&self) -> f64 {
+        self.owner().get_zone_setpoint()
     }
 }
 
