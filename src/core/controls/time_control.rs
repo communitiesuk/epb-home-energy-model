@@ -2409,6 +2409,11 @@ mod tests {
             .unwrap()
         }
 
+        #[fixture]
+        fn charge_control_3() -> ChargeControl {
+            create_charge_control(ControlLogicType::Manual, None, external_conditions()).unwrap()
+        }
+
         #[test]
         fn test_init() {
             let charge_control =
@@ -2660,14 +2665,33 @@ mod tests {
         #[rstest]
         fn test_temp_charge_cut_corr(
             charge_control_1: ChargeControl,
-            simulation_time_for_charge_control: SimulationTime,
+            charge_control_3: ChargeControl,
         ) {
+            let simulation_time_iteration = simulation_time().iter().next().unwrap();
             assert_eq!(
                 charge_control_1
-                    .temp_charge_cut_corr(simulation_time_for_charge_control.iter().next().unwrap())
+                    .temp_charge_cut_corr(simulation_time_iteration)
                     .unwrap(),
                 15.5
             );
+            assert!(charge_control_3
+                .temp_charge_cut_corr(simulation_time_iteration)
+                .is_none())
+        }
+
+        #[rstest]
+        fn test_temp_charge_cut_corr_temp_charge_cut_delta(mut charge_control_1: ChargeControl) {
+            charge_control_1.temp_charge_cut_delta = Some(vec![
+                0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16., 17.,
+                18., 19., 20., 21., 22., 23.,
+            ]);
+
+            for t_it in simulation_time().iter() {
+                assert_eq!(
+                    charge_control_1.temp_charge_cut_corr(t_it).unwrap(),
+                    15.5 + t_it.index as f64
+                );
+            }
         }
     }
 
