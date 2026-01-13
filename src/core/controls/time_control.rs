@@ -2404,6 +2404,19 @@ mod tests {
             create_charge_control(ControlLogicType::Automatic, Some(15.5))
         }
 
+        #[test]
+        fn test_init() {
+            let charge_control = create_charge_control(ControlLogicType::Manual, None);
+            // in Python the checks are against energy_to_store, in Rust heat_retention_data combines data including energy_to_store
+            assert!(charge_control.heat_retention_data.is_none());
+
+            let charge_control = create_charge_control(ControlLogicType::HeatBattery, None);
+            assert_eq!(
+                charge_control.heat_retention_data.unwrap().energy_to_store,
+                (0.).into()
+            )
+        }
+
         #[rstest]
         fn test_is_on_for_charge_control(
             charge_control: ChargeControl,
