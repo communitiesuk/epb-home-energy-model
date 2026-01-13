@@ -2309,9 +2309,9 @@ mod tests {
             ]
         }
 
-        fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
-            ExternalConditions::new(
-                &simulation_time.iter(),
+        fn external_conditions() -> Option<Arc<ExternalConditions>> {
+            Some(Arc::new(ExternalConditions::new(
+                &simulation_time().iter(),
                 vec![
                     19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
                     19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
@@ -2363,7 +2363,7 @@ mod tests {
                     {"start360": 315, "end360": 360}
                 ]))
                 .unwrap(),
-            )
+            )))
         }
 
         fn external_sensor() -> ExternalSensor {
@@ -2380,7 +2380,8 @@ mod tests {
         fn create_charge_control(
             logic_type: ControlLogicType,
             temp_charge_cut: Option<f64>,
-        ) -> ChargeControl {
+            external_conditions: Option<Arc<ExternalConditions>>,
+        ) -> anyhow::Result<ChargeControl> {
             let simulation_time = simulation_time();
             ChargeControl::new(
                 logic_type,
@@ -2391,30 +2392,57 @@ mod tests {
                 vec![Some(1.0), Some(0.8)],
                 temp_charge_cut,
                 None,
-                Some(external_conditions(simulation_time).into()),
+                external_conditions,
                 Some(external_sensor()),
                 None,
             )
-            .unwrap()
         }
 
         #[fixture]
         // In the Pyhon set up code charge_control_1 and charge_control_2 are identical
         fn charge_control() -> ChargeControl {
-            create_charge_control(ControlLogicType::Automatic, Some(15.5))
+            create_charge_control(
+                ControlLogicType::Automatic,
+                Some(15.5),
+                external_conditions(),
+            )
+            .unwrap()
         }
 
         #[test]
         fn test_init() {
-            let charge_control = create_charge_control(ControlLogicType::Manual, None);
+            let charge_control =
+                create_charge_control(ControlLogicType::Manual, None, external_conditions())
+                    .unwrap();
             // in Python the checks are against energy_to_store, in Rust heat_retention_data combines data including energy_to_store
             assert!(charge_control.heat_retention_data.is_none());
 
-            let charge_control = create_charge_control(ControlLogicType::HeatBattery, None);
+            let charge_control =
+                create_charge_control(ControlLogicType::HeatBattery, None, external_conditions())
+                    .unwrap();
             assert_eq!(
                 charge_control.heat_retention_data.unwrap().energy_to_store,
                 (0.).into()
             )
+        }
+
+        #[test]
+        fn test_init_missing_parameters() {
+            // When temp_charge_cut is None
+            for logic_type in [
+                ControlLogicType::Automatic,
+                ControlLogicType::Celect,
+                ControlLogicType::Hhrsh,
+            ] {
+                let charge_control = create_charge_control(logic_type, None, external_conditions());
+                assert!(charge_control.is_err());
+            }
+
+            // When external_conditions is None
+            for logic_type in [ControlLogicType::Hhrsh, ControlLogicType::HeatBattery] {
+                let charge_control = create_charge_control(logic_type, Some(15.5), None);
+                assert!(charge_control.is_err());
+            }
         }
 
         #[rstest]
