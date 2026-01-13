@@ -2483,7 +2483,7 @@ mod tests {
         }
 
         #[rstest]
-        fn test_target_charge(charge_control_1: ChargeControl) {
+        fn test_target_charge_automatic(charge_control_1: ChargeControl) {
             let simulation_time = simulation_time();
             let expected_target_charges = (
                 vec![
@@ -2529,6 +2529,125 @@ mod tests {
                 assert_eq!(
                     charge_control_1.target_charge(t_it, Some(19.5)).unwrap(),
                     expected_target_charges.1[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge_manual(mut charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = vec![
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            ];
+
+            charge_control_1.logic_type = ControlLogicType::Manual;
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge_celect(mut charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = vec![
+                0.0,
+                1.0,
+                0.99,
+                0.98,
+                0.95,
+                0.93,
+                0.9400000000000001,
+                0.675,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            ];
+
+            charge_control_1.logic_type = ControlLogicType::Celect;
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge_automatic_no_sensor(mut charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = vec![
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            ];
+
+            charge_control_1.external_sensor = None;
+            charge_control_1.logic_type = ControlLogicType::Automatic;
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge_celect_no_sensor(mut charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = vec![
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            ];
+
+            charge_control_1.external_sensor = None;
+            charge_control_1.logic_type = ControlLogicType::Celect;
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge_hhrsh(mut charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = vec![
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            ];
+
+            charge_control_1.logic_type = ControlLogicType::Hhrsh;
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges[t_idx],
                     "incorrect target charge returned"
                 );
             }
