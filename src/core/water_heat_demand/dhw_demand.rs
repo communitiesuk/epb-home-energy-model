@@ -69,10 +69,10 @@ pub(crate) enum TappingPoint<'a> {
 }
 
 impl TappingPoint<'_> {
-    pub fn hot_water_demand(
+    pub fn hot_water_demand<'a>(
         &self,
         event: WaterHeatingEvent,
-        func_temp_hot_water: &CallableGetHotWaterTemperature,
+        func_temp_hot_water: &'a CallableGetHotWaterTemperature,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64)> {
         match self {
@@ -369,7 +369,7 @@ impl DomesticHotWaterDemand {
     }
 
     pub fn hot_water_demand<'a>(
-        &self,
+        &'a self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(
         IndexMap<String, f64>,
@@ -487,7 +487,7 @@ impl DomesticHotWaterDemand {
                                 )
                             };
 
-                            let func_temp_hot_water: Box<dyn Fn(f64) -> f64> = todo!(); // Box::new(func);
+                            let func_temp_hot_water: Box<dyn Fn(f64) -> f64 + 'a> = Box::new(func);
 
                             let (hw_demand_i, hw_demand_target_i) = tapping_point
                                 .hot_water_demand(event.into(), &func_temp_hot_water, simtime)?;
