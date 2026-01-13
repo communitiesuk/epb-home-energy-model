@@ -2297,176 +2297,181 @@ mod tests {
         ]
     }
 
-    #[fixture]
-    fn charge_control(
-        simulation_time_for_charge_control: SimulationTime,
-        schedule_for_charge_control: Vec<bool>,
-    ) -> ChargeControl {
-        let external_conditions = ExternalConditions::new(
-            &simulation_time_for_charge_control.iter(),
-            vec![
-                19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
-                19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
-            ],
-            vec![
-                3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
-                3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
-            ],
-            vec![
-                300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
-                190., 200., 320., 330., 340., 350., 355., 315., 5.,
-            ],
-            vec![
-                0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225.,
-                198., 121., 68., 19., 0., 0., 0., 0., 0.,
-            ],
-            vec![
-                0., 0., 0., 0., 0., 0., 7., 53., 63., 164., 339., 242., 315., 577., 385., 285.,
-                332., 126., 7., 0., 0., 0., 0., 0.,
-            ],
-            vec![
-                0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-                0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-            ],
-            51.383,
-            -0.783,
-            0,
-            0,
-            Some(0),
-            1.,
-            Some(1),
-            Some(DaylightSavingsConfig::NotApplicable),
-            false,
-            false,
-            // following starts/ends are corrected from Python tests which erroneously use previous
-            // "start" field instead of "start360" (which has different origin for angle)
-            serde_json::from_value(json!([
-                {"start360": 0, "end360": 45},
-                {"start360": 45, "end360": 90},
-                {"start360": 90, "end360": 135},
-                {"start360": 135, "end360": 180,
-                    "shading": [
-                        {"type": "obstacle", "height": 10.5, "distance": 12}
-                    ]
-                },
-                {"start360": 180, "end360": 225},
-                {"start360": 225, "end360": 270},
-                {"start360": 270, "end360": 315},
-                {"start360": 315, "end360": 360}
-            ]))
-            .unwrap(),
-        );
-        let external_sensor: ExternalSensor = serde_json::from_value(json!({
-            "correlation": [
-                {"temperature": 0.0, "max_charge": 1.0},
-                {"temperature": 10.0, "max_charge": 0.9},
-                {"temperature": 18.0, "max_charge": 0.0}
-            ]
-        }))
-        .unwrap();
+    mod test_charge_control {
+        use super::*;
+        use pretty_assertions::assert_eq;
 
-        ChargeControl::new(
-            ControlLogicType::Automatic,
-            schedule_for_charge_control,
-            &simulation_time_for_charge_control
-                .iter()
-                .current_iteration(),
-            0,
-            1.,
-            vec![Some(1.0), Some(0.8)],
-            Some(15.5),
-            None,
-            Some(external_conditions.into()),
-            Some(external_sensor),
-            None,
-        )
-        .unwrap()
-    }
-
-    #[rstest]
-    fn test_is_on_for_charge_control(
-        charge_control: ChargeControl,
-        simulation_time_for_charge_control: SimulationTime,
-        schedule_for_charge_control: Vec<bool>,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
-            assert_eq!(
-                charge_control.is_on(&t_it),
-                schedule_for_charge_control[t_idx],
-                "incorrect schedule returned"
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_target_charge(
-        charge_control: ChargeControl,
-        simulation_time_for_charge_control: SimulationTime,
-    ) {
-        let expected_target_charges = (
-            vec![
-                0.0,
-                1.0,
-                0.99,
-                0.98,
-                0.95,
-                0.93,
-                0.9400000000000001,
-                0.675,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            ],
-            vec![
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            ],
-        );
-
-        for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
-            assert_eq!(
-                charge_control.target_charge(t_it, Some(12.5)).unwrap(),
-                expected_target_charges.0[t_idx],
-                "incorrect target charge returned"
-            );
-        }
-        for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
-            assert_eq!(
-                charge_control.target_charge(t_it, Some(19.5)).unwrap(),
-                expected_target_charges.1[t_idx],
-                "incorrect target charge returned"
-            );
-        }
-    }
-
-    // (from Python) Check correction of nominal/json temp_charge_cut with monthly table.
-    //               This function will most likely be superseded when the Electric Storage methodology
-    //               is upgraded to consider more realistic manufacturers' controls and corresponding
-    //               unit_test will be deprecated.
-    #[rstest]
-    fn test_temp_charge_cut_corr(
-        charge_control: ChargeControl,
-        simulation_time_for_charge_control: SimulationTime,
-    ) {
-        assert_eq!(
-            charge_control
-                .temp_charge_cut_corr(simulation_time_for_charge_control.iter().next().unwrap())
+        #[fixture]
+        fn charge_control(
+            simulation_time_for_charge_control: SimulationTime,
+            schedule_for_charge_control: Vec<bool>,
+        ) -> ChargeControl {
+            let external_conditions = ExternalConditions::new(
+                &simulation_time_for_charge_control.iter(),
+                vec![
+                    19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+                    19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+                ],
+                vec![
+                    3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+                    3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+                ],
+                vec![
+                    300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100.,
+                    140., 190., 200., 320., 330., 340., 350., 355., 315., 5.,
+                ],
+                vec![
+                    0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225.,
+                    198., 121., 68., 19., 0., 0., 0., 0., 0.,
+                ],
+                vec![
+                    0., 0., 0., 0., 0., 0., 7., 53., 63., 164., 339., 242., 315., 577., 385., 285.,
+                    332., 126., 7., 0., 0., 0., 0., 0.,
+                ],
+                vec![
+                    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+                    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+                ],
+                51.383,
+                -0.783,
+                0,
+                0,
+                Some(0),
+                1.,
+                Some(1),
+                Some(DaylightSavingsConfig::NotApplicable),
+                false,
+                false,
+                // following starts/ends are corrected from Python tests which erroneously use previous
+                // "start" field instead of "start360" (which has different origin for angle)
+                serde_json::from_value(json!([
+                    {"start360": 0, "end360": 45},
+                    {"start360": 45, "end360": 90},
+                    {"start360": 90, "end360": 135},
+                    {"start360": 135, "end360": 180,
+                        "shading": [
+                            {"type": "obstacle", "height": 10.5, "distance": 12}
+                        ]
+                    },
+                    {"start360": 180, "end360": 225},
+                    {"start360": 225, "end360": 270},
+                    {"start360": 270, "end360": 315},
+                    {"start360": 315, "end360": 360}
+                ]))
                 .unwrap(),
-            15.5
-        );
+            );
+            let external_sensor: ExternalSensor = serde_json::from_value(json!({
+                "correlation": [
+                    {"temperature": 0.0, "max_charge": 1.0},
+                    {"temperature": 10.0, "max_charge": 0.9},
+                    {"temperature": 18.0, "max_charge": 0.0}
+                ]
+            }))
+            .unwrap();
+
+            ChargeControl::new(
+                ControlLogicType::Automatic,
+                schedule_for_charge_control,
+                &simulation_time_for_charge_control
+                    .iter()
+                    .current_iteration(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
+                Some(15.5),
+                None,
+                Some(external_conditions.into()),
+                Some(external_sensor),
+                None,
+            )
+            .unwrap()
+        }
+
+        #[rstest]
+        fn test_is_on_for_charge_control(
+            charge_control: ChargeControl,
+            simulation_time_for_charge_control: SimulationTime,
+            schedule_for_charge_control: Vec<bool>,
+        ) {
+            for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
+                assert_eq!(
+                    charge_control.is_on(&t_it),
+                    schedule_for_charge_control[t_idx],
+                    "incorrect schedule returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge(
+            charge_control: ChargeControl,
+            simulation_time_for_charge_control: SimulationTime,
+        ) {
+            let expected_target_charges = (
+                vec![
+                    0.0,
+                    1.0,
+                    0.99,
+                    0.98,
+                    0.95,
+                    0.93,
+                    0.9400000000000001,
+                    0.675,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+                vec![
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                ],
+            );
+
+            for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
+                assert_eq!(
+                    charge_control.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges.0[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+            for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
+                assert_eq!(
+                    charge_control.target_charge(t_it, Some(19.5)).unwrap(),
+                    expected_target_charges.1[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        // (from Python) Check correction of nominal/json temp_charge_cut with monthly table.
+        //               This function will most likely be superseded when the Electric Storage methodology
+        //               is upgraded to consider more realistic manufacturers' controls and corresponding
+        //               unit_test will be deprecated.
+        #[rstest]
+        fn test_temp_charge_cut_corr(
+            charge_control: ChargeControl,
+            simulation_time_for_charge_control: SimulationTime,
+        ) {
+            assert_eq!(
+                charge_control
+                    .temp_charge_cut_corr(simulation_time_for_charge_control.iter().next().unwrap())
+                    .unwrap(),
+                15.5
+            );
+        }
     }
 
     #[fixture]
