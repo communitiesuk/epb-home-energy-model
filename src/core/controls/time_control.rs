@@ -2309,8 +2309,8 @@ mod tests {
             ]
         }
 
-        fn external_conditions() -> Option<Arc<ExternalConditions>> {
-            Some(Arc::new(ExternalConditions::new(
+        fn external_conditions() -> ExternalConditions {
+            ExternalConditions::new(
                 &simulation_time().iter(),
                 vec![
                     19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
@@ -2363,7 +2363,7 @@ mod tests {
                     {"start360": 315, "end360": 360}
                 ]))
                 .unwrap(),
-            )))
+            )
         }
 
         fn external_sensor() -> ExternalSensor {
@@ -2380,19 +2380,19 @@ mod tests {
         fn create_charge_control(
             logic_type: ControlLogicType,
             temp_charge_cut: Option<f64>,
-            external_conditions: Option<Arc<ExternalConditions>>,
+            external_conditions: Option<ExternalConditions>,
+            schedule: Vec<bool>,
         ) -> anyhow::Result<ChargeControl> {
-            let simulation_time = simulation_time();
             ChargeControl::new(
                 logic_type,
-                schedule(),
-                &simulation_time.iter().current_iteration(),
+                schedule,
+                &simulation_time().iter().current_iteration(),
                 0,
                 1.,
                 vec![Some(1.0), Some(0.8)],
                 temp_charge_cut,
                 None,
-                external_conditions,
+                external_conditions.map(Arc::new),
                 Some(external_sensor()),
                 None,
             )
@@ -2404,27 +2404,42 @@ mod tests {
             create_charge_control(
                 ControlLogicType::Automatic,
                 Some(15.5),
-                external_conditions(),
+                Some(external_conditions()),
+                schedule(),
             )
             .unwrap()
         }
 
         #[fixture]
         fn charge_control_3() -> ChargeControl {
-            create_charge_control(ControlLogicType::Manual, None, external_conditions()).unwrap()
+            create_charge_control(
+                ControlLogicType::Manual,
+                None,
+                Some(external_conditions()),
+                schedule(),
+            )
+            .unwrap()
         }
 
         #[test]
         fn test_init() {
-            let charge_control =
-                create_charge_control(ControlLogicType::Manual, None, external_conditions())
-                    .unwrap();
+            let charge_control = create_charge_control(
+                ControlLogicType::Manual,
+                None,
+                Some(external_conditions()),
+                schedule(),
+            )
+            .unwrap();
             // in Python the checks are against energy_to_store, in Rust heat_retention_data combines data including energy_to_store
             assert!(charge_control.heat_retention_data.is_none());
 
-            let charge_control =
-                create_charge_control(ControlLogicType::HeatBattery, None, external_conditions())
-                    .unwrap();
+            let charge_control = create_charge_control(
+                ControlLogicType::HeatBattery,
+                None,
+                Some(external_conditions()),
+                schedule(),
+            )
+            .unwrap();
             assert_eq!(
                 charge_control.heat_retention_data.unwrap().energy_to_store,
                 (0.).into()
@@ -2439,13 +2454,19 @@ mod tests {
                 ControlLogicType::Celect,
                 ControlLogicType::Hhrsh,
             ] {
-                let charge_control = create_charge_control(logic_type, None, external_conditions());
+                let charge_control = create_charge_control(
+                    logic_type,
+                    None,
+                    Some(external_conditions()),
+                    schedule(),
+                );
                 assert!(charge_control.is_err());
             }
 
             // When external_conditions is None
             for logic_type in [ControlLogicType::Hhrsh, ControlLogicType::HeatBattery] {
-                let charge_control = create_charge_control(logic_type, Some(15.5), None);
+                let charge_control =
+                    create_charge_control(logic_type, Some(15.5), None, schedule());
                 assert!(charge_control.is_err());
             }
         }
@@ -2691,6 +2712,43 @@ mod tests {
                     charge_control_1.temp_charge_cut_corr(t_it).unwrap(),
                     15.5 + t_it.index as f64
                 );
+            }
+        }
+
+        #[rstest]
+        fn test_energy_to_store() {
+            let simulation_time = SimulationTime::new(0., 48., 1.);
+            let mut schedule = schedule();
+            schedule.extend(vec![true; 24]);
+
+            // we need air-temps to have a length of 48 here, otherwise it panics at runtime once
+            // it gets to `air_temp_with_offset` and tries to access `air_temps` by index
+            let mut external_conditions = external_conditions();
+            external_conditions
+                .air_temps
+                .extend(external_conditions.air_temps.clone());
+            let charge_control = create_charge_control(
+                ControlLogicType::Hhrsh,
+                Some(15.5),
+                Some(external_conditions),
+                schedule,
+            );
+
+            let expected: Vec<f64> = [
+                vec![f64::NAN; 8],
+                vec![0.0; 8],
+                vec![f64::NAN; 4],
+                vec![0.0; 4],
+                vec![2400.0; 24],
+            ]
+            .concat();
+
+            for (t_it, expected) in simulation_time.iter().zip(&expected) {
+                let actual = charge_control
+                    .as_ref()
+                    .unwrap()
+                    .energy_to_store(100., 70., t_it);
+                assert!(actual.total_cmp(expected).is_eq()); // comparison including NaN values
             }
         }
     }
