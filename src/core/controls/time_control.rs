@@ -2232,7 +2232,7 @@ mod tests {
         #[rstest]
         fn test_update_demand_buffer(
             smart_appliance_control: SmartApplianceControl,
-            mut simulation_time_iterator: SimulationTimeIterator,
+            simulation_time_iterator: SimulationTimeIterator,
         ) {
             for t_it in simulation_time_iterator {
                 smart_appliance_control.update_demand_buffer(t_it);
@@ -2246,14 +2246,14 @@ mod tests {
         #[rstest]
         fn test_get_demand(
             smart_appliance_control: SmartApplianceControl,
-            mut simulation_time_iterator: SimulationTimeIterator,
+            simulation_time_iterator: SimulationTimeIterator,
         ) {
             assert_relative_eq!(smart_appliance_control.get_demand(0, "mains elec"), -0.3);
             assert_relative_eq!(smart_appliance_control.get_demand(1, "mains elec"), -0.2);
         }
 
         #[rstest]
-        fn test_get_demand_no_battery(mut simulation_time_iterator: SimulationTimeIterator) {
+        fn test_get_demand_no_battery(simulation_time_iterator: SimulationTimeIterator) {
             let smart_appliance_control = SmartApplianceControl::new(
                 &IndexMap::from([("mains elec".into(), vec![100.; 12])]),
                 2.,
