@@ -398,30 +398,48 @@ struct HeatBatteryResult {
 }
 
 impl HeatBatteryResult {
-    fn param_value_as_string(&self, param: &str) -> String {
+    fn param(&self, param: &str) -> ResultParamValue {
         match param {
-            "service_name" => self.service_name.clone(),
-            "service_type" => format!("{:?}", self.service_type).into(),
-            "service_on" => self.service_on.to_string().into(),
-            "energy_output_required" => self.energy_output_required.to_string().into(),
-            "temp_output" => match self.temp_output {
-                Some(temp) => temp.to_string().into(),
-                None => "".into(),
-            },
-            "temp_inlet" => self.temp_inlet.to_string().into(),
-            "time_running" => self.time_running.to_string().into(),
-            "energy_delivered_hb" => self.energy_delivered_hb.to_string().into(),
-            "energy_delivered_backup" => self.energy_delivered_backup.to_string().into(),
-            "energy_delivered_total" => self.energy_delivered_total.to_string().into(),
-            "energy_charged_during_service" => {
-                self.energy_charged_during_service.to_string().into()
-            }
-            "hb_zone_temperatures" => self.hb_zone_temperatures.iter().join(",").into(),
-            "current_hb_power" => self.current_hb_power.to_string().into(),
+            "service_name" => ResultParamValue::from(self.service_name.clone()),
+            "service_type" => ResultParamValue::from(String::from(self.service_type.to_string())),
+            "service_on" => self.service_on.into(),
+            "energy_output_required" => self.energy_output_required.into(),
+            "temp_output" => self.temp_output.into(),
+            "temp_inlet" => self.temp_inlet.into(),
+            "time_running" => self.time_running.into(),
+            "energy_delivered_HB" => self.energy_delivered_hb.into(),
+            "energy_delivered_backup" => self.energy_delivered_backup.into(),
+            "energy_delivered_total" => self.energy_delivered_total.into(),
+            "energy_charged_during_service" => self.energy_charged_during_service.into(),
+            "current_hb_power" => self.current_hb_power.into(),
             _ => panic!("Unknown parameter: {}", param),
         }
     }
 }
+
+const OUTPUT_PARAMETERS: [(&str, Option<&str>, bool); 13] = [
+    ("service_name", None, false),
+    ("service_type", None, false),
+    ("service_on", None, false),
+    ("energy_output_required", Some("kWh"), true),
+    ("temp_output", Some("degC"), false),
+    ("temp_inlet", Some("degC"), false),
+    ("time_running", Some("secs"), true),
+    ("energy_delivered_HB", Some("kWh"), true),
+    ("energy_delivered_backup", Some("kWh"), true),
+    ("energy_delivered_total", Some("kWh"), true),
+    ("energy_charged_during_service", Some("kWh"), true),
+    ("hb_zone_temperatures", Some("degC"), false),
+    ("current_hb_power", Some("kW"), false),
+];
+const AUX_PARAMETERS: [(&str, Option<&str>, bool); 6] = [
+    ("energy_aux", Some("kWh"), true),
+    ("battery_losses", Some("kWh"), true),
+    ("Temps_after_losses", Some("degC"), false),
+    ("total_charge", Some("kWh"), true),
+    ("end_of_timestep_charge", Some("kWh"), true),
+    ("hb_after_only_charge_zone_temp", Some("degC"), false),
+];
 
 #[derive(Debug)]
 struct HeatBatteryTimestepSummary {
@@ -431,6 +449,18 @@ struct HeatBatteryTimestepSummary {
     total_charge: f64,
     end_of_timestep_charge: f64,
     hb_after_only_charge_zone_temp: Vec<f64>,
+}
+
+impl HeatBatteryTimestepSummary {
+    fn param(&self, param: &str) -> ResultParamValue {
+        match param {
+            "energy_aux" => self.energy_aux.into(),
+            "battery_losses" => self.battery_losses.into(),
+            "total_charge" => self.total_charge.into(),
+            "end_of_timestep_charge" => self.end_of_timestep_charge.into(),
+            _ => panic!("Parameter {param} not recognised"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1739,43 +1769,16 @@ impl HeatBatteryPcm {
             "Detailed results cannot be output when the option to collect them was not selected",
         );
 
-        // Define parameters to output
-        // Last element of each tuple controls whether item is summed for annual total
-
-        let output_parameters: [(&'static str, Option<&'static str>, bool); 13] = [
-            ("service_name", None, false),
-            ("service_type", None, false),
-            ("service_on", None, false),
-            ("energy_output_required", "kWh".into(), true),
-            ("temp_output", "degC".into(), false),
-            ("temp_inlet", "degC".into(), false),
-            ("time_running", "secs".into(), true),
-            ("energy_delivered_HB", "kWh".into(), true),
-            ("energy_delivered_backup", "kWh".into(), true),
-            ("energy_delivered_total", "kWh".into(), true),
-            ("energy_charged_during_service", "kWh".into(), true),
-            ("hb_zone_temperatures", "degC".into(), false),
-            ("current_hb_power", "kW".into(), false),
-        ];
-        let aux_parameters = [
-            ("energy_aux", "kWh", true),
-            ("battery_losses", "kWh", true),
-            ("Temps_after_losses", "degC", false),
-            ("total_charge", "kWh", true),
-            ("end_of_timestep_charge", "kWh", true),
-            ("hb_after_only_charge_zone_temp", "degC", false),
-        ];
-
         let mut results_per_timestep: ResultsPerTimestep =
             [("auxiliary".into(), Default::default())].into();
 
         // Report auxiliary parameters (not specific to a service)
-        for (parameter, param_unit, _) in aux_parameters.iter() {
-            if ["Temps_after_losses", "hb_after_only_charge_zone_temp"].contains(parameter) {
+        for (parameter, param_unit, _) in AUX_PARAMETERS {
+            if ["Temps_after_losses", "hb_after_only_charge_zone_temp"].contains(&parameter) {
                 let mut labels: Option<Vec<String>> = Default::default();
                 for service_results in detailed_results.read().iter() {
                     let summary = &service_results.summary;
-                    let param_values = match *parameter {
+                    let param_values = match parameter {
                         "Temps_after_losses" => &summary.temps_after_losses,
                         "hb_after_only_charge_zone_temp" => &summary.hb_after_only_charge_zone_temp,
                         _ => unreachable!(),
@@ -1791,29 +1794,24 @@ impl HeatBatteryPcm {
                         );
                     }
                     for (label, result) in labels.as_ref().unwrap().iter().zip(param_values) {
-                        results_per_timestep["auxiliary"][&(
-                            String::from(label.as_str()),
-                            String::from(*param_unit).into(),
-                        )]
+                        results_per_timestep["auxiliary"]
+                            .entry((label.as_str().into(), param_unit.map(Into::into)))
+                            .or_default()
                             .push(result.into());
                     }
                 }
             } else {
                 // Default behaviour for scalar parameters
                 let mut param_results = vec![];
-                for service_results in self.detailed_results.as_ref().unwrap().read().iter() {
-                    let summary = &service_results.summary;
-                    let result = match *parameter {
-                        "energy_aux" => summary.energy_aux,
-                        "battery_losses" => summary.battery_losses,
-                        "total_charge" => summary.total_charge,
-                        "end_of_timestep_charge" => summary.end_of_timestep_charge,
-                        _ => unreachable!(),
-                    };
-                    param_results.push(result.into());
+                for service_results in detailed_results.read().iter() {
+                    let result = &service_results.summary.param(parameter);
+
+                    param_results.push(result.clone());
                 }
-                results_per_timestep["auxiliary"]
-                    [&(String::from(*parameter), String::from(*param_unit).into())] = param_results;
+                results_per_timestep["auxiliary"].insert(
+                    (parameter.into(), param_unit.map(Into::into)),
+                    param_results,
+                );
             }
         }
 
@@ -1823,17 +1821,11 @@ impl HeatBatteryPcm {
                 Default::default();
 
             // Look up each required parameter
-            for (parameter, param_unit, _) in output_parameters.iter() {
+            for (parameter, param_unit, _) in OUTPUT_PARAMETERS {
                 // Look up value of required parameter in each timestep
-                for service_results in self
-                    .detailed_results
-                    .as_ref()
-                    .expect("Detailed results accessed on heat battery when none collected.")
-                    .read()
-                    .iter()
-                {
+                for service_results in detailed_results.read().iter() {
                     let current_result = &service_results.results[service_idx];
-                    if *parameter == "hb_zone_temperatures" {
+                    if parameter == "hb_zone_temperatures" {
                         let labels = (0..current_result.hb_zone_temperatures.len())
                             .map(|i| format!("{parameter}{i}"))
                             .collect_vec();
@@ -1847,49 +1839,41 @@ impl HeatBatteryPcm {
                                 .push(result.into());
                         }
                     } else {
-                        let result = current_result.param_value_as_string(parameter);
+                        let result = current_result.param(parameter);
                         current_results
-                            .entry((String::from(*parameter), param_unit.map(String::from)))
+                            .entry((String::from(parameter), param_unit.map(String::from)))
                             .or_default()
-                            .push(result.into());
+                            .push(result);
                     }
                 }
             }
             // For water heating service, record hot water energy delivered from tank
-            current_results[&("energy_delivered_H4".into(), Some("kWh".into()))] = if self
-                .detailed_results
-                .as_ref()
-                .unwrap()
-                .read()
-                .first()
-                .unwrap()
-                .results[service_idx]
-                .service_type
-                == HeatingServiceType::DomesticHotWaterRegular
-            {
-                // For DHW, need to include storage and primary circuit losses.
-                // Can do this by replacing H4 numerator with total energy
-                // draw-off from hot water cylinder.
-                // TODO (from Python) Need to default to None here because HeatingServiceType.DOMESTIC_HOT_WATER_REGULAR
-                //      is being used for direct hot water service as well. This is a bug that is
-                //      being addressed on another branch.
-                // TODO look into whether above comment is relevant in Rust
-                let energy_delivered_total_len = results_per_timestep[service_name]
-                    [&("energy_delivered_total".into(), Some("kWh".into()))]
-                    .len();
-                let hws_name = &hot_water_source_name_for_heat_battery_service[service_name];
-                if !hot_water_energy_output.contains_key(hws_name) {
-                    vec![ResultParamValue::Empty; energy_delivered_total_len]
+            current_results.insert(("energy_delivered_H4".into(), Some("kWh".into())), {
+                if detailed_results.read().first().unwrap().results[service_idx].service_type
+                    == HeatingServiceType::DomesticHotWaterRegular
+                {
+                    let energy_delivered_total_len = results_per_timestep
+                        .get(service_name)
+                        .and_then(|inner_map| {
+                            // We are now inside the map for that service
+                            inner_map.get(&("energy_delivered_total".into(), Some("kWh".into())))
+                        })
+                        .map(|vec| vec.len())
+                        .unwrap_or(0);
+                    // For DHW, need to include storage and primary circuit losses.
+                    // Can do this by replacing H5 numerator with total energy
+                    // draw-off from hot water cylinder.
+                    let hws_name = &hot_water_source_name_for_heat_battery_service[service_name];
+
+                    if !hot_water_energy_output.contains_key(hws_name) {
+                        vec![ResultParamValue::Empty; energy_delivered_total_len]
+                    } else {
+                        hot_water_energy_output[hws_name].clone()
+                    }
                 } else {
-                    hot_water_energy_output[hws_name].clone()
+                    current_results[&("energy_delivered_total".into(), Some("kWh".into()))].clone()
                 }
-            } else {
-                // TODO (from Python) Note that the below assumes there is no buffer tank for
-                //       space heating, which is not currently included in the
-                //       model. If this is included in future, this code will need
-                //       to be revised.
-                current_results[&("energy_delivered_total".into(), Some("kWh".into()))].clone()
-            };
+            });
 
             results_per_timestep.insert(service_name.to_owned(), current_results);
         }
@@ -1897,7 +1881,7 @@ impl HeatBatteryPcm {
         let mut results_annual: ResultsAnnual = [
             (
                 "Overall".into(),
-                output_parameters
+                OUTPUT_PARAMETERS
                     .iter()
                     .filter_map(|(parameter, param_units, incl_in_manual)| {
                         incl_in_manual.then_some((
@@ -1915,12 +1899,12 @@ impl HeatBatteryPcm {
             0.0f64.into(),
         );
         // Report auxiliary parameters (not specific to a service)
-        for (parameter, param_unit, incl_in_annual) in aux_parameters.iter() {
+        for (parameter, param_unit, incl_in_annual) in AUX_PARAMETERS.iter() {
             if *incl_in_annual {
                 results_annual["auxiliary"].insert(
-                    (String::from(*parameter), String::from(*param_unit).into()),
+                    (String::from(*parameter), param_unit.map(Into::into)),
                     results_per_timestep["auxiliary"]
-                        [&(String::from(*parameter), String::from(*param_unit).into())]
+                        [&(String::from(*parameter), param_unit.map(Into::into))]
                         .iter()
                         .cloned()
                         .sum::<ResultParamValue>(),
@@ -1931,7 +1915,7 @@ impl HeatBatteryPcm {
         for service_name in self.energy_supply_connections.keys() {
             let mut current_annual_results: IndexMap<(String, Option<String>), ResultParamValue> =
                 Default::default();
-            for (parameter, param_unit, incl_in_annual) in output_parameters.iter() {
+            for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS.iter() {
                 if *incl_in_annual {
                     let parameter_annual_total = results_per_timestep[service_name]
                         [&(String::from(*parameter), param_unit.map(String::from))]
@@ -2013,6 +1997,7 @@ mod tests {
     };
     use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
     use approx::assert_relative_eq;
+    use indexmap::indexmap;
     use itertools::Itertools;
     use parking_lot::RwLock;
     use rstest::*;
@@ -3324,16 +3309,68 @@ mod tests {
 
     // skipping python's test_energy_output_max_negative as unable to replicate patch object
 
+    #[fixture]
+    fn heat_battery_no_service_connection(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        battery_control_on: Control,
+    ) -> Arc<RwLock<HeatBatteryPcm>> {
+        let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
+            battery: HeatBatteryInput::Pcm {
+                energy_supply: "mains elec".into(),
+                electricity_circ_pump: 0.06,
+                electricity_standby: 0.0244,
+                rated_charge_power: 20.0,
+                max_rated_losses: 0.1,
+                number_of_units: 1,
+                control_charge: "hb_charge_control".into(),
+                simultaneous_charging_and_discharging: false,
+                heat_storage_k_j_per_k_above_phase_transition: 381.5,
+                heat_storage_k_j_per_k_below_phase_transition: 305.2,
+                heat_storage_k_j_per_k_during_phase_transition: 12317.,
+                phase_transition_temperature_upper: 59.,
+                phase_transition_temperature_lower: 57.,
+                max_temperature: 80.,
+                temp_init: 80.,
+                velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
+                capillary_diameter_m: 0.0065,
+                a: 19.744,
+                b: -105.5,
+                heat_exchanger_surface_area_m2: 8.83,
+                flow_rate_l_per_min: 10.,
+            },
+        };
+
+        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time_iterator.total_steps())
+                .build(),
+        ));
+
+        let energy_supply_connection: EnergySupplyConnection =
+            EnergySupply::connection(energy_supply.clone(), "WaterHeating").unwrap();
+
+        Arc::new(RwLock::new(HeatBatteryPcm::new(
+            heat_battery_details,
+            battery_control_on.into(),
+            energy_supply,
+            energy_supply_connection,
+            simulation_time_iterator,
+            Some(8),
+            Some(20.),
+            None,
+            None,
+            Some(true),
+        )))
+    }
     #[rstest]
     fn test_output_detailed_results_water_regular(
-        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        simulation_time: SimulationTime,
+        heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
     ) {
-        let control_true = create_setpoint_time_control(vec![Some(21.), Some(20.)]);
-        let heat_battery = create_heat_battery(simulation_time_iterator, control_true, Some(true));
-        let service_name = "new_service";
+        let heat_battery = heat_battery_no_service_connection;
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(vec![1.0, 1.2], 0, 1.),
         ));
+        let service_name = "new_service";
 
         HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
@@ -3343,8 +3380,114 @@ mod tests {
             None,
         )
         .unwrap();
-        //TODO
+
+        let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
+            "auxiliary".into() => indexmap! {
+                ("energy_aux".into(), Some("kWh".into())) => vec![0.06.into(), 0.06.into()],
+                ("battery_losses".into(), Some("kWh".into())) => vec![0.1.into(), 0.1.into()],
+                ("Temps_after_losses0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 38.82044560943607.into()],
+                ("Temps_after_losses1".into(), Some("degC".into())) => vec![38.820445609439716.into(), 38.82044560943589.into()],
+                ("Temps_after_losses2".into(), Some("degC".into())) => vec![38.82044560954896.into(), 38.8204456094357.into()],
+                ("Temps_after_losses3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 38.820445609433904.into()],
+                ("Temps_after_losses4".into(), Some("degC".into())) => vec![38.82044568377406.into(), 38.82044560942411.into()],
+                ("Temps_after_losses5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 38.820445609382055.into()],
+                ("Temps_after_losses6".into(), Some("degC".into())) => vec![38.82048124427147.into(), 38.8204456092257.into()],
+                ("Temps_after_losses7".into(), Some("degC".into())) => vec![38.82118099093947.into(), 38.820445608708134.into()],
+                ("total_charge".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("end_of_timestep_charge".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("hb_after_only_charge_zone_temp0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 38.82044560943607.into()],
+                ("hb_after_only_charge_zone_temp1".into(), Some("degC".into())) => vec![38.820445609439716.into(), 38.82044560943589.into()],
+                ("hb_after_only_charge_zone_temp2".into(), Some("degC".into())) => vec![38.82044560954896.into(), 38.8204456094357.into()],
+                ("hb_after_only_charge_zone_temp3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 38.820445609433904.into()],
+                ("hb_after_only_charge_zone_temp4".into(), Some("degC".into())) => vec![38.82044568377406.into(), 38.82044560942411.into()],
+                ("hb_after_only_charge_zone_temp5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 38.820445609382055.into()],
+                ("hb_after_only_charge_zone_temp6".into(), Some("degC".into())) => vec![38.82048124427147.into(), 38.8204456092257.into()],
+                ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![38.82118099093947.into(), 38.820445608708134.into()],
+            },
+            "new_service".into() => indexmap! {
+                ("service_name".into(), None) => vec![ResultParamValue::String("new_service".into()); 2],
+                ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::DomesticHotWaterRegular.to_string().into()); 2],
+                ("service_on".into(), None) => vec![ResultParamValue::Boolean(true); 2],
+                ("energy_output_required".into(), Some("kWh".into())) => vec![100.0.into(); 2],
+                ("temp_output".into(), Some("degC".into())) => vec![40.000471231805946.into(), 40.0.into()],
+                ("temp_inlet".into(), Some("degC".into())) => vec![40.0.into(); 2],
+                ("time_running".into(), Some("secs".into())) => vec![3600.0.into(); 2],
+                ("energy_delivered_HB".into(), Some("kWh".into())) => vec![10.509408477594047.into(), (-0.09999181091672799).into()],
+                ("energy_delivered_backup".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("energy_delivered_total".into(), Some("kWh".into())) => vec![10.509408477594047.into(), (-0.09999181091672799).into()],
+                ("energy_charged_during_service".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("hb_zone_temperatures0".into(), Some("degC".into())) => vec![
+                    40.00000000000006.into(),
+                    39.99999999999964.into(),
+                ],
+                ("hb_zone_temperatures1".into(), Some("degC".into())) => vec![40.00000000000328.into(), 40.0.into()],
+                ("hb_zone_temperatures2".into(), Some("degC".into())) => vec![40.00000000011253.into(), 40.0.into()],
+                ("hb_zone_temperatures3".into(), Some("degC".into())) => vec![40.00000000307894.into(), 40.0.into()],
+                ("hb_zone_temperatures4".into(), Some("degC".into())) => vec![40.00000007433763.into(), 40.0.into()],
+                ("hb_zone_temperatures5".into(), Some("degC".into())) => vec![40.000001662652714.into(), 40.0.into()],
+                ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![40.00003563483504.into(), 40.0.into()],
+                ("hb_zone_temperatures7".into(), Some("degC".into())) => vec![40.000735381503034.into(), 40.0.into()],
+                ("current_hb_power".into(), Some("kW".into())) => vec![10.509408477594047.into(), (-0.09999181091672799).into()],
+                ("energy_delivered_H4".into(), Some("kWh".into())) => vec![100.0.into()],
+            },
+        };
+
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            heat_battery
+                .read()
+                .demand_energy(
+                    service_name,
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    100.,
+                    40.,
+                    Some(50.),
+                    true,
+                    None,
+                    Some(true),
+                )
+                .unwrap();
+
+            heat_battery.read().timestep_end(t_idx).unwrap();
+        }
+
+        let (results_per_timestep, _results_annual) = heat_battery
+            .read()
+            .output_detailed_results(
+                &indexmap! { "hwsname".into() => vec![100.0.into()] },
+                &indexmap! { service_name.into() => "hwsname".into()},
+            )
+            .unwrap();
+
+        assert_eq!(
+            results_per_timestep.keys().collect_vec(),
+            expected_results_per_timestep.keys().collect_vec()
+        );
+
+        for (expected_outer_key, expected_results) in &expected_results_per_timestep {
+            let actual_results = &results_per_timestep[expected_outer_key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, expected_vec) in expected_results {
+                let actual_vec = &actual_results[inner_key];
+
+                for (actual, expected) in actual_vec.iter().zip(expected_vec) {
+                    match (actual, expected) {
+                        (ResultParamValue::Number(actual), ResultParamValue::Number(expected)) => {
+                            assert_relative_eq!(actual, expected, max_relative = 1e-7);
+                        }
+                        _ => assert_eq!(actual, expected),
+                    }
+                }
+            }
+        }
+
+        // TODO results_annual
     }
+
     // TODO (implementation not yet updated) test_output_detailed_results_space
     // TODO (implementation not yet updated) test_output_detailed_results_none
 
