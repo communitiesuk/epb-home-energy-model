@@ -2462,6 +2462,27 @@ mod tests {
         }
 
         #[rstest]
+        fn test_calculate_heating_degree_hours(charge_control_1: ChargeControl) {
+            assert_eq!(
+                charge_control_1
+                    .calculate_heating_degree_hours(&VecDeque::from([Some(20.), Some(21.)]), 25.)
+                    .unwrap(),
+                9.
+            );
+
+            assert_eq!(
+                charge_control_1
+                    .calculate_heating_degree_hours(&VecDeque::from([Some(20.), Some(21.)]), 15.)
+                    .unwrap(),
+                0.
+            );
+
+            assert!(charge_control_1
+                .calculate_heating_degree_hours(&VecDeque::from([Some(20.), Some(21.), None]), 15.)
+                .is_none())
+        }
+
+        #[rstest]
         fn test_target_charge(charge_control_1: ChargeControl) {
             let simulation_time = simulation_time();
             let expected_target_charges = (
