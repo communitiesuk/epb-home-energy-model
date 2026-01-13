@@ -1855,7 +1855,6 @@ impl HeatBatteryPcm {
                     let energy_delivered_total_len = results_per_timestep
                         .get(service_name)
                         .and_then(|inner_map| {
-                            // We are now inside the map for that service
                             inner_map.get(&("energy_delivered_total".into(), Some("kWh".into())))
                         })
                         .map(|vec| vec.len())
