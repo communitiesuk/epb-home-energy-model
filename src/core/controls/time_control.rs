@@ -2298,13 +2298,20 @@ mod tests {
         use super::*;
         use pretty_assertions::assert_eq;
 
-        #[fixture]
-        fn charge_control(
-            simulation_time_for_charge_control: SimulationTime,
-            schedule_for_charge_control: Vec<bool>,
-        ) -> ChargeControl {
-            let external_conditions = ExternalConditions::new(
-                &simulation_time_for_charge_control.iter(),
+        fn simulation_time() -> SimulationTime {
+            SimulationTime::new(0.0, 24.0, 1.0)
+        }
+
+        fn schedule() -> Vec<bool> {
+            vec![
+                true, true, true, true, true, true, true, true, false, false, false, false, false,
+                false, false, false, true, true, true, true, false, false, false, false,
+            ]
+        }
+
+        fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
+            ExternalConditions::new(
+                &simulation_time.iter(),
                 vec![
                     19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
                     19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
@@ -2356,32 +2363,45 @@ mod tests {
                     {"start360": 315, "end360": 360}
                 ]))
                 .unwrap(),
-            );
-            let external_sensor: ExternalSensor = serde_json::from_value(json!({
+            )
+        }
+
+        fn external_sensor() -> ExternalSensor {
+            serde_json::from_value(json!({
                 "correlation": [
                     {"temperature": 0.0, "max_charge": 1.0},
                     {"temperature": 10.0, "max_charge": 0.9},
                     {"temperature": 18.0, "max_charge": 0.0}
                 ]
             }))
-            .unwrap();
+            .unwrap()
+        }
 
+        fn create_charge_control(
+            logic_type: ControlLogicType,
+            temp_charge_cut: Option<f64>,
+        ) -> ChargeControl {
+            let simulation_time = simulation_time();
             ChargeControl::new(
-                ControlLogicType::Automatic,
-                schedule_for_charge_control,
-                &simulation_time_for_charge_control
-                    .iter()
-                    .current_iteration(),
+                logic_type,
+                schedule(),
+                &simulation_time.iter().current_iteration(),
                 0,
                 1.,
                 vec![Some(1.0), Some(0.8)],
-                Some(15.5),
+                temp_charge_cut,
                 None,
-                Some(external_conditions.into()),
-                Some(external_sensor),
+                Some(external_conditions(simulation_time).into()),
+                Some(external_sensor()),
                 None,
             )
             .unwrap()
+        }
+
+        #[fixture]
+        // In the Pyhon set up code charge_control_1 and charge_control_2 are identical
+        fn charge_control() -> ChargeControl {
+            create_charge_control(ControlLogicType::Automatic, Some(15.5))
         }
 
         #[rstest]
