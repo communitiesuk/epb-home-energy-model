@@ -2400,7 +2400,7 @@ mod tests {
 
         #[fixture]
         // In the Pyhon set up code charge_control_1 and charge_control_2 are identical
-        fn charge_control() -> ChargeControl {
+        fn charge_control_1() -> ChargeControl {
             create_charge_control(
                 ControlLogicType::Automatic,
                 Some(15.5),
@@ -2446,25 +2446,24 @@ mod tests {
         }
 
         #[rstest]
-        fn test_is_on_for_charge_control(
-            charge_control: ChargeControl,
-            simulation_time_for_charge_control: SimulationTime,
-            schedule_for_charge_control: Vec<bool>,
-        ) {
-            for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
+        fn test_is_on(charge_control_1: ChargeControl) {
+            for (t_idx, t_it) in simulation_time().iter().enumerate() {
                 assert_eq!(
-                    charge_control.is_on(&t_it),
-                    schedule_for_charge_control[t_idx],
+                    charge_control_1.is_on(&t_it),
+                    schedule()[t_idx],
                     "incorrect schedule returned"
                 );
             }
         }
 
         #[rstest]
-        fn test_target_charge(
-            charge_control: ChargeControl,
-            simulation_time_for_charge_control: SimulationTime,
-        ) {
+        fn test_logic_type(charge_control_1: ChargeControl) {
+            assert_eq!(charge_control_1.logic_type(), ControlLogicType::Automatic)
+        }
+
+        #[rstest]
+        fn test_target_charge(charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
             let expected_target_charges = (
                 vec![
                     0.0,
@@ -2498,16 +2497,16 @@ mod tests {
                 ],
             );
 
-            for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_eq!(
-                    charge_control.target_charge(t_it, Some(12.5)).unwrap(),
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
                     expected_target_charges.0[t_idx],
                     "incorrect target charge returned"
                 );
             }
-            for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_eq!(
-                    charge_control.target_charge(t_it, Some(19.5)).unwrap(),
+                    charge_control_1.target_charge(t_it, Some(19.5)).unwrap(),
                     expected_target_charges.1[t_idx],
                     "incorrect target charge returned"
                 );
@@ -2520,11 +2519,11 @@ mod tests {
         //               unit_test will be deprecated.
         #[rstest]
         fn test_temp_charge_cut_corr(
-            charge_control: ChargeControl,
+            charge_control_1: ChargeControl,
             simulation_time_for_charge_control: SimulationTime,
         ) {
             assert_eq!(
-                charge_control
+                charge_control_1
                     .temp_charge_cut_corr(simulation_time_for_charge_control.iter().next().unwrap())
                     .unwrap(),
                 15.5
