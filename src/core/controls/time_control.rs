@@ -2244,10 +2244,7 @@ mod tests {
         }
 
         #[rstest]
-        fn test_get_demand(
-            smart_appliance_control: SmartApplianceControl,
-            simulation_time_iterator: SimulationTimeIterator,
-        ) {
+        fn test_get_demand(smart_appliance_control: SmartApplianceControl) {
             assert_relative_eq!(smart_appliance_control.get_demand(0, "mains elec"), -0.3);
             assert_relative_eq!(smart_appliance_control.get_demand(1, "mains elec"), -0.2);
         }
