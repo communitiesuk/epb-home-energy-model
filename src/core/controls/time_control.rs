@@ -2875,8 +2875,6 @@ mod tests {
             });
 
             for t_it in simulation_time.iter() {
-                let idx = t_it.index;
-                print!("{idx}");
                 let actual = charge_control.energy_to_store(100., 19., t_it);
                 assert_eq!(actual, 0.);
             }
