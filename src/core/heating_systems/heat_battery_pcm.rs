@@ -1852,11 +1852,8 @@ impl HeatBatteryPcm {
                 if detailed_results.read().first().unwrap().results[service_idx].service_type
                     == HeatingServiceType::DomesticHotWaterRegular
                 {
-                    let energy_delivered_total_len = results_per_timestep
-                        .get(service_name)
-                        .and_then(|inner_map| {
-                            inner_map.get(&("energy_delivered_total".into(), Some("kWh".into())))
-                        })
+                    let energy_delivered_total_len = current_results
+                        .get(&("energy_delivered_total".into(), Some("kWh".into())))
                         .map(|vec| vec.len())
                         .unwrap_or(0);
                     // For DHW, need to include storage and primary circuit losses.
@@ -1912,29 +1909,28 @@ impl HeatBatteryPcm {
         }
         // For each service, report required output parameters
         for service_name in self.energy_supply_connections.keys() {
-            let mut current_annual_results: IndexMap<(String, Option<String>), ResultParamValue> =
-                Default::default();
-            for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS.iter() {
-                if *incl_in_annual {
+            results_annual.insert(service_name.clone(), Default::default());
+            for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
+                if incl_in_annual {
                     let parameter_annual_total = results_per_timestep[service_name]
-                        [&(String::from(*parameter), param_unit.map(String::from))]
+                        [&(parameter.into(), param_unit.map(Into::into))]
                         .iter()
                         .cloned()
                         .sum::<ResultParamValue>();
-                    current_annual_results.insert(
-                        (String::from(*parameter), param_unit.map(String::from)),
+                    results_annual[service_name].insert(
+                        (parameter.into(), param_unit.map(Into::into)),
                         parameter_annual_total.clone(),
                     );
-                    results_annual["Overall"]
-                        [&(String::from(*parameter), param_unit.map(String::from))] +=
-                        parameter_annual_total;
+                    *results_annual["Overall"]
+                        .entry((parameter.into(), param_unit.map(Into::into)))
+                        .or_insert(ResultParamValue::Number(0.)) += parameter_annual_total;
                 }
             }
             if results_per_timestep[service_name]
                 [&("energy_delivered_H4".into(), Some("kWh".into()))]
                 .contains(&ResultParamValue::Empty)
             {
-                current_annual_results.insert(
+                results_annual.get_mut(service_name).unwrap().insert(
                     ("energy_delivered_H4".into(), Some("kWh".into())),
                     ResultParamValue::Empty,
                 );
@@ -1943,7 +1939,7 @@ impl HeatBatteryPcm {
                     ResultParamValue::Empty,
                 );
             } else {
-                current_annual_results.insert(
+                results_annual.get_mut(service_name).unwrap().insert(
                     ("energy_delivered_H4".into(), Some("kWh".into())),
                     results_per_timestep[service_name]
                         [&("energy_delivered_H4".into(), Some("kWh".into()))]
@@ -1951,7 +1947,6 @@ impl HeatBatteryPcm {
                         .cloned()
                         .sum::<ResultParamValue>(),
                 );
-                results_annual.insert(service_name.to_owned(), current_annual_results);
 
                 if results_annual["Overall"][&("energy_delivered_H4".into(), Some("kWh".into()))]
                     != ResultParamValue::Empty
@@ -3380,7 +3375,7 @@ mod tests {
         )
         .unwrap();
 
-        let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
+        let mut expected_results_per_timestep: ResultsPerTimestep = indexmap! {
             "auxiliary".into() => indexmap! {
                 ("energy_aux".into(), Some("kWh".into())) => vec![0.06.into(), 0.06.into()],
                 ("battery_losses".into(), Some("kWh".into())) => vec![0.1.into(), 0.1.into()],
@@ -3431,6 +3426,33 @@ mod tests {
             },
         };
 
+        let mut expected_results_annual: ResultsAnnual = indexmap! {
+            "Overall".into() => indexmap! {
+                ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
+                ("time_running".into(), Some("secs".into())) => 7200.0.into(),
+                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.409416666677318.into(),
+                ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.409416666677318.into(),
+                ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_H4".into(), Some("kWh".into())) => 100.0.into(),
+            },
+            "auxiliary".into() => indexmap! {
+                ("energy_aux".into(), Some("kWh".into())) => 0.12.into(),
+                ("battery_losses".into(), Some("kWh".into())) => 0.2.into(),
+                ("total_charge".into(), Some("kWh".into())) => 0.0.into(),
+                ("end_of_timestep_charge".into(), Some("kWh".into())) => 0.0.into(),
+            },
+            "new_service".into() => indexmap! {
+                ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
+                ("time_running".into(), Some("secs".into())) => 7200.0.into(),
+                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.409416666677318.into(),
+                ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.409416666677318.into(),
+                ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_H4".into(), Some("kWh".into())) => 100.0.into(),
+            },
+        };
+
         for (t_idx, _) in simulation_time.iter().enumerate() {
             heat_battery
                 .read()
@@ -3449,7 +3471,7 @@ mod tests {
             heat_battery.read().timestep_end(t_idx).unwrap();
         }
 
-        let (results_per_timestep, _results_annual) = heat_battery
+        let (results_per_timestep, results_annual) = heat_battery
             .read()
             .output_detailed_results(
                 &indexmap! { "hwsname".into() => vec![100.0.into()] },
@@ -3461,9 +3483,21 @@ mod tests {
             results_per_timestep.keys().collect_vec(),
             expected_results_per_timestep.keys().collect_vec()
         );
+        assert_eq!(
+            results_annual.keys().collect_vec(),
+            expected_results_annual.keys().collect_vec()
+        );
 
-        for (expected_outer_key, expected_results) in &expected_results_per_timestep {
-            let actual_results = &results_per_timestep[expected_outer_key];
+        let assert_value =
+            |actual: &ResultParamValue, expected: &ResultParamValue| match (actual, expected) {
+                (ResultParamValue::Number(actual_num), ResultParamValue::Number(expected_num)) => {
+                    assert_relative_eq!(actual_num, expected_num, max_relative = 1e-7);
+                }
+                _ => assert_eq!(actual, expected,),
+            };
+
+        for (key, expected_results) in &expected_results_per_timestep {
+            let actual_results = &results_per_timestep[key];
 
             assert_eq!(
                 actual_results.keys().collect_vec(),
@@ -3471,20 +3505,83 @@ mod tests {
             );
 
             for (inner_key, expected_vec) in expected_results {
-                let actual_vec = &actual_results[inner_key];
-
-                for (actual, expected) in actual_vec.iter().zip(expected_vec) {
-                    match (actual, expected) {
-                        (ResultParamValue::Number(actual), ResultParamValue::Number(expected)) => {
-                            assert_relative_eq!(actual, expected, max_relative = 1e-7);
-                        }
-                        _ => assert_eq!(actual, expected),
-                    }
+                for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
+                    assert_value(actual, expected);
                 }
             }
         }
 
-        // TODO results_annual
+        for (key, expected_results) in &expected_results_annual {
+            let actual_results = &results_annual[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, value) in expected_results {
+                assert_value(&actual_results[inner_key], value);
+            }
+        }
+
+        // Test case where hot water source is not in hot water energy source data
+        expected_results_per_timestep[service_name].insert(
+            ("energy_delivered_H4".into(), Some("kWh".into())),
+            vec![ResultParamValue::Empty; 2],
+        );
+        expected_results_annual[service_name].insert(
+            ("energy_delivered_H4".into(), Some("kWh".into())),
+            ResultParamValue::Empty,
+        );
+        expected_results_annual["Overall"].insert(
+            ("energy_delivered_H4".into(), Some("kWh".into())),
+            ResultParamValue::Empty,
+        );
+
+        let (results_per_timestep, results_annual) = heat_battery
+            .read()
+            .output_detailed_results(
+                &indexmap! { "hwsname".into() => vec![100.0.into()] },
+                &indexmap! { service_name.into() => "hwsname_other".into()},
+            )
+            .unwrap();
+
+        assert_eq!(
+            results_per_timestep.keys().collect_vec(),
+            expected_results_per_timestep.keys().collect_vec()
+        );
+        assert_eq!(
+            results_annual.keys().collect_vec(),
+            expected_results_annual.keys().collect_vec()
+        );
+
+        for (key, expected_results) in &expected_results_per_timestep {
+            let actual_results = &results_per_timestep[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, expected_vec) in expected_results {
+                for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
+                    assert_value(actual, expected);
+                }
+            }
+        }
+
+        for (key, expected_results) in &expected_results_annual {
+            let actual_results = &results_annual[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, value) in expected_results {
+                assert_value(&actual_results[inner_key], value);
+            }
+        }
     }
 
     // TODO (implementation not yet updated) test_output_detailed_results_space
