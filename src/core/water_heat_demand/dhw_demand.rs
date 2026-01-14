@@ -657,9 +657,9 @@ impl DomesticHotWaterDemand {
         for hot_water_source in self.pre_heated_water_sources.values() {
             match hot_water_source {
                 HotWaterSource::PreHeated(storage_tank) => {
-                    storage_tank.demand_hot_water(None, simtime);
+                    storage_tank.demand_hot_water(None, simtime)?;
                 }
-                // TODO is this true? can we just always call demand_hot_water regardless?
+                // TODO is this true? or can we always call demand_hot_water regardless?
                 _ => {
                     bail!("Preheated hot water sources must be storage tanks");
                 }
