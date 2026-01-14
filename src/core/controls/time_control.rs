@@ -2720,9 +2720,15 @@ mod tests {
             let simulation_time = SimulationTime::new(0., 48., 1.);
             let mut schedule = schedule();
             schedule.extend(vec![true; 24]);
-
+            
+            // TODO: review this with someone
             // we need air-temps to have a length of 48 here, otherwise it panics at runtime once
             // it gets to `air_temp_with_offset` and tries to access `air_temps` by index
+            // this seems to not happen in Python because the 24 hour simtime from
+            // ExternalConditions is used, rather than the one being passed through from the
+            // ChargeControl energy_to_store method - this might mean that the Python never tests
+            // the last 24 values
+            
             let mut external_conditions = external_conditions();
             external_conditions
                 .air_temps

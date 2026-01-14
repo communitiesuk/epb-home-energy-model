@@ -146,8 +146,12 @@ impl SimulationTimeIteration {
         )
     }
 
-    pub(crate) fn time_series_idx(&self, start_day: u32, step: f64) -> usize {
-        ((self.time - (start_day * HOURS_IN_DAY) as f64) / step) as usize
+    /// Calculate array lookup index
+    pub(crate) fn time_series_idx(&self, start_day: u32, time_series_step: f64) -> usize {
+        // Index in array of time-series data is current hour (relative to start
+        // of year) adjusted for the time-series step (in hours) and for the start day
+        // (relative to start of year) of time-series data
+        ((self.time - (start_day * HOURS_IN_DAY) as f64) / time_series_step).floor() as usize
     }
 
     /// Calculate array lookup index
