@@ -1765,9 +1765,9 @@ impl HeatBatteryPcm {
         hot_water_energy_output: &IndexMap<String, Vec<ResultParamValue>>,
         hot_water_source_name_for_heat_battery_service: &IndexMap<String, String>,
     ) -> anyhow::Result<(ResultsPerTimestep, ResultsAnnual)> {
-        let detailed_results = self.detailed_results.as_ref().expect(
-            "Detailed results cannot be output when the option to collect them was not selected",
-        );
+        let detailed_results = self.detailed_results.as_ref().ok_or_else(||
+            anyhow!("Detailed results cannot be output when the option to collect them was not selected")
+        )?;
 
         let mut results_per_timestep: ResultsPerTimestep =
             [("auxiliary".into(), Default::default())].into();
@@ -3743,7 +3743,21 @@ mod tests {
             }
         }
     }
-    // TODO (implementation not yet updated) test_output_detailed_results_none
+
+    #[rstest]
+    fn test_output_detailed_results_none(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        battery_control_on: Control,
+    ) {
+        // Test that calling output_detailed_results errors when output_detailed_results on heat_battery is false
+        let heat_battery =
+            create_heat_battery(simulation_time_iterator, battery_control_on, Some(false));
+
+        assert!(heat_battery
+            .read()
+            .output_detailed_results(&indexmap! {}, &indexmap! {})
+            .is_err());
+    }
 
     #[rstest]
     fn test_demand_energy_low_temp_minimum_run_coverage(
