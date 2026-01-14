@@ -11,7 +11,7 @@ use crate::core::water_heat_demand::misc::{
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
 use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
-use crate::corpus::{ColdWaterSources, EventSchedule, HotWaterSource};
+use crate::corpus::{ColdWaterSources, EventSchedule, HotWaterSource, HotWaterSourceBehaviour};
 use crate::input::{
     BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput,
     PipeworkContents, Shower as ShowerInput, Showers as ShowersInput,
@@ -31,16 +31,16 @@ use std::sync::Arc;
 const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
 
 #[derive(Debug)]
-pub struct DomesticHotWaterDemand {
+pub struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour> {
     showers: HashMap<String, Shower>,
     baths: HashMap<String, Bath>,
     other: HashMap<String, OtherHotWater>,
-    hot_water_sources: IndexMap<String, HotWaterSource>,
+    hot_water_sources: IndexMap<String, T>,
     energy_supply_conn_unmet_demand: IndexMap<String, EnergySupplyConnection>,
     source_supplying_outlet: HashMap<(OutletType, String), String>,
     hot_water_distribution_pipework:  IndexMap<String, Vec<PipeworkSimple>> ,
     event_schedules: EventSchedule,
-    pre_heated_water_sources: IndexMap<String, HotWaterSource>,
+    pre_heated_water_sources: IndexMap<String, T>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -102,7 +102,7 @@ pub enum OutletType {
     Other,
 }
 
-impl DomesticHotWaterDemand {
+impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
     // TODO (from Python) Enhance analysis for overlapping events
     // Part of draft code for future overlapping analysis of events
     // For pipework losses count only none overlapping events
@@ -118,8 +118,8 @@ impl DomesticHotWaterDemand {
         wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         event_schedules: EventSchedule,
-        hot_water_sources: IndexMap<String, HotWaterSource>,
-        pre_heated_water_sources: IndexMap<String, HotWaterSource>,
+        hot_water_sources: IndexMap<String, T>,
+        pre_heated_water_sources: IndexMap<String, T>,
     ) -> anyhow::Result<Self> {
         let showers: HashMap<String, Shower> = showers_input
             .0
@@ -183,28 +183,26 @@ impl DomesticHotWaterDemand {
         let hws_without_pws: Vec<_> = hot_water_sources.keys().filter(|key| { !hw_pipework_inputs.keys().contains(key) }).collect();
         for hws_name in hws_without_pws {
             let hot_water_source = hot_water_sources.get(hws_name).unwrap();
-            match hot_water_source {
-                HotWaterSource::PointOfUse(_) => {
-                    // point of use doesn't need pipework - just add an empty vec
-                    hw_pipework_inputs.insert(hws_name.clone(), vec![]);
-                },
-                _ => {
-                    // TODO include name in error message
-                    bail!("Distribution pipework not specified for HotWaterSource");
-                },
+
+            if hot_water_source.is_point_of_use() {
+                // point of use doesn't need pipework - just add an empty vec
+                hw_pipework_inputs.insert(hws_name.clone(), vec![]);
             }
+            else {
+                // TODO include name in error message
+                bail!("Distribution pipework not specified for HotWaterSource");
+            };
         }
 
         for (hws_name, hws) in &hot_water_sources {
-            match hws {
-                HotWaterSource::PointOfUse(_) => continue,
-                _ => {
-                    for data in hw_pipework_inputs.get(hws_name).unwrap() {
-                        let pipework = input_to_water_distribution_pipework(data, total_number_tapping_points)?;
-                        let entry = hot_water_distribution_pipework.get_mut(hws_name).unwrap();
-                        entry.push(pipework);
-                    }
-                }
+            if hws.is_point_of_use() {
+                continue;
+            }
+
+            for data in hw_pipework_inputs.get(hws_name).unwrap() {
+                let pipework = input_to_water_distribution_pipework(data, total_number_tapping_points)?;
+                let entry = hot_water_distribution_pipework.get_mut(hws_name).unwrap();
+                entry.push(pipework);
             }
         }
 
@@ -213,7 +211,7 @@ impl DomesticHotWaterDemand {
             hot_water_sources
                 .keys()
                 .map(|name| {
-                    let energy_supply = energy_supplies.get("unmet_demand").unwrap();
+                    let energy_supply = energy_supplies.get("_unmet_demand").unwrap();
                     let energy_suppy_conn_unmet_demand =
                         EnergySupply::connection(energy_supply.clone(), &name).unwrap(); // TODO avoid unwrap here
                     (name.clone(), energy_suppy_conn_unmet_demand)
@@ -244,7 +242,7 @@ impl DomesticHotWaterDemand {
         showers_dict: ShowersInput,
         baths_dict: BathInput,
         other_hw_users_dict: OtherWaterUseInput,
-        hot_water_sources: &IndexMap<String, HotWaterSource>,
+        hot_water_sources: &IndexMap<String, impl HotWaterSourceBehaviour>,
     ) -> HashMap<(OutletType, String), String> {
         let mut mapping = HashMap::<(OutletType, String), String>::default();
         for (shower_name, shower) in showers_dict.0.iter() {
@@ -329,7 +327,7 @@ impl DomesticHotWaterDemand {
 
     pub(crate) fn temp_hot_water(
         &self,
-        hot_water_source: HotWaterSource,
+        hot_water_source: T,
         volume_required_already: f64,
         volume_required: f64,
     ) -> f64 {
@@ -390,7 +388,7 @@ impl DomesticHotWaterDemand {
         }
     }
 
-    pub fn hot_water_demand<'a>(
+    pub(crate) fn hot_water_demand<'a>(
         &'a self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(
@@ -464,7 +462,7 @@ impl DomesticHotWaterDemand {
                     energy_supply_conn_unmet_demand,
                 ): (
                     String,
-                    Option<&HotWaterSource>,
+                    Option<&T>,
                     Option<f64>,
                     f64,
                     Option<&EnergySupplyConnection>,
@@ -655,14 +653,12 @@ impl DomesticHotWaterDemand {
 
         // Running heat sources of pre-heated tanks and updating thermal losses, etc.
         for hot_water_source in self.pre_heated_water_sources.values() {
-            match hot_water_source {
-                HotWaterSource::PreHeated(storage_tank) => {
-                    storage_tank.demand_hot_water(None, simtime)?;
-                }
-                // TODO is this true? or can we always call demand_hot_water regardless?
-                _ => {
-                    bail!("Preheated hot water sources must be storage tanks");
-                }
+            if hot_water_source.is_point_of_use() {
+                // TODO ensure an empty vec the same behaviour as None
+                hot_water_source.demand_hot_water(vec![], simtime);
+            }
+            else {
+                bail!("Preheated hot water sources must be storage tanks");
             }
         }
 
@@ -923,6 +919,8 @@ fn input_to_water_distribution_pipework(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compare_floats::max_of_2;
+    use crate::core::common::WaterSourceWithTemperature;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -935,13 +933,104 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rstest::*;
 
+    #[derive(Debug, Clone)]
+    struct HotWaterSourceMock {
+        cold_feed: WaterSourceWithTemperature
+    }
+
+    impl HotWaterSourceBehaviour for HotWaterSourceMock {
+        fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
+            self.cold_feed.clone()
+        }
+    
+        fn temp_hot_water(&self) -> anyhow::Result<f64> {
+            unimplemented!();
+        }
+    
+        fn demand_hot_water(&self,
+            usage_events: Vec<WaterEventResult>,
+            simtime: SimulationTimeIteration,
+        ) -> anyhow::Result<f64> {
+            Ok(usage_events.iter().map(|e| { e.temperature_warm * e.volume_warm / 4200.0 }).sum())
+        }
+    
+        fn get_temp_hot_water(
+            &self,
+            volume_required: f64,
+            volume_required_already: f64,
+        ) -> Vec<(f64, f64)> {
+            let volume_req_cumulative = volume_required + volume_required_already;
+            let frac_volume_req_already = volume_required_already / volume_req_cumulative;
+            let frac_layer_1 = max_of_2(0.0, 0.6 - frac_volume_req_already);
+            let frac_layer_2 = 0.4 - max_of_2(0.0 , frac_volume_req_already - 0.6);
+
+            vec![
+                (55.0, volume_req_cumulative * frac_layer_1),
+                (45.0, volume_req_cumulative * frac_layer_2)
+            ]
+        }
+    
+        fn internal_gains(&self) -> Option<f64> {
+            None
+        }
+    
+        fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+            (0., 0.)
+        }
+    
+        fn is_point_of_use(&self) -> bool {
+            false
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct HotWaterSourceMockWithUniqueHotWaterTemperature {
+    }
+
+    impl HotWaterSourceBehaviour for HotWaterSourceMockWithUniqueHotWaterTemperature {
+        fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
+            unimplemented!()
+        }
+    
+        fn temp_hot_water(&self) -> anyhow::Result<f64> {
+            todo!()
+        }
+    
+        fn demand_hot_water(&self,
+            usage_events: Vec<WaterEventResult>,
+            simtime: SimulationTimeIteration,
+        ) -> anyhow::Result<f64> {
+            Ok(0.) // Python doesn't mock this
+        }
+    
+        fn get_temp_hot_water(
+            &self,
+            volume_required: f64,
+            volume_required_already: f64,
+        ) -> Vec<(f64, f64)> {
+            let volume_req_cumulative = volume_required + volume_required_already;
+            vec![(55.0, volume_req_cumulative)]
+        }
+    
+        fn internal_gains(&self) -> Option<f64> {
+            Some(0.) // Python doesn't mock this
+        }
+    
+        fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+            (0., 0.) // Python doesn't mock this
+        }
+    
+        fn is_point_of_use(&self) -> bool {
+            false
+        }
+    }
+
     #[fixture]
     fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 24., 1.)
     }
 
-    #[fixture]
-    fn dhw_demand(simulation_time: SimulationTime) -> DomesticHotWaterDemand {
+    fn create_dhw_demand<T: HotWaterSourceBehaviour>(simulation_time: SimulationTime, hot_water_sources: IndexMap<String, T>,  pre_heated_water_sources: IndexMap<String, T>) -> DomesticHotWaterDemand<T> {
         let cold_water_temps = vec![
             2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0,
             4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0,
@@ -965,7 +1054,15 @@ mod tests {
         let electricity_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
         ));
-        let energy_supplies = IndexMap::from([("mains elec".into(), electricity_supply.clone())]);
+
+        let unmet_demand = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::UnmetDemand, simulation_time.total_steps()).build(),
+        ));
+
+        let energy_supplies = IndexMap::from([
+            ("_unmet_demand".into(), unmet_demand.clone()),
+            ("mains elec".into(), electricity_supply.clone()),
+            ]);
 
         let showers_input = Showers(IndexMap::from([
             (
@@ -1009,7 +1106,7 @@ mod tests {
             },
         )]));
 
-        let hw_pipework = Some(WaterDistribution::List(vec![
+        let hw_pipework = WaterDistributionInput::List(vec![
             WaterPipeworkSimple {
                 location: WaterPipeworkLocation::Internal,
                 internal_diameter_mm: 30.,
@@ -1050,7 +1147,7 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-        ]));
+        ]);
 
         let event_schedules = vec![
             None,
@@ -1163,9 +1260,6 @@ mod tests {
             None,
         ];
 
-        let hot_water_sources = todo!();
-        let pre_heated_water_sources = todo!();
-
         DomesticHotWaterDemand::new(
             showers_input,
             baths_input,
@@ -1182,448 +1276,178 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "not yet implemented for 1_0_a1"]
-    fn test_hot_water_demand(dhw_demand: DomesticHotWaterDemand, simulation_time: SimulationTime) {
+    fn test_hot_water_demand(simulation_time: SimulationTime) {
+        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> = IndexMap::from([( "hw cylinder".into(), HotWaterSourceMockWithUniqueHotWaterTemperature {} )]);
+        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> = Default::default();
+
+        let expected_hw_demand_volumes: Vec<IndexMap<String, f64>> = vec![
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 81.141483189812),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 53.58989404060333),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 64.89041357202146),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ]),
+            IndexMap::from([
+                ("_electric_showers".into(), 0.),
+                ("hw cylinder".into(), 0.),
+            ])
+        ];
+
+        let dhw_demand = create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources);
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            assert_eq!(
-                dhw_demand.hot_water_demand(t_it, 55.0).unwrap(),
-                [
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 29.783791734078537,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: Some(vec![
-                            TypedScheduleEvent {
-                                start: 4.1,
-                                duration: Some(6.),
-                                temperature: 41.0,
-                                name: "IES".to_string(),
-                                event_type: WaterScheduleEventType::Shower,
-                                volume: None,
-                                warm_volume: None,
-                                pipework_volume: Some(7.556577529434648),
-                            },
-                            TypedScheduleEvent {
-                                start: 4.5,
-                                duration: Some(6.),
-                                temperature: 41.0,
-                                name: "IES".to_string(),
-                                event_type: WaterScheduleEventType::Shower,
-                                volume: None,
-                                warm_volume: None,
-                                pipework_volume: Some(7.556577529434648),
-                            }
-                        ]),
-                        vol_hot_water_equiv_elec_shower: 29.783791734078537
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 81.141483189812,
-                        hw_demand_vol_target: IndexMap::from([
-                            (
-                                41.0.into(),
-                                VolumeReference {
-                                    warm_temp: 41.0,
-                                    warm_vol: 100.
-                                }
-                            ),
-                            (
-                                DemandVolTargetKey::TempHotWater,
-                                VolumeReference {
-                                    warm_temp: 55.0,
-                                    warm_vol: 81.141483189812
-                                }
-                            )
-                        ]),
-                        hw_vol_at_tapping_points: 88.195822360114,
-                        hw_duration: 12.5,
-                        all_events: 1usize,
-                        hw_energy_demand: 4.532666666666667,
-                        usage_events: Some(vec![
-                            TypedScheduleEvent {
-                                start: 6.,
-                                duration: Some(6.),
-                                temperature: 41.0,
-                                name: "IES".to_string(),
-                                event_type: WaterScheduleEventType::Shower,
-                                volume: None,
-                                warm_volume: None,
-                                pipework_volume: Some(7.556577529434648),
-                            },
-                            TypedScheduleEvent {
-                                start: 6.,
-                                duration: Some(12.5),
-                                temperature: 41.0,
-                                name: "medium".to_string(),
-                                event_type: WaterScheduleEventType::Bath,
-                                volume: Some(100.0),
-                                warm_volume: Some(100.),
-                                pipework_volume: Some(7.556577529434648),
-                            }
-                        ]),
-                        vol_hot_water_equiv_elec_shower: 14.610916699736642
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 53.58989404060333,
-                        hw_demand_vol_target: IndexMap::from([
-                            (
-                                41.0.into(),
-                                VolumeReference {
-                                    warm_temp: 41.0,
-                                    warm_vol: 56.0
-                                }
-                            ),
-                            (
-                                DemandVolTargetKey::TempHotWater,
-                                VolumeReference {
-                                    warm_temp: 55.0,
-                                    warm_vol: 53.58989404060333
-                                }
-                            )
-                        ]),
-                        hw_vol_at_tapping_points: 38.47673898173404,
-                        hw_duration: 7.0,
-                        all_events: 2,
-                        hw_energy_demand: 2.325363096327197,
-                        usage_events: Some(vec![
-                            TypedScheduleEvent {
-                                start: 7.,
-                                duration: Some(6.),
-                                temperature: 41.0,
-                                name: "mixer".to_string(),
-                                event_type: WaterScheduleEventType::Shower,
-                                volume: None,
-                                warm_volume: Some(48.0),
-                                pipework_volume: Some(7.556577529434648),
-                            },
-                            TypedScheduleEvent {
-                                start: 7.,
-                                duration: Some(1.),
-                                temperature: 41.0,
-                                name: "other".to_string(),
-                                event_type: WaterScheduleEventType::Other,
-                                volume: None,
-                                warm_volume: Some(8.0),
-                                pipework_volume: Some(7.556577529434648),
-                            }
-                        ]),
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 64.89041357202146,
-                        hw_demand_vol_target: IndexMap::from([
-                            (
-                                41.0.into(),
-                                VolumeReference {
-                                    warm_temp: 41.0,
-                                    warm_vol: 72.0
-                                }
-                            ),
-                            (
-                                DemandVolTargetKey::TempHotWater,
-                                VolumeReference {
-                                    warm_temp: 55.0,
-                                    warm_vol: 64.89041357202146
-                                }
-                            ),
-                        ]),
-                        hw_vol_at_tapping_points: 49.77725851315216,
-                        hw_duration: 9.0,
-                        all_events: 2,
-                        hw_energy_demand: 2.9504640362695724,
-                        usage_events: Some(vec![
-                            TypedScheduleEvent {
-                                start: 8.,
-                                duration: Some(6.),
-                                temperature: 41.0,
-                                name: "mixer".to_string(),
-                                event_type: WaterScheduleEventType::Shower,
-                                volume: None,
-                                warm_volume: Some(48.0),
-                                pipework_volume: Some(7.556577529434648),
-                            },
-                            TypedScheduleEvent {
-                                start: 8.,
-                                duration: Some(3.),
-                                temperature: 41.0,
-                                name: "medium".to_string(),
-                                event_type: WaterScheduleEventType::Bath,
-                                volume: None,
-                                warm_volume: Some(24.),
-                                pipework_volume: Some(7.556577529434648),
-                            }
-                        ]),
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    },
-                    DomesticHotWaterDemandData {
-                        hw_demand_vol: 0.0,
-                        hw_demand_vol_target: Default::default(),
-                        hw_vol_at_tapping_points: 0.0,
-                        hw_duration: 0.0,
-                        all_events: Default::default(),
-                        hw_energy_demand: 0.0,
-                        usage_events: None,
-                        vol_hot_water_equiv_elec_shower: 0.0
-                    }
-                ][t_idx]
-            );
+
+            // TODO test all other results too
+            let (hw_demand_volume, hw_duration, all_events, hw_energy_demand, usage_events_with_flushes) = dhw_demand.hot_water_demand(t_it).unwrap();
+            assert_eq!(hw_demand_volume, expected_hw_demand_volumes[t_idx]);
         }
     }
 
-    #[rstest]
-    #[ignore = "not yet implemented for 1_0_a1"]
-    fn test_calc_pipework_losses(
-        dhw_demand: DomesticHotWaterDemand,
-        simulation_time: SimulationTime,
-    ) {
-        for (t_idx, _) in simulation_time.iter().enumerate() {
-            assert_eq!(
-                dhw_demand.calc_pipework_losses(
-                    1.,
-                    0.,
-                    [0, 0, 0, 2, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0][t_idx],
-                    [
-                        55.0, 55.0, 55.0, 57.0, 55.0, 58.0, 60.0, 40.0, 55.0, 55.0, 55.0, 55.0,
-                        55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0
-                    ][t_idx],
-                    20.0,
-                    5.0
-                ),
-                [
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.3615154654675836, 0.4052961328742277),
-                    (0.0, 0.0),
-                    (0.3712861537234643, 0.41309028927565516),
-                    (0.3908275302352256, 0.42867860207851005),
-                    (0.1954137651176128, 0.27279547404996096),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0),
-                    (0.0, 0.0)
-                ][t_idx]
-            );
-        }
-    }
+    // #[rstest]
+    // #[ignore = "not yet implemented for 1_0_a1"]
+    // fn test_calc_pipework_losses(simulation_time: SimulationTime) {
+    //     let dhw_demand = create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources);
+    //     for (t_idx, _) in simulation_time.iter().enumerate() {
+    //         assert_eq!(
+    //             dhw_demand.calc_pipework_losses(
+    //                 1.,
+    //                 0.,
+    //                 [0, 0, 0, 2, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0][t_idx],
+    //                 [
+    //                     55.0, 55.0, 55.0, 57.0, 55.0, 58.0, 60.0, 40.0, 55.0, 55.0, 55.0, 55.0,
+    //                     55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0
+    //                 ][t_idx],
+    //                 20.0,
+    //                 5.0
+    //             ),
+    //             [
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.3615154654675836, 0.4052961328742277),
+    //                 (0.0, 0.0),
+    //                 (0.3712861537234643, 0.41309028927565516),
+    //                 (0.3908275302352256, 0.42867860207851005),
+    //                 (0.1954137651176128, 0.27279547404996096),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0),
+    //                 (0.0, 0.0)
+    //             ][t_idx]
+    //         );
+    //     }
+    // }
 
-    #[rstest]
-    #[ignore = "not yet implemented for 1_0_a1"]
-    fn test_calc_pipework_losses_with_no_pipework(
-        mut dhw_demand: DomesticHotWaterDemand,
-        simulation_time: SimulationTime,
-    ) {
-        dhw_demand.hot_water_distribution_pipework = vec![];
+    // #[rstest]
+    // #[ignore = "not yet implemented for 1_0_a1"]
+    // fn test_calc_pipework_losses_with_no_pipework(
+    //     mut dhw_demand: DomesticHotWaterDemand,
+    //     simulation_time: SimulationTime,
+    // ) {
+    //     dhw_demand.hot_water_distribution_pipework = vec![];
 
-        for _ in simulation_time.iter() {
-            assert_eq!(
-                dhw_demand.calc_pipework_losses(1., 0., 0, 55., 20., 5.),
-                (0., 0.)
-            );
-        }
-    }
+    //     for _ in simulation_time.iter() {
+    //         assert_eq!(
+    //             dhw_demand.calc_pipework_losses(1., 0., 0, 55., 20., 5.),
+    //             (0., 0.)
+    //         );
+    //     }
+    // }
 }

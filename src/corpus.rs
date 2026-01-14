@@ -651,7 +651,7 @@ pub struct Corpus {
     pre_heated_water_sources: IndexMap<String, HotWaterStorageTank>,
     pub(crate) energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
     pub(crate) internal_gains: InternalGainsCollection,
-    pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand,
+    pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand<HotWaterSource>,
     r_v_arg: AtomicF64,
     pub(crate) ventilation: Arc<InfiltrationVentilation>,
     pub(crate) zones: IndexMap<String, Arc<Zone>>,
@@ -4573,8 +4573,25 @@ pub(crate) enum HotWaterSource {
     HeatBattery(HeatBatteryPcmServiceWaterDirect),
 }
 
-impl HotWaterSource {
-    pub fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
+pub trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
+    fn get_cold_water_source(&self) -> WaterSourceWithTemperature;
+    fn temp_hot_water(&self) -> anyhow::Result<f64>;
+    fn demand_hot_water(&self,
+        usage_events: Vec<WaterEventResult>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64>;
+    fn get_temp_hot_water(
+        &self,
+        volume_required: f64,
+        volume_required_already: f64,
+    ) -> Vec<(f64, f64)>;
+    fn internal_gains(&self) -> Option<f64>;
+    fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64);
+    fn is_point_of_use(&self) -> bool;
+}
+
+impl HotWaterSourceBehaviour for HotWaterSource {
+    fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
         match self {
             HotWaterSource::PreHeated(source) => match source {
                 HotWaterStorageTank::StorageTank(storage_tank) => {
@@ -4591,7 +4608,7 @@ impl HotWaterSource {
         }
     }
 
-    pub(crate) fn temp_hot_water(&self) -> anyhow::Result<f64> {
+    fn temp_hot_water(&self) -> anyhow::Result<f64> {
         Ok(match self {
             HotWaterSource::PreHeated(source) => match source {
                 HotWaterStorageTank::StorageTank(_storage_tank) => {
@@ -4618,7 +4635,7 @@ impl HotWaterSource {
         })
     }
 
-    pub fn demand_hot_water(
+    fn demand_hot_water(
         &self,
         usage_events: Vec<WaterEventResult>,
         simtime: SimulationTimeIteration,
@@ -4643,7 +4660,7 @@ impl HotWaterSource {
         })
     }
 
-    pub(crate) fn get_temp_hot_water(
+    fn get_temp_hot_water(
         &self,
         volume_required: f64,
         volume_required_already: f64,
@@ -4676,7 +4693,7 @@ impl HotWaterSource {
     }
 
     // Calls internal_gains on hot water source where available
-    pub(crate) fn internal_gains(&self) -> Option<f64> {
+    fn internal_gains(&self) -> Option<f64> {
         match &self {
             HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
                 HotWaterStorageTank::StorageTank(rw_lock) => Some(rw_lock.read().internal_gains()),
@@ -4694,7 +4711,7 @@ impl HotWaterSource {
     }
 
     // Calls get_losses_from_primary_pipework_and_storage on hot water source where available, otherwise returns 0s.
-    pub(crate) fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+    fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
         match &self {
             HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
                 HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
@@ -4704,6 +4721,10 @@ impl HotWaterSource {
             },
             _ => (0., 0.),
         }
+    }
+    
+    fn is_point_of_use(&self) -> bool {
+        matches!(&self, HotWaterSource::PointOfUse(_))
     }
 }
 
