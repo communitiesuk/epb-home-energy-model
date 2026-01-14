@@ -2302,6 +2302,10 @@ mod tests {
             SimulationTime::new(0.0, 24.0, 1.0)
         }
 
+        fn simulation_time_48_hours() -> SimulationTime {
+            SimulationTime::new(0.0, 48.0, 1.0)
+        }
+
         fn schedule() -> Vec<bool> {
             vec![
                 true, true, true, true, true, true, true, true, false, false, false, false, false,
@@ -2309,33 +2313,108 @@ mod tests {
             ]
         }
 
+        fn schedule_48_hours() -> Vec<bool> {
+            [schedule(), vec![true; 24]].concat()
+        }
+
+        fn air_temperatures() -> Vec<f64> {
+            vec![
+                19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+                19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+            ]
+        }
+
+        fn wind_speeds() -> Vec<f64> {
+            vec![
+                3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+                3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+            ]
+        }
+
+        fn wind_directions() -> Vec<f64> {
+            vec![
+                300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
+                190., 200., 320., 330., 340., 350., 355., 315., 5.,
+            ]
+        }
+
+        fn diffuse_horizontal_radiation() -> Vec<f64> {
+            vec![
+                0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225.,
+                198., 121., 68., 19., 0., 0., 0., 0., 0.,
+            ]
+        }
+
+        fn direct_beam_radiation() -> Vec<f64> {
+            vec![
+                0., 0., 0., 0., 0., 0., 7., 53., 63., 164., 339., 242., 315., 577., 385., 285.,
+                332., 126., 7., 0., 0., 0., 0., 0.,
+            ]
+        }
+
+        fn solar_reflectivity_of_ground() -> Vec<f64> {
+            vec![
+                0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+                0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+            ]
+        }
+
         fn external_conditions() -> ExternalConditions {
             ExternalConditions::new(
                 &simulation_time().iter(),
-                vec![
-                    19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
-                    19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
-                ],
-                vec![
-                    3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
-                    3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
-                ],
-                vec![
-                    300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100.,
-                    140., 190., 200., 320., 330., 340., 350., 355., 315., 5.,
-                ],
-                vec![
-                    0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225.,
-                    198., 121., 68., 19., 0., 0., 0., 0., 0.,
-                ],
-                vec![
-                    0., 0., 0., 0., 0., 0., 7., 53., 63., 164., 339., 242., 315., 577., 385., 285.,
-                    332., 126., 7., 0., 0., 0., 0., 0.,
-                ],
-                vec![
-                    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-                    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-                ],
+                air_temperatures(),
+                wind_speeds(),
+                wind_directions(),
+                diffuse_horizontal_radiation(),
+                direct_beam_radiation(),
+                solar_reflectivity_of_ground(),
+                51.383,
+                -0.783,
+                0,
+                0,
+                Some(0),
+                1.,
+                Some(1),
+                Some(DaylightSavingsConfig::NotApplicable),
+                false,
+                false,
+                // following starts/ends are corrected from Python tests which erroneously use previous
+                // "start" field instead of "start360" (which has different origin for angle)
+                serde_json::from_value(json!([
+                    {"start360": 0, "end360": 45},
+                    {"start360": 45, "end360": 90},
+                    {"start360": 90, "end360": 135},
+                    {"start360": 135, "end360": 180,
+                        "shading": [
+                            {"type": "obstacle", "height": 10.5, "distance": 12}
+                        ]
+                    },
+                    {"start360": 180, "end360": 225},
+                    {"start360": 225, "end360": 270},
+                    {"start360": 270, "end360": 315},
+                    {"start360": 315, "end360": 360}
+                ]))
+                .unwrap(),
+            )
+        }
+
+        fn external_conditions_48_hours() -> ExternalConditions {
+            ExternalConditions::new(
+                &simulation_time_48_hours().iter(),
+                [air_temperatures(), air_temperatures()].concat(),
+                [wind_speeds(), wind_speeds()].concat(),
+                [wind_directions(), wind_directions()].concat(),
+                [
+                    diffuse_horizontal_radiation(),
+                    diffuse_horizontal_radiation(),
+                ]
+                .concat(),
+                [direct_beam_radiation(), direct_beam_radiation()].concat(),
+                [
+                    solar_reflectivity_of_ground(),
+                    solar_reflectivity_of_ground(),
+                ]
+                .concat(),
                 51.383,
                 -0.783,
                 0,
@@ -2717,27 +2796,28 @@ mod tests {
 
         #[test]
         fn test_energy_to_store() {
-            let simulation_time = SimulationTime::new(0., 48., 1.);
-            let mut schedule = schedule();
-            schedule.extend(vec![true; 24]);
+            let simulation_time = simulation_time_48_hours();
 
-            // TODO: review this with someone
-            // we need air-temps to have a length of 48 here, otherwise it panics at runtime once
-            // it gets to `air_temp_with_offset` and tries to access `air_temps` by index
-            // this seems to not happen in Python because the 24 hour simtime from
-            // ExternalConditions is used, rather than the one being passed through from the
-            // ChargeControl energy_to_store method - this might mean that the Python never tests
-            // the last 24 values
-            let mut external_conditions = external_conditions();
-            external_conditions
-                .air_temps
-                .extend(external_conditions.air_temps.clone());
+            // Using an ExternalConditions with a 48 simtime & fields with length of 48, because we
+            // need air-temps to have a length of 48. Otherwise, a panic in `air_temp_with_offset`
+            // occurs when trying to access `air_temps` by index. This doesn't happen in Python
+            // because the 24 hour simtime from ExternalConditions is used to create the index,
+            // rather than the simtime being passed through from ChargeControl. This might mean that
+            // the Python test isn't set up correctly (reported upstream)
+            let external_conditions = external_conditions_48_hours();
 
-            let charge_control = create_charge_control(
+            let charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
+                schedule_48_hours(),
+                &simulation_time.iter().current_iteration(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
                 Some(15.5),
-                Some(external_conditions),
-                schedule,
+                None,
+                Some(Arc::new(external_conditions)),
+                Some(external_sensor()),
+                None,
             );
 
             let expected: Vec<f64> = [
@@ -2755,6 +2835,50 @@ mod tests {
                     .unwrap()
                     .energy_to_store(100., 70., t_it);
                 assert!(actual.total_cmp(expected).is_eq()); // comparison including NaN values
+            }
+        }
+
+        #[ignore = "this test is set up incongruously in Python so we have decided to skip it for now"]
+        #[test]
+        fn test_energy_to_store_no_energy() {
+            let simulation_time = simulation_time_48_hours();
+
+            let mut charge_control = ChargeControl::new(
+                ControlLogicType::Hhrsh,
+                schedule_48_hours(),
+                &simulation_time.iter().current_iteration(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
+                Some(15.5),
+                None,
+                Some(Arc::new(external_conditions_48_hours())),
+                Some(external_sensor()),
+                None,
+            )
+            .unwrap();
+
+            let past_ext_temp = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
+                repeat(Some(19.0)),
+                24,
+            )));
+
+            let heat_retention_data = &charge_control.heat_retention_data.unwrap();
+            charge_control.heat_retention_data = Some(ChargeControlHeatRetentionFields {
+                steps_day: heat_retention_data.steps_day,
+                demand: heat_retention_data.demand.clone(),
+                past_ext_temp,
+                future_ext_temp: heat_retention_data.future_ext_temp.clone(),
+                energy_to_store: AtomicF64::new(
+                    heat_retention_data.energy_to_store.load(Ordering::SeqCst),
+                ),
+            });
+
+            for t_it in simulation_time.iter() {
+                let idx = t_it.index;
+                print!("{idx}");
+                let actual = charge_control.energy_to_store(100., 19., t_it);
+                assert_eq!(actual, 0.);
             }
         }
 
