@@ -2715,12 +2715,12 @@ mod tests {
             }
         }
 
-        #[rstest]
+        #[test]
         fn test_energy_to_store() {
             let simulation_time = SimulationTime::new(0., 48., 1.);
             let mut schedule = schedule();
             schedule.extend(vec![true; 24]);
-            
+
             // TODO: review this with someone
             // we need air-temps to have a length of 48 here, otherwise it panics at runtime once
             // it gets to `air_temp_with_offset` and tries to access `air_temps` by index
@@ -2728,11 +2728,11 @@ mod tests {
             // ExternalConditions is used, rather than the one being passed through from the
             // ChargeControl energy_to_store method - this might mean that the Python never tests
             // the last 24 values
-            
             let mut external_conditions = external_conditions();
             external_conditions
                 .air_temps
                 .extend(external_conditions.air_temps.clone());
+
             let charge_control = create_charge_control(
                 ControlLogicType::Hhrsh,
                 Some(15.5),
@@ -2756,6 +2756,11 @@ mod tests {
                     .energy_to_store(100., 70., t_it);
                 assert!(actual.total_cmp(expected).is_eq()); // comparison including NaN values
             }
+        }
+
+        #[rstest]
+        fn test_get_limit_factor_invalid(charge_control_1: ChargeControl) {
+            assert!(charge_control_1.get_limit_factor(f64::NAN).is_err())
         }
     }
 
