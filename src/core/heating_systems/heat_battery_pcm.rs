@@ -3584,7 +3584,165 @@ mod tests {
         }
     }
 
-    // TODO (implementation not yet updated) test_output_detailed_results_space
+    #[rstest]
+    fn test_output_detailed_results_space(
+        simulation_time: SimulationTime,
+        heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
+    ) {
+        let heat_battery = heat_battery_no_service_connection;
+        let service_name = "new_service";
+        let control = create_setpoint_time_control(vec![]);
+
+        HeatBatteryPcm::create_service_space_heating(
+            heat_battery.clone(),
+            service_name,
+            Arc::new(control),
+        )
+        .unwrap();
+
+        let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
+            "auxiliary".into() => indexmap! {
+                ("energy_aux".into(), Some("kWh".into())) => vec![0.06.into(), 0.06.into()],
+                ("battery_losses".into(), Some("kWh".into())) => vec![0.1.into(), 0.1.into()],
+                ("Temps_after_losses0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 38.82044560943607.into()],
+                ("Temps_after_losses1".into(), Some("degC".into())) => vec![38.820445609439716.into(), 38.82044560943589.into()],
+                ("Temps_after_losses2".into(), Some("degC".into())) => vec![38.82044560954896.into(), 38.8204456094357.into()],
+                ("Temps_after_losses3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 38.820445609433904.into()],
+                ("Temps_after_losses4".into(), Some("degC".into())) => vec![38.82044568377406.into(), 38.82044560942411.into()],
+                ("Temps_after_losses5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 38.820445609382055.into()],
+                ("Temps_after_losses6".into(), Some("degC".into())) => vec![38.82048124427147.into(), 38.8204456092257.into()],
+                ("Temps_after_losses7".into(), Some("degC".into())) => vec![38.82118099093947.into(), 38.820445608708134.into()],
+                ("total_charge".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+                ("end_of_timestep_charge".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+                ("hb_after_only_charge_zone_temp0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 38.82044560943607.into()],
+                ("hb_after_only_charge_zone_temp1".into(), Some("degC".into())) => vec![38.820445609439716.into(), 38.82044560943589.into()],
+                ("hb_after_only_charge_zone_temp2".into(), Some("degC".into())) => vec![38.82044560954896.into(), 38.8204456094357.into()],
+                ("hb_after_only_charge_zone_temp3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 38.820445609433904.into()],
+                ("hb_after_only_charge_zone_temp4".into(), Some("degC".into())) => vec![38.82044568377406.into(), 38.82044560942411.into()],
+                ("hb_after_only_charge_zone_temp5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 38.820445609382055.into()],
+                ("hb_after_only_charge_zone_temp6".into(), Some("degC".into())) => vec![38.82048124427147.into(), 38.8204456092257.into()],
+                ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![38.82118099093947.into(), 38.820445608708134.into()],
+            },
+            "new_service".into() => indexmap! {
+                ("service_name".into(), None) => vec![ResultParamValue::String("new_service".into()), ResultParamValue::String("new_service".into())],
+                ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::Space.to_string().into()), ResultParamValue::String(HeatingServiceType::Space.to_string().into())],
+                ("service_on".into(), None) => vec![ResultParamValue::Boolean(true), ResultParamValue::Boolean(true)],
+                ("energy_output_required".into(), Some("kWh".into())) => vec![100.0.into(), 100.0.into()],
+                ("temp_output".into(), Some("degC".into())) => vec![40.000471231805946.into(), 39.99999999956042.into()],
+                ("temp_inlet".into(), Some("degC".into())) => vec![40.0.into(), 40.0.into()],
+                ("time_running".into(), Some("secs".into())) => vec![3600.0.into(), 3600.0.into()],
+                ("energy_delivered_HB".into(), Some("kWh".into())) => vec![10.509408477594047.into(), (-0.09999181091672799).into()],
+                ("energy_delivered_backup".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+                ("energy_delivered_total".into(), Some("kWh".into())) => vec![10.509408477594047.into(), (-0.09999181091672799).into()],
+                ("energy_charged_during_service".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+                ("hb_zone_temperatures0".into(), Some("degC".into())) => vec![40.00000000000006.into(), 39.99999999999964.into()],
+                ("hb_zone_temperatures1".into(), Some("degC".into())) => vec![40.00000000000328.into(), 39.99999999999946.into()],
+                ("hb_zone_temperatures2".into(), Some("degC".into())) => vec![40.00000000011253.into(), 39.99999999999927.into()],
+                ("hb_zone_temperatures3".into(), Some("degC".into())) => vec![40.00000000307894.into(), 39.99999999999747.into()],
+                ("hb_zone_temperatures4".into(), Some("degC".into())) => vec![40.00000007433763.into(), 39.99999999998768.into()],
+                ("hb_zone_temperatures5".into(), Some("degC".into())) => vec![40.000001662652714.into(), 39.99999999994562.into()],
+                ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![40.00003563483504.into(), 39.99999999978927.into()],
+                ("hb_zone_temperatures7".into(), Some("degC".into())) => vec![40.000735381503034.into(), 39.9999999992717.into()],
+                ("current_hb_power".into(), Some("kW".into())) => vec![10.509408477594047.into(), (-0.09999181091672799).into()],
+                ("energy_delivered_H4".into(), Some("kWh".into())) => vec![10.509408477594047.into(), (-0.09999181091672799).into()],
+            },
+        };
+
+        let expected_results_annual: ResultsAnnual = indexmap! {
+            "Overall".into() => indexmap! {
+                ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
+                ("time_running".into(), Some("secs".into())) => 7200.0.into(),
+                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.409416666677318.into(),
+                ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.409416666677318.into(),
+                ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_H4".into(), Some("kWh".into())) => 10.409416666677318.into(),
+            },
+            "auxiliary".into() => indexmap! {
+                ("energy_aux".into(), Some("kWh".into())) => 0.12.into(),
+                ("battery_losses".into(), Some("kWh".into())) => 0.2.into(),
+                ("total_charge".into(), Some("kWh".into())) => 0.0.into(),
+                ("end_of_timestep_charge".into(), Some("kWh".into())) => 0.0.into(),
+            },
+            "new_service".into() => indexmap! {
+                ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
+                ("time_running".into(), Some("secs".into())) => 7200.0.into(),
+                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.409416666677318.into(),
+                ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.409416666677318.into(),
+                ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_H4".into(), Some("kWh".into())) => 10.409416666677318.into(),
+            },
+        };
+
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            heat_battery
+                .read()
+                .demand_energy(
+                    service_name,
+                    HeatingServiceType::Space,
+                    100.,
+                    40.,
+                    Some(55.),
+                    true,
+                    None,
+                    Some(true),
+                )
+                .unwrap();
+
+            heat_battery.read().timestep_end(t_idx).unwrap();
+        }
+
+        let (results_per_timestep, results_annual) = heat_battery
+            .read()
+            .output_detailed_results(&indexmap! {}, &indexmap! {})
+            .unwrap();
+
+        assert_eq!(
+            results_per_timestep.keys().collect_vec(),
+            expected_results_per_timestep.keys().collect_vec()
+        );
+        assert_eq!(
+            results_annual.keys().collect_vec(),
+            expected_results_annual.keys().collect_vec()
+        );
+
+        let assert_value =
+            |actual: &ResultParamValue, expected: &ResultParamValue| match (actual, expected) {
+                (ResultParamValue::Number(actual_num), ResultParamValue::Number(expected_num)) => {
+                    assert_relative_eq!(actual_num, expected_num, max_relative = 1e-7);
+                }
+                _ => assert_eq!(actual, expected,),
+            };
+
+        for (key, expected_results) in &expected_results_per_timestep {
+            let actual_results = &results_per_timestep[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, expected_vec) in expected_results {
+                for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
+                    assert_value(actual, expected);
+                }
+            }
+        }
+
+        for (key, expected_results) in &expected_results_annual {
+            let actual_results = &results_annual[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, value) in expected_results {
+                assert_value(&actual_results[inner_key], value);
+            }
+        }
+    }
     // TODO (implementation not yet updated) test_output_detailed_results_none
 
     #[rstest]
