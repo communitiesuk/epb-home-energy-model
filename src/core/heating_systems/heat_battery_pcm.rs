@@ -22,7 +22,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use smartstring::alias::String;
-use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -383,7 +382,7 @@ const DEFAULT_OUTLET_TEMP_CELSIUS: f64 = 53.; // Estimated outlet temperature fo
 #[allow(dead_code)]
 struct HeatBatteryResult {
     service_name: String,
-    service_type: HeatingServiceType,
+    service_type: Option<HeatingServiceType>,
     service_on: bool,
     energy_output_required: f64,
     temp_output: Option<f64>,
@@ -401,7 +400,11 @@ impl HeatBatteryResult {
     fn param(&self, param: &str) -> ResultParamValue {
         match param {
             "service_name" => ResultParamValue::from(self.service_name.clone()),
-            "service_type" => ResultParamValue::from(String::from(self.service_type.to_string())),
+            "service_type" => self
+                .service_type
+                .as_ref()
+                .map(|service_type| ResultParamValue::from(String::from(service_type.to_string())))
+                .unwrap_or(ResultParamValue::Empty),
             "service_on" => self.service_on.into(),
             "energy_output_required" => self.energy_output_required.into(),
             "temp_output" => self.temp_output.into(),
@@ -480,7 +483,7 @@ pub struct HeatBatteryPcm {
     simulation_time: Arc<SimulationTimeIterator>,
     energy_supply: Arc<RwLock<EnergySupply>>,
     energy_supply_connection: EnergySupplyConnection,
-    energy_supply_connections: HashMap<String, EnergySupplyConnection>,
+    energy_supply_connections: IndexMap<String, EnergySupplyConnection>,
     pwr_in: f64,
     max_rated_losses: f64,
     power_circ_pump: f64,
@@ -1540,7 +1543,7 @@ impl HeatBatteryPcm {
             if update_heat_source_state {
                 self.service_results.write().push(HeatBatteryResult {
                     service_name: service_name.into(),
-                    service_type,
+                    service_type: service_type.into(),
                     service_on,
                     energy_output_required,
                     temp_output,
@@ -1651,7 +1654,7 @@ impl HeatBatteryPcm {
             // TODO (from Python) Clarify whether Heat Batteries can have direct electric backup if depleted
             self.service_results.write().push(HeatBatteryResult {
                 service_name: service_name.into(),
-                service_type,
+                service_type: service_type.into(),
                 service_on,
                 energy_output_required,
                 temp_output: outlet_temp_c,
@@ -1711,7 +1714,7 @@ impl HeatBatteryPcm {
         let (battery_losses, zone_temp_c_after_losses) = self.battery_heat_loss()?;
         self.battery_losses.store(battery_losses, Ordering::SeqCst);
 
-        // Charging battery for the remaining of the timestep
+        // Charging battery for the remainder of the timestep
         let (end_of_ts_charge, zone_temp_c_after_charging) = if self
             .charge_control
             .is_on(&self.simulation_time.current_iteration())
@@ -1727,27 +1730,58 @@ impl HeatBatteryPcm {
         )?;
 
         // If detailed results are to be output, save the results from the current timestep
-        if self.detailed_results.is_some() {
-            // TODO after 1.0.0a1 migration
-            let results = self.service_results.read().clone();
+        if let Some(detailed_results) = self.detailed_results.as_ref() {
+            let service_results = self.service_results.read();
+            let services_called: IndexMap<&String, &HeatBatteryResult> = service_results
+                .iter()
+                .map(|result| (&result.service_name, result))
+                .collect();
 
-            self.detailed_results
-                .as_ref()
-                .unwrap()
-                .write()
-                .push(HeatBatteryTimestepResult {
-                    results,
-                    summary: HeatBatteryTimestepSummary {
-                        energy_aux: energy_aux * self.n_units as f64,
-                        battery_losses: self.battery_losses.load(Ordering::SeqCst)
-                            * self.n_units as f64,
-                        temps_after_losses: zone_temp_c_after_losses,
-                        total_charge: self.energy_charged.load(Ordering::SeqCst)
-                            * self.n_units as f64,
-                        end_of_timestep_charge: end_of_ts_charge * self.n_units as f64,
-                        hb_after_only_charge_zone_temp: zone_temp_c_after_charging,
-                    },
-                });
+            // Ensure all registered services have an entry in the results
+            let mut ordered_service_results =
+                Vec::with_capacity(self.energy_supply_connections.len());
+            let initial_temps = self.zone_temp_c_dist_initial.read().clone();
+
+            for service_name in self.energy_supply_connections.keys() {
+                if let Some(result) = services_called.get(service_name) {
+                    // Service was called, use its results
+                    ordered_service_results.push((*result).clone());
+                } else {
+                    // Service was not called, create a placeholder entry
+                    ordered_service_results.push(HeatBatteryResult {
+                        service_name: service_name.clone(),
+                        service_type: None, // Unknown since service wasn't called
+                        service_on: false,
+                        energy_output_required: 0.,
+                        temp_output: None,
+                        temp_inlet: 0.,
+                        time_running: 0.,
+                        energy_delivered_hb: 0.,
+                        energy_delivered_backup: 0.,
+                        energy_delivered_total: 0.,
+                        energy_charged_during_service: 0.,
+                        hb_zone_temperatures: initial_temps.clone(),
+                        current_hb_power: 0.,
+                    });
+                }
+            }
+
+            // Add auxiliary results at the end
+            let n_units = self.n_units as f64;
+            let battery_losses = self.battery_losses.load(Ordering::SeqCst) * n_units;
+            let total_charge = self.energy_charged.load(Ordering::SeqCst) * n_units;
+
+            detailed_results.write().push(HeatBatteryTimestepResult {
+                results: ordered_service_results,
+                summary: HeatBatteryTimestepSummary {
+                    energy_aux: energy_aux * n_units,
+                    battery_losses,
+                    temps_after_losses: zone_temp_c_after_losses,
+                    total_charge,
+                    end_of_timestep_charge: end_of_ts_charge * n_units,
+                    hb_after_only_charge_zone_temp: zone_temp_c_after_charging,
+                },
+            });
         }
 
         self.total_time_running_current_timestep
@@ -1850,7 +1884,7 @@ impl HeatBatteryPcm {
             // For water heating service, record hot water energy delivered from tank
             current_results.insert(("energy_delivered_H4".into(), Some("kWh".into())), {
                 if detailed_results.read().first().unwrap().results[service_idx].service_type
-                    == HeatingServiceType::DomesticHotWaterRegular
+                    == Some(HeatingServiceType::DomesticHotWaterRegular)
                 {
                     let energy_delivered_total_len = current_results
                         .get(&("energy_delivered_total".into(), Some("kWh".into())))
@@ -3802,7 +3836,149 @@ mod tests {
         assert_relative_eq!(service_result.time_running, 51.08689856959955);
     }
 
-    // TODO (implementation not yet updated) test_timestep_end_with_uncalled_services
+    #[rstest]
+    fn test_timestep_end_with_uncalled_services(
+        heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
+    ) {
+        let heat_battery = heat_battery_no_service_connection;
+
+        // Create three services
+        let service1 = "water_heating";
+        let service2 = "space_heating_zone1";
+        let service3 = "space_heating_zone2";
+
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service1).unwrap();
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service2).unwrap();
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service3).unwrap();
+
+        // In timestep 1: Call only service1 and service3 (skip service2)
+        heat_battery
+            .read()
+            .demand_energy(
+                service1,
+                HeatingServiceType::DomesticHotWaterRegular,
+                5.,
+                40.,
+                Some(55.),
+                true,
+                Some(0.),
+                Some(true),
+            )
+            .unwrap();
+
+        heat_battery
+            .read()
+            .demand_energy(
+                service3,
+                HeatingServiceType::Space,
+                3.,
+                35.,
+                Some(50.),
+                true,
+                Some(0.),
+                Some(true),
+            )
+            .unwrap();
+
+        heat_battery.read().timestep_end(0).unwrap();
+
+        {
+            let hb_guard = heat_battery.read();
+            let detailed_results_guard = hb_guard.detailed_results.as_ref().unwrap().read();
+
+            // Check that detailed results were created
+            assert_eq!(detailed_results_guard.len(), 1);
+
+            let timestep_results = &detailed_results_guard[0].results;
+
+            assert_eq!(timestep_results.len(), 3); // In Python this is 4 (Should have 3 service results + 1 auxiliary result = 4 total)
+
+            // Check service1 (was called)
+            assert_eq!(timestep_results[0].service_name, service1);
+            assert_eq!(
+                timestep_results[0].service_type.unwrap(),
+                HeatingServiceType::DomesticHotWaterRegular
+            );
+            assert!(timestep_results[0].service_on);
+            assert!(timestep_results[0].time_running > 0.);
+
+            // Check service2 (was NOT called - should have placeholder values)
+            assert_eq!(timestep_results[1].service_name, service2);
+            assert!(timestep_results[1].service_type.is_none());
+            assert!(!timestep_results[1].service_on);
+            assert_eq!(timestep_results[1].energy_output_required, 0.);
+            assert_eq!(timestep_results[1].time_running, 0.);
+            assert_eq!(timestep_results[1].energy_delivered_hb, 0.);
+            assert_eq!(timestep_results[1].current_hb_power, 0.);
+
+            // Check service3 (was called)
+            assert_eq!(timestep_results[2].service_name, service3);
+            assert_eq!(
+                timestep_results[2].service_type.unwrap(),
+                HeatingServiceType::Space
+            );
+            assert!(timestep_results[2].service_on);
+            assert!(timestep_results[2].time_running > 0.);
+
+            // Check auxiliary results
+            let summary = &detailed_results_guard[0].summary;
+            assert!(summary.energy_aux >= 0.);
+            assert!(summary.battery_losses >= 0.);
+            assert!(!summary.temps_after_losses.is_empty());
+            assert!(summary.total_charge >= 0.);
+            assert!(summary.end_of_timestep_charge >= 0.);
+            assert!(!summary.hb_after_only_charge_zone_temp.is_empty());
+        }
+
+        // In timestep 2: Call only service2 (skip service1 and service3)
+        heat_battery
+            .read()
+            .demand_energy(
+                service2,
+                HeatingServiceType::Space,
+                4.,
+                38.,
+                Some(52.),
+                true,
+                Some(0.),
+                Some(true),
+            )
+            .unwrap();
+
+        heat_battery.read().timestep_end(1).unwrap();
+
+        {
+            let hb_guard = heat_battery.read();
+            let detailed_results_guard = hb_guard.detailed_results.as_ref().unwrap().read();
+
+            // Check second timestep results
+            assert_eq!(detailed_results_guard.len(), 2);
+
+            let timestep2_results = &detailed_results_guard[1].results;
+
+            // service1 should have placeholder values this time
+            assert_eq!(timestep2_results[0].service_name, service1);
+            assert!(timestep2_results[0].service_type.is_none());
+            assert!(!timestep2_results[0].service_on);
+            assert_eq!(timestep2_results[0].time_running, 0.);
+
+            // service2 should have actual values
+            assert_eq!(timestep2_results[1].service_name, service2);
+            assert_eq!(
+                timestep2_results[1].service_type.unwrap(),
+                HeatingServiceType::Space
+            );
+            assert!(timestep2_results[1].service_on);
+            assert!(timestep2_results[1].time_running > 0.);
+
+            // service3 should have placeholder values
+            assert_eq!(timestep2_results[2].service_name, service3);
+            assert!(timestep2_results[2].service_type.is_none());
+            assert!(!timestep2_results[2].service_on);
+            assert_eq!(timestep2_results[2].time_running, 0.);
+        }
+    }
+
     // TODO (implementation not yet updated) test_timestep_end_no_services_called
 
     #[rstest]
