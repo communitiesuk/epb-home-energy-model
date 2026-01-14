@@ -37,6 +37,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
+
 const N_EXER: f64 = 3.0;
 
 impl HeatPumpSourceType {
@@ -3989,10 +3990,11 @@ impl HeatPump {
         &self,
         hot_water_energy_output: &IndexMap<String, Vec<ResultParamValue>>,
         hot_water_source_name_for_heat_pump_service: &IndexMap<String, String>,
-    ) -> (ResultsPerTimestep, ResultsAnnual) {
-        let detailed_results = self.detailed_results.as_ref().expect(
-            "Detailed results cannot be output when the option to collect them was not selected",
-        );
+    ) -> anyhow::Result<(ResultsPerTimestep, ResultsAnnual)> {
+        let detailed_results = self.detailed_results.as_ref().ok_or_else(||
+            anyhow!("Detailed results cannot be output when the option to collect them was not selected")
+        )?;
+
         let mut results_per_timestep: ResultsPerTimestep = Default::default();
         results_per_timestep.insert("auxiliary".into(), Default::default());
         for (parameter, param_unit, _) in AUX_PARAMETERS {
@@ -4191,7 +4193,7 @@ impl HeatPump {
         // Calculate overall CoP for all services combined
         self.calc_service_cop_overall(&mut results_annual);
 
-        (results_per_timestep, results_annual)
+        Ok((results_per_timestep, results_annual))
     }
 
     /// Calculate CoP for whole simulation period for the given service (or overall)
@@ -11485,10 +11487,13 @@ mod tests {
             },
         };
 
-        let (results_per_timestep, results_annual) = heat_pump.lock().output_detailed_results(
-            &indexmap! { "hwsname".into() => vec![100.0.into()] },
-            &indexmap! { "servicetimestep_demand_energy".into() => "hwsname".into() },
-        );
+        let (results_per_timestep, results_annual) = heat_pump
+            .lock()
+            .output_detailed_results(
+                &indexmap! { "hwsname".into() => vec![100.0.into()] },
+                &indexmap! { "servicetimestep_demand_energy".into() => "hwsname".into() },
+            )
+            .unwrap();
 
         assert_eq!(results_per_timestep, expected_results_per_timestep);
         assert_eq!(results_annual, expected_results_annual);
@@ -11529,10 +11534,13 @@ mod tests {
             ResultParamValue::Empty,
         );
 
-        let (results_per_timestep, results_annual) = heat_pump.lock().output_detailed_results(
-            &indexmap! { "hwsname".into() => vec![100.0.into()] },
-            &indexmap! { "servicetimestep_demand_energy".into() => "hwsname_other".into()},
-        );
+        let (results_per_timestep, results_annual) = heat_pump
+            .lock()
+            .output_detailed_results(
+                &indexmap! { "hwsname".into() => vec![100.0.into()] },
+                &indexmap! { "servicetimestep_demand_energy".into() => "hwsname_other".into()},
+            )
+            .unwrap();
 
         assert_eq!(results_per_timestep, expected_results_per_timestep);
         assert_eq!(results_annual, expected_results_annual);
@@ -11689,10 +11697,13 @@ mod tests {
             },
         };
 
-        let (results_per_timestep, results_annual) = heat_pump.lock().output_detailed_results(
-            &indexmap! { "hwsname".into() => vec![100.0.into()] },
-            &indexmap! {},
-        );
+        let (results_per_timestep, results_annual) = heat_pump
+            .lock()
+            .output_detailed_results(
+                &indexmap! { "hwsname".into() => vec![100.0.into()] },
+                &indexmap! {},
+            )
+            .unwrap();
 
         assert_eq!(results_per_timestep, expected_results_per_timestep);
         assert_eq!(results_annual, expected_results_annual);
