@@ -3979,7 +3979,43 @@ mod tests {
         }
     }
 
-    // TODO (implementation not yet updated) test_timestep_end_no_services_called
+    #[rstest]
+    fn test_timestep_end_no_services_called(
+        heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
+    ) {
+        // Test timestep_end when no services are called but services are registered
+        let heat_battery = heat_battery_no_service_connection;
+
+        // Create services but don't call them
+        let service1 = "water_heating";
+        let service2 = "space_heating";
+
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service1).unwrap();
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service2).unwrap();
+
+        // Call timestep_end without calling any services
+        heat_battery.read().timestep_end(0).unwrap();
+
+        let hb_guard = heat_battery.read();
+        let detailed_results_guard = hb_guard.detailed_results.as_ref().unwrap().read();
+
+        //  Check that detailed results were created with placeholder entries
+        assert_eq!(detailed_results_guard.len(), 1);
+
+        let timestep_results = &detailed_results_guard[0].results;
+
+        assert_eq!(timestep_results.len(), 2); // In Python this is 3 (Should have 2 service results + 1 auxiliary result = 3 total)
+
+        for (i, result) in timestep_results.iter().enumerate() {
+            assert_eq!(result.service_name, [service1, service2][i]);
+            assert!(result.service_type.is_none());
+            assert!(!result.service_on);
+            assert_eq!(result.energy_output_required, 0.);
+            assert_eq!(result.time_running, 0.);
+            assert_eq!(result.energy_delivered_hb, 0.);
+            assert_eq!(result.current_hb_power, 0.);
+        }
+    }
 
     #[rstest]
     fn test_heat_battery_create_service_connection_already_exists(
