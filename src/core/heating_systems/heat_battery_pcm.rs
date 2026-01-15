@@ -1933,11 +1933,15 @@ impl HeatBatteryPcm {
             if *incl_in_annual {
                 results_annual["auxiliary"].insert(
                     (String::from(*parameter), param_unit.map(Into::into)),
-                    results_per_timestep["auxiliary"]
-                        [&(String::from(*parameter), param_unit.map(Into::into))]
-                        .iter()
-                        .cloned()
-                        .sum::<ResultParamValue>(),
+                    ResultParamValue::from(
+                        FSum::with_all(
+                            results_per_timestep["auxiliary"]
+                                [&(String::from(*parameter), param_unit.map(Into::into))]
+                                .iter()
+                                .map(ResultParamValue::as_f64),
+                        )
+                        .value(),
+                    ),
                 );
             }
         }
@@ -1946,11 +1950,15 @@ impl HeatBatteryPcm {
             results_annual.insert(service_name.clone(), Default::default());
             for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
                 if incl_in_annual {
-                    let parameter_annual_total = results_per_timestep[service_name]
-                        [&(parameter.into(), param_unit.map(Into::into))]
-                        .iter()
-                        .cloned()
-                        .sum::<ResultParamValue>();
+                    let parameter_annual_total = ResultParamValue::from(
+                        FSum::with_all(
+                            results_per_timestep[service_name]
+                                [&(parameter.into(), param_unit.map(Into::into))]
+                                .iter()
+                                .map(ResultParamValue::as_f64),
+                        )
+                        .value(),
+                    );
                     results_annual[service_name].insert(
                         (parameter.into(), param_unit.map(Into::into)),
                         parameter_annual_total.clone(),
@@ -1975,11 +1983,15 @@ impl HeatBatteryPcm {
             } else {
                 results_annual.get_mut(service_name).unwrap().insert(
                     ("energy_delivered_H4".into(), Some("kWh".into())),
-                    results_per_timestep[service_name]
-                        [&("energy_delivered_H4".into(), Some("kWh".into()))]
-                        .iter()
-                        .cloned()
-                        .sum::<ResultParamValue>(),
+                    ResultParamValue::from(
+                        FSum::with_all(
+                            results_per_timestep[service_name]
+                                [&("energy_delivered_H4".into(), Some("kWh".into()))]
+                                .iter()
+                                .map(ResultParamValue::as_f64),
+                        )
+                        .value(),
+                    ),
                 );
 
                 if results_annual["Overall"][&("energy_delivered_H4".into(), Some("kWh".into()))]
