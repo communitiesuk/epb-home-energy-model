@@ -6,9 +6,9 @@ use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
+use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
 use smartstring::alias::String;
-use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -265,7 +265,7 @@ pub(crate) struct HeatNetwork {
     power_aux: f64,
     building_level_distribution_losses: f64, // in watts
     energy_supply: Arc<RwLock<EnergySupply>>,
-    energy_supply_connections: HashMap<String, EnergySupplyConnection>,
+    energy_supply_connections: IndexMap<String, EnergySupplyConnection>,
     energy_supply_connection_aux: EnergySupplyConnection,
     energy_supply_connection_building_level_distribution_losses: EnergySupplyConnection,
     total_time_running_current_timestep: f64,
@@ -324,7 +324,7 @@ impl HeatNetwork {
         // Set up EnergySupplyConnection for this service
         heat_network.lock().energy_supply_connections.insert(
             service_name.into(),
-            EnergySupply::connection(energy_supply, service_name).unwrap(),
+            EnergySupply::connection(energy_supply, service_name)?,
         );
 
         Ok(())
