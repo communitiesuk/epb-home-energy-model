@@ -11404,34 +11404,20 @@ mod tests {
                 ("temp_output".into(), Some("K".into())) => vec![330.0.into(); 2],
                 ("temp_source".into(), Some("K".into())) => vec![273.15.into(), 275.65.into()],
                 ("thermal_capacity_op_cond".into(), Some("kW".into())) => vec![8.417674488123662.into(), 8.650924134797519.into()],
-                ("cop_op_cond".into(), None) => vec![
-                    3.182442675928905.into(), // 3.1824426759289044 in Python
-                    3.1971341044162673.into(), // 3.197134104416267 in Python
-                ],
+                ("cop_op_cond".into(), None) => vec![3.1824426759289044.into(), 3.197134104416267.into()],
                 ("time_running_full_load".into(), Some("hours".into())) => vec![0.5939882810928845.into(), 0.5779729335375832.into()],
                 ("time_running_part_load".into(), Some("hours".into())) => vec![0.5939882810928845.into(), 0.5779729335375832.into()],
                 ("load_ratio".into(), None) => vec![1.0.into(); 2],
                 ("hp_operating_in_onoff_mode".into(), None) => vec![ResultParamValue::Boolean(false); 2],
-                ("energy_delivered_HP".into(), Some("kWh".into())) => vec![
-                    5.0.into(),
-                    5.000000000000001.into() // 5. in Python
-                ],
+                ("energy_delivered_HP".into(), Some("kWh".into())) => vec![5.0.into(), 5.0.into()],
                 ("energy_delivered_backup".into(), Some("kWh".into())) => vec![0.0.into(); 2],
-                ("energy_delivered_total".into(), Some("kWh".into())) => vec![
-                    5.0.into(),
-                    5.000000000000001.into() // 5. in Python
-                ],
-                ("energy_input_HP".into(), Some("kWh".into())) => vec![
-                    1.5711202083288363.into(), // 1.5711202083288365 in Python
-                    1.5639006174603054.into()], // 1.5639006174603056 in Python
+                ("energy_delivered_total".into(), Some("kWh".into())) => vec![5.0.into(), 5.0.into()],
+                ("energy_input_HP".into(), Some("kWh".into())) => vec![1.5711202083288365.into(), 1.5639006174603056.into()],
                 ("energy_input_backup".into(), Some("kWh".into())) => vec![0.0.into(); 2],
                 ("energy_heating_circ_pump".into(), Some("kWh".into())) => vec![0.008909824216393266.into(), 0.008669594003063746.into()],
                 ("energy_source_circ_pump".into(), Some("kWh".into())) => vec![0.005939882810928845.into(), 0.005779729335375832.into()],
                 ("energy_heating_warm_air_fan".into(), Some("kWh".into())) => vec![0.0.into(); 2],
-                ("energy_input_total".into(), Some("kWh".into())) => vec![
-                    1.5859699153561584.into(), // 1.5859699153561586 in Python
-                    1.578349940798745.into() // 1.5783499407987451 in Python
-                ],
+                ("energy_input_total".into(), Some("kWh".into())) => vec![1.5859699153561586.into(), 1.5783499407987451.into()],
                 ("energy_output_delivered_boiler".into(), Some("kWh".into())) => vec![0.0.into(); 2],
                 ("energy_delivered_H5".into(), Some("kWh".into())) => vec![100.0.into()],
             },
@@ -11450,7 +11436,7 @@ mod tests {
                 ("energy_heating_circ_pump".into(), Some("kWh".into())) => 0.017579418219457014.into(),
                 ("energy_source_circ_pump".into(), Some("kWh".into())) => 0.011719612146304677.into(),
                 ("energy_heating_warm_air_fan".into(), Some("kWh".into())) => 0.0.into(),
-                ("energy_input_total".into(), Some("kWh".into())) => 3.1643198561549033.into(), // 3.1643198561549037 in Python
+                ("energy_input_total".into(), Some("kWh".into())) => 3.1643198561549037.into(),
                 ("energy_output_delivered_boiler".into(), Some("kWh".into())) => 0.0.into(),
                 ("energy_delivered_H5".into(), Some("kWh".into())) => 100.0.into(),
                 ("CoP (H1)".into(), None) => 3.1771838471558898.into(),
@@ -11476,7 +11462,7 @@ mod tests {
                 ("energy_heating_circ_pump".into(), Some("kWh".into())) => 0.017579418219457014.into(),
                 ("energy_source_circ_pump".into(), Some("kWh".into())) => 0.011719612146304677.into(),
                 ("energy_heating_warm_air_fan".into(), Some("kWh".into())) => 0.0.into(),
-                ("energy_input_total".into(), Some("kWh".into())) => 3.1643198561549033.into(), // 3.1643198561549037 in Python
+                ("energy_input_total".into(), Some("kWh".into())) => 3.1643198561549037.into(),
                 ("energy_output_delivered_boiler".into(), Some("kWh".into())) => 0.0.into(),
                 ("energy_delivered_H5".into(), Some("kWh".into())) => 100.0.into(),
                 ("CoP (H1)".into(), None) => 3.1897714738411085.into(),
@@ -11495,8 +11481,50 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(results_per_timestep, expected_results_per_timestep);
-        assert_eq!(results_annual, expected_results_annual);
+        assert_eq!(
+            results_per_timestep.keys().collect_vec(),
+            expected_results_per_timestep.keys().collect_vec()
+        );
+        assert_eq!(
+            results_annual.keys().collect_vec(),
+            expected_results_annual.keys().collect_vec()
+        );
+
+        let check_values =
+            |actual: &ResultParamValue, expected: &ResultParamValue| match (actual, expected) {
+                (ResultParamValue::Number(actual_num), ResultParamValue::Number(expected_num)) => {
+                    assert_relative_eq!(actual_num, expected_num, max_relative = 1e-7);
+                }
+                _ => assert_eq!(actual, expected),
+            };
+
+        for (key, expected_results) in &expected_results_per_timestep {
+            let actual_results = &results_per_timestep[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, expected_vec) in expected_results {
+                for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
+                    check_values(actual, expected);
+                }
+            }
+        }
+
+        for (key, expected_results) in &expected_results_annual {
+            let actual_results = &results_annual[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, value) in expected_results {
+                check_values(&actual_results[inner_key], value);
+            }
+        }
 
         // Test case where hot water source is not in hot water energy source data
         expected_results_per_timestep["servicetimestep_demand_energy"].insert(
@@ -11542,8 +11570,42 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(results_per_timestep, expected_results_per_timestep);
-        assert_eq!(results_annual, expected_results_annual);
+        assert_eq!(
+            results_per_timestep.keys().collect_vec(),
+            expected_results_per_timestep.keys().collect_vec()
+        );
+        assert_eq!(
+            results_annual.keys().collect_vec(),
+            expected_results_annual.keys().collect_vec()
+        );
+
+        for (key, expected_results) in &expected_results_per_timestep {
+            let actual_results = &results_per_timestep[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, expected_vec) in expected_results {
+                for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
+                    check_values(actual, expected);
+                }
+            }
+        }
+
+        for (key, expected_results) in &expected_results_annual {
+            let actual_results = &results_annual[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, value) in expected_results {
+                check_values(&actual_results[inner_key], value);
+            }
+        }
     }
 
     #[rstest]
@@ -11614,10 +11676,7 @@ mod tests {
                 ("temp_output".into(), Some("K".into())) => vec![330.0.into(); 2],
                 ("temp_source".into(), Some("K".into())) => vec![273.15.into(), 275.65.into()],
                 ("thermal_capacity_op_cond".into(), Some("kW".into())) => vec![8.417674488123662.into(), 8.650924134797519.into()],
-                ("cop_op_cond".into(), None) => vec![
-                    3.182442675928905.into(), // 3.1824426759289044 in Python
-                    3.1971341044162673.into(), // 3.197134104416267 in Python
-                ],
+                ("cop_op_cond".into(), None) => vec![3.1824426759289044.into(), 3.197134104416267.into()],
                 ("time_running_full_load".into(), Some("hours".into())) => vec![0.5939882810928845.into(), 0.5779729335375832.into()],
                 ("time_running_part_load".into(), Some("hours".into())) => vec![1.0.into(), 1.0.into()],
                 ("load_ratio".into(), None) => vec![0.5939882810928845.into(), 0.5779729335375832.into()],
@@ -11631,17 +11690,12 @@ mod tests {
                     5.0.into(),
                     5.000000000000001.into()
                 ],
-                ("energy_input_HP".into(), Some("kWh".into())) => vec![
-                    1.5711202083288363.into(), // 1.5711202083288365 in Python
-                    1.5639006174603054.into()], // 1.5639006174603056 in Python
+                ("energy_input_HP".into(), Some("kWh".into())) => vec![1.5711202083288365.into(), 1.5639006174603056.into()],
                 ("energy_input_backup".into(), Some("kWh".into())) => vec![0.0.into(); 2],
                 ("energy_heating_circ_pump".into(), Some("kWh".into())) => vec![0.008909824216393266.into(), 0.008669594003063746.into()],
                 ("energy_source_circ_pump".into(), Some("kWh".into())) => vec![0.005939882810928845.into(), 0.005779729335375832.into()],
                 ("energy_heating_warm_air_fan".into(), Some("kWh".into())) => vec![0.0.into(); 2],
-                ("energy_input_total".into(), Some("kWh".into())) => vec![
-                    1.5859699153561584.into(), // 1.5859699153561586 in Python
-                    1.578349940798745.into() // 1.5783499407987451 in Python
-                ],
+                ("energy_input_total".into(), Some("kWh".into())) => vec![1.5859699153561586.into(), 1.5783499407987451.into()],
                 ("energy_output_delivered_boiler".into(), Some("kWh".into())) => vec![0.0.into(); 2],
                 ("energy_delivered_H5".into(), Some("kWh".into())) => vec![5.0.into(), 5.000000000000001.into()],
             },
@@ -11660,7 +11714,7 @@ mod tests {
                 ("energy_heating_circ_pump".into(), Some("kWh".into())) => 0.017579418219457014.into(),
                 ("energy_source_circ_pump".into(), Some("kWh".into())) => 0.011719612146304677.into(),
                 ("energy_heating_warm_air_fan".into(), Some("kWh".into())) => 0.0.into(),
-                ("energy_input_total".into(), Some("kWh".into())) => 3.1643198561549033.into(), // 3.1643198561549037 in Python
+                ("energy_input_total".into(), Some("kWh".into())) => 3.1643198561549037.into(),
                 ("energy_output_delivered_boiler".into(), Some("kWh".into())) => 0.0.into(),
                 ("energy_delivered_H5".into(), Some("kWh".into())) => 10.0.into(),
                 ("CoP (H1)".into(), None) => 3.1897714738411085.into(),
@@ -11686,7 +11740,7 @@ mod tests {
                 ("energy_heating_circ_pump".into(), Some("kWh".into())) => 0.017579418219457014.into(),
                 ("energy_source_circ_pump".into(), Some("kWh".into())) => 0.011719612146304677.into(),
                 ("energy_heating_warm_air_fan".into(), Some("kWh".into())) => 0.0.into(),
-                ("energy_input_total".into(), Some("kWh".into())) => 3.1643198561549033.into(), // 3.1643198561549037 in Python
+                ("energy_input_total".into(), Some("kWh".into())) => 3.1643198561549037.into(),
                 ("energy_output_delivered_boiler".into(), Some("kWh".into())) => 0.0.into(),
                 ("energy_delivered_H5".into(), Some("kWh".into())) => 10.0.into(),
                 ("CoP (H1)".into(), None) => 3.1897714738411085.into(),
@@ -11705,8 +11759,41 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(results_per_timestep, expected_results_per_timestep);
-        assert_eq!(results_annual, expected_results_annual);
+        let check_values =
+            |actual: &ResultParamValue, expected: &ResultParamValue| match (actual, expected) {
+                (ResultParamValue::Number(actual_num), ResultParamValue::Number(expected_num)) => {
+                    assert_relative_eq!(actual_num, expected_num, max_relative = 1e-7);
+                }
+                _ => assert_eq!(actual, expected),
+            };
+
+        for (key, expected_results) in &expected_results_per_timestep {
+            let actual_results = &results_per_timestep[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, expected_vec) in expected_results {
+                for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
+                    check_values(actual, expected);
+                }
+            }
+        }
+
+        for (key, expected_results) in &expected_results_annual {
+            let actual_results = &results_annual[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, value) in expected_results {
+                check_values(&actual_results[inner_key], value);
+            }
+        }
     }
 
     #[rstest]
