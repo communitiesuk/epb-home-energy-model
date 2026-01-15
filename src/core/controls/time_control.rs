@@ -2281,19 +2281,6 @@ mod tests {
         }
     }
 
-    #[fixture]
-    fn simulation_time_for_charge_control() -> SimulationTime {
-        SimulationTime::new(0.0, 24.0, 1.0)
-    }
-
-    #[fixture]
-    fn schedule_for_charge_control() -> Vec<bool> {
-        vec![
-            true, true, true, true, true, true, true, true, false, false, false, false, false,
-            false, false, false, true, true, true, true, false, false, false, false,
-        ]
-    }
-
     mod test_charge_control {
         use super::*;
         use pretty_assertions::assert_eq;
@@ -3194,6 +3181,28 @@ mod tests {
                 &mut vec![true].iter().map(|x| *x),
             );
         }
+
+        // skipped the following tests as Rust compiler makes it impossible to pass in an invalid
+        // control type:
+        // test_evaluate_control_in_req_period_invalid
+        // test_evaluate_control_setpnt
+
+        // skipped: test_evaluate_combination_target_charge & test_evaluate_combination_target_charge_more_charge_control
+        // as method under test (evaluate_combination_target_charge) not actually used by any
+        // implementation code
+    }
+
+    #[fixture]
+    fn simulation_time_for_charge_control() -> SimulationTime {
+        SimulationTime::new(0.0, 24.0, 1.0)
+    }
+
+    #[fixture]
+    fn schedule_for_charge_control() -> Vec<bool> {
+        vec![
+            true, true, true, true, true, true, true, true, false, false, false, false, false,
+            false, false, false, true, true, true, true, false, false, false, false,
+        ]
     }
 
     #[fixture]
