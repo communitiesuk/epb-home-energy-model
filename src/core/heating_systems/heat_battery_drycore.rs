@@ -1574,6 +1574,16 @@ impl HeatBatteryDryCore {
     pub(crate) fn get_pwr_in(&self) -> f64 {
         self.storage.read().pwr_in
     }
+
+    #[cfg(test)]
+    pub(crate) fn get_demand_met(&self) -> f64 {
+        self.storage.read().demand_met()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn get_demand_unmet(&self) -> f64 {
+        self.storage.read().demand_unmet()
+    }
 }
 
 impl HeatBatteryDryCoreCommonBehaviour for HeatBatteryDryCore {
@@ -2269,5 +2279,83 @@ mod tests {
                 .unwrap(),
             0.0
         );
+    }
+
+    #[rstest]
+    #[ignore = "todo 1.0.0a1"]
+    fn test_heat_battery_dhw_temperature_edge_case(
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        simulation_time: SimulationTime,
+    ) {
+        // Create a heat battery with very low power output capabilities
+        let input = HeatBattery::DryCore {
+            pwr_in: 0.5,
+            heat_storage_capacity: 2.0,
+            state_of_charge_init: 0.0,
+            dry_core_min_output: vec![[0.0, 0.0], [0.5, 0.001], [1.0, 0.002]], // Very low power
+            dry_core_max_output: vec![[0.0, 0.0], [0.5, 2.0], [1.0, 4.0]],     // Very low max power
+            fan_power: 0.01,
+            rated_power_instant: 0.0, // No instant backup
+            energy_supply: "heat_battery".into(),
+            number_of_units: 1,
+            electricity_circ_pump: 0.01,
+            electricity_standby: 0.01,
+            control_charge: Default::default(),
+        };
+
+        let heat_battery = HeatBatteryDryCore::new(
+            input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(1),
+            simulation_time.step,
+            Some(true),
+        )
+        .unwrap();
+
+        heat_battery.set_state_of_charge(1.);
+
+        // Create control that requires high temperature
+        let _control_min = Arc::new(Control::Mock(MockControl::new(
+            Some(40.0),
+            Some(true),
+            Some(true),
+        )));
+        let _control_max = Arc::new(Control::Mock(MockControl::new(
+            Some(85.0), // High temperature requirement
+            None,
+            None,
+        )));
+
+        // Set cold feed temperature
+        // TODO?
+
+        // Directly call the private __demand_energy method to ensure we hit the right code path
+        // This bypasses the service wrapper and gives us more control
+        let energy_delivered = heat_battery
+            .demand_energy(
+                "dhw_high_temp_test",
+                HeatingServiceType::DomesticHotWaterRegular,
+                2.0,       // Request 2 kWh
+                10.0,      // Cold inlet temp
+                Some(45.), // Required output temp (high)
+                true,
+                Some(0.),
+                Some(true),
+                simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+
+        // Energy should be 0 because temperature requirement cannot be met
+        // With such low max power (0.02 kW at SOC=0.3), the heat battery
+        // cannot raise water temperature from 10°C to 85°C
+        assert_eq!(energy_delivered, 2.);
+
+        // Verify demand tracking was updated correctly
+        assert_eq!(heat_battery.get_demand_met(), 2.0);
+        assert_eq!(heat_battery.get_demand_unmet(), 0.0);
     }
 }
