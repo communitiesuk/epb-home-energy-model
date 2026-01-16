@@ -2663,6 +2663,23 @@ pub(crate) enum HotWaterStorageTank {
     SmartHotWaterTank(Arc<RwLock<SmartHotWaterTank>>),
 }
 
+impl HotWaterStorageTank {
+    pub(crate) fn demand_hot_water(
+        &self,
+        usage_events: Option<Vec<WaterEventResult>>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match &self {
+            HotWaterStorageTank::StorageTank(rw_lock) => {
+                rw_lock.read().demand_hot_water(usage_events, simtime)
+            }
+            HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
+                rw_lock.read().demand_hot_water(usage_events, simtime)
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PVDiverter {
     pre_heated_water_source: HotWaterStorageTank,

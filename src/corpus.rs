@@ -58,10 +58,8 @@ use crate::core::space_heat_demand::zone::{
 };
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::core::water_heat_demand::dhw_demand::{
-    DemandVolTargetKey, DomesticHotWaterDemand, DomesticHotWaterDemandData, VolumeReference,
-};
-use crate::core::water_heat_demand::misc::water_demand_to_kwh;
+use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
+use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
@@ -653,7 +651,7 @@ pub struct Corpus {
     pre_heated_water_sources: IndexMap<String, HotWaterStorageTank>,
     pub(crate) energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
     pub(crate) internal_gains: InternalGainsCollection,
-    pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand,
+    pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand<HotWaterSource>,
     r_v_arg: AtomicF64,
     pub(crate) ventilation: Arc<InfiltrationVentilation>,
     pub(crate) zones: IndexMap<String, Arc<Zone>>,
@@ -1184,14 +1182,7 @@ impl Corpus {
             .external_conditions
             .air_temp(&simulation_time_iteration);
 
-        self.domestic_hot_water_demand.calc_pipework_losses(
-            delta_t_h,
-            hw_duration,
-            no_of_hw_events,
-            demand_water_temperature,
-            internal_air_temperature,
-            external_air_temperature,
-        )
+        todo!()
     }
 
     /// Calculate the losses in the buffer tank
@@ -2338,134 +2329,26 @@ impl Corpus {
         for t_it in simulation_time_iter {
             timestep_array.push(t_it.time);
             self.update_temp_internal_air();
-            let temp_hot_water = self.hot_water_sources["hw cylinder"].temp_hot_water()?;
-            let _temp_final_drawoff = temp_hot_water;
-            let _temp_average_drawoff = temp_hot_water;
-
-            let DomesticHotWaterDemandData {
+            
+            let (
                 hw_demand_vol,
-                hw_demand_vol_target,
-                hw_vol_at_tapping_points,
                 hw_duration,
-                all_events: no_events,
-                hw_energy_demand,
-                usage_events: _,
-                vol_hot_water_equiv_elec_shower: _,
-            } = self
-                .domestic_hot_water_demand
-                .hot_water_demand(t_it, temp_hot_water)?;
+                no_events,
+                hw_energy_demand_at_tapping_points,
+                hw_energy_demand_at_hot_water_source,
+                hw_energy_output,
+                pw_losses_total,
+                primary_pw_losses,
+                storage_losses,
+                gains_internal_dhw,
+            ) = self.domestic_hot_water_demand.calc_water_heating(
+                t_it,
+                self.temp_internal_air_prev_timestep(),
+                self.external_conditions.air_temp(&t_it),
+            )?;
 
-            // Running heat sources of pre-heated tanks and updating thermal losses, etc.
-            for source in self.pre_heated_water_sources.values() {
-                match source {
-                    HotWaterStorageTank::StorageTank(storage_tank) => {
-                        storage_tank.read().demand_hot_water(None, t_it)?;
-                    }
-                    HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
-                        smart_storage_tank.read().demand_hot_water(None, t_it)?;
-                    }
-                }
-            }
-            // TODO (Python) Remove hard-coding of hot water source name
-            // TODO (Python) Reporting of the hot water energy output assumes that there
-            //      is only one water heating system. If the model changes in
-            //      future to allow more than one hot water system, this code may
-            //      need to be revised to handle that scenario.
-
-            let (hw_energy_output, pw_losses_internal, pw_losses_external, gains_internal_dhw_use) =
-                if let HotWaterSource::PreHeated(_source) = &self.hot_water_sources["hw cylinder"] {
-                    unimplemented!("To be implemented as part of migration to 1_0_a1")
-                } else if let HotWaterSource::HeatBattery(source) =
-                    &self.hot_water_sources["hw cylinder"]
-                {
-                    let hw_energy_output = source.demand_hot_water(None, t_it)?; // TODO 1.0.0a1 update to use common demand_hot_water method once its signature has been updated and pass in usage_events
-                    let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
-                        .pipework_losses_and_internal_gains_from_hw(
-                            delta_t_h,
-                            hw_vol_at_tapping_points,
-                            hw_duration,
-                            no_events,
-                            temp_hot_water,
-                            t_it,
-                        );
-                    (
-                        hw_energy_output,
-                        pw_losses_internal,
-                        pw_losses_external,
-                        gains_internal_dhw_use,
-                    )
-                } else {
-                    let hw_energy_output = self.hot_water_sources["hw cylinder"]
-                        .demand_hot_water(hw_demand_vol_target, t_it)?;
-
-                    let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
-                        .pipework_losses_and_internal_gains_from_hw(
-                            delta_t_h,
-                            hw_vol_at_tapping_points,
-                            hw_duration,
-                            no_events,
-                            temp_hot_water,
-                            t_it,
-                        );
-
-                    (
-                        hw_energy_output,
-                        pw_losses_internal,
-                        pw_losses_external,
-                        gains_internal_dhw_use,
-                    )
-                };
-
-            // Convert from litres to kWh
-            let cold_water_source = self.hot_water_sources["hw cylinder"].get_cold_water_source();
-            let cold_water_temperature = cold_water_source.temperature(t_it, None);
-            let hw_energy_demand_incl_pipework_loss =
-                water_demand_to_kwh(hw_demand_vol, temp_hot_water, cold_water_temperature);
-            let mut gains_internal_dhw = (pw_losses_internal + gains_internal_dhw_use)
-                * WATTS_PER_KILOWATT as f64
-                / t_it.timestep;
-
-            match self.hot_water_sources.get("hw cylinder").unwrap() {
-                HotWaterSource::PreHeated(ref source) => match source {
-                    HotWaterStorageTank::StorageTank(storage_tank) => {
-                        gains_internal_dhw += storage_tank.read().internal_gains();
-                    }
-                    HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
-                        gains_internal_dhw += smart_hot_water_tank.read().internal_gains();
-                    }
-                },
-                HotWaterSource::CombiBoiler(ref source) => {
-                    gains_internal_dhw += source.internal_gains();
-                }
-                _ => {}
-            }
-
-            // loop through on-site energy generation
-            for pv in self.on_site_generation.values() {
-                // Get energy produced for the current timestep
-                let (_energy_produced, energy_lost) = pv.produce_energy(t_it)?;
-                // Add the energy lost figure to the internal gains if it is considered inside the building
-                if pv.inverter_is_inside() {
-                    gains_internal_dhw += energy_lost * WATTS_PER_KILOWATT as f64 / delta_t_h;
-                }
-            }
-
-            // Addition of primary_pipework_losses_kWh for reporting as part of investigation of (upstream BRE) issue #31225: FDEV A082
-            let (primary_pw_losses, storage_losses) =
-                if let HotWaterSource::PreHeated(source) = &self.hot_water_sources["hw cylinder"] {
-                    match source {
-                        HotWaterStorageTank::StorageTank(_storage_tank) => {
-                            unimplemented!(".to_report() no longer exists on storage tank");
-                            //storage_tank.read().to_report()
-                        }
-                        HotWaterStorageTank::SmartHotWaterTank(_smart_hot_water_tank) => {
-                            unimplemented!(".to_report() no longer exists on storage tank");
-                            //smart_hot_water_tank.read().to_report()
-                        }
-                    }
-                } else {
-                    (0.0, 0.0)
-                };
+            let gains_internal_hb = 0.;
+            // TODO set gains_internal_hb based on heat batteries
 
             let SpaceHeatingCalculation {
                 gains_internal_zone,
@@ -2480,7 +2363,7 @@ impl Corpus {
                 heat_balance_map: heat_balance_dict,
             } = self.calc_space_heating(
                 t_it.timestep,
-                gains_internal_dhw,
+                gains_internal_hb,
                 &mut internal_pressure_window,
                 t_it,
             )?;
@@ -2564,46 +2447,7 @@ impl Corpus {
                 }
             }
 
-            hot_water_demand_dict
-                .get_mut("demand")
-                .unwrap()
-                .push(hw_demand_vol);
-            hot_water_energy_demand_dict
-                .get_mut("energy_demand")
-                .unwrap()
-                .push(hw_energy_demand);
-            hot_water_energy_demand_dict_incl_pipework
-                .get_mut("energy_demand_incl_pipework_loss")
-                .unwrap()
-                .push(hw_energy_demand_incl_pipework_loss);
-            hot_water_energy_output_dict
-                .get_mut("energy_output")
-                .unwrap()
-                .push(hw_energy_output);
-            hot_water_duration_dict
-                .get_mut("duration")
-                .unwrap()
-                .push(hw_duration);
-            hot_water_no_events_dict
-                .get_mut("no_events")
-                .unwrap()
-                .push(no_events);
-            hot_water_pipework_dict
-                .get_mut("pw_losses")
-                .unwrap()
-                .push(pw_losses_internal + pw_losses_external);
-            ductwork_gains_dict
-                .get_mut("ductwork_gains")
-                .unwrap()
-                .push(ductwork_gains);
-            hot_water_primary_pipework_dict
-                .get_mut("primary_pw_losses")
-                .unwrap()
-                .push(primary_pw_losses);
-            hot_water_storage_losses_dict
-                .get_mut("storage_losses")
-                .unwrap()
-                .push(storage_losses);
+            // TODO implement append_dict_vals_to_dict_lists and update hot water demand values
 
             for supply in self.energy_supplies.values() {
                 anyhow::Ok(supply.read().calc_energy_import_export_betafactor(t_it)?)?;
@@ -4729,8 +4573,25 @@ pub(crate) enum HotWaterSource {
     HeatBattery(HeatBatteryPcmServiceWaterDirect),
 }
 
-impl HotWaterSource {
-    pub fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
+pub trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
+    fn get_cold_water_source(&self) -> WaterSourceWithTemperature;
+    fn temp_hot_water(&self) -> anyhow::Result<f64>;
+    fn demand_hot_water(&self,
+        usage_events: Vec<WaterEventResult>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64>;
+    fn get_temp_hot_water(
+        &self,
+        volume_required: f64,
+        volume_required_already: f64,
+    ) -> Vec<(f64, f64)>;
+    fn internal_gains(&self) -> Option<f64>;
+    fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64);
+    fn is_point_of_use(&self) -> bool;
+}
+
+impl HotWaterSourceBehaviour for HotWaterSource {
+    fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
         match self {
             HotWaterSource::PreHeated(source) => match source {
                 HotWaterStorageTank::StorageTank(storage_tank) => {
@@ -4747,7 +4608,7 @@ impl HotWaterSource {
         }
     }
 
-    pub(crate) fn temp_hot_water(&self) -> anyhow::Result<f64> {
+    fn temp_hot_water(&self) -> anyhow::Result<f64> {
         Ok(match self {
             HotWaterSource::PreHeated(source) => match source {
                 HotWaterStorageTank::StorageTank(_storage_tank) => {
@@ -4774,35 +4635,32 @@ impl HotWaterSource {
         })
     }
 
-    pub fn demand_hot_water(
+    fn demand_hot_water(
         &self,
-        _vol_demand_target: IndexMap<DemandVolTargetKey, VolumeReference>,
-        _simulation_time_iteration: SimulationTimeIteration,
+        usage_events: Vec<WaterEventResult>,
+        simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         Ok(match self {
-            HotWaterSource::PreHeated(_) => {
-                // StorageTank does not match the same method signature or return type as all other Hot Water sources
-                panic!("demand_hot_water for HotWaterSource::StorageTank should be called directly on the HotWaterSource::StorageTank");
+            HotWaterSource::PreHeated(hot_water_storage_tank) => {
+                hot_water_storage_tank.demand_hot_water(Some(usage_events), simtime)?
             }
-            HotWaterSource::CombiBoiler(ref _source) => {
-                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
+            HotWaterSource::CombiBoiler(boiler_service_water_combi) => {
+                boiler_service_water_combi.demand_hot_water(usage_events, simtime)?
             }
-            // source
-            //     .demand_hot_water(vol_demand_target, simulation_time_iteration)
-            //     .expect("Combi boiler could not calc demand hot water."),
-            HotWaterSource::PointOfUse(ref _source) => {
-                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
+            HotWaterSource::PointOfUse(point_of_use) => {
+                point_of_use.demand_hot_water(usage_events, &simtime)?
             }
-            HotWaterSource::HeatNetwork(ref _source) => {
-                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
+            HotWaterSource::HeatNetwork(heat_network_service_water_direct) => {
+                heat_network_service_water_direct.demand_hot_water(usage_events, simtime)?
             }
-            HotWaterSource::HeatBattery(_source) => {
-                todo!("To do, this probably gets removed as part of migration to 1.0.0a1");
+            HotWaterSource::HeatBattery(heat_battery_pcm_service_water_direct) => {
+                heat_battery_pcm_service_water_direct
+                    .demand_hot_water(Some(usage_events), simtime)?
             }
         })
     }
 
-    pub(crate) fn get_temp_hot_water(
+    fn get_temp_hot_water(
         &self,
         volume_required: f64,
         volume_required_already: f64,
@@ -4832,6 +4690,41 @@ impl HotWaterSource {
                 // heat_battery_pcm_service_water_direct.get_temp_hot_water(volume_required, Some(volume_required_already)),
             }
         }
+    }
+
+    // Calls internal_gains on hot water source where available
+    fn internal_gains(&self) -> Option<f64> {
+        match &self {
+            HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
+                HotWaterStorageTank::StorageTank(rw_lock) => Some(rw_lock.read().internal_gains()),
+                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
+                    Some(rw_lock.read().internal_gains())
+                }
+            },
+            HotWaterSource::CombiBoiler(boiler_service_water_combi) => {
+                Some(boiler_service_water_combi.internal_gains())
+            }
+            HotWaterSource::PointOfUse(_) => None,
+            HotWaterSource::HeatNetwork(_) => None,
+            HotWaterSource::HeatBattery(_) => None,
+        }
+    }
+
+    // Calls get_losses_from_primary_pipework_and_storage on hot water source where available, otherwise returns 0s.
+    fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+        match &self {
+            HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
+                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
+                    .read()
+                    .get_losses_from_primary_pipework_and_storage(),
+                _ => (0., 0.),
+            },
+            _ => (0., 0.),
+        }
+    }
+    
+    fn is_point_of_use(&self) -> bool {
+        matches!(&self, HotWaterSource::PointOfUse(_))
     }
 }
 

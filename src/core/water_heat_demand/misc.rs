@@ -1,4 +1,5 @@
 use crate::core::material_properties::WATER;
+use crate::core::schedule::WaterScheduleEventType;
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use format_num::format_num;
@@ -27,6 +28,16 @@ impl WaterEventResultType {
             Self::Bath => "B",
             Self::Other => "O",
             Self::PipeFlush => "P",
+        }
+    }
+}
+
+impl From<WaterScheduleEventType> for WaterEventResultType {
+    fn from(value: WaterScheduleEventType) -> Self {
+        match value {
+            WaterScheduleEventType::Shower => WaterEventResultType::Shower,
+            WaterScheduleEventType::Bath => WaterEventResultType::Bath,
+            WaterScheduleEventType::Other => WaterEventResultType::Other,
         }
     }
 }

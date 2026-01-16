@@ -37,10 +37,10 @@ impl Bath {
 
     /// Calculate volume of hot water required
     /// (and volume of warm water draining to WWHRS, if applicable)
-    pub(crate) fn hot_water_demand(
-        &self,
+    pub(crate) fn hot_water_demand<'a>(
+        &'a self,
         event: WaterHeatingEvent,
-        func_temp_hot_water: &CallableGetHotWaterTemperature,
+        func_temp_hot_water: &'a Box<dyn Fn(f64) -> f64 + 'a>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64)> {
         let peak_flowrate = self.flowrate;
