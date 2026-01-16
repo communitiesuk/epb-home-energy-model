@@ -5,11 +5,11 @@
 ## Overview
 
 The [Home Energy Model (HEM)](https://www.gov.uk/government/publications/home-energy-model-technical-documentation) is a
-methodology for calculating the energy performance of buildings that is currently under development by BRE under
+methodology for calculating the energy performance of buildings that is currently under development under
 instruction from the UK Department for Energy Security and Net Zero (DESNZ).
 
 This project constitutes a port into Rust of
-the [calculation engine](https://dev.azure.com/BreGroup/_git/Home%20Energy%20Model) written in Python produced by BRE as
+the [calculation engine](hhttps://dev.azure.com/Sustenic/Home%20Energy%20Model%20Reference/_git/Home%20Energy%20Model) written in Python produced as
 a candidate specification of the Home Energy Model.
 
 Its purpose is to provide a library that is significantly more performant than the Python specification code, as well as
