@@ -2566,4 +2566,55 @@ mod tests {
         );
         assert_eq!(heat_battery.service_results.read().len(), 0);
     }
+
+    // TODO Skipping test_heat_battery_temperature_control as looks unfinished, check in later migrations (unchanged in 1.0.0a2) whether it can be migrated
+
+    #[rstest]
+    fn test_electric_charge_heat_battery(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        simulation_time: SimulationTime,
+    ) {
+        for t_it in simulation_time.iter() {
+            let target_charge = heat_battery
+                .storage
+                .read()
+                .target_electric_charge(t_it)
+                .unwrap();
+
+            // Should be a valid charge value between 0 and 1
+            assert!(target_charge >= 0.);
+            assert!(target_charge <= 1.);
+        }
+    }
+
+    #[rstest]
+    fn test_heat_battery_with_instant_power(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        mock_control_space: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        // The heat battery already has instant power configured
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "space_service",
+            Some(mock_control_space),
+        )
+        .unwrap();
+
+        // Set low SOC and demand high energy
+        heat_battery.set_state_of_charge(0.1);
+        let energy = service
+            .demand_energy(
+                10.0,
+                60.0,
+                40.0,
+                None,
+                None,
+                simulation_time.iter().current_iteration(),
+            )
+            .unwrap(); // High demand
+
+        // Should get some energy even with low SOC due to instant backup
+        assert!(energy > 0.);
+    }
 }
