@@ -2205,7 +2205,7 @@ mod tests {
         assert_eq!(heat_battery.state_of_charge(), 0.7);
         assert_eq!(heat_battery.get_storage_capacity(), 12.0);
         assert_eq!(heat_battery.get_pwr_in(), 3.0);
-        assert!(!heat_battery.detailed_results.is_none());
+        assert!(heat_battery.detailed_results.is_some());
     }
 
     #[rstest]
@@ -2357,5 +2357,213 @@ mod tests {
         // Verify demand tracking was updated correctly
         assert_eq!(heat_battery.get_demand_met(), 2.0);
         assert_eq!(heat_battery.get_demand_unmet(), 0.0);
+    }
+
+    #[rstest]
+    fn test_create_service_space_heating(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        mock_control_space: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery,
+            "space_service",
+            Some(mock_control_space),
+        );
+
+        assert!(service.is_ok());
+
+        let service = service.unwrap();
+        let simtime = simulation_time.iter().current_iteration();
+
+        assert_eq!(service.service_name, "space_service");
+        assert_eq!(service.temp_setpnt(simtime), Some(21.));
+        assert!(service.in_required_period(simtime).unwrap());
+    }
+
+    #[rstest]
+    #[should_panic = "Service name already used"]
+    fn test_duplicate_service_name_error(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        mock_control_dhw: Arc<Control>,
+        default_control_max: Arc<Control>,
+        mock_control_space: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        let mock_cold_feed = Arc::new(ColdWaterSource::new(
+            vec![70.; simulation_time.total_steps()],
+            0,
+            1.,
+        )); // we can just set up a normal cold water source here - it isn't used
+
+        // Create first service
+        HeatBatteryDryCore::create_service_hot_water_regular(
+            heat_battery.clone(),
+            "test_service",
+            mock_cold_feed,
+            mock_control_dhw,
+            default_control_max,
+        )
+        .unwrap();
+
+        // Try to create another service with same name
+        HeatBatteryDryCore::create_service_space_heating(
+            heat_battery,
+            "test_service",
+            Some(mock_control_space),
+        )
+        .unwrap();
+    }
+
+    #[rstest]
+    fn test_dhw_service_demand_hot_water(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        simulation_time: SimulationTime,
+    ) {
+        let mock_cold_feed = Arc::new(ColdWaterSource::new(
+            vec![1000.; simulation_time.total_steps()],
+            0,
+            1.,
+        ));
+
+        let service = HeatBatteryDryCore::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "dhw_complex",
+            65.,
+            mock_cold_feed.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(*service.get_cold_water_source(), *mock_cold_feed);
+
+        // Skipping rest of test due to mocking
+    }
+
+    // Skipping Python's test_dhw_service_demand_hot_water_fallback_path due to mocking
+
+    #[rstest]
+    fn test_space_service_demand_energy(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        mock_control_space: Arc<Control>,
+        mock_control_dhw_off: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "space_service",
+            Some(mock_control_space),
+        )
+        .unwrap();
+
+        // Test normal demand
+        let energy = service
+            .demand_energy(
+                2.,
+                60.,
+                40.,
+                None,
+                None,
+                simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+
+        assert!(energy > 0.);
+
+        // Test with service off
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery,
+            "space_service_2",
+            Some(mock_control_dhw_off),
+        )
+        .unwrap();
+
+        let energy_off = service
+            .demand_energy(
+                2.,
+                60.,
+                40.,
+                None,
+                None,
+                simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+
+        assert_eq!(energy_off, 0.);
+    }
+
+    #[rstest]
+    fn test_space_service_energy_output_max(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        mock_control_space: Arc<Control>,
+        mock_control_dhw_off: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "space_service",
+            Some(mock_control_space),
+        )
+        .unwrap();
+
+        // Test normal operation
+        let max_energy = service
+            .energy_output_max(60., 40., None, simulation_time.iter().current_iteration())
+            .unwrap();
+
+        assert!(max_energy > 0.);
+
+        // Test with service off
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery,
+            "space_service_2",
+            Some(mock_control_dhw_off),
+        )
+        .unwrap();
+
+        let max_energy_off = service
+            .energy_output_max(60., 40., None, simulation_time.iter().current_iteration())
+            .unwrap();
+
+        assert_eq!(max_energy_off, 0.);
+    }
+
+    // Skipping Python's test_dhw_service_get_temp_hot_water due to mocking
+    // Skipping Python's test_heat_battery_direct_demand_energy_error as not relevant in the Rust
+
+    #[rstest]
+    fn test_timestep_end(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        mock_control_space: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "space_service",
+            Some(mock_control_space),
+        )
+        .unwrap();
+
+        service
+            .demand_energy(
+                1.,
+                60.,
+                0.,
+                None,
+                None,
+                simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+
+        heat_battery
+            .timestep_end(simulation_time.iter().current_iteration())
+            .unwrap();
+
+        assert_eq!(
+            heat_battery
+                .total_time_running_current_timestep
+                .load(Ordering::SeqCst),
+            0.,
+        );
+        assert_eq!(heat_battery.service_results.read().len(), 0);
     }
 }
