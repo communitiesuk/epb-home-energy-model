@@ -107,19 +107,6 @@ impl From<&TypedScheduleEvent> for WaterHeatingEvent {
     }
 }
 
-impl From<&TypedScheduleEvent> for WaterEventResult {
-    fn from(item: &TypedScheduleEvent) -> WaterEventResult {
-        WaterEventResult {
-            event_result_type: item.event_type.into(),
-
-            // TODO check these are correct
-            temperature_warm: item.temperature,
-            volume_warm: item.warm_volume.unwrap(),
-            volume_hot: item.warm_volume.unwrap(),
-        }
-    }
-}
-
 #[cfg(test)]
 impl TryFrom<&Value> for ScheduleEvent {
     type Error = anyhow::Error;

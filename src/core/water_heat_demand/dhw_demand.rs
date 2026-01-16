@@ -282,7 +282,7 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
             match &bath.hot_water_source {
                 Some(hot_water_source) => {
                     mapping.insert(
-                        (OutletType::Shower, bath_name.into()),
+                        (OutletType::Bath, bath_name.into()),
                         hot_water_source.clone(),
                     );
                 }
@@ -290,7 +290,7 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                     if hot_water_sources.len() == 1 {
                         let default_hot_water_source = hot_water_sources.first().unwrap().0;
                         mapping.insert(
-                            (OutletType::Shower, bath_name.into()),
+                            (OutletType::Bath, bath_name.into()),
                             default_hot_water_source.clone(),
                         );
                     } else {
@@ -304,7 +304,7 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
             match &other.hot_water_source {
                 Some(hot_water_source) => {
                     mapping.insert(
-                        (OutletType::Shower, other_name.into()),
+                        (OutletType::Other, other_name.into()),
                         hot_water_source.clone(),
                     );
                 }
@@ -312,7 +312,7 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                     if hot_water_sources.len() == 1 {
                         let default_hot_water_source = hot_water_sources.first().unwrap().0;
                         mapping.insert(
-                            (OutletType::Shower, other_name.into()),
+                            (OutletType::Other, other_name.into()),
                             default_hot_water_source.clone(),
                         );
                     } else {
@@ -433,6 +433,10 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
             }
         }
 
+        // NOTE - this is not in the Python code
+        // Needed in Rust because we access by the ELECTRIC_SHOWERS_HWS_NAME key outside of a conditional
+        volume_hot_water_left_in_pipework.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), 0.);
+
         // Events have been organised now so that they are structured by simple step t_idx and
         // sorted for each time step from start to end.
         //
@@ -538,7 +542,7 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                     let list_temperature_volume =
                         cold_water_source.get_temp_cold_water(hw_demand_target_i, simtime)?;
                     let sum_t_by_v: f64 = list_temperature_volume.iter().map(|(t, v)| t * v).sum();
-                    let sum_v: f64 = list_temperature_volume.iter().map(|(t, v)| v).sum();
+                    let sum_v: f64 = list_temperature_volume.iter().map(|(_, v)| v).sum();
                     sum_t_by_v / sum_v
                 };
 
@@ -547,7 +551,8 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                     event.temperature,
                     cold_water_temperature,
                 );
-                *hw_duration.get_mut(&hot_water_source_name).unwrap() += event.duration.unwrap();
+
+                *hw_duration.get_mut(&hot_water_source_name).unwrap() += Self::get_duration_for_tapping_point_event(&tapping_point, event);
                 *all_events.get_mut(&hot_water_source_name).unwrap() += 1;
 
                 if hw_demand_i.is_none() && energy_supply_conn_unmet_demand.is_some() {
@@ -573,10 +578,11 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                 let volume_hot_water_left = *volume_hot_water_left_in_pipework
                     .get(&hot_water_source_name)
                     .unwrap();
+
                 usage_events_with_flushes
                     .get_mut(&hot_water_source_name)
                     .unwrap()
-                    .push(event.into());
+                    .push(event_result);
 
                 if event_result.volume_hot.abs() > 1e-10
                     && volume_hot_water_left > 0.
@@ -655,7 +661,7 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
         for hot_water_source in self.pre_heated_water_sources.values() {
             if hot_water_source.is_point_of_use() {
                 // TODO ensure an empty vec the same behaviour as None
-                hot_water_source.demand_hot_water(vec![], simtime);
+                hot_water_source.demand_hot_water(vec![], simtime)?;
             }
             else {
                 bail!("Preheated hot water sources must be storage tanks");
@@ -825,6 +831,24 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
 
         (pw_losses_internal, pw_losses_external, gains_internal_dhw_use)
     }
+    
+    fn get_duration_for_tapping_point_event(tapping_point: &TappingPoint, event: &TypedScheduleEvent) -> f64 {
+        // In Python, for Baths, the hot_water_demand function mutates the event we pass in 
+        // to avoid this in the Rust we replicate the logic here
+        match tapping_point {
+            TappingPoint::Bath(bath) => {
+                match event.duration {
+                    Some(duration) => duration,
+                    None => {
+                        // if no duration is specified for a Bath then a volume is required
+                        // to calculate the duration
+                        event.volume.unwrap() / bath.get_flowrate()
+                    },
+                }
+            },
+            _ => event.duration.unwrap()
+        }
+    }
 }
 
 fn shower_from_input(
@@ -949,7 +973,7 @@ mod tests {
     
         fn demand_hot_water(&self,
             usage_events: Vec<WaterEventResult>,
-            simtime: SimulationTimeIteration,
+            _: SimulationTimeIteration,
         ) -> anyhow::Result<f64> {
             Ok(usage_events.iter().map(|e| { e.temperature_warm * e.volume_warm / 4200.0 }).sum())
         }
@@ -1190,7 +1214,8 @@ mod tests {
                 },
                 TypedScheduleEvent {
                     start: 6.,
-                    duration: None,
+                    duration: None, // TODO match Python
+                    // duration: Some(1.), // set duration to Some to avoid unwrap error
                     temperature: 41.0,
                     name: "medium".to_string(),
                     event_type: WaterScheduleEventType::Bath,
