@@ -4573,7 +4573,7 @@ pub(crate) enum HotWaterSource {
     HeatBattery(HeatBatteryPcmServiceWaterDirect),
 }
 
-pub trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
+pub(crate) trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
     fn get_cold_water_source(&self) -> WaterSourceWithTemperature;
     fn temp_hot_water(&self) -> anyhow::Result<f64>;
     fn demand_hot_water(&self,

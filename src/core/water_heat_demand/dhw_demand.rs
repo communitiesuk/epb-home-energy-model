@@ -31,7 +31,7 @@ use std::sync::Arc;
 const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
 
 #[derive(Debug)]
-pub struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour> {
+pub(crate) struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour> {
     showers: HashMap<String, Shower>,
     baths: HashMap<String, Bath>,
     other: HashMap<String, OtherHotWater>,
@@ -532,6 +532,7 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
 
                 let cold_water_temperature = if hw_demand_i.is_some() {
                     let hw_demand_i = hw_demand_i.unwrap();
+
                     *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() += hw_demand_i;
                     let list_temperature_volume = cold_water_source
                         .get_temp_cold_water(hw_demand_target_i - hw_demand_i, simtime)?;
@@ -604,7 +605,9 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                             temperature_warm: temperature_pipe_flush,
                             volume_warm: volume_required,
                             volume_hot: volume_required,
-                        })
+                        });
+
+                    *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() += volume_hot_water_left;
                 }
                 //  TODO (from Python)   Enhance analysis for overlapping events
                 // Part of draft code for future overlapping analysis of events
@@ -1301,116 +1304,579 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "work in progress for 1_0_a1 migration"]
+    #[ignore = "work in progress for migration to 1.0.0a1"]
     fn test_hot_water_demand(simulation_time: SimulationTime) {
         let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> = IndexMap::from([( "hw cylinder".into(), HotWaterSourceMockWithUniqueHotWaterTemperature {} )]);
         let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> = Default::default();
 
-        let expected_hw_demand_volumes: Vec<IndexMap<String, f64>> = vec![
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 81.141483189812),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 53.58989404060333),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 64.89041357202146),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ]),
-            IndexMap::from([
-                ("_electric_showers".into(), 0.),
-                ("hw cylinder".into(), 0.),
-            ])
+        let expected_results: Vec<(
+            IndexMap<String, f64>,
+            IndexMap<String, f64>,
+            IndexMap<String, u32>,
+            IndexMap<String, f64>,
+            IndexMap<String, Vec<WaterEventResult>>,
+        )> = vec![
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 12.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 2),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 1.7999999999999998),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![
+                        WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41., volume_warm: 20.378383818053738, volume_hot: 0.}, 
+                        WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41., volume_warm: 20.378383818053738, volume_hot: 0. }
+                    ]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 81.141483189812),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 12.5),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 1),
+                    ("hw cylinder".into(), 1),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.9),
+                    ("hw cylinder".into(), 4.532666666666667),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![
+                        WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41., volume_warm: 19.85586115605236, volume_hot: 0.}, 
+                    ]),
+                    ("hw cylinder".into(), vec![
+                        WaterEventResult { event_result_type: WaterEventResultType::Bath, temperature_warm: 41., volume_warm: 100., volume_hot: 73.58490566037736}, 
+                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 55., volume_warm: 7.556577529434648, volume_hot: 7.556577529434648}, 
+                    ]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 53.58989404060333),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 7.0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 2),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 2.473208888888889),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![
+                        WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41., volume_warm: 48., volume_hot: 32.63058513558019}, 
+                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 55., volume_warm: 7.556577529434648, volume_hot: 7.556577529434648},
+                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 41., volume_warm: 8., volume_hot: 5.846153846153845},
+                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 55., volume_warm: 7.556577529434648, volume_hot: 7.556577529434648},
+                    ]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 64.89041357202146),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 2.0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 2),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 3.09616),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![
+                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 41., volume_warm: 48., volume_hot: 32.365493807269814},
+                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 55., volume_warm: 7.556577529434648, volume_hot: 7.556577529434648},
+                        WaterEventResult { event_result_type: WaterEventResultType::Bath, temperature_warm: 55., volume_warm: 24., volume_hot: 17.41176470588235},
+                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 54.99999999999999, volume_warm: 7.556577529434648, volume_hot: 7.556577529434648},
+                    ]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
+            (
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0),
+                    ("hw cylinder".into(), 0),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), 0.),
+                    ("hw cylinder".into(), 0.),
+                ]),
+                IndexMap::from([
+                    ("_electric_showers".into(), vec![]),
+                    ("hw cylinder".into(), vec![]),
+                ]),
+            ),
         ];
 
         let dhw_demand = create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources);
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let (hw_demand_volume, hw_duration, all_events, hw_energy_demand, _usage_events_with_flushes) = dhw_demand.hot_water_demand(t_it).unwrap();
 
-            // TODO test all other results too
-            let (hw_demand_volume, hw_duration, all_events, hw_energy_demand, usage_events_with_flushes) = dhw_demand.hot_water_demand(t_it).unwrap();
-            assert_eq!(hw_demand_volume, expected_hw_demand_volumes[t_idx]);
+            let (expected_hw_demand_volume, expected_hw_duration, expected_all_events, expected_hw_energy_demand, _expected_usage_events_with_flushes) = &expected_results[t_idx];
+
+            assert_eq!(hw_demand_volume, *expected_hw_demand_volume);
+            assert_eq!(hw_duration, *expected_hw_duration);
+            assert_eq!(all_events, *expected_all_events);
+            assert_eq!(hw_energy_demand, *expected_hw_energy_demand);
+
+            // TODO allow comparison of this
+            // assert_eq!(_usage_events_with_flushes, *_expected_usage_events_with_flushes);
         }
     }
 
