@@ -48,6 +48,12 @@ impl SimulationTime {
     }
 }
 
+impl From<&SimulationTimeIterator> for SimulationTime {
+    fn from(value: &SimulationTimeIterator) -> Self {
+        value.simulation_time
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SimulationTimeIterator {
     current_index: usize,
@@ -57,15 +63,6 @@ pub struct SimulationTimeIterator {
 }
 
 impl SimulationTimeIterator {
-    fn from(simulation_time: SimulationTime) -> Self {
-        SimulationTimeIterator {
-            current_index: 0,
-            current_time: simulation_time.start_time,
-            started: false,
-            simulation_time,
-        }
-    }
-
     #[allow(dead_code)]
     pub fn current_index(&self) -> usize {
         self.current_index
@@ -98,6 +95,17 @@ impl SimulationTimeIterator {
             index: self.current_index,
             time: self.current_time,
             timestep: self.simulation_time.step,
+        }
+    }
+}
+
+impl From<SimulationTime> for SimulationTimeIterator {
+    fn from(value: SimulationTime) -> Self {
+        Self {
+            current_index: 0,
+            current_time: value.start_time,
+            started: false,
+            simulation_time: value,
         }
     }
 }
