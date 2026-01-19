@@ -39,6 +39,7 @@ pub(super) fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub(crate) struct ElecStorageHeater {
+    storage: Arc<RwLock<HeatStorageDryCore>>,
     pwr_in: f64,
     pwr_instant: f64,
     storage_capacity: f64,
@@ -145,7 +146,7 @@ impl ElecStorageHeater {
         dry_core_min_output: Vec<[f64; 2]>,
         dry_core_max_output: Vec<[f64; 2]>,
         external_conditions: Arc<ExternalConditions>,
-        _state_of_charge_init: f64,
+        state_of_charge_init: f64,
         output_detailed_results: Option<bool>,
     ) -> anyhow::Result<Self> {
         let output_detailed_results = output_detailed_results.unwrap_or(false);
@@ -225,7 +226,18 @@ impl ElecStorageHeater {
             storage_capacity,
         );
 
+        let storage = Arc::new(RwLock::new(HeatStorageDryCore::new(
+            pwr_in,
+            storage_capacity,
+            n_units,
+            charge_control.clone(),
+            dry_core_min_output,
+            dry_core_max_output,
+            state_of_charge_init,
+        )?));
+
         Ok(Self {
+            storage,
             pwr_in,
             pwr_instant: rated_power_instant,
             storage_capacity,

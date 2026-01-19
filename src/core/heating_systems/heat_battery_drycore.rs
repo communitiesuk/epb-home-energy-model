@@ -40,6 +40,7 @@ pub(crate) enum OutputMode {
     Max,
 }
 
+#[derive(Debug)]
 pub(crate) struct HeatStorageDryCore {
     pwr_in: f64,
     storage_capacity: f64,
