@@ -2,6 +2,7 @@
 //! This includes the common functionality for electrical storage and discharge
 //! that is shared between Electric Storage Heaters and Dry Core Heat Batteries.
 
+use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
@@ -841,7 +842,7 @@ pub(crate) struct HeatBatteryDryCoreServiceWaterRegular {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
     service_name: String,
-    cold_feed: Arc<ColdWaterSource>,
+    cold_feed: WaterSupply,
     control_min: Arc<Control>,
     control_max: Arc<Control>,
 }
@@ -850,7 +851,7 @@ impl HeatBatteryDryCoreServiceWaterRegular {
     pub(crate) fn new(
         heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
         service_name: String,
-        cold_feed: Arc<ColdWaterSource>,
+        cold_feed: WaterSupply,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
     ) -> Self {
@@ -1253,7 +1254,7 @@ impl HeatBatteryDryCore {
     pub(crate) fn create_service_hot_water_regular(
         battery: Arc<Self>,
         service_name: &str,
-        cold_feed: Arc<ColdWaterSource>,
+        cold_feed: WaterSupply,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
     ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterRegular> {
@@ -2231,11 +2232,11 @@ mod tests {
             None,
             simulation_time.step,
         )));
-        let mock_cold_feed = Arc::new(ColdWaterSource::new(
+        let mock_cold_feed = WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(
             vec![70.; simulation_time.total_steps()],
             0,
             1.,
-        )); // we can just set up a normal cold water source here - it isn't used
+        ))); // we can just set up a normal cold water source here - it isn't used
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
             "dhw_service",
@@ -2390,11 +2391,11 @@ mod tests {
         mock_control_space: Arc<Control>,
         simulation_time: SimulationTime,
     ) {
-        let mock_cold_feed = Arc::new(ColdWaterSource::new(
+        let mock_cold_feed = WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(
             vec![70.; simulation_time.total_steps()],
             0,
             1.,
-        )); // we can just set up a normal cold water source here - it isn't used
+        ))); // we can just set up a normal cold water source here - it isn't used
 
         // Create first service
         HeatBatteryDryCore::create_service_hot_water_regular(

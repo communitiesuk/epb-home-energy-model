@@ -380,7 +380,7 @@ impl WwhrsInstantaneous {
     }
 
     /// Get the stored temperature
-    fn get_temp_cold_water(&self, volume_needed: f64) -> (f64, f64) {
+    pub(crate) fn get_temp_cold_water(&self, volume_needed: f64) -> (f64, f64) {
         (self.stored_temperature, volume_needed)
     }
 
