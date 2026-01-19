@@ -1,3 +1,4 @@
+use crate::anyhow;
 use crate::core::controls::time_control::{per_control, ControlBehaviour};
 use crate::core::heating_systems::heat_battery_drycore;
 use crate::core::heating_systems::heat_battery_drycore::{
@@ -621,7 +622,7 @@ impl ElecStorageHeater {
                     .map(|tc| tc.min(target_charge_hhrsh))
             }
             ControlLogicType::HeatBattery => {
-                unimplemented!("HeatBattery control logic not implemented for ESH")
+                Err(anyhow!("HeatBattery control logic not implemented for ESH"))
             }
         }
     }
@@ -1511,7 +1512,6 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
     fn test_electric_charge_invalid_logic_type(
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
@@ -1547,9 +1547,10 @@ mod tests {
             None,
         );
 
-        heater
-            .target_electric_charge(simulation_time.iter().current_iteration())
-            .unwrap();
+        let actual = heater.target_electric_charge(simulation_time.iter().current_iteration());
+        assert!(actual.is_err());
+        let error = actual.unwrap_err().to_string();
+        assert_eq!(error, "HeatBattery control logic not implemented for ESH");
     }
 
     #[rstest]
