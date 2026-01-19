@@ -312,9 +312,9 @@ impl ChargeControl {
 
         Ok(Self {
             logic_type,
-            schedule,
-            start_day,
-            time_series_step,
+            schedule,         // TODO (migration 1.0.0a1) this seems to be optional in Python
+            start_day,        // TODO (migration 1.0.0a1) this seems to be optional in Python
+            time_series_step, // TODO (migration 1.0.0a1) this seems to be optional in Python
             charge_level,
             temp_charge_cut,
             temp_charge_cut_delta,
@@ -1080,7 +1080,7 @@ impl SmartApplianceControl {
 
 impl ControlBehaviour for SmartApplianceControl {}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 /// An object to model a control with nested combinations of other control types
 pub(crate) struct CombinationTimeControl {
     combinations: ControlCombinations,
@@ -1338,7 +1338,7 @@ impl CombinationTimeControl {
                     self.evaluate_combination_setpnt(control_name, simtime)?
                 } else {
                     // Track the types of controls for logic enforcement
-                    match self.controls[control_name].as_ref() {
+                    match self.controls.get(control_name).ok_or_else(|| anyhow!("Control '{control_name}' not found"))?.as_ref() {
                         Control::OnOffTime(_)
                         | Control::Charge(_)
                         | Control::OnOffMinimisingTime(_) => {
@@ -1524,6 +1524,16 @@ impl CombinationTimeControl {
     ) -> anyhow::Result<f64> {
         self.evaluate_combination_target_charge(MAIN_REFERENCE, *simtime, temp_air)
     }
+
+    #[cfg(test)]
+    fn set_combinations(&mut self, combinations: ControlCombinations) {
+        self.combinations = combinations;
+    }
+
+    #[cfg(test)]
+    fn set_controls(&mut self, controls: IndexMap<String, Arc<Control>>) {
+        self.controls = controls;
+    }
 }
 
 impl ControlBehaviour for CombinationTimeControl {
@@ -1602,10 +1612,22 @@ impl ControlBehaviour for MockControl {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum SetpointOrBoolean {
     Setpoint(Option<f64>),
     Boolean(bool),
+}
+
+impl From<f64> for SetpointOrBoolean {
+    fn from(t: f64) -> Self {
+        SetpointOrBoolean::Setpoint(Some(t))
+    }
+}
+
+impl From<bool> for SetpointOrBoolean {
+    fn from(b: bool) -> Self {
+        SetpointOrBoolean::Boolean(b)
+    }
 }
 
 // utility functions to assist with comparing setpoint values where the comparisons are fallible
@@ -1642,7 +1664,6 @@ mod tests {
     use super::*;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
-    use pretty_assertions::assert_eq;
     use rstest::*;
     use serde_json::json;
 
@@ -2878,174 +2899,6 @@ mod tests {
         use pretty_assertions::assert_eq;
 
         #[fixture]
-        fn simulation_time() -> SimulationTime {
-            SimulationTime::new(0.0, 8.0, 1.0)
-        }
-
-        #[fixture]
-        fn simulation_time_cost() -> SimulationTime {
-            SimulationTime::new(0.0, 24.0, 1.0)
-        }
-
-        #[fixture]
-        fn cost_schedule() -> Vec<f64> {
-            [vec![5.; 12], vec![10.; 6], vec![5.; 6]].concat()
-        }
-
-        #[fixture]
-        fn cost_minimising_control(cost_schedule: Vec<f64>) -> Control {
-            Control::OnOffMinimisingTime(
-                OnOffCostMinimisingTimeControl::new(
-                    cost_schedule,
-                    0,
-                    1.,
-                    5.0, // Need 12 "on" hours
-                )
-                .unwrap(),
-            )
-        }
-
-        #[fixture]
-        fn controls(cost_minimising_control: Control) -> IndexMap<String, Arc<Control>> {
-            IndexMap::from([
-                (
-                    "ctrl1".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        [true, true, false, true, true, true, true, true]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                    ))
-                    .into(),
-                ),
-                (
-                    "ctrl2".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        [false, true, true, false, false, false, true, false]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                    ))
-                    .into(),
-                ),
-                (
-                    "ctrl3".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        [true, false, true, false, false, false, true, false]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                    ))
-                    .into(),
-                ),
-                (
-                    "ctrl4".into(),
-                    Control::SetpointTime(SetpointTimeControl::new(
-                        [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                        Default::default(),
-                        Default::default(),
-                        1.,
-                    ))
-                    .into(),
-                ),
-                (
-                    "ctrl5".into(),
-                    Control::SetpointTime(SetpointTimeControl::new(
-                        [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                        Default::default(),
-                        Default::default(),
-                        1.,
-                    ))
-                    .into(),
-                ),
-                (
-                    "ctrl6".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        [true, true, false, true, true, true, true, true]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                    ))
-                    .into(),
-                ),
-                (
-                    "ctrl7".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        [false, true, false, false, false, false, true, false]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                    ))
-                    .into(),
-                ),
-                (
-                    "ctrl8".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        [true, false, false, true, true, true, true, true]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                    ))
-                    .into(),
-                ),
-                (
-                    "ctrl9".into(),
-                    Control::SetpointTime(SetpointTimeControl::new(
-                        vec![
-                            Some(45.0),
-                            None,
-                            Some(50.0),
-                            Some(48.0),
-                            Some(48.0),
-                            None,
-                            Some(48.0),
-                            Some(48.0),
-                        ],
-                        0,
-                        1.,
-                        Default::default(),
-                        Default::default(),
-                        1.,
-                    ))
-                    .into(),
-                ),
-                ("ctrl10".into(), cost_minimising_control.into()),
-            ])
-        }
-
-        // combination_on_off
-        //combination_control_on_off
-        //combination_setpnt
-        //combination_control_setpnt
-        //combination_req
-        //combination_control_req
-        //combination_on_off_cost
-        //combination_control_on_off_cost
-        //        # Setup for ChargeControl test
-
-        #[fixture]
         fn simulation_time_1() -> SimulationTime {
             SimulationTime::new(0., 24., 1.)
         }
@@ -3180,30 +3033,6 @@ mod tests {
                     .into(),
                 ),
             ])
-        }
-
-        #[fixture]
-        fn combination_target_charge() -> ControlCombinations {
-            serde_json::from_value(json!({
-                "main": {"operation": "AND", "controls": ["ctrl11", "ctrl12"]},
-            }))
-            .unwrap()
-        }
-
-        #[fixture]
-        fn combination_target_charge1() -> ControlCombination {
-            ControlCombination {
-                operation: ControlCombinationOperation::And,
-                controls: vec!["ctrl11".into(), "ctrl13".into()],
-            }
-        }
-
-        #[fixture]
-        fn combination_control_target_charge(
-            combination_target_charge: ControlCombinations,
-            controls_1: IndexMap<String, Arc<Control>>,
-        ) -> CombinationTimeControl {
-            CombinationTimeControl::new(combination_target_charge, controls_1).unwrap()
         }
 
         #[rstest]
@@ -3365,6 +3194,498 @@ mod tests {
         // skipped: test_evaluate_combination_target_charge & test_evaluate_combination_target_charge_more_charge_control
         // as method under test (evaluate_combination_target_charge) not actually used by any
         // implementation code
+
+        #[rstest]
+        fn test_evaluate_combination_in_req_period(
+            combination_control_req: CombinationTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let simtime: SimulationTime = (&simulation_time).into();
+
+            let mut control = combination_control_req.clone();
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "AND", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [true, false, true, true, true, false, true, true][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "OR", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [true, true, true, true, true, true, true, true][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "XOR", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [false, true, false, false, false, true, false, false][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MAX", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [true, true, true, true, true, true, true, true][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MIN", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [true, false, true, true, true, false, true, true][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MEAN", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [true, false, true, true, true, false, true, true][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(json!({"main": {"operation": "AND", "controls": []}}))
+                    .unwrap(),
+            );
+
+            assert!(control
+                .evaluate_combination_in_req_period("main", simtime.iter().current_iteration())
+                .is_err());
+        }
+
+        fn test_evaluate_combination_in_req_period_invalid(
+            combination_control_req: CombinationTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let simtime: SimulationTime = (&simulation_time).into();
+
+            let mut control = combination_control_req.clone();
+
+            // OnOff + Setpoint combination in_req_perdioc() only supports the AND operation
+
+            control.set_combinations(
+                serde_json::from_value(json!({
+                    "main": {"operation": "OR", "controls": ["ctrl9", "comb1"]},
+                    "comb1": {"operation": "OR", "controls": ["ctrl4", "ctrl1"]},
+                }))
+                .unwrap(),
+            );
+
+            assert!(control
+                .evaluate_combination_in_req_period("main", simtime.iter().current_iteration())
+                .is_err());
+
+            // OnOff + OnOff combination is not applicable for in_req_period() operation
+
+            control.set_combinations(
+                serde_json::from_value(json!({
+                    "main": {"operation": "OR", "controls": ["ctrl2", "ctrl1"]},
+                }))
+                .unwrap(),
+            );
+
+            assert!(control
+                .evaluate_combination_in_req_period("main", simtime.iter().current_iteration())
+                .is_err());
+
+            control.set_combinations(
+                serde_json::from_value(json!({
+                    "main": {"operation": "AND", "controls": []},
+                }))
+                .unwrap(),
+            );
+
+            assert!(control
+                .evaluate_combination_in_req_period("main", simtime.iter().current_iteration())
+                .is_err());
+        }
+
+        #[rstest]
+        fn test_evaluate_combination_setpnt(
+            combination_control_req: CombinationTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let simtime: SimulationTime = (&simulation_time).into();
+
+            let mut control = combination_control_req.clone();
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MIN", "controls": ["ctrl4", "ctrl5"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control.evaluate_combination_setpnt("main", t_it).unwrap(),
+                    [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0][t_idx].into()
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MAX", "controls": ["ctrl4", "ctrl5"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control.evaluate_combination_setpnt("main", t_it).unwrap(),
+                    [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0][t_idx].into()
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MEAN", "controls": ["ctrl4", "ctrl5"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control.evaluate_combination_setpnt("main", t_it).unwrap(),
+                    [true, true, true, true, true, true, true, true][t_idx].into()
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(json!({"main": {"operation": "AND", "controls": []}}))
+                    .unwrap(),
+            );
+
+            assert!(control
+                .evaluate_combination_setpnt("main", simtime.iter().current_iteration())
+                .is_err());
+        }
+
+        #[rstest]
+        fn test_evaluate_combination_setpnt_invalid(
+            combination_control_req: CombinationTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let simtime: SimulationTime = (&simulation_time).into();
+
+            let mut control = combination_control_req.clone();
+
+            // Only one numerical value allowed in AND operation
+
+            // (cannot port this setup and assertion because the OnOffTimeControl objects
+            // in the Python are given a float, which is contra the typing in Python and
+            // inexpressible in Rust)
+
+            // OnOff + Setpoint combination setpnt() only supports the AND operation
+
+            // NB. the Python here, incorrectly, uses OnOffTimeControls for both control objects
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "OR", "controls": ["ctrl1", "ctrl2"]}}),
+                )
+                .unwrap(),
+            );
+            control.set_controls(IndexMap::from([
+                (
+                    "ctrl1".into(),
+                    Control::SetpointTime(SetpointTimeControl::new(
+                        vec![Some(20.); 8],
+                        0,
+                        1.,
+                        None,
+                        None,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                (
+                    "ctr12".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.)).into(),
+                ),
+            ]));
+
+            assert!(control
+                .evaluate_combination_setpnt("main", simtime.iter().current_iteration())
+                .is_err());
+
+            // Unsupported operation: SupportedOperation.AND
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "AND", "controls": ["ctrl1", "ctrl2"]}}),
+                )
+                .unwrap(),
+            );
+            control.set_controls(IndexMap::from([
+                (
+                    "ctrl1".into(),
+                    Control::SetpointTime(SetpointTimeControl::new(
+                        vec![45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                        None,
+                        None,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                (
+                    "ctr12".into(),
+                    Control::SetpointTime(SetpointTimeControl::new(
+                        vec![45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                        None,
+                        None,
+                        1.,
+                    ))
+                    .into(),
+                ),
+            ]));
+
+            assert!(control
+                .evaluate_combination_setpnt("main", simtime.iter().current_iteration())
+                .is_err());
+
+            // OnOff + OnOff combination is not applicable for setpnt() operation
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "OR", "controls": ["ctrl1", "ctrl2"]}}),
+                )
+                .unwrap(),
+            );
+            control.set_controls(IndexMap::from([
+                (
+                    "ctrl1".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        vec![false, false, false, true, true, true, true, true]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                (
+                    "ctrl2".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        vec![false, true, false, false, true, false, true, true]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+            ]));
+
+            assert!(control
+                .evaluate_combination_setpnt("main", simtime.iter().current_iteration())
+                .is_err());
+        }
+
+        #[rstest]
+        fn test_is_on(
+            combination_control_on_off: CombinationTimeControl,
+            simulation_time_for_combinations: SimulationTime,
+        ) {
+            for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
+                assert_eq!(
+                    combination_control_on_off.is_on(&t_it),
+                    [false, false, false, false, false, false, true, false][t_idx]
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_setpnt(
+            combination_control_setpoint: CombinationTimeControl,
+            simulation_time_for_combinations: SimulationTime,
+        ) {
+            for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
+                assert_eq!(
+                    combination_control_setpoint.setpnt(&t_it),
+                    [None, Some(52.0), None, None, None, None, Some(52.0), None][t_idx]
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_in_required_period(
+            combination_control_req: CombinationTimeControl,
+            simulation_time_for_combinations: SimulationTime,
+        ) {
+            for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
+                assert_eq!(
+                    combination_control_req.in_required_period(&t_it),
+                    Some([true, false, false, true, true, false, true, true][t_idx]),
+                    "incorrect required period returned on iteration {}",
+                    t_idx + 1
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_is_on_cost(
+            combination_control_on_off_cost: CombinationTimeControl,
+            simulation_time_for_combinations: SimulationTime,
+        ) {
+            for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
+                assert_eq!(
+                    combination_control_on_off_cost.is_on(&t_it),
+                    [false, true, false, false, false, false, true, false][t_idx]
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge(
+            combination_control_target_charge: CombinationTimeControl,
+            combination_control_target_charge1: CombinationTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let simtime: SimulationTime = (&simulation_time).into();
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    combination_control_target_charge
+                        .target_charge(&t_it, None)
+                        .unwrap(),
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx]
+                );
+            }
+
+            assert!(combination_control_target_charge1
+                .target_charge(&simtime.iter().current_iteration(), None)
+                .is_err());
+        }
+
+        #[rstest]
+        fn test_max_min_mean_operations_logic() {
+            let simtime_short = SimulationTime::new(0., 4., 1.);
+
+            let controls: IndexMap<String, Arc<Control>> = IndexMap::from([
+                (
+                    "ctrl_a".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        vec![false, false, true, true]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                (
+                    "ctrl_b".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        vec![false, false, false, true]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                (
+                    "ctrl_c".into(),
+                    Control::SetpointTime(SetpointTimeControl::new(
+                        vec![None, Some(20.0), None, None],
+                        0,
+                        1.,
+                        None,
+                        None,
+                        1.,
+                    ))
+                    .into(),
+                ),
+            ]);
+
+            for operation in ["MAX", "MIN", "MEAN"] {
+                let combination: ControlCombinations = serde_json::from_value(json!({
+                    "main": {"operation": operation, "controls": ["ctrl_a", "ctrl_b", "ctrl_c"]}
+                }))
+                .unwrap();
+
+                let combination_control =
+                    CombinationTimeControl::new(combination, controls.clone()).unwrap();
+
+                let expected_results = [false, true, true, true];
+
+                for (t_idx, t_it) in simtime_short.iter().enumerate() {
+                    let result = combination_control.is_on(&t_it);
+                    assert_eq!(result, expected_results[t_idx]);
+                }
+            }
+        }
     }
 
     #[fixture]
@@ -3736,83 +4057,6 @@ mod tests {
     #[fixture]
     fn simulation_time_for_combinations() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
-    }
-
-    #[rstest]
-    fn test_is_on_for_combination(
-        combination_control_on_off: CombinationTimeControl,
-        simulation_time_for_combinations: SimulationTime,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
-            assert_eq!(
-                combination_control_on_off.is_on(&t_it),
-                [false, false, false, false, false, false, true, false][t_idx]
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_setpnt_for_combination(
-        combination_control_setpoint: CombinationTimeControl,
-        simulation_time_for_combinations: SimulationTime,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
-            assert_eq!(
-                combination_control_setpoint.setpnt(&t_it),
-                [None, Some(52.0), None, None, None, None, Some(52.0), None][t_idx]
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_in_required_period_for_combination(
-        combination_control_req: CombinationTimeControl,
-        simulation_time_for_combinations: SimulationTime,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
-            assert_eq!(
-                combination_control_req.in_required_period(&t_it),
-                Some([true, false, false, true, true, false, true, true][t_idx]),
-                "incorrect required period returned on iteration {}",
-                t_idx + 1
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_is_on_cost_for_combination(
-        combination_control_on_off_cost: CombinationTimeControl,
-        simulation_time_for_combinations: SimulationTime,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
-            assert_eq!(
-                combination_control_on_off_cost.is_on(&t_it),
-                [false, true, false, false, false, false, true, false][t_idx]
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_target_charge_for_combination(
-        combination_control_target_charge: CombinationTimeControl,
-        combination_control_target_charge1: CombinationTimeControl,
-        simulation_time_for_combinations: SimulationTime,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
-            assert_eq!(
-                combination_control_target_charge
-                    .target_charge(&t_it, None)
-                    .unwrap(),
-                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx]
-            );
-        }
-
-        assert!(combination_control_target_charge1
-            .target_charge(
-                &simulation_time_for_combinations.iter().next().unwrap(),
-                None
-            )
-            .is_err());
     }
 
     #[fixture]
