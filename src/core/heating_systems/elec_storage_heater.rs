@@ -151,8 +151,14 @@ impl ElecStorageHeater {
     ) -> anyhow::Result<Self> {
         let output_detailed_results = output_detailed_results.unwrap_or(false);
 
-        if !matches!(charge_control.as_ref(), Control::Charge(_)) {
-            bail!("charge_control must be a ChargeControl");
+        match charge_control.as_ref() {
+            Control::Charge(charge) => match charge.logic_type() {
+                ControlLogicType::HeatBattery => {
+                    bail!("Control logic type HeatBattery is not valid for ElecStorageHeater.")
+                }
+                _ => {}
+            },
+            _ => bail!("charge_control must be a ChargeControl"),
         }
 
         let temp_air = zone_internal_air_func();
@@ -1549,20 +1555,39 @@ mod tests {
             )
             .unwrap(),
         ));
-        let heater = create_elec_storage_heater(
-            simulation_time,
-            charge_control,
+
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn =
+            EnergySupply::connection(energy_supply.clone(), "storage_heater").unwrap();
+
+        let elec_storage_heater = ElecStorageHeater::new(
+            3.5,
+            2.5,
+            10.0,
+            ElectricStorageHeaterAirFlowType::FanAssisted,
+            0.7,
+            11.,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
             control,
-            external_conditions,
+            charge_control,
             DRY_CORE_MIN_OUTPUT.to_vec(),
             DRY_CORE_MAX_OUTPUT.to_vec(),
+            external_conditions, // NOTE this is None in Python,
+            0.,
             None,
         );
 
-        let actual = heater.target_electric_charge(simulation_time.iter().current_iteration());
-        assert!(actual.is_err());
-        let error = actual.unwrap_err().to_string();
-        assert_eq!(error, "HeatBattery control logic not implemented for ESH");
+        assert!(elec_storage_heater.is_err());
+        assert_eq!(
+            elec_storage_heater.unwrap_err().to_string(),
+            "Control logic type HeatBattery is not valid for ElecStorageHeater."
+        );
     }
 
     #[rstest]
