@@ -455,19 +455,17 @@ pub struct WWHRSInstantaneousSystemB {
 /// For System B WWHRS, output of the heat exchanger is fed to the shower only
 impl WWHRSInstantaneousSystemB {
     pub fn new(
-        _cold_water_source: Arc<ColdWaterSource>,
-        _flow_rates: Vec<f64>,
-        _efficiencies: Vec<f64>,
-        _utilisation_factor: f64,
+        cold_water_source: Arc<ColdWaterSource>,
+        flow_rates: Vec<f64>,
+        efficiencies: Vec<f64>,
+        utilisation_factor: f64,
     ) -> Self {
-        unreachable!()
-
-        // Self {
-        //     cold_water_source,
-        //     flow_rates,
-        //     efficiencies,
-        //     utilisation_factor,
-        // }
+        Self {
+            cold_water_source,
+            flow_rates,
+            efficiencies,
+            utilisation_factor,
+        }
     }
 
     pub fn return_temperature(
