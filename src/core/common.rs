@@ -15,27 +15,6 @@ pub(crate) enum WaterSourceWithTemperature {
 }
 
 impl WaterSourceWithTemperature {
-    pub(crate) fn temperature(
-        &self,
-        simtime: SimulationTimeIteration,
-        _volume_needed: Option<f64>,
-    ) -> f64 {
-        match self {
-            WaterSourceWithTemperature::ColdWaterSource(cold_water_source) => {
-                cold_water_source.temperature(simtime)
-            }
-            WaterSourceWithTemperature::Wwhrs(w) => w.lock().temperature(),
-            WaterSourceWithTemperature::Preheated(source) => match source {
-                HotWaterStorageTank::StorageTank(_storage_tank) => {
-                    todo!("temperature method no longer exists on storage tank")
-                }
-                HotWaterStorageTank::SmartHotWaterTank(_smart_hot_water_tank) => {
-                    todo!("temperature method no longer exists on storage tank")
-                }
-            },
-        }
-    }
-
     pub(crate) fn get_temp_cold_water(
         &self,
         volume_needed: f64,

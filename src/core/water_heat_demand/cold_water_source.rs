@@ -24,12 +24,6 @@ impl ColdWaterSource {
         }
     }
 
-    // TODO remove temperature function once migration to 1.0.0a1 is complete
-    pub fn temperature(&self, simtime: SimulationTimeIteration) -> f64 {
-        let time_series_idx = simtime.time_series_idx(self.start_day, self.time_series_step);
-        *self.cold_water_temps.get(time_series_idx).unwrap()
-    }
-
     /// Return the cold water temperature and volume for the current timestep
     pub(crate) fn get_temp_cold_water(
         &self,

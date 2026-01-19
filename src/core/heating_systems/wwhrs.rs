@@ -414,27 +414,31 @@ impl Wwhrs {
         flowrate_waste_water: f64,
         simtime: SimulationTimeIteration,
     ) -> f64 {
-        match &self {
-            Wwhrs::WWHRSInstantaneousSystemB(system) => {
-                system.return_temperature(temp_target, flowrate_waste_water, simtime)
-            }
-            Wwhrs::WWHRSInstantaneousSystemC(system) => {
-                system.return_temperature(temp_target, flowrate_waste_water, simtime)
-            }
-            Wwhrs::WWHRSInstantaneousSystemA(system) => {
-                system.return_temperature(temp_target, flowrate_waste_water, simtime)
-            }
-        }
+        unreachable!()
+
+        // match &self {
+        //     Wwhrs::WWHRSInstantaneousSystemB(system) => {
+        //         system.return_temperature(temp_target, flowrate_waste_water, simtime)
+        //     }
+        //     Wwhrs::WWHRSInstantaneousSystemC(system) => {
+        //         system.return_temperature(temp_target, flowrate_waste_water, simtime)
+        //     }
+        //     Wwhrs::WWHRSInstantaneousSystemA(system) => {
+        //         system.return_temperature(temp_target, flowrate_waste_water, simtime)
+        //     }
+        // }
     }
 
     pub fn temperature(&self) -> f64 {
-        match self {
-            Wwhrs::WWHRSInstantaneousSystemB(_) => {
-                unreachable!("A SystemB WWHRS does not expect to have temperature() called on it")
-            }
-            Wwhrs::WWHRSInstantaneousSystemC(c) => c.temperature(),
-            Wwhrs::WWHRSInstantaneousSystemA(a) => a.temperature(),
-        }
+        unreachable!()
+
+        // match self {
+        //     Wwhrs::WWHRSInstantaneousSystemB(_) => {
+        //         unreachable!("A SystemB WWHRS does not expect to have temperature() called on it")
+        //     }
+        //     Wwhrs::WWHRSInstantaneousSystemC(c) => c.temperature(),
+        //     Wwhrs::WWHRSInstantaneousSystemA(a) => a.temperature(),
+        // }
     }
 }
 
@@ -451,40 +455,44 @@ pub struct WWHRSInstantaneousSystemB {
 /// For System B WWHRS, output of the heat exchanger is fed to the shower only
 impl WWHRSInstantaneousSystemB {
     pub fn new(
-        cold_water_source: Arc<ColdWaterSource>,
-        flow_rates: Vec<f64>,
-        efficiencies: Vec<f64>,
-        utilisation_factor: f64,
+        _cold_water_source: Arc<ColdWaterSource>,
+        _flow_rates: Vec<f64>,
+        _efficiencies: Vec<f64>,
+        _utilisation_factor: f64,
     ) -> Self {
-        Self {
-            cold_water_source,
-            flow_rates,
-            efficiencies,
-            utilisation_factor,
-        }
+        unreachable!()
+
+        // Self {
+        //     cold_water_source,
+        //     flow_rates,
+        //     efficiencies,
+        //     utilisation_factor,
+        // }
     }
 
     pub fn return_temperature(
         &self,
-        temp_target: f64,
-        flowrate_waste_water: f64,
-        simtime: SimulationTimeIteration,
+        _temp_target: f64,
+        _flowrate_waste_water: f64,
+        _simtime: SimulationTimeIteration,
     ) -> f64 {
-        // # TODO (from Python) The cold water flow rate depends on the temperature returned from
-        // #      this function, which may create a circularity in the calculation.
-        // #      May need to integrate System B into shower module and/or combine
-        // #      equations.
+        unreachable!()
 
-        let temp_cold = self.cold_water_source.temperature(simtime);
-
-        // # TODO (from Python) If flowrates have been provided for waste and cold water:
-        // #    - Calc heat recovered from waste water. Need to do this per shower
-        // #      individually? Need WWHRS_Connection object?
-        let wwhrs_efficiency =
-            self.get_efficiency_from_flowrate(flowrate_waste_water) * self.utilisation_factor;
-
-        // Calculate temp of pre-heated water based on heat recovered and flow rates
-        temp_cold + ((wwhrs_efficiency / 100.0) * (temp_target - temp_cold))
+        // // # TODO (from Python) The cold water flow rate depends on the temperature returned from
+        // // #      this function, which may create a circularity in the calculation.
+        // // #      May need to integrate System B into shower module and/or combine
+        // // #      equations.
+        //
+        // let temp_cold = self.cold_water_source.temperature(simtime);
+        //
+        // // # TODO (from Python) If flowrates have been provided for waste and cold water:
+        // // #    - Calc heat recovered from waste water. Need to do this per shower
+        // // #      individually? Need WWHRS_Connection object?
+        // let wwhrs_efficiency =
+        //     self.get_efficiency_from_flowrate(flowrate_waste_water) * self.utilisation_factor;
+        //
+        // // Calculate temp of pre-heated water based on heat recovered and flow rates
+        // temp_cold + ((wwhrs_efficiency / 100.0) * (temp_target - temp_cold))
     }
 
     fn get_efficiency_from_flowrate(&self, flowrate: f64) -> f64 {
@@ -506,22 +514,24 @@ pub struct WWHRSInstantaneousSystemC {
 
 impl WWHRSInstantaneousSystemC {
     pub(crate) fn new(
-        flow_rates: Vec<f64>,
-        efficiencies: Vec<f64>,
-        cold_water_source: Arc<ColdWaterSource>,
-        utilisation_factor: f64,
-        initial_simtime: SimulationTimeIteration,
+        _flow_rates: Vec<f64>,
+        _efficiencies: Vec<f64>,
+        _cold_water_source: Arc<ColdWaterSource>,
+        _utilisation_factor: f64,
+        _initial_simtime: SimulationTimeIteration,
     ) -> Self {
-        // assuming the first timestep index is wanted here, but this is unclear!
-        let stored_temperature = cold_water_source.temperature(initial_simtime);
+        unreachable!()
 
-        Self {
-            cold_water_source,
-            stored_temperature,
-            flow_rates,
-            efficiencies,
-            utilisation_factor,
-        }
+        // // assuming the first timestep index is wanted here, but this is unclear!
+        // let stored_temperature = cold_water_source.temperature(initial_simtime);
+        //
+        // Self {
+        //     cold_water_source,
+        //     stored_temperature,
+        //     flow_rates,
+        //     efficiencies,
+        //     utilisation_factor,
+        // }
     }
 
     pub fn set_temperature_for_return(&mut self, water_temperature: f64) {
@@ -530,25 +540,27 @@ impl WWHRSInstantaneousSystemC {
 
     pub fn return_temperature(
         &self,
-        temp_target: f64,
-        flowrate_waste_water: f64,
-        simtime: SimulationTimeIteration,
+        _temp_target: f64,
+        _flowrate_waste_water: f64,
+        _simtime: SimulationTimeIteration,
     ) -> f64 {
-        // # TODO (from Python) The cold water flow rate depends on the temperature returned from
-        // #      this function, which may create a circularity in the calculation.
-        // #      May need to integrate System B into shower module and/or combine
-        // #      equations.
+        unreachable!()
 
-        let temp_cold = self.cold_water_source.temperature(simtime);
-
-        // # TODO (from Python) If flowrates have been provided for waste and cold water:
-        // #    - Calc heat recovered from waste water. Need to do this per shower
-        // #      individually? Need WWHRS_Connection object?
-        let wwhrs_efficiency =
-            self.get_efficiency_from_flowrate(flowrate_waste_water) * self.utilisation_factor;
-
-        // Calculate temp of pre-heated water based on heat recovered and flow rates
-        temp_cold + ((wwhrs_efficiency / 100.0) * (temp_target - temp_cold))
+        // // # TODO (from Python) The cold water flow rate depends on the temperature returned from
+        // // #      this function, which may create a circularity in the calculation.
+        // // #      May need to integrate System B into shower module and/or combine
+        // // #      equations.
+        //
+        // let temp_cold = self.cold_water_source.temperature(simtime);
+        //
+        // // # TODO (from Python) If flowrates have been provided for waste and cold water:
+        // // #    - Calc heat recovered from waste water. Need to do this per shower
+        // // #      individually? Need WWHRS_Connection object?
+        // let wwhrs_efficiency =
+        //     self.get_efficiency_from_flowrate(flowrate_waste_water) * self.utilisation_factor;
+        //
+        // // Calculate temp of pre-heated water based on heat recovered and flow rates
+        // temp_cold + ((wwhrs_efficiency / 100.0) * (temp_target - temp_cold))
     }
 
     fn get_efficiency_from_flowrate(&self, flowrate: f64) -> f64 {
@@ -581,16 +593,18 @@ impl WWHRSInstantaneousSystemA {
         utilisation_factor: f64,
         initial_simtime: SimulationTimeIteration,
     ) -> Self {
-        // assume that the first timestep is what is wanted here though could be wrong!!
-        let stored_temperature = cold_water_source.temperature(initial_simtime);
+        unreachable!()
 
-        Self {
-            cold_water_source,
-            stored_temperature,
-            flow_rates,
-            efficiencies,
-            utilisation_factor,
-        }
+        // // assume that the first timestep is what is wanted here though could be wrong!!
+        // let stored_temperature = cold_water_source.temperature(initial_simtime);
+        //
+        // Self {
+        //     cold_water_source,
+        //     stored_temperature,
+        //     flow_rates,
+        //     efficiencies,
+        //     utilisation_factor,
+        // }
     }
 
     pub fn set_temperature_for_return(&mut self, water_temperature: f64) {
@@ -603,21 +617,23 @@ impl WWHRSInstantaneousSystemA {
         flowrate_waste_water: f64,
         simtime: SimulationTimeIteration,
     ) -> f64 {
-        // # TODO (from Python) The cold water flow rate depends on the temperature returned from
-        // #      this function, which may create a circularity in the calculation.
-        // #      May need to integrate System B into shower module and/or combine
-        // #      equations.
+        unreachable!()
 
-        let temp_cold = self.cold_water_source.temperature(simtime);
-
-        // # TODO (from Python) If flowrates have been provided for waste and cold water:
-        // #    - Calc heat recovered from waste water. Need to do this per shower
-        // #      individually? Need WWHRS_Connection object?
-        let wwhrs_efficiency =
-            self.get_efficiency_from_flowrate(flowrate_waste_water) * self.utilisation_factor;
-
-        // Calculate temp of pre-heated water based on heat recovered and flow rates
-        temp_cold + ((wwhrs_efficiency / 100.0) * (temp_target - temp_cold))
+        // // # TODO (from Python) The cold water flow rate depends on the temperature returned from
+        // // #      this function, which may create a circularity in the calculation.
+        // // #      May need to integrate System B into shower module and/or combine
+        // // #      equations.
+        //
+        // let temp_cold = self.cold_water_source.temperature(simtime);
+        //
+        // // # TODO (from Python) If flowrates have been provided for waste and cold water:
+        // // #    - Calc heat recovered from waste water. Need to do this per shower
+        // // #      individually? Need WWHRS_Connection object?
+        // let wwhrs_efficiency =
+        //     self.get_efficiency_from_flowrate(flowrate_waste_water) * self.utilisation_factor;
+        //
+        // // Calculate temp of pre-heated water based on heat recovered and flow rates
+        // temp_cold + ((wwhrs_efficiency / 100.0) * (temp_target - temp_cold))
     }
 
     fn get_efficiency_from_flowrate(&self, flowrate: f64) -> f64 {
