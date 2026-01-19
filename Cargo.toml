@@ -12,7 +12,7 @@ arc-swap = "1.8.0"
 argmin = "0.11.0"
 atomic_float = "1.1.0"
 bounded-vec-deque = "0.1.1"
-chrono = "0.4.42"
+chrono = "0.4.43"
 clap = { version = "4.5.54", features = ["derive"], optional = true }
 convert_case = "0.10.0"
 csv = "1.4.0"
@@ -43,7 +43,7 @@ serde_with = { version = "3.15.1", features = ["json", "macros"] }
 serde_valid = "2.0.1"
 smartstring = { version = "1.0.1", features = ["arbitrary", "serde"] }
 statrs = "0.18.0"
-thiserror = "2.0.17"
+thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
 
