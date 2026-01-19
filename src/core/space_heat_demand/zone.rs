@@ -530,7 +530,7 @@ impl Zone {
                         * ((eli.element.h_ci(
                             temp_prev[self.zone_idx],
                             temp_prev[self.element_positions[eli_idx].1],
-                        )) * (air_node_temp * temp_int_surface))
+                        )) * (air_node_temp - temp_int_surface))
                 })
                 .sum::<f64>();
 
