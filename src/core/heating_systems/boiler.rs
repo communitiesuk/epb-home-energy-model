@@ -1,5 +1,5 @@
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::common::WaterSourceWithTemperature;
+use crate::core::common::WaterSource;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
@@ -32,7 +32,7 @@ pub(crate) struct BoilerServiceWaterCombi {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
     temperature_hot_water_in_c: f64,
-    cold_feed: WaterSourceWithTemperature,
+    cold_feed: WaterSource,
     separate_dhw_tests: BoilerHotWaterTest,
     rejected_energy_1: Option<f64>,
     storage_loss_factor_2: Option<f64>,
@@ -62,7 +62,7 @@ impl BoilerServiceWaterCombi {
         boiler_data: HotWaterSourceDetails,
         service_name: String,
         temperature_hot_water_in_c: f64,
-        cold_feed: WaterSourceWithTemperature,
+        cold_feed: WaterSource,
         simulation_timestep: f64,
     ) -> Result<Self, IncorrectBoilerDataType> {
         match boiler_data {
@@ -102,7 +102,7 @@ impl BoilerServiceWaterCombi {
         }
     }
 
-    pub fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+    pub fn get_cold_water_source(&self) -> &WaterSource {
         &self.cold_feed
     }
 
@@ -622,7 +622,7 @@ impl Boiler {
         boiler_data: HotWaterSourceDetails,
         service_name: &str,
         temperature_hot_water_in_c: f64,
-        cold_feed: WaterSourceWithTemperature,
+        cold_feed: WaterSource,
     ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
         boiler
             .write()
@@ -1192,7 +1192,7 @@ mod tests {
     }
 
     mod test_boiler_service_water_combi {
-        use crate::core::common::WaterSourceWithTemperature;
+        use crate::core::common::WaterSource;
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -1273,18 +1273,16 @@ mod tests {
         }
 
         #[fixture]
-        fn cold_water_source_with_temp(
-            simulation_time: SimulationTime,
-        ) -> WaterSourceWithTemperature {
+        fn cold_water_source_with_temp(simulation_time: SimulationTime) -> WaterSource {
             let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step);
-            WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source))
+            WaterSource::ColdWaterSource(Arc::new(cold_water_source))
         }
 
         #[fixture]
         fn boiler_service(
             boiler: Boiler,
             boiler_service_water_combi_data: HotWaterSourceDetails,
-            cold_water_source_with_temp: WaterSourceWithTemperature,
+            cold_water_source_with_temp: WaterSource,
             simulation_time: SimulationTime,
         ) -> BoilerServiceWaterCombi {
             BoilerServiceWaterCombi::new(
@@ -1328,7 +1326,7 @@ mod tests {
                 boiler_service_data,
                 "boiler_test".into(),
                 20.,
-                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
+                WaterSource::ColdWaterSource(Arc::new(cold_water_source)),
                 simulation_time.step,
             )
             .unwrap();
@@ -1360,7 +1358,7 @@ mod tests {
                 boiler_service_data,
                 "boiler_test".into(),
                 20.,
-                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
+                WaterSource::ColdWaterSource(Arc::new(cold_water_source)),
                 simulation_time.step,
             )
             .unwrap();
@@ -1435,7 +1433,7 @@ mod tests {
         #[rstest]
         fn test_get_cold_water_source(
             boiler_service: BoilerServiceWaterCombi,
-            cold_water_source_with_temp: WaterSourceWithTemperature,
+            cold_water_source_with_temp: WaterSource,
         ) {
             // using match statement because we have not implemented PartialEq for all
             // WaterSourceWithTemperature variants
@@ -1443,10 +1441,7 @@ mod tests {
                 boiler_service.get_cold_water_source(),
                 cold_water_source_with_temp,
             ) {
-                (
-                    WaterSourceWithTemperature::ColdWaterSource(actual),
-                    WaterSourceWithTemperature::ColdWaterSource(expected),
-                ) => {
+                (WaterSource::ColdWaterSource(actual), WaterSource::ColdWaterSource(expected)) => {
                     assert_eq!(actual, &expected)
                 }
                 _ => unreachable!(),
@@ -1951,7 +1946,7 @@ mod tests {
     }
 
     mod test_boiler {
-        use crate::core::common::WaterSourceWithTemperature;
+        use crate::core::common::WaterSource;
         use crate::core::controls::time_control::{Control, SetpointTimeControl};
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
@@ -2063,7 +2058,7 @@ mod tests {
                 boiler_data,
                 service_name,
                 temp_hot_water,
-                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_feed)),
+                WaterSource::ColdWaterSource(Arc::new(cold_feed)),
             );
             assert!(boiler_service_result.is_ok());
         }

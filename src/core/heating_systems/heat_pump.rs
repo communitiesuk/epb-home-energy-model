@@ -3,7 +3,7 @@
 /// entries for SAP 2012 and SAP 10. DAHPSE was based on a draft of
 /// BS EN 15316-4-2:2017 and is described in the SAP calculation method CALCM-01.
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::common::WaterSourceWithTemperature;
+use crate::core::common::WaterSource;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -36,7 +36,6 @@ use smartstring::alias::String;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
-
 
 const N_EXER: f64 = 3.0;
 
@@ -1355,7 +1354,7 @@ pub struct HeatPumpServiceWater {
     control_min: Arc<Control>,
     control_max: Arc<Control>,
     temp_limit_upper_in_k: f64,
-    cold_feed: Arc<WaterSourceWithTemperature>,
+    cold_feed: Arc<WaterSource>,
     hybrid_boiler_service: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
 }
 
@@ -1364,7 +1363,7 @@ impl HeatPumpServiceWater {
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: String,
         temp_limit_upper_in_c: f64,
-        cold_feed: Arc<WaterSourceWithTemperature>,
+        cold_feed: Arc<WaterSource>,
         control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl
         control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
@@ -2441,7 +2440,7 @@ impl HeatPump {
         boiler_data: HotWaterSourceDetails,
         service_name: &str,
         temp_hot_water: f64,
-        cold_feed: WaterSourceWithTemperature,
+        cold_feed: WaterSource,
     ) -> anyhow::Result<BoilerServiceWaterCombi> {
         if let Some(boiler) = self.boiler.as_ref() {
             Boiler::create_service_hot_water_combi(
@@ -2461,7 +2460,7 @@ impl HeatPump {
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
         temp_limit_upper_in_c: f64,
-        cold_feed: Arc<WaterSourceWithTemperature>,
+        cold_feed: Arc<WaterSource>,
         control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
         control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
     ) -> anyhow::Result<HeatPumpServiceWater> {
@@ -6147,7 +6146,7 @@ mod tests {
         );
         let control_min = create_setpoint_time_control(vec![Some(10.)]);
         let control_max = create_setpoint_time_control(vec![Some(20.)]);
-        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(
+        let cold_feed = WaterSource::ColdWaterSource(
             ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step).into(),
         ); // Python uses a mock for cold_feed
 
@@ -7466,7 +7465,7 @@ mod tests {
         };
         let service_name = "service_hot_water_combi";
         let temp_hot_water = 50.;
-        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(
+        let cold_feed = WaterSource::ColdWaterSource(
             ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step).into(),
         );
         let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> =
@@ -7512,7 +7511,7 @@ mod tests {
 
         let service_name = "service_hot_water";
 
-        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(
+        let cold_feed = WaterSource::ColdWaterSource(
             ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step).into(),
         );
 

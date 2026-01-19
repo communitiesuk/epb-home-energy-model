@@ -1,5 +1,5 @@
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::common::WaterSourceWithTemperature;
+use crate::core::common::WaterSource;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::{MaterialProperties, WATER};
@@ -94,7 +94,7 @@ pub enum HeatSourceWithStorageTank {
 pub struct StorageTank {
     initial_temperature: f64,
     q_std_ls_ref: f64, // measured standby losses due to cylinder insulation at standardised conditions, in kWh/24h
-    cold_feed: WaterSourceWithTemperature,
+    cold_feed: WaterSource,
     simulation_timestep: f64,
     number_of_volumes: usize,
     temp_flow_prev: AtomicF64,
@@ -151,7 +151,7 @@ impl StorageTank {
         volume: f64,
         losses: f64,
         initial_temperature: f64,
-        cold_feed: WaterSourceWithTemperature,
+        cold_feed: WaterSource,
         simulation_timestep: f64,
         heat_sources: IndexMap<String, PositionedHeatSource>,
         // In Python this is "project" but only temp_internal_air is accessed from it
@@ -1122,7 +1122,7 @@ impl StorageTank {
         }
     }
 
-    pub(crate) fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+    pub(crate) fn get_cold_water_source(&self) -> &WaterSource {
         &self.cold_feed
     }
 
@@ -1566,7 +1566,7 @@ impl SmartHotWaterTank {
         max_flow_rate_pump_l_per_min: f64,
         temp_usable: f64,
         temp_setpnt_max: Arc<Control>,
-        cold_feed: WaterSourceWithTemperature,
+        cold_feed: WaterSource,
         simulation_timestep: f64,
         heat_sources: IndexMap<String, PositionedHeatSource>,
         temp_internal_air_fn: TempInternalAirFn,
@@ -1928,7 +1928,7 @@ impl SmartHotWaterTank {
         self.storage_tank.output_results()
     }
 
-    pub(crate) fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+    pub(crate) fn get_cold_water_source(&self) -> &WaterSource {
         self.storage_tank.get_cold_water_source()
     }
 
@@ -3265,7 +3265,7 @@ mod tests {
             control_max_schedule,
         );
 
-        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(cold_water_source.clone());
+        let cold_feed = WaterSource::ColdWaterSource(cold_water_source.clone());
         let simulation_timestep = simulation_time_for_storage_tank.step;
 
         let heat_sources = IndexMap::from([("imheater".into(), heat_source)]);
@@ -3337,7 +3337,7 @@ mod tests {
             control_max_schedule,
         );
 
-        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(cold_water_source.clone());
+        let cold_feed = WaterSource::ColdWaterSource(cold_water_source.clone());
         let simulation_timestep = simulation_time_for_storage_tank.step;
 
         let heat_sources = IndexMap::from([(String::from("imheater2"), heat_source)]);
@@ -3468,9 +3468,11 @@ mod tests {
         let start_day = 0;
         let time_series_step = 1.;
         let cold_water_temps = vec![10.6, 11.0, 11.5, 12.1];
-        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
-            ColdWaterSource::new(cold_water_temps, start_day, time_series_step),
-        ));
+        let cold_feed = WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(
+            cold_water_temps,
+            start_day,
+            time_series_step,
+        )));
         let simulation_timestep = simulation_time_for_storage_tank.step;
 
         let heat_sources = IndexMap::from([(String::from("imheater"), heat_source)]);
@@ -3673,9 +3675,11 @@ mod tests {
             17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5,
             17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7,
         ];
-        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
-            ColdWaterSource::new(cold_water_temps.to_vec(), 212, 1.),
-        ));
+        let cold_feed = WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(
+            cold_water_temps.to_vec(),
+            212,
+            1.,
+        )));
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
@@ -3903,7 +3907,7 @@ mod tests {
             );
 
             let cold_water_temps = match storage_tank2.cold_feed {
-                WaterSourceWithTemperature::ColdWaterSource(ref cold_water_source) => {
+                WaterSource::ColdWaterSource(ref cold_water_source) => {
                     &cold_water_source.cold_water_temps
                 }
                 _ => unreachable!(), // we know this is a cold water source
@@ -3997,10 +4001,7 @@ mod tests {
         let (storage_tank1, _) = storage_tank1;
         let result = storage_tank1.get_cold_water_source();
 
-        assert!(matches!(
-            result,
-            WaterSourceWithTemperature::ColdWaterSource(_)
-        ));
+        assert!(matches!(result, WaterSource::ColdWaterSource(_)));
     }
 
     #[rstest]
@@ -4787,9 +4788,8 @@ mod tests {
             1.,
         )));
         let cold_water_temps = vec![10.0, 10.1, 10.2, 10.5, 10.6, 11.0, 11.5, 12.1];
-        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
-            ColdWaterSource::new(cold_water_temps, 0, 1.),
-        ));
+        let cold_feed =
+            WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(cold_water_temps, 0, 1.)));
         let energy_supply_connection = EnergySupply::connection(
             energy_supply_for_smart_hot_water_tank_immersion.clone(),
             heat_source_name,

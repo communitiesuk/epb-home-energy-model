@@ -1,5 +1,5 @@
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::common::WaterSourceWithTemperature;
+use crate::core::common::WaterSource;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
@@ -17,7 +17,7 @@ pub struct HeatNetworkServiceWaterDirect {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,
     temperature_hot_water: f64, // in C
-    cold_feed: WaterSourceWithTemperature,
+    cold_feed: WaterSource,
 }
 
 /// An object to represent a water heating service provided by a heat network.
@@ -34,7 +34,7 @@ impl HeatNetworkServiceWaterDirect {
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
         temperature_hot_water: f64,
-        cold_feed: WaterSourceWithTemperature,
+        cold_feed: WaterSource,
     ) -> Self {
         Self {
             heat_network,
@@ -44,7 +44,7 @@ impl HeatNetworkServiceWaterDirect {
         }
     }
 
-    pub(crate) fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+    pub(crate) fn get_cold_water_source(&self) -> &WaterSource {
         &self.cold_feed
     }
 
@@ -334,7 +334,7 @@ impl HeatNetwork {
         heat_network: Arc<Mutex<Self>>,
         service_name: &str,
         temperature_hot_water: f64,
-        cold_feed: WaterSourceWithTemperature,
+        cold_feed: WaterSource,
     ) -> HeatNetworkServiceWaterDirect {
         Self::create_service_connection(heat_network.clone(), service_name).unwrap();
 
@@ -588,7 +588,7 @@ mod tests {
             heat_network,
             "heat_network_test".into(),
             return_temp,
-            WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_feed)),
+            WaterSource::ColdWaterSource(Arc::new(cold_feed)),
         )
     }
 
@@ -655,10 +655,7 @@ mod tests {
         let actual = heat_network_service_water_direct.get_cold_water_source();
 
         match (actual, expected) {
-            (
-                WaterSourceWithTemperature::ColdWaterSource(actual),
-                WaterSourceWithTemperature::ColdWaterSource(expected),
-            ) => {
+            (WaterSource::ColdWaterSource(actual), WaterSource::ColdWaterSource(expected)) => {
                 assert_eq!(actual, expected);
             }
             _ => panic!("Expected ColdWaterSource variant"),
@@ -1112,9 +1109,11 @@ mod tests {
         let heat_network = heat_network.clone();
         let service_name = "hot_water_direct";
         let temp_hot_water = 50.;
-        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
-            ColdWaterSource::new(vec![1.0, 1.2], 0, two_len_simulation_time.step),
-        ));
+        let cold_feed = WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(
+            vec![1.0, 1.2],
+            0,
+            two_len_simulation_time.step,
+        )));
 
         HeatNetwork::create_service_hot_water_direct(
             heat_network.clone(),

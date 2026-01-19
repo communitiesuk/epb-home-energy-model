@@ -1,4 +1,4 @@
-use crate::core::common::WaterSourceWithTemperature;
+use crate::core::common::WaterSource;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::simulation_time::SimulationTimeIteration;
@@ -7,7 +7,7 @@ use crate::simulation_time::SimulationTimeIteration;
 pub(crate) struct PointOfUse {
     efficiency: f64,
     energy_supply_connection: EnergySupplyConnection,
-    cold_feed: WaterSourceWithTemperature,
+    cold_feed: WaterSource,
     temp_hot_water: f64,
 }
 
@@ -15,7 +15,7 @@ impl PointOfUse {
     pub(crate) fn new(
         efficiency: f64,
         energy_supply_connection: EnergySupplyConnection,
-        cold_feed: WaterSourceWithTemperature,
+        cold_feed: WaterSource,
         temp_hot_water: f64,
     ) -> Self {
         Self {
@@ -26,7 +26,7 @@ impl PointOfUse {
         }
     }
 
-    pub fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+    pub fn get_cold_water_source(&self) -> &WaterSource {
         &self.cold_feed
     }
 
@@ -122,11 +122,8 @@ mod tests {
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "electricity").unwrap();
         let cold_water_temps = vec![15., 20., 25.];
-        let coldfeed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(ColdWaterSource::new(
-            cold_water_temps,
-            0,
-            1.,
-        )));
+        let coldfeed =
+            WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(cold_water_temps, 0, 1.)));
         let temp_hot_water = 55.;
 
         PointOfUse::new(
@@ -195,10 +192,7 @@ mod tests {
         let expected = &point_of_use.cold_feed;
 
         match (actual, expected) {
-            (
-                WaterSourceWithTemperature::ColdWaterSource(actual),
-                WaterSourceWithTemperature::ColdWaterSource(expected),
-            ) => {
+            (WaterSource::ColdWaterSource(actual), WaterSource::ColdWaterSource(expected)) => {
                 assert_eq!(actual, expected);
             }
             _ => panic!("Expected ColdWaterSource variant"),

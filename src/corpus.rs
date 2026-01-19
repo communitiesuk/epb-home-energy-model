@@ -1,4 +1,4 @@
-use crate::core::common::WaterSourceWithTemperature;
+use crate::core::common::WaterSource;
 use crate::core::controls::time_control::{
     ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl,
     OnOffCostMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl, SmartApplianceControl,
@@ -2329,7 +2329,7 @@ impl Corpus {
         for t_it in simulation_time_iter {
             timestep_array.push(t_it.time);
             self.update_temp_internal_air();
-            
+
             let (
                 hw_demand_vol,
                 hw_duration,
@@ -3912,7 +3912,7 @@ impl WetHeatSource {
         boiler_data: HotWaterSourceDetails,
         service_name: &str,
         temp_hot_water: f64,
-        cold_feed: WaterSourceWithTemperature,
+        cold_feed: WaterSource,
     ) -> anyhow::Result<BoilerServiceWaterCombi> {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().create_service_hot_water_combi(
@@ -4343,7 +4343,7 @@ fn heat_source_wet_from_input(
 fn heat_source_from_input(
     name: &str,
     input: &HeatSourceInput,
-    cold_water_source: &WaterSourceWithTemperature,
+    cold_water_source: &WaterSource,
     volume: f64,
     daily_losses: f64,
     heat_exchanger_surface_area: Option<f64>,
@@ -4574,9 +4574,10 @@ pub(crate) enum HotWaterSource {
 }
 
 pub(crate) trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
-    fn get_cold_water_source(&self) -> WaterSourceWithTemperature;
+    fn get_cold_water_source(&self) -> WaterSource;
     fn temp_hot_water(&self) -> anyhow::Result<f64>;
-    fn demand_hot_water(&self,
+    fn demand_hot_water(
+        &self,
         usage_events: Vec<WaterEventResult>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64>;
@@ -4591,7 +4592,7 @@ pub(crate) trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
 }
 
 impl HotWaterSourceBehaviour for HotWaterSource {
-    fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
+    fn get_cold_water_source(&self) -> WaterSource {
         match self {
             HotWaterSource::PreHeated(source) => match source {
                 HotWaterStorageTank::StorageTank(storage_tank) => {
@@ -4722,7 +4723,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             _ => (0., 0.),
         }
     }
-    
+
     fn is_point_of_use(&self) -> bool {
         matches!(&self, HotWaterSource::PointOfUse(_))
     }
@@ -4748,16 +4749,16 @@ fn hot_water_source_from_input(
     let cloned_input = input.clone();
 
     let cold_water_source_for_hot_water_tank =
-        |cold_water_source_type: &str| -> anyhow::Result<WaterSourceWithTemperature> {
+        |cold_water_source_type: &str| -> anyhow::Result<WaterSource> {
             pre_heated_water_sources
                 .get(cold_water_source_type)
-                .map(|source| WaterSourceWithTemperature::Preheated(source.clone()))
-                .or(wwhrs.get(cold_water_source_type).map(|source| WaterSourceWithTemperature::Wwhrs(source.clone())))
+                .map(|source| WaterSource::Preheated(source.clone()))
+                .or(wwhrs.get(cold_water_source_type).map(|source| WaterSource::Wwhrs(source.clone())))
                 .ok_or_else(|| anyhow!("Could not find pre-heated or WWHRS water source for name '{cold_water_source_type}'"))
         };
 
     let mut heat_sources_for_hot_water_tank =
-        |cold_water_source: WaterSourceWithTemperature,
+        |cold_water_source: WaterSource,
          heat_exchanger_surface_area: &Option<f64>,
          heat_source: &IndexMap<std::string::String, HeatSourceInput>,
          volume: &f64,
@@ -5122,8 +5123,8 @@ fn hot_water_source_from_input(
 fn cold_water_source_for_type(
     cold_water_source_type: &str,
     cold_water_sources: &ColdWaterSources,
-) -> anyhow::Result<WaterSourceWithTemperature> {
-    Ok(WaterSourceWithTemperature::ColdWaterSource(
+) -> anyhow::Result<WaterSource> {
+    Ok(WaterSource::ColdWaterSource(
         cold_water_sources
             .get(cold_water_source_type)
             .ok_or_else(|| anyhow!("referenced cold water source was expected to exist"))?

@@ -8,23 +8,23 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub(crate) enum WaterSourceWithTemperature {
+pub(crate) enum WaterSource {
     ColdWaterSource(Arc<ColdWaterSource>),
     Wwhrs(Arc<Mutex<Wwhrs>>),
     Preheated(HotWaterStorageTank),
 }
 
-impl WaterSourceWithTemperature {
+impl WaterSource {
     pub(crate) fn get_temp_cold_water(
         &self,
         volume_needed: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         match self {
-            WaterSourceWithTemperature::ColdWaterSource(cold_water_source) => {
+            WaterSource::ColdWaterSource(cold_water_source) => {
                 cold_water_source.get_temp_cold_water(volume_needed, simtime)
             }
-            WaterSourceWithTemperature::Preheated(storage_tank) => match storage_tank {
+            WaterSource::Preheated(storage_tank) => match storage_tank {
                 HotWaterStorageTank::StorageTank(rw_lock) => {
                     Ok(rw_lock.read().get_temp_cold_water(volume_needed))
                 }
@@ -42,10 +42,10 @@ impl WaterSourceWithTemperature {
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         match self {
-            WaterSourceWithTemperature::ColdWaterSource(cold_water_source) => {
+            WaterSource::ColdWaterSource(cold_water_source) => {
                 cold_water_source.draw_off_water(volume_needed, simtime)
             }
-            WaterSourceWithTemperature::Preheated(storage_tank) => match storage_tank {
+            WaterSource::Preheated(storage_tank) => match storage_tank {
                 HotWaterStorageTank::StorageTank(rw_lock) => {
                     rw_lock.read().draw_off_water(volume_needed, simtime)
                 }

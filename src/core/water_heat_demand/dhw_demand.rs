@@ -6,7 +6,7 @@ use crate::core::units::{MILLIMETRES_IN_METRE, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::bath::Bath;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::{
-    FRAC_DHW_ENERGY_INTERNAL_GAINS, WaterEventResult, WaterEventResultType, water_demand_to_kwh
+    water_demand_to_kwh, WaterEventResult, WaterEventResultType, FRAC_DHW_ENERGY_INTERNAL_GAINS,
 };
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
 use crate::core::water_heat_demand::shower::Shower;
@@ -15,8 +15,7 @@ use crate::corpus::{ColdWaterSources, EventSchedule, HotWaterSource, HotWaterSou
 use crate::input::{
     BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput,
     PipeworkContents, Shower as ShowerInput, Showers as ShowersInput,
-    WaterDistribution as WaterDistributionInput, WaterHeatingEvent,
-    WaterPipeworkSimple,
+    WaterDistribution as WaterDistributionInput, WaterHeatingEvent, WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -38,7 +37,7 @@ pub(crate) struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour> {
     hot_water_sources: IndexMap<String, T>,
     energy_supply_conn_unmet_demand: IndexMap<String, EnergySupplyConnection>,
     source_supplying_outlet: HashMap<(OutletType, String), String>,
-    hot_water_distribution_pipework:  IndexMap<String, Vec<PipeworkSimple>> ,
+    hot_water_distribution_pipework: IndexMap<String, Vec<PipeworkSimple>>,
     event_schedules: EventSchedule,
     pre_heated_water_sources: IndexMap<String, T>,
 }
@@ -102,7 +101,7 @@ pub enum OutletType {
     Other,
 }
 
-impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
+impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
     // TODO (from Python) Enhance analysis for overlapping events
     // Part of draft code for future overlapping analysis of events
     // For pipework losses count only none overlapping events
@@ -159,36 +158,50 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                 .collect();
 
         // if we have a list (and only one heat source) convert it into map
-        let mut hw_pipework_inputs: IndexMap<String, Vec<WaterPipeworkSimple>> = match hw_pipework_inputs {
-            WaterDistributionInput::List(pipeworks) => {
-                if hot_water_sources.len() == 1 {
-                    hot_water_sources.keys().map(|key| -> (String, Vec<WaterPipeworkSimple>) { (key.clone(), pipeworks.clone()) }).collect()
-                } else {
-                    bail!("If more than one HotWaterSource is defined, then distribution pipework must be defined for each one");
+        let mut hw_pipework_inputs: IndexMap<String, Vec<WaterPipeworkSimple>> =
+            match hw_pipework_inputs {
+                WaterDistributionInput::List(pipeworks) => {
+                    if hot_water_sources.len() == 1 {
+                        hot_water_sources
+                            .keys()
+                            .map(|key| -> (String, Vec<WaterPipeworkSimple>) {
+                                (key.clone(), pipeworks.clone())
+                            })
+                            .collect()
+                    } else {
+                        bail!("If more than one HotWaterSource is defined, then distribution pipework must be defined for each one");
+                    }
                 }
-            },
-            WaterDistributionInput::Map(index_map) => {
-                index_map.iter().map(|(key, value)| -> (String, Vec<WaterPipeworkSimple>) { (key.into(), value.clone()) }).collect()
-            },
-        };
+                WaterDistributionInput::Map(index_map) => index_map
+                    .iter()
+                    .map(|(key, value)| -> (String, Vec<WaterPipeworkSimple>) {
+                        (key.into(), value.clone())
+                    })
+                    .collect(),
+            };
 
         // pipework without a valid hot water source
-        let pws_without_hws: Vec<_> = hw_pipework_inputs.keys().filter(|key| { !hot_water_sources.keys().contains(key) }).collect();
+        let pws_without_hws: Vec<_> = hw_pipework_inputs
+            .keys()
+            .filter(|key| !hot_water_sources.keys().contains(key))
+            .collect();
         if !pws_without_hws.is_empty() {
             // TODO include names in error message
             bail!("Distribution pipework defined for non-existent HotWaterSource(s)");
         }
 
         // hot water sources (not including point of use) without any pipework
-        let hws_without_pws: Vec<_> = hot_water_sources.keys().filter(|key| { !hw_pipework_inputs.keys().contains(key) }).collect();
+        let hws_without_pws: Vec<_> = hot_water_sources
+            .keys()
+            .filter(|key| !hw_pipework_inputs.keys().contains(key))
+            .collect();
         for hws_name in hws_without_pws {
             let hot_water_source = hot_water_sources.get(hws_name).unwrap();
 
             if hot_water_source.is_point_of_use() {
                 // point of use doesn't need pipework - just add an empty vec
                 hw_pipework_inputs.insert(hws_name.clone(), vec![]);
-            }
-            else {
+            } else {
                 // TODO include name in error message
                 bail!("Distribution pipework not specified for HotWaterSource");
             };
@@ -200,7 +213,8 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
             }
 
             for data in hw_pipework_inputs.get(hws_name).unwrap() {
-                let pipework = input_to_water_distribution_pipework(data, total_number_tapping_points)?;
+                let pipework =
+                    input_to_water_distribution_pipework(data, total_number_tapping_points)?;
                 let entry = hot_water_distribution_pipework.get_mut(hws_name).unwrap();
                 entry.push(pipework);
             }
@@ -553,7 +567,8 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                     cold_water_temperature,
                 );
 
-                *hw_duration.get_mut(&hot_water_source_name).unwrap() += Self::get_duration_for_tapping_point_event(&tapping_point, event);
+                *hw_duration.get_mut(&hot_water_source_name).unwrap() +=
+                    Self::get_duration_for_tapping_point_event(&tapping_point, event);
                 *all_events.get_mut(&hot_water_source_name).unwrap() += 1;
 
                 if hw_demand_i.is_none() && energy_supply_conn_unmet_demand.is_some() {
@@ -607,7 +622,8 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                             volume_hot: volume_required,
                         });
 
-                    *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() += volume_hot_water_left;
+                    *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() +=
+                        volume_hot_water_left;
                 }
                 //  TODO (from Python)   Enhance analysis for overlapping events
                 // Part of draft code for future overlapping analysis of events
@@ -665,8 +681,7 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
             if hot_water_source.is_point_of_use() {
                 // TODO ensure an empty vec the same behaviour as None
                 hot_water_source.demand_hot_water(vec![], simtime)?;
-            }
-            else {
+            } else {
                 bail!("Preheated hot water sources must be storage tanks");
             }
         }
@@ -722,7 +737,10 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                 .collect();
 
             // TODO update demand_hot_water to accept usage_events
-            hw_energy_output.insert(hws_name.clone(), hws.demand_hot_water(filtered_events.clone(), simtime)?);
+            hw_energy_output.insert(
+                hws_name.clone(),
+                hws.demand_hot_water(filtered_events.clone(), simtime)?,
+            );
 
             // Convert from litres to kWh
             // Find underlying cold water source, ignoring pre-heat tanks
@@ -785,7 +803,11 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
         let mut cool_down_loss_internal = 0.0;
         let mut cool_down_loss_external = 0.0;
 
-        for pipework in self.hot_water_distribution_pipework.get(hot_water_source_name).unwrap() {
+        for pipework in self
+            .hot_water_distribution_pipework
+            .get(hot_water_source_name)
+            .unwrap()
+        {
             match pipework.location() {
                 PipeworkLocation::Internal => {
                     cool_down_loss_internal += pipework.calculate_cool_down_loss(
@@ -822,21 +844,39 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
         for event in usage_events {
             match event.event_result_type {
                 WaterEventResultType::PipeFlush => {
-                    let (pw_losses_internal_i, pw_losses_external_i) = self.calc_pipework_losses(&hot_water_source_name, 1, event.temperature_warm, internal_air_temperature, external_air_temperature);
+                    let (pw_losses_internal_i, pw_losses_external_i) = self.calc_pipework_losses(
+                        &hot_water_source_name,
+                        1,
+                        event.temperature_warm,
+                        internal_air_temperature,
+                        external_air_temperature,
+                    );
                     pw_losses_internal += pw_losses_internal_i;
                     pw_losses_external += pw_losses_external_i;
-                },
+                }
                 _ => {
-                    gains_internal_dhw_use += FRAC_DHW_ENERGY_INTERNAL_GAINS * water_demand_to_kwh(event.volume_warm, event.temperature_warm, internal_air_temperature);
+                    gains_internal_dhw_use += FRAC_DHW_ENERGY_INTERNAL_GAINS
+                        * water_demand_to_kwh(
+                            event.volume_warm,
+                            event.temperature_warm,
+                            internal_air_temperature,
+                        );
                 }
             }
         }
 
-        (pw_losses_internal, pw_losses_external, gains_internal_dhw_use)
+        (
+            pw_losses_internal,
+            pw_losses_external,
+            gains_internal_dhw_use,
+        )
     }
-    
-    fn get_duration_for_tapping_point_event(tapping_point: &TappingPoint, event: &TypedScheduleEvent) -> f64 {
-        // In Python, for Baths, the hot_water_demand function mutates the event we pass in 
+
+    fn get_duration_for_tapping_point_event(
+        tapping_point: &TappingPoint,
+        event: &TypedScheduleEvent,
+    ) -> f64 {
+        // In Python, for Baths, the hot_water_demand function mutates the event we pass in
         // to avoid this in the Rust we replicate the logic here
         match tapping_point {
             TappingPoint::Bath(bath) => {
@@ -846,10 +886,10 @@ impl <T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                         // if no duration is specified for a Bath then a volume is required
                         // to calculate the duration
                         event.volume.unwrap() / bath.get_flowrate()
-                    },
+                    }
                 }
-            },
-            _ => event.duration.unwrap()
+            }
+            _ => event.duration.unwrap(),
         }
     }
 }
@@ -947,7 +987,7 @@ fn input_to_water_distribution_pipework(
 mod tests {
     use super::*;
     use crate::compare_floats::max_of_2;
-    use crate::core::common::WaterSourceWithTemperature;
+    use crate::core::common::WaterSource;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -962,25 +1002,29 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct HotWaterSourceMock {
-        cold_feed: WaterSourceWithTemperature
+        cold_feed: WaterSource,
     }
 
     impl HotWaterSourceBehaviour for HotWaterSourceMock {
-        fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
+        fn get_cold_water_source(&self) -> WaterSource {
             self.cold_feed.clone()
         }
-    
+
         fn temp_hot_water(&self) -> anyhow::Result<f64> {
             unimplemented!();
         }
-    
-        fn demand_hot_water(&self,
+
+        fn demand_hot_water(
+            &self,
             usage_events: Vec<WaterEventResult>,
             _: SimulationTimeIteration,
         ) -> anyhow::Result<f64> {
-            Ok(usage_events.iter().map(|e| { e.temperature_warm * e.volume_warm / 4200.0 }).sum())
+            Ok(usage_events
+                .iter()
+                .map(|e| e.temperature_warm * e.volume_warm / 4200.0)
+                .sum())
         }
-    
+
         fn get_temp_hot_water(
             &self,
             volume_required: f64,
@@ -989,47 +1033,47 @@ mod tests {
             let volume_req_cumulative = volume_required + volume_required_already;
             let frac_volume_req_already = volume_required_already / volume_req_cumulative;
             let frac_layer_1 = max_of_2(0.0, 0.6 - frac_volume_req_already);
-            let frac_layer_2 = 0.4 - max_of_2(0.0 , frac_volume_req_already - 0.6);
+            let frac_layer_2 = 0.4 - max_of_2(0.0, frac_volume_req_already - 0.6);
 
             vec![
                 (55.0, volume_req_cumulative * frac_layer_1),
-                (45.0, volume_req_cumulative * frac_layer_2)
+                (45.0, volume_req_cumulative * frac_layer_2),
             ]
         }
-    
+
         fn internal_gains(&self) -> Option<f64> {
             None
         }
-    
+
         fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
             (0., 0.)
         }
-    
+
         fn is_point_of_use(&self) -> bool {
             false
         }
     }
 
     #[derive(Debug, Clone)]
-    struct HotWaterSourceMockWithUniqueHotWaterTemperature {
-    }
+    struct HotWaterSourceMockWithUniqueHotWaterTemperature {}
 
     impl HotWaterSourceBehaviour for HotWaterSourceMockWithUniqueHotWaterTemperature {
-        fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
+        fn get_cold_water_source(&self) -> WaterSource {
             unimplemented!()
         }
-    
+
         fn temp_hot_water(&self) -> anyhow::Result<f64> {
             todo!()
         }
-    
-        fn demand_hot_water(&self,
+
+        fn demand_hot_water(
+            &self,
             usage_events: Vec<WaterEventResult>,
             simtime: SimulationTimeIteration,
         ) -> anyhow::Result<f64> {
             Ok(0.) // Python doesn't mock this
         }
-    
+
         fn get_temp_hot_water(
             &self,
             volume_required: f64,
@@ -1038,15 +1082,15 @@ mod tests {
             let volume_req_cumulative = volume_required + volume_required_already;
             vec![(55.0, volume_req_cumulative)]
         }
-    
+
         fn internal_gains(&self) -> Option<f64> {
             Some(0.) // Python doesn't mock this
         }
-    
+
         fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
             (0., 0.) // Python doesn't mock this
         }
-    
+
         fn is_point_of_use(&self) -> bool {
             false
         }
@@ -1057,7 +1101,11 @@ mod tests {
         SimulationTime::new(0., 24., 1.)
     }
 
-    fn create_dhw_demand<T: HotWaterSourceBehaviour>(simulation_time: SimulationTime, hot_water_sources: IndexMap<String, T>,  pre_heated_water_sources: IndexMap<String, T>) -> DomesticHotWaterDemand<T> {
+    fn create_dhw_demand<T: HotWaterSourceBehaviour>(
+        simulation_time: SimulationTime,
+        hot_water_sources: IndexMap<String, T>,
+        pre_heated_water_sources: IndexMap<String, T>,
+    ) -> DomesticHotWaterDemand<T> {
         let cold_water_temps = vec![
             2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0,
             4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0,
@@ -1089,7 +1137,7 @@ mod tests {
         let energy_supplies = IndexMap::from([
             ("_unmet_demand".into(), unmet_demand.clone()),
             ("mains elec".into(), electricity_supply.clone()),
-            ]);
+        ]);
 
         let showers_input = Showers(IndexMap::from([
             (
@@ -1306,8 +1354,15 @@ mod tests {
     #[rstest]
     #[ignore = "work in progress for migration to 1.0.0a1"]
     fn test_hot_water_demand(simulation_time: SimulationTime) {
-        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> = IndexMap::from([( "hw cylinder".into(), HotWaterSourceMockWithUniqueHotWaterTemperature {} )]);
-        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> = Default::default();
+        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> =
+            IndexMap::from([(
+                "hw cylinder".into(),
+                HotWaterSourceMockWithUniqueHotWaterTemperature {},
+            )]);
+        let pre_heated_water_sources: IndexMap<
+            String,
+            HotWaterSourceMockWithUniqueHotWaterTemperature,
+        > = Default::default();
 
         let expected_results: Vec<(
             IndexMap<String, f64>,
@@ -1317,135 +1372,82 @@ mod tests {
             IndexMap<String, Vec<WaterEventResult>>,
         )> = vec![
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), 12.),
                     ("hw cylinder".into(), 0.),
                 ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 2),
-                    ("hw cylinder".into(), 0),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 2), ("hw cylinder".into(), 0)]),
                 IndexMap::from([
                     ("_electric_showers".into(), 1.7999999999999998),
                     ("hw cylinder".into(), 0.),
                 ]),
                 IndexMap::from([
-                    ("_electric_showers".into(), vec![
-                        WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41., volume_warm: 20.378383818053738, volume_hot: 0.}, 
-                        WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41., volume_warm: 20.378383818053738, volume_hot: 0. }
-                    ]),
+                    (
+                        "_electric_showers".into(),
+                        vec![
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::Shower,
+                                temperature_warm: 41.,
+                                volume_warm: 20.378383818053738,
+                                volume_hot: 0.,
+                            },
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::Shower,
+                                temperature_warm: 41.,
+                                volume_warm: 20.378383818053738,
+                                volume_hot: 0.,
+                            },
+                        ],
+                    ),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
@@ -1460,22 +1462,38 @@ mod tests {
                     ("_electric_showers".into(), 0.),
                     ("hw cylinder".into(), 12.5),
                 ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 1),
-                    ("hw cylinder".into(), 1),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 1), ("hw cylinder".into(), 1)]),
                 IndexMap::from([
                     ("_electric_showers".into(), 0.9),
                     ("hw cylinder".into(), 4.532666666666667),
                 ]),
                 IndexMap::from([
-                    ("_electric_showers".into(), vec![
-                        WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41., volume_warm: 19.85586115605236, volume_hot: 0.}, 
-                    ]),
-                    ("hw cylinder".into(), vec![
-                        WaterEventResult { event_result_type: WaterEventResultType::Bath, temperature_warm: 41., volume_warm: 100., volume_hot: 73.58490566037736}, 
-                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 55., volume_warm: 7.556577529434648, volume_hot: 7.556577529434648}, 
-                    ]),
+                    (
+                        "_electric_showers".into(),
+                        vec![WaterEventResult {
+                            event_result_type: WaterEventResultType::Shower,
+                            temperature_warm: 41.,
+                            volume_warm: 19.85586115605236,
+                            volume_hot: 0.,
+                        }],
+                    ),
+                    (
+                        "hw cylinder".into(),
+                        vec![
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::Bath,
+                                temperature_warm: 41.,
+                                volume_warm: 100.,
+                                volume_hot: 73.58490566037736,
+                            },
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::PipeFlush,
+                                temperature_warm: 55.,
+                                volume_warm: 7.556577529434648,
+                                volume_hot: 7.556577529434648,
+                            },
+                        ],
+                    ),
                 ]),
             ),
             (
@@ -1487,22 +1505,42 @@ mod tests {
                     ("_electric_showers".into(), 0.),
                     ("hw cylinder".into(), 7.0),
                 ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 2),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 2)]),
                 IndexMap::from([
                     ("_electric_showers".into(), 0.),
                     ("hw cylinder".into(), 2.473208888888889),
                 ]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
-                    ("hw cylinder".into(), vec![
-                        WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41., volume_warm: 48., volume_hot: 32.63058513558019}, 
-                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 55., volume_warm: 7.556577529434648, volume_hot: 7.556577529434648},
-                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 41., volume_warm: 8., volume_hot: 5.846153846153845},
-                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 55., volume_warm: 7.556577529434648, volume_hot: 7.556577529434648},
-                    ]),
+                    (
+                        "hw cylinder".into(),
+                        vec![
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::Shower,
+                                temperature_warm: 41.,
+                                volume_warm: 48.,
+                                volume_hot: 32.63058513558019,
+                            },
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::PipeFlush,
+                                temperature_warm: 55.,
+                                volume_warm: 7.556577529434648,
+                                volume_hot: 7.556577529434648,
+                            },
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::PipeFlush,
+                                temperature_warm: 41.,
+                                volume_warm: 8.,
+                                volume_hot: 5.846153846153845,
+                            },
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::PipeFlush,
+                                temperature_warm: 55.,
+                                volume_warm: 7.556577529434648,
+                                volume_hot: 7.556577529434648,
+                            },
+                        ],
+                    ),
                 ]),
             ),
             (
@@ -1514,349 +1552,189 @@ mod tests {
                     ("_electric_showers".into(), 0.),
                     ("hw cylinder".into(), 2.0),
                 ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 2),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 2)]),
                 IndexMap::from([
                     ("_electric_showers".into(), 0.),
                     ("hw cylinder".into(), 3.09616),
                 ]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
-                    ("hw cylinder".into(), vec![
-                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 41., volume_warm: 48., volume_hot: 32.365493807269814},
-                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 55., volume_warm: 7.556577529434648, volume_hot: 7.556577529434648},
-                        WaterEventResult { event_result_type: WaterEventResultType::Bath, temperature_warm: 55., volume_warm: 24., volume_hot: 17.41176470588235},
-                        WaterEventResult { event_result_type: WaterEventResultType::PipeFlush, temperature_warm: 54.99999999999999, volume_warm: 7.556577529434648, volume_hot: 7.556577529434648},
-                    ]),
+                    (
+                        "hw cylinder".into(),
+                        vec![
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::PipeFlush,
+                                temperature_warm: 41.,
+                                volume_warm: 48.,
+                                volume_hot: 32.365493807269814,
+                            },
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::PipeFlush,
+                                temperature_warm: 55.,
+                                volume_warm: 7.556577529434648,
+                                volume_hot: 7.556577529434648,
+                            },
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::Bath,
+                                temperature_warm: 55.,
+                                volume_warm: 24.,
+                                volume_hot: 17.41176470588235,
+                            },
+                            WaterEventResult {
+                                event_result_type: WaterEventResultType::PipeFlush,
+                                temperature_warm: 54.99999999999999,
+                                volume_warm: 7.556577529434648,
+                                volume_hot: 7.556577529434648,
+                            },
+                        ],
+                    ),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
                 ]),
             ),
             (
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0),
-                    ("hw cylinder".into(), 0),
-                ]),
-                IndexMap::from([
-                    ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 0.),
-                ]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
+                IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 0)]),
+                IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
                 IndexMap::from([
                     ("_electric_showers".into(), vec![]),
                     ("hw cylinder".into(), vec![]),
@@ -1864,11 +1742,24 @@ mod tests {
             ),
         ];
 
-        let dhw_demand = create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources);
+        let dhw_demand =
+            create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources);
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            let (hw_demand_volume, hw_duration, all_events, hw_energy_demand, _usage_events_with_flushes) = dhw_demand.hot_water_demand(t_it).unwrap();
+            let (
+                hw_demand_volume,
+                hw_duration,
+                all_events,
+                hw_energy_demand,
+                _usage_events_with_flushes,
+            ) = dhw_demand.hot_water_demand(t_it).unwrap();
 
-            let (expected_hw_demand_volume, expected_hw_duration, expected_all_events, expected_hw_energy_demand, _expected_usage_events_with_flushes) = &expected_results[t_idx];
+            let (
+                expected_hw_demand_volume,
+                expected_hw_duration,
+                expected_all_events,
+                expected_hw_energy_demand,
+                _expected_usage_events_with_flushes,
+            ) = &expected_results[t_idx];
 
             assert_eq!(hw_demand_volume, *expected_hw_demand_volume);
             assert_eq!(hw_duration, *expected_hw_duration);
