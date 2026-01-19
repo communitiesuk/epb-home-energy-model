@@ -13,7 +13,7 @@ pub(crate) const FRAC_DHW_ENERGY_INTERNAL_GAINS: f64 = 0.25;
 
 pub(crate) type CallableGetHotWaterTemperature = Box<dyn Fn(f64) -> f64>;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum WaterEventResultType {
     Shower,
     Bath,

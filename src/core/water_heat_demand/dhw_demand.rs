@@ -678,10 +678,8 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
 
         // Running heat sources of pre-heated tanks and updating thermal losses, etc.
         for hot_water_source in self.pre_heated_water_sources.values() {
-            if hot_water_source.is_point_of_use() {
-                // Note Python passes None - we are assuming an empty vec is the same behaviour
-                hot_water_source.demand_hot_water(vec![], simtime)?;
-            }
+            // Note Python passes None - we are assuming an empty vec is the same behaviour
+            hot_water_source.demand_hot_water(vec![], simtime)?;
         }
 
         let mut hw_energy_demand_at_hot_water_source: IndexMap<String, f64> = Default::default();
@@ -789,7 +787,7 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
     pub fn calc_pipework_losses(
         &self,
         hot_water_source_name: &String,
-        no_of_hw_events: usize,
+        no_of_hw_events: u32,
         demand_water_temperature: f64,
         internal_air_temperature: f64,
         external_air_temperature: f64,
@@ -1066,8 +1064,8 @@ mod tests {
 
         fn demand_hot_water(
             &self,
-            usage_events: Vec<WaterEventResult>,
-            simtime: SimulationTimeIteration,
+            _usage_events: Vec<WaterEventResult>,
+            _simtime: SimulationTimeIteration,
         ) -> anyhow::Result<f64> {
             Ok(0.) // Python doesn't mock this
         }
@@ -1087,6 +1085,60 @@ mod tests {
 
         fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
             (0., 0.) // Python doesn't mock this
+        }
+
+        fn is_point_of_use(&self) -> bool {
+            false
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct HotWaterSourceMockWithInternalGains {
+            cold_feed: WaterSupply,
+    }
+
+    impl HotWaterSourceBehaviour for HotWaterSourceMockWithInternalGains {
+        fn get_cold_water_source(&self) -> WaterSupply {
+            self.cold_feed.clone()
+        }
+
+        fn temp_hot_water(&self) -> anyhow::Result<f64> {
+            unimplemented!();
+        }
+
+        fn demand_hot_water(
+            &self,
+            usage_events: Vec<WaterEventResult>,
+            _: SimulationTimeIteration,
+        ) -> anyhow::Result<f64> {
+            Ok(usage_events
+                .iter()
+                .map(|e| e.temperature_warm * e.volume_warm / 4200.0)
+                .sum())
+        }
+
+        fn get_temp_hot_water(
+            &self,
+            volume_required: f64,
+            volume_required_already: f64,
+        ) -> Vec<(f64, f64)> {
+            let volume_req_cumulative = volume_required + volume_required_already;
+            let frac_volume_req_already = volume_required_already / volume_req_cumulative;
+            let frac_layer_1 = max_of_2(0.0, 0.6 - frac_volume_req_already);
+            let frac_layer_2 = 0.4 - max_of_2(0.0, frac_volume_req_already - 0.6);
+
+            vec![
+                (55.0, volume_req_cumulative * frac_layer_1),
+                (45.0, volume_req_cumulative * frac_layer_2),
+            ]
+        }
+
+        fn internal_gains(&self) -> Option<f64> {
+            Some(20.)
+        }
+
+        fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+            (5., 15.)
         }
 
         fn is_point_of_use(&self) -> bool {
@@ -1932,13 +1984,7 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
 
-            let actual = dhw_demand.calc_water_heating(t_it, temp_int_air, temp_ext_air);
-            match &actual {
-                Ok(_) => {},
-                Err(e) => { dbg!(e); }
-            }
-
-            let actual = actual.unwrap();
+            let actual = dhw_demand.calc_water_heating(t_it, temp_int_air, temp_ext_air).unwrap();
 
             let (hw_demand_vol,
                 hw_duration,
@@ -1950,8 +1996,6 @@ mod tests {
                 primary_pw_losses,
                 storage_losses,
                 gains_internal_dhw) = actual;
-
-            dbg!(&hw_energy_output);
 
             let keys: Vec<String> = vec!["hw cylinder".into(), "_electric_showers".into()];
             for key in keys {
@@ -1972,4 +2016,364 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[ignore = "work in progress for migration to 1.0.0a1"]
+    fn test_calc_water_heating_with_internal_gains(simulation_time: SimulationTime, event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>, cold_water_source: Arc<ColdWaterSource>) {
+        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> =
+            IndexMap::from([(
+                "hw cylinder".into(),
+                HotWaterSourceMockWithInternalGains { cold_feed: WaterSupply::ColdWaterSource(cold_water_source.clone()) },
+            )]);
+
+        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> = 
+            IndexMap::from([]);
+
+        let temp_int_air = 20.;
+        let temp_ext_air = 5.;
+
+
+        let dhw_demand =
+            create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources, cold_water_source, event_schedules);
+
+        let hw_demand_vol_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+            ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 87.14841426412852, 58.267631655968856, 72.45826885901587, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ]);
+        let hw_duration_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+            ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 12.5, 7.0, 9.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 12.0, 0.0, 6.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ]);
+        let no_events_expected: IndexMap<String, Vec<u32>> = IndexMap::from([
+            ("hw cylinder".into(), vec![0, 0, 0, 0, 0, 0, 1, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            ("_electric_showers".into(), vec![0, 0, 0, 0, 2, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        ]);
+        let hw_energy_demand_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+            ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.532666666666667, 2.473208888888889, 3.09616, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 1.7999999999999998, 0.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ]);
+        let hw_energy_demand_incl_pipework_loss_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+            ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.91031082679879, 3.2109323644958288, 3.8163186309496315, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            // NOTE - no _electric_showers entry expected
+        ]);
+        let hw_energy_output_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+            ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0571538068629902, 0.7085933280116948, 0.864783804202171, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ]);
+        let dist_pw_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+            ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2780167312270571, 0.5560334624541142, 0.5560334624541142, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ]);
+        let primary_pw_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+            ("hw cylinder".into(), vec![5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]),
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ]);
+        let storage_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+            ("hw cylinder".into(), vec![15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]),
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ]);
+        let gains_internal_dhw_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+            ("hw cylinder".into(), vec![20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 752.3002698651746, 605.9605397303493, 703.5872063970161, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0]),
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 248.68421052631578, 0.0, 121.15384615384616, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ]);
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+
+            let actual = dhw_demand.calc_water_heating(t_it, temp_int_air, temp_ext_air).unwrap();
+
+            let (hw_demand_vol,
+                hw_duration,
+                no_events,
+                hw_energy_demand,
+                hw_energy_demand_incl_pipework_loss,
+                hw_energy_output,
+                dist_pw_losses,
+                primary_pw_losses,
+                storage_losses,
+                gains_internal_dhw) = actual;
+
+            let keys: Vec<String> = vec!["hw cylinder".into(), "_electric_showers".into()];
+            for key in keys {
+                assert_eq!(*hw_demand_vol.get(&key).unwrap(), hw_demand_vol_expected.get(&key).unwrap()[t_idx]);
+                assert_eq!(*hw_duration.get(&key).unwrap(), hw_duration_expected.get(&key).unwrap()[t_idx]);
+                assert_eq!(*no_events.get(&key).unwrap(), no_events_expected.get(&key).unwrap()[t_idx]);
+                assert_eq!(*hw_energy_demand.get(&key).unwrap(), hw_energy_demand_expected.get(&key).unwrap()[t_idx]);
+                assert_eq!(*dist_pw_losses.get(&key).unwrap(), dist_pw_losses_expected.get(&key).unwrap()[t_idx]);
+                assert_eq!(*gains_internal_dhw.get(&key).unwrap(), gains_internal_dhw_expected.get(&key).unwrap()[t_idx]);
+
+                // don't check for _electric_showers entry for the below
+                if &key == "_electric_showers" { continue };
+                assert_eq!(*hw_energy_demand_incl_pipework_loss.get(&key).unwrap(), hw_energy_demand_incl_pipework_loss_expected.get(&key).unwrap()[t_idx]);
+                assert_eq!(*hw_energy_output.get(&key).unwrap(), hw_energy_output_expected.get(&key).unwrap()[t_idx]);
+                assert_eq!(*primary_pw_losses.get(&key).unwrap(), primary_pw_losses_expected.get(&key).unwrap()[t_idx]);
+                assert_eq!(*storage_losses.get(&key).unwrap(), storage_losses_expected.get(&key).unwrap()[t_idx]);
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_calc_pipework_losses(simulation_time: SimulationTime, event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>, cold_water_source: Arc<ColdWaterSource>) {
+        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> =
+            IndexMap::from([(
+                "hw cylinder".into(),
+                HotWaterSourceMockWithInternalGains { cold_feed: WaterSupply::ColdWaterSource(cold_water_source.clone()) },
+            )]);
+
+        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> = 
+            IndexMap::from([]);
+
+        let dhw_demand =
+            create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources, cold_water_source, event_schedules);
+
+        let no_of_hw_events: [u32; 24] = [0,0,0,2,0,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+        let demand_water_temperature: [f64; 24] = [55.0,55.0,55.0,57.0,55.0,58.0,60.0,40.0,55.0,55.0,55.0,55.0,55.0,55.0,55.0,55.0,55.0,55.0,55.0,55.0,55.0,55.0,55.0,55.0];
+        let expected: [(f64, f64); 24] = [
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.3615154654675836, 0.4052961328742277),
+            (0.0, 0.0),
+            (0.3712861537234643, 0.41309028927565516),
+            (0.3908275302352256, 0.42867860207851005),
+            (0.1954137651176128, 0.27279547404996096),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+        ];
+
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            let actual = dhw_demand.calc_pipework_losses(&"hw cylinder".into(), no_of_hw_events[t_idx], demand_water_temperature[t_idx], 20., 5.);
+            assert_eq!(actual, expected[t_idx]);
+        }
+    }
+
+    #[rstest]
+    fn test_calc_pipework_losses_with_no_pipework(simulation_time: SimulationTime, event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>, cold_water_source: Arc<ColdWaterSource>) {
+        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> =
+            IndexMap::from([(
+                "hw cylinder".into(),
+                HotWaterSourceMockWithInternalGains { cold_feed: WaterSupply::ColdWaterSource(cold_water_source.clone()) },
+            )]);
+
+        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> = 
+            IndexMap::from([]);
+
+        let dhw_demand =
+            create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources, cold_water_source, event_schedules);
+
+        let actual = dhw_demand.calc_pipework_losses(&"hw cylinder".into(), 0, 55., 20., 5.);
+        assert_eq!(actual, (0., 0.));
+    }
+
+    #[rstest]
+    fn test_hot_water_demand_with_other_event_new_temp(simulation_time: SimulationTime, cold_water_source: Arc<ColdWaterSource>) {
+        let event_schedules = vec![
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(vec![TypedScheduleEvent { start: 13., duration: Some(2.), temperature: 38., name: "other".into(), event_type: WaterScheduleEventType::Other, volume: None, warm_volume: None, pipework_volume: None}]),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ];
+
+        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> =
+            IndexMap::from([(
+                "hw cylinder".into(),
+                HotWaterSourceMockWithUniqueHotWaterTemperature { },
+            )]);
+
+        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> = 
+            IndexMap::from([]);
+
+        let dhw_demand =
+            create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources, cold_water_source, event_schedules);
+
+        // Test timestep 13 with Other event
+        let actual = dhw_demand.hot_water_demand(SimulationTimeIteration { index: 13, time: 0., timestep: 1. }).unwrap();
+        let (
+                _hw_demand_volume,
+                _hw_duration,
+                _all_events,
+                _hw_energy_demand,
+                usage_events_with_flushes,
+            )= actual;
+
+        let usage_events_with_flushes_for_hw_cylinder = usage_events_with_flushes.get::<String>(&"hw cylinder".into()).unwrap();
+
+        // Verify that the Other event was processed
+        assert_eq!(usage_events_with_flushes_for_hw_cylinder.len(), 2); // should have 1 event + 1 pipe flush
+        assert_eq!(usage_events_with_flushes_for_hw_cylinder[0].event_result_type, WaterEventResultType::Other);
+
+    }
+
+    #[rstest]
+    fn test_hot_water_demand_mixer_new_temp(simulation_time: SimulationTime, cold_water_source: Arc<ColdWaterSource>) {
+        let event_schedules = vec![
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(vec![TypedScheduleEvent { start: 14., duration: Some(5.), temperature: 43., name: "mixer".into(), event_type: WaterScheduleEventType::Shower, volume: None, warm_volume: None, pipework_volume: None}]),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ];
+
+        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> =
+            IndexMap::from([(
+                "hw cylinder".into(),
+                HotWaterSourceMockWithUniqueHotWaterTemperature { },
+            )]);
+
+        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> = 
+            IndexMap::from([]);
+
+        let dhw_demand =
+            create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources, cold_water_source, event_schedules);
+
+        // Test timestep 14 with mixer shower at new temperature
+        let actual = dhw_demand.hot_water_demand(SimulationTimeIteration { index: 14, time: 0., timestep: 1. }).unwrap();
+        let (
+            _hw_demand_volume,
+            _hw_duration,
+            _all_events,
+            _hw_energy_demand,
+            usage_events_with_flushes,
+        )= actual;
+
+        let usage_events_with_flushes_for_hw_cylinder = usage_events_with_flushes.get::<String>(&"hw cylinder".into()).unwrap();
+
+        // Verify that the mixer shower event was processed
+        assert_eq!(usage_events_with_flushes_for_hw_cylinder.len(), 2); // should have 1 event + 1 pipe flush
+        assert_eq!(usage_events_with_flushes_for_hw_cylinder[0].event_result_type, WaterEventResultType::Shower);
+
+    }
+    
+    #[rstest]
+    fn test_hot_water_demand_multiple_mixer_same_temp(simulation_time: SimulationTime, cold_water_source: Arc<ColdWaterSource>) {
+        let event_schedules = vec![
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(vec![
+                TypedScheduleEvent { start: 13., duration: Some(3.), temperature: 42., name: "mixer".into(), event_type: WaterScheduleEventType::Shower, volume: None, warm_volume: None, pipework_volume: None},
+                TypedScheduleEvent { start: 13.2, duration: Some(3.), temperature: 42., name: "mixer".into(), event_type: WaterScheduleEventType::Shower, volume: None, warm_volume: None, pipework_volume: None},
+                ]),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ];
+
+        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> =
+            IndexMap::from([(
+                "hw cylinder".into(),
+                HotWaterSourceMockWithUniqueHotWaterTemperature { },
+            )]);
+
+        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> = 
+            IndexMap::from([]);
+
+        let dhw_demand =
+            create_dhw_demand(simulation_time, hot_water_sources, pre_heated_water_sources, cold_water_source, event_schedules);
+
+        // Test timestep 13 with multiple mixer showers at same temperature
+        let actual = dhw_demand.hot_water_demand(SimulationTimeIteration { index: 13, time: 0., timestep: 1. }).unwrap();
+        let (
+            _hw_demand_volume,
+            _hw_duration,
+            _all_events,
+            _hw_energy_demand,
+            usage_events_with_flushes,
+        )= actual;
+
+        let usage_events_with_flushes_for_hw_cylinder = usage_events_with_flushes.get::<String>(&"hw cylinder".into()).unwrap();
+
+        // Verify that both mixer shower events were processed
+        assert_eq!(usage_events_with_flushes_for_hw_cylinder.len(), 4); // should have 2 event + 2 pipe flushes
+        assert_eq!(usage_events_with_flushes_for_hw_cylinder[0].event_result_type, WaterEventResultType::Shower);
+        assert_eq!(usage_events_with_flushes_for_hw_cylinder[1].event_result_type, WaterEventResultType::PipeFlush);
+        assert_eq!(usage_events_with_flushes_for_hw_cylinder[2].event_result_type, WaterEventResultType::Shower);
+        assert_eq!(usage_events_with_flushes_for_hw_cylinder[3].event_result_type, WaterEventResultType::PipeFlush);
+    }
+
+    // The following Python tests were skipped as they are not necessary to validate the Rust port:
+    // test_hot_water_source_assignment
+    // test_default_hot_water_source_assignment
+    // test_missing_hot_water_source_assignment
+    // test_hot_water_demand_invalid_events
+    // test_init_distribution_pointofuse
+    // test_init_distribution_missing_dict
+    // test_init_distribution_part_missing_list
+    // test_init_distribution_extra
+    // test_calc_pipework_losses_with_invalid_location
+    // test_init_invalid_shower_type
+    // test_init_invalid_wwhrs_name_shower
+    // test_init_invalid_energysupply_name_shower
+    // test_init_missing_cold_water_source_shower
+    // test_init_missing_cold_water_source_bath
+    // test_init_missing_cold_water_source_other_water_use
+    // test_create_water_distribution_pipework_no_tapping_points
 }
