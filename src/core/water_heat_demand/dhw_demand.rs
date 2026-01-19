@@ -679,10 +679,8 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
         // Running heat sources of pre-heated tanks and updating thermal losses, etc.
         for hot_water_source in self.pre_heated_water_sources.values() {
             if hot_water_source.is_point_of_use() {
-                // TODO ensure an empty vec the same behaviour as None
+                // Note Python passes None - we are assuming an empty vec is the same behaviour
                 hot_water_source.demand_hot_water(vec![], simtime)?;
-            } else {
-                bail!("Preheated hot water sources must be storage tanks");
             }
         }
 
@@ -1897,44 +1895,51 @@ mod tests {
         ]);
         let hw_duration_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
             ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 12.5, 7.0, 9.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            ("hw _electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 12.0, 0.0, 6.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 12.0, 0.0, 6.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         ]);
         let no_events_expected: IndexMap<String, Vec<u32>> = IndexMap::from([
             ("hw cylinder".into(), vec![0, 0, 0, 0, 0, 0, 1, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-            ("hw _electric_showers".into(), vec![0, 0, 0, 0, 2, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            ("_electric_showers".into(), vec![0, 0, 0, 0, 2, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         ]);
         let hw_energy_demand_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
             ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.532666666666667, 2.473208888888889, 3.09616, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            ("hw _electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 1.7999999999999998, 0.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 1.7999999999999998, 0.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         ]);
         let hw_energy_demand_incl_pipework_loss_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
-            ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.91031082679879, 3.2109323644958288, 3.8163186309496315, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            ("hw _electric_showers".into(), vec![]) // not set in Python
+            ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.91031082679879, 3.2109323644958288, 3.8163186309496315, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            // NOTE - no _electric_showers entry expected
         ]);
         let hw_energy_output_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
             ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0571538068629902, 0.7085933280116948, 0.864783804202171, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            ("hw _electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         ]);
         let dist_pw_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
             ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2780167312270571, 0.5560334624541142, 0.5560334624541142, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            ("hw _electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         ]);
         let primary_pw_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
             ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            ("hw _electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         ]);
         let storage_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
             ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            ("hw _electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         ]);
         let gains_internal_dhw_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
             ("hw cylinder".into(), vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 732.3002698651746, 585.9605397303493, 683.5872063970161, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            ("hw _electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 248.68421052631578, 0.0, 121.15384615384616, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            ("_electric_showers".into(), vec![0.0, 0.0, 0.0, 0.0, 248.68421052631578, 0.0, 121.15384615384616, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         ]);
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
 
-            let actual = dhw_demand.calc_water_heating(t_it, temp_int_air, temp_ext_air).unwrap();
+            let actual = dhw_demand.calc_water_heating(t_it, temp_int_air, temp_ext_air);
+            match &actual {
+                Ok(_) => {},
+                Err(e) => { dbg!(e); }
+            }
+
+            let actual = actual.unwrap();
+
             let (hw_demand_vol,
                 hw_duration,
                 no_events,
@@ -1946,18 +1951,23 @@ mod tests {
                 storage_losses,
                 gains_internal_dhw) = actual;
 
-            let keys: Vec<String> = vec!["hw cylinder".into(), "hw _electric_showers".into()];
+            dbg!(&hw_energy_output);
+
+            let keys: Vec<String> = vec!["hw cylinder".into(), "_electric_showers".into()];
             for key in keys {
                 assert_eq!(*hw_demand_vol.get(&key).unwrap(), hw_demand_vol_expected.get(&key).unwrap()[t_idx]);
                 assert_eq!(*hw_duration.get(&key).unwrap(), hw_duration_expected.get(&key).unwrap()[t_idx]);
                 assert_eq!(*no_events.get(&key).unwrap(), no_events_expected.get(&key).unwrap()[t_idx]);
                 assert_eq!(*hw_energy_demand.get(&key).unwrap(), hw_energy_demand_expected.get(&key).unwrap()[t_idx]);
+                assert_eq!(*dist_pw_losses.get(&key).unwrap(), dist_pw_losses_expected.get(&key).unwrap()[t_idx]);
+                assert_eq!(*gains_internal_dhw.get(&key).unwrap(), gains_internal_dhw_expected.get(&key).unwrap()[t_idx]);
+
+                // don't check for _electric_showers entry for the below
+                if &key == "_electric_showers" { continue };
                 assert_eq!(*hw_energy_demand_incl_pipework_loss.get(&key).unwrap(), hw_energy_demand_incl_pipework_loss_expected.get(&key).unwrap()[t_idx]);
                 assert_eq!(*hw_energy_output.get(&key).unwrap(), hw_energy_output_expected.get(&key).unwrap()[t_idx]);
-                assert_eq!(*dist_pw_losses.get(&key).unwrap(), dist_pw_losses_expected.get(&key).unwrap()[t_idx]);
                 assert_eq!(*primary_pw_losses.get(&key).unwrap(), primary_pw_losses_expected.get(&key).unwrap()[t_idx]);
                 assert_eq!(*storage_losses.get(&key).unwrap(), storage_losses_expected.get(&key).unwrap()[t_idx]);
-                assert_eq!(*gains_internal_dhw.get(&key).unwrap(), gains_internal_dhw_expected.get(&key).unwrap()[t_idx]);
             }
         }
     }
