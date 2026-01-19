@@ -1132,6 +1132,7 @@ impl HeatBatteryDryCoreServiceSpace {
 ///
 /// These batteries use electrical storage similar to ESH but provide
 /// heating through water services (space heating via (e.g.) radiators and DHW).
+#[derive(Debug)]
 struct HeatBatteryDryCore {
     storage: Arc<RwLock<HeatStorageDryCore>>,
     energy_supply: Arc<RwLock<EnergySupply>>,
@@ -1874,9 +1875,9 @@ impl ServiceResult {
             "energy_output_required" => self.energy_output_required.into(),
             "temp_output" => self.temp_output.into(),
             "temp_inlet" => self.temp_inlet.into(),
-            "temp_running" => self.time_running.into(),
+            "time_running" => self.time_running.into(),
             "unmet_demand" => self.demand_unmet.into(),
-            "energy_delivered_hb" => self.energy_delivered_hb.into(),
+            "energy_delivered_HB" => self.energy_delivered_hb.into(),
             "energy_delivered_backup" => self.energy_delivered_backup.into(),
             "energy_delivered_total" => self.energy_delivered_total.into(),
             "energy_charged_during_service" => self.energy_charged_during_service.into(),
@@ -1915,6 +1916,7 @@ const AUX_PARAMETERS: [(&str, Option<&str>, bool); 4] = [
     ("non_service_charge", Some("kWh"), true),
 ];
 
+#[derive(Debug)]
 struct DetailedResult {
     timestep: usize,
     services: Vec<ServiceResult>,
@@ -1939,8 +1941,9 @@ impl DetailedResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::common::MockWaterSupply;
     use crate::core::controls::time_control::{ChargeControl, MockControl, SetpointTimeControl};
-    use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+    use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::hem_core::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::hem_core::simulation_time::SimulationTime;
     use crate::input::{ExternalSensor, ExternalSensorCorrelation, FuelType};
@@ -2077,6 +2080,11 @@ mod tests {
     }
 
     #[fixture]
+    fn original_setpoint_temp_water() -> f64 {
+        70.
+    }
+
+    #[fixture]
     fn heat_battery_input() -> HeatBattery {
         HeatBattery::DryCore {
             control_charge: Default::default(),
@@ -2169,6 +2177,10 @@ mod tests {
         .unwrap()
     }
 
+    fn mock_cold_feed(temperature: Option<f64>) -> WaterSupply {
+        WaterSupply::Mock(MockWaterSupply::new(temperature.unwrap_or(10.)))
+    }
+
     #[fixture]
     fn mock_control_dhw() -> Arc<Control> {
         Arc::new(Control::Mock(MockControl::with_is_on(true)))
@@ -2233,11 +2245,7 @@ mod tests {
             None,
             simulation_time.step,
         )));
-        let mock_cold_feed = WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(
-            vec![70.; simulation_time.total_steps()],
-            0,
-            1.,
-        ))); // we can just set up a normal cold water source here - it isn't used
+        let mock_cold_feed = mock_cold_feed(None); // we can just set up a mock cold water source here - it isn't used
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
             "dhw_service",
@@ -2284,7 +2292,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "todo 1.0.0a1"]
+    #[ignore = "will not resolve until ode solving code is corrected in heat battery drycore module"]
     fn test_heat_battery_dhw_temperature_edge_case(
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
@@ -2332,8 +2340,7 @@ mod tests {
             None,
         )));
 
-        // Set cold feed temperature
-        // TODO?
+        // cold feed temperature not relevant
 
         // Directly call the private __demand_energy method to ensure we hit the right code path
         // This bypasses the service wrapper and gives us more control
@@ -2392,11 +2399,7 @@ mod tests {
         mock_control_space: Arc<Control>,
         simulation_time: SimulationTime,
     ) {
-        let mock_cold_feed = WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(
-            vec![70.; simulation_time.total_steps()],
-            0,
-            1.,
-        ))); // we can just set up a normal cold water source here - it isn't used
+        let mock_cold_feed = mock_cold_feed(None); // we can just set up a normal cold water source here - it isn't used
 
         // Create first service
         HeatBatteryDryCore::create_service_hot_water_regular(
@@ -2422,11 +2425,7 @@ mod tests {
         heat_battery: Arc<HeatBatteryDryCore>,
         simulation_time: SimulationTime,
     ) {
-        let mock_cold_feed = WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(
-            vec![1000.; simulation_time.total_steps()],
-            0,
-            1.,
-        )));
+        let mock_cold_feed = mock_cold_feed(None);
 
         let service = HeatBatteryDryCore::create_service_hot_water_direct(
             heat_battery.clone(),
@@ -2437,9 +2436,64 @@ mod tests {
         .unwrap();
 
         // skipping check that same cold feed is used as not useful
+
+        // Test with usage events
+        let usage_events = vec![
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                temperature_warm: 40.0,
+                volume_warm: 50.0,
+                volume_hot: 8.0,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                temperature_warm: 35.0,
+                volume_warm: 0.0,
+                volume_hot: 0.0,
+            },
+        ];
+
+        // Set high SOC to ensure temperature can be met
+        heat_battery.set_state_of_charge(0.9);
+
+        let energy = service
+            .demand_hot_water(
+                usage_events.into(),
+                simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+
+        assert_relative_eq!(energy, 0.511377777777777, epsilon = 1e-7);
     }
 
-    // Skipping Python's test_dhw_service_demand_hot_water_fallback_path due to mocking
+    #[rstest]
+    fn test_dhw_service_demand_hot_water_fallback_path(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        simulation_time: SimulationTime,
+    ) {
+        let mock_cold_feed = mock_cold_feed(Some(15.));
+
+        let service = HeatBatteryDryCore::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "dhw_fallback",
+            65.,
+            mock_cold_feed,
+        )
+        .unwrap();
+
+        // Set reasonable SOC
+        heat_battery.set_state_of_charge(0.5);
+
+        // test with None usage_events (triggers fallback path)
+        let energy = service
+            .demand_hot_water(None, simulation_time.iter().current_iteration())
+            .unwrap();
+
+        // can't verify fallback method was called as mock is not spy
+
+        // Should return 0 energy since no events processed
+        assert_eq!(energy, 0.0);
+    }
 
     #[rstest]
     fn test_space_service_demand_energy(
@@ -2528,6 +2582,49 @@ mod tests {
     }
 
     // Skipping Python's test_dhw_service_get_temp_hot_water due to mocking
+
+    #[rstest]
+    fn test_dhw_service_get_temp_hot_water(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        heat_battery_input: HeatBattery,
+        simulation_time: SimulationTime,
+        original_setpoint_temp_water: f64,
+    ) {
+        let mock_cold_feed_temperature = 20.;
+        let mock_cold_feed = mock_cold_feed(mock_cold_feed_temperature.into());
+
+        let service = HeatBatteryDryCore::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "dhw_complex",
+            65.,
+            mock_cold_feed,
+        )
+        .unwrap();
+
+        let hot_water_temp = service
+            .get_temp_hot_water(20.0, None, simulation_time.iter().current_iteration())
+            .unwrap()[0]
+            .0
+            .unwrap();
+
+        assert!(hot_water_temp > mock_cold_feed_temperature);
+        assert!(hot_water_temp < original_setpoint_temp_water);
+
+        let hot_water_temp = service
+            .get_temp_hot_water(20.0, Some(10.), simulation_time.iter().current_iteration())
+            .unwrap()[0]
+            .0
+            .unwrap();
+        assert!(hot_water_temp > mock_cold_feed_temperature);
+        assert!(hot_water_temp < original_setpoint_temp_water);
+
+        let results = service
+            .get_temp_hot_water(0.0, None, simulation_time.iter().current_iteration())
+            .unwrap()[0];
+        assert!(results.0.is_none());
+        assert_eq!(results.1, 0.0);
+    }
+
     // Skipping Python's test_heat_battery_direct_demand_energy_error as not relevant in the Rust
 
     #[rstest]
@@ -2616,5 +2713,239 @@ mod tests {
 
         // Should get some energy even with low SOC due to instant backup
         assert!(energy > 0.);
+    }
+
+    #[rstest]
+    fn test_heat_battery_without_instant_power(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        mock_control_space: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        // The heat battery already has instant power configured
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "space_service",
+            Some(mock_control_space),
+        )
+        .unwrap();
+
+        // Set low SOC and demand high energy
+        heat_battery.set_state_of_charge(0.1);
+        let energy = service
+            .energy_output_max(50., 10., None, simulation_time.iter().current_iteration())
+            .unwrap(); // High demand
+
+        // Should get some energy even with low SOC due to instant backup
+        assert!(energy > 0.);
+    }
+
+    #[rstest]
+    fn test_output_detailed_results(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        mock_control_space: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        let mock_cold_feed = mock_cold_feed(Some(10.));
+
+        let dhw_service = HeatBatteryDryCore::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "dhw_complex",
+            65.0,
+            mock_cold_feed,
+        )
+        .unwrap();
+
+        let space_service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "space_service",
+            mock_control_space.into(),
+        )
+        .unwrap();
+
+        // Simulate a few timesteps
+
+        // the variable hot_water_energy in the upstream Python is unnecessary as that parameter does not get used
+
+        let mut timestep_idx: usize = 0;
+        for t_it in simulation_time.iter() {
+            if timestep_idx >= 3 {
+                break;
+            }
+
+            // DHW demand
+            let usage_events = vec![WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                temperature_warm: 40.0,
+                volume_warm: 30.0,
+                volume_hot: 20.0,
+            }];
+            let _dhw_energy = dhw_service
+                .demand_hot_water(usage_events.into(), t_it)
+                .unwrap();
+
+            // Space heating demand
+            space_service
+                .demand_energy(1.5, 55.0, 45.0, None, None, t_it)
+                .unwrap();
+
+            // End timestep
+            heat_battery.timestep_end(t_it).unwrap();
+            timestep_idx += 1;
+        }
+
+        let (results_per_timestep, results_annual) = heat_battery.output_detailed_results();
+
+        // Check structure of results
+        assert!(results_per_timestep.contains_key("auxiliary"));
+        assert!(results_per_timestep.contains_key("dhw_complex"));
+        assert!(results_per_timestep.contains_key("space_service"));
+
+        // Check annual results
+        assert!(results_annual.contains_key("Overall"));
+        assert!(results_annual.contains_key("auxiliary"));
+        assert!(results_annual.contains_key("dhw_complex"));
+        assert!(results_annual.contains_key("space_service"));
+
+        // unnecessary to check other test case from Python as parameters to output_detailed_results are not used
+    }
+
+    // test_output_detailed_results_without_all_aux_parameter_keys is unneeded as case it is testing is impossible in the Rust
+
+    #[rstest]
+    fn test_heat_battery_without_detailed_results(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+    ) {
+        let heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(1),
+            1.0,
+            Some(false),
+        )
+        .unwrap();
+
+        // Check that detailed results are None
+        assert!(heat_battery.detailed_results.is_none());
+    }
+
+    #[rstest]
+    fn test_multiple_units(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        mock_control_space: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        let heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(3),
+            1.0,
+            Some(false),
+        )
+        .unwrap();
+
+        heat_battery.calculate_max_deliverable_temp(5., 0.0, 65.0);
+
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "space_service",
+            mock_control_space.into(),
+        )
+        .unwrap();
+
+        // Energy output should scale with number of units
+        let energy = service
+            .demand_energy(
+                2.0,
+                60.0,
+                40.0,
+                None,
+                None,
+                simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+        assert!(energy > 0.);
+    }
+
+    #[rstest]
+    fn test_base_service_class_without_control(simulation_time: SimulationTime) {
+        let base_service = HeatBatteryDryCoreService::new(None);
+
+        // Should return true when no control
+        assert!(base_service.is_on(simulation_time.iter().current_iteration()));
+    }
+
+    #[rstest]
+    fn test_get_temp_for_charge_control(heat_battery: Arc<HeatBatteryDryCore>) {
+        let temperature = heat_battery.get_temp_for_charge_control();
+        assert!(temperature.is_none());
+    }
+
+    #[rstest]
+    fn test_get_zone_setpoint(heat_battery: Arc<HeatBatteryDryCore>) {
+        let setpoint = heat_battery.get_zone_setpoint();
+        assert_eq!(setpoint, 21.);
+    }
+
+    // test_heat_battery_charge_with_nonpositive_energy_to_store,
+    // test_heat_battery_charge_zero_heat_retention, and
+    // test_heat_battery_charge_no_heat_retention_ratio
+    // are tricksier to port
+    // (as they call on ChargeControl's API (energy_to_store)) than is beneficial
+
+    #[rstest]
+    fn test_heat_battery_dry_core_service_off_conditions(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        simulation_time: SimulationTime,
+    ) {
+        let heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(1),
+            1.0,
+            Some(false),
+        )
+        .unwrap();
+
+        let ctrl_off = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![None; 24],
+            0,
+            1.0,
+            None,
+            None,
+            1.0,
+        )));
+
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "test_space",
+            ctrl_off.into(),
+        )
+        .unwrap();
+
+        // Test energy_output_max when service is off
+        let result = service
+            .energy_output_max(
+                50.0,
+                40.0,
+                Some(0.0),
+                simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+        assert_eq!(result, 0.0);
     }
 }
