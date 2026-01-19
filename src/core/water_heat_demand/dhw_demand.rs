@@ -987,7 +987,7 @@ fn input_to_water_distribution_pipework(
 mod tests {
     use super::*;
     use crate::compare_floats::max_of_2;
-    use crate::core::common::WaterSource;
+    use crate::core::common::WaterSupply;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -1002,11 +1002,11 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct HotWaterSourceMock {
-        cold_feed: WaterSource,
+        cold_feed: WaterSupply,
     }
 
     impl HotWaterSourceBehaviour for HotWaterSourceMock {
-        fn get_cold_water_source(&self) -> WaterSource {
+        fn get_cold_water_source(&self) -> WaterSupply {
             self.cold_feed.clone()
         }
 
@@ -1058,7 +1058,7 @@ mod tests {
     struct HotWaterSourceMockWithUniqueHotWaterTemperature {}
 
     impl HotWaterSourceBehaviour for HotWaterSourceMockWithUniqueHotWaterTemperature {
-        fn get_cold_water_source(&self) -> WaterSource {
+        fn get_cold_water_source(&self) -> WaterSupply {
             unimplemented!()
         }
 

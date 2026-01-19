@@ -1,6 +1,6 @@
 use crate::compare_floats::min_of_2;
 /// This module provides object(s) to model the behaviour of heat batteries.
-use crate::core::common::WaterSource;
+use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
@@ -41,7 +41,7 @@ pub(crate) enum HeatBatteryPcmOperationMode {
 pub struct HeatBatteryPcmServiceWaterRegular {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
-    cold_feed: WaterSource,
+    cold_feed: WaterSupply,
     control: Option<Arc<Control>>,
     _control_min: Option<Arc<Control>>,
     control_max: Option<Arc<Control>>,
@@ -57,7 +57,7 @@ impl HeatBatteryPcmServiceWaterRegular {
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
-        cold_feed: WaterSource,
+        cold_feed: WaterSupply,
         control_min: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
         control_max: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
     ) -> Self {
@@ -150,7 +150,7 @@ pub(crate) struct HeatBatteryPcmServiceWaterDirect {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
     setpoint_temp: f64,
-    cold_feed: WaterSource,
+    cold_feed: WaterSupply,
 }
 
 impl HeatBatteryPcmServiceWaterDirect {
@@ -163,7 +163,7 @@ impl HeatBatteryPcmServiceWaterDirect {
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
         setpoint_temp: f64,
-        cold_feed: WaterSource,
+        cold_feed: WaterSupply,
     ) -> Self {
         Self {
             heat_battery,
@@ -173,7 +173,7 @@ impl HeatBatteryPcmServiceWaterDirect {
         }
     }
 
-    pub(crate) fn get_cold_water_source(&self) -> &WaterSource {
+    pub(crate) fn get_cold_water_source(&self) -> &WaterSupply {
         &self.cold_feed
     }
 
@@ -689,7 +689,7 @@ impl HeatBatteryPcm {
     pub(crate) fn create_service_hot_water_regular(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
-        cold_feed: WaterSource,
+        cold_feed: WaterSupply,
         control_min: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
         control_max: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
     ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular> {
@@ -714,7 +714,7 @@ impl HeatBatteryPcm {
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         setpoint_temp: f64,
-        cold_feed: WaterSource,
+        cold_feed: WaterSupply,
     ) -> anyhow::Result<HeatBatteryPcmServiceWaterDirect> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterDirect::new(
@@ -2023,7 +2023,7 @@ impl HeatBatteryPcm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::common::WaterSource;
+    use crate::core::common::WaterSupply;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::controls::time_control::{ChargeControl, Control};
     use crate::core::energy_supply::energy_supply::{
@@ -2276,7 +2276,7 @@ mod tests {
     ) -> HeatBatteryPcmServiceWaterDirect {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let cold_feed =
-            WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
         let service_name = "WaterHeating".into();
 
         HeatBatteryPcmServiceWaterDirect::new(heat_battery, service_name, 60., cold_feed.clone())
@@ -2287,11 +2287,11 @@ mod tests {
         heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
     ) {
         let expected =
-            WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
         let actual = heat_battery_service_water_direct.get_cold_water_source();
 
         match (actual, expected) {
-            (WaterSource::ColdWaterSource(actual), WaterSource::ColdWaterSource(expected)) => {
+            (WaterSupply::ColdWaterSource(actual), WaterSupply::ColdWaterSource(expected)) => {
                 assert_eq!(actual, &expected);
             }
             _ => panic!("Expected ColdWaterSource variant"),
@@ -2327,7 +2327,7 @@ mod tests {
             Some(55.),
         ]);
         let cold_water_source =
-            WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
 
         HeatBatteryPcmServiceWaterRegular::new(
             heat_battery,
@@ -2405,7 +2405,7 @@ mod tests {
             HeatBatteryPcmServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
-                WaterSource::ColdWaterSource(Arc::new(cold_water_source)),
+                WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
                 Some(service_control_off.clone()),
                 Some(service_control_off),
             );
@@ -2579,7 +2579,7 @@ mod tests {
     ) {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
         let cold_feed =
-            WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
         let service = HeatBatteryPcm::create_service_hot_water_direct(
             heat_battery.clone(),
             "new_service",
@@ -2591,7 +2591,7 @@ mod tests {
         let actual = service.get_cold_water_source();
 
         match (actual, cold_feed) {
-            (WaterSource::ColdWaterSource(actual), WaterSource::ColdWaterSource(cold_feed)) => {
+            (WaterSupply::ColdWaterSource(actual), WaterSupply::ColdWaterSource(cold_feed)) => {
                 assert_eq!(actual, &cold_feed);
             }
             _ => panic!("Expected ColdWaterSource variant"),
@@ -2917,7 +2917,7 @@ mod tests {
     ) {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let cold_feed =
-            WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
         let service = HeatBatteryPcm::create_service_hot_water_direct(
             heat_battery,
             "dhw_complex",
@@ -2929,7 +2929,7 @@ mod tests {
         let actual = service.get_cold_water_source();
 
         match (actual, cold_feed) {
-            (WaterSource::ColdWaterSource(actual), WaterSource::ColdWaterSource(cold_feed)) => {
+            (WaterSupply::ColdWaterSource(actual), WaterSupply::ColdWaterSource(cold_feed)) => {
                 assert_eq!(actual, &cold_feed);
             }
             _ => panic!("Expected ColdWaterSource variant"),
@@ -3392,7 +3392,7 @@ mod tests {
     ) {
         let heat_battery = heat_battery_no_service_connection;
         let cold_feed =
-            WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
         let service_name = "new_service";
 
         HeatBatteryPcm::create_service_hot_water_regular(
@@ -4020,7 +4020,7 @@ mod tests {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let service_name = "test_service";
         let cold_feed =
-            WaterSource::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
 
         let result = HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
