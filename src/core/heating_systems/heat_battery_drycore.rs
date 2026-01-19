@@ -513,7 +513,7 @@ impl HeatStorageDryCore {
             .unwrap()
     }
 
-    fn set_owner(&mut self, owner: Arc<dyn HeatBatteryDryCoreCommonBehaviour>) {
+    pub(super) fn set_owner(&mut self, owner: Arc<dyn HeatBatteryDryCoreCommonBehaviour>) {
         self.owner.replace(Arc::downgrade(&owner));
     }
 
@@ -1841,7 +1841,7 @@ impl HeatBatteryDryCoreCommonBehaviour for HeatBatteryDryCore {
     }
 }
 
-fn convert_to_kwh(power_in_watts: f64, time_in_hours: f64) -> f64 {
+pub(super) fn convert_to_kwh(power_in_watts: f64, time_in_hours: f64) -> f64 {
     power_in_watts / WATTS_PER_KILOWATT as f64 * time_in_hours
 }
 
