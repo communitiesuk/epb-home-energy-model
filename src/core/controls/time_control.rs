@@ -312,9 +312,9 @@ impl ChargeControl {
 
         Ok(Self {
             logic_type,
-            schedule,         // TODO (migration 1.0.0a1) this seems to be optional in Python
-            start_day,        // TODO (migration 1.0.0a1) this seems to be optional in Python
-            time_series_step, // TODO (migration 1.0.0a1) this seems to be optional in Python
+            schedule,
+            start_day,
+            time_series_step,
             charge_level,
             temp_charge_cut,
             temp_charge_cut_delta,
