@@ -11,7 +11,7 @@ use crate::core::water_heat_demand::misc::{
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
 use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
-use crate::corpus::{ColdWaterSources, EventSchedule, HotWaterSource, HotWaterSourceBehaviour};
+use crate::corpus::{ColdWaterSources, EventSchedule, HotWaterSourceBehaviour};
 use crate::input::{
     BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput,
     PipeworkContents, Shower as ShowerInput, Showers as ShowersInput,

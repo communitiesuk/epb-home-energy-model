@@ -11,7 +11,6 @@ use crate::core::energy_supply::energy_supply::{
     ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME, UNMET_DEMAND_SUPPLY_NAME,
 };
 use crate::core::energy_supply::inverter::Inverter;
-use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
 use crate::core::energy_supply::pv::{PhotovoltaicPanel, PhotovoltaicSystem};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem, SpaceHeatingService};

@@ -1,7 +1,4 @@
-use crate::{
-    core::water_heat_demand::misc::WaterEventResult,
-    input::{WaterHeatingEvent, WaterHeatingEventType},
-};
+use crate::input::{WaterHeatingEvent, WaterHeatingEventType};
 use anyhow::{anyhow, bail};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 #[cfg(test)]
