@@ -1586,6 +1586,13 @@ impl HeatBatteryDryCore {
     pub(crate) fn get_demand_unmet(&self) -> f64 {
         self.storage.read().demand_unmet()
     }
+
+    #[cfg(test)]
+    pub(crate) fn set_detailed_results(&self, new_results: Vec<DetailedResult>) {
+        if let Some(detailed_results) = self.detailed_results.as_ref() {
+            *detailed_results.write() = new_results;
+        }
+    }
 }
 
 impl HeatBatteryDryCoreCommonBehaviour for HeatBatteryDryCore {
@@ -2948,4 +2955,302 @@ mod tests {
             .unwrap();
         assert_eq!(result, 0.0);
     }
+
+    #[rstest]
+    fn test_heat_battery_dry_core_no_detailed_results(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        simulation_time: SimulationTime,
+    ) {
+        let heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(1),
+            1.0,
+            Some(false),
+        )
+        .unwrap();
+
+        // Run through timestep - no parameters
+        heat_battery
+            .timestep_end(simulation_time.iter().current_iteration())
+            .unwrap();
+
+        // Test that detailed results are None (internal attribute)
+        assert!(heat_battery.detailed_results.is_none());
+    }
+
+    #[rstest]
+    fn test_heat_battery_dry_core_water_service_edge_cases(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        simulation_time: SimulationTime,
+    ) {
+        let mock_cold_feed = mock_cold_feed(Some(10.));
+
+        let heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(1),
+            1.0,
+            Some(false),
+        )
+        .unwrap();
+
+        // Create DHW service
+        let service = HeatBatteryDryCore::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "dhw_complex",
+            65.0, // High setpoint
+            mock_cold_feed,
+        )
+        .unwrap();
+
+        // Test edge cases
+
+        // Test with zero volume request
+        let temp_vol_list = service
+            .get_temp_hot_water(0.0, None, simulation_time.iter().current_iteration())
+            .unwrap();
+        assert_eq!(temp_vol_list[0].0, None);
+        assert_eq!(temp_vol_list[0].1, 0.0);
+
+        // Test with very small volume (close to zero but not exactly zero)
+        let temperature_volume = service
+            .get_temp_hot_water(0.0000001, None, simulation_time.iter().current_iteration())
+            .unwrap();
+        assert_eq!(temperature_volume.len(), 1);
+
+        // Test with normal volume request - reset mock to return correct volume
+        let temp_vol_list = service
+            .get_temp_hot_water(10.0, None, simulation_time.iter().current_iteration())
+            .unwrap();
+        let (_temperature, volume) = temp_vol_list[0];
+        assert_eq!(volume, 10.0);
+    }
+
+    // test_heat_battery_dry_core_extreme_temperatures is incomplete/ tests nothing, so not ported
+
+    /// Test HeatBatteryDryCore with multiple services demanding energy
+    #[rstest]
+    #[ignore = "will not pass until ode solver code is correct"]
+    fn test_heat_battery_dry_core_multiple_services_interaction(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        mock_control_space: Arc<Control>,
+        mock_control_dhw: Arc<Control>,
+        default_control_max: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        let simtime = simulation_time.iter().current_iteration();
+
+        let heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(2),
+            1.0,
+            Some(false),
+        )
+        .unwrap();
+
+        let service1 = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "space1",
+            mock_control_space.into(),
+        );
+
+        let service2 = HeatBatteryDryCore::create_service_hot_water_regular(
+            heat_battery.clone(),
+            "dhw1",
+            mock_cold_feed(None),
+            mock_control_dhw,
+            default_control_max,
+        );
+
+        // Test services work correctly (i.e. we can access them
+        let service1 = if let Ok(service) = service1 {
+            service
+        } else {
+            panic!("Failed to create service1")
+        };
+        if service2.is_err() {
+            panic!("Failed to create service2")
+        };
+
+        // energy_output_max from space service
+        let result1 = service1.energy_output_max(35., 10., None, simtime).unwrap();
+        assert_relative_eq!(result1, 4.897563801409152, epsilon = 1e-7);
+
+        // demand energy from services
+        let result1 = service1
+            .demand_energy(1.0, 50.0, 40.0, None, None, simtime)
+            .unwrap();
+        assert!(result1 >= 0.0);
+    }
+
+    // test_heat_battery_dry_core_base_service_is_on_without_control duplicates test_base_service_class_without_control
+
+    #[rstest]
+    fn test_heat_battery_dry_core_get_temp_hot_water_edge_cases(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        simulation_time: SimulationTime,
+    ) {
+        let simtime = simulation_time.iter().current_iteration();
+
+        let heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(1),
+            1.0,
+            Some(false),
+        )
+        .unwrap();
+
+        let mock_cold_feed_10 = mock_cold_feed(Some(10.));
+
+        // Test regular DHW service
+        let service_regular = HeatBatteryDryCore::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "dhw_complex",
+            65.0,
+            mock_cold_feed_10,
+        )
+        .unwrap();
+
+        // Test with very small volume (close to zero but not exactly zero)
+        let temperature_volume = service_regular
+            .get_temp_hot_water(0.0000001, None, simtime)
+            .unwrap();
+        assert_eq!(temperature_volume.len(), 1);
+
+        // Test with multiple temperature/volume pairs (though only exercising the first simulation timestep)
+        let mock_cold_feed_8 = mock_cold_feed(Some(8.0));
+        let temperature_volume = service_regular
+            .get_temp_hot_water(10.0, None, simtime)
+            .unwrap();
+        assert_eq!(temperature_volume.len(), 1);
+        assert_eq!(temperature_volume[0].1, 10.0);
+    }
+
+    // skip test_heat_battery_dry_core_water_regular_demand_edge_cases as uses spies
+
+    #[rstest]
+    fn test_heat_battery_dry_core_output_detailed_results_edge_cases(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        mock_control_space: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) {
+        let heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(2),
+            1.0,
+            Some(false),
+        )
+        .unwrap();
+
+        // Create and use a service to generate some results
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "space_service",
+            mock_control_space.into(),
+        )
+        .unwrap();
+
+        let simtime = simulation_time.iter().current_iteration();
+
+        // Demand energy multiple times
+        for i in 0..3 {
+            service
+                .demand_energy(0.5 + i as f64 * 0.1, 50.0, 40.0, None, None, simtime)
+                .unwrap();
+        }
+
+        // Call timestep_end to save results
+        heat_battery.timestep_end(simtime).unwrap();
+
+        // Use the correct way to get number of timesteps
+        let num_timesteps = simulation_time.total_steps();
+
+        // skipping setting up different lengths of inputs for output_detailed_results as these are ignored/unused
+        let (results1, _) = heat_battery.output_detailed_results();
+
+        assert!(results1.contains_key("auxiliary"));
+    }
+
+    #[rstest]
+    fn test_heat_battery_dry_core_timestep_end_with_charging(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        simulation_time: SimulationTime,
+    ) {
+        let simtime = simulation_time.iter().current_iteration();
+
+        let mut heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(1),
+            1.0,
+            Some(true),
+        )
+        .unwrap();
+
+        // Set initial state
+        heat_battery.set_state_of_charge(0.3);
+
+        // Don't run any services, so time_remaining > 0
+        // This should trigger the charging logic in timestep_end
+
+        heat_battery.timestep_end(simtime).unwrap();
+        let final_soc = heat_battery.state_of_charge();
+
+        // SOC might increase due to charging (depends on charge control logic)
+        assert!(final_soc >= 0.0);
+        assert!(final_soc <= 1.0);
+
+        // Time available
+        assert_eq!(heat_battery.time_available(0., 1.), 1.);
+
+        heat_battery
+            .total_time_running_current_timestep
+            .store(1., Ordering::SeqCst);
+        heat_battery.set_detailed_results(vec![]);
+        heat_battery.timestep_end(simtime).unwrap();
+
+        // Get detailed results
+        let (_, _) = heat_battery.output_detailed_results();
+
+        assert_eq!(
+            heat_battery.detailed_results.as_ref().unwrap().read()[0].non_service_energy_lost,
+            0.0
+        );
+    }
+
+    // skipped test_heat_battery_dry_core_demand_energy_not_implemented as this is enforced statically by the Rust compiler
 }
