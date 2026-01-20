@@ -38,7 +38,7 @@ impl Bath {
     pub(crate) fn hot_water_demand<'a>(
         &'a self,
         event: WaterHeatingEvent,
-        func_temp_hot_water: &'a Box<dyn Fn(f64) -> f64 + 'a>,
+        func_temp_hot_water: &'a (dyn Fn(f64) -> f64 + 'a),
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64)> {
         let peak_flowrate = self.flowrate;
