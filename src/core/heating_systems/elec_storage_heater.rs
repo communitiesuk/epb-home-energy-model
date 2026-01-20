@@ -1,6 +1,8 @@
 use crate::core::controls::time_control::{per_control, ControlBehaviour};
 use crate::core::heating_systems::heat_battery_drycore;
-use crate::core::heating_systems::heat_battery_drycore::convert_to_kwh;
+use crate::core::heating_systems::heat_battery_drycore::{
+    convert_to_kwh, HeatBatteryDryCoreCommonBehaviour,
+};
 use crate::core::heating_systems::heat_battery_drycore::{HeatStorageDryCore, OutputMode};
 use crate::{
     core::{controls::time_control::Control, energy_supply::energy_supply::EnergySupplyConnection},
@@ -140,7 +142,7 @@ impl ElecStorageHeater {
         external_conditions: Arc<ExternalConditions>,
         state_of_charge_init: f64,
         output_detailed_results: Option<bool>,
-    ) -> anyhow::Result<Self> {
+    ) -> anyhow::Result<Arc<Self>> {
         let output_detailed_results = output_detailed_results.unwrap_or(false);
 
         match charge_control.as_ref() {
@@ -234,10 +236,8 @@ impl ElecStorageHeater {
             state_of_charge_init,
         )?));
 
-        let heater =
-            // Arc::new(
-            Self {
-            storage,
+        let heater = Self {
+            storage: storage.clone(),
             pwr_instant: rated_power_instant,
             storage_capacity,
             air_flow_type,
@@ -265,11 +265,10 @@ impl ElecStorageHeater {
                     simulation_time.total_steps(),
                 )))
             }),
-        }
-            // )
-        ;
+        };
 
-        // storage.write().set_owner(heater);
+        let heater = Arc::new(heater);
+        storage.write().set_owner(heater.clone());
 
         Ok(heater)
     }
@@ -491,6 +490,34 @@ impl ElecStorageHeater {
     fn energy_delivered(&self) -> f64 {
         self.current_energy_profile.read().energy_delivered
     }
+
+    #[cfg(test)]
+    fn set_heat_retention_ratio(&mut self, value: f64) {
+        self.heat_retention_ratio = value;
+    }
+}
+
+impl HeatBatteryDryCoreCommonBehaviour for ElecStorageHeater {
+    fn get_temp_for_charge_control(&self) -> Option<f64> {
+        todo!()
+    }
+
+    fn get_zone_setpoint(&self) -> f64 {
+        todo!()
+    }
+
+    fn energy_output_max(
+        &self,
+        _temp_output: f64,
+        time_start: Option<f64>,
+        simtime: &SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        todo!()
+    }
+
+    fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64, setpoint_temp: f64) -> f64 {
+        todo!()
+    }
 }
 
 #[cfg(test)]
@@ -652,7 +679,7 @@ mod tests {
         dry_core_min_output: Vec<[f64; 2]>,
         dry_core_max_output: Vec<[f64; 2]>,
         output_detailed_results: Option<bool>,
-    ) -> ElecStorageHeater {
+    ) -> Arc<ElecStorageHeater> {
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
         ));
@@ -694,7 +721,7 @@ mod tests {
         charge_control: Arc<Control>,
         control: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
-    ) -> ElecStorageHeater {
+    ) -> Arc<ElecStorageHeater> {
         create_elec_storage_heater(
             simulation_time,
             charge_control,
@@ -709,7 +736,7 @@ mod tests {
     #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_initialisation(
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
         simulation_time_iteration: SimulationTimeIteration,
     ) {
         let energy = elec_storage_heater.demand_energy(1., &simulation_time_iteration);
@@ -843,7 +870,7 @@ mod tests {
     #[rstest]
     fn test_temp_setpnt(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let mut expected_setpoints = vec![Some(21.), Some(21.), None, Some(21.)];
         expected_setpoints.extend(vec![None; 20]);
@@ -859,7 +886,7 @@ mod tests {
     #[rstest]
     fn test_in_required_period(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let mut expected_values = vec![true, true, false, true];
         expected_values.extend(vec![false; 20]);
@@ -873,7 +900,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_frac_convective(elec_storage_heater: ElecStorageHeater) {
+    fn test_frac_convective(elec_storage_heater: Arc<ElecStorageHeater>) {
         assert_eq!(elec_storage_heater.frac_convective(), 0.7);
     }
 
@@ -881,7 +908,7 @@ mod tests {
     #[rstest]
     fn test_energy_output_min_single(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let min_energy_output = elec_storage_heater
             .energy_output_min(&simulation_time_iterator.current_iteration())
@@ -900,7 +927,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_output_min(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         // Test minimum energy output calculation across all timesteps.
 
@@ -947,7 +974,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_output_max(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         // Test maximum energy output calculation across all timesteps.
         let expected_max_energy_output = [
@@ -1127,7 +1154,7 @@ mod tests {
     #[rstest]
     fn test_electric_charge_automatic(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         // Test electric charge calculation across all timesteps.
         let expected_target_elec_charge = [
@@ -1334,7 +1361,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let mut heater = create_elec_storage_heater(
+        let heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
             control,
@@ -1343,7 +1370,9 @@ mod tests {
             DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
-        heater.heat_retention_ratio = -0.9;
+
+        // TODO fix this
+        todo!(); // heater.set_heat_retention_ratio(-0.9);
         heater.state_of_charge.store(0.5, Ordering::SeqCst);
 
         let expected_target_elec_charge = [
@@ -1423,7 +1452,7 @@ mod tests {
     #[rstest]
     fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy = [
             4.0,
@@ -1462,7 +1491,7 @@ mod tests {
     #[ignore = "known issue (energy_output)"]
     fn test_demand_energy_no_demand(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy = [
             0.019999999999999997,
@@ -1857,7 +1886,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy_for_fan = [
             0.003666666666666666,
@@ -1901,7 +1930,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_instant(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy_instant = [
             2.5,
@@ -1945,7 +1974,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_charged(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy_charged = [
             1.5,
@@ -1989,7 +2018,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_stored_delivered(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy_delivered = [
             1.5,

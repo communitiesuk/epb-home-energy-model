@@ -19,6 +19,7 @@ use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{bail, Error};
 use serde_enum_str::Serialize_enum_str;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize_enum_str)]
 pub(crate) enum HeatingServiceType {
@@ -179,7 +180,7 @@ impl HeatSourceWet {
 
 #[derive(Debug)]
 pub(crate) enum SpaceHeatSystem {
-    ElecStorage(ElecStorageHeater),
+    ElecStorage(Arc<ElecStorageHeater>),
     Instant(InstantElecHeater),
     WarmAir(HeatPumpServiceSpaceWarmAir),
     WetDistribution(Emitters),
