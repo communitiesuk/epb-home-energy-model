@@ -2574,8 +2574,6 @@ mod tests {
         assert_eq!(max_energy_off, 0.);
     }
 
-    // Skipping Python's test_dhw_service_get_temp_hot_water due to mocking
-
     #[rstest]
     fn test_dhw_service_get_temp_hot_water(
         heat_battery: Arc<HeatBatteryDryCore>,
