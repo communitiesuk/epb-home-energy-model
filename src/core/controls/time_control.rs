@@ -1129,7 +1129,7 @@ impl CombinationTimeControl {
     fn evaluate_boolean_operation_is_on(
         &self,
         operation: ControlCombinationOperation,
-        control_results: &mut (impl Iterator<Item = bool> + ExactSizeIterator),
+        control_results: &mut impl ExactSizeIterator<Item = bool>,
     ) -> bool {
         match operation {
             ControlCombinationOperation::And => control_results.all(|x| x),

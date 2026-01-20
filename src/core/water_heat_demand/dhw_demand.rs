@@ -573,11 +573,11 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                     Self::get_duration_for_tapping_point_event(&tapping_point, event);
                 *all_events.get_mut(&hot_water_source_name).unwrap() += 1;
 
-                if hw_demand_i.is_none() && energy_supply_conn_unmet_demand.is_some() {
-                    // TODO check simtime.index is correct to pass here
-                    energy_supply_conn_unmet_demand
-                        .unwrap()
-                        .demand_energy(hw_energy_demand_i, simtime.index)?;
+                if hw_demand_i.is_none() {
+                    if let Some(unmet_demand) = energy_supply_conn_unmet_demand {
+                        // TODO check simtime.index is correct to pass here
+                        unmet_demand.demand_energy(hw_energy_demand_i, simtime.index)?;
+                    }
                 }
 
                 // If event demand cannot be met, skip to the next one
