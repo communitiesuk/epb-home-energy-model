@@ -4949,7 +4949,6 @@ mod tests {
     const FIVE_DECIMAL_PLACES: f64 = 1e-6;
 
     #[rstest]
-    #[ignore = "not yet updated to 1_0_a1"]
     fn test_calc_state_of_charge_for_smart_hot_water_tank(
         smart_hot_water_tank: SmartHotWaterTank,
         simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
