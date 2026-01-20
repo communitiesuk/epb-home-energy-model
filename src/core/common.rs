@@ -7,6 +7,20 @@ use crate::simulation_time::SimulationTimeIteration;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
+pub(crate) trait WaterSupplyBehaviour {
+    fn get_temp_cold_water(
+        &self,
+        volume_needed: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(f64, f64)>>;
+
+    fn draw_off_water(
+        &self,
+        volume_needed: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(f64, f64)>>;
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum WaterSupply {
     ColdWaterSource(Arc<ColdWaterSource>),
@@ -16,8 +30,8 @@ pub(crate) enum WaterSupply {
     Mock(MockWaterSupply),
 }
 
-impl WaterSupply {
-    pub(crate) fn get_temp_cold_water(
+impl WaterSupplyBehaviour for WaterSupply {
+    fn get_temp_cold_water(
         &self,
         volume_needed: f64,
         simtime: SimulationTimeIteration,
@@ -35,12 +49,12 @@ impl WaterSupply {
                 }
             },
             #[cfg(test)]
-            WaterSupply::Mock(mock) => Ok(mock.get_temp_cold_water(volume_needed)),
+            WaterSupply::Mock(mock) => mock.get_temp_cold_water(volume_needed, simtime),
             _ => unimplemented!("TODO during migration 1.0.0a1"),
         }
     }
 
-    pub(crate) fn draw_off_water(
+    fn draw_off_water(
         &self,
         volume_needed: f64,
         simtime: SimulationTimeIteration,
@@ -58,7 +72,7 @@ impl WaterSupply {
                 }
             },
             #[cfg(test)]
-            WaterSupply::Mock(mock) => Ok(mock.draw_off_water(volume_needed)),
+            WaterSupply::Mock(mock) => mock.draw_off_water(volume_needed, simtime),
             _ => unimplemented!("TODO during migration 1.0.0a1"),
         }
     }
@@ -75,12 +89,23 @@ impl MockWaterSupply {
     pub(crate) fn new(temperature: f64) -> Self {
         Self { temperature }
     }
+}
 
-    pub(crate) fn get_temp_cold_water(&self, volume_needed: f64) -> Vec<(f64, f64)> {
-        vec![(self.temperature, volume_needed)]
+#[cfg(test)]
+impl WaterSupplyBehaviour for MockWaterSupply {
+    fn get_temp_cold_water(
+        &self,
+        volume_needed: f64,
+        _simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(f64, f64)>> {
+        Ok(vec![(self.temperature, volume_needed)])
     }
 
-    pub(crate) fn draw_off_water(&self, volume_needed: f64) -> Vec<(f64, f64)> {
-        self.get_temp_cold_water(volume_needed)
+    fn draw_off_water(
+        &self,
+        volume_needed: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(f64, f64)>> {
+        self.get_temp_cold_water(volume_needed, simtime)
     }
 }

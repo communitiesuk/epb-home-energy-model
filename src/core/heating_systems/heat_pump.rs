@@ -3,7 +3,7 @@
 /// entries for SAP 2012 and SAP 10. DAHPSE was based on a draft of
 /// BS EN 15316-4-2:2017 and is described in the SAP calculation method CALCM-01.
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::common::WaterSupply;
+use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};

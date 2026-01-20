@@ -1,3 +1,4 @@
+use crate::core::common::WaterSupplyBehaviour;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};

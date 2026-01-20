@@ -2,7 +2,7 @@
 //! This includes the common functionality for electrical storage and discharge
 //! that is shared between Electric Storage Heaters and Dry Core Heat Batteries.
 
-use crate::core::common::WaterSupply;
+use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;

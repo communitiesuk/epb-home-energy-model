@@ -1,6 +1,6 @@
 use crate::compare_floats::min_of_2;
 /// This module provides object(s) to model the behaviour of heat batteries.
-use crate::core::common::WaterSupply;
+use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;

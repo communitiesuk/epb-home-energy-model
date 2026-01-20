@@ -1,5 +1,5 @@
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::common::WaterSupply;
+use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
