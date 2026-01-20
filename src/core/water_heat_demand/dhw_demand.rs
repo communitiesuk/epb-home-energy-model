@@ -1,6 +1,6 @@
 use crate::core::common::WaterSupplyBehaviour;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
-use crate::core::heating_systems::wwhrs::Wwhrs;
+use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
 use crate::core::schedule::{TypedScheduleEvent, WaterScheduleEventType};
 use crate::core::units::{MILLIMETRES_IN_METRE, WATTS_PER_KILOWATT};
@@ -115,7 +115,7 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
         other_hot_water_input: OtherWaterUseInput,
         hw_pipework_inputs: WaterDistributionInput,
         cold_water_sources: &ColdWaterSources,
-        wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
+        wwhrs: &IndexMap<String, Arc<Mutex<WwhrsInstantaneous>>>,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         event_schedules: EventSchedule,
         hot_water_sources: IndexMap<String, T>,
@@ -892,7 +892,7 @@ fn shower_from_input(
     input: &ShowerInput,
     cold_water_sources: &ColdWaterSources,
     energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
-    wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
+    wwhrs: &IndexMap<String, Arc<Mutex<WwhrsInstantaneous>>>,
 ) -> anyhow::Result<Shower> {
     Ok(match input {
         ShowerInput::MixerShower {
@@ -902,16 +902,19 @@ fn shower_from_input(
             hot_water_source,
         } => {
             let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
-            let _wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = wwhrs_config
+            let wwhrs_instance: Option<Arc<Mutex<WwhrsInstantaneous>>> = wwhrs_config
                 .as_ref()
                 .map(|config| &config.waste_water_heat_recovery_system)
-                .and_then(|w| wwhrs.get(w).cloned());
+                .map(|w| wwhrs.get(w).cloned())
+                .ok_or_else(|| anyhow!("Could not find WWHRS instance for shower '{name}'",))?;
 
             Shower::MixerShower(MixerShower::new(
                 *flowrate,
                 cold_water_source,
-                None, // TODO (migration 1.0.0a1)
-                None, // TODO (migration 1.0.0a1)
+                wwhrs_instance,
+                wwhrs_config
+                    .as_ref()
+                    .and_then(|config| config.wwhrs_configuration.map(Into::into)),
             ))
         }
         ShowerInput::InstantElectricShower {
@@ -982,7 +985,6 @@ mod tests {
     use crate::compare_floats::max_of_2;
     use crate::core::common::WaterSupply;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
-    use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::input::{
         Baths, FuelType, MixerShowerWwhrsConfiguration, OtherWaterUses, Showers,
@@ -1280,18 +1282,26 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
     ) -> DomesticHotWaterDemand<T> {
         let flow_rates = vec![5., 7., 9., 11., 13.];
-        let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
-        let utilisation_factor = 0.7;
+        let system_a_efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
+        let system_a_utilisation_factor = 0.7;
         let cold_water_sources =
             ColdWaterSources::from([("mains water".into(), cold_water_source.clone())]);
-        let wwhrsb = Arc::new(Mutex::new(Wwhrs::WWHRSInstantaneousSystemB(
-            WWHRSInstantaneousSystemB::new(
-                cold_water_source.clone(),
+        let wwhrsb = Arc::new(Mutex::new(
+            WwhrsInstantaneous::new(
                 flow_rates,
-                efficiencies,
-                utilisation_factor,
-            ),
-        )));
+                system_a_efficiencies,
+                cold_water_source.clone(),
+                system_a_utilisation_factor.into(),
+                None,
+                None,
+                None,
+                None,
+                Some(0.81),
+                None,
+                simulation_time.iter().current_iteration(),
+            )
+            .unwrap(),
+        ));
         let wwhrs = IndexMap::from([(String::from("Example_Inst_WWHRS"), wwhrsb.clone())]);
 
         let electricity_supply = Arc::new(RwLock::new(

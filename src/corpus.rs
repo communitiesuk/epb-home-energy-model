@@ -32,7 +32,7 @@ use crate::core::heating_systems::storage_tank::{
     PositionedHeatSource, SmartHotWaterTank, SolarThermalSystem, StorageTank,
     StorageTankDetailedResult,
 };
-use crate::core::heating_systems::wwhrs::Wwhrs;
+use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::material_properties::WATER;
 use crate::core::schedule::{
     expand_boolean_schedule, expand_events, expand_numeric_schedule, reject_nones, reject_nulls,
@@ -209,6 +209,7 @@ fn single_control_from_details(
             temp_charge_cut,
             temp_charge_cut_delta,
             logic_type,
+            charge_calc_time,
             ..
         } => {
             let schedule = reject_nulls(expand_boolean_schedule(schedule))?;
@@ -261,9 +262,9 @@ fn single_control_from_details(
                 charge_level_vec,
                 *temp_charge_cut,
                 temp_charge_cut_delta,
-                Some(external_conditions.clone()), // TODO review as part of migration to 1.0.0a1
+                Some(external_conditions.clone()),
                 external_sensor.clone(),
-                None, // TODO as part of migration to 1.0.0a1
+                Some(*charge_calc_time),
             )?)
             .into()
         }
@@ -3058,8 +3059,8 @@ fn wwhrs_from_input(
     wwhrs: Option<&WasteWaterHeatRecovery>,
     cold_water_sources: &ColdWaterSources,
     initial_simtime: SimulationTimeIteration,
-) -> anyhow::Result<IndexMap<String, Arc<Mutex<Wwhrs>>>> {
-    let mut wwhr_systems: IndexMap<String, Arc<Mutex<Wwhrs>>> = IndexMap::from([]);
+) -> anyhow::Result<IndexMap<String, Arc<Mutex<WwhrsInstantaneous>>>> {
+    let mut wwhr_systems: IndexMap<String, Arc<Mutex<WwhrsInstantaneous>>> = IndexMap::from([]);
     if let Some(systems) = wwhrs {
         for (name, system) in systems {
             wwhr_systems
@@ -3076,57 +3077,39 @@ fn wwhrs_from_input(
 }
 
 fn wwhr_system_from_details(
-    _system: WasteWaterHeatRecoveryDetails,
-    _cold_water_sources: &ColdWaterSources,
-    _initial_simtime: SimulationTimeIteration,
-) -> anyhow::Result<Wwhrs> {
-    todo!();
-    // Ok(match system.system_type {
-    //     WasteWaterHeatRecoverySystemType::SystemA => {
-    //         Wwhrs::WWHRSInstantaneousSystemA(WWHRSInstantaneousSystemA::new(
-    //             system.flow_rates,
-    //             system.efficiencies,
-    //             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
-    //                 .ok_or_else(|| {
-    //                     anyhow!(
-    //                         "Could not find cold water source '{:?}'",
-    //                         system.cold_water_source
-    //                     )
-    //                 })?,
-    //             system.utilisation_factor,
-    //             initial_simtime,
-    //         ))
-    //     }
-    //     WasteWaterHeatRecoverySystemType::SystemB => {
-    //         Wwhrs::WWHRSInstantaneousSystemB(WWHRSInstantaneousSystemB::new(
-    //             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
-    //                 .ok_or_else(|| {
-    //                     anyhow!(
-    //                         "Could not find cold water source '{:?}'",
-    //                         system.cold_water_source
-    //                     )
-    //                 })?,
-    //             system.flow_rates,
-    //             system.efficiencies,
-    //             system.utilisation_factor,
-    //         ))
-    //     }
-    //     WasteWaterHeatRecoverySystemType::SystemC => {
-    //         Wwhrs::WWHRSInstantaneousSystemC(WWHRSInstantaneousSystemC::new(
-    //             system.flow_rates,
-    //             system.efficiencies,
-    //             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
-    //                 .ok_or_else(|| {
-    //                     anyhow!(
-    //                         "Could not find cold water source '{:?}'",
-    //                         system.cold_water_source
-    //                     )
-    //                 })?,
-    //             system.utilisation_factor,
-    //             initial_simtime,
-    //         ))
-    //     }
-    // })
+    system: WasteWaterHeatRecoveryDetails,
+    cold_water_sources: &ColdWaterSources,
+    initial_simtime: SimulationTimeIteration,
+) -> anyhow::Result<WwhrsInstantaneous> {
+    let cold_water_source = cold_water_sources.get(&system.cold_water_source).ok_or_else(|| anyhow!("Cold water source '{}' referenced by WWHRS input not found in cold water sources list.", system.cold_water_source))?;
+
+    // Get efficiency data for all systems if provided
+    let WasteWaterHeatRecoveryDetails {
+        flow_rates,
+        system_a_efficiencies,
+        system_a_utilisation_factor,
+        system_b_efficiencies,
+        system_b_utilisation_factor,
+        system_c_efficiencies,
+        system_c_utilisation_factor,
+        system_b_efficiency_factor,
+        system_c_efficiency_factor,
+        ..
+    } = system;
+
+    WwhrsInstantaneous::new(
+        flow_rates,
+        system_a_efficiencies,
+        cold_water_source.clone(),
+        system_a_utilisation_factor,
+        system_b_efficiencies,
+        system_b_utilisation_factor,
+        system_c_efficiencies,
+        system_c_utilisation_factor,
+        system_b_efficiency_factor.into(),
+        system_c_efficiency_factor.into(),
+        initial_simtime,
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -4734,7 +4717,7 @@ fn hot_water_source_from_input(
     cold_water_sources: &ColdWaterSources,
     pre_heated_water_sources: &IndexMap<String, HotWaterStorageTank>,
     wet_heat_sources: &mut IndexMap<String, WetHeatSource>,
-    wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
+    wwhrs: &IndexMap<String, Arc<Mutex<WwhrsInstantaneous>>>,
     controls: &Controls,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     diverter_types: &DiverterTypes,

@@ -1,7 +1,7 @@
 // location for defining common traits and enums defined across submodules
 
 use crate::core::heating_systems::storage_tank::HotWaterStorageTank;
-use crate::core::heating_systems::wwhrs::Wwhrs;
+use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::simulation_time::SimulationTimeIteration;
 use parking_lot::Mutex;
@@ -24,7 +24,7 @@ pub(crate) trait WaterSupplyBehaviour {
 #[derive(Clone, Debug)]
 pub(crate) enum WaterSupply {
     ColdWaterSource(Arc<ColdWaterSource>),
-    Wwhrs(Arc<Mutex<Wwhrs>>),
+    Wwhrs(Arc<Mutex<WwhrsInstantaneous>>),
     Preheated(HotWaterStorageTank),
     #[cfg(test)]
     Mock(MockWaterSupply),
