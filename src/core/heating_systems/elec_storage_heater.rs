@@ -498,8 +498,9 @@ impl ElecStorageHeater {
 }
 
 impl HeatBatteryDryCoreCommonBehaviour for ElecStorageHeater {
+    /// Get temperature for charge control calculations.
     fn get_temp_for_charge_control(&self) -> Option<f64> {
-        todo!()
+        Some((self.zone_internal_air_func)())
     }
 
     fn get_zone_setpoint(&self) -> f64 {
@@ -2067,5 +2068,11 @@ mod tests {
             HeatStorageDryCore::heat_retention_output(&soc_array, &power_array, storage_capacity);
 
         assert_relative_eq!(actual, 0.92372001, max_relative = EIGHT_DECIMAL_PLACES);
+    }
+
+    #[rstest]
+    fn test_get_temp_for_charge_control(elec_storage_heater: Arc<ElecStorageHeater>) {
+        let temp = elec_storage_heater.get_temp_for_charge_control().unwrap();
+        assert_eq!(temp, 20.0);
     }
 }
