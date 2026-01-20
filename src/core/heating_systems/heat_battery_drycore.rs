@@ -792,20 +792,6 @@ pub(crate) trait HeatBatteryDryCoreCommonBehaviour: Send + Sync {
     /// Get zone setpoint for HHRSH calculations.
     fn get_zone_setpoint(&self) -> f64;
 
-    /// Process energy demand.
-    fn demand_energy(
-        &self,
-        service_name: &str,
-        service_type: HeatingServiceType,
-        energy_output_required: f64,
-        temp_return_feed: f64,
-        temp_output: Option<f64>,
-        service_on: bool,
-        time_start: Option<f64>,
-        update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<f64>;
-
     fn energy_output_max(
         &self,
         _temp_output: f64,
@@ -840,7 +826,7 @@ trait HeatBatteryDryCoreServiceBehaviour {
 
 pub(crate) struct HeatBatteryDryCoreServiceWaterRegular<T: WaterSupplyBehaviour> {
     core_service: HeatBatteryDryCoreService,
-    heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
+    heat_battery: Arc<HeatBatteryDryCore>,
     service_name: String,
     cold_feed: T,
     control_min: Arc<Control>,
@@ -849,7 +835,7 @@ pub(crate) struct HeatBatteryDryCoreServiceWaterRegular<T: WaterSupplyBehaviour>
 
 impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
     pub(crate) fn new(
-        heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
+        heat_battery: Arc<HeatBatteryDryCore>,
         service_name: String,
         cold_feed: T,
         control_min: Arc<Control>,
@@ -920,7 +906,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
 /// This is similar to a combi boiler or HIU providing hot water on demand.
 pub(crate) struct HeatBatteryDryCoreServiceWaterDirect<T: WaterSupplyBehaviour> {
     core_service: HeatBatteryDryCoreService,
-    heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
+    heat_battery: Arc<HeatBatteryDryCore>,
     service_name: String,
     setpoint_temp: f64,
     cold_feed: T,
@@ -928,7 +914,7 @@ pub(crate) struct HeatBatteryDryCoreServiceWaterDirect<T: WaterSupplyBehaviour> 
 
 impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
     fn new(
-        heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
+        heat_battery: Arc<HeatBatteryDryCore>,
         service_name: &str,
         setpoint_temp: f64,
         cold_feed: T,
@@ -1051,14 +1037,14 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
 /// Wrapper for space heating service from dry core heat battery.
 pub(crate) struct HeatBatteryDryCoreServiceSpace {
     core_service: HeatBatteryDryCoreService,
-    heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
+    heat_battery: Arc<HeatBatteryDryCore>,
     service_name: String,
     control: Option<Arc<Control>>,
 }
 
 impl HeatBatteryDryCoreServiceSpace {
     fn new(
-        heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
+        heat_battery: Arc<HeatBatteryDryCore>,
         service_name: &str,
         control: Option<Arc<Control>>,
     ) -> Self {
@@ -1133,7 +1119,7 @@ impl HeatBatteryDryCoreServiceSpace {
 /// These batteries use electrical storage similar to ESH but provide
 /// heating through water services (space heating via (e.g.) radiators and DHW).
 #[derive(Debug)]
-struct HeatBatteryDryCore {
+pub(crate) struct HeatBatteryDryCore {
     storage: Arc<RwLock<HeatStorageDryCore>>,
     energy_supply: Arc<RwLock<EnergySupply>>,
     energy_supply_connection: Arc<EnergySupplyConnection>,
@@ -1321,6 +1307,208 @@ impl HeatBatteryDryCore {
                 .total_time_running_current_timestep
                 .load(Ordering::SeqCst))
             * (1.0 - time_start / timestep)
+    }
+
+    fn demand_energy(
+        &self,
+        service_name: &str,
+        service_type: HeatingServiceType,
+        energy_output_required: f64,
+        temp_return_feed: f64,
+        temp_output: Option<f64>,
+        service_on: bool,
+        time_start: Option<f64>,
+        update_heat_source_state: Option<bool>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let time_start = time_start.unwrap_or(0.0);
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
+
+        let timestep = simtime.timestep;
+        let time_remaining = self.time_available(time_start, timestep);
+
+        let energy_output_required = energy_output_required / self.n_units() as f64;
+        let mut energy_instant = 0.;
+        let mut energy_for_fan = 0.;
+        let mut time_running_current_service = 0.;
+
+        // Process energy demand from a specific service
+        if !service_on
+            || energy_output_required < 0.
+            || is_close!(energy_output_required, 0.0, abs_tol = 1e-10)
+        {
+            if update_heat_source_state {
+                self.service_results.write().push(ServiceResult {
+                    service_name: service_name.into(),
+                    service_type,
+                    service_on,
+                    energy_output_required: energy_output_required * self.n_units() as f64,
+                    temp_output,
+                    temp_inlet: temp_return_feed,
+                    time_running: 0.,
+                    demand_unmet: self.storage.read().demand_unmet() * self.n_units() as f64,
+                    energy_delivered_hb: 0.0,
+                    energy_delivered_backup: 0.0,
+                    energy_delivered_total: 0.0,
+                    energy_charged_during_service: 0.0,
+                    energy_for_fans: ResultParamValue::Empty,
+                    dry_core_soc: self.storage.read().state_of_charge(),
+                    current_hb_power: ResultParamValue::Empty,
+                    energy_lost: ResultParamValue::Empty,
+                });
+            }
+            return Ok(0.0);
+        }
+
+        let (energy_delivered_hb, energy_lost, energy_charged) = if time_remaining < 0.
+            || is_close!(time_remaining, 0.0, abs_tol = 1e-10)
+        {
+            // No time left to run this service
+            let energy_delivered_hb = 0.0;
+            let energy_lost = 0.0;
+
+            // Update demand tracking
+            {
+                let storage = self.storage.read();
+                storage.set_demand_met(0.0);
+                storage.set_demand_unmet(energy_output_required)
+            }
+
+            (energy_delivered_hb, energy_lost, 0.0)
+        } else {
+            // Use the enhanced energy output method with loss tracking
+
+            // First check maximum available energy
+            let (q_released_max, time_used_max, energy_charged_max, final_soc, losses_max) =
+                self.storage.read().energy_output_with_losses(
+                    OutputMode::Max,
+                    time_remaining.into(),
+                    None,
+                    &simtime,
+                )?;
+
+            // For DHW direct, no charging during same timestep
+
+            // Determine how to deliver the energy
+            let (
+                energy_delivered_hb,
+                time_running_current_service,
+                energy_charged,
+                final_soc,
+                energy_lost,
+            ) = if q_released_max > energy_output_required
+                || is_close!(q_released_max, energy_output_required, abs_tol = 1e-10)
+            {
+                let (
+                    energy_delivered_hb,
+                    time_running_current_service,
+                    energy_charged,
+                    final_soc,
+                    energy_lost,
+                ) = self.storage.read().energy_output_with_losses(
+                    OutputMode::Max,
+                    time_remaining.into(),
+                    energy_output_required.into(),
+                    &simtime,
+                )?;
+                let energy_delivered_hb = energy_delivered_hb.min(energy_output_required);
+                (
+                    energy_delivered_hb,
+                    time_running_current_service,
+                    energy_charged,
+                    final_soc,
+                    energy_lost,
+                )
+            } else {
+                // Not enough energy in storage - deliver what we can
+                let energy_delivered_hb = q_released_max;
+                time_running_current_service = time_used_max;
+                let energy_charged = energy_charged_max;
+                let energy_lost = losses_max;
+
+                // Top up with instant heater if available
+                if self.power_instant != 0.0 {
+                    energy_instant = (energy_output_required - energy_delivered_hb)
+                        .min(self.power_instant * time_remaining);
+                    let time_instant = energy_instant / self.power_instant;
+                    time_running_current_service += time_instant;
+                    time_running_current_service = time_running_current_service.min(time_remaining);
+                }
+
+                (
+                    energy_delivered_hb,
+                    time_running_current_service,
+                    energy_charged,
+                    final_soc,
+                    energy_lost,
+                )
+            };
+
+            // The losses are now accurately integrated during the service delivery
+            self.battery_losses.fetch_add(energy_lost, Ordering::SeqCst);
+
+            {
+                let storage = self.storage.read();
+
+                // Update state of charge (the ODE has already integrated everything accurately)
+                storage.set_state_of_charge(final_soc);
+
+                // Update demand tracking
+                storage.set_demand_met(energy_delivered_hb - energy_instant);
+                storage.set_demand_unmet(
+                    0.0f64.max(energy_output_required - energy_delivered_hb - energy_instant),
+                );
+            }
+
+            // Calculate fan energy
+            energy_for_fan = convert_to_kwh(self.fan_power, time_running_current_service);
+
+            // (from Python) Add energy for fan to internal gains or core or service... TBD
+
+            if update_heat_source_state {
+                self.total_time_running_current_timestep
+                    .fetch_add(time_running_current_service, Ordering::SeqCst);
+            }
+
+            (energy_delivered_hb, energy_lost, energy_charged)
+        };
+
+        if update_heat_source_state {
+            // Log the energy charged, fan energy, and total energy delivered
+            self.energy_supply_connection.demand_energy(
+                self.n_units() as f64 * (energy_charged + energy_instant + energy_for_fan),
+                simtime.index,
+            )?;
+
+            let current_hb_power = if time_running_current_service > 0. {
+                energy_delivered_hb * SECONDS_PER_HOUR as f64 / time_running_current_service
+            } else {
+                0.
+            };
+
+            // Record service results with accurate loss tracking
+            let n_units: f64 = self.n_units() as f64;
+            self.service_results.write().push(ServiceResult {
+                service_name: service_name.into(),
+                service_type,
+                service_on,
+                energy_output_required: energy_output_required * n_units,
+                temp_output,
+                temp_inlet: temp_return_feed,
+                time_running: time_running_current_service,
+                demand_unmet: self.storage.read().demand_unmet() * n_units,
+                energy_delivered_hb: energy_delivered_hb * n_units,
+                energy_delivered_backup: energy_instant * n_units,
+                energy_delivered_total: (energy_delivered_hb + energy_instant) * n_units,
+                energy_charged_during_service: energy_charged * n_units,
+                energy_for_fans: (energy_for_fan * n_units).into(),
+                dry_core_soc: self.storage.read().state_of_charge(),
+                current_hb_power: (current_hb_power * n_units).into(),
+                energy_lost: (energy_lost * n_units).into(),
+            });
+        }
+
+        Ok((energy_delivered_hb + energy_instant) * self.n_units() as f64)
     }
 
     /// Calculate maximum temperature that can be delivered based on SOC and inlet conditions.
@@ -1603,208 +1791,6 @@ impl HeatBatteryDryCoreCommonBehaviour for HeatBatteryDryCore {
 
     fn get_zone_setpoint(&self) -> f64 {
         ZONE_TEMP_INIT
-    }
-
-    fn demand_energy(
-        &self,
-        service_name: &str,
-        service_type: HeatingServiceType,
-        energy_output_required: f64,
-        temp_return_feed: f64,
-        temp_output: Option<f64>,
-        service_on: bool,
-        time_start: Option<f64>,
-        update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        let time_start = time_start.unwrap_or(0.0);
-        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
-
-        let timestep = simtime.timestep;
-        let time_remaining = self.time_available(time_start, timestep);
-
-        let energy_output_required = energy_output_required / self.n_units() as f64;
-        let mut energy_instant = 0.;
-        let mut energy_for_fan = 0.;
-        let mut time_running_current_service = 0.;
-
-        // Process energy demand from a specific service
-        if !service_on
-            || energy_output_required < 0.
-            || is_close!(energy_output_required, 0.0, abs_tol = 1e-10)
-        {
-            if update_heat_source_state {
-                self.service_results.write().push(ServiceResult {
-                    service_name: service_name.into(),
-                    service_type,
-                    service_on,
-                    energy_output_required: energy_output_required * self.n_units() as f64,
-                    temp_output,
-                    temp_inlet: temp_return_feed,
-                    time_running: 0.,
-                    demand_unmet: self.storage.read().demand_unmet() * self.n_units() as f64,
-                    energy_delivered_hb: 0.0,
-                    energy_delivered_backup: 0.0,
-                    energy_delivered_total: 0.0,
-                    energy_charged_during_service: 0.0,
-                    energy_for_fans: ResultParamValue::Empty,
-                    dry_core_soc: self.storage.read().state_of_charge(),
-                    current_hb_power: ResultParamValue::Empty,
-                    energy_lost: ResultParamValue::Empty,
-                });
-            }
-            return Ok(0.0);
-        }
-
-        let (energy_delivered_hb, energy_lost, energy_charged) = if time_remaining < 0.
-            || is_close!(time_remaining, 0.0, abs_tol = 1e-10)
-        {
-            // No time left to run this service
-            let energy_delivered_hb = 0.0;
-            let energy_lost = 0.0;
-
-            // Update demand tracking
-            {
-                let storage = self.storage.read();
-                storage.set_demand_met(0.0);
-                storage.set_demand_unmet(energy_output_required)
-            }
-
-            (energy_delivered_hb, energy_lost, 0.0)
-        } else {
-            // Use the enhanced energy output method with loss tracking
-
-            // First check maximum available energy
-            let (q_released_max, time_used_max, energy_charged_max, final_soc, losses_max) =
-                self.storage.read().energy_output_with_losses(
-                    OutputMode::Max,
-                    time_remaining.into(),
-                    None,
-                    &simtime,
-                )?;
-
-            // For DHW direct, no charging during same timestep
-
-            // Determine how to deliver the energy
-            let (
-                energy_delivered_hb,
-                time_running_current_service,
-                energy_charged,
-                final_soc,
-                energy_lost,
-            ) = if q_released_max > energy_output_required
-                || is_close!(q_released_max, energy_output_required, abs_tol = 1e-10)
-            {
-                let (
-                    energy_delivered_hb,
-                    time_running_current_service,
-                    energy_charged,
-                    final_soc,
-                    energy_lost,
-                ) = self.storage.read().energy_output_with_losses(
-                    OutputMode::Max,
-                    time_remaining.into(),
-                    energy_output_required.into(),
-                    &simtime,
-                )?;
-                let energy_delivered_hb = energy_delivered_hb.min(energy_output_required);
-                (
-                    energy_delivered_hb,
-                    time_running_current_service,
-                    energy_charged,
-                    final_soc,
-                    energy_lost,
-                )
-            } else {
-                // Not enough energy in storage - deliver what we can
-                let energy_delivered_hb = q_released_max;
-                time_running_current_service = time_used_max;
-                let energy_charged = energy_charged_max;
-                let energy_lost = losses_max;
-
-                // Top up with instant heater if available
-                if self.power_instant != 0.0 {
-                    energy_instant = (energy_output_required - energy_delivered_hb)
-                        .min(self.power_instant * time_remaining);
-                    let time_instant = energy_instant / self.power_instant;
-                    time_running_current_service += time_instant;
-                    time_running_current_service = time_running_current_service.min(time_remaining);
-                }
-
-                (
-                    energy_delivered_hb,
-                    time_running_current_service,
-                    energy_charged,
-                    final_soc,
-                    energy_lost,
-                )
-            };
-
-            // The losses are now accurately integrated during the service delivery
-            self.battery_losses.fetch_add(energy_lost, Ordering::SeqCst);
-
-            {
-                let storage = self.storage.read();
-
-                // Update state of charge (the ODE has already integrated everything accurately)
-                storage.set_state_of_charge(final_soc);
-
-                // Update demand tracking
-                storage.set_demand_met(energy_delivered_hb - energy_instant);
-                storage.set_demand_unmet(
-                    0.0f64.max(energy_output_required - energy_delivered_hb - energy_instant),
-                );
-            }
-
-            // Calculate fan energy
-            energy_for_fan = convert_to_kwh(self.fan_power, time_running_current_service);
-
-            // (from Python) Add energy for fan to internal gains or core or service... TBD
-
-            if update_heat_source_state {
-                self.total_time_running_current_timestep
-                    .fetch_add(time_running_current_service, Ordering::SeqCst);
-            }
-
-            (energy_delivered_hb, energy_lost, energy_charged)
-        };
-
-        if update_heat_source_state {
-            // Log the energy charged, fan energy, and total energy delivered
-            self.energy_supply_connection.demand_energy(
-                self.n_units() as f64 * (energy_charged + energy_instant + energy_for_fan),
-                simtime.index,
-            )?;
-
-            let current_hb_power = if time_running_current_service > 0. {
-                energy_delivered_hb * SECONDS_PER_HOUR as f64 / time_running_current_service
-            } else {
-                0.
-            };
-
-            // Record service results with accurate loss tracking
-            let n_units: f64 = self.n_units() as f64;
-            self.service_results.write().push(ServiceResult {
-                service_name: service_name.into(),
-                service_type,
-                service_on,
-                energy_output_required: energy_output_required * n_units,
-                temp_output,
-                temp_inlet: temp_return_feed,
-                time_running: time_running_current_service,
-                demand_unmet: self.storage.read().demand_unmet() * n_units,
-                energy_delivered_hb: energy_delivered_hb * n_units,
-                energy_delivered_backup: energy_instant * n_units,
-                energy_delivered_total: (energy_delivered_hb + energy_instant) * n_units,
-                energy_charged_during_service: energy_charged * n_units,
-                energy_for_fans: (energy_for_fan * n_units).into(),
-                dry_core_soc: self.storage.read().state_of_charge(),
-                current_hb_power: (current_hb_power * n_units).into(),
-                energy_lost: (energy_lost * n_units).into(),
-            });
-        }
-
-        Ok((energy_delivered_hb + energy_instant) * self.n_units() as f64)
     }
 
     /// Calculate maximum energy output for current SOC and temperature requirements.
