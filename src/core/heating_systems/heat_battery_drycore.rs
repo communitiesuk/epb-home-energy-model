@@ -1910,7 +1910,7 @@ const AUX_PARAMETERS: [(&str, Option<&str>, bool); 4] = [
 ];
 
 #[derive(Debug)]
-struct DetailedResult {
+pub(crate) struct DetailedResult {
     timestep: usize,
     services: Vec<ServiceResult>,
     soc: f64,
