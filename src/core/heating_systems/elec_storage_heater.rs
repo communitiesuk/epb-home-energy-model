@@ -503,8 +503,9 @@ impl HeatBatteryDryCoreCommonBehaviour for ElecStorageHeater {
         Some((self.zone_internal_air_func)())
     }
 
+    /// Get zone setpoint for HHRSH calculations.
     fn get_zone_setpoint(&self) -> f64 {
-        todo!()
+        self.zone_setpoint_init
     }
 
     fn energy_output_max(
@@ -2074,5 +2075,11 @@ mod tests {
     fn test_get_temp_for_charge_control(elec_storage_heater: Arc<ElecStorageHeater>) {
         let temp = elec_storage_heater.get_temp_for_charge_control().unwrap();
         assert_eq!(temp, 20.0);
+    }
+
+    #[rstest]
+    fn test_get_zone_setpoint(elec_storage_heater: Arc<ElecStorageHeater>) {
+        let setpoint = elec_storage_heater.get_zone_setpoint();
+        assert_eq!(setpoint, 21.);
     }
 }
