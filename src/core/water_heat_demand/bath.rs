@@ -1,7 +1,5 @@
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::core::water_heat_demand::misc::{
-    volume_hot_water_required, CallableGetHotWaterTemperature,
-};
+use crate::core::water_heat_demand::misc::volume_hot_water_required;
 use crate::input::WaterHeatingEvent;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
@@ -73,6 +71,7 @@ impl Bath {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::water_heat_demand::misc::CallableGetHotWaterTemperature;
     use crate::simulation_time::SimulationTime;
     use pretty_assertions::assert_eq;
     use rstest::*;

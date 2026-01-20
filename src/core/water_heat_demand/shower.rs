@@ -4,7 +4,6 @@ use crate::core::material_properties::WATER;
 use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::volume_hot_water_required;
-use crate::core::water_heat_demand::misc::CallableGetHotWaterTemperature;
 use crate::input::WaterHeatingEvent;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
@@ -243,6 +242,7 @@ mod tests {
 
     mod mixer_shower {
         use super::*;
+        use crate::core::water_heat_demand::misc::CallableGetHotWaterTemperature;
         use crate::simulation_time::SimulationTime;
         use approx::assert_relative_eq;
         use itertools::Itertools;
