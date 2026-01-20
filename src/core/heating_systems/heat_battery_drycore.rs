@@ -1835,7 +1835,7 @@ impl HeatBatteryDryCoreCommonBehaviour for HeatBatteryDryCore {
         )?;
 
         let energy_instant = if self.power_instant != 0.0 {
-            self.power_instant + time_remaining
+            self.power_instant * time_remaining
         } else {
             0.0
         };
@@ -3253,4 +3253,77 @@ mod tests {
     }
 
     // skipped test_heat_battery_dry_core_demand_energy_not_implemented as this is enforced statically by the Rust compiler
+
+    #[rstest]
+    fn test_heat_battery_dry_core_battery_losses(
+        heat_battery_input: HeatBattery,
+        charge_control: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+    ) {
+        let heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control,
+            energy_supply,
+            energy_supply_connection,
+            Some(1),
+            1.0,
+            Some(false),
+        )
+        .unwrap();
+
+        // Battery losses
+        assert_eq!(heat_battery.get_battery_losses(), 0.0);
+    }
+
+    // skipping test_heat_battery_dry_core_water_direct_complex_events as doesn't really make meaningful assertions
+    // and needed embellishment of mocking code is not worth it for this
+
+    // NB. in the Python this test is called test_heat_battery_edge_cases_with_loses (sic)
+    #[rstest]
+    #[ignore = "won't quite pass until ode solving with stop function is implemented successfully"]
+    fn test_heat_battery_edge_cases_with_losses(
+        heat_battery_input: HeatBattery,
+        charge_control_target_0: Arc<Control>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_connection: Arc<EnergySupplyConnection>,
+        simulation_time: SimulationTime,
+    ) {
+        let simtime = simulation_time.iter().current_iteration();
+
+        let heat_battery = HeatBatteryDryCore::new(
+            heat_battery_input,
+            charge_control_target_0,
+            energy_supply,
+            energy_supply_connection,
+            Some(1),
+            1.0,
+            Some(false),
+        )
+        .unwrap();
+
+        // assertions for invalid modes do not need testing in the Rust as these are inexpressible using the OutputMode enums
+
+        assert_eq!(
+            heat_battery.energy_output_max(35., None, &simtime).unwrap(),
+            2.0
+        );
+
+        assert_eq!(
+            heat_battery
+                .energy_output_with_losses(OutputMode::Max, Some(0.0), None, &simtime)
+                .unwrap(),
+            (0.0, 0.0, 0.0, 0.0, 0.0)
+        );
+
+        assert_eq!(
+            heat_battery
+                .energy_output_with_losses(OutputMode::Max, None, None, &simtime)
+                .unwrap(),
+            (0.0, 0.0, 0.0, 0.0, 0.0)
+        );
+    }
+
+    // skipping test_demand_hot_water_with_none_temperature as just asserts types and call counts,
+    // and mocking behaviour to support it is not worth building out
 }
