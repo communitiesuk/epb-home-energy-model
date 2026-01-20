@@ -94,7 +94,7 @@ impl ControlBehaviour for Control {
     }
 
     fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        per_control!(self, c => {c.is_on(&simulation_time_iteration)})
+        per_control!(self, c => {c.is_on(simulation_time_iteration)})
     }
 }
 
@@ -3042,7 +3042,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::And,
-                    &mut vec![false, false].iter().map(|x| *x),
+                    &mut [false, false].iter().copied(),
                 ),
                 false
             );
@@ -3050,7 +3050,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::And,
-                    &mut vec![true, false].iter().map(|x| *x),
+                    &mut [true, false].iter().copied(),
                 ),
                 false
             );
@@ -3058,7 +3058,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::And,
-                    &mut vec![false, true].iter().map(|x| *x),
+                    &mut [false, true].iter().copied(),
                 ),
                 false
             );
@@ -3066,7 +3066,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::And,
-                    &mut vec![true, true].iter().map(|x| *x),
+                    &mut [true, true].iter().copied(),
                 ),
                 true
             );
@@ -3074,7 +3074,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Or,
-                    &mut vec![false, false].iter().map(|x| *x),
+                    &mut [false, false].iter().copied(),
                 ),
                 false
             );
@@ -3082,7 +3082,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Or,
-                    &mut vec![false, true].iter().map(|x| *x),
+                    &mut [false, true].iter().copied(),
                 ),
                 true
             );
@@ -3090,7 +3090,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Or,
-                    &mut vec![true, false].iter().map(|x| *x),
+                    &mut [true, false].iter().copied(),
                 ),
                 true
             );
@@ -3098,7 +3098,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Or,
-                    &mut vec![true, true].iter().map(|x| *x),
+                    &mut [true, true].iter().copied(),
                 ),
                 true
             );
@@ -3106,7 +3106,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Xor,
-                    &mut vec![false, false].iter().map(|x| *x),
+                    &mut [false, false].iter().copied(),
                 ),
                 false
             );
@@ -3114,7 +3114,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Xor,
-                    &mut vec![false, true].iter().map(|x| *x),
+                    &mut [false, true].iter().copied(),
                 ),
                 true
             );
@@ -3122,7 +3122,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Xor,
-                    &mut vec![true, false].iter().map(|x| *x),
+                    &mut [true, false].iter().copied(),
                 ),
                 true
             );
@@ -3130,7 +3130,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Xor,
-                    &mut vec![true, true].iter().map(|x| *x),
+                    &mut [true, true].iter().copied(),
                 ),
                 false
             );
@@ -3138,7 +3138,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Not,
-                    &mut vec![true].iter().map(|x| *x),
+                    &mut [true].iter().copied(),
                 ),
                 false
             );
@@ -3146,7 +3146,7 @@ mod tests {
             assert_eq!(
                 combination_control_target_charge.evaluate_boolean_operation_is_on(
                     ControlCombinationOperation::Not,
-                    &mut vec![false].iter().map(|x| *x),
+                    &mut [false].iter().copied(),
                 ),
                 true
             );
@@ -3160,7 +3160,7 @@ mod tests {
         ) {
             combination_control_target_charge.evaluate_boolean_operation_is_on(
                 ControlCombinationOperation::Not,
-                &mut vec![true, true].iter().map(|x| *x),
+                &mut [true, true].iter().copied(),
             );
         }
 
@@ -3171,7 +3171,7 @@ mod tests {
         ) {
             combination_control_target_charge.evaluate_boolean_operation_is_on(
                 ControlCombinationOperation::Max,
-                &mut vec![true].iter().map(|x| *x),
+                &mut [true].iter().copied(),
             );
         }
 
@@ -3182,7 +3182,7 @@ mod tests {
         ) {
             combination_control_target_charge.evaluate_boolean_operation_is_on(
                 ControlCombinationOperation::Min,
-                &mut vec![true].iter().map(|x| *x),
+                &mut [true].iter().copied(),
             );
         }
 

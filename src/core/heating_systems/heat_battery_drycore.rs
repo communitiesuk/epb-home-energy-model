@@ -2242,7 +2242,7 @@ mod tests {
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
             "dhw_service",
-            mock_cold_feed.clone(),
+            mock_cold_feed,
             control_min,
             control_max.clone(),
         )
@@ -2390,7 +2390,6 @@ mod tests {
         mock_control_dhw: Arc<Control>,
         default_control_max: Arc<Control>,
         mock_control_space: Arc<Control>,
-        simulation_time: SimulationTime,
     ) {
         let mock_cold_feed = mock_cold_feed(None); // we can just set up a normal cold water source here - it isn't used
 
@@ -2424,7 +2423,7 @@ mod tests {
             heat_battery.clone(),
             "dhw_complex",
             65.,
-            mock_cold_feed.clone(),
+            mock_cold_feed,
         )
         .unwrap();
 
@@ -2577,7 +2576,6 @@ mod tests {
     #[rstest]
     fn test_dhw_service_get_temp_hot_water(
         heat_battery: Arc<HeatBatteryDryCore>,
-        heat_battery_input: HeatBattery,
         simulation_time: SimulationTime,
         original_setpoint_temp_water: f64,
     ) {
@@ -3125,7 +3123,6 @@ mod tests {
         assert_eq!(temperature_volume.len(), 1);
 
         // Test with multiple temperature/volume pairs (though only exercising the first simulation timestep)
-        let mock_cold_feed_8 = mock_cold_feed(Some(8.0));
         let temperature_volume = service_regular
             .get_temp_hot_water(10.0, None, simtime)
             .unwrap();
@@ -3175,9 +3172,6 @@ mod tests {
         // Call timestep_end to save results
         heat_battery.timestep_end(simtime).unwrap();
 
-        // Use the correct way to get number of timesteps
-        let num_timesteps = simulation_time.total_steps();
-
         // skipping setting up different lengths of inputs for output_detailed_results as these are ignored/unused
         let (results1, _) = heat_battery.output_detailed_results();
 
@@ -3194,7 +3188,7 @@ mod tests {
     ) {
         let simtime = simulation_time.iter().current_iteration();
 
-        let mut heat_battery = HeatBatteryDryCore::new(
+        let heat_battery = HeatBatteryDryCore::new(
             heat_battery_input,
             charge_control,
             energy_supply,
@@ -3366,7 +3360,7 @@ mod tests {
             fn get_temp_cold_water(
                 &self,
                 volume_needed: f64,
-                simtime: SimulationTimeIteration,
+                _simtime: SimulationTimeIteration,
             ) -> anyhow::Result<Vec<(f64, f64)>> {
                 Ok(varying_temp_by_volume(volume_needed))
             }

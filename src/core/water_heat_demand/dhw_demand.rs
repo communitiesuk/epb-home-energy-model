@@ -230,7 +230,7 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                         .get("_unmet_demand")
                         .expect("_unmmet_demand energy supply expected");
                     let energy_suppy_conn_unmet_demand =
-                        EnergySupply::connection(energy_supply.clone(), &name)
+                        EnergySupply::connection(energy_supply.clone(), name)
                             .expect("_unmmet_demand energy supply connection expected");
                     (name.clone(), energy_suppy_conn_unmet_demand)
                 })
@@ -528,7 +528,7 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                                 self.temp_hot_water(
                                     hot_water_source.clone(),
                                     volume_required_already,
-                                    volume_required.clone(),
+                                    volume_required,
                                 )
                             };
 
@@ -548,14 +548,12 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
 
                 let cold_water_source = tapping_point.get_cold_water_source();
 
-                let cold_water_temperature = if hw_demand_i.is_some() {
-                    let hw_demand_i = hw_demand_i.unwrap();
-
+                let cold_water_temperature = if let Some(hw_demand_i) = hw_demand_i {
                     *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() += hw_demand_i;
                     let list_temperature_volume = cold_water_source
                         .get_temp_cold_water(hw_demand_target_i - hw_demand_i, simtime)?;
                     let sum_t_by_v: f64 = list_temperature_volume.iter().map(|(t, v)| t * v).sum();
-                    let sum_v: f64 = list_temperature_volume.iter().map(|(t, v)| v).sum();
+                    let sum_v: f64 = list_temperature_volume.iter().map(|(_, v)| v).sum();
                     sum_t_by_v / sum_v
                 } else {
                     let list_temperature_volume =
@@ -693,12 +691,7 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
         let mut primary_pw_losses: IndexMap<String, f64> = Default::default();
         let mut storage_losses: IndexMap<String, f64> = Default::default();
 
-        let mut all_keys: Vec<String> = self
-            .hot_water_sources
-            .keys()
-            .into_iter()
-            .map(|x| x.clone())
-            .collect();
+        let mut all_keys: Vec<String> = self.hot_water_sources.keys().cloned().collect();
         all_keys.push(ELECTRIC_SHOWERS_HWS_NAME.into());
 
         for hws_name in all_keys {
@@ -733,7 +726,7 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
                 .unwrap()
                 .iter()
                 .filter(|event| event.volume_hot.abs() > 1e-10)
-                .map(|x| *x)
+                .copied()
                 .collect();
 
             // TODO update demand_hot_water to accept usage_events
@@ -765,8 +758,8 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
             }
 
             let internal_gains = hws.internal_gains();
-            if internal_gains.is_some() {
-                *gains_internal_dhw.get_mut(hws_name).unwrap() += internal_gains.unwrap();
+            if let Some(internal_gains) = internal_gains {
+                *gains_internal_dhw.get_mut(hws_name).unwrap() += internal_gains;
             }
 
             let (losses, storage) = hws.get_losses_from_primary_pipework_and_storage();
@@ -934,7 +927,7 @@ fn shower_from_input(
                     anyhow!("The energy supply with name '{energy_supply}' is not known.")
                 })?
                 .clone();
-            let energy_supply_conn = EnergySupply::connection(energy_supply, name).unwrap();
+            let energy_supply_conn = EnergySupply::connection(energy_supply, name)?;
 
             Shower::InstantElectricShower(InstantElectricShower::new(
                 *rated_power,
