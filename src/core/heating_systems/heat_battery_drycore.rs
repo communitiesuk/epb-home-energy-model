@@ -2,7 +2,7 @@
 //! This includes the common functionality for electrical storage and discharge
 //! that is shared between Electric Storage Heaters and Dry Core Heat Batteries.
 
-use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
+use crate::core::common::WaterSupplyBehaviour;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
@@ -838,20 +838,20 @@ trait HeatBatteryDryCoreServiceBehaviour {
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool;
 }
 
-pub(crate) struct HeatBatteryDryCoreServiceWaterRegular {
+pub(crate) struct HeatBatteryDryCoreServiceWaterRegular<T: WaterSupplyBehaviour> {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
     service_name: String,
-    cold_feed: WaterSupply,
+    cold_feed: T,
     control_min: Arc<Control>,
     control_max: Arc<Control>,
 }
 
-impl HeatBatteryDryCoreServiceWaterRegular {
+impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
     pub(crate) fn new(
         heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
         service_name: String,
-        cold_feed: WaterSupply,
+        cold_feed: T,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
     ) -> Self {
@@ -918,20 +918,20 @@ impl HeatBatteryDryCoreServiceWaterRegular {
 /// A struct to represent a direct water heating service provided by a dry core heat battery.
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
-pub(crate) struct HeatBatteryDryCoreServiceWaterDirect {
+pub(crate) struct HeatBatteryDryCoreServiceWaterDirect<T: WaterSupplyBehaviour> {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
     service_name: String,
     setpoint_temp: f64,
-    cold_feed: WaterSupply,
+    cold_feed: T,
 }
 
-impl HeatBatteryDryCoreServiceWaterDirect {
+impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
     fn new(
         heat_battery: Arc<dyn HeatBatteryDryCoreCommonBehaviour>,
         service_name: &str,
         setpoint_temp: f64,
-        cold_feed: WaterSupply,
+        cold_feed: T,
     ) -> Self {
         Self {
             core_service: HeatBatteryDryCoreService::new(None),
@@ -942,7 +942,7 @@ impl HeatBatteryDryCoreServiceWaterDirect {
         }
     }
 
-    pub(crate) fn get_cold_water_source(&self) -> &WaterSupply {
+    pub(crate) fn get_cold_water_source(&self) -> &T {
         &self.cold_feed
     }
 
@@ -1252,13 +1252,13 @@ impl HeatBatteryDryCore {
     }
 
     /// Return a HeatBatteryDryCoreServiceWaterRegular object for DHW.
-    pub(crate) fn create_service_hot_water_regular(
+    pub(crate) fn create_service_hot_water_regular<T: WaterSupplyBehaviour>(
         battery: Arc<Self>,
         service_name: &str,
-        cold_feed: WaterSupply,
+        cold_feed: T,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
-    ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterRegular> {
+    ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterRegular<T>> {
         battery.create_service_connection(service_name)?;
 
         Ok(HeatBatteryDryCoreServiceWaterRegular::new(
@@ -1271,12 +1271,12 @@ impl HeatBatteryDryCore {
     }
 
     /// Return a HeatBatteryDryCoreServiceWaterDirect object and create an EnergySupplyConnection for it
-    pub(crate) fn create_service_hot_water_direct(
+    pub(crate) fn create_service_hot_water_direct<T: WaterSupplyBehaviour>(
         battery: Arc<Self>,
         service_name: &str,
         setpoint_temp: f64,
-        cold_feed: WaterSupply,
-    ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterDirect> {
+        cold_feed: T,
+    ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterDirect<T>> {
         battery.create_service_connection(service_name)?;
 
         Ok(HeatBatteryDryCoreServiceWaterDirect::new(
@@ -2184,8 +2184,8 @@ mod tests {
         .unwrap()
     }
 
-    fn mock_cold_feed(temperature: Option<f64>) -> WaterSupply {
-        WaterSupply::Mock(MockWaterSupply::new(temperature.unwrap_or(10.)))
+    fn mock_cold_feed(temperature: Option<f64>) -> MockWaterSupply {
+        MockWaterSupply::new(temperature.unwrap_or(10.))
     }
 
     #[fixture]
@@ -2265,7 +2265,7 @@ mod tests {
         let simtime = simulation_time.iter().current_iteration();
 
         assert_eq!(service.service_name, "dhw_service");
-        let (setpntmin, setpntmax) = service.setpnt(simtime);
+        let (setpntmin, setpntmax): (Option<f64>, Option<f64>) = service.setpnt(simtime);
         assert_eq!(setpntmin.unwrap(), 45.);
         assert_eq!(setpntmax.unwrap(), 65.);
         // Demand energy
