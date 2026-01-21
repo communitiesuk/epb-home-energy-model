@@ -507,10 +507,6 @@ impl HeatBatteryDryCoreCommonBehaviour for ElecStorageHeater {
     fn get_zone_setpoint(&self) -> f64 {
         self.zone_setpoint_init
     }
-
-    fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64, setpoint_temp: f64) -> f64 {
-        todo!()
-    }
 }
 
 #[cfg(test)]

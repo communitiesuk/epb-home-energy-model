@@ -791,8 +791,6 @@ pub(crate) trait HeatBatteryDryCoreCommonBehaviour: Send + Sync {
 
     /// Get zone setpoint for HHRSH calculations.
     fn get_zone_setpoint(&self) -> f64;
-
-    fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64, setpoint_temp: f64) -> f64;
 }
 
 pub(crate) struct HeatBatteryDryCoreService {
@@ -1609,6 +1607,10 @@ impl HeatBatteryDryCore {
         Ok((q_released_max + energy_instant) * self.n_units() as f64)
     }
 
+    fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64, setpoint_temp: f64) -> f64 {
+        self.calculate_max_deliverable_temp(inlet_temp, volume, setpoint_temp)
+    }
+
     /// Calculations to be done at the end of each timestep.
     pub(crate) fn timestep_end(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
         let timestep = simtime.timestep;
@@ -1821,10 +1823,6 @@ impl HeatBatteryDryCoreCommonBehaviour for HeatBatteryDryCore {
 
     fn get_zone_setpoint(&self) -> f64 {
         ZONE_TEMP_INIT
-    }
-
-    fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64, setpoint_temp: f64) -> f64 {
-        self.calculate_max_deliverable_temp(inlet_temp, volume, setpoint_temp)
     }
 }
 
