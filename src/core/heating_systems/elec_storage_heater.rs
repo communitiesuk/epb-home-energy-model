@@ -703,7 +703,6 @@ mod tests {
         )
     }
 
-    #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_initialisation(
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -874,7 +873,6 @@ mod tests {
         assert_eq!(elec_storage_heater.frac_convective(), 0.7);
     }
 
-    #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_energy_output_min_single(
         simulation_time_iterator: SimulationTimeIterator,
@@ -987,7 +985,6 @@ mod tests {
         }
     }
 
-    #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_energy_output_max_with_zero_event_single(
         simulation_time: SimulationTime,
@@ -1120,7 +1117,6 @@ mod tests {
         }
     }
 
-    #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_electric_charge_automatic(
         simulation_time_iterator: SimulationTimeIterator,
@@ -1160,7 +1156,6 @@ mod tests {
         }
     }
 
-    #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_electric_charge_manual(
         external_conditions: Arc<ExternalConditions>,
@@ -1208,7 +1203,6 @@ mod tests {
         }
     }
 
-    #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_electric_charge_celect(
         external_conditions: Arc<ExternalConditions>,
@@ -1256,7 +1250,6 @@ mod tests {
         }
     }
 
-    #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_electric_charge_hhrsh(
         external_conditions: Arc<ExternalConditions>,
@@ -1304,7 +1297,6 @@ mod tests {
         }
     }
 
-    #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_electric_charge_hhrsh_negative_heat_retention_ratio(
         external_conditions: Arc<ExternalConditions>,
@@ -1417,7 +1409,6 @@ mod tests {
         );
     }
 
-    #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
@@ -1495,7 +1486,6 @@ mod tests {
         }
     }
 
-    #[ignore = "temporary, TODO do not skip this test"]
     #[rstest]
     fn test_demand_energy_detailed_results(
         simulation_time: SimulationTime,
