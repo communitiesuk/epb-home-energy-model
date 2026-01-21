@@ -46,10 +46,6 @@ pub(crate) struct ElecStorageHeater {
     zone_setpoint_init: f64,
     #[derivative(Debug = "ignore")]
     zone_internal_air_func: Arc<dyn Fn() -> f64 + Send + Sync>,
-    soc_max_array: Vec<f64>,   // duplicate?
-    power_max_array: Vec<f64>, // duplicate?
-    soc_min_array: Vec<f64>,   // duplicate?
-    power_min_array: Vec<f64>, // duplicate?
     current_energy_profile: RwLock<CurrentEnergyProfile>,
     esh_detailed_results: Option<Arc<RwLock<Vec<StorageHeaterDetailedResult>>>>,
 }
@@ -150,69 +146,6 @@ impl ElecStorageHeater {
 
         let temp_air = zone_internal_air_func();
 
-        // Convert ESH_max_output to NumPy arrays without sorting
-        let soc_max_array = dry_core_max_output.iter().map(|f| f[0]).collect_vec();
-        let power_max_array = dry_core_max_output.iter().map(|f| f[1]).collect_vec();
-
-        // Convert ESH_min_output to NumPy arrays without sorting
-        let soc_min_array = dry_core_min_output.iter().map(|f| f[0]).collect_vec();
-        let power_min_array = dry_core_min_output.iter().map(|f| f[1]).collect_vec();
-
-        // Validate that both SOC arrays are in strictly increasing order
-        if !soc_max_array
-            .iter()
-            .zip(soc_max_array.iter().skip(1))
-            .all(|(a, b)| a <= b)
-        {
-            bail!("esh_max_output SOC values must be in increasing order (from 0.0 to 1.0).");
-        }
-
-        if !soc_min_array
-            .iter()
-            .zip(soc_min_array.iter().skip(1))
-            .all(|(a, b)| a <= b)
-        {
-            bail!("esh_min_output SOC values must be in increasing order (from 0.0 to 1.0).");
-        }
-
-        // Validate that both SOC arrays start at 0.0 and end at 1.0
-        if !is_close!(*soc_max_array.first().unwrap(), 0.) {
-            bail!("The first SOC value in esh_max_output must be 0.0 (fully discharged).");
-        }
-
-        if !is_close!(*soc_max_array.last().unwrap(), 1.) {
-            bail!("The last SOC value in esh_max_output must be 1.0 (fully charged).");
-        }
-
-        if !is_close!(*soc_min_array.first().unwrap(), 0.) {
-            bail!("The first SOC value in esh_min_output must be 0.0 (fully discharged).");
-        }
-
-        if !is_close!(*soc_min_array.last().unwrap(), 1.) {
-            bail!("The last SOC value in esh_min_output must be 1.0 (fully charged).");
-        }
-
-        // Validate that for any SOC, power_max >= power_min
-        // Sample a fine grid of SOCs and ensure power_max >= power_min
-        let fine_soc: Vec<f64> = linspace(0., 1., 100);
-
-        let power_max_fine: Vec<f64> = fine_soc
-            .iter()
-            .map(|s| np_interp(*s, &soc_max_array, &power_max_array))
-            .collect();
-
-        // TODO in Python a fill_value is used to make this return 0 when out of bounds
-        let power_min_fine: Vec<f64> = fine_soc
-            .iter()
-            .map(|s| np_interp(*s, &soc_min_array, &power_min_array))
-            .collect();
-
-        for i in 0..fine_soc.len() {
-            if power_max_fine[i] < power_min_fine[i] {
-                bail!("At all SOC levels, ESH_max_output must be >= ESH_min_output.")
-            }
-        }
-
         let storage = Arc::new(RwLock::new(HeatStorageDryCore::new(
             pwr_in,
             storage_capacity,
@@ -235,10 +168,6 @@ impl ElecStorageHeater {
             temp_air,
             zone_setpoint_init,
             zone_internal_air_func,
-            soc_max_array,
-            power_max_array,
-            soc_min_array,
-            power_min_array,
             current_energy_profile: Default::default(),
             esh_detailed_results: output_detailed_results.then(|| {
                 Arc::new(RwLock::new(Vec::with_capacity(
