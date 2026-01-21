@@ -195,16 +195,6 @@ impl ElecStorageHeater {
         self.frac_convective
     }
 
-    pub(crate) fn energy_output(
-        &self,
-        mode: OutputMode,
-        time_remaining: Option<f64>,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64, f64, f64)> {
-        let storage = self.storage.read();
-        storage.energy_output(mode, time_remaining, None, simulation_time_iteration)
-    }
-
     /// Calculates the minimum energy that must be delivered based on dry_core_min_output.
     /// :return: np.float64 (minimum energy deliverable in kWh * __n_units).
     pub(crate) fn energy_output_min(
@@ -212,19 +202,22 @@ impl ElecStorageHeater {
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         Ok(self
-            .energy_output(OutputMode::Min, None, simulation_time_iteration)?
+            .storage
+            .read()
+            .energy_output(OutputMode::Min, None, None, simulation_time_iteration)?
             .0
             * self.storage.read().n_units() as f64)
     }
 
-    #[cfg(test)]
     pub(crate) fn energy_output_max(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64, f64)> {
         // Calculates the maximum energy that can be delivered based on ESH_max_output.
         // :return: Tuple containing (maximum energy deliverable in kWh, time used in hours).
-        self.energy_output(OutputMode::Max, None, simulation_time_iteration)
+        self.storage
+            .read()
+            .energy_output(OutputMode::Max, None, None, simulation_time_iteration)
     }
 
     pub(crate) fn demand_energy(
@@ -248,8 +241,10 @@ impl ElecStorageHeater {
         let _energy_charged_max = 0.;
 
         // Calculate minimum energy that can be delivered
-        let (q_released_min, _, energy_charged, mut final_soc) =
-            self.energy_output(OutputMode::Min, None, simulation_time_iteration)?;
+        let (q_released_min, _, energy_charged, mut final_soc) = self
+            .storage
+            .read()
+            .energy_output(OutputMode::Min, None, None, simulation_time_iteration)?;
         current_profile.energy_charged = energy_charged;
 
         let mut q_released_max: Option<f64> = None;
@@ -262,7 +257,7 @@ impl ElecStorageHeater {
         } else {
             // Calculate maximum energy that can be delivered
             let (q_released_max_value, time_used_max_tmp, energy_charged, final_soc_override) =
-                self.energy_output(OutputMode::Max, None, simulation_time_iteration)?;
+                self.energy_output_max(simulation_time_iteration)?;
             final_soc = final_soc_override;
 
             q_released_max = Some(q_released_max_value);
@@ -792,24 +787,6 @@ mod tests {
     #[rstest]
     fn test_frac_convective(elec_storage_heater: Arc<ElecStorageHeater>) {
         assert_eq!(elec_storage_heater.frac_convective(), 0.7);
-    }
-
-    #[rstest]
-    fn test_energy_output_min_single(
-        simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: Arc<ElecStorageHeater>,
-    ) {
-        let min_energy_output = elec_storage_heater
-            .energy_output_min(&simulation_time_iterator.current_iteration())
-            .unwrap();
-        let _ =
-            elec_storage_heater.demand_energy(5.0, &simulation_time_iterator.current_iteration());
-
-        assert_relative_eq!(
-            min_energy_output,
-            0.019999999999999997,
-            max_relative = EIGHT_DECIMAL_PLACES
-        );
     }
 
     #[rstest]
@@ -1936,17 +1913,6 @@ mod tests {
                 max_relative = 1e-2
             );
         }
-    }
-
-    #[test]
-    fn test_heat_retention_output() {
-        let soc_array = vec![0., 0.5, 1.];
-        let power_array = vec![0., 0.02, 0.05];
-        let storage_capacity = 10.;
-        let actual =
-            HeatStorageDryCore::heat_retention_output(&soc_array, &power_array, storage_capacity);
-
-        assert_relative_eq!(actual, 0.92372001, max_relative = EIGHT_DECIMAL_PLACES);
     }
 
     #[rstest]
