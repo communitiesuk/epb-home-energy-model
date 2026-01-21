@@ -36,7 +36,6 @@ pub(super) fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
 pub(crate) struct ElecStorageHeater {
     storage: Arc<RwLock<HeatStorageDryCore>>,
     pwr_instant: f64,
-    storage_capacity: f64,
     air_flow_type: ElectricStorageHeaterAirFlowType,
     frac_convective: f64,
     n_units: u32,
@@ -56,7 +55,6 @@ pub(crate) struct ElecStorageHeater {
     power_max_array: Vec<f64>,
     soc_min_array: Vec<f64>,
     power_min_array: Vec<f64>,
-    heat_retention_ratio: f64,
     current_energy_profile: RwLock<CurrentEnergyProfile>,
     esh_detailed_results: Option<Arc<RwLock<Vec<StorageHeaterDetailedResult>>>>,
 }
@@ -220,12 +218,6 @@ impl ElecStorageHeater {
             }
         }
 
-        let heat_retention_ratio = HeatStorageDryCore::heat_retention_output(
-            &soc_min_array,
-            &power_min_array,
-            storage_capacity,
-        );
-
         let storage = Arc::new(RwLock::new(HeatStorageDryCore::new(
             pwr_in,
             storage_capacity,
@@ -239,7 +231,6 @@ impl ElecStorageHeater {
         let heater = Self {
             storage: storage.clone(),
             pwr_instant: rated_power_instant,
-            storage_capacity,
             air_flow_type,
             frac_convective,
             n_units,
@@ -258,7 +249,6 @@ impl ElecStorageHeater {
             power_max_array,
             soc_min_array,
             power_min_array,
-            heat_retention_ratio,
             current_energy_profile: Default::default(),
             esh_detailed_results: output_detailed_results.then(|| {
                 Arc::new(RwLock::new(Vec::with_capacity(
@@ -404,7 +394,7 @@ impl ElecStorageHeater {
 
         let new_state_of_charge = self.state_of_charge.load(Ordering::SeqCst)
             + (current_profile.energy_charged - current_profile.energy_delivered)
-                / self.storage_capacity;
+                / self.storage.read().storage_capacity();
         let new_state_of_charge = heat_battery_drycore::clip(new_state_of_charge, 0., 1.);
         self.state_of_charge
             .store(new_state_of_charge, Ordering::SeqCst);
@@ -489,11 +479,6 @@ impl ElecStorageHeater {
     #[cfg(test)]
     fn energy_delivered(&self) -> f64 {
         self.current_energy_profile.read().energy_delivered
-    }
-
-    #[cfg(test)]
-    fn set_heat_retention_ratio(&mut self, value: f64) {
-        self.heat_retention_ratio = value;
     }
 }
 

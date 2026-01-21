@@ -555,6 +555,10 @@ impl HeatStorageDryCore {
     fn get_zone_setpoint(&self) -> f64 {
         self.owner().get_zone_setpoint()
     }
+
+    pub(super) fn storage_capacity(&self) -> f64 {
+        self.storage_capacity
+    }
 }
 
 // replicate numpy's clip function
