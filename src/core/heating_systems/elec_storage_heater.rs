@@ -301,9 +301,9 @@ impl ElecStorageHeater {
                 self.storage
                     .write()
                     .set_demand_met(current_profile.energy_delivered);
-                self.storage
-                    .write()
-                    .set_demand_unmet(0.0_f64.max(energy_demand - current_profile.energy_delivered));
+                self.storage.write().set_demand_unmet(
+                    0.0_f64.max(energy_demand - current_profile.energy_delivered),
+                );
             }
         }
 

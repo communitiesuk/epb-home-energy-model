@@ -3897,7 +3897,11 @@ mod tests {
             let actual_temperatues_1 = storage_tank1.temp_n.read().clone();
             for i in 0..actual_temperatues_1.len() {
                 // TODO decrease max_relative here
-                assert_relative_eq!(actual_temperatues_1[i], expected_temperatures_1[t_idx][i], max_relative = 1e-2);
+                assert_relative_eq!(
+                    actual_temperatues_1[i],
+                    expected_temperatures_1[t_idx][i],
+                    max_relative = 1e-2
+                );
             }
 
             assert_relative_eq!(
@@ -3922,21 +3926,23 @@ mod tests {
             // Convert usage events based on HW temp of 55 to equivalent 60:
             let mut usage_events2_for_iteration = usage_events_for_iteration.clone();
             if usage_events2_for_iteration.is_some() {
-                usage_events2_for_iteration = Some(usage_events2_for_iteration
-                    .unwrap()
-                    .iter()
-                    .map(|event| {
-                        let volume_hot = event.volume_warm
-                            * (event.temperature_warm - cold_water_temps[t_idx])
-                            / (temp_hot - cold_water_temps[t_idx]);
-                        WaterEventResult {
-                            event_result_type: event.event_result_type,
-                            temperature_warm: event.temperature_warm,
-                            volume_warm: event.volume_warm,
-                            volume_hot,
-                        }
-                    })
-                    .collect_vec());
+                usage_events2_for_iteration = Some(
+                    usage_events2_for_iteration
+                        .unwrap()
+                        .iter()
+                        .map(|event| {
+                            let volume_hot = event.volume_warm
+                                * (event.temperature_warm - cold_water_temps[t_idx])
+                                / (temp_hot - cold_water_temps[t_idx]);
+                            WaterEventResult {
+                                event_result_type: event.event_result_type,
+                                temperature_warm: event.temperature_warm,
+                                volume_warm: event.volume_warm,
+                                volume_hot,
+                            }
+                        })
+                        .collect_vec(),
+                );
             }
 
             storage_tank2
@@ -3945,7 +3951,11 @@ mod tests {
 
             let actual_temperatues_2 = storage_tank2.temp_n.read().clone();
             for i in 0..actual_temperatues_2.len() {
-                assert_relative_eq!(actual_temperatues_2[i], expected_temperatures_2[t_idx][i], max_relative = 1e-7);
+                assert_relative_eq!(
+                    actual_temperatues_2[i],
+                    expected_temperatures_2[t_idx][i],
+                    max_relative = 1e-7
+                );
             }
 
             assert_relative_eq!(
@@ -5107,24 +5117,89 @@ mod tests {
 
         let expected_temperatures_1 = &[
             vec![42.06412979639594, 50.0, 50.0, 50.0],
-            vec![26.168457194735883, 45.942228008024884, 49.87555555555556, 49.87555555555556],
-            vec![26.115731861133547, 45.86963541543229, 49.802962962962965, 49.802962962962965],
-            vec![17.336010881790145, 34.751355008536194, 47.57251929648306, 49.782222222222224],
+            vec![
+                26.168457194735883,
+                45.942228008024884,
+                49.87555555555556,
+                49.87555555555556,
+            ],
+            vec![
+                26.115731861133547,
+                45.86963541543229,
+                49.802962962962965,
+                49.802962962962965,
+            ],
+            vec![
+                17.336010881790145,
+                34.751355008536194,
+                47.57251929648306,
+                49.782222222222224,
+            ],
             vec![31.875588805820787, 50.0, 50.0, 50.0],
-            vec![20.717353598198578, 40.20747289529573, 49.82370370370371, 49.82370370370371],
-            vec![20.69289324620792, 40.08195266546827, 49.64832153635117, 49.64832153635117],
-            vec![20.668559725672026, 39.95708328127696, 49.47384875801453, 49.47384875801453],
+            vec![
+                20.717353598198578,
+                40.20747289529573,
+                49.82370370370371,
+                49.82370370370371,
+            ],
+            vec![
+                20.69289324620792,
+                40.08195266546827,
+                49.64832153635117,
+                49.64832153635117,
+            ],
+            vec![
+                20.668559725672026,
+                39.95708328127696,
+                49.47384875801453,
+                49.47384875801453,
+            ],
         ];
 
         let expected_temperatures_2 = [
-            vec![10.0, 24.55607367670878, 50.03631427851564, 59.092295619623506],
-            vec![10.057665043481068, 16.16115527929868, 35.205810167360966, 53.69978967126601],
-            vec![10.057665043481068, 16.160011275772792, 35.10642745131158, 53.60040695521663],
-            vec![10.381386078348926, 11.69403406025759, 21.212174941529444, 40.037268379332176],
-            vec![11.520424219588156, 48.63806146445693, 48.63806146445693, 48.63806146445693],
+            vec![
+                10.0,
+                24.55607367670878,
+                50.03631427851564,
+                59.092295619623506,
+            ],
+            vec![
+                10.057665043481068,
+                16.16115527929868,
+                35.205810167360966,
+                53.69978967126601,
+            ],
+            vec![
+                10.057665043481068,
+                16.160011275772792,
+                35.10642745131158,
+                53.60040695521663,
+            ],
+            vec![
+                10.381386078348926,
+                11.69403406025759,
+                21.212174941529444,
+                40.037268379332176,
+            ],
+            vec![
+                11.520424219588156,
+                48.63806146445693,
+                48.63806146445693,
+                48.63806146445693,
+            ],
             vec![50.0, 50.0, 50.0, 50.0],
-            vec![49.75864197530864, 49.75864197530864, 49.75864197530864, 49.75864197530864],
-            vec![49.518997294619716, 49.518997294619716, 49.518997294619716, 49.518997294619716],
+            vec![
+                49.75864197530864,
+                49.75864197530864,
+                49.75864197530864,
+                49.75864197530864,
+            ],
+            vec![
+                49.518997294619716,
+                49.518997294619716,
+                49.518997294619716,
+                49.518997294619716,
+            ],
         ];
 
         let expected_results_by_end_user_1 =
