@@ -534,11 +534,11 @@ impl HeatStorageDryCore {
         self.demand_met.store(demand_met, Ordering::SeqCst);
     }
 
-    fn demand_unmet(&self) -> f64 {
+    pub(super) fn demand_unmet(&self) -> f64 {
         self.demand_unmet.load(Ordering::SeqCst)
     }
 
-    fn set_demand_unmet(&self, demand_unmet: f64) {
+    pub(super) fn set_demand_unmet(&self, demand_unmet: f64) {
         self.demand_unmet.store(demand_unmet, Ordering::SeqCst);
     }
 
