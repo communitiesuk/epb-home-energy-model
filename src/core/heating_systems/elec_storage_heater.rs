@@ -43,7 +43,6 @@ pub(crate) struct ElecStorageHeater {
     fan_pwr: f64,
     external_conditions: Arc<ExternalConditions>,
     temp_air: f64,
-    demand_met: AtomicF64,   // duplicate?
     demand_unmet: AtomicF64, // duplicate?
     zone_setpoint_init: f64,
     #[derivative(Debug = "ignore")]
@@ -235,7 +234,6 @@ impl ElecStorageHeater {
             fan_pwr,
             external_conditions,
             temp_air,
-            demand_met: Default::default(),
             demand_unmet: Default::default(),
             zone_setpoint_init,
             zone_internal_air_func,
@@ -337,7 +335,7 @@ impl ElecStorageHeater {
         if q_released_min > energy_demand {
             // Deliver at least the minimum energy
             current_profile.energy_delivered = q_released_min;
-            self.demand_met.store(q_released_min, Ordering::SeqCst);
+            self.storage.write().set_demand_met(q_released_min);
             self.demand_unmet.store(0., Ordering::SeqCst);
         } else {
             // Calculate maximum energy that can be delivered
@@ -352,8 +350,7 @@ impl ElecStorageHeater {
             if q_released_max_value < energy_demand {
                 // Deliver as much as possible up to the maximum energy
                 current_profile.energy_delivered = q_released_max_value;
-                self.demand_met
-                    .store(q_released_max_value, Ordering::SeqCst);
+                self.storage.write().set_demand_met(q_released_max_value);
                 self.demand_unmet
                     .store(energy_demand - q_released_max_value, Ordering::SeqCst);
 
@@ -377,7 +374,7 @@ impl ElecStorageHeater {
                     time_used_max *= energy_demand / q_released_max_value;
                 }
 
-                self.demand_met.store(energy_demand, Ordering::SeqCst);
+                self.storage.write().set_demand_met(energy_demand);
                 self.demand_unmet.store(0., Ordering::SeqCst);
             }
         }

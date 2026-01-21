@@ -530,7 +530,7 @@ impl HeatStorageDryCore {
         self.demand_met.load(Ordering::SeqCst)
     }
 
-    fn set_demand_met(&self, demand_met: f64) {
+    pub(super) fn set_demand_met(&self, demand_met: f64) {
         self.demand_met.store(demand_met, Ordering::SeqCst);
     }
 
