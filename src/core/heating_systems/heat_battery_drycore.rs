@@ -517,11 +517,11 @@ impl HeatStorageDryCore {
         self.owner.replace(Arc::downgrade(&owner));
     }
 
-    fn state_of_charge(&self) -> f64 {
+    pub(super) fn state_of_charge(&self) -> f64 {
         self.state_of_charge.load(Ordering::SeqCst)
     }
 
-    fn set_state_of_charge(&self, soc: f64) {
+    pub(super) fn set_state_of_charge(&self, soc: f64) {
         self.state_of_charge
             .store(clip(soc, 0.0, 1.0), Ordering::SeqCst);
     }

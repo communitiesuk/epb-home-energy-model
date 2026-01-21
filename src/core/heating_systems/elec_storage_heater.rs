@@ -43,16 +43,15 @@ pub(crate) struct ElecStorageHeater {
     fan_pwr: f64,
     external_conditions: Arc<ExternalConditions>,
     temp_air: f64,
-    state_of_charge: AtomicF64,
-    demand_met: AtomicF64,
-    demand_unmet: AtomicF64,
+    demand_met: AtomicF64,   // duplicate?
+    demand_unmet: AtomicF64, // duplicate?
     zone_setpoint_init: f64,
     #[derivative(Debug = "ignore")]
     zone_internal_air_func: Arc<dyn Fn() -> f64 + Send + Sync>,
-    soc_max_array: Vec<f64>,
-    power_max_array: Vec<f64>,
-    soc_min_array: Vec<f64>,
-    power_min_array: Vec<f64>,
+    soc_max_array: Vec<f64>,   // duplicate?
+    power_max_array: Vec<f64>, // duplicate?
+    soc_min_array: Vec<f64>,   // duplicate?
+    power_min_array: Vec<f64>, // duplicate?
     current_energy_profile: RwLock<CurrentEnergyProfile>,
     esh_detailed_results: Option<Arc<RwLock<Vec<StorageHeaterDetailedResult>>>>,
 }
@@ -236,7 +235,6 @@ impl ElecStorageHeater {
             fan_pwr,
             external_conditions,
             temp_air,
-            state_of_charge: Default::default(),
             demand_met: Default::default(),
             demand_unmet: Default::default(),
             zone_setpoint_init,
@@ -389,12 +387,13 @@ impl ElecStorageHeater {
 
         current_profile.energy_delivered = current_profile.energy_delivered.min(max);
 
-        let new_state_of_charge = self.state_of_charge.load(Ordering::SeqCst)
+        let new_state_of_charge = self.storage.read().state_of_charge()
             + (current_profile.energy_charged - current_profile.energy_delivered)
                 / self.storage.read().storage_capacity();
         let new_state_of_charge = heat_battery_drycore::clip(new_state_of_charge, 0., 1.);
-        self.state_of_charge
-            .store(new_state_of_charge, Ordering::SeqCst);
+        self.storage
+            .write()
+            .set_state_of_charge(new_state_of_charge);
 
         // Calculate fan energy
         current_profile.energy_for_fan = 0.;
@@ -430,7 +429,7 @@ impl ElecStorageHeater {
                 energy_instant,
                 energy_charged,
                 energy_for_fan,
-                state_of_charge: self.state_of_charge.load(Ordering::SeqCst),
+                state_of_charge: self.storage.read().state_of_charge(),
                 final_soc,
                 time_used_max,
             };
@@ -681,9 +680,7 @@ mod tests {
         )
         .unwrap();
 
-        elec_storage_heater
-            .state_of_charge
-            .store(0.5, Ordering::SeqCst);
+        elec_storage_heater.storage.write().set_state_of_charge(0.5);
 
         elec_storage_heater
     }
@@ -1346,7 +1343,7 @@ mod tests {
 
         // TODO fix this
         todo!(); // heater.set_heat_retention_ratio(-0.9);
-        heater.state_of_charge.store(0.5, Ordering::SeqCst);
+        heater.storage.write().set_state_of_charge(0.5);
 
         let expected_target_elec_charge = [
             1., 1., 1., 1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 0., 0.,
