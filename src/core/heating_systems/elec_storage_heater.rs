@@ -9,15 +9,11 @@ use crate::{
     external_conditions::ExternalConditions,
     input::{ControlLogicType, ElectricStorageHeaterAirFlowType},
     simulation_time::{SimulationTimeIteration, SimulationTimeIterator},
-    statistics::np_interp,
 };
 use anyhow::bail;
-use atomic_float::AtomicF64;
 use derivative::Derivative;
-use itertools::Itertools;
 use nalgebra::{Vector1, Vector3};
 use parking_lot::RwLock;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 type State = Vector1<f64>;
@@ -135,12 +131,11 @@ impl ElecStorageHeater {
         let output_detailed_results = output_detailed_results.unwrap_or(false);
 
         match charge_control.as_ref() {
-            Control::Charge(charge) => match charge.logic_type() {
-                ControlLogicType::HeatBattery => {
+            Control::Charge(charge) => {
+                if charge.logic_type() == ControlLogicType::HeatBattery {
                     bail!("Control logic type HeatBattery is not valid for ElecStorageHeater.")
                 }
-                _ => {}
-            },
+            }
             _ => bail!("charge_control must be a ChargeControl"),
         }
 
