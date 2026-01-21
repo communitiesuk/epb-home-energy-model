@@ -38,7 +38,6 @@ pub(crate) struct ElecStorageHeater {
     pwr_instant: f64,
     air_flow_type: ElectricStorageHeaterAirFlowType,
     frac_convective: f64,
-    n_units: u32,
     energy_supply_conn: EnergySupplyConnection,
     control: Arc<Control>,
     charge_control: Arc<Control>,
@@ -233,7 +232,6 @@ impl ElecStorageHeater {
             pwr_instant: rated_power_instant,
             air_flow_type,
             frac_convective,
-            n_units,
             energy_supply_conn,
             control,
             charge_control,
@@ -300,7 +298,7 @@ impl ElecStorageHeater {
         Ok(self
             .energy_output(OutputMode::Min, None, simulation_time_iteration)?
             .0
-            * self.n_units as f64)
+            * self.storage.read().n_units() as f64)
     }
 
     #[cfg(test)]
@@ -325,7 +323,8 @@ impl ElecStorageHeater {
         let mut current_profile = self.current_energy_profile.write();
 
         let timestep = simulation_time_iteration.timestep;
-        let energy_demand = energy_demand / f64::from(self.n_units);
+        let n_units: u32 = self.storage.read().n_units();
+        let energy_demand = energy_demand / f64::from(n_units);
         current_profile.energy_instant = 0.;
 
         // Initialize time_used_max and energy_charged_max to default values
@@ -410,7 +409,7 @@ impl ElecStorageHeater {
         }
 
         // Log the energy charged, fan energy, and total energy delivered
-        let amount_demanded = f64::from(self.n_units)
+        let amount_demanded = f64::from(n_units)
             * (current_profile.energy_charged
                 + current_profile.energy_instant
                 + current_profile.energy_for_fan);
@@ -427,7 +426,7 @@ impl ElecStorageHeater {
             } = *current_profile;
             let result = StorageHeaterDetailedResult {
                 timestep_idx: simulation_time_iteration.index,
-                n_units: self.n_units,
+                n_units,
                 energy_delivered,
                 energy_demand,
                 energy_instant,
@@ -443,8 +442,10 @@ impl ElecStorageHeater {
         }
 
         // Return total net energy delivered (discharged + instant heat + fan energy)
-        Ok(f64::from(self.n_units)
-            * (current_profile.energy_delivered + current_profile.energy_instant))
+        Ok(
+            f64::from(n_units)
+                * (current_profile.energy_delivered + current_profile.energy_instant),
+        )
     }
 
     pub(crate) fn target_electric_charge(

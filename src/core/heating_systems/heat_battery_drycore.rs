@@ -559,6 +559,10 @@ impl HeatStorageDryCore {
     pub(super) fn storage_capacity(&self) -> f64 {
         self.storage_capacity
     }
+
+    pub(super) fn n_units(&self) -> u32 {
+        self.n_units
+    }
 }
 
 // replicate numpy's clip function
