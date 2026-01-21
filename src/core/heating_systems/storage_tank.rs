@@ -448,11 +448,9 @@ impl StorageTank {
         let mut temp_average_drawoff_volweighted: f64 =
             self.temp_average_drawoff_volweighted.load(Ordering::SeqCst);
         let mut total_volume_drawoff: f64 = self.total_volume_drawoff.load(Ordering::SeqCst);
-        let mut last_layer_index: usize = Default::default();
 
         //  Loop through storage layers (starting from the top)
         for (layer_index, &layer_temp) in self.temp_n.read().iter().enumerate().rev() {
-            last_layer_index = layer_index;
             let layer_vol = remaining_vols[layer_index];
 
             if remaining_demanded_volume <= 0. {
@@ -500,7 +498,7 @@ impl StorageTank {
                 self.rho
                     * self.cp
                     * required_vol
-                    * (layer_temp - temp_cold)
+                    * (layer_temp - temp_cold);
         }
 
         self.temp_average_drawoff_volweighted
@@ -3935,10 +3933,10 @@ mod tests {
 
         // Loop through the timesteps and the associated data pairs using `subTest`
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
-            let usage_events_for_iteration = event_data[t_idx].clone();
+            let usage_events = event_data[t_idx].clone();
 
             storage_tank1
-                .demand_hot_water(usage_events_for_iteration.clone(), t_it)
+                .demand_hot_water(usage_events.clone(), t_it)
                 .unwrap();
 
             // Verify the temperatures against expected results
@@ -3972,29 +3970,22 @@ mod tests {
             };
 
             // Convert usage events based on HW temp of 55 to equivalent 60:
-            let mut usage_events2_for_iteration = usage_events_for_iteration.clone();
-            if usage_events2_for_iteration.is_some() {
-                usage_events2_for_iteration = Some(
-                    usage_events2_for_iteration
-                        .unwrap()
-                        .iter()
-                        .map(|event| {
-                            let volume_hot = event.volume_warm
-                                * (event.temperature_warm - cold_water_temps[t_idx])
-                                / (temp_hot - cold_water_temps[t_idx]);
-                            WaterEventResult {
-                                event_result_type: event.event_result_type,
-                                temperature_warm: event.temperature_warm,
-                                volume_warm: event.volume_warm,
-                                volume_hot,
-                            }
-                        })
-                        .collect_vec(),
-                );
+            let mut usage_events2 = vec![];
+
+            if usage_events.is_some() {
+                for event in usage_events.unwrap() {
+                    let volume_hot = event.volume_warm * (event.temperature_warm - COLD_WATER_TEMPS[t_idx]) / (temp_hot - COLD_WATER_TEMPS[t_idx]);
+                    usage_events2.push(WaterEventResult {
+                            event_result_type: event.event_result_type,
+                            temperature_warm: event.temperature_warm,
+                            volume_warm: event.volume_warm,
+                            volume_hot,
+                    });
+                }
             }
 
             storage_tank2
-                .demand_hot_water(usage_events2_for_iteration.clone(), t_it)
+                .demand_hot_water(Some(usage_events2), t_it)
                 .unwrap();
 
             let actual_temperatues_2 = storage_tank2.temp_n.read().clone();
@@ -4818,6 +4809,8 @@ mod tests {
         external_conditions_for_pv_diverter // external_conditions_for_pv_diverter has the same data & set up as what we need for smart hot water tank
     }
 
+    static COLD_WATER_TEMPS: [f64; 8] = [10.0, 10.1, 10.2, 10.5, 10.6, 11.0, 11.5, 12.1];
+
     fn create_smart_hot_water_tank(
         simulation_time_for_smart_hot_water_tank: SimulationTime,
         temp_internal_air_fn: TempInternalAirFn,
@@ -4849,9 +4842,8 @@ mod tests {
             None,
             1.,
         )));
-        let cold_water_temps = vec![10.0, 10.1, 10.2, 10.5, 10.6, 11.0, 11.5, 12.1];
         let cold_feed =
-            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(cold_water_temps, 0, 1.)));
+            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(COLD_WATER_TEMPS.to_vec(), 0, 1.)));
         let energy_supply_connection = EnergySupply::connection(
             energy_supply_for_smart_hot_water_tank_immersion.clone(),
             heat_source_name,
@@ -4959,7 +4951,6 @@ mod tests {
         )
     }
 
-    // TODO use a new WaterEventResult type instead of TypedScheduleEvent
     fn get_event_data_immersion() -> Vec<Option<Vec<WaterEventResult>>> {
         vec![
             Some(vec![
@@ -4986,7 +4977,7 @@ mod tests {
                 event_result_type: WaterEventResultType::Shower,
                 temperature_warm: 41.0,
                 volume_warm: 48.0,
-                volume_hot: 33.0666666666667,
+                volume_hot: 33.0334075723831,
             }]),
             None,
             Some(vec![WaterEventResult {
@@ -5101,7 +5092,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "not yet updated to 1_0_a1"]
     fn test_demand_hot_water_for_smart_hot_water_tank(
         simulation_time_for_smart_hot_water_tank: SimulationTime,
         temp_internal_air_fn: TempInternalAirFn,
@@ -5161,7 +5151,7 @@ mod tests {
             60.,
         );
 
-        let usage_events = get_event_data_immersion();
+        let event_data = get_event_data_immersion();
 
         let expected_temperatures_1 = &[
             vec![42.06412979639594, 50.0, 50.0, 50.0],
@@ -5257,18 +5247,27 @@ mod tests {
             [0.0, 0.0, 0.0, 0.0, 4.5043354264, 0.1956556236, 0.0, 0.0];
 
         for (t_idx, t_it) in simulation_time_for_smart_hot_water_tank.iter().enumerate() {
+
+            // # Convert usage events based on HW temp of 55 to equivalent 50:
+            let usage_events = event_data[t_idx].clone();
+            let temp_hot = if t_idx == 0 { 50. } else { *expected_temperatures_1[t_idx -1].last().unwrap() };
+
+            let mut usage_events1 = vec![];
+            if usage_events.is_some() {
+                for event in usage_events.clone().unwrap() {
+                    let volume_hot = event.volume_warm * (event.temperature_warm - COLD_WATER_TEMPS[t_idx]) / (temp_hot - COLD_WATER_TEMPS[t_idx]);
+                    usage_events1.push(WaterEventResult { event_result_type: event.event_result_type, temperature_warm: event.temperature_warm, volume_warm: event.volume_warm, volume_hot });
+                }
+            }
+
             let _ = smart_hot_water_tank
-                .demand_hot_water(usage_events[t_idx].clone(), t_it)
+                .demand_hot_water(Some(usage_events1), t_it)
                 .unwrap();
 
             let temp_n = smart_hot_water_tank.storage_tank.temp_n.read();
 
-            dbg!(&temp_n);
-
             for (i, expected_temp) in expected_temperatures_1[t_idx].iter().enumerate() {
-                // note - high max_relative here. We expect differences due to Emitters
-                assert_relative_eq!(temp_n[i], *expected_temp, max_relative = 0.05);
-                // 5% rel tolerance
+                assert_relative_eq!(temp_n[i], *expected_temp, max_relative = 1e-9);
             }
 
             let results_by_end_user = energy_supply_for_smart_hot_water_tank_immersion_1
@@ -5278,18 +5277,30 @@ mod tests {
             assert_relative_eq!(
                 actual_results_by_end_user_1[t_idx],
                 expected_results_by_end_user_1[t_idx],
-                max_relative = 0.05
-            ); // 5% rel tolerance
+                max_relative = FIVE_DECIMAL_PLACES
+            );
 
             // smart_hot_water_tank_2 tests for case where heater does not heat all layers
+
+            // Convert usage events based on HW temp of 55 to equivalent 60:
+            let temp_hot = if t_idx == 0 { 60. } else { *expected_temperatures_2[t_idx -1].last().unwrap() };
+            let mut usage_events2 = vec![];
+
+            if usage_events.is_some() {
+                for event in usage_events.unwrap() {
+                    let volume_hot = event.volume_warm * (event.temperature_warm - COLD_WATER_TEMPS[t_idx]) / (temp_hot - COLD_WATER_TEMPS[t_idx]);
+                    usage_events2.push(WaterEventResult { event_result_type: event.event_result_type, temperature_warm: event.temperature_warm, volume_warm: event.volume_warm, volume_hot });
+                }
+            }
             let _ = smart_hot_water_tank_2
-                .demand_hot_water(usage_events[t_idx].clone(), t_it)
+                .demand_hot_water(Some(usage_events2.clone()), t_it)
                 .unwrap();
+
+            dbg!(&usage_events2);
 
             let temp_n = smart_hot_water_tank_2.storage_tank.temp_n.read();
             for (i, expected_temp) in expected_temperatures_2[t_idx].iter().enumerate() {
-                assert_relative_eq!(temp_n[i], *expected_temp, max_relative = 0.0019);
-                // 0.19% rel tolerance
+                assert_relative_eq!(temp_n[i], *expected_temp, max_relative = FIVE_DECIMAL_PLACES);
             }
 
             let results_by_end_user_2 = energy_supply_for_smart_hot_water_tank_immersion_2
@@ -5299,8 +5310,8 @@ mod tests {
             assert_relative_eq!(
                 actual_results_by_end_user_2[t_idx],
                 expected_results_by_end_user_2[t_idx],
-                max_relative = 0.007
-            ); // 0.7% rel tolerance
+                max_relative = FIVE_DECIMAL_PLACES
+            ); 
         }
     }
 
