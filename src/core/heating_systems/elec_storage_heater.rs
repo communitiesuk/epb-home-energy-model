@@ -1,5 +1,4 @@
 use crate::core::controls::time_control::{per_control, ControlBehaviour};
-use crate::core::heating_systems::heat_battery_drycore;
 use crate::core::heating_systems::heat_battery_drycore::{
     convert_to_kwh, HeatBatteryDryCoreCommonBehaviour,
 };
@@ -295,6 +294,10 @@ impl ElecStorageHeater {
                         simulation_time_iteration,
                     )?;
 
+                time_used_max = time_used_max_tmp;
+                current_profile.energy_charged = energy_charged;
+                final_soc = final_soc_override;
+
                 // The solver should have delivered exactly what we requested
                 // (within numerical tolerances)
                 current_profile.energy_delivered = energy_delivered.min(energy_demand);
@@ -307,19 +310,13 @@ impl ElecStorageHeater {
             }
         }
 
-        // TODO: do we need to update current profile? self.current_energy_profile = current_profile;
         // Ensure energy_delivered does not exceed q_released_max
         let max = q_released_max.unwrap_or(q_released_min);
-
         current_profile.energy_delivered = current_profile.energy_delivered.min(max);
 
-        let new_state_of_charge = self.storage.read().state_of_charge()
-            + (current_profile.energy_charged - current_profile.energy_delivered)
-                / self.storage.read().storage_capacity();
-        let new_state_of_charge = heat_battery_drycore::clip(new_state_of_charge, 0., 1.);
-        self.storage
-            .write()
-            .set_state_of_charge(new_state_of_charge);
+        // Update state of charge using the final SOC from the differential equation solver
+        // The ODE has already integrated the charging and discharging accurately
+        self.storage.write().set_state_of_charge(final_soc);
 
         // Calculate fan energy
         current_profile.energy_for_fan = 0.;
