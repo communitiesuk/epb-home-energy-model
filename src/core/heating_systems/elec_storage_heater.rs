@@ -238,7 +238,6 @@ impl ElecStorageHeater {
 
         // Initialize time_used_max and energy_charged_max to default values
         let mut time_used_max = 0.;
-        let _energy_charged_max = 0.;
 
         // Calculate minimum energy that can be delivered
         let (q_released_min, _, energy_charged, mut final_soc) = self
@@ -256,13 +255,12 @@ impl ElecStorageHeater {
             self.storage.write().set_demand_unmet(0.);
         } else {
             // Calculate maximum energy that can be delivered
-            let (q_released_max_value, time_used_max_tmp, energy_charged, final_soc_override) =
+            let (q_released_max_value, time_used_max_tmp, energy_charged_max, final_soc_override) =
                 self.energy_output_max(simulation_time_iteration)?;
             final_soc = final_soc_override;
 
             q_released_max = Some(q_released_max_value);
             time_used_max = time_used_max_tmp;
-            current_profile.energy_charged = energy_charged;
 
             if q_released_max_value < energy_demand {
                 // Deliver as much as possible up to the maximum energy
@@ -271,6 +269,7 @@ impl ElecStorageHeater {
                 self.storage
                     .write()
                     .set_demand_unmet(energy_demand - q_released_max_value);
+                current_profile.energy_charged = energy_charged_max;
 
                 // For now, we assume demand not met from storage is topped-up by
                 // the direct top-up heater (if applicable). If still some unmet,
@@ -286,18 +285,29 @@ impl ElecStorageHeater {
                     time_used_max = time_used_max.min(timestep);
                 }
             } else {
-                // Deliver the demanded energy
-                current_profile.energy_delivered = energy_demand;
+                // IMPROVED ACCURACY: Use exact energy target instead of linear proration
+                // Deliver exactly the demanded energy using the differential equation solver
+                let (energy_delivered, time_used_max_tmp, energy_charged, final_soc_override) =
+                    self.storage.read().energy_output(
+                        OutputMode::Max,
+                        None,
+                        Some(energy_demand),
+                        simulation_time_iteration,
+                    )?;
 
-                if q_released_max_value > 0. {
-                    time_used_max *= energy_demand / q_released_max_value;
-                }
-
-                self.storage.write().set_demand_met(energy_demand);
-                self.storage.write().set_demand_unmet(0.);
+                // The solver should have delivered exactly what we requested
+                // (within numerical tolerances)
+                current_profile.energy_delivered = energy_delivered.min(energy_demand);
+                self.storage
+                    .write()
+                    .set_demand_met(current_profile.energy_delivered);
+                self.storage
+                    .write()
+                    .set_demand_unmet(0.0_f64.max(energy_demand - current_profile.energy_delivered));
             }
         }
 
+        // TODO: do we need to update current profile? self.current_energy_profile = current_profile;
         // Ensure energy_delivered does not exceed q_released_max
         let max = q_released_max.unwrap_or(q_released_min);
 
