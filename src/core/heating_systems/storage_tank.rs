@@ -6,7 +6,7 @@ use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
 use crate::core::units::{MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::WaterEventResult;
-use crate::corpus::{HeatSource, TempInternalAirFn};
+use crate::corpus::{HeatSource, HotWaterSourceBehaviour, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCollectorLoopLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
@@ -2663,20 +2663,68 @@ pub(crate) enum HotWaterStorageTank {
     SmartHotWaterTank(Arc<RwLock<SmartHotWaterTank>>),
 }
 
-impl HotWaterStorageTank {
-    pub(crate) fn demand_hot_water(
+impl HotWaterSourceBehaviour for HotWaterStorageTank {
+    fn get_cold_water_source(&self) -> WaterSupply {
+        match self {
+            HotWaterStorageTank::StorageTank(storage_tank) => {
+                storage_tank.read().get_cold_water_source().clone()
+            }
+            HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
+                smart_storage_tank.read().get_cold_water_source().clone()
+            }
+        }
+    }
+
+    fn demand_hot_water(
         &self,
-        usage_events: Option<Vec<WaterEventResult>>,
+        usage_events: Vec<WaterEventResult>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match &self {
-            HotWaterStorageTank::StorageTank(rw_lock) => {
-                rw_lock.read().demand_hot_water(usage_events, simtime)
-            }
+            HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
+                .read()
+                .demand_hot_water(usage_events.into(), simtime),
+            HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock
+                .read()
+                .demand_hot_water(usage_events.into(), simtime),
+        }
+    }
+
+    fn get_temp_hot_water(
+        &self,
+        volume_required: f64,
+        volume_required_already: f64,
+    ) -> Vec<(f64, f64)> {
+        match self {
+            HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
+                .read()
+                .get_temp_hot_water(volume_required, Some(volume_required_already)),
+            HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock
+                .read()
+                .get_temp_hot_water(volume_required, Some(volume_required_already)),
+        }
+    }
+
+    fn internal_gains(&self) -> Option<f64> {
+        match self {
+            HotWaterStorageTank::StorageTank(rw_lock) => Some(rw_lock.read().internal_gains()),
             HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
-                rw_lock.read().demand_hot_water(usage_events, simtime)
+                Some(rw_lock.read().internal_gains())
             }
         }
+    }
+
+    fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+        match self {
+            HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
+                .read()
+                .get_losses_from_primary_pipework_and_storage(),
+            _ => (0., 0.),
+        }
+    }
+
+    fn is_point_of_use(&self) -> bool {
+        false
     }
 }
 

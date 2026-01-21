@@ -651,7 +651,8 @@ pub struct Corpus {
     pre_heated_water_sources: IndexMap<String, HotWaterStorageTank>,
     pub(crate) energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
     pub(crate) internal_gains: InternalGainsCollection,
-    pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand<HotWaterSource>,
+    pub(crate) domestic_hot_water_demand:
+        DomesticHotWaterDemand<HotWaterSource, HotWaterStorageTank>,
     r_v_arg: AtomicF64,
     pub(crate) ventilation: Arc<InfiltrationVentilation>,
     pub(crate) zones: IndexMap<String, Arc<Zone>>,
@@ -728,26 +729,6 @@ impl Corpus {
         let event_schedules = event_schedules_from_input(
             &input.water_heating_events,
             simulation_time_iterator.as_ref(),
-        )?;
-
-        let hot_water_sources = todo!();
-        let pre_heated_water_sources = todo!();
-
-        let domestic_hot_water_demand = DomesticHotWaterDemand::new(
-            input.hot_water_demand.shower.clone(),
-            input.hot_water_demand.bath.clone(),
-            input.hot_water_demand.other_water_use.clone(),
-            // match &input.hot_water_source.hot_water_cylinder {
-            //     HotWaterSourceDetails::PointOfUse { .. } => None,
-            //     _ => Some(input.hot_water_demand.water_distribution.clone()),
-            // },
-            Default::default(), // TODO: migrate properly for 1.0.0a1
-            &cold_water_sources,
-            &wwhrs,
-            &energy_supplies,
-            event_schedules,
-            hot_water_sources,
-            pre_heated_water_sources,
         )?;
 
         let total_volume = input.zone.values().map(|zone| zone.volume).sum::<f64>();
@@ -938,6 +919,19 @@ impl Corpus {
             energy_supply_conn_names_for_hot_water_source
                 .insert(name.into(), hw_cylinder_conn_names);
         }
+
+        let domestic_hot_water_demand = DomesticHotWaterDemand::new(
+            input.hot_water_demand.shower.clone(),
+            input.hot_water_demand.bath.clone(),
+            input.hot_water_demand.other_water_use.clone(),
+            Default::default(), // TODO: migrate properly for 1.0.0a1
+            &cold_water_sources,
+            &wwhrs,
+            &energy_supplies,
+            event_schedules,
+            hot_water_sources.clone(),
+            pre_heated_water_sources.clone(),
+        )?;
 
         let mut heat_system_names_requiring_overvent: Vec<String> = Default::default();
 
@@ -4549,10 +4543,10 @@ fn heat_source_from_input(
 #[derive(Debug, Clone)]
 pub(crate) enum HotWaterSource {
     PreHeated(HotWaterStorageTank),
-    CombiBoiler(BoilerServiceWaterCombi),
-    PointOfUse(PointOfUse),
-    HeatNetwork(HeatNetworkServiceWaterDirect),
-    HeatBattery(HeatBatteryPcmServiceWaterDirect),
+    CombiBoiler(Arc<BoilerServiceWaterCombi>),
+    PointOfUse(Arc<PointOfUse>),
+    HeatNetwork(Arc<HeatNetworkServiceWaterDirect>),
+    HeatBattery(Arc<HeatBatteryPcmServiceWaterDirect>),
 }
 
 pub(crate) trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
@@ -4575,14 +4569,7 @@ pub(crate) trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
 impl HotWaterSourceBehaviour for HotWaterSource {
     fn get_cold_water_source(&self) -> WaterSupply {
         match self {
-            HotWaterSource::PreHeated(source) => match source {
-                HotWaterStorageTank::StorageTank(storage_tank) => {
-                    storage_tank.read().get_cold_water_source().clone()
-                }
-                HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
-                    smart_storage_tank.read().get_cold_water_source().clone()
-                }
-            },
+            HotWaterSource::PreHeated(source) => source.get_cold_water_source(),
             HotWaterSource::CombiBoiler(source) => source.get_cold_water_source().clone(),
             HotWaterSource::PointOfUse(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),
@@ -4597,7 +4584,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
     ) -> anyhow::Result<f64> {
         Ok(match self {
             HotWaterSource::PreHeated(hot_water_storage_tank) => {
-                hot_water_storage_tank.demand_hot_water(Some(usage_events), simtime)?
+                hot_water_storage_tank.demand_hot_water(usage_events, simtime)?
             }
             HotWaterSource::CombiBoiler(boiler_service_water_combi) => {
                 boiler_service_water_combi.demand_hot_water(usage_events, simtime)?
@@ -4621,14 +4608,9 @@ impl HotWaterSourceBehaviour for HotWaterSource {
         volume_required_already: f64,
     ) -> Vec<(f64, f64)> {
         match self {
-            HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
-                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
-                    .read()
-                    .get_temp_hot_water(volume_required, Some(volume_required_already)),
-                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock
-                    .read()
-                    .get_temp_hot_water(volume_required, Some(volume_required_already)),
-            },
+            HotWaterSource::PreHeated(hot_water_storage_tank) => {
+                hot_water_storage_tank.get_temp_hot_water(volume_required, volume_required_already)
+            }
             HotWaterSource::CombiBoiler(boiler_service_water_combi) => boiler_service_water_combi
                 .get_temp_hot_water(volume_required, Some(volume_required_already)),
             HotWaterSource::PointOfUse(point_of_use) => {
@@ -4650,12 +4632,9 @@ impl HotWaterSourceBehaviour for HotWaterSource {
     // Calls internal_gains on hot water source where available
     fn internal_gains(&self) -> Option<f64> {
         match &self {
-            HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
-                HotWaterStorageTank::StorageTank(rw_lock) => Some(rw_lock.read().internal_gains()),
-                HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
-                    Some(rw_lock.read().internal_gains())
-                }
-            },
+            HotWaterSource::PreHeated(hot_water_storage_tank) => {
+                hot_water_storage_tank.internal_gains()
+            }
             HotWaterSource::CombiBoiler(boiler_service_water_combi) => {
                 Some(boiler_service_water_combi.internal_gains())
             }
@@ -4668,12 +4647,9 @@ impl HotWaterSourceBehaviour for HotWaterSource {
     // Calls get_losses_from_primary_pipework_and_storage on hot water source where available, otherwise returns 0s.
     fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
         match &self {
-            HotWaterSource::PreHeated(hot_water_storage_tank) => match hot_water_storage_tank {
-                HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
-                    .read()
-                    .get_losses_from_primary_pipework_and_storage(),
-                _ => (0., 0.),
-            },
+            HotWaterSource::PreHeated(hot_water_storage_tank) => {
+                hot_water_storage_tank.get_losses_from_primary_pipework_and_storage()
+            }
             _ => (0., 0.),
         }
     }
@@ -4983,7 +4959,8 @@ fn hot_water_source_from_input(
                         })?,
                         cold_water_source,
                     )
-                    .expect("expected to be able to instantiate a combi boiler object"),
+                    .expect("expected to be able to instantiate a combi boiler object")
+                    .into(),
             )
         }
         HotWaterSourceDetails::PointOfUse {
@@ -5005,7 +4982,7 @@ fn hot_water_source_from_input(
                 energy_supply_conn,
                 cold_water_source,
                 *setpoint_temp,
-            ))
+            ).into())
         }
         HotWaterSourceDetails::Hiu {
             cold_water_source: cold_water_source_type,
@@ -5030,16 +5007,19 @@ fn hot_water_source_from_input(
                 }
                 _ => panic!("expected a heat network in this context"),
             };
-            HotWaterSource::HeatNetwork(HeatNetwork::create_service_hot_water_direct(
-                heat_source_wet.clone(),
-                &energy_supply_conn_name,
-                (*setpoint_temp).ok_or_else(|| {
-                    anyhow!(
+            HotWaterSource::HeatNetwork(
+                HeatNetwork::create_service_hot_water_direct(
+                    heat_source_wet.clone(),
+                    &energy_supply_conn_name,
+                    (*setpoint_temp).ok_or_else(|| {
+                        anyhow!(
                         "A setpoint_temp value was expected on a point of use hot water source."
                     )
-                })?,
-                cold_water_source,
-            ))
+                    })?,
+                    cold_water_source,
+                )
+                .into(),
+            )
         }
         HotWaterSourceDetails::HeatBattery {
             cold_water_source,
@@ -5062,12 +5042,15 @@ fn hot_water_source_from_input(
                 _ => unreachable!("heat source wet was expected to be a heat battery"),
             };
 
-            HotWaterSource::HeatBattery(HeatBatteryPcm::create_service_hot_water_direct(
-                heat_battery,
-                &energy_supply_conn_name,
-                *setpoint_temp,
-                cold_water_source,
-            )?)
+            HotWaterSource::HeatBattery(
+                HeatBatteryPcm::create_service_hot_water_direct(
+                    heat_battery,
+                    &energy_supply_conn_name,
+                    *setpoint_temp,
+                    cold_water_source,
+                )?
+                .into(),
+            )
         }
     };
 

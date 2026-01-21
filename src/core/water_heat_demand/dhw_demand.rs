@@ -31,7 +31,8 @@ use std::sync::Arc;
 const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
 
 #[derive(Debug)]
-pub(crate) struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour> {
+pub(crate) struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour = T>
+{
     showers: HashMap<String, Shower>,
     baths: HashMap<String, Bath>,
     other: HashMap<String, OtherHotWater>,
@@ -40,7 +41,7 @@ pub(crate) struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour> {
     source_supplying_outlet: HashMap<(OutletType, String), String>,
     hot_water_distribution_pipework: IndexMap<String, Vec<PipeworkSimple>>,
     event_schedules: EventSchedule,
-    pre_heated_water_sources: IndexMap<String, T>,
+    pre_heated_water_sources: IndexMap<String, U>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -102,7 +103,7 @@ pub enum OutletType {
     Other,
 }
 
-impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
+impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDemand<T, U> {
     // TODO (from Python) Enhance analysis for overlapping events
     // Part of draft code for future overlapping analysis of events
     // For pipework losses count only none overlapping events
@@ -119,7 +120,7 @@ impl<T: HotWaterSourceBehaviour> DomesticHotWaterDemand<T> {
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         event_schedules: EventSchedule,
         hot_water_sources: IndexMap<String, T>,
-        pre_heated_water_sources: IndexMap<String, T>,
+        pre_heated_water_sources: IndexMap<String, U>,
     ) -> anyhow::Result<Self> {
         let showers: HashMap<String, Shower> = showers_input
             .0
