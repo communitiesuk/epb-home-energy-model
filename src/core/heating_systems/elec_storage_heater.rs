@@ -508,15 +508,6 @@ impl HeatBatteryDryCoreCommonBehaviour for ElecStorageHeater {
         self.zone_setpoint_init
     }
 
-    fn energy_output_max(
-        &self,
-        _temp_output: f64,
-        time_start: Option<f64>,
-        simtime: &SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        todo!()
-    }
-
     fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64, setpoint_temp: f64) -> f64 {
         todo!()
     }

@@ -792,13 +792,6 @@ pub(crate) trait HeatBatteryDryCoreCommonBehaviour: Send + Sync {
     /// Get zone setpoint for HHRSH calculations.
     fn get_zone_setpoint(&self) -> f64;
 
-    fn energy_output_max(
-        &self,
-        _temp_output: f64,
-        time_start: Option<f64>,
-        simtime: &SimulationTimeIteration,
-    ) -> anyhow::Result<f64>;
-
     fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64, setpoint_temp: f64) -> f64;
 }
 
@@ -1579,6 +1572,43 @@ impl HeatBatteryDryCore {
             .energy_output(mode, time_remaining, target_energy, simtime)
     }
 
+    /// Calculate maximum energy output for current SOC and temperature requirements.
+    ///
+    /// Args:
+    ///   * `temp_output`: Required output temperature (°C)
+    ///   * `time_start`: Start time within timestep (unused currently)
+    ///
+    /// Returns:
+    ///   Maximum energy output (kWh)
+    fn energy_output_max(
+        &self,
+        _temp_output: f64,
+        time_start: Option<f64>,
+        simtime: &SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let time_start = time_start.unwrap_or(0.0);
+
+        let timestep = self.simulation_timestep;
+        let time_remaining = self.time_available(time_start, timestep);
+
+        // First, get the base storage calculation which includes charging logic
+        let (q_released_max, _, _, _) = self.storage.read().energy_output(
+            OutputMode::Max,
+            time_remaining.into(),
+            None,
+            simtime,
+        )?;
+
+        let energy_instant = if self.power_instant != 0.0 {
+            self.power_instant * time_remaining
+        } else {
+            0.0
+        };
+
+        // Can only provide energy if we can achieve the required output temperature
+        Ok((q_released_max + energy_instant) * self.n_units() as f64)
+    }
+
     /// Calculations to be done at the end of each timestep.
     pub(crate) fn timestep_end(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
         let timestep = simtime.timestep;
@@ -1791,43 +1821,6 @@ impl HeatBatteryDryCoreCommonBehaviour for HeatBatteryDryCore {
 
     fn get_zone_setpoint(&self) -> f64 {
         ZONE_TEMP_INIT
-    }
-
-    /// Calculate maximum energy output for current SOC and temperature requirements.
-    ///
-    /// Args:
-    ///   * `temp_output`: Required output temperature (°C)
-    ///   * `time_start`: Start time within timestep (unused currently)
-    ///
-    /// Returns:
-    ///   Maximum energy output (kWh)
-    fn energy_output_max(
-        &self,
-        _temp_output: f64,
-        time_start: Option<f64>,
-        simtime: &SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        let time_start = time_start.unwrap_or(0.0);
-
-        let timestep = self.simulation_timestep;
-        let time_remaining = self.time_available(time_start, timestep);
-
-        // First, get the base storage calculation which includes charging logic
-        let (q_released_max, _, _, _) = self.storage.read().energy_output(
-            OutputMode::Max,
-            time_remaining.into(),
-            None,
-            simtime,
-        )?;
-
-        let energy_instant = if self.power_instant != 0.0 {
-            self.power_instant * time_remaining
-        } else {
-            0.0
-        };
-
-        // Can only provide energy if we can achieve the required output temperature
-        Ok((q_released_max + energy_instant) * self.n_units() as f64)
     }
 
     fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64, setpoint_temp: f64) -> f64 {
