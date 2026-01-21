@@ -4557,7 +4557,6 @@ pub(crate) enum HotWaterSource {
 
 pub(crate) trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
     fn get_cold_water_source(&self) -> WaterSupply;
-    fn temp_hot_water(&self) -> anyhow::Result<f64>;
     fn demand_hot_water(
         &self,
         usage_events: Vec<WaterEventResult>,
@@ -4589,33 +4588,6 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatBattery(source) => source.get_cold_water_source().clone(),
         }
-    }
-
-    fn temp_hot_water(&self) -> anyhow::Result<f64> {
-        Ok(match self {
-            HotWaterSource::PreHeated(source) => match source {
-                HotWaterStorageTank::StorageTank(_storage_tank) => {
-                    unimplemented!("WIP - storage tank migration")
-                    // storage_tank.read().get_temp_hot_water()
-                }
-                HotWaterStorageTank::SmartHotWaterTank(_smart_storage_tank) => {
-                    unimplemented!("WIP - storage tank migration")
-                    // smart_storage_tank.read().get_temp_hot_water()
-                }
-            },
-            HotWaterSource::CombiBoiler(_combi) => {
-                todo!("Probably gets removed/moved as part of migration to 1.0.01a")
-            } // combi.get_temp_hot_water(),
-            HotWaterSource::PointOfUse(_point_of_use) => {
-                todo!("Probably gets removed/moved as part of migration to 1.0.01a")
-            }
-            HotWaterSource::HeatNetwork(_heat_network) => {
-                todo!("Probably gets removed/moved as part of migration to 1.0.01a")
-            }
-            HotWaterSource::HeatBattery(_source) => {
-                todo!("Probably gets removed/moved as part of migration to 1.0.01a")
-            }
-        })
     }
 
     fn demand_hot_water(

@@ -1005,10 +1005,6 @@ mod tests {
             self.cold_feed.clone()
         }
 
-        fn temp_hot_water(&self) -> anyhow::Result<f64> {
-            unimplemented!();
-        }
-
         fn demand_hot_water(
             &self,
             usage_events: Vec<WaterEventResult>,
@@ -1057,10 +1053,6 @@ mod tests {
             unimplemented!()
         }
 
-        fn temp_hot_water(&self) -> anyhow::Result<f64> {
-            todo!()
-        }
-
         fn demand_hot_water(
             &self,
             _usage_events: Vec<WaterEventResult>,
@@ -1099,10 +1091,6 @@ mod tests {
     impl HotWaterSourceBehaviour for HotWaterSourceMockWithInternalGains {
         fn get_cold_water_source(&self) -> WaterSupply {
             self.cold_feed.clone()
-        }
-
-        fn temp_hot_water(&self) -> anyhow::Result<f64> {
-            unimplemented!();
         }
 
         fn demand_hot_water(
