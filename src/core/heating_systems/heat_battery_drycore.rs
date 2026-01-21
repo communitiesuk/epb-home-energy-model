@@ -563,6 +563,11 @@ impl HeatStorageDryCore {
     pub(super) fn n_units(&self) -> u32 {
         self.n_units
     }
+    
+    #[cfg(test)]
+    pub(super) fn set_heat_retention_ratio(&mut self, ratio: f64) {
+        self.heat_retention_ratio = ratio;
+    }
 }
 
 // replicate numpy's clip function

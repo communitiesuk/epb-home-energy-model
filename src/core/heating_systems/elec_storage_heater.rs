@@ -1341,8 +1341,7 @@ mod tests {
             None,
         );
 
-        // TODO fix this
-        todo!(); // heater.set_heat_retention_ratio(-0.9);
+        heater.storage.write().set_heat_retention_ratio(-0.9);
         heater.storage.write().set_state_of_charge(0.5);
 
         let expected_target_elec_charge = [
