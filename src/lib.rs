@@ -4,6 +4,8 @@
     dead_code
 )]
 
+#[macro_use]
+extern crate is_close;
 pub mod compare_floats;
 pub mod core;
 pub mod corpus;
@@ -15,9 +17,6 @@ pub mod input;
 pub mod output;
 pub mod read_weather_file;
 pub mod statistics;
-
-#[macro_use]
-extern crate is_close;
 
 use crate::core::heating_systems::elec_storage_heater::StorageHeaterDetailedResult;
 use crate::core::heating_systems::emitters::EmittersDetailedResult;
@@ -37,7 +36,7 @@ use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use chrono::prelude::*;
 use chrono::{TimeDelta, Utc};
 use convert_case::{Case, Casing};
@@ -99,6 +98,10 @@ pub fn run_project(
             mut input: Input,
             external_conditions_data: Option<ExternalConditionsInput>,
         ) -> anyhow::Result<Input> {
+            if external_conditions_data.is_none()
+                && !input.external_conditions.are_all_fields_set() {
+                    bail!("No weather data found. Please provide a weather file or complete weather data in the input file.");
+            }
             if let Some(external_conditions) = external_conditions_data {
                 let shading_segments = &input.external_conditions.shading_segments;
                 let mut new_external_conditions = external_conditions.clone();
