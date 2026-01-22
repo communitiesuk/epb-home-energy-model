@@ -525,18 +525,24 @@ mod tests {
     }
 
     #[fixture]
+    fn charge_control_schedule() -> Vec<bool> {
+        vec![
+            true, true, true, true, true, true, true, true, false, false, false, false, false,
+            false, false, false, true, true, true, true, false, false, false, false,
+        ]
+    }
+
+    #[fixture]
     fn charge_control(
         simulation_time_iteration: SimulationTimeIteration,
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
+        charge_control_schedule: Vec<bool>,
     ) -> Arc<Control> {
         Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Automatic,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
+                charge_control_schedule,
                 &simulation_time_iteration,
                 0,
                 1.,
@@ -1067,14 +1073,12 @@ mod tests {
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
         control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
     ) {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
+                charge_control_schedule,
                 &simulation_time.iter().current_iteration(),
                 0,
                 1.,
@@ -1114,14 +1118,12 @@ mod tests {
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
         control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
     ) {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Celect,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
+                charge_control_schedule,
                 &simulation_time.iter().current_iteration(),
                 0,
                 1.,
@@ -1161,14 +1163,12 @@ mod tests {
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
         control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
     ) {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
+                charge_control_schedule,
                 &simulation_time.iter().current_iteration(),
                 0,
                 1.,
@@ -1208,14 +1208,12 @@ mod tests {
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
         control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
     ) {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
+                charge_control_schedule,
                 &simulation_time.iter().current_iteration(),
                 0,
                 1.,
@@ -1259,14 +1257,12 @@ mod tests {
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
         control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
     ) {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
+                charge_control_schedule,
                 &simulation_time.iter().current_iteration(),
                 0,
                 1.,
