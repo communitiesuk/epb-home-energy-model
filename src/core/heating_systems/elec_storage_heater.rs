@@ -2101,8 +2101,36 @@ mod tests {
         assert!(actual_energy < 10.);
     }
 
-    // TODO: test_elec_storage_heater_no_instant_power
-    // TODO: test_elec_storage_energy_output_modes
+    #[ignore = "known issue"]
+    #[rstest]
+    fn test_elec_storage_energy_output_modes(
+        elec_storage_heater: Arc<ElecStorageHeater>,
+        simulation_time: SimulationTime,
+    ) {
+        let energy_min = elec_storage_heater
+            .storage
+            .read()
+            .energy_output(
+                OutputMode::Min,
+                None,
+                None,
+                &simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+        assert_eq!(energy_min.0, 0.);
+
+        let energy_max = elec_storage_heater
+            .storage
+            .read()
+            .energy_output(
+                OutputMode::Max,
+                None,
+                None,
+                &simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+        assert_eq!(energy_max.0, energy_min.0);
+    }
 
     #[rstest]
     fn test_get_temp_for_charge_control(elec_storage_heater: Arc<ElecStorageHeater>) {
