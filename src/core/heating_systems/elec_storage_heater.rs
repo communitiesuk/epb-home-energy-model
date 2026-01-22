@@ -1310,6 +1310,70 @@ mod tests {
         );
     }
 
+    #[ignore = "fails probably because heat_retention_ratio cannot be set to None in Rust"]
+    #[rstest]
+    fn test_electric_charge_hhrsh_no_heat_retention_ratio(
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+        simulation_time: SimulationTime,
+        control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
+    ) {
+        let charge_control = Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::Hhrsh,
+                charge_control_schedule,
+                &simulation_time.iter().current_iteration(),
+                0,
+                1.,
+                [1.0, 0.8].into_iter().map(Into::into).collect(),
+                Some(22.),
+                None,
+                Some(external_conditions.clone()),
+                Some(external_sensor),
+                None,
+            )
+            .unwrap(),
+        ));
+
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn =
+            EnergySupply::connection(energy_supply.clone(), "storage_heater").unwrap();
+
+        let heater = ElecStorageHeater::new(
+            3.5,
+            2.5,
+            10.0,
+            ElectricStorageHeaterAirFlowType::FanAssisted,
+            0.7,
+            11.,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
+            control,
+            charge_control,
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
+            external_conditions,
+            0.,
+            None,
+        )
+        .unwrap();
+
+        heater.storage.write().set_heat_retention_ratio(0.);
+
+        let result = heater
+            .storage
+            .read()
+            .target_electric_charge(simulation_time.iter().current_iteration());
+
+        assert!(result.is_err())
+    }
+
     #[rstest]
     fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
