@@ -2053,7 +2053,54 @@ mod tests {
         assert_eq!(elec_storage_heater.storage.read().state_of_charge(), 0.);
     }
 
-    // TODO: test_invalid_charge_control_logic_error
+    // skipped test_invalid_charge_control_logic_error as not able to replicate in Rust
+    // & Rust ensures no invalid logic type can be used
+
+    #[rstest]
+    fn test_elec_storage_heater_no_instant_power(
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        control: Arc<Control>,
+        charge_control: Arc<Control>,
+    ) {
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
+
+        let heater = ElecStorageHeater::new(
+            3.5,
+            0.,
+            10.0,
+            ElectricStorageHeaterAirFlowType::FanAssisted,
+            0.7,
+            11.,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
+            control,
+            charge_control,
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
+            external_conditions,
+            0.,
+            None,
+        )
+        .unwrap();
+
+        // Set low SOC
+        heater.storage.write().set_state_of_charge(0.1);
+
+        // Demand high energy
+        let actual_energy = heater
+            .demand_energy(10., &simulation_time.iter().current_iteration())
+            .unwrap();
+
+        assert!(actual_energy < 10.);
+    }
+
     // TODO: test_elec_storage_heater_no_instant_power
     // TODO: test_elec_storage_energy_output_modes
 
