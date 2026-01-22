@@ -2144,7 +2144,43 @@ mod tests {
         assert_eq!(setpoint, 21.);
     }
 
-    // TODO: test_output_mode_enum_values
-    // TODO: test_heat_storage_dry_core_boundary_soc_values
-    // TODO: test_heat_storage_dry_core_zero_capacity
+    // skipped test_output_mode_enum_values as not adding value in Rust
+    // skippped test_heat_storage_dry_core_boundary_soc_values as no current_core_soc exists on
+    // HeatStorageDryCore & otherwise the test is same as test_elec_storage_energy_output_modes
+    
+    #[rstest]
+    fn test_heat_storage_dry_core_zero_capacity(
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        control: Arc<Control>,
+        charge_control: Arc<Control>,
+    ) {
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
+
+        let heater = ElecStorageHeater::new(
+            0.55,
+            0.23,
+            0.,
+            ElectricStorageHeaterAirFlowType::DamperOnly,
+            0.4,
+            0.02,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
+            control,
+            charge_control,
+            vec![[0.0, 0.5], [100., 0.15]],
+            vec![[0.0, 0.3], [100.0, 0.8]],
+            external_conditions,
+            0.,
+            None,
+        );
+
+        assert!(heater.is_err())
+    }
 }
