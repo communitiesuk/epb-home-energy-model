@@ -672,6 +672,7 @@ pub struct Corpus {
     required_vent_data: Option<RequiredVentData>,
     energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>>,
     energy_supply_conn_names_for_heat_systems: IndexMap<String, String>,
+    hotwatersource_name_for_heatsourcewet_service: IndexMap<String, String>,
     timestep_end_calcs: Arc<RwLock<Vec<WetHeatSource>>>,
     initial_loop: AtomicBool,
     detailed_output_heating_cooling: bool,
@@ -869,28 +870,30 @@ impl Corpus {
 
         let mut energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>> =
             Default::default();
+        let mut hot_water_source_name_for_service: IndexMap<String, String> = Default::default();
 
         // processing pre-heated sources
         let mut pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> =
             Default::default();
 
         for (source_name, source_details) in &input.pre_heated_water_source {
-            let (heat_source, energy_conn_names) = hot_water_source_from_input(
-                source_name.into(),
-                source_details,
-                &cold_water_sources,
-                &pre_heated_water_sources,
-                &mut wet_heat_sources,
-                &wwhrs,
-                &controls,
-                &mut energy_supplies,
-                &diverter_types,
-                &mut diverters,
-                shareable_fn(&temp_internal_air_prev),
-                simulation_time_iterator.clone().as_ref(),
-                external_conditions.clone(),
-                output_options.detailed_output_heating_cooling,
-            )?;
+            let (heat_source, energy_conn_names, preheated_source_names_for_service) =
+                hot_water_source_from_input(
+                    source_name.into(),
+                    source_details,
+                    &cold_water_sources,
+                    &pre_heated_water_sources,
+                    &mut wet_heat_sources,
+                    &wwhrs,
+                    &controls,
+                    &mut energy_supplies,
+                    &diverter_types,
+                    &mut diverters,
+                    shareable_fn(&temp_internal_air_prev),
+                    simulation_time_iterator.clone().as_ref(),
+                    external_conditions.clone(),
+                    output_options.detailed_output_heating_cooling,
+                )?;
             energy_supply_conn_names_for_hot_water_source
                 .insert(source_name.into(), energy_conn_names);
             if let HotWaterSource::PreHeated(source) = heat_source {
@@ -898,29 +901,32 @@ impl Corpus {
             } else {
                 bail!("Pre-heated water sources must be storage tanks");
             }
+            hot_water_source_name_for_service.extend(preheated_source_names_for_service);
         }
 
         let mut hot_water_sources: IndexMap<String, HotWaterSource> = Default::default();
         for (name, data) in input.hot_water_source.iter() {
-            let (hot_water_source, hw_cylinder_conn_names) = hot_water_source_from_input(
-                name.into(),
-                data,
-                &cold_water_sources,
-                &pre_heated_water_sources,
-                &mut wet_heat_sources,
-                &wwhrs,
-                &controls,
-                &mut energy_supplies,
-                &diverter_types,
-                &mut diverters,
-                shareable_fn(&temp_internal_air_prev),
-                simulation_time_iterator.clone().as_ref(),
-                external_conditions.clone(),
-                output_options.detailed_output_heating_cooling,
-            )?;
+            let (hot_water_source, hw_cylinder_conn_names, source_names_for_service) =
+                hot_water_source_from_input(
+                    name.into(),
+                    data,
+                    &cold_water_sources,
+                    &pre_heated_water_sources,
+                    &mut wet_heat_sources,
+                    &wwhrs,
+                    &controls,
+                    &mut energy_supplies,
+                    &diverter_types,
+                    &mut diverters,
+                    shareable_fn(&temp_internal_air_prev),
+                    simulation_time_iterator.clone().as_ref(),
+                    external_conditions.clone(),
+                    output_options.detailed_output_heating_cooling,
+                )?;
             hot_water_sources.insert(name.into(), hot_water_source);
             energy_supply_conn_names_for_hot_water_source
                 .insert(name.into(), hw_cylinder_conn_names);
+            hot_water_source_name_for_service.extend(source_names_for_service);
         }
 
         let domestic_hot_water_demand = DomesticHotWaterDemand::new(
@@ -1026,6 +1032,7 @@ impl Corpus {
             required_vent_data,
             energy_supply_conn_names_for_hot_water_source,
             energy_supply_conn_names_for_heat_systems,
+            hotwatersource_name_for_heatsourcewet_service: hot_water_source_name_for_service,
             timestep_end_calcs,
             initial_loop: AtomicBool::new(false),
             detailed_output_heating_cooling: output_options.detailed_output_heating_cooling,
@@ -4384,6 +4391,7 @@ fn heat_source_wet_from_input(
 
 fn heat_source_from_input(
     name: &str,
+    hot_water_source_name: &str,
     input: &HeatSourceInput,
     cold_water_source: &WaterSupply,
     volume: f64,
@@ -4395,7 +4403,7 @@ fn heat_source_from_input(
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
-) -> anyhow::Result<(HeatSource, String)> {
+) -> anyhow::Result<(HeatSource, String, Option<(String, String)>)> {
     match input {
         HeatSourceInput::ImmersionHeater {
             power,
@@ -4424,6 +4432,7 @@ fn heat_source_from_input(
                     ),
                 )))),
                 name.into(),
+                None,
             ))
         }
         HeatSourceInput::SolarThermalSystem {
@@ -4483,6 +4492,7 @@ fn heat_source_from_input(
                     ),
                 )))),
                 name.into(),
+                None,
             ))
         }
         HeatSourceInput::ServiceWaterRegular {
@@ -4492,7 +4502,8 @@ fn heat_source_from_input(
             temp_flow_limit_upper,
             ..
         } => {
-            let energy_supply_conn_name: String = format!("{name}_water_heating").into();
+            let energy_supply_conn_name: String =
+                format!("{name}_water_heating: {hot_water_source_name}").into();
             let heat_source_wet = wet_heat_sources
                 .get(name)
                 .ok_or_else(|| {
@@ -4557,7 +4568,8 @@ fn heat_source_from_input(
                         }
                     },
                 },
-                energy_supply_conn_name,
+                energy_supply_conn_name.clone(),
+                (energy_supply_conn_name, hot_water_source_name.into()).into(),
             ))
         }
         HeatSourceInput::HeatPumpHotWaterOnly {
@@ -4604,6 +4616,7 @@ fn heat_source_from_input(
                     ),
                 ))),
                 energy_supply_conn_name.into(),
+                None,
             ))
         }
     }
@@ -4729,7 +4742,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
 }
 
 fn hot_water_source_from_input(
-    source_name: String,
+    name: String,
     input: &HotWaterSourceDetails,
     cold_water_sources: &ColdWaterSources,
     pre_heated_water_sources: &IndexMap<String, HotWaterStorageTank>,
@@ -4743,8 +4756,9 @@ fn hot_water_source_from_input(
     simulation_time: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
-) -> anyhow::Result<(HotWaterSource, Vec<String>)> {
+) -> anyhow::Result<(HotWaterSource, Vec<String>, IndexMap<String, String>)> {
     let mut energy_supply_conn_names = vec![];
+    let mut hot_water_source_name_for_service: IndexMap<String, String> = Default::default();
     let cloned_input = input.clone();
 
     let cold_water_source_for_hot_water_tank =
@@ -4756,47 +4770,52 @@ fn hot_water_source_from_input(
                 .ok_or_else(|| anyhow!("Could not find pre-heated or WWHRS water source for name '{cold_water_source_type}'"))
         };
 
-    let mut heat_sources_for_hot_water_tank =
-        |cold_water_source: WaterSupply,
-         heat_exchanger_surface_area: &Option<f64>,
-         heat_source: &IndexMap<std::string::String, HeatSourceInput>,
-         volume: &f64,
-         daily_losses: &f64|
-         -> anyhow::Result<IndexMap<String, PositionedHeatSource>> {
-            let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
+    let mut heat_sources_for_hot_water_tank = |cold_water_source: WaterSupply,
+                                               heat_exchanger_surface_area: &Option<f64>,
+                                               heat_source: &IndexMap<
+        std::string::String,
+        HeatSourceInput,
+    >,
+                                               volume: &f64,
+                                               daily_losses: &f64|
+     -> anyhow::Result<
+        IndexMap<String, PositionedHeatSource>,
+    > {
+        let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
 
-            let heat_exchanger_surface_area =
-                heat_exchanger_surface_area.and_then(|surface_area| {
-                    heat_source
-                        .values()
-                        .any(|source| {
-                            matches!(source, HeatSourceInput::HeatPumpHotWaterOnly { .. })
-                        })
-                        .then_some(surface_area)
-                });
+        let heat_exchanger_surface_area = heat_exchanger_surface_area.and_then(|surface_area| {
+            heat_source
+                .values()
+                .any(|source| matches!(source, HeatSourceInput::HeatPumpHotWaterOnly { .. }))
+                .then_some(surface_area)
+        });
 
-            // With pre-heated tanks we allow now tanks not to have a heat source as the 'cold' feed
-            // could be a pre-heated source or wwhr that might be enough
-            let mut used_heat_source_names: Vec<String> = Default::default();
-            for (name, hs) in heat_source {
-                let name = String::from(name);
-                if used_heat_source_names.contains(&name) {
-                    return Err(anyhow!("Duplicate heat source name detected: {name}"));
+        // With pre-heated tanks we allow now tanks not to have a heat source as the 'cold' feed
+        // could be a pre-heated source or wwhr that might be enough
+        let mut used_heat_source_names: Vec<String> = Default::default();
+        for (heat_source_name, heat_source_data) in heat_source {
+            let heat_source_name = String::from(heat_source_name);
+            if used_heat_source_names.contains(&heat_source_name) {
+                return Err(anyhow!(
+                    "Duplicate heat source name detected: {heat_source_name}"
+                ));
+            }
+            used_heat_source_names.push(heat_source_name.clone());
+
+            let heater_position = heat_source_data.heater_position();
+            let thermostat_position = match input {
+                HotWaterSourceDetails::StorageTank { .. } => heat_source_data.thermostat_position(),
+                HotWaterSourceDetails::SmartHotWaterTank { .. } => None,
+                _ => {
+                    unreachable!()
                 }
-                used_heat_source_names.push(name.clone());
+            };
 
-                let heater_position = hs.heater_position();
-                let thermostat_position = match input {
-                    HotWaterSourceDetails::StorageTank { .. } => hs.thermostat_position(),
-                    HotWaterSourceDetails::SmartHotWaterTank { .. } => None,
-                    _ => {
-                        unreachable!()
-                    }
-                };
-
-                let (heat_source, energy_supply_conn_name) = heat_source_from_input(
+            let (heat_source, energy_supply_conn_name, heat_source_name_pair) =
+                heat_source_from_input(
+                    heat_source_name.as_str(),
                     name.as_str(),
-                    hs,
+                    heat_source_data,
                     &cold_water_source,
                     *volume,
                     *daily_losses,
@@ -4808,21 +4827,25 @@ fn hot_water_source_from_input(
                     temp_internal_air_fn.clone(),
                     external_conditions.clone(),
                 )?;
-                let heat_source = Arc::new(Mutex::new(heat_source));
+            let heat_source = Arc::new(Mutex::new(heat_source));
 
-                heat_sources.insert(
-                    name,
-                    PositionedHeatSource {
-                        heat_source: heat_source.clone(),
-                        heater_position,
-                        thermostat_position,
-                    },
-                );
-                energy_supply_conn_names.push(energy_supply_conn_name);
+            heat_sources.insert(
+                heat_source_name,
+                PositionedHeatSource {
+                    heat_source: heat_source.clone(),
+                    heater_position,
+                    thermostat_position,
+                },
+            );
+            energy_supply_conn_names.push(energy_supply_conn_name);
+            if let Some((energy_supply_conn_name, hot_water_source_name)) = heat_source_name_pair {
+                hot_water_source_name_for_service
+                    .insert(energy_supply_conn_name, hot_water_source_name);
             }
+        }
 
-            Ok(heat_sources)
-        };
+        Ok(heat_sources)
+    };
 
     let mut connect_diverter_for_hot_water_tank = |energy_supplies: IndexMap<
         String,
@@ -4961,7 +4984,7 @@ fn hot_water_source_from_input(
             }
 
             let energy_supply_pump = energy_supplies[energy_supply_pump].clone();
-            let pump_source_name = format!("Smart_hot_water_tank_pump: {source_name}");
+            let pump_source_name = format!("Smart_hot_water_tank_pump: {name}");
             let energy_supply_conn_pump =
                 EnergySupply::connection(energy_supply_pump, &pump_source_name)?;
             let smart_hot_water_tank = Arc::new(RwLock::new(SmartHotWaterTank::new(
@@ -5040,7 +5063,7 @@ fn hot_water_source_from_input(
             ..
         } => {
             let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Point of use hot water source references an undeclared energy supply '{energy_supply}'."))?.clone();
-            let energy_supply_conn_name = source_name;
+            let energy_supply_conn_name = name;
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply.clone(), &energy_supply_conn_name)?;
@@ -5124,7 +5147,11 @@ fn hot_water_source_from_input(
         }
     };
 
-    Ok((hot_water_source, energy_supply_conn_names))
+    Ok((
+        hot_water_source,
+        energy_supply_conn_names,
+        hot_water_source_name_for_service,
+    ))
 }
 
 fn cold_water_source_for_type(
