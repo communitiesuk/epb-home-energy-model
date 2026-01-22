@@ -1,9 +1,10 @@
-extern crate hem;
-
 use clap::{Args, Parser};
-use hem::output::FileOutput;
-use hem::read_weather_file::{weather_data_to_vec, ExternalConditions};
-use hem::{run_project, RunInput};
+
+use home_energy_model::output::FileOutput;
+use home_energy_model::read_weather_file::{
+    epw_weather_data_to_external_conditions, ExternalConditions,
+};
+use home_energy_model::{run_project, RunInput};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
@@ -86,7 +87,8 @@ fn main() -> anyhow::Result<()> {
             epw_file: Some(ref file),
             cibse_weather_file: None,
         } => {
-            let external_conditions_data = weather_data_to_vec(File::open(file)?);
+            let external_conditions_data =
+                epw_weather_data_to_external_conditions(File::open(file)?);
             match external_conditions_data {
                 Ok(data) => Some(data),
                 Err(_) => panic!("Could not parse the weather file!"),
