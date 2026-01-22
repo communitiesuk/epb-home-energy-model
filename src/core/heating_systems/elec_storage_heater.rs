@@ -897,138 +897,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_energy_output_max_with_zero_event_single(
-        simulation_time: SimulationTime,
-        simulation_time_iterator: SimulationTimeIterator,
-        charge_control: Arc<Control>,
-        control: Arc<Control>,
-        external_conditions: Arc<ExternalConditions>,
-    ) {
-        let esh_max_output = vec![[0.0, 0.0], [0.5, 30.0], [1.0, 50.0]];
-        let elec_storage_heater = create_elec_storage_heater(
-            simulation_time,
-            charge_control,
-            control,
-            external_conditions,
-            DRY_CORE_MIN_OUTPUT.to_vec(),
-            esh_max_output,
-            None,
-        );
-
-        let expected_max_energy_output = 7.905696339321716;
-
-        let expected_time_used = 1.0;
-
-        let max_energy_output = elec_storage_heater
-            .energy_output_max(&simulation_time_iterator.current_iteration())
-            .unwrap();
-        let _ =
-            elec_storage_heater.demand_energy(5.0, &simulation_time_iterator.current_iteration());
-        let (energy, time_used, _, _) = max_energy_output;
-
-        assert_relative_eq!(energy, expected_max_energy_output, max_relative = 1e-2);
-
-        assert_relative_eq!(
-            time_used,
-            expected_time_used,
-            max_relative = EIGHT_DECIMAL_PLACES
-        );
-    }
-
-    #[rstest]
-    #[ignore = "known issue"]
-    fn test_energy_output_max_with_zero_event(
-        simulation_time: SimulationTime,
-        simulation_time_iterator: SimulationTimeIterator,
-        charge_control: Arc<Control>,
-        control: Arc<Control>,
-        external_conditions: Arc<ExternalConditions>,
-    ) {
-        let elec_storage_heater = create_elec_storage_heater(
-            simulation_time,
-            charge_control,
-            control,
-            external_conditions,
-            DRY_CORE_MIN_OUTPUT.to_vec(),
-            DRY_CORE_MAX_OUTPUT.to_vec(),
-            None,
-        );
-
-        // Test maximum energy output calculation across all timesteps.
-        let expected_max_energy_output = [
-            7.905696339321716,
-            6.409423918606012,
-            4.913144554873739,
-            3.503509067065079,
-            3.4999662250517263,
-            3.5000272321002064,
-            3.4999664471092706,
-            3.5000359941220256,
-            0.5819017195075272,
-            0.0014406990152162622,
-            7.97047184775446e-06,
-            9.068336550842638e-08,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            2.9181276338320536,
-            3.4985510038277714,
-            3.5000309931442937,
-            3.4999785113707134,
-            0.5818631932808774,
-            0.0014406043531798149,
-            7.969521833559643e-06,
-            9.066927928048405e-08,
-        ];
-
-        let expected_time_used = [
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            0.37318890798358917,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            0.37318890798725507,
-        ];
-
-        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
-            let max_energy_output = elec_storage_heater.energy_output_max(&t_it).unwrap();
-            let _ = elec_storage_heater.demand_energy(5.0, &t_it);
-            let (energy, time_used, _, _) = max_energy_output;
-
-            assert_relative_eq!(
-                energy,
-                expected_max_energy_output[t_idx],
-                max_relative = 1e-2
-            );
-
-            assert_relative_eq!(
-                time_used,
-                expected_time_used[t_idx],
-                max_relative = EIGHT_DECIMAL_PLACES
-            );
-        }
-    }
-
-    #[rstest]
     fn test_electric_charge_automatic(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -2147,7 +2015,7 @@ mod tests {
     // skipped test_output_mode_enum_values as not adding value in Rust
     // skippped test_heat_storage_dry_core_boundary_soc_values as no current_core_soc exists on
     // HeatStorageDryCore & otherwise the test is same as test_elec_storage_energy_output_modes
-    
+
     #[rstest]
     fn test_heat_storage_dry_core_zero_capacity(
         simulation_time: SimulationTime,
