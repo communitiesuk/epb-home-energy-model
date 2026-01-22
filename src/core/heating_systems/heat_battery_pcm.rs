@@ -25,6 +25,7 @@ use smartstring::alias::String;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use thiserror::Error;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum HeatBatteryPcmOperationMode {
@@ -1390,11 +1391,7 @@ impl HeatBatteryPcm {
 
     /// Calculate the maximum energy output of the heat battery, accounting
     /// for time spent on higher-priority services.
-    pub(crate) fn energy_output_max(
-        &self,
-        temp_output: f64,
-        time_start: Option<f64>,
-    ) -> anyhow::Result<f64> {
+    fn energy_output_max(&self, temp_output: f64, time_start: Option<f64>) -> anyhow::Result<f64> {
         // Return the energy the battery can provide assuming the HB temperature inlet
         // is constant during HEM time step equal to the required emitter temperature (temp_output)
         // Maximum energy for a given HB zones temperature distribution and inlet temperature.
@@ -1482,7 +1479,7 @@ impl HeatBatteryPcm {
         self.flag_first_call.store(false, Ordering::SeqCst);
     }
 
-    pub(crate) fn demand_energy(
+    fn demand_energy(
         &self,
         service_name: &str,
         service_type: HeatingServiceType,
@@ -1798,10 +1795,11 @@ impl HeatBatteryPcm {
         &self,
         hot_water_energy_output: &IndexMap<String, Vec<ResultParamValue>>,
         hot_water_source_name_for_heat_battery_service: &IndexMap<String, String>,
-    ) -> anyhow::Result<(ResultsPerTimestep, ResultsAnnual)> {
-        let detailed_results = self.detailed_results.as_ref().ok_or_else(||
-            anyhow!("Detailed results cannot be output when the option to collect them was not selected")
-        )?;
+    ) -> Result<(ResultsPerTimestep, ResultsAnnual), OutputDetailedResultsNotEnabledError> {
+        let detailed_results = self
+            .detailed_results
+            .as_ref()
+            .ok_or_else(|| OutputDetailedResultsNotEnabledError)?;
 
         let mut results_per_timestep: ResultsPerTimestep =
             [("auxiliary".into(), Default::default())].into();
@@ -2019,6 +2017,10 @@ impl HeatBatteryPcm {
         }
     }
 }
+
+#[derive(Debug, Error)]
+#[error("Tried to call output_detailed_results when option to collect detailed results was not selected")]
+pub(crate) struct OutputDetailedResultsNotEnabledError;
 
 #[cfg(test)]
 mod tests {

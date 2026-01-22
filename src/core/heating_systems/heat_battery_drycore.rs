@@ -1126,7 +1126,7 @@ impl HeatBatteryDryCoreServiceSpace {
 pub(crate) struct HeatBatteryDryCore {
     storage: Arc<RwLock<HeatStorageDryCore>>,
     energy_supply: Arc<RwLock<EnergySupply>>,
-    energy_supply_connection: Arc<EnergySupplyConnection>,
+    energy_supply_connection: EnergySupplyConnection,
     energy_supply_connections: Arc<RwLock<IndexMap<String, EnergySupplyConnection>>>,
     fan_power: f64,
     power_instant: f64,
@@ -1144,10 +1144,10 @@ const ZONE_TEMP_INIT: f64 = 21.0;
 
 impl HeatBatteryDryCore {
     pub(crate) fn new(
-        heat_battery_input: HeatBattery,
+        heat_battery_input: &HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         n_units: Option<u32>,
         simulation_timestep: f64,
         output_detailed_results: Option<bool>,
@@ -1193,13 +1193,13 @@ impl HeatBatteryDryCore {
         };
 
         let storage = Arc::new(RwLock::new(HeatStorageDryCore::new(
-            pwr_in,
-            storage_capacity,
+            *pwr_in,
+            *storage_capacity,
             n_units,
             charge_control,
-            dry_core_min_output,
-            dry_core_max_output,
-            state_of_charge_init,
+            dry_core_min_output.clone(),
+            dry_core_max_output.clone(),
+            *state_of_charge_init,
         )?));
 
         let battery = Arc::new(Self {
@@ -1207,10 +1207,10 @@ impl HeatBatteryDryCore {
             energy_supply,
             energy_supply_connection,
             energy_supply_connections: Arc::new(RwLock::new(IndexMap::new())),
-            fan_power,
-            power_instant: rated_power_instant,
-            power_circ_pump,
-            power_standby,
+            fan_power: *fan_power,
+            power_instant: *rated_power_instant,
+            power_circ_pump: *power_circ_pump,
+            power_standby: *power_standby,
             detailed_results: output_detailed_results.then_some(Arc::new(RwLock::new(vec![]))),
             service_results: Arc::new(RwLock::new(Vec::new())),
             total_time_running_current_timestep: Default::default(),
@@ -2070,10 +2070,8 @@ mod tests {
     #[fixture]
     fn energy_supply_connection(
         energy_supply: Arc<RwLock<EnergySupply>>,
-    ) -> Arc<EnergySupplyConnection> {
-        EnergySupply::connection(energy_supply, "heat_battery")
-            .unwrap()
-            .into()
+    ) -> EnergySupplyConnection {
+        EnergySupply::connection(energy_supply, "heat_battery").unwrap()
     }
 
     #[fixture]
@@ -2122,7 +2120,7 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
     ) -> Arc<HeatBatteryDryCore> {
         let n_units: u32 = match heat_battery_input {
@@ -2132,7 +2130,7 @@ mod tests {
             _ => unreachable!(),
         };
         let battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -2152,7 +2150,7 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
     ) -> Arc<HeatBatteryDryCore> {
         let n_units: u32 = match heat_battery_input {
@@ -2163,7 +2161,7 @@ mod tests {
         };
 
         HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -2293,7 +2291,7 @@ mod tests {
     fn test_heat_battery_dhw_temperature_edge_case(
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
     ) {
         // Create a heat battery with very low power output capabilities
@@ -2313,7 +2311,7 @@ mod tests {
         };
 
         let heat_battery = HeatBatteryDryCore::new(
-            input,
+            &input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -2809,10 +2807,10 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
     ) {
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -2831,12 +2829,12 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         mock_control_space: Arc<Control>,
         simulation_time: SimulationTime,
     ) {
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -2900,11 +2898,11 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
     ) {
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -2947,11 +2945,11 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
     ) {
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -2975,13 +2973,13 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
     ) {
         let mock_cold_feed = mock_cold_feed(Some(10.));
 
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -3032,7 +3030,7 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         mock_control_space: Arc<Control>,
         mock_control_dhw: Arc<Control>,
         default_control_max: Arc<Control>,
@@ -3041,7 +3039,7 @@ mod tests {
         let simtime = simulation_time.iter().current_iteration();
 
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -3093,13 +3091,13 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
     ) {
         let simtime = simulation_time.iter().current_iteration();
 
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -3141,12 +3139,12 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         mock_control_space: Arc<Control>,
         simulation_time: SimulationTime,
     ) {
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -3187,13 +3185,13 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
     ) {
         let simtime = simulation_time.iter().current_iteration();
 
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -3241,10 +3239,10 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
     ) {
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -3268,13 +3266,13 @@ mod tests {
         heat_battery_input: HeatBattery,
         charge_control_target_0: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_connection: Arc<EnergySupplyConnection>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
     ) {
         let simtime = simulation_time.iter().current_iteration();
 
         let heat_battery = HeatBatteryDryCore::new(
-            heat_battery_input,
+            &heat_battery_input,
             charge_control_target_0,
             energy_supply,
             energy_supply_connection,
