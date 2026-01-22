@@ -2024,7 +2024,35 @@ mod tests {
         assert_eq!(heater.energy_for_fan(), 0.)
     }
 
-    // TODO: test_protected_accessor_methods
+    #[rstest]
+    fn test_protected_accessor_methods(elec_storage_heater: Arc<ElecStorageHeater>) {
+        // skipped methods we did not port to Rust
+
+        // Test getter methods
+        assert_eq!(elec_storage_heater.storage.read().state_of_charge(), 0.5);
+        assert_eq!(elec_storage_heater.storage.read().storage_capacity(), 10.);
+        assert_eq!(elec_storage_heater.storage.read().n_units(), 1);
+        assert_eq!(elec_storage_heater.storage.read().demand_met(), 0.);
+        assert_eq!(elec_storage_heater.storage.read().demand_unmet(), 0.);
+
+        // Test setter methods
+        elec_storage_heater.storage.write().set_state_of_charge(0.8);
+        assert_eq!(elec_storage_heater.storage.read().state_of_charge(), 0.8);
+
+        elec_storage_heater.storage.write().set_demand_met(1.5);
+        assert_eq!(elec_storage_heater.storage.read().demand_met(), 1.5);
+
+        elec_storage_heater.storage.write().set_demand_unmet(0.5);
+        assert_eq!(elec_storage_heater.storage.read().demand_unmet(), 0.5);
+
+        // Test SOC clipping
+        elec_storage_heater.storage.write().set_state_of_charge(1.5); // Above 1.0
+        assert_eq!(elec_storage_heater.storage.read().state_of_charge(), 1.);
+
+        elec_storage_heater.storage.write().set_state_of_charge(0.); // Below 1.0
+        assert_eq!(elec_storage_heater.storage.read().state_of_charge(), 0.);
+    }
+
     // TODO: test_invalid_charge_control_logic_error
     // TODO: test_elec_storage_heater_no_instant_power
     // TODO: test_elec_storage_energy_output_modes

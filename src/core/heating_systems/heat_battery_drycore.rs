@@ -526,7 +526,7 @@ impl HeatStorageDryCore {
             .store(clip(soc, 0.0, 1.0), Ordering::SeqCst);
     }
 
-    fn demand_met(&self) -> f64 {
+    pub(super) fn demand_met(&self) -> f64 {
         self.demand_met.load(Ordering::SeqCst)
     }
 
