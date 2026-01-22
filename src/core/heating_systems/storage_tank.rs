@@ -3974,12 +3974,14 @@ mod tests {
 
             if usage_events.is_some() {
                 for event in usage_events.unwrap() {
-                    let volume_hot = event.volume_warm * (event.temperature_warm - COLD_WATER_TEMPS[t_idx]) / (temp_hot - COLD_WATER_TEMPS[t_idx]);
+                    let volume_hot = event.volume_warm
+                        * (event.temperature_warm - COLD_WATER_TEMPS[t_idx])
+                        / (temp_hot - COLD_WATER_TEMPS[t_idx]);
                     usage_events2.push(WaterEventResult {
-                            event_result_type: event.event_result_type,
-                            temperature_warm: event.temperature_warm,
-                            volume_warm: event.volume_warm,
-                            volume_hot,
+                        event_result_type: event.event_result_type,
+                        temperature_warm: event.temperature_warm,
+                        volume_warm: event.volume_warm,
+                        volume_hot,
                     });
                 }
             }
@@ -4842,8 +4844,11 @@ mod tests {
             None,
             1.,
         )));
-        let cold_feed =
-            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(COLD_WATER_TEMPS.to_vec(), 0, 1.)));
+        let cold_feed = WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(
+            COLD_WATER_TEMPS.to_vec(),
+            0,
+            1.,
+        )));
         let energy_supply_connection = EnergySupply::connection(
             energy_supply_for_smart_hot_water_tank_immersion.clone(),
             heat_source_name,
@@ -5247,16 +5252,26 @@ mod tests {
             [0.0, 0.0, 0.0, 0.0, 4.5043354264, 0.1956556236, 0.0, 0.0];
 
         for (t_idx, t_it) in simulation_time_for_smart_hot_water_tank.iter().enumerate() {
-
             // # Convert usage events based on HW temp of 55 to equivalent 50:
             let usage_events = event_data[t_idx].clone();
-            let temp_hot = if t_idx == 0 { 50. } else { *expected_temperatures_1[t_idx -1].last().unwrap() };
+            let temp_hot = if t_idx == 0 {
+                50.
+            } else {
+                *expected_temperatures_1[t_idx - 1].last().unwrap()
+            };
 
             let mut usage_events1 = vec![];
             if usage_events.is_some() {
                 for event in usage_events.clone().unwrap() {
-                    let volume_hot = event.volume_warm * (event.temperature_warm - COLD_WATER_TEMPS[t_idx]) / (temp_hot - COLD_WATER_TEMPS[t_idx]);
-                    usage_events1.push(WaterEventResult { event_result_type: event.event_result_type, temperature_warm: event.temperature_warm, volume_warm: event.volume_warm, volume_hot });
+                    let volume_hot = event.volume_warm
+                        * (event.temperature_warm - COLD_WATER_TEMPS[t_idx])
+                        / (temp_hot - COLD_WATER_TEMPS[t_idx]);
+                    usage_events1.push(WaterEventResult {
+                        event_result_type: event.event_result_type,
+                        temperature_warm: event.temperature_warm,
+                        volume_warm: event.volume_warm,
+                        volume_hot,
+                    });
                 }
             }
 
@@ -5283,13 +5298,24 @@ mod tests {
             // smart_hot_water_tank_2 tests for case where heater does not heat all layers
 
             // Convert usage events based on HW temp of 55 to equivalent 60:
-            let temp_hot = if t_idx == 0 { 60. } else { *expected_temperatures_2[t_idx -1].last().unwrap() };
+            let temp_hot = if t_idx == 0 {
+                60.
+            } else {
+                *expected_temperatures_2[t_idx - 1].last().unwrap()
+            };
             let mut usage_events2 = vec![];
 
             if usage_events.is_some() {
                 for event in usage_events.unwrap() {
-                    let volume_hot = event.volume_warm * (event.temperature_warm - COLD_WATER_TEMPS[t_idx]) / (temp_hot - COLD_WATER_TEMPS[t_idx]);
-                    usage_events2.push(WaterEventResult { event_result_type: event.event_result_type, temperature_warm: event.temperature_warm, volume_warm: event.volume_warm, volume_hot });
+                    let volume_hot = event.volume_warm
+                        * (event.temperature_warm - COLD_WATER_TEMPS[t_idx])
+                        / (temp_hot - COLD_WATER_TEMPS[t_idx]);
+                    usage_events2.push(WaterEventResult {
+                        event_result_type: event.event_result_type,
+                        temperature_warm: event.temperature_warm,
+                        volume_warm: event.volume_warm,
+                        volume_hot,
+                    });
                 }
             }
             let _ = smart_hot_water_tank_2
@@ -5300,7 +5326,11 @@ mod tests {
 
             let temp_n = smart_hot_water_tank_2.storage_tank.temp_n.read();
             for (i, expected_temp) in expected_temperatures_2[t_idx].iter().enumerate() {
-                assert_relative_eq!(temp_n[i], *expected_temp, max_relative = FIVE_DECIMAL_PLACES);
+                assert_relative_eq!(
+                    temp_n[i],
+                    *expected_temp,
+                    max_relative = FIVE_DECIMAL_PLACES
+                );
             }
 
             let results_by_end_user_2 = energy_supply_for_smart_hot_water_tank_immersion_2
@@ -5311,7 +5341,7 @@ mod tests {
                 actual_results_by_end_user_2[t_idx],
                 expected_results_by_end_user_2[t_idx],
                 max_relative = FIVE_DECIMAL_PLACES
-            ); 
+            );
         }
     }
 
