@@ -1982,6 +1982,53 @@ mod tests {
         }
     }
 
+    // skip test_invalid_air_flow_type as not replicable, Rust ensures only valid air flow types can be used
+
+    #[rstest]
+    fn test_damper_only(
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        control: Arc<Control>,
+        charge_control: Arc<Control>,
+    ) {
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
+
+        let heater = ElecStorageHeater::new(
+            3.5,
+            2.5,
+            10.0,
+            ElectricStorageHeaterAirFlowType::DamperOnly,
+            0.7,
+            11.,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
+            control,
+            charge_control,
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
+            external_conditions,
+            0.,
+            None,
+        )
+        .unwrap();
+
+        heater.storage.write().set_state_of_charge(0.5);
+        let _ = heater.demand_energy(1., &simulation_time.iter().current_iteration());
+
+        assert_eq!(heater.energy_for_fan(), 0.)
+    }
+
+    // TODO: test_protected_accessor_methods
+    // TODO: test_invalid_charge_control_logic_error
+    // TODO: test_elec_storage_heater_no_instant_power
+    // TODO: test_elec_storage_energy_output_modes
+
     #[rstest]
     fn test_get_temp_for_charge_control(elec_storage_heater: Arc<ElecStorageHeater>) {
         let temp = elec_storage_heater.get_temp_for_charge_control().unwrap();
@@ -1993,4 +2040,8 @@ mod tests {
         let setpoint = elec_storage_heater.get_zone_setpoint();
         assert_eq!(setpoint, 21.);
     }
+
+    // TODO: test_output_mode_enum_values
+    // TODO: test_heat_storage_dry_core_boundary_soc_values
+    // TODO: test_heat_storage_dry_core_zero_capacity
 }
