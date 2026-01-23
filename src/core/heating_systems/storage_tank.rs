@@ -4339,7 +4339,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "not yet updated to 1_0_a1"]
     fn test_extract_hot_water(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
@@ -4352,10 +4351,10 @@ mod tests {
             .total_volume_drawoff
             .store(0.0, Ordering::SeqCst);
         let event = WaterEventResult {
-            event_result_type: todo!(),
-            temperature_warm: todo!(),
-            volume_warm: todo!(),
-            volume_hot: todo!(),
+            event_result_type: WaterEventResultType::Other,
+            temperature_warm: 41.0,
+            volume_warm: 8.0,
+            volume_hot: 5.511111111111113,
         };
 
         assert_eq!(
@@ -4368,7 +4367,7 @@ mod tests {
             (
                 5.51111111111112,
                 0.2882311111111112,
-                vec![37.5, 37.5, 32.5, 31.988888888888887]
+                vec![37.5, 37.5, 37.5, 31.988888888888887]
             )
         );
     }
