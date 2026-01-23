@@ -4,10 +4,11 @@ use home_energy_model::output::FileOutput;
 use home_energy_model::read_weather_file::{
     epw_weather_data_to_external_conditions, ExternalConditions,
 };
-use home_energy_model::{run_project_from_input_file, RunInput};
+use home_energy_model::run_project_from_input_file;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use tracing_subscriber::fmt::format::FmtSpan;
 
@@ -102,7 +103,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     run_project_from_input_file(
-        RunInput::Read(Box::new(File::open(Path::new(input_file))?)),
+        BufReader::new(File::open(Path::new(input_file))?),
         &file_output,
         external_conditions,
         args.tariff_file.as_ref().map(|f| f.as_str()),

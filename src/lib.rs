@@ -46,7 +46,6 @@ use hem_core::external_conditions;
 use hem_core::simulation_time;
 use indexmap::IndexMap;
 use serde::{Serialize, Serializer};
-use serde_json::Value as JsonValue;
 use smartstring::alias::String;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -78,20 +77,32 @@ impl HemResponse {
     }
 }
 
-pub enum RunInput<'a> {
-    Json(JsonValue),
-    Read(Box<dyn Read + 'a>),
-}
-
 #[instrument(skip_all)]
 pub fn run_project_from_input_file(
-    input: RunInput,
+    input: impl Read,
     output: &impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
 ) -> Result<CalculationResultsWithContext, HemError> {
+    #[instrument(skip_all)]
+    fn finalize(input: impl Read) -> anyhow::Result<Input> {
+        let input = serde_json::from_reader(input)?;
+        // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
+        // if let BasicOutput::Invalid(errors) =
+        //     CORE_INCLUDING_FHS_VALIDATOR.apply(&self.input).basic()
+        // {
+        //     bail!(
+        //         "Wrapper formed invalid JSON for the core schema: {}",
+        //         serde_json::to_value(errors)?.to_json_string_pretty()?
+        //     );
+        // }
+
+        serde_json::from_value(input).map_err(|err| anyhow!(err))
+    }
+    let input = finalize(input)?;
+
     let results = run_project(
         input,
         external_conditions_data,
@@ -117,7 +128,7 @@ pub fn run_project_from_input_file(
 
 #[instrument(skip_all)]
 pub fn run_project(
-    input: RunInput,
+    input: Input,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
     heat_balance: bool,
@@ -131,7 +142,7 @@ pub fn run_project(
         ) -> anyhow::Result<Input> {
             if external_conditions_data.is_none()
                 && !input.external_conditions.are_all_fields_set() {
-                    bail!("No weather data found. Please provide a weather file or complete weather data in the input file.");
+                bail!("No weather data found. Please provide a weather file or complete weather data in the input file.");
             }
             if let Some(external_conditions) = external_conditions_data {
                 let shading_segments = &input.external_conditions.shading_segments;
@@ -143,26 +154,9 @@ pub fn run_project(
             Ok(input)
         }
 
-        #[instrument(skip_all)]
-        fn finalize(input: RunInput, external_conditions_data: Option<&ExternalConditionsFromFile>) -> anyhow::Result<Input> {
-            let input = match input {
-                RunInput::Json(value) => value,
-                RunInput::Read(value) => serde_json::from_reader(value)?
-            };
-            // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
-            // if let BasicOutput::Invalid(errors) =
-            //     CORE_INCLUDING_FHS_VALIDATOR.apply(&self.input).basic()
-            // {
-            //     bail!(
-            //         "Wrapper formed invalid JSON for the core schema: {}",
-            //         serde_json::to_value(errors)?.to_json_string_pretty()?
-            //     );
-            // }
-            let input = serde_json::from_value(input).map_err(|err| anyhow!(err))?;
-            merge_external_conditions_data(input, external_conditions_data.map(|x| x.into()))
-        }
-
-        let input = finalize(input, external_conditions_data.as_ref())?;
+        let input = merge_external_conditions_data(input, external_conditions_data
+            .as_ref()
+            .map(ExternalConditionsInput::from))?;
 
         // 1. Determine external conditions to use for calculations.
         #[instrument(skip_all)]
