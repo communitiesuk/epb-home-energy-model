@@ -84,9 +84,40 @@ pub enum RunInput<'a> {
 }
 
 #[instrument(skip_all)]
-pub fn run_project(
+pub fn run_project_from_input_file(
     input: RunInput,
     output: &impl Output,
+    external_conditions_data: Option<ExternalConditionsFromFile>,
+    tariff_data_file: Option<&str>,
+    heat_balance: bool,
+    detailed_output_heating_cooling: bool,
+) -> Result<CalculationResultsWithContext, HemError> {
+    let results = run_project(
+        input,
+        external_conditions_data,
+        tariff_data_file,
+        heat_balance,
+        detailed_output_heating_cooling,
+    )?;
+
+    let steps_in_hours = results.context.corpus.simulation_time.step_in_hours();
+
+    // TODO 1.0.0a1 writing of core output, wrap in if condition?
+    write_core_output_files(
+        Some(&results.context.input),
+        output,
+        &results,
+        steps_in_hours,
+        heat_balance,
+        detailed_output_heating_cooling,
+    )?;
+
+    Ok(results)
+}
+
+#[instrument(skip_all)]
+pub fn run_project(
+    input: RunInput,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
     heat_balance: bool,
@@ -132,7 +163,6 @@ pub fn run_project(
         }
 
         let input = finalize(input, external_conditions_data.as_ref())?;
-        let cloned_input = input.clone();
 
         // 1. Determine external conditions to use for calculations.
         #[instrument(skip_all)]
@@ -192,143 +222,9 @@ pub fn run_project(
             }
         };
 
-        // 4. Write out to core output files.
-        #[instrument(skip_all)]
-        fn write_core_output_files(
-            primary_input: Option<&Input>,
-            output: &impl Output,
-            results: &CalculationResultsWithContext,
-            hour_per_step: f64,
-            heat_balance: bool,
-            detailed_output_heating_cooling: bool,
-        ) -> anyhow::Result<()> {
-            if output.is_noop() {
-                return Ok(());
-            }
-            let CalculationResultsWithContext {
-                results:
-                RunResults {
-                    timestep_array,
-                    results_totals,
-                    results_end_user,
-                    energy_import,
-                    energy_export,
-                    energy_generated_consumed,
-                    energy_to_storage,
-                    energy_from_storage,
-                    energy_diverted,
-                    betafactor,
-                    zone_dict,
-                    zone_list,
-                    hc_system_dict,
-                    hot_water_dict,
-                    ductwork_gains,
-                    heat_balance_dict,
-                    heat_source_wet_results_dict,
-                    heat_source_wet_results_annual_dict,
-                    vent_output_list,
-                    emitters_output_dict,
-                    storage_from_grid,
-                    battery_state_of_charge,
-                    esh_output_dict,
-                    hot_water_source_results_dict,
-                    ..
-                },
-                ..
-            } = results;
-
-            write_core_output_file(
-                output,
-                OutputFileArgs {
-                    output_key: "results".into(),
-                    timestep_array,
-                    results_totals,
-                    results_end_user,
-                    energy_import,
-                    energy_export,
-                    energy_generated_consumed,
-                    energy_to_storage,
-                    energy_from_storage,
-                    storage_from_grid,
-                    battery_state_of_charge,
-                    energy_diverted,
-                    betafactor,
-                    zone_dict,
-                    zone_list,
-                    hc_system_dict,
-                    hot_water_dict,
-                    ductwork_gains,
-                },
-            )?;
-
-            if heat_balance {
-                for (hb_name, hb_map) in heat_balance_dict.iter() {
-                    let output_key = format!("results_heat_balance_{}", hb_name.to_string().to_case(Case::Snake)).into();
-                    write_core_output_file_heat_balance(output, HeatBalanceOutputFileArgs {
-                        output_key,
-                        timestep_array,
-                        hour_per_step,
-                        heat_balance_map: hb_map,
-                    })?;
-                }
-            }
-
-            if detailed_output_heating_cooling {
-                for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
-                    let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
-                    write_core_output_file_heat_source_wet(output, &output_key, timestep_array, heat_source_wet_results)?;
-                }
-                for (heat_source_wet_name, heat_source_wet_results_annual) in heat_source_wet_results_annual_dict.iter() {
-                    let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
-                    write_core_output_file_heat_source_wet_summary(output, &output_key, heat_source_wet_results_annual)?;
-                }
-                // Function call to write detailed ventilation results
-                let vent_output_file = "ventilation_results";
-                write_core_output_file_ventilation_detailed(output, vent_output_file, vent_output_list)?;
-                for (hot_water_source_name, hot_water_source_results) in hot_water_source_results_dict.iter() {
-                    let hot_water_source_file = format!("results_hot_water_source_summary__{}", hot_water_source_name.replace(" ", "_"));
-                    write_core_output_file_hot_water_source_summary(output, &hot_water_source_file, hot_water_source_results);
-                }
-            }
-
-            write_core_output_file_summary(output, results.try_into()?)?;
-
-            let corpus = &results.context.corpus;
-
-            let primary_input = primary_input.ok_or_else(|| anyhow!("Primary input should be available as there is a primary calculation."))?;
-
-            let HtcHlpCalculation { total_htc: heat_transfer_coefficient, total_hlp: heat_loss_parameter, .. } = calc_htc_hlp(primary_input)?;
-            let heat_capacity_parameter = corpus.calc_hcp();
-            let heat_loss_form_factor = corpus.calc_hlff();
-
-            write_core_output_file_static(
-                output,
-                StaticOutputFileArgs {
-                    output_key: "results_static".into(),
-                    heat_transfer_coefficient,
-                    heat_loss_parameter,
-                    heat_capacity_parameter,
-                    heat_loss_form_factor,
-                    temp_internal_air: primary_input.temp_internal_air_static_calcs,
-                    temp_external_air: corpus.external_conditions.air_temp_annual_daily_average_min(),
-                },
-            )?;
-
-            if detailed_output_heating_cooling {
-                let output_prefix = "results_emitters_";
-                write_core_output_file_emitters_detailed(output, output_prefix, emitters_output_dict)?;
-
-                let esh_output_prefix = "results_esh_";
-                write_core_output_file_esh_detailed(output, esh_output_prefix, esh_output_dict)?;
-            }
-
-            Ok(())
-        }
-
-        let steps_in_hours = &corpus.simulation_time.step_in_hours();
         let contextualised_results =
             CalculationResultsWithContext::new(input, corpus, run_results);
-        write_core_output_files(Some(&cloned_input), output, &contextualised_results, *steps_in_hours, heat_balance, detailed_output_heating_cooling)?;
+
         Ok(contextualised_results)
     }))
         .map_err(|e| {
@@ -338,6 +234,173 @@ pub fn run_project(
                     .to_owned(),
             )
         })?
+}
+
+#[instrument(skip_all)]
+fn write_core_output_files(
+    primary_input: Option<&Input>,
+    output: &impl Output,
+    results: &CalculationResultsWithContext,
+    hour_per_step: f64,
+    heat_balance: bool,
+    detailed_output_heating_cooling: bool,
+) -> anyhow::Result<()> {
+    if output.is_noop() {
+        return Ok(());
+    }
+    let CalculationResultsWithContext {
+        results:
+            RunResults {
+                timestep_array,
+                results_totals,
+                results_end_user,
+                energy_import,
+                energy_export,
+                energy_generated_consumed,
+                energy_to_storage,
+                energy_from_storage,
+                energy_diverted,
+                betafactor,
+                zone_dict,
+                zone_list,
+                hc_system_dict,
+                hot_water_dict,
+                ductwork_gains,
+                heat_balance_dict,
+                heat_source_wet_results_dict,
+                heat_source_wet_results_annual_dict,
+                vent_output_list,
+                emitters_output_dict,
+                storage_from_grid,
+                battery_state_of_charge,
+                esh_output_dict,
+                hot_water_source_results_dict,
+                ..
+            },
+        ..
+    } = results;
+
+    write_core_output_file(
+        output,
+        OutputFileArgs {
+            output_key: "results".into(),
+            timestep_array,
+            results_totals,
+            results_end_user,
+            energy_import,
+            energy_export,
+            energy_generated_consumed,
+            energy_to_storage,
+            energy_from_storage,
+            storage_from_grid,
+            battery_state_of_charge,
+            energy_diverted,
+            betafactor,
+            zone_dict,
+            zone_list,
+            hc_system_dict,
+            hot_water_dict,
+            ductwork_gains,
+        },
+    )?;
+
+    if heat_balance {
+        for (hb_name, hb_map) in heat_balance_dict.iter() {
+            let output_key = format!(
+                "results_heat_balance_{}",
+                hb_name.to_string().to_case(Case::Snake)
+            )
+            .into();
+            write_core_output_file_heat_balance(
+                output,
+                HeatBalanceOutputFileArgs {
+                    output_key,
+                    timestep_array,
+                    hour_per_step,
+                    heat_balance_map: hb_map,
+                },
+            )?;
+        }
+    }
+
+    if detailed_output_heating_cooling {
+        for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
+            let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
+            write_core_output_file_heat_source_wet(
+                output,
+                &output_key,
+                timestep_array,
+                heat_source_wet_results,
+            )?;
+        }
+        for (heat_source_wet_name, heat_source_wet_results_annual) in
+            heat_source_wet_results_annual_dict.iter()
+        {
+            let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
+            write_core_output_file_heat_source_wet_summary(
+                output,
+                &output_key,
+                heat_source_wet_results_annual,
+            )?;
+        }
+        // Function call to write detailed ventilation results
+        let vent_output_file = "ventilation_results";
+        write_core_output_file_ventilation_detailed(output, vent_output_file, vent_output_list)?;
+        for (hot_water_source_name, hot_water_source_results) in
+            hot_water_source_results_dict.iter()
+        {
+            let hot_water_source_file = format!(
+                "results_hot_water_source_summary__{}",
+                hot_water_source_name.replace(" ", "_")
+            );
+            write_core_output_file_hot_water_source_summary(
+                output,
+                &hot_water_source_file,
+                hot_water_source_results,
+            );
+        }
+    }
+
+    write_core_output_file_summary(output, results.try_into()?)?;
+
+    let corpus = &results.context.corpus;
+
+    let primary_input = primary_input.ok_or_else(|| {
+        anyhow!("Primary input should be available as there is a primary calculation.")
+    })?;
+
+    let HtcHlpCalculation {
+        total_htc: heat_transfer_coefficient,
+        total_hlp: heat_loss_parameter,
+        ..
+    } = calc_htc_hlp(primary_input)?;
+    let heat_capacity_parameter = corpus.calc_hcp();
+    let heat_loss_form_factor = corpus.calc_hlff();
+
+    write_core_output_file_static(
+        output,
+        StaticOutputFileArgs {
+            output_key: "results_static".into(),
+            heat_transfer_coefficient,
+            heat_loss_parameter,
+            heat_capacity_parameter,
+            heat_loss_form_factor,
+            temp_internal_air: primary_input.temp_internal_air_static_calcs,
+            temp_external_air: corpus
+                .external_conditions
+                .air_temp_annual_daily_average_min(),
+        },
+    )?;
+
+    if detailed_output_heating_cooling {
+        let output_prefix = "results_emitters_";
+        write_core_output_file_emitters_detailed(output, output_prefix, emitters_output_dict)?;
+
+        let esh_output_prefix = "results_esh_";
+        write_core_output_file_esh_detailed(output, esh_output_prefix, esh_output_dict)?;
+    }
+
+    Ok(())
 }
 
 fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
