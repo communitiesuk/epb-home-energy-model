@@ -900,7 +900,7 @@ fn shower_from_input(
             cold_water_source,
             wwhrs_config,
             flowrate,
-            hot_water_source,
+            ..
         } => {
             let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
             let wwhrs_instance: Option<Arc<Mutex<WwhrsInstantaneous>>> = wwhrs_config

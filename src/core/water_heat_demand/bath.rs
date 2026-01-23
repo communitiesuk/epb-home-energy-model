@@ -43,9 +43,9 @@ impl Bath {
     ) -> anyhow::Result<(Option<f64>, f64)> {
         let peak_flowrate = self.flowrate;
 
-        let (vol_warm_water, bath_duration) = match (event.volume, event.duration) {
-            (Some(volume), _) => (volume, volume / peak_flowrate),
-            (_, Some(duration)) => (duration * self.flowrate, duration),
+        let vol_warm_water = match (event.volume, event.duration) {
+            (Some(volume), _) => volume,
+            (_, Some(duration)) => duration * peak_flowrate,
             _ => bail!("Invalid bath event {event:?} - must specify either volume or duration"),
         };
         let temp_target = event.temperature;

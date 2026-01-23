@@ -3956,13 +3956,6 @@ mod tests {
                 max_relative = 1e-3
             );
 
-            let cold_water_temps = match storage_tank2.cold_feed {
-                WaterSupply::ColdWaterSource(ref cold_water_source) => {
-                    &cold_water_source.cold_water_temps
-                }
-                _ => unreachable!(), // we know this is a cold water source
-            };
-
             let temp_hot = if t_idx == 0 {
                 60.
             } else {
