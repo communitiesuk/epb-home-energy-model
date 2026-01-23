@@ -113,7 +113,6 @@ pub fn run_project_from_input_file(
 
     let steps_in_hours = results.context.corpus.simulation_time.step_in_hours();
 
-    // TODO 1.0.0a1 writing of core output, wrap in if condition?
     write_core_output_files(
         Some(&results.context.input),
         output,
