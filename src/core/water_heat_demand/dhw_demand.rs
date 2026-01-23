@@ -603,30 +603,29 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                     .unwrap()
                     .push(event_result);
 
-                if event_result.volume_hot.abs() > 1e-10
-                    && volume_hot_water_left > 0.
-                    && hot_water_source.is_some()
-                {
-                    let volume_required_already =
-                        *hw_demand_volume.get(&hot_water_source_name).unwrap();
-                    let volume_required = volume_hot_water_left;
-                    let temperature_pipe_flush = self.temp_hot_water(
-                        hot_water_source.unwrap().clone(),
-                        volume_required_already,
-                        volume_required,
-                    );
-                    usage_events_with_flushes
-                        .get_mut(&hot_water_source_name)
-                        .unwrap()
-                        .push(WaterEventResult {
-                            event_result_type: WaterEventResultType::PipeFlush,
-                            temperature_warm: temperature_pipe_flush,
-                            volume_warm: volume_required,
-                            volume_hot: volume_required,
-                        });
+                if event_result.volume_hot.abs() > 1e-10 && volume_hot_water_left > 0. {
+                    if let Some(hot_water_source) = hot_water_source {
+                        let volume_required_already =
+                            *hw_demand_volume.get(&hot_water_source_name).unwrap();
+                        let volume_required = volume_hot_water_left;
+                        let temperature_pipe_flush = self.temp_hot_water(
+                            hot_water_source.clone(),
+                            volume_required_already,
+                            volume_required,
+                        );
+                        usage_events_with_flushes
+                            .get_mut(&hot_water_source_name)
+                            .unwrap()
+                            .push(WaterEventResult {
+                                event_result_type: WaterEventResultType::PipeFlush,
+                                temperature_warm: temperature_pipe_flush,
+                                volume_warm: volume_required,
+                                volume_hot: volume_required,
+                            });
 
-                    *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() +=
-                        volume_hot_water_left;
+                        *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() +=
+                            volume_hot_water_left;
+                    }
                 }
                 //  TODO (from Python)   Enhance analysis for overlapping events
                 // Part of draft code for future overlapping analysis of events

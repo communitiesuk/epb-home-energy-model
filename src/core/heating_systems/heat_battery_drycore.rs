@@ -2757,8 +2757,7 @@ mod tests {
 
         // the variable hot_water_energy in the upstream Python is unnecessary as that parameter does not get used
 
-        let mut timestep_idx: usize = 0;
-        for t_it in simulation_time.iter() {
+        for (timestep_idx, t_it) in simulation_time.iter().enumerate() {
             if timestep_idx >= 3 {
                 break;
             }
@@ -2781,7 +2780,6 @@ mod tests {
 
             // End timestep
             heat_battery.timestep_end(t_it).unwrap();
-            timestep_idx += 1;
         }
 
         let (results_per_timestep, results_annual) = heat_battery.output_detailed_results();

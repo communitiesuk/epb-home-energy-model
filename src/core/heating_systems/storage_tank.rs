@@ -2580,13 +2580,13 @@ impl ImmersionHeater {
     }
     pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
         (
-            if self.control_min.is_some() {
-                self.control_min.as_ref().unwrap().setpnt(&simtime)
+            if let Some(control_min) = self.control_min.as_ref() {
+                control_min.setpnt(&simtime)
             } else {
                 None
             },
-            if self.control_max.is_some() {
-                self.control_max.as_ref().unwrap().setpnt(&simtime)
+            if let Some(control_max) = &self.control_max {
+                control_max.setpnt(&simtime)
             } else {
                 None
             },

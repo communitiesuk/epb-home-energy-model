@@ -366,13 +366,12 @@ impl ChargeControl {
 
                         // Controls can also be supplemented by an external weather sensor,
                         // which tends to act as a limiting device to prevent the storage heaters from overcharging.
-                        if self.external_sensor.is_some() && self.external_conditions.is_some() {
-                            let limit = self.get_limit_factor(
-                                self.external_conditions
-                                    .as_ref()
-                                    .unwrap()
-                                    .air_temp(&simtime),
-                            )?;
+                        if let (Some(_), Some(external_conditions)) = (
+                            self.external_sensor.as_ref(),
+                            self.external_conditions.as_ref(),
+                        ) {
+                            let limit =
+                                self.get_limit_factor(external_conditions.air_temp(&simtime))?;
                             target_charge_nominal * limit
                         } else {
                             target_charge_nominal
@@ -389,13 +388,12 @@ impl ChargeControl {
                         //
                         // Controls can also be supplemented by an external weather sensor,
                         // which tends to act as a limiting device to prevent the storage heaters from overcharging.
-                        if self.external_sensor.is_some() && self.external_conditions.is_some() {
-                            let limit = self.get_limit_factor(
-                                self.external_conditions
-                                    .as_ref()
-                                    .unwrap()
-                                    .air_temp(&simtime),
-                            )?;
+                        if let (Some(_), Some(external_conditions)) = (
+                            self.external_sensor.as_ref(),
+                            self.external_conditions.as_ref(),
+                        ) {
+                            let limit =
+                                self.get_limit_factor(external_conditions.air_temp(&simtime))?;
                             target_charge_nominal * limit
                         } else {
                             target_charge_nominal
@@ -443,19 +441,13 @@ impl ChargeControl {
             energy_to_store: energy_to_store_atomic,
         } = heat_retention_data;
         demand.write().push_front(Some(energy_demand));
-        if self.external_conditions.is_some() {
+        if let Some(external_conditions) = self.external_conditions.as_ref() {
             future_ext_temp.write().push_front(Some(
-                self.external_conditions
-                    .as_ref()
-                    .unwrap()
-                    .air_temp_with_offset(&simtime, *steps_day),
+                external_conditions.air_temp_with_offset(&simtime, *steps_day),
             ));
-            past_ext_temp.write().push_front(Some(
-                self.external_conditions
-                    .as_ref()
-                    .unwrap()
-                    .air_temp(&simtime),
-            ));
+            past_ext_temp
+                .write()
+                .push_front(Some(external_conditions.air_temp(&simtime)));
         }
 
         let future_hdh =
@@ -485,10 +477,7 @@ impl ChargeControl {
     /// Arguments
     /// returns -- temp_charge_cut (corrected)
     pub(crate) fn temp_charge_cut_corr(&self, simtime: SimulationTimeIteration) -> Option<f64> {
-        if self.temp_charge_cut.is_none() {
-            // Return None if temp_charge_cut is not set (e.g., for heat batteries)
-            None
-        } else {
+        if let Some(temp_charge_cut) = self.temp_charge_cut.as_ref() {
             let temp_charge_cut_delta =
                 if let Some(temp_charge_cut_delta) = self.temp_charge_cut_delta.as_ref() {
                     temp_charge_cut_delta
@@ -497,7 +486,10 @@ impl ChargeControl {
                     0.0
                 };
 
-            Some(self.temp_charge_cut.unwrap() + temp_charge_cut_delta)
+            Some(temp_charge_cut + temp_charge_cut_delta)
+        } else {
+            // Return None if temp_charge_cut is not set (e.g., for heat batteries)
+            None
         }
     }
 

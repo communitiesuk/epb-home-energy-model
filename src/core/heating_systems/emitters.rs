@@ -127,9 +127,7 @@ impl System<Time, State> for EmittersAndPowerInput<'_> {
 
         let current_difference = self.difference_from_temp_diff_max(y[0]);
 
-        if self.previous_difference_from_temp_diff_max.is_some() {
-            let previous_difference = self.previous_difference_from_temp_diff_max.unwrap();
-
+        if let Some(previous_difference) = self.previous_difference_from_temp_diff_max {
             // signs are different - we must have passed zero
             if current_difference == 0.
                 || signs_are_different(current_difference, previous_difference)

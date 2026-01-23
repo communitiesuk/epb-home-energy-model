@@ -1799,7 +1799,7 @@ impl HeatBatteryPcm {
         let detailed_results = self
             .detailed_results
             .as_ref()
-            .ok_or_else(|| OutputDetailedResultsNotEnabledError)?;
+            .ok_or(OutputDetailedResultsNotEnabledError)?;
 
         let mut results_per_timestep: ResultsPerTimestep =
             [("auxiliary".into(), Default::default())].into();
