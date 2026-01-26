@@ -199,11 +199,11 @@ impl HeatBatteryPcmServiceWaterDirect {
         volume_req: f64,
         volume_req_already: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<Vec<(Option<f64>, f64)>> {
+    ) -> anyhow::Result<Vec<(f64, f64)>> {
         let volume_req_already = volume_req_already.unwrap_or(0.);
 
         if is_close!(volume_req, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
-            return Ok(vec![(None, volume_req)]);
+            return Ok(vec![]);
         }
 
         let volume_req_cumulative = volume_req + volume_req_already;
@@ -224,7 +224,7 @@ impl HeatBatteryPcmServiceWaterDirect {
                     / volume_req
             };
 
-        Ok(vec![(Some(temp_hot_water_req), volume_req)])
+        Ok(vec![(temp_hot_water_req, volume_req)])
     }
 
     /// Process hot water demand directly from dry core heat battery
@@ -242,10 +242,12 @@ impl HeatBatteryPcmServiceWaterDirect {
                 if is_close!(event.volume_hot, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
                     continue;
                 }
-                let hot_temp = self.get_temp_hot_water(event.volume_hot, None, simtime)?[0].0;
-
                 // Skip this event if no temperature available
-                if let Some(hot_temp) = hot_temp {
+                if let Some(hot_temp) = self
+                    .get_temp_hot_water(event.volume_hot, None, simtime)?
+                    .get(0)
+                    .map(|(t, _v)| t)
+                {
                     let list_temp_vol = self.cold_feed.draw_off_water(event.volume_hot, simtime)?;
                     let cold_temp = calculate_volume_weighted_average_temperature(
                         list_temp_vol,
@@ -254,7 +256,7 @@ impl HeatBatteryPcmServiceWaterDirect {
                     )?;
 
                     // Calculate energy needed to heat water
-                    energy_demand += water_demand_to_kwh(event.volume_hot, hot_temp, cold_temp);
+                    energy_demand += water_demand_to_kwh(event.volume_hot, *hot_temp, cold_temp);
 
                     // Accumulate for weighted average cold water temperature
                     total_volume += event.volume_hot;

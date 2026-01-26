@@ -942,11 +942,11 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
         volume_req: f64,
         volume_req_already: Option<f64>,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<[(Option<f64>, f64); 1]> {
+    ) -> anyhow::Result<Vec<(f64, f64)>> {
         let volume_req_already = volume_req_already.unwrap_or(0.0);
 
         if is_close!(volume_req, 0.0, abs_tol = 1e-10) {
-            return Ok([(None, volume_req)]);
+            return Ok(vec![]);
         }
 
         let temp_hot_water = |volume| -> anyhow::Result<f64> {
@@ -973,7 +973,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
                 / volume_req
         };
 
-        Ok([(temp_hot_water_req.into(), volume_req)])
+        Ok(vec![(temp_hot_water_req, volume_req)])
     }
 
     /// Process hot water demand directly from dry core heat battery
@@ -988,9 +988,10 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
 
         if let Some(usage_events) = usage_events {
             for event in usage_events {
-                let hot_temp = self.get_temp_hot_water(event.volume_hot, None, simtime)?[0].0;
+                let hot_temp_list = self.get_temp_hot_water(event.volume_hot, None, simtime)?;
+                let hot_temp = hot_temp_list.get(0).map(|(t, _v)| t);
                 let hot_temp = match hot_temp {
-                    Some(hot_temp) => hot_temp,
+                    Some(hot_temp) => *hot_temp,
                     None => continue,
                 };
 
@@ -2595,8 +2596,7 @@ mod tests {
         let hot_water_temp = service
             .get_temp_hot_water(20.0, None, simulation_time.iter().current_iteration())
             .unwrap()[0]
-            .0
-            .unwrap();
+            .0;
 
         assert!(hot_water_temp > mock_cold_feed_temperature);
         assert!(hot_water_temp < original_setpoint_temp_water);
@@ -2604,16 +2604,19 @@ mod tests {
         let hot_water_temp = service
             .get_temp_hot_water(20.0, Some(10.), simulation_time.iter().current_iteration())
             .unwrap()[0]
-            .0
-            .unwrap();
+            .0;
         assert!(hot_water_temp > mock_cold_feed_temperature);
         assert!(hot_water_temp < original_setpoint_temp_water);
 
-        let results = service
+        let results_list = service
             .get_temp_hot_water(0.0, None, simulation_time.iter().current_iteration())
-            .unwrap()[0];
-        assert!(results.0.is_none());
-        assert_eq!(results.1, 0.0);
+            .unwrap();
+
+        assert_eq!(results_list.len(), 0);
+
+        // following is as per upstream Python at 2026-01-26 - have queried this as it should not be possible to return an empty temperature value here
+        // assert!(results.0.is_none());
+        // assert_eq!(results.1, 0.0);
     }
 
     // Skipping Python's test_heat_battery_direct_demand_energy_error as not relevant in the Rust
@@ -3002,8 +3005,10 @@ mod tests {
         let temp_vol_list = service
             .get_temp_hot_water(0.0, None, simulation_time.iter().current_iteration())
             .unwrap();
-        assert_eq!(temp_vol_list[0].0, None);
-        assert_eq!(temp_vol_list[0].1, 0.0);
+        assert_eq!(temp_vol_list.len(), 0);
+        // following matches upstream Python as of 2026-01-26 - have queried this as it should not be possible to return an empty temperature value
+        // assert_eq!(temp_vol_list[0].0, None);
+        // assert_eq!(temp_vol_list[0].1, 0.0);
 
         // Test with very small volume (close to zero but not exactly zero)
         let temperature_volume = service
