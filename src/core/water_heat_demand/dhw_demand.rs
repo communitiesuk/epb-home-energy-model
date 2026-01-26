@@ -73,7 +73,7 @@ impl TappingPoint<'_> {
     pub fn hot_water_demand<'a>(
         &'a self,
         event: WaterHeatingEvent,
-        func_temp_hot_water: &'a (dyn Fn(f64) -> f64 + 'a),
+        func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64)> {
         match self {
@@ -349,9 +349,13 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         hot_water_source: T,
         volume_required_already: f64,
         volume_required: f64,
-    ) -> f64 {
-        let list_temperature_for_required_volume =
-            hot_water_source.get_temp_hot_water(volume_required, volume_required_already);
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let list_temperature_for_required_volume = hot_water_source.get_temp_hot_water(
+            volume_required,
+            volume_required_already,
+            simtime,
+        )?;
         let sum_t_by_v: f64 = list_temperature_for_required_volume
             .iter()
             .map(|(t, v)| t * v)
@@ -362,7 +366,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             .sum();
 
         // Return average hot water temperature for the required volume
-        sum_t_by_v / sum_v
+        Ok(sum_t_by_v / sum_v)
     }
 
     pub(crate) fn get_tapping_point_for_event(
@@ -525,15 +529,17 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
 
                             let volume_required_already = hw_demand_volume[hot_water_source_name];
 
-                            let func = move |volume_required: f64| -> f64 {
+                            let func = move |volume_required: f64| -> anyhow::Result<f64> {
                                 self.temp_hot_water(
                                     hot_water_source.clone(),
                                     volume_required_already,
                                     volume_required,
+                                    simtime,
                                 )
                             };
 
-                            let func_temp_hot_water: Box<dyn Fn(f64) -> f64 + 'a> = Box::new(func);
+                            let func_temp_hot_water: Box<dyn Fn(f64) -> anyhow::Result<f64> + 'a> =
+                                Box::new(func);
                             let (hw_demand_i, hw_demand_target_i) = tapping_point
                                 .hot_water_demand(event.into(), &func_temp_hot_water, simtime)?;
 
@@ -612,7 +618,8 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                             hot_water_source.clone(),
                             volume_required_already,
                             volume_required,
-                        );
+                            simtime,
+                        )?;
                         usage_events_with_flushes
                             .get_mut(&hot_water_source_name)
                             .unwrap()
@@ -1020,16 +1027,17 @@ mod tests {
             &self,
             volume_required: f64,
             volume_required_already: f64,
-        ) -> Vec<(f64, f64)> {
+            _simtime: SimulationTimeIteration,
+        ) -> anyhow::Result<Vec<(f64, f64)>> {
             let volume_req_cumulative = volume_required + volume_required_already;
             let frac_volume_req_already = volume_required_already / volume_req_cumulative;
             let frac_layer_1 = max_of_2(0.0, 0.6 - frac_volume_req_already);
             let frac_layer_2 = 0.4 - max_of_2(0.0, frac_volume_req_already - 0.6);
 
-            vec![
+            Ok(vec![
                 (55.0, volume_req_cumulative * frac_layer_1),
                 (45.0, volume_req_cumulative * frac_layer_2),
-            ]
+            ])
         }
 
         fn internal_gains(&self) -> Option<f64> {
@@ -1065,9 +1073,10 @@ mod tests {
             &self,
             volume_required: f64,
             volume_required_already: f64,
-        ) -> Vec<(f64, f64)> {
+            _simtime: SimulationTimeIteration,
+        ) -> anyhow::Result<Vec<(f64, f64)>> {
             let volume_req_cumulative = volume_required + volume_required_already;
-            vec![(55.0, volume_req_cumulative)]
+            Ok(vec![(55.0, volume_req_cumulative)])
         }
 
         fn internal_gains(&self) -> Option<f64> {
@@ -1108,16 +1117,17 @@ mod tests {
             &self,
             volume_required: f64,
             volume_required_already: f64,
-        ) -> Vec<(f64, f64)> {
+            _simtime: SimulationTimeIteration,
+        ) -> anyhow::Result<Vec<(f64, f64)>> {
             let volume_req_cumulative = volume_required + volume_required_already;
             let frac_volume_req_already = volume_required_already / volume_req_cumulative;
             let frac_layer_1 = max_of_2(0.0, 0.6 - frac_volume_req_already);
             let frac_layer_2 = 0.4 - max_of_2(0.0, frac_volume_req_already - 0.6);
 
-            vec![
+            Ok(vec![
                 (55.0, volume_req_cumulative * frac_layer_1),
                 (45.0, volume_req_cumulative * frac_layer_2),
-            ]
+            ])
         }
 
         fn internal_gains(&self) -> Option<f64> {

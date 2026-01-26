@@ -27,7 +27,7 @@ impl Shower {
     pub(crate) fn hot_water_demand<'a>(
         &'a self,
         event: WaterHeatingEvent,
-        func_temp_hot_water: &'a (dyn Fn(f64) -> f64 + 'a),
+        func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64)> {
         match self {
@@ -88,7 +88,7 @@ impl MixerShower {
     pub(crate) fn hot_water_demand<'a>(
         &'a self,
         event: WaterHeatingEvent,
-        func_temp_hot_water: &'a (dyn Fn(f64) -> f64 + 'a),
+        func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64)> {
         let total_shower_duration = event
@@ -116,7 +116,7 @@ impl MixerShower {
         let volume_cold_water = volume_warm_water - volume_hot_water;
 
         if let Some(wwhrs) = &self.wwhrs {
-            let temperature_hot_water = func_temp_hot_water(volume_hot_water); // temperature of hot water supply, in Celsius
+            let temperature_hot_water = func_temp_hot_water(volume_hot_water)?; // temperature of hot water supply, in Celsius
 
             //  Use the unified WWHRS interface
             let wwhrs_result = wwhrs.lock().calculate_performance(
@@ -265,8 +265,8 @@ mod tests {
             MixerShower::new(6.5, cold_water_source.into(), None, None)
         }
 
-        fn func_temp_hot_water_fixed(_f: f64) -> f64 {
-            52.0
+        fn func_temp_hot_water_fixed(_f: f64) -> anyhow::Result<f64> {
+            Ok(52.0)
         }
 
         #[fixture]

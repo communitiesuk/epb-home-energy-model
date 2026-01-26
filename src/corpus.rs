@@ -18,7 +18,9 @@ use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
 use crate::core::heating_systems::emitters::{Emitters, EmittersDetailedResult};
-use crate::core::heating_systems::heat_battery_drycore::HeatBatteryDryCore;
+use crate::core::heating_systems::heat_battery_drycore::{
+    HeatBatteryDryCore, HeatBatteryDryCoreServiceWaterDirect,
+};
 use crate::core::heating_systems::heat_battery_pcm::{
     HeatBatteryPcm, HeatBatteryPcmServiceWaterDirect,
 };
@@ -4628,7 +4630,7 @@ pub(crate) enum HotWaterSource {
     CombiBoiler(Arc<BoilerServiceWaterCombi>),
     PointOfUse(Arc<PointOfUse>),
     HeatNetwork(Arc<HeatNetworkServiceWaterDirect>),
-    HeatBattery(Arc<HeatBatteryPcmServiceWaterDirect>),
+    HeatBattery(HeatBatteryHotWaterSource),
 }
 
 pub(crate) trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
@@ -4642,10 +4644,17 @@ pub(crate) trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
         &self,
         volume_required: f64,
         volume_required_already: f64,
-    ) -> Vec<(f64, f64)>;
-    fn internal_gains(&self) -> Option<f64>;
-    fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64);
-    fn is_point_of_use(&self) -> bool;
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(f64, f64)>>;
+    fn internal_gains(&self) -> Option<f64> {
+        None
+    }
+    fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+        (0., 0.)
+    }
+    fn is_point_of_use(&self) -> bool {
+        false
+    }
 }
 
 impl HotWaterSourceBehaviour for HotWaterSource {
@@ -4677,9 +4686,8 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             HotWaterSource::HeatNetwork(heat_network_service_water_direct) => {
                 heat_network_service_water_direct.demand_hot_water(usage_events, simtime)?
             }
-            HotWaterSource::HeatBattery(heat_battery_pcm_service_water_direct) => {
-                heat_battery_pcm_service_water_direct
-                    .demand_hot_water(Some(usage_events), simtime)?
+            HotWaterSource::HeatBattery(heat_battery_hot_water_source) => {
+                heat_battery_hot_water_source.demand_hot_water(usage_events, simtime)?
             }
         })
     }
@@ -4688,19 +4696,21 @@ impl HotWaterSourceBehaviour for HotWaterSource {
         &self,
         volume_required: f64,
         volume_required_already: f64,
-    ) -> Vec<(f64, f64)> {
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(f64, f64)>> {
         match self {
-            HotWaterSource::PreHeated(hot_water_storage_tank) => {
-                hot_water_storage_tank.get_temp_hot_water(volume_required, volume_required_already)
+            HotWaterSource::PreHeated(hot_water_storage_tank) => hot_water_storage_tank
+                .get_temp_hot_water(volume_required, volume_required_already, simtime),
+            HotWaterSource::CombiBoiler(boiler_service_water_combi) => {
+                Ok(boiler_service_water_combi
+                    .get_temp_hot_water(volume_required, Some(volume_required_already)))
             }
-            HotWaterSource::CombiBoiler(boiler_service_water_combi) => boiler_service_water_combi
-                .get_temp_hot_water(volume_required, Some(volume_required_already)),
             HotWaterSource::PointOfUse(point_of_use) => {
-                point_of_use.get_temp_hot_water(volume_required, Some(volume_required_already))
+                Ok(point_of_use.get_temp_hot_water(volume_required, Some(volume_required_already)))
             }
             HotWaterSource::HeatNetwork(heat_network_service_water_direct) => {
-                heat_network_service_water_direct
-                    .get_temp_hot_water(volume_required, Some(volume_required_already))
+                Ok(heat_network_service_water_direct
+                    .get_temp_hot_water(volume_required, Some(volume_required_already)))
             }
             // TODO this is the only Result - for now we're using unwrap. In future we could improve this.
             // This is also the only implementation which returns a Vec<(Option<f64>, f64)> instead of Vec<(f64, f64)>
@@ -4738,6 +4748,56 @@ impl HotWaterSourceBehaviour for HotWaterSource {
 
     fn is_point_of_use(&self) -> bool {
         matches!(&self, HotWaterSource::PointOfUse(_))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum HeatBatteryHotWaterSource {
+    Pcm(Arc<HeatBatteryPcmServiceWaterDirect>),
+    DryCore(Arc<HeatBatteryDryCoreServiceWaterDirect<WaterSupply>>),
+}
+
+impl HotWaterSourceBehaviour for HeatBatteryHotWaterSource {
+    fn get_cold_water_source(&self) -> WaterSupply {
+        match self {
+            HeatBatteryHotWaterSource::Pcm(pcm) => pcm.get_cold_water_source().clone(),
+            HeatBatteryHotWaterSource::DryCore(dry_core) => {
+                dry_core.get_cold_water_source().clone()
+            }
+        }
+    }
+
+    fn demand_hot_water(
+        &self,
+        usage_events: Vec<WaterEventResult>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            HeatBatteryHotWaterSource::Pcm(pcm) => {
+                pcm.demand_hot_water(usage_events.into(), simtime)
+            }
+            HeatBatteryHotWaterSource::DryCore(dry_core) => {
+                dry_core.demand_hot_water(usage_events.into(), simtime)
+            }
+        }
+    }
+
+    fn get_temp_hot_water(
+        &self,
+        volume_required: f64,
+        volume_required_already: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(f64, f64)>> {
+        match self {
+            HeatBatteryHotWaterSource::Pcm(pcm) => {
+                pcm.get_temp_hot_water(volume_required, volume_required_already.into(), simtime)
+            }
+            HeatBatteryHotWaterSource::DryCore(dry_core) => dry_core.get_temp_hot_water(
+                volume_required,
+                volume_required_already.into(),
+                simtime,
+            ),
+        }
     }
 }
 
@@ -5135,14 +5195,22 @@ fn hot_water_source_from_input(
             };
 
             HotWaterSource::HeatBattery(match heat_battery {
-                HeatBattery::DryCore(_dry_core) => unimplemented!(),
-                HeatBattery::Pcm(pcm) => HeatBatteryPcm::create_service_hot_water_direct(
-                    pcm,
-                    &energy_supply_conn_name,
-                    *setpoint_temp,
-                    cold_water_source,
-                )?
-                .into(),
+                HeatBattery::DryCore(dry_core) => HeatBatteryHotWaterSource::DryCore(Arc::new(
+                    HeatBatteryDryCore::create_service_hot_water_direct(
+                        dry_core,
+                        &energy_supply_conn_name,
+                        *setpoint_temp,
+                        cold_water_source,
+                    )?,
+                )),
+                HeatBattery::Pcm(pcm) => HeatBatteryHotWaterSource::Pcm(Arc::new(
+                    HeatBatteryPcm::create_service_hot_water_direct(
+                        pcm,
+                        &energy_supply_conn_name,
+                        *setpoint_temp,
+                        cold_water_source,
+                    )?,
+                )),
             })
         }
     };

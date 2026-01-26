@@ -11,7 +11,7 @@ use smartstring::alias::String;
 // This applies to both hot water usage and combi boiler losses
 pub(crate) const FRAC_DHW_ENERGY_INTERNAL_GAINS: f64 = 0.25;
 
-pub(crate) type CallableGetHotWaterTemperature = Box<dyn Fn(f64) -> f64>;
+pub(crate) type CallableGetHotWaterTemperature = Box<dyn Fn(f64) -> anyhow::Result<f64>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum WaterEventResultType {
@@ -126,7 +126,7 @@ pub fn water_demand_to_kwh(
 }
 
 pub(crate) fn volume_hot_water_required<
-    T: Fn(f64) -> f64,
+    T: Fn(f64) -> anyhow::Result<f64>,
     U: Fn(f64, SimulationTimeIteration) -> anyhow::Result<Vec<(f64, f64)>>,
 >(
     volume_warm_water: f64,
@@ -135,7 +135,7 @@ pub(crate) fn volume_hot_water_required<
     func_temperature_cold_water: U,
     simtime: SimulationTimeIteration,
 ) -> anyhow::Result<Option<f64>> {
-    let mut temperature_hot_water = func_temperature_hot_water(volume_warm_water * 0.5);
+    let mut temperature_hot_water = func_temperature_hot_water(volume_warm_water * 0.5)?;
     let mut list_temperature_volume =
         func_temperature_cold_water(volume_warm_water * 0.5, simtime)?;
     let mut temperature_cold_water = list_temperature_volume
@@ -161,7 +161,7 @@ pub(crate) fn volume_hot_water_required<
             )?;
         let volume_cold_water = volume_warm_water - volume_hot_water;
         // Calculate the temperature of hot and warm (mixed) water given the volumes calculated
-        temperature_hot_water = func_temperature_hot_water(volume_hot_water);
+        temperature_hot_water = func_temperature_hot_water(volume_hot_water)?;
         let _ = std::mem::replace(
             &mut list_temperature_volume,
             func_temperature_cold_water(volume_cold_water, simtime)?,

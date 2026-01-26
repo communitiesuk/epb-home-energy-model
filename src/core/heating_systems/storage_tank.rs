@@ -2692,15 +2692,16 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
         &self,
         volume_required: f64,
         volume_required_already: f64,
-    ) -> Vec<(f64, f64)> {
-        match self {
+        _simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<Vec<(f64, f64)>> {
+        Ok(match self {
             HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
                 .read()
                 .get_temp_hot_water(volume_required, Some(volume_required_already)),
             HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock
                 .read()
                 .get_temp_hot_water(volume_required, Some(volume_required_already)),
-        }
+        })
     }
 
     fn internal_gains(&self) -> Option<f64> {

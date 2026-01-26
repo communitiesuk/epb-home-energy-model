@@ -806,6 +806,7 @@ pub(crate) trait HeatBatteryDryCoreCommonBehaviour: Send + Sync {
     fn get_zone_setpoint(&self) -> f64;
 }
 
+#[derive(Debug)]
 pub(crate) struct HeatBatteryDryCoreService {
     control: Option<Arc<Control>>,
 }
@@ -908,6 +909,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
 /// A struct to represent a direct water heating service provided by a dry core heat battery.
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
+#[derive(Debug)]
 pub(crate) struct HeatBatteryDryCoreServiceWaterDirect<T: WaterSupplyBehaviour> {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,
@@ -937,7 +939,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
     }
 
     /// Return temperature of hot water at outlet
-    fn get_temp_hot_water(
+    pub(crate) fn get_temp_hot_water(
         &self,
         volume_req: f64,
         volume_req_already: Option<f64>,

@@ -24,7 +24,7 @@ impl OtherHotWater {
 
     /// Calculate volume of hot water required
     /// (and volume of warm water draining to WWHRS, if applicable)
-    pub(crate) fn hot_water_demand<T: Fn(f64) -> f64>(
+    pub(crate) fn hot_water_demand<T: Fn(f64) -> anyhow::Result<f64>>(
         &self,
         event: &WaterHeatingEvent,
         func_temp_hot_water: T,
@@ -90,8 +90,8 @@ mod tests {
         );
     }
 
-    fn func_temp_hot_water_fixed(_t: f64) -> f64 {
-        52.0
+    fn func_temp_hot_water_fixed(_t: f64) -> anyhow::Result<f64> {
+        Ok(52.0)
     }
 
     #[rstest]
