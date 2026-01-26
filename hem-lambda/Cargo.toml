@@ -10,4 +10,4 @@ lambda_http = "1.0.2"
 parking_lot = "0.12.5"
 serde_json = "1.0.149"
 tokio = { version = "1", features = ["macros"] }
-uuid = { version = "1.19.0", features = ["v4", "serde"] }
+uuid = { version = "1.20.0", features = ["v4", "serde"] }
