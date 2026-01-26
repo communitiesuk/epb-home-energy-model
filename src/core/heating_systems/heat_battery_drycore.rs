@@ -806,7 +806,7 @@ pub(crate) trait HeatBatteryDryCoreCommonBehaviour: Send + Sync {
     fn get_zone_setpoint(&self) -> f64;
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct HeatBatteryDryCoreService {
     control: Option<Arc<Control>>,
 }
@@ -1043,6 +1043,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
 }
 
 /// Wrapper for space heating service from dry core heat battery.
+#[derive(Clone, Debug)]
 pub(crate) struct HeatBatteryDryCoreServiceSpace {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,

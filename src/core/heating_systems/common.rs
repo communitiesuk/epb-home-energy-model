@@ -7,7 +7,9 @@ use crate::core::heating_systems::boiler::{
 use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
-use crate::core::heating_systems::heat_battery_drycore::HeatBatteryDryCoreServiceWaterRegular;
+use crate::core::heating_systems::heat_battery_drycore::{
+    HeatBatteryDryCoreServiceSpace, HeatBatteryDryCoreServiceWaterRegular,
+};
 use crate::core::heating_systems::heat_battery_pcm::{
     HeatBatteryPcmServiceSpace, HeatBatteryPcmServiceWaterRegular,
 };
@@ -373,7 +375,7 @@ pub enum SpaceHeatingService {
     HeatPump(HeatPumpServiceSpace),
     Boiler(BoilerServiceSpace),
     HeatNetwork(HeatNetworkServiceSpace),
-    HeatBattery(HeatBatteryPcmServiceSpace),
+    HeatBattery(HeatBatteryServiceSpace),
     #[cfg(test)]
     Mock,
 }
@@ -384,7 +386,7 @@ impl SpaceHeatingService {
         temp_output: f64,
         temp_return_feed: f64,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersData>,
-        simulation_time_iteration: SimulationTimeIteration,
+        simtime: SimulationTimeIteration,
     ) -> Result<(f64, Option<BufferTankEmittersDataWithResult>), Error> {
         match self {
             SpaceHeatingService::HeatPump(heat_pump_service_space) => heat_pump_service_space
@@ -393,7 +395,7 @@ impl SpaceHeatingService {
                     temp_return_feed,
                     None,
                     emitters_data_for_buffer_tank,
-                    simulation_time_iteration,
+                    simtime,
                 ),
             SpaceHeatingService::Boiler(boiler_service_space) => Ok((
                 boiler_service_space.energy_output_max(
@@ -401,7 +403,7 @@ impl SpaceHeatingService {
                     temp_return_feed,
                     None,
                     None,
-                    simulation_time_iteration,
+                    simtime,
                 ),
                 None,
             )),
@@ -410,19 +412,17 @@ impl SpaceHeatingService {
                     temp_output,
                     temp_return_feed,
                     None,
-                    &simulation_time_iteration,
+                    &simtime,
                 ),
                 None,
             )),
-            SpaceHeatingService::HeatBattery(heat_battery_service_space) => Ok((
-                heat_battery_service_space.energy_output_max(
+            SpaceHeatingService::HeatBattery(heat_battery_service_space) => {
+                Ok(heat_battery_service_space.energy_output_max(
                     temp_output,
                     temp_return_feed,
-                    None,
-                    simulation_time_iteration,
-                )?,
-                None,
-            )),
+                    simtime,
+                )?)
+            }
             #[cfg(test)]
             SpaceHeatingService::Mock => Ok((
                 2.5,
@@ -481,7 +481,7 @@ impl SpaceHeatingService {
                 ),
                 None,
             )),
-            SpaceHeatingService::HeatBattery(ref heat_battery_service_space) => Ok((
+            SpaceHeatingService::HeatBattery(ref mut heat_battery_service_space) => {
                 heat_battery_service_space.demand_energy(
                     energy_demand,
                     temp_flow,
@@ -489,9 +489,8 @@ impl SpaceHeatingService {
                     time_start,
                     update_heat_source_state,
                     simulation_time_iteration,
-                )?,
-                None,
-            )),
+                )
+            }
             #[cfg(test)]
             SpaceHeatingService::Mock => Ok(((0.0f64).max(2.5f64.min(energy_demand)), None)),
         }
@@ -516,6 +515,81 @@ impl SpaceHeatingService {
                     simulation_time_iteration,
                 ),
             _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum HeatBatteryServiceSpace {
+    Pcm(HeatBatteryPcmServiceSpace),
+    DryCore(HeatBatteryDryCoreServiceSpace),
+}
+
+impl HeatBatteryServiceSpace {
+    fn energy_output_max(
+        &self,
+        temp_output: f64,
+        temp_return_feed: f64,
+        simtime: SimulationTimeIteration,
+    ) -> Result<(f64, Option<BufferTankEmittersDataWithResult>), Error> {
+        Ok(match self {
+            Self::Pcm(pcm) => (
+                pcm.energy_output_max(temp_output, temp_return_feed, None, simtime)?,
+                None,
+            ),
+            Self::DryCore(dry_core) => (
+                dry_core.energy_output_max(temp_output, temp_return_feed, None, simtime)?,
+                None,
+            ),
+        })
+    }
+
+    fn demand_energy(
+        &mut self,
+        energy_demand: f64,
+        temp_flow: f64,
+        temp_return: f64,
+        time_start: Option<f64>,
+        update_heat_source_state: Option<bool>,
+        simtime: SimulationTimeIteration,
+    ) -> Result<(f64, Option<f64>), Error> {
+        Ok(match self {
+            Self::Pcm(pcm) => (
+                pcm.demand_energy(
+                    energy_demand,
+                    temp_flow,
+                    temp_return,
+                    time_start,
+                    update_heat_source_state,
+                    simtime,
+                )?,
+                None,
+            ),
+            Self::DryCore(dry_core) => (
+                dry_core.demand_energy(
+                    energy_demand,
+                    temp_flow,
+                    temp_return,
+                    time_start,
+                    update_heat_source_state,
+                    simtime,
+                )?,
+                None,
+            ),
+        })
+    }
+
+    pub(crate) fn temp_setpnt(&self, simtime: SimulationTimeIteration) -> Option<f64> {
+        match self {
+            HeatBatteryServiceSpace::Pcm(pcm) => pcm.temp_setpnt(simtime),
+            HeatBatteryServiceSpace::DryCore(dry_core) => dry_core.temp_setpnt(simtime),
+        }
+    }
+
+    pub(crate) fn in_required_period(&self, simtime: SimulationTimeIteration) -> Option<bool> {
+        match self {
+            HeatBatteryServiceSpace::Pcm(pcm) => pcm.in_required_period(simtime),
+            HeatBatteryServiceSpace::DryCore(dry_core) => dry_core.in_required_period(simtime),
         }
     }
 }

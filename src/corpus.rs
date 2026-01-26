@@ -14,7 +14,8 @@ use crate::core::energy_supply::inverter::Inverter;
 use crate::core::energy_supply::pv::{PhotovoltaicPanel, PhotovoltaicSystem};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{
-    HeatBatteryWaterService, HeatSourceWet, SpaceHeatSystem, SpaceHeatingService,
+    HeatBatteryServiceSpace, HeatBatteryWaterService, HeatSourceWet, SpaceHeatSystem,
+    SpaceHeatingService,
 };
 use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
@@ -391,13 +392,13 @@ fn init_resistance_or_uvalue_from_data(
             thermal_resistance_construction
         } else {
             convert_uvalue_to_resistance(
-            u_value.ok_or_else(|| {
-                anyhow!(
+                u_value.ok_or_else(|| {
+                    anyhow!(
                     "Neither thermal_resistance_construction nor u_value were provided for one of the building element inputs."
                 )
-            })?,
-            pitch,
-        )
+                })?,
+                pitch,
+            )
         },
     )
 }
@@ -4326,25 +4327,25 @@ fn heat_source_wet_from_input(
                     EnergySupply::connection(energy_supply.clone(), energy_supply_name)?;
 
                 let heat_source =
-                        WetHeatSource::HeatBattery(HeatBattery::Pcm(Arc::new(RwLock::new(HeatBatteryPcm::new(
-                            &input,
-                            controls
-                                .get_with_string(control_charge)
-                                .unwrap_or_else(|| {
-                                    panic!(
-                                        "expected a control to be registered with the name '{control_charge}'"
-                                    )
-                                })
-                                .clone(),
-                            energy_supply,
-                            energy_supply_conn,
-                            simulation_time,
-                            None,
-                            None,
-                            None,
-                            None,
-                            Some(detailed_output_heating_cooling),
-                        )))));
+                    WetHeatSource::HeatBattery(HeatBattery::Pcm(Arc::new(RwLock::new(HeatBatteryPcm::new(
+                        &input,
+                        controls
+                            .get_with_string(control_charge)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "expected a control to be registered with the name '{control_charge}'"
+                                )
+                            })
+                            .clone(),
+                        energy_supply,
+                        energy_supply_conn,
+                        simulation_time,
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(detailed_output_heating_cooling),
+                    )))));
                 Ok(heat_source)
             }
             HeatBatteryInput::DryCore {
@@ -4373,20 +4374,20 @@ fn heat_source_wet_from_input(
                     EnergySupply::connection(energy_supply.clone(), energy_supply_name)?;
 
                 Ok(WetHeatSource::HeatBattery(HeatBattery::DryCore(HeatBatteryDryCore::new(
-                        battery,
-                        controls
-                            .get_with_string(control_charge)
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "expected a control to be registered with the name '{control_charge}'"
-                                )
-                            })
-                            .clone(),
-                        energy_supply,
-                        energy_supply_conn,
-                        Some(*number_of_units as u32),
-                        simulation_time.step_in_hours(),
-                        detailed_output_heating_cooling.into(),
+                    battery,
+                    controls
+                        .get_with_string(control_charge)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "expected a control to be registered with the name '{control_charge}'"
+                            )
+                        })
+                        .clone(),
+                    energy_supply,
+                    energy_supply_conn,
+                    Some(*number_of_units as u32),
+                    simulation_time.step_in_hours(),
+                    detailed_output_heating_cooling.into(),
                 )?)))
             }
         },
@@ -5354,17 +5355,15 @@ fn space_heat_systems_from_input(
                                     SpaceHeatingService::HeatNetwork(heat_source_service)
                                 }
                                 WetHeatSource::HeatBattery(heat_battery) => {
-                                    match heat_battery {
-                                        HeatBattery::DryCore(_dry_core) => unimplemented!(),
-                                        HeatBattery::Pcm(pcm) => {
-                                            let heat_source_service = HeatBatteryPcm::create_service_space_heating(pcm.clone(), &energy_supply_conn_name, control)?;
-                                            SpaceHeatingService::HeatBattery(heat_source_service)
-                                        }
-                                    }
+                                    SpaceHeatingService::HeatBattery(match heat_battery {
+                                        HeatBattery::DryCore(dry_core) => HeatBatteryServiceSpace::DryCore(HeatBatteryDryCore::create_service_space_heating(dry_core.clone(), &energy_supply_conn_name, control.into())?),
+                                        HeatBattery::Pcm(pcm) =>
+                                            HeatBatteryServiceSpace::Pcm(HeatBatteryPcm::create_service_space_heating(pcm.clone(), &energy_supply_conn_name, control)?)
+                                    })
                                 }
                             };
 
-                        let energy_supply_fc_conn  = if energy_supply.is_none() {
+                        let energy_supply_fc_conn = if energy_supply.is_none() {
                             None
                         } else {
                             let energy_supply_name = energy_supply.clone().unwrap();
@@ -5380,17 +5379,17 @@ fn space_heat_systems_from_input(
                             &[], // <---- pipework goes here!!
                             *temp_diff_emit_dsgn,
                             matches!(flow_data, FlowData::Variable {..}),
-                            if let FlowData::Design {design_flow_rate, ..} = flow_data {
+                            if let FlowData::Design { design_flow_rate, .. } = flow_data {
                                 Some(*design_flow_rate)
                             } else {
                                 None
                             },
-                            if let FlowData::Variable {min_flow_rate, ..} = flow_data {
+                            if let FlowData::Variable { min_flow_rate, .. } = flow_data {
                                 Some(*min_flow_rate)
                             } else {
                                 None
                             },
-                            if let FlowData::Variable {max_flow_rate, ..} = flow_data {
+                            if let FlowData::Variable { max_flow_rate, .. } = flow_data {
                                 Some(*max_flow_rate)
                             } else {
                                 None
@@ -5537,7 +5536,7 @@ fn on_site_generation_from_input(
                 PhotovoltaicSystem::new(
                     external_conditions.clone(),
                     panels,
-                    inverter
+                    inverter,
                 )
             }))
         })
