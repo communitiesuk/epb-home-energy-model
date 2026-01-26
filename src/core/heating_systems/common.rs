@@ -1,11 +1,13 @@
 use super::emitters::{Emitters, EmittersDetailedResult};
 use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult};
+use crate::core::common::WaterSupply;
 use crate::core::heating_systems::boiler::{
     BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
 };
 use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
+use crate::core::heating_systems::heat_battery_drycore::HeatBatteryDryCoreServiceWaterRegular;
 use crate::core::heating_systems::heat_battery_pcm::{
     HeatBatteryPcmServiceSpace, HeatBatteryPcmServiceWaterRegular,
 };
@@ -37,7 +39,7 @@ pub(crate) enum HeatSourceWet {
     #[allow(dead_code)]
     Space(BoilerServiceSpace),
     HeatNetworkWaterStorage(HeatNetworkServiceWaterStorage),
-    HeatBatteryHotWater(HeatBatteryPcmServiceWaterRegular),
+    HeatBatteryHotWater(HeatBatteryWaterService),
     HeatPumpWater(HeatPumpServiceWater),
     HeatPumpWaterOnly(HeatPumpHotWaterOnly),
 }
@@ -169,12 +171,68 @@ impl HeatSourceWet {
                 (minmax, minmax)
             }
             HeatSourceWet::HeatNetworkWaterStorage(storage) => storage.setpnt(simtime),
-            HeatSourceWet::HeatBatteryHotWater(battery) => battery.setpnt(simtime)?,
+            HeatSourceWet::HeatBatteryHotWater(battery) => battery.setpnt(simtime),
             HeatSourceWet::HeatPumpWater(heat_pump_water) => heat_pump_water.setpnt(simtime)?,
             HeatSourceWet::HeatPumpWaterOnly(heat_pump_water_only) => {
                 heat_pump_water_only.setpnt(simtime)?
             }
         })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum HeatBatteryWaterService {
+    Pcm(HeatBatteryPcmServiceWaterRegular),
+    DryCore(HeatBatteryDryCoreServiceWaterRegular<WaterSupply>),
+}
+
+impl HeatBatteryWaterService {
+    fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
+        match self {
+            HeatBatteryWaterService::Pcm(service) => service.setpnt(simtime),
+            HeatBatteryWaterService::DryCore(service) => service.setpnt(simtime),
+        }
+    }
+
+    fn demand_energy(
+        &self,
+        energy_demand: f64,
+        temp_flow: Option<f64>,
+        temp_return: f64,
+        update_heat_source_state: Option<bool>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            HeatBatteryWaterService::Pcm(service) => service.demand_energy(
+                energy_demand,
+                temp_flow,
+                temp_return,
+                update_heat_source_state,
+                simtime,
+            ),
+            HeatBatteryWaterService::DryCore(service) => service.demand_energy(
+                energy_demand,
+                temp_flow,
+                temp_return,
+                update_heat_source_state,
+                simtime,
+            ),
+        }
+    }
+    fn energy_output_max(
+        &self,
+        temp_flow: f64,
+        temp_return: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            HeatBatteryWaterService::Pcm(service) => {
+                service.energy_output_max(temp_flow, temp_return, simtime)
+            }
+            HeatBatteryWaterService::DryCore(service) => {
+                service.energy_output_max(temp_flow, temp_return, simtime)
+            }
+        }
     }
 }
 

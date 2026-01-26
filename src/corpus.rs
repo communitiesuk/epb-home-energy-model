@@ -13,7 +13,9 @@ use crate::core::energy_supply::energy_supply::{
 use crate::core::energy_supply::inverter::Inverter;
 use crate::core::energy_supply::pv::{PhotovoltaicPanel, PhotovoltaicSystem};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
-use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem, SpaceHeatingService};
+use crate::core::heating_systems::common::{
+    HeatBatteryWaterService, HeatSourceWet, SpaceHeatSystem, SpaceHeatingService,
+};
 use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
@@ -4555,20 +4557,28 @@ fn heat_source_from_input(
                             ),
                         )))
                     }
-                    WetHeatSource::HeatBattery(battery) => match battery {
-                        HeatBattery::DryCore(drycore) => unimplemented!(),
-                        HeatBattery::Pcm(pcm) => {
-                            HeatSource::Wet(Box::new(HeatSourceWet::HeatBatteryHotWater(
+                    WetHeatSource::HeatBattery(battery) => HeatSource::Wet(Box::new(
+                        HeatSourceWet::HeatBatteryHotWater(match battery {
+                            HeatBattery::DryCore(dry_core) => HeatBatteryWaterService::DryCore(
+                                HeatBatteryDryCore::create_service_hot_water_regular(
+                                    dry_core,
+                                    &energy_supply_conn_name,
+                                    cold_water_source.clone(),
+                                    control_min,
+                                    control_max,
+                                )?,
+                            ),
+                            HeatBattery::Pcm(pcm) => HeatBatteryWaterService::Pcm(
                                 HeatBatteryPcm::create_service_hot_water_regular(
                                     pcm,
                                     &energy_supply_conn_name,
                                     cold_water_source.clone(),
-                                    Some(control_min),
-                                    Some(control_max),
+                                    control_min,
+                                    control_max,
                                 )?,
-                            )))
-                        }
-                    },
+                            ),
+                        }),
+                    )),
                 },
                 energy_supply_conn_name.clone(),
                 (energy_supply_conn_name, hot_water_source_name.into()).into(),

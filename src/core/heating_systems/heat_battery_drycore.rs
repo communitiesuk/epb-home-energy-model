@@ -829,6 +829,7 @@ trait HeatBatteryDryCoreServiceBehaviour {
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool;
 }
 
+#[derive(Debug)]
 pub(crate) struct HeatBatteryDryCoreServiceWaterRegular<T: WaterSupplyBehaviour> {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,
@@ -866,7 +867,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
     pub(crate) fn demand_energy(
         &self,
         energy_demand: f64,
-        temp_flow: f64,
+        temp_flow: Option<f64>,
         temp_return: f64,
         update_heat_source_state: Option<bool>,
         simtime: SimulationTimeIteration,
@@ -881,7 +882,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
             HeatingServiceType::DomesticHotWaterRegular,
             energy_demand,
             temp_return,
-            temp_flow.into(),
+            temp_flow,
             service_on,
             None,
             update_heat_source_state.into(),
@@ -2266,7 +2267,7 @@ mod tests {
         );
         assert_relative_eq!(
             service
-                .demand_energy(4.829918824420231, 55., 34., None, simtime)
+                .demand_energy(4.829918824420231, Some(55.), 34., None, simtime)
                 .unwrap(),
             4.787470041454905
         );
@@ -2283,7 +2284,7 @@ mod tests {
         assert_eq!(service1.energy_output_max(55., 34., simtime).unwrap(), 0.0);
         assert_eq!(
             service1
-                .demand_energy(100., 55., 34., None, simtime)
+                .demand_energy(100., Some(55.), 34., None, simtime)
                 .unwrap(),
             0.0
         );

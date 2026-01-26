@@ -14,7 +14,6 @@ use crate::core::water_heat_demand::misc::{
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
 use crate::input::{HeatBattery as HeatBatteryInput, HeatSourceWetDetails};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
-use anyhow::anyhow;
 use anyhow::bail;
 use atomic_float::AtomicF64;
 use fsum::FSum;
@@ -43,9 +42,9 @@ pub struct HeatBatteryPcmServiceWaterRegular {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
     cold_feed: WaterSupply,
-    control: Option<Arc<Control>>,
-    _control_min: Option<Arc<Control>>,
-    control_max: Option<Arc<Control>>,
+    control: Arc<Control>,
+    control_min: Arc<Control>,
+    control_max: Arc<Control>,
 }
 
 impl HeatBatteryPcmServiceWaterRegular {
@@ -59,8 +58,8 @@ impl HeatBatteryPcmServiceWaterRegular {
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
         cold_feed: WaterSupply,
-        control_min: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
-        control_max: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control_min: Arc<Control>,
+        control_max: Arc<Control>,
     ) -> Self {
         let control = control_min.clone();
 
@@ -69,7 +68,7 @@ impl HeatBatteryPcmServiceWaterRegular {
             service_name,
             cold_feed,
             control,
-            _control_min: control_min,
+            control_min,
             control_max,
         }
     }
@@ -78,21 +77,11 @@ impl HeatBatteryPcmServiceWaterRegular {
     pub(crate) fn setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        Ok((
-            self._control_min
-                .as_ref()
-                .ok_or_else(|| {
-                    anyhow!("control min expected on heat battery when setpnt is called")
-                })?
-                .setpnt(&simulation_time_iteration),
-            self.control_max
-                .as_ref()
-                .ok_or_else(|| {
-                    anyhow!("control max expected on heat battery when setpnt is called")
-                })?
-                .setpnt(&simulation_time_iteration),
-        ))
+    ) -> (Option<f64>, Option<f64>) {
+        (
+            self.control_min.setpnt(&simulation_time_iteration),
+            self.control_max.setpnt(&simulation_time_iteration),
+        )
     }
 
     /// Demand energy (in kWh) from the heat_battery
@@ -104,7 +93,7 @@ impl HeatBatteryPcmServiceWaterRegular {
         update_heat_source_state: Option<bool>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let service_on = self.is_on(simulation_time_iteration)?;
+        let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
@@ -126,7 +115,7 @@ impl HeatBatteryPcmServiceWaterRegular {
         _temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let service_on = self.is_on(simulation_time_iteration)?;
+        let service_on = self.is_on(simulation_time_iteration);
         if !service_on {
             return Ok(0.);
         }
@@ -134,12 +123,8 @@ impl HeatBatteryPcmServiceWaterRegular {
         self.heat_battery.read().energy_output_max(temp_flow, None)
     }
 
-    fn is_on(&self, simtime: SimulationTimeIteration) -> anyhow::Result<bool> {
-        if let Some(control) = &self.control {
-            Ok(control.is_on(&simtime))
-        } else {
-            Ok(true)
-        }
+    fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
+        self.control.is_on(&simtime)
     }
 }
 
@@ -693,8 +678,8 @@ impl HeatBatteryPcm {
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         cold_feed: WaterSupply,
-        control_min: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
-        control_max: Option<Arc<Control>>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control_min: Arc<Control>,
+        control_max: Arc<Control>,
     ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterRegular::new(
@@ -2028,8 +2013,8 @@ pub(crate) struct OutputDetailedResultsNotEnabledError;
 mod tests {
     use super::*;
     use crate::core::common::WaterSupply;
-    use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::controls::time_control::{ChargeControl, Control};
+    use crate::core::controls::time_control::{MockControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
@@ -2337,8 +2322,8 @@ mod tests {
             heat_battery,
             SERVICE_NAME.into(),
             cold_water_source,
-            Some(Arc::new(control_min)),
-            Some(Arc::new(control_max)),
+            Arc::new(control_min),
+            Arc::new(control_max),
         )
     }
 
@@ -2354,9 +2339,7 @@ mod tests {
             simulation_time_iterator,
         );
 
-        assert!(heat_battery_service
-            .is_on(simulation_time_iteration)
-            .unwrap());
+        assert!(heat_battery_service.is_on(simulation_time_iteration));
     }
 
     #[rstest]
@@ -2371,7 +2354,7 @@ mod tests {
         );
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            let (control_min, control_max) = service.setpnt(t_it).unwrap();
+            let (control_min, control_max) = service.setpnt(t_it);
 
             assert_eq!(
                 control_min,
@@ -2410,8 +2393,8 @@ mod tests {
                 heat_battery,
                 SERVICE_NAME.into(),
                 WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
-                Some(service_control_off.clone()),
-                Some(service_control_off),
+                service_control_off.clone(),
+                service_control_off,
             );
 
         let result = heat_battery_service
@@ -3403,8 +3386,8 @@ mod tests {
             heat_battery.clone(),
             service_name,
             cold_feed.clone(),
-            None,
-            None,
+            Arc::new(Control::Mock(MockControl::default())),
+            Arc::new(Control::Mock(MockControl::default())),
         )
         .unwrap();
 
@@ -4030,8 +4013,8 @@ mod tests {
             heat_battery.clone(),
             service_name,
             cold_feed.clone(),
-            None,
-            None,
+            Arc::new(Control::Mock(MockControl::default())),
+            Arc::new(Control::Mock(MockControl::default())),
         );
 
         assert!(result.is_ok());
@@ -4040,8 +4023,8 @@ mod tests {
             heat_battery,
             service_name,
             cold_feed,
-            None,
-            None,
+            Arc::new(Control::Mock(MockControl::default())),
+            Arc::new(Control::Mock(MockControl::default())),
         );
 
         assert!(result.is_err())
