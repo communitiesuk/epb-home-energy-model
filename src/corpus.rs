@@ -1440,6 +1440,7 @@ impl Corpus {
     /// Arguments:
     /// * `delta_t_h` - calculation timestep, in hours
     /// * `gains_internal_dhw` - internal gains from hot water system for this timestep, in W
+    /// * `gains_internal_hb` - internal gains from central heat battery systems for this timestep, in W
     fn calc_space_heating(
         &self,
         delta_t_h: f64,
