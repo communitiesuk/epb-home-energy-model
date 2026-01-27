@@ -235,14 +235,17 @@ impl BuildingElement {
         }
     }
 
-    pub(crate) fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
-        match self {
-            BuildingElement::Opaque(el) => el.i_sol_dir_dif(simtime),
+    pub(crate) fn i_sol_dir_dif(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        Ok(match self {
+            BuildingElement::Opaque(el) => el.i_sol_dir_dif(simtime)?,
             BuildingElement::AdjacentConditionedSpace(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::Ground(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::Transparent(el) => el.i_sol_dir_dif(simtime),
-        }
+        })
     }
 
     pub(crate) fn shading_factors_direct_diffuse(
@@ -1100,7 +1103,7 @@ pub(crate) trait SolarRadiationInteraction {
     fn set_external_pitch(&mut self, pitch: f64);
     fn external_pitch(&self) -> f64;
     fn set_orientation(&mut self, orientation: f64);
-    fn orientation(&self) -> f64;
+    fn orientation(&self) -> Option<f64>;
     fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>);
     fn shading(&self) -> &[WindowShadingObject];
     fn set_base_height(&mut self, base_height: f64);
@@ -1153,16 +1156,20 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
     fn external_conditions(&self) -> &ExternalConditions;
 
     /// Return calculated i_sol_dir and i_sol_dif using pitch and orientation of element
-    fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
+    fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> anyhow::Result<(f64, f64)> {
         let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
             .external_conditions()
             .calculated_direct_diffuse_total_irradiance(
                 self.external_pitch(),
-                self.orientation(),
+                self.orientation().ok_or_else(|| {
+                    anyhow!(
+                        "Cannot compute direct and diffuse irradiance because orientation is None."
+                    )
+                })?,
                 false,
                 &simtime,
             );
-        (i_sol_dir, i_sol_dif)
+        Ok((i_sol_dir, i_sol_dif))
     }
 
     fn shading_factors_direct_diffuse(
@@ -1175,7 +1182,11 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
                 self.projected_height(),
                 self.width(),
                 self.external_pitch(),
-                self.orientation(),
+                self.orientation().ok_or_else(|| {
+                    anyhow!(
+                        "Cannot compute direct and diffuse shading factors because orientation is None."
+                    )
+                })?,
                 &[],
                 simtime,
             )
@@ -1214,7 +1225,9 @@ pub(crate) trait SolarRadiationInteractionTransmitted: SolarRadiationInteraction
             self.projected_height(),
             self.width(),
             self.pitch(),
-            self.orientation(),
+            self.orientation().ok_or_else(|| {
+                anyhow!("Cannot compute surface irradiance because orientation is None.")
+            })?,
             self.shading(),
             simtime,
         )?;
@@ -1237,7 +1250,9 @@ pub(crate) trait SolarRadiationInteractionTransmitted: SolarRadiationInteraction
                 self.projected_height(),
                 self.width(),
                 self.pitch(),
-                self.orientation(),
+                self.orientation().ok_or_else(|| {
+                    anyhow!("Cannot compute shading factor because orientation is None.")
+                })?,
                 self.shading(),
                 simtime,
             )
@@ -1261,7 +1276,7 @@ pub(crate) struct BuildingElementOpaque {
     base_height: f64,
     projected_height: f64,
     width: f64,
-    orientation: f64,
+    orientation: Option<f64>,
     k_m: f64,
     k_pli: [f64; 5],
     h_pli: [f64; 4],
@@ -1301,7 +1316,7 @@ impl BuildingElementOpaque {
         thermal_resistance_construction: f64,
         areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
-        orientation: f64,
+        orientation: Option<f64>,
         base_height: f64,
         height: f64,
         width: f64,
@@ -1335,7 +1350,7 @@ impl BuildingElementOpaque {
         // shading is None because the model ignores nearby shading on opaque elements
         new_opaque.init_solar_radiation_interaction_absorbed(
             pitch,
-            Some(orientation),
+            orientation,
             None,
             base_height,
             projected_height(pitch, height),
@@ -1350,7 +1365,10 @@ impl BuildingElementOpaque {
         self.solar_absorption_coeff
     }
 
-    pub(crate) fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
+    pub(crate) fn i_sol_dir_dif(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
         SolarRadiationInteractionAbsorbed::i_sol_dir_dif(self, simtime)
     }
 
@@ -1457,10 +1475,10 @@ impl SolarRadiationInteraction for BuildingElementOpaque {
     }
 
     fn set_orientation(&mut self, orientation: f64) {
-        self.orientation = orientation;
+        self.orientation = orientation.into();
     }
 
-    fn orientation(&self) -> f64 {
+    fn orientation(&self) -> Option<f64> {
         self.orientation
     }
 
@@ -1697,8 +1715,8 @@ impl SolarRadiationInteraction for BuildingElementAdjacentConditionedSpace {
         self.orientation = orientation;
     }
 
-    fn orientation(&self) -> f64 {
-        self.orientation
+    fn orientation(&self) -> Option<f64> {
+        self.orientation.into()
     }
 
     fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
@@ -1936,8 +1954,8 @@ impl SolarRadiationInteraction for BuildingElementAdjacentUnconditionedSpaceSimp
         // do nothing
     }
 
-    fn orientation(&self) -> f64 {
-        0.0
+    fn orientation(&self) -> Option<f64> {
+        0.0.into()
     }
 
     fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
@@ -2372,8 +2390,8 @@ impl SolarRadiationInteraction for BuildingElementGround {
         // do nothing
     }
 
-    fn orientation(&self) -> f64 {
-        0.0
+    fn orientation(&self) -> Option<f64> {
+        0.0.into()
     }
 
     fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
@@ -2505,7 +2523,7 @@ pub(crate) struct BuildingElementTransparent {
     frame_area_fraction: f64,
     pitch: f64,
     external_pitch: f64,
-    orientation: f64,
+    orientation: Option<f64>,
     base_height: f64,
     projected_height: f64,
     width: f64,
@@ -2540,7 +2558,7 @@ impl BuildingElementTransparent {
     pub(crate) fn new(
         pitch: f64,
         thermal_resistance_construction: f64,
-        orientation: f64,
+        orientation: Option<f64>,
         g_value: f64,
         frame_area_fraction: f64,
         base_height: f64,
@@ -2576,7 +2594,7 @@ impl BuildingElementTransparent {
         new_trans.init_heat_transfer_other_side_outside(pitch);
         new_trans.init_solar_radiation_interaction(
             pitch,
-            Some(orientation),
+            orientation,
             shading,
             base_height,
             projected_height(pitch, height),
@@ -2617,7 +2635,9 @@ impl BuildingElementTransparent {
                 self.projected_height,
                 self.width,
                 self.pitch,
-                self.orientation,
+                self.orientation.ok_or_else(|| {
+                    anyhow!("Cannot compute surface irradiance because orientation is None.")
+                })?,
                 self.shading(),
                 simtime,
             )?;
@@ -2823,11 +2843,11 @@ impl SolarRadiationInteraction for BuildingElementTransparent {
     }
 
     fn set_orientation(&mut self, orientation: f64) {
-        self.orientation = orientation;
+        self.orientation = orientation.into();
     }
 
-    fn orientation(&self) -> f64 {
-        self.orientation
+    fn orientation(&self) -> Option<f64> {
+        self.orientation.into()
     }
 
     fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>) {
@@ -3150,7 +3170,7 @@ mod tests {
             0.25,
             19000.0,
             MassDistributionClass::I,
-            0.,
+            Some(0.),
             0.,
             2.,
             10.,
@@ -3168,7 +3188,7 @@ mod tests {
             0.50,
             18000.0,
             MassDistributionClass::E,
-            180.,
+            Some(180.),
             0.,
             2.25,
             10.,
@@ -3186,7 +3206,7 @@ mod tests {
             0.75,
             17000.0,
             MassDistributionClass::IE,
-            90.,
+            Some(90.),
             0.,
             2.5,
             10.,
@@ -3204,7 +3224,7 @@ mod tests {
             0.80,
             16000.0,
             MassDistributionClass::D,
-            -90.,
+            Some(-90.),
             0.,
             2.75,
             10.,
@@ -3222,7 +3242,7 @@ mod tests {
             0.40,
             15000.0,
             MassDistributionClass::M,
-            0.,
+            Some(0.),
             0.,
             3.,
             10.,
@@ -4199,7 +4219,7 @@ mod tests {
         fn external_pitch(&self) -> f64 {
             unreachable!()
         }
-        fn orientation(&self) -> f64 {
+        fn orientation(&self) -> Option<f64> {
             unreachable!()
         }
         fn projected_height(&self) -> f64 {
@@ -4350,7 +4370,7 @@ mod tests {
         BuildingElementTransparent::new(
             90.,
             0.4,
-            180.,
+            Some(180.),
             0.75,
             0.25,
             1.,
@@ -4930,7 +4950,7 @@ mod tests {
     fn test_orientation(transparent_building_element: BuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.orientation(),
-            180.,
+            Some(180.),
             "incorrect orientation returned"
         );
     }

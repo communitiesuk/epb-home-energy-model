@@ -46,9 +46,9 @@ use crate::core::schedule::{
 };
 use crate::core::space_heat_demand::building_element::{
     convert_uvalue_to_resistance, BuildingElement, BuildingElementAdjacentConditionedSpace,
-    BuildingElementAdjacentUnconditionedSpaceSimple, BuildingElementGround, H_CE, H_RE,
-    PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR, R_SI_DOWNWARDS, R_SI_HORIZONTAL,
-    R_SI_UPWARDS,
+    BuildingElementAdjacentUnconditionedSpaceSimple, BuildingElementGround, BuildingElementOpaque,
+    BuildingElementTransparent, WindowTreatment, H_CE, H_RE, PITCH_LIMIT_HORIZ_CEILING,
+    PITCH_LIMIT_HORIZ_FLOOR, R_SI_DOWNWARDS, R_SI_HORIZONTAL, R_SI_UPWARDS,
 };
 use crate::core::space_heat_demand::internal_gains::{
     ApplianceGains, EventApplianceGains, Gains, InternalGains,
@@ -68,10 +68,10 @@ use crate::core::water_heat_demand::misc::WaterEventResult;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
-    BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
-    ColdWaterSourceInput, Control as ControlInput, ControlCombinations, ControlDetails, DuctType,
-    EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FlowData, FuelType,
-    HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    BuildingElement as BuildingElementInput, BuildingElementHeightWidthInput, ChargeLevel,
+    ColdWaterSourceDetails, ColdWaterSourceInput, Control as ControlInput, ControlCombinations,
+    ControlDetails, DuctType, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FlowData,
+    FuelType, HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
     HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
     InternalGains as InternalGainsInput, InternalGainsDetails,
@@ -3487,79 +3487,90 @@ impl CompletedVentilationLeaks {
 fn building_element_from_input(
     input: &BuildingElementInput,
     external_conditions: Arc<ExternalConditions>,
-    _controls: &Controls,
-    _simulation_time_iterator: &SimulationTimeIterator,
+    controls: &Controls,
+    simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<Arc<BuildingElement>> {
+    let thermal_resistance_construction = init_resistance_or_uvalue(input)?;
+
     Ok(Arc::from(match input {
         BuildingElementInput::Opaque {
-            // is_unheated_pitched_roof,
-            // area_input,
-            // pitch,
-            // solar_absorption_coeff,
-            // u_value_input,
-            // areal_heat_capacity,
-            // mass_distribution_class,
-            // orientation,
-            // base_height,
+            is_unheated_pitched_roof,
+            area_input,
+            pitch,
+            solar_absorption_coeff,
+            u_value_input,
+            areal_heat_capacity,
+            mass_distribution_class,
+            orientation,
+            base_height,
             ..
         } => {
-            todo!("BuildingElementInput::Opaque cannot yet be built from input in 0.40");
-            // let is_unheated_pitched_roof = if *pitch < PITCH_LIMIT_HORIZ_CEILING {
-            //     is_unheated_pitched_roof
-            //         .ok_or_else(|| anyhow!("Pitch of opaque building element was {pitch} degrees, so it is necessary for this element to indicate whether this is an unheated pitched roof."))?
-            // } else {
-            //     false
-            // };
-            //
-            // BuildingElement::Opaque(BuildingElementOpaque::new(
-            //     *area,
-            //     is_unheated_pitched_roof,
-            //     *pitch,
-            //     *solar_absorption_coeff,
-            //     init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
-            //     *areal_heat_capacity,
-            //     *mass_distribution_class,
-            //     *orientation,
-            //     *base_height,
-            //     *height,
-            //     *width,
-            //     external_conditions,
-            // ))
+            let is_unheated_pitched_roof = if *pitch < PITCH_LIMIT_HORIZ_CEILING {
+                is_unheated_pitched_roof
+                    .ok_or_else(|| anyhow!("Pitch of opaque building element was {pitch} degrees, so it is necessary for this element to indicate whether this is an unheated pitched roof."))?
+            } else {
+                false
+            };
+
+            let BuildingElementHeightWidthInput { height, width } =
+                area_input.height_and_width.ok_or_else(|| {
+                    anyhow!("Height and width of opaque building element must be provided.")
+                })?;
+
+            BuildingElement::Opaque(BuildingElementOpaque::new(
+                area_input.area(),
+                is_unheated_pitched_roof,
+                *pitch,
+                *solar_absorption_coeff,
+                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+                *areal_heat_capacity,
+                *mass_distribution_class,
+                *orientation,
+                *base_height,
+                height,
+                width,
+                external_conditions,
+            ))
         }
         BuildingElementInput::Transparent {
-            // u_value_input,
-            // pitch,
-            // orientation,
-            // g_value,
-            // frame_area_fraction,
-            // base_height,
-            // shading,
-            // treatment,
+            area_input,
+            u_value_input,
+            pitch,
+            orientation,
+            g_value,
+            frame_area_fraction,
+            base_height,
+            shading,
+            treatment,
             ..
         } => {
-            todo!("Transparent building elements are not yet supported in this 0.40 version");
-            // BuildingElement::Transparent(BuildingElementTransparent::new(
-            //     *pitch,
-            //     init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
-            //     *orientation,
-            //     *g_value,
-            //     *frame_area_fraction,
-            //     *base_height,
-            //     *height,
-            //     *width,
-            //     Some(shading.clone()),
-            //     treatment
-            //         .iter()
-            //         .map(|t| {
-            //             WindowTreatment::from_input(
-            //                 t,
-            //                 controls,
-            //                 simulation_time_iterator.current_hour(),
-            //             )
-            //         })
-            //         .collect_vec(),
-            //     external_conditions,
-            // ))
+            let BuildingElementHeightWidthInput { height, width } =
+                area_input.height_and_width.ok_or_else(|| {
+                    anyhow!("Height and width of transparent building element must be provided.")
+                })?;
+
+            BuildingElement::Transparent(BuildingElementTransparent::new(
+                *pitch,
+                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+                *orientation,
+                *g_value,
+                *frame_area_fraction,
+                *base_height,
+                height,
+                width,
+                Some(shading.clone()),
+                treatment
+                    .iter()
+                    .map(|t| {
+                        WindowTreatment::from_input(
+                            t,
+                            controls,
+                            simulation_time_iterator.current_hour(),
+                        )
+                    })
+                    .collect_vec(),
+                external_conditions,
+            ))
         }
         BuildingElementInput::Ground {
             area,
@@ -3597,7 +3608,9 @@ fn building_element_from_input(
             ..
         } => {
             BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
-                area.ok_or_else(|| anyhow!("AdjacentConditionedSpace building element is expected have an area"))?,
+                area.ok_or_else(|| {
+                    anyhow!("AdjacentConditionedSpace building element is expected have an area")
+                })?,
                 *pitch,
                 init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
                 *areal_heat_capacity,
@@ -3614,7 +3627,9 @@ fn building_element_from_input(
             mass_distribution_class,
         } => BuildingElement::AdjacentUnconditionedSpaceSimple(
             BuildingElementAdjacentUnconditionedSpaceSimple::new(
-                area.ok_or_else(|| anyhow!("AdjacentUnconditionedSpace building element is expected have an area"))?,
+                area.ok_or_else(|| {
+                    anyhow!("AdjacentUnconditionedSpace building element is expected have an area")
+                })?,
                 *pitch,
                 init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
                 *thermal_resistance_unconditioned_space,

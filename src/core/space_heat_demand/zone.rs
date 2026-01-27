@@ -373,8 +373,8 @@ impl Zone {
             // Coeff for temperature of next node
             matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i, simtime)?;
             // RHS of heat balance eqn for this node
-            let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(simtime);
-            let (f_sh_dir, f_sh_dif) = eli.shading_factors_direct_diffuse(simtime).unwrap();
+            let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(simtime)?;
+            let (f_sh_dir, f_sh_dif) = eli.shading_factors_direct_diffuse(simtime)?;
             vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
                 + (h_ce + h_re) * eli.temp_ext(simtime)
                 + solar_absorption_coeff * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
@@ -557,7 +557,9 @@ impl Zone {
                 // Get position in vector for the first (external) node of the building element
                 let idx = self.element_positions[eli_idx].0;
                 let temp_ext_surface = vector_x[idx];
-                let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(simtime);
+                let (i_sol_dir, i_sol_dif) = eli
+                    .i_sol_dir_dif(simtime)
+                    .expect("Expected i_sol_dir_dif to be calculable.");
                 let (f_sh_dir, f_sh_dif) = eli
                     .shading_factors_direct_diffuse(simtime)
                     .expect("Expected shading factors direct diffuse to be calculable.");
@@ -1938,7 +1940,7 @@ mod tests {
             0.25,
             19000.0,
             MassDistributionClass::I,
-            0.,
+            Some(0.),
             0.,
             2.,
             10.,
@@ -1952,7 +1954,7 @@ mod tests {
             0.33,
             16000.0,
             MassDistributionClass::D,
-            0.,
+            Some(0.),
             0.,
             2.,
             10.,
@@ -1995,7 +1997,7 @@ mod tests {
         let be_transparent = BuildingElement::Transparent(BuildingElementTransparent::new(
             90.,
             0.4,
-            180.,
+            Some(180.),
             0.75,
             0.25,
             1.,
