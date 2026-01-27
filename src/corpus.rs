@@ -4834,11 +4834,12 @@ fn hot_water_source_from_input(
 
     let cold_water_source_for_hot_water_tank =
         |cold_water_source_type: &str| -> anyhow::Result<WaterSupply> {
-            pre_heated_water_sources
-                .get(cold_water_source_type)
-                .map(|source| WaterSupply::Preheated(source.clone()))
-                .or(wwhrs.get(cold_water_source_type).map(|source| WaterSupply::Wwhrs(source.clone())))
-                .ok_or_else(|| anyhow!("Could not find pre-heated or WWHRS water source for name '{cold_water_source_type}'"))
+            cold_water_sources.get(cold_water_source_type).map(|source| WaterSupply::ColdWaterSource(source.clone())).or_else(|| {
+                pre_heated_water_sources
+                    .get(cold_water_source_type)
+                    .map(|source| WaterSupply::Preheated(source.clone()))
+                    .or(wwhrs.get(cold_water_source_type).map(|source| WaterSupply::Wwhrs(source.clone())))
+            }).ok_or_else(|| anyhow!("Could not find pre-heated or WWHRS water source for name '{cold_water_source_type}'"))
         };
 
     let mut heat_sources_for_hot_water_tank = |cold_water_source: WaterSupply,
