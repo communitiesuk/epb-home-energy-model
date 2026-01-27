@@ -3096,7 +3096,7 @@ impl SolarThermalSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::controls::time_control::{SetpointBounds, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::material_properties::WATER;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -3250,6 +3250,7 @@ mod tests {
             Default::default(),
             simulation_timestep,
         );
+
         let immersion_heater = ImmersionHeater::new(
             rated_power,
             energy_supply_connection.clone(),
@@ -3257,6 +3258,7 @@ mod tests {
             Some(Arc::new(Control::SetpointTime(control_min))),
             Some(Arc::new(Control::SetpointTime(control_max))),
         );
+
         PositionedHeatSource {
             heat_source: Arc::new(Mutex::new(HeatSource::Storage(
                 HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(immersion_heater))),
@@ -3272,7 +3274,11 @@ mod tests {
         simulation_time_for_storage_tank: SimulationTime,
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
     ) -> (StorageTank, Arc<RwLock<EnergySupply>>) {
+        let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
+        let simulation_timestep = simulation_time_for_storage_tank.step;
+
         let control_min_schedule = vec![
             Some(52.),
             None,
@@ -3293,16 +3299,11 @@ mod tests {
             Some(55.),
             Some(55.),
         ];
-        let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(
-                FuelType::Electricity,
-                simulation_time_for_storage_tank.total_steps(),
-            )
-            .build(),
-        ));
+
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "immersion").unwrap();
-        let heat_source = heat_source(
+
+        let heat_source_imheater = heat_source(
             simulation_time_for_storage_tank,
             energy_supply_connection.clone(),
             50.0,
@@ -3312,10 +3313,7 @@ mod tests {
             control_max_schedule,
         );
 
-        let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
-        let simulation_timestep = simulation_time_for_storage_tank.step;
-
-        let heat_sources = IndexMap::from([("imheater".into(), heat_source)]);
+        let heat_sources = IndexMap::from([("imheater".into(), heat_source_imheater)]);
         let storage_tank = StorageTank::new(
             150.0,
             1.68,
@@ -4366,6 +4364,30 @@ mod tests {
         );
     }
 
+    // Python test test_extract_hot_water_skips_empty_layer skipped as it modifies private state of storage tank instance
+    // which would be difficult to replicate here
+
+    #[rstest]
+    fn test_calc_temps_ater_extraction(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>), simulation_time_for_storage_tank: SimulationTime) {
+        let (storage_tank1, _) = storage_tank1;
+
+        let remaining_vols = vec![0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0];
+
+        let expected_new_temps = vec![10.0, 10.0, 10.0, 16.0];
+        let (actual_new_temps, flag) = storage_tank1.calc_temps_after_extraction(remaining_vols, simulation_time_for_storage_tank.iter().current_iteration()).unwrap();
+
+        assert_eq!(actual_new_temps, expected_new_temps);
+        assert_eq!(flag, false);
+
+        let remaining_vols = vec![40.0, 40.0, 40.0, 40.0];
+
+        let expected_new_temps = vec![55.0, 55.0, 55.0, 55.0];
+        let (actual_new_temps, flag) = storage_tank1.calc_temps_after_extraction(remaining_vols, simulation_time_for_storage_tank.iter().current_iteration()).unwrap();
+
+        assert_eq!(actual_new_temps, expected_new_temps);
+        assert_eq!(flag, false);
+    }
+
     #[rstest]
     fn test_calculate_new_temperatures(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
@@ -4396,6 +4418,7 @@ mod tests {
             .clone()
             .heat_source;
         let energy_input = 5.0;
+        let setpnt_diverter = Control::SetpointTime(SetpointTimeControl::new(vec![Some(60.), Some(60.), Some(60.), Some(60.)], 0, 1.0, None, None, 1.0));
         storage_tank1.q_ls_n_prev_heat_source = Arc::new(RwLock::new(vec![0.0, 0.1, 0.2, 0.3]));
         assert_eq!(
             storage_tank1
@@ -4403,11 +4426,11 @@ mod tests {
                     &heat_source.lock(),
                     "imheater",
                     energy_input,
-                    None,
+                    Some(&setpnt_diverter),
                     simulation_time_for_storage_tank.iter().current_iteration()
                 )
                 .unwrap(),
-            0.01762703703703572
+            0.8915535802469137
         );
 
         // Test with no energy input
@@ -4423,7 +4446,7 @@ mod tests {
                     &heat_source.lock(),
                     "imheater2",
                     energy_input,
-                    None,
+                    Some(&setpnt_diverter),
                     simulation_time_for_storage_tank.iter().current_iteration()
                 )
                 .unwrap(),
@@ -4439,7 +4462,6 @@ mod tests {
         assert_eq!(storage_tank1.internal_gains(), 50.);
     }
 
-    #[ignore = "work in progress - pipework migration"]
     #[rstest]
     fn test_primary_pipework_losses(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
@@ -4494,21 +4516,151 @@ mod tests {
         // With value for input_energy_adj
         let input_energy_adj = 3.;
 
-        for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
+        for (_, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
                 storage_tank1.calculate_primary_pipework_losses(input_energy_adj, setpnt_max, t_it),
-                [
-                    (0.04665869119015863, 9.854304934823482),
-                    (0.04665869119015863, 9.854304934823482),
-                    (0.04665869119015863, 9.854304934823482),
-                    (0.04665869119015863, 9.854304934823482),
-                    (0.04665869119015863, 9.854304934823482),
-                    (0.04665869119015863, 9.854304934823482),
-                    (0.04665869119015863, 9.854304934823482),
-                    (0.04665869119015863, 9.854304934823482)
-                ][t_idx]
+                (0.04746228058715814, 10.657894331822993),
             )
         }
+    }
+
+    // Python test test_primary_pipework_losses_end_of_heating skipped as it would required mocking Pipeworkesque::calculate_cool_down_loss
+
+    #[rstest]
+    fn test_get_losses_from_primary_pipework_and_storage(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+        let usage_event = get_usage_event();
+        let _ = storage_tank1.demand_hot_water(Some(usage_event), simulation_time_for_storage_tank.iter().current_iteration());
+
+        let expected = (0., 0.07050814814814815);
+        let actual = storage_tank1.get_losses_from_primary_pipework_and_storage();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    fn test_energy_demand(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+        let usage_event = get_usage_event();
+        let _ = storage_tank1.demand_hot_water(Some(usage_event), simulation_time_for_storage_tank.iter().current_iteration());
+
+        assert_eq!(storage_tank1.test_energy_demand(), 5.9141614814815);
+    }
+
+    #[rstest]
+    fn test_temperature_and_draw_off_hot_water(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions: Arc<ExternalConditions>
+    ) {
+        let cold_water_temps =  [60.0, 10.1, 10.2, 10.5, 10.6, 11.0, 11.5, 12.1];
+        let cold_feed = WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(
+            cold_water_temps.to_vec(), 
+            0,
+            1.,
+        )));
+
+        // create storage tank (same as storage_tank1) but with our cold feed
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_storage_tank.total_steps(),
+            )
+            .build(),
+        ));
+        let control_min_schedule = vec![
+            Some(52.),
+            None,
+            None,
+            None,
+            Some(52.),
+            Some(52.),
+            Some(52.),
+            Some(52.),
+        ];
+        let control_max_schedule = vec![
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+        ];
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "immersion").unwrap();
+        let heat_source = heat_source(
+            simulation_time_for_storage_tank,
+            energy_supply_connection.clone(),
+            50.0,
+            0.1,
+            0.33,
+            control_min_schedule,
+            control_max_schedule,
+        );
+        let simulation_timestep = simulation_time_for_storage_tank.step;
+
+        let heat_sources = IndexMap::from([("imheater".into(), heat_source)]);
+        let storage_tank = StorageTank::new(
+            150.0,
+            1.68,
+            55.0,
+            cold_feed,
+            simulation_timestep,
+            heat_sources,
+            temp_internal_air_fn.clone(),
+            external_conditions.clone(),
+            None,
+            None,
+            *WATER,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+
+        let expected = (Some(56.875), 240.0);
+        let iteration = simulation_time_for_storage_tank.iter().current_iteration(); 
+        let actual = storage_tank.draw_off_hot_water(240., iteration).unwrap();
+
+        assert_eq!(actual, expected);
+
+        // use the default storage tank for the next tests
+        // Python re-runs setUp to achieve the same
+        let (storage_tank1, _) = storage_tank1;
+
+        let iteration = simulation_time_for_storage_tank.iter().current_iteration(); 
+        assert_eq!((None, 0.0), storage_tank1.draw_off_hot_water(0., iteration).unwrap());
+
+        // Note the below are draw_off_water, not draw_off_hot_water
+        assert_eq!(vec![(55.0, 0.0)], storage_tank1.draw_off_water(0., iteration).unwrap());
+
+        assert_eq!(vec![(55.0, 22.3)], storage_tank1.draw_off_water(22.3, iteration).unwrap());
+
+        assert_eq!(vec![(55.0, 37.5), (55.0, 37.5), (55.0, 37.5), (28.24, 37.5)], storage_tank1.draw_off_water(165., iteration).unwrap());
+
+    }
+
+    #[rstest]
+    fn test_heat_source_output(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime) {
+
+        let (storage_tank1, _) = storage_tank1;
+        let positioned_heat_source = storage_tank1.heat_source_data["imheater"].clone();
+        let heat_source = &*positioned_heat_source.heat_source.lock();
+
+        let iteration = simulation_time_for_storage_tank.iter().current_iteration();
+        assert_eq!(storage_tank1.heat_source_output(heat_source, 43.2, 0, iteration, None).unwrap(), 43.2);
+
+        // TODO add assertions for other heat sources as in Python
     }
 
     #[fixture]
@@ -4996,6 +5148,41 @@ mod tests {
         ]
     }
 
+    fn get_usage_event() -> Vec<WaterEventResult> {
+        get_event_data_immersion().get(0).unwrap().clone().unwrap()
+    }
+
+     fn get_event_data_solthermal() -> Vec<Option<Vec<WaterEventResult>>> {
+        vec![
+            None,
+            Some(vec![
+                WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41.0, volume_warm: 48.0, volume_hot: 30.5956261482843 }
+            ]),
+            None,
+            Some(vec![WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 45.0, volume_warm: 48.0, volume_hot: 36.4281898110265 }]),
+            None,
+            Some(vec![WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41.0, volume_warm: 52.0, volume_hot: 34.4038433055010 }]),
+            None,
+            None,
+            None,
+            Some(vec![WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41.0, volume_warm: 48.0, volume_hot: 33.3416695316938 }]),
+            None,
+            Some(vec![]),
+            None,
+            Some(vec![WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41.0, volume_warm: 52.0, volume_hot: 40.521971319747124 }]),
+            None,
+            None,
+            None,
+            Some(vec![WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41.0, volume_warm: 48.0, volume_hot: 30.5956261482843 }]),
+            None,
+            Some(vec![WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 45.0, volume_warm: 48.0, volume_hot: 36.42818981102645 }]),
+            None,
+            Some(vec![WaterEventResult { event_result_type: WaterEventResultType::Shower, temperature_warm: 41.0, volume_warm: 52.0, volume_hot: 34.40384330550096 }]),
+            None,
+            None
+        ]
+     }
+
     const TWO_DECIMAL_PLACES: f64 = 1e-3;
     const FIVE_DECIMAL_PLACES: f64 = 1e-6;
 
@@ -5356,4 +5543,72 @@ mod tests {
             (vec![10.0, 10.0, 10.0, 12.666666666666666], false)
         );
     }
+
+    #[rstest]
+    fn test_demand_hot_water_solthermal(storage_tank_with_solar_thermal: (
+            StorageTank,
+            Arc<Mutex<SolarThermalSystem>>,
+            SimulationTime,
+            Arc<RwLock<EnergySupply>>,
+        )) {
+            let (storage_tank_solar_thermal, _, simulation_time, _) = storage_tank_with_solar_thermal;
+            let event_data = get_event_data_solthermal();
+
+            let expected_energy_demand = [
+                0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.39440131536356493,
+                        0.8431945125549533,
+                        1.3874298880308749,
+                        1.092014226211686,
+                        1.1503560996860809,
+                        1.484510483919223,
+                        0.9003607869563452,
+                        0.4981024012117776,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+            ];
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                let usage_events = event_data[t_idx].clone();
+                let _ = storage_tank_solar_thermal.demand_hot_water(usage_events, t_it);
+
+                let actual = storage_tank_solar_thermal.energy_demand_test.load(Ordering::SeqCst);
+
+                assert_relative_eq!(actual, expected_energy_demand[t_idx], max_relative = 1e-7);
+            } 
+    }
 }
+
+   // Tests still to be ported:
+   // Test_StorageTank:
+    // test_heat_source_output
+
+    // Test_ImmersionHeater
+
+    // TestPVDiverter
+    // test_capacity_used
+    // test_timestep_end
+    // test_divert_surplus
+
+    // TestSolarThermalSystem
+    // test_energy_potential
+    // test_energy_supply
+
+    // TestSmartHotWaterTank
+    // test_demand_hot_water_edge_cases
+    // test_calc_final_temps
+    // test_temps_after_pumping
+    // test_bottom_to_top_pump_volume_none_setpoint
