@@ -111,10 +111,10 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
     // __time_end_previous_event = 0.0
 
     pub(crate) fn new(
-        showers_input: ShowersInput,
-        bath_input: BathInput,
-        other_hot_water_input: OtherWaterUseInput,
-        hw_pipework_inputs: WaterDistributionInput,
+        showers_input: &ShowersInput,
+        bath_input: &BathInput,
+        other_hot_water_input: &OtherWaterUseInput,
+        hw_pipework_inputs: &WaterDistributionInput,
         cold_water_sources: &ColdWaterSources,
         wwhrs: &IndexMap<String, Arc<Mutex<WwhrsInstantaneous>>>,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
@@ -258,9 +258,9 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
     }
 
     fn init_outlet_to_source_mapping(
-        showers_dict: ShowersInput,
-        baths_dict: BathInput,
-        other_hw_users_dict: OtherWaterUseInput,
+        showers_dict: &ShowersInput,
+        baths_dict: &BathInput,
+        other_hw_users_dict: &OtherWaterUseInput,
         hot_water_sources: &IndexMap<String, impl HotWaterSourceBehaviour>,
     ) -> HashMap<(OutletType, String), String> {
         let mut mapping = HashMap::<(OutletType, String), String>::default();
@@ -1401,10 +1401,10 @@ mod tests {
         ]);
 
         DomesticHotWaterDemand::new(
-            showers_input,
-            baths_input,
-            other_input,
-            hw_pipework,
+            &showers_input,
+            &baths_input,
+            &other_input,
+            &hw_pipework,
             &cold_water_sources,
             &wwhrs,
             &energy_supplies,

@@ -877,6 +877,11 @@ impl Corpus {
             Default::default();
         let mut hot_water_source_name_for_service: IndexMap<String, String> = Default::default();
         let mut used_heat_source_names: HashSet<String> = Default::default();
+
+        // Track pre-heat sources and WWHRS allocated to ensure single allocation only
+        // This is required to avoid double-counting of the saving without significant additional
+        // book-keeping code or a complete re-conceptualisation of the water heating calculation,
+        // to handle an arrangement which is unlikely to occur in practice
         let mut cold_water_sources_already_allocated: HashSet<String> = Default::default();
 
         // processing pre-heated sources
@@ -941,10 +946,10 @@ impl Corpus {
         }
 
         let domestic_hot_water_demand = DomesticHotWaterDemand::new(
-            input.hot_water_demand.shower.clone(),
-            input.hot_water_demand.bath.clone(),
-            input.hot_water_demand.other_water_use.clone(),
-            Default::default(), // TODO: migrate properly for 1.0.0a1
+            &input.hot_water_demand.shower,
+            &input.hot_water_demand.bath,
+            &input.hot_water_demand.other_water_use,
+            &input.hot_water_demand.water_distribution,
             &cold_water_sources,
             &wwhrs,
             &energy_supplies,
@@ -974,6 +979,7 @@ impl Corpus {
                         .collect_vec(),
                     external_conditions.clone(),
                     output_options.detailed_output_heating_cooling,
+                    temp_internal_air_prev.load(Ordering::SeqCst),
                 )?)
             })
             .transpose()?
@@ -5292,6 +5298,7 @@ fn space_heat_systems_from_input(
     heat_sources_wet_with_buffer_tank: &[String],
     external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
+    initial_temp: f64,
 ) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {
     let mut energy_conn_names_for_systems: IndexMap<String, String> = Default::default();
     let space_heat_systems = input
@@ -5334,7 +5341,7 @@ fn space_heat_systems_from_input(
                         let state_of_charge_init: f64 = Default::default(); // TODO as part of migration to 1.0.0a1
                         SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(*pwr_in, *rated_power_instant, *storage_capacity, *air_flow_type, *frac_convective, *fan_pwr, *n_units, zone_setpoint_init, ZoneTempInternalAir(zone).as_fn(), energy_supply_conn, simulation_time, control, charge_control, dry_core_min_output.clone(), dry_core_max_output.clone(), external_conditions.clone(), state_of_charge_init, Some(detailed_output_heating_cooling))?)
                     }
-                    SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, flow_data, bypass_fraction_recirculated, heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, zone, .. } => {
+                    SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, flow_data, bypass_fraction_recirculated, heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, zone, pipework, .. } => {
                         let heat_source_name = &heat_source.name;
                         let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;
 
@@ -5349,8 +5356,6 @@ fn space_heat_systems_from_input(
                         let heat_source_service: SpaceHeatingService =
                             match heat_source {
                                 WetHeatSource::HeatPump(heat_pump) => {
-                                    // TODO (from Python) If EAHP, feed zone volume into function below
-
                                     // For HPs, need to know emitter type for inertia calculations
                                     let emitter_type = if emitters.iter().any(|e| matches!(e, WetEmitter::Fancoil { .. })) {
                                         HeatPumpEmitterType::FanCoils
@@ -5371,7 +5376,7 @@ fn space_heat_systems_from_input(
                                         emitter_type,
                                         temp_flow_limit_upper.expect("Expected a temp_flow_limit_upper to be present for a heat pump"),
                                         *temp_diff_emit_dsgn,
-                                        1., // TODO 1.0.0a1, pass in design flow temp, should be an f64?
+                                        *design_flow_temp as f64,
                                         control,
                                         volume_heated);
 
@@ -5411,7 +5416,7 @@ fn space_heat_systems_from_input(
                         let space_heater = Emitters::new(
                             *thermal_mass,
                             emitters,
-                            &[], // <---- pipework goes here!!
+                            pipework,
                             *temp_diff_emit_dsgn,
                             matches!(flow_data, FlowData::Variable {..}),
                             if let FlowData::Design { design_flow_rate, .. } = flow_data {
@@ -5436,7 +5441,7 @@ fn space_heat_systems_from_input(
                             external_conditions.clone(),
                             *ecodesign_controller,
                             *design_flow_temp as f64,
-                            20., // replace!!!!! this uses a function to provide an initial value
+                            initial_temp,
                             simulation_time.total_steps(),
                             energy_supply_fc_conn,
                             detailed_output_heating_cooling.into(),
