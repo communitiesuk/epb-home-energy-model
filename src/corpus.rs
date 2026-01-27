@@ -76,12 +76,14 @@ use crate::input::{
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
     InternalGains as InternalGainsInput, InternalGainsDetails,
     OnSiteGeneration as OnSiteGenerationInput, PhotovoltaicInputs,
-    PhotovoltaicSystem as PhotovoltaicSystemInput, SpaceCoolSystem as SpaceCoolSystemInput,
-    SpaceCoolSystemDetails, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
-    SystemReference, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput,
-    VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
-    WaterHeatingEvents, WaterPipework, WetEmitter, ZoneDictionary, ZoneInput,
-    ZoneTemperatureControlBasis, MAIN_REFERENCE,
+    PhotovoltaicSystem as PhotovoltaicSystemInput,
+    PhotovoltaicSystemWithPanels as PhotovoltaicSystemWithPanelsInput,
+    SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
+    SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
+    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput, VentilationLeaks,
+    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
+    WaterPipework, WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
+    MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::StringOrNumber;
@@ -5542,36 +5544,74 @@ fn on_site_generation_from_input(
         .iter()
         .map(|(name, generation_details)| {
             Ok((name.into(), {
-                let generation_details = match generation_details {
-                    PhotovoltaicInputs::DeprecatedStyle(generation_details) => generation_details,
-                    PhotovoltaicInputs::WithPanels(_) => todo!("New variant not yet implemented for 1.0.0a1"),
-                };
-                let PhotovoltaicSystemInput {
-                    peak_power,
-                    ventilation_strategy,
-                    pitch,
-                    orientation,
-                    base_height,
-                    height,
-                    width,
-                    energy_supply,
-                    shading,
+                let (
+                    panels,
                     inverter_peak_power_dc,
                     inverter_peak_power_ac,
                     inverter_is_inside,
                     inverter_type,
-                    ..
-                } = generation_details;
+                    energy_supply
+                ) = match generation_details {
+                    PhotovoltaicInputs::DeprecatedStyle(PhotovoltaicSystemInput {
+                        peak_power,
+                        ventilation_strategy,
+                        pitch,
+                        orientation,
+                        base_height,
+                        height,
+                        width,
+                        energy_supply,
+                        shading,
+                        inverter_peak_power_dc,
+                        inverter_peak_power_ac,
+                        inverter_is_inside,
+                        inverter_type, ..
+                    }) => {
+                        (
+                            vec![PhotovoltaicPanel::new(*peak_power, *ventilation_strategy, *pitch, *orientation, *base_height, *height, *width, simulation_time_iterator.step_in_hours(), shading.to_vec())],
+                            *inverter_peak_power_dc,
+                            *inverter_peak_power_ac,
+                            *inverter_is_inside,
+                            *inverter_type,
+                            energy_supply
+                        )
+                    }
+                    PhotovoltaicInputs::WithPanels(PhotovoltaicSystemWithPanelsInput {
+                       energy_supply, inverter_is_inside, inverter_peak_power_ac, inverter_peak_power_dc, inverter_type, panels, ..
+                    }) => {
+                        (
+                            panels
+                                .into_iter()
+                                .map(|panel| PhotovoltaicPanel::new(
+                                    panel.peak_power,
+                                    panel.ventilation_strategy,
+                                    panel.pitch,
+                                    panel.orientation,
+                                    panel.base_height,
+                                    panel.height,
+                                    panel.width,
+                                    simulation_time_iterator.step_in_hours(),
+                                    panel.shading.to_vec())
+                                )
+                                .collect(),
+                            *inverter_peak_power_dc,
+                            *inverter_peak_power_ac,
+                            *inverter_is_inside,
+                            *inverter_type,
+                            energy_supply
+                        )
+                    }
+                };
+
                 let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("On site generation (photovoltaic) references an undeclared energy supply '{energy_supply}'."))?.clone();
                 let energy_supply_conn = EnergySupply::connection(energy_supply, name).unwrap();
-                let panels = vec![PhotovoltaicPanel::new(*peak_power, *ventilation_strategy, *pitch, *orientation, *base_height, *height, *width, simulation_time_iterator.step_in_hours(), shading.to_vec())]; // TODO review migration alpha1
                 let inverter = Inverter::new(
                     energy_supply_conn,
                     simulation_time_iterator.clone(),
-                    *inverter_peak_power_dc,
-                    *inverter_peak_power_ac,
-                    *inverter_is_inside,
-                    *inverter_type,
+                    inverter_peak_power_dc,
+                    inverter_peak_power_ac,
+                    inverter_is_inside,
+                    inverter_type,
                 );
                 PhotovoltaicSystem::new(
                     external_conditions.clone(),

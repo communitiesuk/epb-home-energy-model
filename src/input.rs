@@ -4293,14 +4293,14 @@ pub(crate) struct PhotovoltaicPanel {
     /// with a given area for a solar irradiance of 1 kW/m² on this surface (at 25 degrees)
     /// (unit: kW)
     #[validate(minimum = 0.)]
-    peak_power: f64,
+    pub(crate) peak_power: f64,
 
-    ventilation_strategy: PhotovoltaicVentilationStrategy,
+    pub(crate) ventilation_strategy: PhotovoltaicVentilationStrategy,
 
     /// The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: ˚)
     #[validate(minimum = 0.)]
     #[validate(maximum = 90.)]
-    pitch: f64,
+    pub(crate) pitch: f64,
 
     #[serde(
         rename = "orientation360",
@@ -4309,21 +4309,21 @@ pub(crate) struct PhotovoltaicPanel {
     )]
     #[validate(minimum = -180.)]
     #[validate(maximum = 180.)]
-    orientation: f64,
+    pub(crate) orientation: f64,
 
     /// The distance between the ground and the lowest edge of the PV array (unit: m)
     #[validate(minimum = 0.)]
-    base_height: f64,
+    pub(crate) base_height: f64,
 
     /// Height of the PV array (unit: m)
-    height: f64,
+    pub(crate) height: f64,
 
     /// Width of the PV panel (unit: m)
     #[validate(exclusive_minimum = 0.)]
-    width: f64,
+    pub(crate) width: f64,
 
     #[validate]
-    shading: Vec<WindowShadingObject>,
+    pub(crate) shading: Vec<WindowShadingObject>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -4333,23 +4333,23 @@ pub(crate) struct PhotovoltaicSystemWithPanels {
     _type: MustBe!("PhotovoltaicSystem"),
 
     #[serde(rename = "EnergySupply")]
-    energy_supply: String,
+    pub(crate) energy_supply: String,
 
     /// Whether the inverter is considered inside the building
-    inverter_is_inside: bool,
+    pub(crate) inverter_is_inside: bool,
 
     /// Peak power; represents the peak electrical AC power output from the inverter (unit: kW)
     #[validate(minimum = 0.)]
-    inverter_peak_power_ac: f64,
+    pub(crate) inverter_peak_power_ac: f64,
 
     /// Peak power; represents the peak electrical DC power input to the inverter (unit: kW)
     #[validate(minimum = 0.)]
-    inverter_peak_power_dc: f64,
+    pub(crate) inverter_peak_power_dc: f64,
 
-    inverter_type: InverterType,
+    pub(crate) inverter_type: InverterType,
 
     #[validate(min_items = 1)]
-    panels: Vec<PhotovoltaicPanel>,
+    pub(crate) panels: Vec<PhotovoltaicPanel>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
