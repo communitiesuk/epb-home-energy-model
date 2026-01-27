@@ -876,7 +876,7 @@ impl Corpus {
         let mut energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>> =
             Default::default();
         let mut hot_water_source_name_for_service: IndexMap<String, String> = Default::default();
-
+        let mut used_heat_source_names: HashSet<String> = Default::default();
         let mut cold_water_sources_already_allocated: HashSet<String> = Default::default();
 
         // processing pre-heated sources
@@ -900,6 +900,7 @@ impl Corpus {
                     simulation_time_iterator.clone().as_ref(),
                     external_conditions.clone(),
                     output_options.detailed_output_heating_cooling,
+                    &mut used_heat_source_names,
                     &mut cold_water_sources_already_allocated,
                 )?;
             energy_supply_conn_names_for_hot_water_source
@@ -930,6 +931,7 @@ impl Corpus {
                     simulation_time_iterator.clone().as_ref(),
                     external_conditions.clone(),
                     output_options.detailed_output_heating_cooling,
+                    &mut used_heat_source_names,
                     &mut cold_water_sources_already_allocated,
                 )?;
             hot_water_sources.insert(name.into(), hot_water_source);
@@ -4832,6 +4834,7 @@ fn hot_water_source_from_input(
     simulation_time: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
+    used_heat_source_names: &mut HashSet<String>,
     cold_water_sources_already_allocated: &mut HashSet<String>,
 ) -> anyhow::Result<(HotWaterSource, Vec<String>, IndexMap<String, String>)> {
     let mut energy_supply_conn_names = vec![];
@@ -4883,7 +4886,6 @@ fn hot_water_source_from_input(
 
             // With pre-heated tanks we allow now tanks not to have a heat source as the 'cold' feed
             // could be a pre-heated source or wwhr that might be enough
-            let mut used_heat_source_names: Vec<String> = Default::default();
             for (heat_source_name, heat_source_data) in heat_source {
                 let heat_source_name = String::from(heat_source_name);
                 if used_heat_source_names.contains(&heat_source_name) {
@@ -4891,7 +4893,7 @@ fn hot_water_source_from_input(
                         "Duplicate heat source name detected: {heat_source_name}"
                     ));
                 }
-                used_heat_source_names.push(heat_source_name.clone());
+                used_heat_source_names.insert(heat_source_name.clone());
 
                 let heater_position = heat_source_data.heater_position();
                 let thermostat_position = match input {
@@ -5174,7 +5176,7 @@ fn hot_water_source_from_input(
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
             HotWaterSource::PointOfUse(PointOfUse::new(
-                efficiency.ok_or_else(|| anyhow!("An efficiency value was expected on a point of use hot water source input."))?, // TODO: review as part of migration to 1.0.0a1 as efficiency may now be optional
+                efficiency.ok_or_else(|| anyhow!("An efficiency value was expected on a point of use hot water source input."))?,
                 energy_supply_conn,
                 cold_water_source,
                 *setpoint_temp,
