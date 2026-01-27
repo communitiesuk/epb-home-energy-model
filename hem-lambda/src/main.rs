@@ -1,4 +1,4 @@
-use home_energy_model::output::Output;
+use home_energy_model::output_writer::OutputWriter;
 use home_energy_model::read_weather_file::epw_weather_data_to_external_conditions;
 use home_energy_model::{run_project_from_input_file, CalculationResultsWithContext};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
@@ -66,7 +66,7 @@ impl LambdaOutput {
     }
 }
 
-impl Output for LambdaOutput {
+impl OutputWriter for LambdaOutput {
     fn writer_for_location_key(
         &self,
         location_key: &str,
@@ -80,13 +80,13 @@ impl Output for LambdaOutput {
     }
 }
 
-impl Output for &LambdaOutput {
+impl OutputWriter for &LambdaOutput {
     fn writer_for_location_key(
         &self,
         location_key: &str,
         file_extension: &str,
     ) -> anyhow::Result<impl Write> {
-        <LambdaOutput as Output>::writer_for_location_key(self, location_key, file_extension)
+        <LambdaOutput as OutputWriter>::writer_for_location_key(self, location_key, file_extension)
     }
 }
 

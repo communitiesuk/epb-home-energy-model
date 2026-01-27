@@ -5,7 +5,7 @@ use std::io;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
-pub trait Output: Debug + Sync + Send {
+pub trait OutputWriter: Debug + Sync + Send {
     fn writer_for_location_key(
         &self,
         location_key: &str,
@@ -18,12 +18,12 @@ pub trait Output: Debug + Sync + Send {
 }
 
 #[derive(Debug)]
-pub struct FileOutput {
+pub struct FileOutputWriter {
     directory_path: PathBuf,
     file_template: String,
 }
 
-impl FileOutput {
+impl FileOutputWriter {
     pub fn new(directory_path: PathBuf, file_template: String) -> Self {
         Self {
             directory_path,
@@ -32,7 +32,7 @@ impl FileOutput {
     }
 }
 
-impl Output for FileOutput {
+impl OutputWriter for FileOutputWriter {
     fn writer_for_location_key(
         &self,
         location_key: &str,
@@ -44,21 +44,25 @@ impl Output for FileOutput {
     }
 }
 
-impl Output for &FileOutput {
+impl OutputWriter for &FileOutputWriter {
     fn writer_for_location_key(
         &self,
         location_key: &str,
         file_extension: &str,
     ) -> anyhow::Result<impl Write> {
-        <FileOutput as Output>::writer_for_location_key(self, location_key, file_extension)
+        <FileOutputWriter as OutputWriter>::writer_for_location_key(
+            self,
+            location_key,
+            file_extension,
+        )
     }
 }
 
 /// An output that goes to nowhere/ a "sink"/ /dev/null.
 #[derive(Debug, Default)]
-pub struct SinkOutput;
+pub struct SinkOutputWriter;
 
-impl Output for SinkOutput {
+impl OutputWriter for SinkOutputWriter {
     fn writer_for_location_key(
         &self,
         _location_key: &str,

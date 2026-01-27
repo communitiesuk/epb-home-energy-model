@@ -1,6 +1,6 @@
 use clap::{Args, Parser};
 
-use home_energy_model::output::FileOutput;
+use home_energy_model::output_writer::FileOutputWriter;
 use home_energy_model::read_weather_file::{
     epw_weather_data_to_external_conditions, ExternalConditions,
 };
@@ -78,7 +78,7 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir_all(&output_path)?;
     let input_file_name = input_file_stem.file_name().unwrap().to_str().unwrap();
     let output_type = "core";
-    let file_output = FileOutput::new(
+    let file_output = FileOutputWriter::new(
         output_path,
         format!("{input_file_name}__{output_type}__{{}}.{{}}"),
     );
