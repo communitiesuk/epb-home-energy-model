@@ -64,7 +64,7 @@ use crate::core::space_heat_demand::zone::{
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
-use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
+use crate::core::water_heat_demand::misc::WaterEventResult;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
@@ -1161,13 +1161,15 @@ impl Corpus {
         &self,
         zone: &Zone,
         gains_internal_dhw: f64,
+        gains_internal_hb: f64,
         internal_gains_ductwork_per_m3: f64,
         gains_internal_buffer_tank: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         // Initialise to dhw internal gains split proportionally to zone floor area
         let mut gains_internal_zone =
-            (gains_internal_buffer_tank + gains_internal_dhw) * zone.area() / self.total_floor_area;
+            (gains_internal_buffer_tank + gains_internal_dhw + gains_internal_hb) * zone.area()
+                / self.total_floor_area;
 
         for internal_gains in self.internal_gains.values() {
             gains_internal_zone += internal_gains.total_internal_gain_in_w(zone.area(), simtime)?;
@@ -1442,6 +1444,7 @@ impl Corpus {
         &self,
         delta_t_h: f64,
         gains_internal_dhw: f64,
+        gains_internal_hb: f64,
         internal_pressure_window: &mut HashMap<ReportingFlag, f64>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<SpaceHeatingCalculation> {
@@ -1558,6 +1561,7 @@ impl Corpus {
                 self.space_heat_internal_gains_for_zone(
                     zone,
                     gains_internal_dhw,
+                    gains_internal_hb,
                     internal_gains_ductwork_per_m3,
                     internal_gains_buffer_tank,
                     simtime,
@@ -2273,8 +2277,10 @@ impl Corpus {
                 self.external_conditions.air_temp(&t_it),
             )?;
 
+            let gains_internal_dhw_on_site_generation = Default::default(); // TODO 1.0.0a1 build this value
+
             let gains_internal_hb = 0.;
-            // TODO set gains_internal_hb based on heat batteries
+            // TODO 1.0.0a1 set gains_internal_hb based on heat batteries
 
             let SpaceHeatingCalculation {
                 gains_internal_zone,
@@ -2289,6 +2295,7 @@ impl Corpus {
                 heat_balance_map: heat_balance_dict,
             } = self.calc_space_heating(
                 t_it.timestep,
+                gains_internal_dhw_on_site_generation,
                 gains_internal_hb,
                 &mut internal_pressure_window,
                 t_it,
