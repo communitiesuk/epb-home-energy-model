@@ -4647,11 +4647,12 @@ impl HotWaterSourceBehaviour for HotWaterSource {
                 Ok(heat_network_service_water_direct
                     .get_temp_hot_water(volume_required, Some(volume_required_already)))
             }
-            // TODO this is the only Result - for now we're using unwrap. In future we could improve this.
-            // This is also the only implementation which returns a Vec<(Option<f64>, f64)> instead of Vec<(f64, f64)>
-            HotWaterSource::HeatBattery(heat_battery_pcm_service_water_direct) => {
-                todo!("Align heat_battery_pcm_service_water_direct with other HotWaterSource implementations");
-                // heat_battery_pcm_service_water_direct.get_temp_hot_water(volume_required, Some(volume_required_already)),
+            HotWaterSource::HeatBattery(heat_battery_hot_water_source) => {
+                heat_battery_hot_water_source.get_temp_hot_water(
+                    volume_required,
+                    volume_required_already,
+                    simtime,
+                )
             }
         }
     }
