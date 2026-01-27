@@ -230,7 +230,7 @@ impl HeatBatteryPcmServiceWaterDirect {
                 // Skip this event if no temperature available
                 if let Some(hot_temp) = self
                     .get_temp_hot_water(event.volume_hot, None, simtime)?
-                    .get(0)
+                    .first()
                     .map(|(t, _v)| t)
                 {
                     let list_temp_vol = self.cold_feed.draw_off_water(event.volume_hot, simtime)?;

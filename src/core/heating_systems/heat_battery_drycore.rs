@@ -992,7 +992,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
         if let Some(usage_events) = usage_events {
             for event in usage_events {
                 let hot_temp_list = self.get_temp_hot_water(event.volume_hot, None, simtime)?;
-                let hot_temp = hot_temp_list.get(0).map(|(t, _v)| t);
+                let hot_temp = hot_temp_list.first().map(|(t, _v)| t);
                 let hot_temp = match hot_temp {
                     Some(hot_temp) => *hot_temp,
                     None => continue,

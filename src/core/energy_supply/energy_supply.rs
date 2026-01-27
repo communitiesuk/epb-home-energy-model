@@ -662,10 +662,8 @@ impl EnergySupply {
             }
             Some(priority) => {
                 for item in priority {
-                    if let (
-                        EnergySupplyPriorityEntry::ElectricBattery { .. },
-                        Some(electric_battery),
-                    ) = (item, self.electric_battery.as_ref())
+                    if let (EnergySupplyPriorityEntry::ElectricBattery, Some(electric_battery)) =
+                        (item, self.electric_battery.as_ref())
                     {
                         let (charging_condition, _, can_charge_if_not_full) = if electric_battery
                             .is_grid_charging_possible()
@@ -690,7 +688,7 @@ impl EnergySupply {
                         demand_not_met -= energy_out_of_battery;
                         self.energy_battery_to_consumption[simtime.index]
                             .store(-energy_out_of_battery, Ordering::SeqCst);
-                    } else if let (EnergySupplyPriorityEntry::Diverter { .. }, Some(diverter)) =
+                    } else if let (EnergySupplyPriorityEntry::Diverter, Some(diverter)) =
                         (item, self.diverter.as_ref())
                     {
                         self.energy_diverted[simtime.index].store(

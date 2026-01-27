@@ -5490,7 +5490,7 @@ fn on_site_generation_from_input(
                     }) => {
                         (
                             panels
-                                .into_iter()
+                                .iter()
                                 .map(|panel| PhotovoltaicPanel::new(
                                     panel.peak_power,
                                     panel.ventilation_strategy,
