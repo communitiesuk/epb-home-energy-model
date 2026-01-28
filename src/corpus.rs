@@ -66,6 +66,7 @@ use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
 use crate::core::water_heat_demand::misc::WaterEventResult;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
+use crate::hem_core::simulation_time::SimulationTime;
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, BuildingElementHeightWidthInput, ChargeLevel,
@@ -85,14 +86,17 @@ use crate::input::{
     WaterPipework, WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
     MAIN_REFERENCE,
 };
+use crate::output::{OutputCore, OutputSummaryPeakElectricityConsumption};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::StringOrNumber;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
+use chrono::{prelude::*, TimeDelta};
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
 use itertools::Itertools;
+use jsonschema::output;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
@@ -687,6 +691,7 @@ pub struct Corpus {
     vent_adjust_max_control: Option<Arc<Control>>,
     temp_internal_air_prev: Arc<AtomicF64>,
     smart_appliance_controls: IndexMap<String, Arc<SmartApplianceControl>>,
+    energy_supply_input: EnergySupplyInput,
 }
 
 impl Corpus {
@@ -1059,6 +1064,7 @@ impl Corpus {
             vent_adjust_max_control,
             temp_internal_air_prev,
             smart_appliance_controls,
+            energy_supply_input: input.energy_supply.clone(),
         })
     }
 
@@ -2656,6 +2662,78 @@ impl Corpus {
         }
 
         cop_dict
+    }
+
+    /// Finds the peak electricity consumption from the simulation output.
+    fn calculate_peak_electricity_consumption(
+        &self,
+        output_core: &OutputCore,
+    ) -> OutputSummaryPeakElectricityConsumption {
+        // Initialize the SimulationTime object
+        let mut timestep_to_date: IndexMap<OrderedFloat<f64>, DateTime<Utc>> = Default::default();
+        // Set the base for any non-leap year
+        let base_time = Utc.with_ymd_and_hms(2023, 1, 1, 0, 0, 0).unwrap();
+        let simulation_time: SimulationTime = self.simulation_time.as_ref().into();
+        // The step must reflect hour or half hour in the year (hour 0 to hour 8759)
+        // Starts on the start timestep.
+        let mut step = simulation_time.start_time();
+        for hours in output_core.timestep_array.iter() {
+            timestep_to_date.insert(
+                OrderedFloat(step),
+                base_time + TimeDelta::hours(*hours as i64),
+            );
+            step += 1.;
+        }
+
+        // Get peak electricity consumption, and when it happens.
+        // Initialize the SimulationTime object
+        let start_timestep = simulation_time.start_time();
+        let stepping = simulation_time.step;
+
+        // Get Energy Supply objects with fuel type 'electricity'.
+        let electricity_keys = self
+            .energy_supply_input
+            .iter()
+            .filter_map(|(key, value)| (value.fuel == FuelType::Electricity).then_some(key))
+            .map(String::from)
+            .collect_vec();
+
+        // Calculate net import per timestep by adding gross import and export figures.
+        // Add because export figures already negative.
+        let net_import_per_timestep = (0..output_core.timestep_array.len())
+            .map(|i| {
+                electricity_keys
+                    .iter()
+                    .map(|key| {
+                        output_core.energy_import[key][i] + output_core.energy_export[key][i]
+                    })
+                    .sum::<f64>()
+            })
+            .collect_vec();
+
+        // Find peak electricity consumption
+        let peak_elec_consumption = *net_import_per_timestep
+            .iter()
+            .max_by(|a, b| a.total_cmp(b))
+            .expect("Expected to be able to find a max for a non-empty list of net imports");
+        let index_peak_elec_consumption = *net_import_per_timestep
+            .iter()
+            .find(|v| **v == peak_elec_consumption)
+            .expect("Expected to be able to find the index for the peak that we just found");
+
+        // must reflect hour or half hour in the year (hour 0 to hour 8759)
+        // to work with the dictionary below timestep_to_date
+        // hence + start_timestep
+        let peak_step = index_peak_elec_consumption + start_timestep;
+        let peak_datetime = timestep_to_date[&OrderedFloat(peak_step)];
+
+        OutputSummaryPeakElectricityConsumption {
+            peak: peak_elec_consumption,
+            index: index_peak_elec_consumption as usize,
+            month: peak_datetime.month() as u8,
+            day: peak_datetime.day() as u8,
+            hour: ((peak_step % (24. / stepping)) * stepping + 1.) as u8,
+        }
     }
 }
 
