@@ -496,22 +496,19 @@ pub static UNITS_MAP: LazyLock<IndexMap<&'static str, &'static str>> = LazyLock:
         ("space heat demand", "[kWh]"),
         ("space cool demand", "[kWh]"),
         (
-            "DHW: demand volume (including distribution pipework losses)",
+            "hot water volume required from hot water source",
             "[litres]",
         ),
+        ("hot water energy demand at hot water source", "[kWh]"),
         (
-            "DHW: demand energy (including distribution pipework losses)",
+            "hot water energy demand at connected tapping points",
             "[kWh]",
         ),
-        (
-            "DHW: demand energy (excluding distribution pipework losses)",
-            "[kWh]",
-        ),
-        ("DHW: total event duration", "[mins]"),
-        ("DHW: number of events", "[count]"),
-        ("DHW: distribution pipework losses", "[kWh]"),
-        ("DHW: primary pipework losses", "[kWh]"),
-        ("DHW: storage losses", "[kWh]"),
+        ("total event duration", "[mins]"),
+        ("number of events", "[count]"),
+        ("distribution pipework losses", "[kWh]"),
+        ("primary pipework losses", "[kWh]"),
+        ("storage losses", "[kWh]"),
     ])
 });
 
