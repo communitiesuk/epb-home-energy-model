@@ -1714,6 +1714,7 @@ fn write_core_output_file_emitters_detailed(
             "temp_return_target",
             "temp_emitter_max_is_final_temp",
             "energy_req_from_heat_source",
+            "fan_energy_kWh",
         ])?;
         writer.write_record([
             "[count]",
@@ -1727,6 +1728,7 @@ fn write_core_output_file_emitters_detailed(
             "[Celsius]",
             "[Celsius]",
             "[Boolean]",
+            "[kWh]",
             "[kWh]",
         ])?;
         for emitters_detailed_result in emitters_detailed_results {
