@@ -14,6 +14,7 @@ pub mod errors;
 mod hem_core;
 
 pub mod input;
+mod output;
 pub mod output_writer;
 pub mod read_weather_file;
 pub mod statistics;
@@ -1855,7 +1856,7 @@ struct HourForTimestep {
     hour: f64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 enum StringOrNumber {
     String(String),
     Float(f64),
