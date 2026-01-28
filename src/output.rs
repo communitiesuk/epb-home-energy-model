@@ -161,7 +161,7 @@ pub struct OutputCore {
     pub(crate) beta_factor: IndexMap<String, Vec<f64>>,
     /// List of the unique zone names in the zone data
     pub(crate) zone_list: Vec<String>,
-    pub(crate) output_zone_data: OutputZoneData,
+    pub(crate) zone_data: OutputZoneData,
     pub(crate) heating_cooling_system: OutputHeatingCoolingSystem,
     pub(crate) cop: OutputCop,
     /// Ventilation ductwork gains (unit: kWh)
@@ -225,7 +225,7 @@ pub struct OutputSummaryEnergySupply {
     /// Storage round-trip efficiency.
     /// Total energy consumed from storage divided by total energy put into storage, from both grid and on site generation.
     /// (unit: kWh)
-    pub(crate) storage_efficiency: f64,
+    pub(crate) storage_efficiency: Option<f64>,
     /// Net import grid to consumption minus generation to grid (unit: kWh)
     pub(crate) net_import: f64,
     /// Gross import from grid (unit: kWh)

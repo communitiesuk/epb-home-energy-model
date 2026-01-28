@@ -1,3 +1,4 @@
+use crate::convert_profile_to_daily;
 use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{
     ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl,
@@ -86,8 +87,11 @@ use crate::input::{
     WaterPipework, WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
     MAIN_REFERENCE,
 };
+use crate::output::OutputSummary;
+use crate::output::OutputSummaryEnergySupply;
 use crate::output::{OutputCore, OutputSummaryPeakElectricityConsumption};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::statistics::percentile;
 use crate::StringOrNumber;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
@@ -96,13 +100,13 @@ use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
 use itertools::Itertools;
-use jsonschema::output;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use smartstring::alias::String;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::default::Default;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
@@ -2662,6 +2666,131 @@ impl Corpus {
         }
 
         cop_dict
+    }
+
+    fn calculate_output_summary(&self, output_core: OutputCore) -> OutputSummary {
+        let mut energy_supply_stats: IndexMap<String, OutputSummaryEnergySupply> =
+            Default::default();
+        for (key, result) in &output_core.results_end_user {
+            let mut elec_generated = 0.;
+            let mut elec_consumed = 0.;
+            for result_value in result.values() {
+                let sum_arr: f64 = result_value.iter().sum();
+                if sum_arr < 0. {
+                    elec_generated += sum_arr.abs();
+                } else {
+                    elec_consumed += sum_arr;
+                }
+            }
+
+            let grid_to_consumption: f64 = output_core.grid_to_consumption[key].iter().sum();
+            let generation_to_grid: f64 = output_core.generation_to_grid[key]
+                .iter()
+                .sum::<f64>()
+                .abs();
+            let gen_to_storage: f64 = output_core.energy_to_storage[key].iter().sum();
+            let storage_to_consumption: f64 = output_core.energy_from_storage[key]
+                .iter()
+                .sum::<f64>()
+                .abs();
+            let gen_to_diverter: f64 = output_core.energy_diverted[key].iter().sum();
+            let total_gross_import: f64 = output_core.energy_import[key].iter().sum();
+            let total_gross_export: f64 = output_core.energy_export[key].iter().sum();
+
+            let storage_eff = (gen_to_storage > 0.).then(|| {
+                storage_to_consumption
+                    / (gen_to_storage + output_core.storage_from_grid[key].iter().sum::<f64>())
+            });
+
+            energy_supply_stats.insert(
+                key.clone(),
+                OutputSummaryEnergySupply {
+                    electricity_generated: elec_generated,
+                    electricity_consumed: elec_consumed,
+                    generation_to_consumption: output_core.energy_generated_consumed[key]
+                        .iter()
+                        .sum(),
+                    generation_to_grid: generation_to_grid,
+                    grid_to_consumption: grid_to_consumption,
+                    net_import: total_gross_import + total_gross_export,
+                    generation_to_storage: gen_to_storage,
+                    storage_to_consumption: storage_to_consumption,
+                    grid_to_storage: output_core.storage_from_grid[key].iter().sum::<f64>().abs(),
+                    generation_to_diverter: gen_to_diverter,
+                    storage_efficiency: storage_eff,
+                    total_gross_import: total_gross_import,
+                    total_gross_export: total_gross_export,
+                },
+            );
+        }
+
+        // Delivered energy by end-use and by fuel
+        // TODO (from Python): Ensure end_uses not consuming fuel directly are filtered out on this report
+        let mut delivered_energy_dict: IndexMap<String, IndexMap<String, f64>> =
+            [("total".into(), IndexMap::from([("total".into(), 0.)]))].into();
+        for (fuel, end_uses) in &output_core.results_end_user {
+            // TODO (from Python) are these keys EnergySupplyType ? Why hot water source names too?
+            let fuel_found_in_hot_water_sources =
+                self.hot_water_sources.keys().collect_vec().contains(&&fuel);
+
+            if !fuel_found_in_hot_water_sources && fuel != "_unmet_demand" {
+                delivered_energy_dict.insert(
+                    fuel.to_owned(),
+                    IndexMap::from([(String::from("total"), 0.)]),
+                );
+
+                for (end_use, delivered_energy) in end_uses {
+                    let sum_delivered_energy = delivered_energy.iter().sum::<f64>();
+                    if sum_delivered_energy >= 0. {
+                        delivered_energy_dict[fuel].insert(end_use.clone(), sum_delivered_energy);
+                        delivered_energy_dict[fuel]["total"] += sum_delivered_energy;
+                        delivered_energy_dict["total"]
+                            .entry(end_use.clone())
+                            .and_modify(|v| *v += sum_delivered_energy)
+                            .or_insert(sum_delivered_energy);
+                        delivered_energy_dict["total"]["total"] += sum_delivered_energy
+                    };
+                }
+            }
+        }
+
+        let mut hot_water_demand_daily_75th_percentile_dict: IndexMap<String, f64> =
+            IndexMap::new();
+        let simulation_time: SimulationTime = self.simulation_time.as_ref().into();
+        for hws_name in self.hot_water_sources.keys() {
+            let daily_hw_demand = convert_profile_to_daily(
+                &output_core
+                    .hot_water_systems
+                    .energy_demand_at_hot_water_source[hws_name],
+                simulation_time.step,
+            );
+            hot_water_demand_daily_75th_percentile_dict
+                .insert(hws_name.to_owned(), percentile(&daily_hw_demand, 75));
+        }
+
+        let space_heat_demand_total = output_core
+            .zone_data
+            .space_heat_demand
+            .values()
+            .flatten()
+            .sum::<f64>();
+
+        let space_cool_demand_total = output_core
+            .zone_data
+            .space_cool_demand
+            .values()
+            .flatten()
+            .sum::<f64>();
+
+        OutputSummary {
+            total_floor_area: self.total_floor_area,
+            space_heat_demand_total,
+            space_cool_demand_total,
+            electricity_peak_consumption: self.calculate_peak_electricity_consumption(&output_core),
+            energy_supply: energy_supply_stats,
+            delivered_energy: delivered_energy_dict,
+            hot_water_demand_daily_75th_percentile: hot_water_demand_daily_75th_percentile_dict,
+        }
     }
 
     /// Finds the peak electricity consumption from the simulation output.
