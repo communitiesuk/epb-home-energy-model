@@ -4328,10 +4328,6 @@ mod tests {
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
-    fn test_calc_temps_ater_extraction(
-        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
-        simulation_time_for_storage_tank: SimulationTime,
-    ) {
         let (storage_tank1, _) = storage_tank1;
 
         let remaining_vols = vec![0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0];
