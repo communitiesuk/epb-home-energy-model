@@ -733,7 +733,7 @@ impl HeatBatteryPcm {
     }
 
     /// Return battery losses
-    fn get_battery_losses(&self) -> f64 {
+    pub(crate) fn get_battery_losses(&self) -> f64 {
         let battery_losses = self.battery_losses.load(Ordering::SeqCst) * self.n_units as f64;
         self.battery_losses.store(0., Ordering::SeqCst);
         battery_losses

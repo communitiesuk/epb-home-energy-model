@@ -423,12 +423,14 @@ impl EnergySupply {
         Self::vec_of_floats_from_atomics(&self.supply_surplus)
     }
 
+    // skipped get_energy_export_from_generation as it has same definition as get_energy_export
+
     /// Return the amount of generated energy consumed in the building for all timesteps
     pub fn get_energy_generated_consumed(&self) -> Vec<f64> {
         Self::vec_of_floats_from_atomics(&self.energy_generated_consumed)
     }
 
-    fn get_grid_to_consumption(&self) -> Vec<f64> {
+    pub(crate) fn get_grid_to_consumption(&self) -> Vec<f64> {
         Self::vec_of_floats_from_atomics(&self.grid_to_consumption)
     }
 

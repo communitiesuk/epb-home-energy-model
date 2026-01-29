@@ -28,7 +28,7 @@ use smartstring::alias::String;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
+pub(crate) const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
 
 #[derive(Debug)]
 pub(crate) struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour = T>
