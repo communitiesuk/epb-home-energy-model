@@ -87,9 +87,9 @@ use crate::input::{
     WaterPipework, WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
     MAIN_REFERENCE,
 };
-use crate::output::OutputSummary;
 use crate::output::OutputSummaryEnergySupply;
 use crate::output::{OutputCore, OutputSummaryPeakElectricityConsumption};
+use crate::output::{OutputStatic, OutputSummary};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::statistics::percentile;
 use crate::StringOrNumber;
@@ -2666,6 +2666,26 @@ impl Corpus {
         }
 
         cop_dict
+    }
+
+    fn calculate_output_static(&self) -> anyhow::Result<OutputStatic> {
+        let HtcHlpCalculation {
+            total_htc: heat_trans_coeff,
+            total_hlp: heat_loss_param,
+            ..
+        } = calc_htc_hlp(self.input.as_ref())?;
+
+        let heat_capacity_param = self.calc_hcp();
+        let heat_loss_form_factor = self.calc_hlff();
+
+        Ok(OutputStatic {
+            heat_transfer_coefficient: heat_trans_coeff,
+            heat_loss_param,
+            heat_capacity_param,
+            heat_loss_form_factor,
+            temperature_air_internal: self.input.temp_internal_air_static_calcs(),
+            temperature_air_external: self.external_conditions.air_temp_annual_daily_average_min(),
+        })
     }
 
     fn calculate_output_summary(&self, output_core: OutputCore) -> OutputSummary {
