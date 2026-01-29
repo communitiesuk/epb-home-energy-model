@@ -1,7 +1,10 @@
 use crate::{EnergySupplyStatKey, StringOrNumber};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use serde::Serialize;
+use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use smartstring::alias::String;
+use std::sync::Arc;
 
 #[derive(Debug, Serialize)]
 pub struct OutputStatic {
@@ -54,28 +57,93 @@ pub struct OutputHotWaterSystems {
     // Each field's alias is the heading to use in the core output CSV.
     /// Hot water volume required from hot water source, for each hot water source (unit: litres)
     #[serde(alias = "hot water volume required from hot water source")]
-    pub(crate) demand: IndexMap<String, Vec<f64>>,
+    pub(crate) demand: IndexMap<Arc<str>, Vec<f64>>,
     /// Hot water energy demand at hot water source, for each hot water source (unit: kWh)
     #[serde(alias = "hot water energy demand at hot water source")]
-    pub(crate) energy_demand_at_hot_water_source: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_demand_at_hot_water_source: IndexMap<Arc<str>, Vec<f64>>,
     /// Hot water energy demand at connected tapping points, for each hot water source (unit: kWh)
     #[serde(alias = "hot water energy demand at connected tapping points")]
-    pub(crate) energy_demand_at_tapping_points: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_demand_at_tapping_points: IndexMap<Arc<str>, Vec<f64>>,
     /// Total hot water event duration, for each hot water source (unit: minutes)
     #[serde(alias = "total event duration")]
-    pub(crate) duration: IndexMap<String, Vec<f64>>,
+    pub(crate) duration: IndexMap<Arc<str>, Vec<f64>>,
     /// Number of hot water events, for each hot water source (unit: count)
     #[serde(alias = "number of events")]
-    pub(crate) events_count: IndexMap<String, Vec<i32>>,
+    pub(crate) events_count: IndexMap<Arc<str>, Vec<i32>>,
     /// Pipework losses, for each hot water source (unit: kWh)
     #[serde(alias = "distribution pipework losses")]
-    pub(crate) losses_pipework: IndexMap<String, Vec<f64>>,
+    pub(crate) losses_pipework: IndexMap<Arc<str>, Vec<f64>>,
     /// Primary pipework losses, for each hot water source (unit: kWh)
     #[serde(alias = "primary pipework losses")]
-    pub(crate) losses_primary_pipework: IndexMap<String, Vec<f64>>,
+    pub(crate) losses_primary_pipework: IndexMap<Arc<str>, Vec<f64>>,
     /// Storage losses, for each hot water source (unit: kWh)
     #[serde(alias = "storage losses")]
-    pub(crate) losses_storage: IndexMap<String, Vec<f64>>,
+    pub(crate) losses_storage: IndexMap<Arc<str>, Vec<f64>>,
+}
+
+#[derive(Clone, Copy, Deserialize_enum_str, Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
+pub(crate) enum OutputHotWaterSystemsAlias {
+    #[serde(rename = "hot water volume required from hot water source")]
+    VolumeRequired,
+    #[serde(rename = "hot water energy demand at hot water source")]
+    EnergyDemandSource,
+    #[serde(rename = "hot water energy demand at connected tapping points")]
+    EnergyDemandTappingPoints,
+    #[serde(rename = "total event duration")]
+    TotalEventDuration,
+    #[serde(rename = "number of events")]
+    NumberOfEvents,
+    #[serde(rename = "distribution pipework losses")]
+    DistributionPipeworkLosses,
+    #[serde(rename = "primary pipework losses")]
+    PrimaryPipeworkLosses,
+    #[serde(rename = "storage losses")]
+    StorageLosses,
+}
+
+impl OutputHotWaterSystems {
+    pub(crate) fn fields(&self) -> [(OutputHotWaterSystemsAlias, Vec<Arc<str>>); 8] {
+        [
+            (
+                OutputHotWaterSystemsAlias::VolumeRequired,
+                self.demand.keys().cloned().collect_vec(),
+            ),
+            (
+                OutputHotWaterSystemsAlias::EnergyDemandSource,
+                self.energy_demand_at_hot_water_source
+                    .keys()
+                    .cloned()
+                    .collect_vec(),
+            ),
+            (
+                OutputHotWaterSystemsAlias::EnergyDemandTappingPoints,
+                self.energy_demand_at_tapping_points
+                    .keys()
+                    .cloned()
+                    .collect_vec(),
+            ),
+            (
+                OutputHotWaterSystemsAlias::TotalEventDuration,
+                self.duration.keys().cloned().collect_vec(),
+            ),
+            (
+                OutputHotWaterSystemsAlias::NumberOfEvents,
+                self.events_count.keys().cloned().collect_vec(),
+            ),
+            (
+                OutputHotWaterSystemsAlias::DistributionPipeworkLosses,
+                self.losses_pipework.keys().cloned().collect_vec(),
+            ),
+            (
+                OutputHotWaterSystemsAlias::PrimaryPipeworkLosses,
+                self.losses_primary_pipework.keys().cloned().collect_vec(),
+            ),
+            (
+                OutputHotWaterSystemsAlias::StorageLosses,
+                self.losses_storage.keys().cloned().collect_vec(),
+            ),
+        ]
+    }
 }
 
 /// Coefficients of performance for space heating & cooling, and hot water systems.
@@ -134,53 +202,54 @@ pub struct OutputCore {
     /// The list of timesteps, serves as an index for the other outputs (unit: Hours)
     pub(crate) timestep_array: Vec<f64>,
     /// Total energy (unit: kWh)
-    pub(crate) results_totals: IndexMap<String, Vec<f64>>,
+    pub(crate) results_totals: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy per supply, per end use (unit: kWh)
-    pub(crate) results_end_user: IndexMap<String, IndexMap<String, Vec<f64>>>,
+    pub(crate) results_end_user: IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
     /// Energy import (unit: kWh)
-    pub(crate) energy_import: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_import: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy export (unit: kWh)
-    pub(crate) energy_export: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_export: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy from grid to consumption (unit: kWh)
-    pub(crate) grid_to_consumption: IndexMap<String, Vec<f64>>,
+    pub(crate) grid_to_consumption: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy export from generation (unit: kWh)
-    pub(crate) generation_to_grid: IndexMap<String, Vec<f64>>,
+    pub(crate) generation_to_grid: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy generated and consumed (unit: kWh)
-    pub(crate) energy_generated_consumed: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_generated_consumed: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy to storage (unit: kWh)
-    pub(crate) energy_to_storage: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_to_storage: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy from storage (unit: kWh)
-    pub(crate) energy_from_storage: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_from_storage: IndexMap<Arc<str>, Vec<f64>>,
     /// Imported energy to storage, (unit: kWh)
-    pub(crate) storage_from_grid: IndexMap<String, Vec<f64>>,
+    pub(crate) storage_from_grid: IndexMap<Arc<str>, Vec<f64>>,
     /// Battery charge level (unit: ratio 0 to 1 as a percentage)
-    pub(crate) battery_state_of_charge: IndexMap<String, Vec<f64>>,
+    pub(crate) battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy diverted (unit: kWh)
-    pub(crate) energy_diverted: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_diverted: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy supply beta factor (unit: ratio 0 to 1)
-    pub(crate) beta_factor: IndexMap<String, Vec<f64>>,
+    pub(crate) beta_factor: IndexMap<Arc<str>, Vec<f64>>,
     /// List of the unique zone names in the zone data
-    pub(crate) zone_list: Vec<String>,
+    pub(crate) zone_list: Vec<Arc<str>>,
     pub(crate) zone_data: OutputZoneData,
     pub(crate) heating_cooling_system: OutputHeatingCoolingSystem,
     pub(crate) cop: OutputCop,
     /// Ventilation ductwork gains (unit: kWh)
     pub(crate) ductwork_gains: Vec<f64>,
     /// Heat balance data for each zone.
-    pub(crate) heat_balance_all: IndexMap<String, IndexMap<String, Vec<f64>>>,
+    pub(crate) heat_balance_all: IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
     /// Heat source wet detailed results.
-    pub(crate) heat_source_wet_results: IndexMap<String, IndexMap<String, Vec<f64>>>,
+    pub(crate) heat_source_wet_results: IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
     /// Annual heat source wet detailed results.
-    pub(crate) heat_source_wet_results_annual: IndexMap<String, IndexMap<String, f64>>,
+    pub(crate) heat_source_wet_results_annual: IndexMap<Arc<str>, IndexMap<Arc<str>, f64>>,
     /// Hot water source results summary.
     /// Currently unstructured, see CSV for column-order.
-    pub(crate) hot_water_source_results_summary: IndexMap<String, Vec<Vec<Option<StringOrNumber>>>>,
+    pub(crate) hot_water_source_results_summary:
+        IndexMap<Arc<str>, Vec<Vec<Option<StringOrNumber>>>>,
     /// Heating system emitters detailed outputs.
     /// Currently unstructured, see CSV for column-order.
-    pub(crate) emitters: IndexMap<String, IndexMap<usize, OutputEmitters>>,
+    pub(crate) emitters: IndexMap<Arc<str>, IndexMap<usize, OutputEmitters>>,
     /// Electric storage heaters detailed outputs.
     /// Currently unstructured, see CSV for column-order.
-    pub(crate) electric_storage_heaters: IndexMap<String, IndexMap<usize, Vec<f64>>>,
+    pub(crate) electric_storage_heaters: IndexMap<Arc<str>, IndexMap<usize, Vec<f64>>>,
     /// Ventilation detailed outputs.
     /// Currently unstructured, see CSV for column-order.
     pub(crate) ventilation: Vec<Vec<StringOrNumber>>,
@@ -262,11 +331,11 @@ pub struct OutputSummary {
     /// Space cooling demand total (unit: kWh)
     pub(crate) space_cool_demand_total: f64,
     pub(crate) electricity_peak_consumption: OutputSummaryPeakElectricityConsumption,
-    pub(crate) energy_supply: IndexMap<String, OutputSummaryEnergySupply>,
+    pub(crate) energy_supply: IndexMap<Arc<str>, OutputSummaryEnergySupply>,
     /// Delivered energy summary, total energy per fuel and end-use (unit: kWh)
-    pub(crate) delivered_energy: IndexMap<String, IndexMap<String, f64>>,
+    pub(crate) delivered_energy: IndexMap<Arc<str>, IndexMap<Arc<str>, f64>>,
     /// 75th percentile of hot water demand summed over each 24 hour segment of the simulation.
-    pub(crate) hot_water_demand_daily_75th_percentile: IndexMap<String, f64>,
+    pub(crate) hot_water_demand_daily_75th_percentile: IndexMap<Arc<str>, f64>,
 }
 
 impl OutputSummary {
@@ -280,7 +349,9 @@ impl OutputSummary {
         self.space_cool_demand_total / self.total_floor_area
     }
 
-    pub(crate) fn delivered_energy_by_floor_area(&self) -> IndexMap<String, IndexMap<String, f64>> {
+    pub(crate) fn delivered_energy_by_floor_area(
+        &self,
+    ) -> IndexMap<Arc<str>, IndexMap<Arc<str>, f64>> {
         self.delivered_energy
             .iter()
             .map(|(fuel, end_use_map)| {
@@ -367,8 +438,8 @@ mod tests {
 
         let delivered_energy_data: [(
             f64,
-            IndexMap<String, IndexMap<String, f64>>,
-            IndexMap<String, IndexMap<String, f64>>,
+            IndexMap<Arc<str>, IndexMap<Arc<str>, f64>>,
+            IndexMap<Arc<str>, IndexMap<Arc<str>, f64>>,
         ); 1] = [(
             100.0,
             IndexMap::from([

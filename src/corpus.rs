@@ -678,7 +678,7 @@ pub struct Corpus {
     pub total_floor_area: f64,
     pub(crate) total_volume: f64,
     pub(crate) wet_heat_sources: IndexMap<String, WetHeatSource>,
-    pub(crate) hot_water_sources: IndexMap<String, HotWaterSource>,
+    pub(crate) hot_water_sources: IndexMap<Arc<str>, HotWaterSource>,
     pub(crate) heat_sources_wet_with_buffer_tank: Vec<String>,
     pub(crate) space_heat_systems: IndexMap<String, Arc<Mutex<SpaceHeatSystem>>>,
     pub(crate) space_cool_systems: IndexMap<String, AirConditioning>,
@@ -902,7 +902,7 @@ impl Corpus {
         for (source_name, source_details) in &input.pre_heated_water_source {
             let (heat_source, energy_conn_names, preheated_source_names_for_service) =
                 hot_water_source_from_input(
-                    source_name.into(),
+                    &source_name,
                     source_details,
                     &cold_water_sources,
                     &pre_heated_water_sources,
@@ -920,20 +920,20 @@ impl Corpus {
                     &mut cold_water_sources_already_allocated,
                 )?;
             energy_supply_conn_names_for_hot_water_source
-                .insert(source_name.into(), energy_conn_names);
+                .insert(source_name.to_string().into(), energy_conn_names);
             if let HotWaterSource::PreHeated(source) = heat_source {
-                pre_heated_water_sources.insert(source_name.into(), source);
+                pre_heated_water_sources.insert(source_name.to_string().into(), source);
             } else {
                 bail!("Pre-heated water sources must be storage tanks");
             }
             hot_water_source_name_for_service.extend(preheated_source_names_for_service);
         }
 
-        let mut hot_water_sources: IndexMap<String, HotWaterSource> = Default::default();
+        let mut hot_water_sources: IndexMap<Arc<str>, HotWaterSource> = Default::default();
         for (name, data) in input.hot_water_source.iter() {
             let (hot_water_source, hw_cylinder_conn_names, source_names_for_service) =
                 hot_water_source_from_input(
-                    name.into(),
+                    name,
                     data,
                     &cold_water_sources,
                     &pre_heated_water_sources,
@@ -950,9 +950,9 @@ impl Corpus {
                     &mut used_heat_source_names,
                     &mut cold_water_sources_already_allocated,
                 )?;
-            hot_water_sources.insert(name.into(), hot_water_source);
+            hot_water_sources.insert(name.to_string().into(), hot_water_source);
             energy_supply_conn_names_for_hot_water_source
-                .insert(name.into(), hw_cylinder_conn_names);
+                .insert(name.to_string().into(), hw_cylinder_conn_names);
             hot_water_source_name_for_service.extend(source_names_for_service);
         }
 
@@ -965,7 +965,10 @@ impl Corpus {
             &wwhrs,
             &energy_supplies,
             event_schedules,
-            hot_water_sources.clone(),
+            hot_water_sources
+                .iter()
+                .map(|(k, v)| (String::from(k.to_string()), v.clone()))
+                .collect(),
             pre_heated_water_sources.clone(),
         )?;
 
@@ -2574,7 +2577,7 @@ impl Corpus {
                                 storage_tank.read().output_results()
                             {
                                 hot_water_source_results_dict
-                                    .insert(name.to_owned(), hot_water_source_output);
+                                    .insert(name.to_string().into(), hot_water_source_output);
                             }
                         }
                         HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
@@ -2582,7 +2585,7 @@ impl Corpus {
                                 smart_storage_tank.read().output_results()
                             {
                                 hot_water_source_results_dict
-                                    .insert(name.to_owned(), hot_water_source_output);
+                                    .insert(name.to_string().into(), hot_water_source_output);
                             }
                         }
                     }
@@ -2691,7 +2694,7 @@ impl Corpus {
     }
 
     fn calculate_output_summary(&self, output_core: OutputCore) -> OutputSummary {
-        let mut energy_supply_stats: IndexMap<String, OutputSummaryEnergySupply> =
+        let mut energy_supply_stats: IndexMap<Arc<str>, OutputSummaryEnergySupply> =
             Default::default();
         for (key, result) in &output_core.results_end_user {
             let mut elec_generated = 0.;
@@ -2742,26 +2745,23 @@ impl Corpus {
                     grid_to_storage: output_core.storage_from_grid[key].iter().sum::<f64>().abs(),
                     generation_to_diverter: gen_to_diverter,
                     storage_efficiency: storage_eff,
-                    total_gross_import: total_gross_import,
-                    total_gross_export: total_gross_export,
+                    total_gross_import,
+                    total_gross_export,
                 },
             );
         }
 
         // Delivered energy by end-use and by fuel
         // TODO (from Python): Ensure end_uses not consuming fuel directly are filtered out on this report
-        let mut delivered_energy_dict: IndexMap<String, IndexMap<String, f64>> =
+        let mut delivered_energy_dict: IndexMap<Arc<str>, IndexMap<Arc<str>, f64>> =
             [("total".into(), IndexMap::from([("total".into(), 0.)]))].into();
         for (fuel, end_uses) in &output_core.results_end_user {
             // TODO (from Python) are these keys EnergySupplyType ? Why hot water source names too?
             let fuel_found_in_hot_water_sources =
                 self.hot_water_sources.keys().collect_vec().contains(&&fuel);
 
-            if !fuel_found_in_hot_water_sources && fuel != "_unmet_demand" {
-                delivered_energy_dict.insert(
-                    fuel.to_owned(),
-                    IndexMap::from([(String::from("total"), 0.)]),
-                );
+            if !fuel_found_in_hot_water_sources && fuel.as_ref() != "_unmet_demand" {
+                delivered_energy_dict.insert(fuel.clone(), IndexMap::from([("total".into(), 0.)]));
 
                 for (end_use, delivered_energy) in end_uses {
                     let sum_delivered_energy = delivered_energy.iter().sum::<f64>();
@@ -2778,18 +2778,18 @@ impl Corpus {
             }
         }
 
-        let mut hot_water_demand_daily_75th_percentile_dict: IndexMap<String, f64> =
+        let mut hot_water_demand_daily_75th_percentile_dict: IndexMap<Arc<str>, f64> =
             IndexMap::new();
         let simulation_time: SimulationTime = self.simulation_time.as_ref().into();
         for hws_name in self.hot_water_sources.keys() {
             let daily_hw_demand = convert_profile_to_daily(
                 &output_core
                     .hot_water_systems
-                    .energy_demand_at_hot_water_source[hws_name],
+                    .energy_demand_at_hot_water_source[hws_name.as_ref()],
                 simulation_time.step,
             );
             hot_water_demand_daily_75th_percentile_dict
-                .insert(hws_name.to_owned(), percentile(&daily_hw_demand, 75));
+                .insert(hws_name.clone(), percentile(&daily_hw_demand, 75));
         }
 
         let space_heat_demand_total = output_core
@@ -2844,12 +2844,14 @@ impl Corpus {
         let stepping = simulation_time.step;
 
         // Get Energy Supply objects with fuel type 'electricity'.
-        let electricity_keys = self
+        let electricity_keys: Vec<Arc<str>> = self
             .input
             .energy_supply
             .iter()
-            .filter_map(|(key, value)| (value.fuel == FuelType::Electricity).then_some(key))
-            .map(String::from)
+            .filter_map(|(key, value)| {
+                (value.fuel == FuelType::Electricity).then_some(Arc::<str>::from(key.to_string()))
+            })
+            .map(Into::into)
             .collect_vec();
 
         // Calculate net import per timestep by adding gross import and export figures.
@@ -4985,7 +4987,7 @@ impl HotWaterSourceBehaviour for HeatBatteryHotWaterSource {
 }
 
 fn hot_water_source_from_input(
-    name: String,
+    name: &str,
     input: &HotWaterSourceDetails,
     cold_water_sources: &ColdWaterSources,
     pre_heated_water_sources: &IndexMap<String, HotWaterStorageTank>,
@@ -5074,7 +5076,7 @@ fn hot_water_source_from_input(
                 let (heat_source, energy_supply_conn_name, heat_source_name_pair) =
                     heat_source_from_input(
                         heat_source_name.as_str(),
-                        name.as_str(),
+                        name,
                         heat_source_data,
                         &cold_water_source,
                         *volume,
@@ -5335,7 +5337,7 @@ fn hot_water_source_from_input(
         } => {
             let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Point of use hot water source references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn_name = name;
-            energy_supply_conn_names.push(energy_supply_conn_name.clone());
+            energy_supply_conn_names.push(energy_supply_conn_name.to_string().into());
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply.clone(), &energy_supply_conn_name)?;
             let cold_water_source =

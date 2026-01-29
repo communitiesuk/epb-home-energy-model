@@ -47,7 +47,6 @@ use erased_serde::Serialize as ErasedSerialize;
 use hem_core::external_conditions;
 use hem_core::simulation_time;
 use indexmap::IndexMap;
-use itertools::Itertools;
 use serde::{Serialize, Serializer};
 use smartstring::alias::String;
 use std::borrow::Cow;
@@ -1002,7 +1001,7 @@ fn write_core_output_file_summary(
         for (end_use, value) in end_uses {
             let mut end_use_found = false;
             for row in delivered_energy_rows.iter_mut() {
-                if row.contains(&StringOrNumber::String(end_use.clone())) {
+                if row.contains(&StringOrNumber::String(end_use.to_string().into())) {
                     end_use_found = true;
                     row[index] = StringOrNumber::Float(value);
                 }
@@ -1010,7 +1009,7 @@ fn write_core_output_file_summary(
             if !end_use_found {
                 let mut new_row =
                     vec![StringOrNumber::Float(0.); delivered_energy_rows_title.len()];
-                *new_row.get_mut(0).unwrap() = StringOrNumber::String(end_use);
+                *new_row.get_mut(0).unwrap() = StringOrNumber::String(end_use.to_string().into());
                 new_row[index] = StringOrNumber::Float(value);
                 delivered_energy_rows.push(new_row);
             }
@@ -1185,9 +1184,9 @@ fn write_core_output_file_summary(
         ])?;
 
         for row in dhw_cop_rows.iter_mut() {
-            let hws_name = String::from(row[0].clone());
+            let hws_name: Arc<str> = row[0].clone().into();
             row.push(StringOrNumber::Float(
-                output.summary.hot_water_demand_daily_75th_percentile[&hws_name],
+                output.summary.hot_water_demand_daily_75th_percentile[hws_name.as_ref()],
             ));
 
             row.push({
@@ -1902,6 +1901,12 @@ impl From<StringOrNumber> for Vec<u8> {
 }
 
 impl From<StringOrNumber> for String {
+    fn from(value: StringOrNumber) -> Self {
+        format!("{}", value).into()
+    }
+}
+
+impl From<StringOrNumber> for Arc<str> {
     fn from(value: StringOrNumber) -> Self {
         format!("{}", value).into()
     }
