@@ -989,6 +989,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "walkdir",
+ "zerocopy",
 ]
 
 [[package]]

@@ -28,26 +28,48 @@ pub struct OutputStatic {
 pub struct OutputZoneData {
     // NB: Field order is important as it affects the output files.
     /// Internal gains (unit: W)
-    pub(crate) internal_gains: IndexMap<String, Vec<f64>>,
+    pub(crate) internal_gains: IndexMap<Arc<str>, Vec<f64>>,
     /// Solar gains (unit: W)
-    pub(crate) solar_gains: IndexMap<String, Vec<f64>>,
+    pub(crate) solar_gains: IndexMap<Arc<str>, Vec<f64>>,
     /// Operative temperature (unit: ˚C)
-    pub(crate) operative_temp: IndexMap<String, Vec<f64>>,
+    pub(crate) operative_temp: IndexMap<Arc<str>, Vec<f64>>,
     /// Internal air temperature (unit: ˚C)
-    pub(crate) internal_air_temp: IndexMap<String, Vec<f64>>,
+    pub(crate) internal_air_temp: IndexMap<Arc<str>, Vec<f64>>,
     /// Space heat demand (unit: kWh)
-    pub(crate) space_heat_demand: IndexMap<String, Vec<f64>>,
+    pub(crate) space_heat_demand: IndexMap<Arc<str>, Vec<f64>>,
     /// Space cool demand (unit: kWh)
-    pub(crate) space_cool_demand: IndexMap<String, Vec<f64>>,
+    pub(crate) space_cool_demand: IndexMap<Arc<str>, Vec<f64>>,
 }
+
+impl OutputZoneData {
+    pub(crate) fn ordered_values_for_zone(&self, zone: &str) -> [&[f64]; 6] {
+        [
+            &self.internal_gains[zone],
+            &self.solar_gains[zone],
+            &self.operative_temp[zone],
+            &self.internal_air_temp[zone],
+            &self.space_heat_demand[zone],
+            &self.space_cool_demand[zone],
+        ]
+    }
+}
+
+pub(crate) const OUTPUT_ZONE_DATA_FIELD_HEADINGS: &[&str] = &[
+    "internal gains",
+    "solar gains",
+    "operative temp",
+    "internal air temp",
+    "space heat demand",
+    "space cool demand",
+];
 
 /// Contains the output timeseries for the heating and cooling systems, respectively.
 #[derive(Debug, Serialize)]
 pub struct OutputHeatingCoolingSystem {
     /// Heating system output, for each heating system (unit: kWh)
-    pub(crate) heating_system_output: IndexMap<String, Vec<f64>>,
+    pub(crate) heating_system_output: IndexMap<Option<Arc<str>>, Vec<f64>>,
     /// Cooling system output, keyed by cooling system name (unit: kWh)
-    pub(crate) cooling_system_output: IndexMap<String, Vec<f64>>,
+    pub(crate) cooling_system_output: IndexMap<Option<Arc<str>>, Vec<f64>>,
 }
 
 /// Hot water systems data for every time step.
@@ -56,28 +78,20 @@ pub struct OutputHotWaterSystems {
     // NB: Field order is important as it affects the output files.
     // Each field's alias is the heading to use in the core output CSV.
     /// Hot water volume required from hot water source, for each hot water source (unit: litres)
-    #[serde(alias = "hot water volume required from hot water source")]
     pub(crate) demand: IndexMap<Arc<str>, Vec<f64>>,
     /// Hot water energy demand at hot water source, for each hot water source (unit: kWh)
-    #[serde(alias = "hot water energy demand at hot water source")]
     pub(crate) energy_demand_at_hot_water_source: IndexMap<Arc<str>, Vec<f64>>,
     /// Hot water energy demand at connected tapping points, for each hot water source (unit: kWh)
-    #[serde(alias = "hot water energy demand at connected tapping points")]
     pub(crate) energy_demand_at_tapping_points: IndexMap<Arc<str>, Vec<f64>>,
     /// Total hot water event duration, for each hot water source (unit: minutes)
-    #[serde(alias = "total event duration")]
     pub(crate) duration: IndexMap<Arc<str>, Vec<f64>>,
     /// Number of hot water events, for each hot water source (unit: count)
-    #[serde(alias = "number of events")]
-    pub(crate) events_count: IndexMap<Arc<str>, Vec<i32>>,
+    pub(crate) events_count: IndexMap<Arc<str>, Vec<f64>>,
     /// Pipework losses, for each hot water source (unit: kWh)
-    #[serde(alias = "distribution pipework losses")]
     pub(crate) losses_pipework: IndexMap<Arc<str>, Vec<f64>>,
     /// Primary pipework losses, for each hot water source (unit: kWh)
-    #[serde(alias = "primary pipework losses")]
     pub(crate) losses_primary_pipework: IndexMap<Arc<str>, Vec<f64>>,
     /// Storage losses, for each hot water source (unit: kWh)
-    #[serde(alias = "storage losses")]
     pub(crate) losses_storage: IndexMap<Arc<str>, Vec<f64>>,
 }
 
@@ -142,6 +156,19 @@ impl OutputHotWaterSystems {
                 OutputHotWaterSystemsAlias::StorageLosses,
                 self.losses_storage.keys().cloned().collect_vec(),
             ),
+        ]
+    }
+
+    pub(crate) fn ordered_values(&self) -> [&IndexMap<Arc<str>, Vec<f64>>; 8] {
+        [
+            &self.demand,
+            &self.energy_demand_at_hot_water_source,
+            &self.energy_demand_at_tapping_points,
+            &self.duration,
+            &self.events_count,
+            &self.losses_pipework,
+            &self.losses_primary_pipework,
+            &self.losses_storage,
         ]
     }
 }
