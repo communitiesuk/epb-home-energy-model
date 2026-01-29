@@ -253,16 +253,16 @@ pub struct OutputSummary {
 
 impl OutputSummary {
     /// Space heating demand total per floor-area (unit: kWh/m²)
-    fn space_heat_demand_by_floor_area(&self) -> f64 {
+    pub(crate) fn space_heat_demand_by_floor_area(&self) -> f64 {
         self.space_heat_demand_total / self.total_floor_area
     }
 
     /// Space cooling demand total per floor-area (unit: kWh/m²)
-    fn space_cool_demand_by_floor_area(&self) -> f64 {
+    pub(crate) fn space_cool_demand_by_floor_area(&self) -> f64 {
         self.space_cool_demand_total / self.total_floor_area
     }
 
-    fn delivered_energy_by_floor_area(&self) -> IndexMap<String, IndexMap<String, f64>> {
+    pub(crate) fn delivered_energy_by_floor_area(&self) -> IndexMap<String, IndexMap<String, f64>> {
         self.delivered_energy
             .iter()
             .map(|(fuel, end_use_map)| {
