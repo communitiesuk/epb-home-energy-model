@@ -2719,10 +2719,12 @@ impl Corpus {
             let total_gross_import: f64 = output_core.energy_import[key].iter().sum();
             let total_gross_export: f64 = output_core.energy_export[key].iter().sum();
 
-            let storage_eff = (gen_to_storage > 0.).then(|| {
-                storage_to_consumption
-                    / (gen_to_storage + output_core.storage_from_grid[key].iter().sum::<f64>())
-            });
+            let storage_eff = (gen_to_storage > 0.)
+                .then(|| {
+                    storage_to_consumption
+                        / (gen_to_storage + output_core.storage_from_grid[key].iter().sum::<f64>())
+                })
+                .unwrap_or(f64::NAN);
 
             energy_supply_stats.insert(
                 key.clone(),

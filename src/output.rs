@@ -1,4 +1,4 @@
-use crate::StringOrNumber;
+use crate::{EnergySupplyStatKey, StringOrNumber};
 use indexmap::IndexMap;
 use serde::Serialize;
 use smartstring::alias::String;
@@ -225,13 +225,31 @@ pub struct OutputSummaryEnergySupply {
     /// Storage round-trip efficiency.
     /// Total energy consumed from storage divided by total energy put into storage, from both grid and on site generation.
     /// (unit: kWh)
-    pub(crate) storage_efficiency: Option<f64>,
+    pub(crate) storage_efficiency: f64,
     /// Net import grid to consumption minus generation to grid (unit: kWh)
     pub(crate) net_import: f64,
     /// Gross import from grid (unit: kWh)
     pub(crate) total_gross_import: f64,
     /// Gross export to grid (unit: kWh)
     pub(crate) total_gross_export: f64,
+}
+
+impl OutputSummaryEnergySupply {
+    pub(crate) fn field(&self, key: &EnergySupplyStatKey) -> f64 {
+        match key {
+            EnergySupplyStatKey::ElectricityGenerated => self.electricity_generated,
+            EnergySupplyStatKey::ElectricityConsumed => self.electricity_consumed,
+            EnergySupplyStatKey::GenerationToConsumption => self.generation_to_consumption,
+            EnergySupplyStatKey::GridToConsumption => self.grid_to_consumption,
+            EnergySupplyStatKey::GenerationToGrid => self.generation_to_grid,
+            EnergySupplyStatKey::NetImport => self.net_import,
+            EnergySupplyStatKey::GenerationToStorage => self.generation_to_storage,
+            EnergySupplyStatKey::StorageToConsumption => self.storage_to_consumption,
+            EnergySupplyStatKey::StorageFromGrid => self.grid_to_storage,
+            EnergySupplyStatKey::GenerationToDiverter => self.generation_to_diverter,
+            EnergySupplyStatKey::StorageEfficiency => self.storage_efficiency,
+        }
+    }
 }
 
 /// Summary outputs from HEM Core.

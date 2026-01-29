@@ -26,9 +26,9 @@ use crate::core::space_heat_demand::ventilation::VentilationDetailedResult;
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 pub use crate::corpus::RunResults;
 use crate::corpus::{
-    calc_htc_hlp, Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap,
-    HtcHlpCalculation, NumberOrDivisionByZero, OutputOptions, ResultsAnnual, ResultsEndUser,
-    ResultsPerTimestep, ZoneResultKey,
+    Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, HtcHlpCalculation,
+    NumberOrDivisionByZero, OutputOptions, ResultsAnnual, ResultsEndUser, ResultsPerTimestep,
+    ZoneResultKey,
 };
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
@@ -47,6 +47,7 @@ use erased_serde::Serialize as ErasedSerialize;
 use hem_core::external_conditions;
 use hem_core::simulation_time;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use serde::{Serialize, Serializer};
 use smartstring::alias::String;
 use std::borrow::Cow;
@@ -979,59 +980,22 @@ impl TryFrom<&CalculationResultsWithContext> for SummaryDataArgs {
 
 fn write_core_output_file_summary(
     output_writer: &impl OutputWriter,
-    args: SummaryOutputFileArgs,
+    output: Output,
+    output_key: &str,
+    input: &Input,
 ) -> Result<(), anyhow::Error> {
     if output_writer.is_noop() {
         return Ok(());
     }
-    let SummaryOutputFileArgs {
-        output_key,
-        input,
-        timestep_array,
-        results_end_user,
-        energy_generated_consumed,
-        energy_to_storage,
-        energy_from_storage,
-        storage_from_grid,
-        energy_diverted,
-        energy_import,
-        energy_export,
-        space_heat_demand_total,
-        space_cool_demand_total,
-        total_floor_area,
-        heat_cop_dict,
-        cool_cop_dict,
-        dhw_cop_dict,
-        daily_hw_demand_75th_percentile,
-    } = args;
-
     debug!("writing out to {output_key}");
-
-    let SummaryData {
-        delivered_energy_map,
-        stats,
-        peak_elec_consumption,
-        index_peak_elec_consumption,
-        step_peak_elec_consumption,
-        timestep_to_date,
-    } = build_summary_data(SummaryDataArgs {
-        timestep_array,
-        input: input.clone(),
-        results_end_user,
-        energy_generated_consumed,
-        energy_to_storage,
-        energy_from_storage,
-        storage_from_grid,
-        energy_diverted,
-        energy_import,
-        energy_export,
-    });
 
     let mut delivered_energy_rows_title =
         vec!["Delivered energy by end-use (below) and fuel (right) [kWh/m2]".into()];
     let mut delivered_energy_rows = vec![vec![StringOrNumber::String("total".into())]];
-    for (fuel, end_uses) in delivered_energy_map {
+
+    for (fuel, end_uses) in output.summary.delivered_energy_by_floor_area() {
         delivered_energy_rows_title.push(fuel.clone());
+        let index = delivered_energy_rows_title.len() - 1;
         for row in delivered_energy_rows.iter_mut() {
             row.push(StringOrNumber::Float(0.));
         }
@@ -1040,43 +1004,61 @@ fn write_core_output_file_summary(
             for row in delivered_energy_rows.iter_mut() {
                 if row.contains(&StringOrNumber::String(end_use.clone())) {
                     end_use_found = true;
-                    *row.get_mut(
-                        delivered_energy_rows_title
-                            .iter()
-                            .position(|x| x == &fuel)
-                            .unwrap(),
-                    )
-                    .unwrap() = StringOrNumber::Float(value / total_floor_area);
+                    row[index] = StringOrNumber::Float(value);
                 }
             }
             if !end_use_found {
                 let mut new_row =
                     vec![StringOrNumber::Float(0.); delivered_energy_rows_title.len()];
                 *new_row.get_mut(0).unwrap() = StringOrNumber::String(end_use);
-                *new_row
-                    .get_mut(
-                        delivered_energy_rows_title
-                            .iter()
-                            .position(|x| x == &fuel)
-                            .unwrap(),
-                    )
-                    .unwrap() = StringOrNumber::Float(value / total_floor_area);
+                new_row[index] = StringOrNumber::Float(value);
                 delivered_energy_rows.push(new_row);
             }
         }
     }
 
-    let heat_cop_rows = heat_cop_dict
+    // Output "DIV/0" in place of None
+    let heat_cop_rows = output
+        .core
+        .cop
+        .space_heating_system
         .iter()
-        .map(|(h_name, h_cop)| vec![StringOrNumber::from(h_name.as_str()), (*h_cop).into()])
+        .map(|(h_name, h_cop)| {
+            vec![
+                StringOrNumber::from(h_name.as_str()),
+                h_cop
+                    .map(StringOrNumber::from)
+                    .unwrap_or(StringOrNumber::from("DIV/0")),
+            ]
+        })
         .collect::<Vec<_>>();
-    let cool_cop_rows = cool_cop_dict
+    let cool_cop_rows = output
+        .core
+        .cop
+        .space_cooling_system
         .iter()
-        .map(|(c_name, c_cop)| vec![StringOrNumber::from(c_name.as_str()), (*c_cop).into()])
+        .map(|(c_name, c_cop)| {
+            vec![
+                StringOrNumber::from(c_name.as_str()),
+                c_cop
+                    .map(StringOrNumber::from)
+                    .unwrap_or(StringOrNumber::from("DIV/0")),
+            ]
+        })
         .collect::<Vec<_>>();
-    let mut dhw_cop_rows = dhw_cop_dict
+    let mut dhw_cop_rows = output
+        .core
+        .cop
+        .hot_water_system
         .iter()
-        .map(|(hw_name, hw_cop)| vec![StringOrNumber::from(hw_name.as_str()), (*hw_cop).into()])
+        .map(|(hw_name, hw_cop)| {
+            vec![
+                StringOrNumber::from(hw_name.as_str()),
+                hw_cop
+                    .map(StringOrNumber::from)
+                    .unwrap_or(StringOrNumber::from("DIV/0")),
+            ]
+        })
         .collect::<Vec<_>>();
 
     let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
@@ -1089,51 +1071,58 @@ fn write_core_output_file_summary(
     writer.write_record([
         "Space heat demand".to_string(),
         "kWh/m2".to_string(),
-        (space_heat_demand_total / total_floor_area).to_string(),
+        output.summary.space_heat_demand_by_floor_area().to_string(),
     ])?;
     writer.write_record([
         "Space cool demand".to_string(),
         "kWh/m2".to_string(),
-        (space_cool_demand_total / total_floor_area).to_string(),
+        output.summary.space_cool_demand_by_floor_area().to_string(),
     ])?;
     writer.write_record(&blank_line)?;
     writer.write_record(["Energy Supply Summary"])?;
     writer.write_record(["", "kWh", "timestep", "month", "day", "hour of day"])?;
+
+    let peak_consumption = output.summary.electricity_peak_consumption;
     writer.write_record([
-        "Peak half-hour consumption (electricity)".to_string(),
-        peak_elec_consumption.to_string(),
-        index_peak_elec_consumption.to_string(),
-        timestep_to_date[&(step_peak_elec_consumption as usize)]
-            .month
-            .to_string(),
-        timestep_to_date[&(step_peak_elec_consumption as usize)]
-            .day
-            .to_string(),
-        timestep_to_date[&(step_peak_elec_consumption as usize)]
-            .hour
-            .to_string(),
+        "Peak half-hour consumption (electricity)".to_string(), // TODO (from Python) TODO technically per-step, not half-hour
+        peak_consumption.peak.to_string(),
+        peak_consumption.index.to_string(),
+        peak_consumption.index.to_string(),
+        MONTH_NAMES[peak_consumption.month as usize].to_string(),
+        peak_consumption.day.to_string(),
+        peak_consumption.hour.to_string(),
     ])?;
     writer.write_record(&blank_line)?;
+
     let mut header_row = vec!["".to_owned(), "Total".to_owned()];
-    header_row.extend(stats.keys().map(|x| x.to_string()));
+    header_row.extend(output.summary.energy_supply.keys().map(|x| x.to_string()));
     writer.write_record(&header_row)?;
     let fields = [
-        ("Consumption", "kWh", EnergySupplyStatKey::ElecConsumed),
-        ("Generation", "kWh", EnergySupplyStatKey::ElecGenerated),
+        // Label, unit, OutputSummaryEnergySupply field
+        (
+            "Consumption",
+            "kWh",
+            EnergySupplyStatKey::ElectricityConsumed,
+        ),
+        (
+            "Generation",
+            "kWh",
+            EnergySupplyStatKey::ElectricityGenerated,
+        ),
         (
             "Generation to consumption (immediate excl. diverter)",
             "kWh",
-            EnergySupplyStatKey::GenToConsumption,
+            EnergySupplyStatKey::GenerationToConsumption,
         ),
         (
             "Generation to storage",
             "kWh",
-            EnergySupplyStatKey::GenToStorage,
+            EnergySupplyStatKey::GenerationToStorage,
         ),
         (
             "Generation to diverter",
             "kWh",
-            EnergySupplyStatKey::GenToDiverter,
+            EnergySupplyStatKey::GenerationToDiverter,
         ),
         (
             "Generation to grid (export)",
@@ -1159,13 +1148,19 @@ fn write_core_output_file_summary(
         (
             "Storage round-trip efficiency",
             "ratio",
-            EnergySupplyStatKey::StorageEff,
+            EnergySupplyStatKey::StorageEfficiency,
         ),
     ];
-    for field in fields {
-        let mut row: Vec<String> = vec![field.0.into(), field.1.into()];
-        for stat in stats.values() {
-            row.push(stat.display_for_key(&field.2));
+    for (label, unit, field) in fields {
+        let mut row: Vec<std::string::String> = vec![label.into(), unit.into()];
+        for stat in output.summary.energy_supply.values() {
+            let value = stat.field(&field);
+            let value = if field == EnergySupplyStatKey::StorageEfficiency && value.is_nan() {
+                "DIV/0".into()
+            } else {
+                value.to_string()
+            };
+            row.push(value);
         }
         writer.write_record(&row)?;
     }
@@ -1188,21 +1183,22 @@ fn write_core_output_file_summary(
             "Daily HW demand ([kWh] 75th percentile)",
             "HW cylinder volume (litres)",
         ])?;
+
         for row in dhw_cop_rows.iter_mut() {
-            let first_item_as_string = String::from(row[0].clone());
-            row.push(StringOrNumber::Float(daily_hw_demand_75th_percentile));
+            let hws_name = String::from(row[0].clone());
+            row.push(StringOrNumber::Float(
+                output.summary.hot_water_demand_daily_75th_percentile[&hws_name],
+            ));
+
             row.push({
-                let hot_water_source: SummaryInputHotWaterSourceDigest = *input
-                    .hot_water_source_digests
-                    .get(&first_item_as_string)
+                if let HotWaterSourceDetails::StorageTank { volume, .. } = input
+                    .hot_water_source
+                    .get(&hws_name.to_string())
                     .ok_or_else(|| {
-                        anyhow!(
-                            "Could not find hot water source digest for row '{}'",
-                            row[0]
-                        )
-                    })?;
-                if hot_water_source.source_is_storage_tank {
-                    StringOrNumber::Float(hot_water_source.source_volume.unwrap())
+                        anyhow!("Could not find hot water source with name '{hws_name}'")
+                    })?
+                {
+                    volume.into()
                 } else {
                     StringOrNumber::String("N/A".into())
                 }
@@ -1232,6 +1228,10 @@ fn write_core_output_file_summary(
 
     Ok(())
 }
+
+const MONTH_NAMES: [&str; 12] = [
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+];
 
 pub struct SummaryDataArgs {
     timestep_array: Vec<f64>,
@@ -1264,36 +1264,38 @@ struct EnergySupplyStat {
 impl EnergySupplyStat {
     fn display_for_key(&self, key: &EnergySupplyStatKey) -> String {
         match key {
-            EnergySupplyStatKey::ElecGenerated => self.elec_generated.to_string().into(),
-            EnergySupplyStatKey::ElecConsumed => self.elec_consumed.to_string().into(),
-            EnergySupplyStatKey::GenToConsumption => self.gen_to_consumption.to_string().into(),
+            EnergySupplyStatKey::ElectricityGenerated => self.elec_generated.to_string().into(),
+            EnergySupplyStatKey::ElectricityConsumed => self.elec_consumed.to_string().into(),
+            EnergySupplyStatKey::GenerationToConsumption => {
+                self.gen_to_consumption.to_string().into()
+            }
             EnergySupplyStatKey::GridToConsumption => self.grid_to_consumption.to_string().into(),
             EnergySupplyStatKey::GenerationToGrid => self.generation_to_grid.to_string().into(),
             EnergySupplyStatKey::NetImport => self.net_import.to_string().into(),
-            EnergySupplyStatKey::GenToStorage => self.gen_to_storage.to_string().into(),
+            EnergySupplyStatKey::GenerationToStorage => self.gen_to_storage.to_string().into(),
             EnergySupplyStatKey::StorageToConsumption => {
                 self.storage_to_consumption.to_string().into()
             }
             EnergySupplyStatKey::StorageFromGrid => self.storage_from_grid.to_string().into(),
-            EnergySupplyStatKey::GenToDiverter => self.gen_to_diverter.to_string().into(),
-            EnergySupplyStatKey::StorageEff => self.storage_eff.to_string().into(),
+            EnergySupplyStatKey::GenerationToDiverter => self.gen_to_diverter.to_string().into(),
+            EnergySupplyStatKey::StorageEfficiency => self.storage_eff.to_string().into(),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum EnergySupplyStatKey {
-    ElecGenerated,
-    ElecConsumed,
-    GenToConsumption,
+    ElectricityGenerated,
+    ElectricityConsumed,
+    GenerationToConsumption,
     GridToConsumption,
     GenerationToGrid,
     NetImport,
-    GenToStorage,
+    GenerationToStorage,
     StorageToConsumption,
     StorageFromGrid,
-    GenToDiverter,
-    StorageEff,
+    GenerationToDiverter,
+    StorageEfficiency,
 }
 
 pub fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
