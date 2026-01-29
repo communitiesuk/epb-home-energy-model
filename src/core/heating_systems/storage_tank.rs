@@ -2091,7 +2091,7 @@ impl SmartHotWaterTank {
         let mut q_in_h_w = vec![0.; self.storage_tank.vol_n.len()];
         let mut q_ls_n_already_considered = q_ls_n_prev_heat_source.to_vec();
 
-        for i in 0..self.storage_tank.vol_n.len() {
+        for _ in 0..self.storage_tank.vol_n.len() {
             if energy_available.iter().sum::<f64>() <= 0. {
                 break;
             }
