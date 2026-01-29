@@ -863,11 +863,12 @@ mod tests {
         SimulationTime::new(0., 3., 1.)
     }
 
+    // no longer using #[once] or Arc<Mutex<>> for this fixture 
+    // as they caused a race condition between tests
     #[fixture]
-    #[once]
     fn heat_network_for_service_space(
         three_len_simulation_time: SimulationTime,
-    ) -> Arc<Mutex<HeatNetwork>> {
+    ) -> HeatNetwork {
         let energy_supply =
             EnergySupplyBuilder::new(FuelType::MainsGas, three_len_simulation_time.total_steps())
                 .build();
@@ -875,7 +876,7 @@ mod tests {
         let energy_supply_conn_name_building_level_distribution_losses =
             "HeatNetwork_building_level_distribution_losses";
 
-        Arc::new(Mutex::new(HeatNetwork::new(
+        HeatNetwork::new(
             5.0,
             1.0,
             0.,
@@ -885,15 +886,15 @@ mod tests {
             energy_supply_conn_name_auxiliary.into(),
             energy_supply_conn_name_building_level_distribution_losses.into(),
             three_len_simulation_time.step,
-        )))
+        )
     }
 
     #[fixture]
     fn heat_network_service_space(
         three_len_simulation_time: SimulationTime,
-        heat_network_for_service_space: &Arc<Mutex<HeatNetwork>>,
+        heat_network_for_service_space: HeatNetwork,
     ) -> HeatNetworkServiceSpace {
-        let heat_network = heat_network_for_service_space;
+        let heat_network = Arc::new(Mutex::new(heat_network_for_service_space.clone()));
 
         let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
 
@@ -939,9 +940,10 @@ mod tests {
     #[rstest]
     fn test_energy_output_max_for_service_space(
         three_len_simulation_time: SimulationTime,
-        heat_network_for_service_space: &Arc<Mutex<HeatNetwork>>,
+        heat_network_for_service_space: HeatNetwork,
         heat_network_service_space: HeatNetworkServiceSpace,
     ) {
+        let mut heat_network_for_service_space = heat_network_for_service_space.clone();
         let temp_output = [55.0, 65.0, 65.0];
         let temp_return_feed = [10.0, 15.0, 20.0];
         for (t_idx, t_it) in three_len_simulation_time.iter().enumerate() {
@@ -955,7 +957,6 @@ mod tests {
                 [5.0, 5.0, 0.0][t_idx]
             );
             heat_network_for_service_space
-                .lock()
                 .timestep_end(t_idx)
                 .unwrap();
         }
