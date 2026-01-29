@@ -2012,7 +2012,7 @@ pub(crate) struct OutputDetailedResultsNotEnabledError;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::common::WaterSupply;
+    use crate::core::common::{MockWaterSupply, WaterSupply};
     use crate::core::controls::time_control::{ChargeControl, Control};
     use crate::core::controls::time_control::{MockControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{
@@ -2287,8 +2287,19 @@ mod tests {
         }
     }
 
-    // skipping following python tests due to mocking
-    // test_get_temp_hot_water, test_demand_hot_water, test_demand_hot_water_fallback_path
+    #[rstest]
+    fn test_get_temp_hot_water_for_water_direct(mut heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect, simulation_time_iteration: SimulationTimeIteration) {
+
+        heat_battery_service_water_direct.cold_feed = WaterSupply::Mock(MockWaterSupply::new(25.));
+
+        let expected = vec![(60., 20.)];
+        let actual = heat_battery_service_water_direct.get_temp_hot_water(20., None, simulation_time_iteration).unwrap();
+
+        assert_eq!(actual, expected)
+    }
+
+    // skipping following python tests due to mocking:
+    // test_demand_hot_water, test_demand_hot_water_fallback_path
 
     fn create_service_water_regular_with_controls(
         battery_control: Control,
