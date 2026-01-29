@@ -87,7 +87,7 @@ use crate::input::{
     WaterPipework, WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
     MAIN_REFERENCE,
 };
-use crate::output::OutputSummaryEnergySupply;
+use crate::output::{Output, OutputSummaryEnergySupply};
 use crate::output::{OutputCore, OutputSummaryPeakElectricityConsumption};
 use crate::output::{OutputStatic, OutputSummary};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
@@ -2176,7 +2176,7 @@ impl Corpus {
         Ok(())
     }
 
-    pub fn run(&self) -> anyhow::Result<RunResults> {
+    pub fn run(&self) -> anyhow::Result<Output> {
         let simulation_time = self.simulation_time.as_ref().to_owned();
         let vec_capacity = || Vec::with_capacity(simulation_time.total_steps());
 
@@ -2590,7 +2590,7 @@ impl Corpus {
             }
         }
 
-        Ok(RunResults {
+        let _ = anyhow::Ok(RunResults {
             timestep_array,
             results_totals,
             results_end_user,
@@ -2618,7 +2618,9 @@ impl Corpus {
             esh_output_dict,
             vent_output_list,
             hot_water_source_results_dict,
-        })
+        });
+
+        todo!()
     }
 
     /// Calculate overall CoP over calculation period for each heating and cooling system

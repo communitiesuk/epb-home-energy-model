@@ -33,6 +33,7 @@ use crate::corpus::{
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input};
+use crate::output::Output;
 use crate::output_writer::OutputWriter;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
@@ -195,12 +196,12 @@ pub fn run_project(
         #[instrument(skip_all)]
         fn run_hem_calculation(
             corpus: &Corpus,
-        ) -> anyhow::Result<RunResults> {
+        ) -> anyhow::Result<Output> {
             corpus.run()
         }
 
         // catch_unwind here catches any downstream panics so we can at least map to the right HemError variant
-        let run_results = match catch_unwind(AssertUnwindSafe(|| {
+        let output = match catch_unwind(AssertUnwindSafe(|| {
             run_hem_calculation(&corpus).map_err(|e| {
                 capture_specific_error_case(&e)
                     .unwrap_or_else(|| HemError::FailureInCalculation(HemCoreError::new(e)))
@@ -218,7 +219,7 @@ pub fn run_project(
         };
 
         let contextualised_results =
-            CalculationResultsWithContext::new(input, corpus, run_results);
+            CalculationResultsWithContext::new(input, corpus, output);
 
         Ok(contextualised_results)
     }))
@@ -243,167 +244,170 @@ fn write_core_output_files(
     if output_writer.is_noop() {
         return Ok(());
     }
-    let CalculationResultsWithContext {
-        results:
-            RunResults {
-                timestep_array,
-                results_totals,
-                results_end_user,
-                energy_import,
-                energy_export,
-                energy_generated_consumed,
-                energy_to_storage,
-                energy_from_storage,
-                energy_diverted,
-                betafactor,
-                zone_dict,
-                zone_list,
-                hc_system_dict,
-                hot_water_dict,
-                ductwork_gains,
-                heat_balance_dict,
-                heat_source_wet_results_dict,
-                heat_source_wet_results_annual_dict,
-                vent_output_list,
-                emitters_output_dict,
-                storage_from_grid,
-                battery_state_of_charge,
-                esh_output_dict,
-                hot_water_source_results_dict,
-                ..
-            },
-        ..
-    } = results;
 
-    write_core_output_file(
-        output_writer,
-        OutputFileArgs {
-            output_key: "results".into(),
-            timestep_array,
-            results_totals,
-            results_end_user,
-            energy_import,
-            energy_export,
-            energy_generated_consumed,
-            energy_to_storage,
-            energy_from_storage,
-            storage_from_grid,
-            battery_state_of_charge,
-            energy_diverted,
-            betafactor,
-            zone_dict,
-            zone_list,
-            hc_system_dict,
-            hot_water_dict,
-            ductwork_gains,
-        },
-    )?;
+    todo!();
 
-    if heat_balance {
-        for (hb_name, hb_map) in heat_balance_dict.iter() {
-            let output_key = format!(
-                "results_heat_balance_{}",
-                hb_name.to_string().to_case(Case::Snake)
-            )
-            .into();
-            write_core_output_file_heat_balance(
-                output_writer,
-                HeatBalanceOutputFileArgs {
-                    output_key,
-                    timestep_array,
-                    hour_per_step,
-                    heat_balance_map: hb_map,
-                },
-            )?;
-        }
-    }
-
-    if detailed_output_heating_cooling {
-        for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
-            let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
-            write_core_output_file_heat_source_wet(
-                output_writer,
-                &output_key,
-                timestep_array,
-                heat_source_wet_results,
-            )?;
-        }
-        for (heat_source_wet_name, heat_source_wet_results_annual) in
-            heat_source_wet_results_annual_dict.iter()
-        {
-            let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
-            write_core_output_file_heat_source_wet_summary(
-                output_writer,
-                &output_key,
-                heat_source_wet_results_annual,
-            )?;
-        }
-        // Function call to write detailed ventilation results
-        let vent_output_file = "ventilation_results";
-        write_core_output_file_ventilation_detailed(
-            output_writer,
-            vent_output_file,
-            vent_output_list,
-        )?;
-        for (hot_water_source_name, hot_water_source_results) in
-            hot_water_source_results_dict.iter()
-        {
-            let hot_water_source_file = format!(
-                "results_hot_water_source_summary__{}",
-                hot_water_source_name.replace(" ", "_")
-            );
-            write_core_output_file_hot_water_source_summary(
-                output_writer,
-                &hot_water_source_file,
-                hot_water_source_results,
-            );
-        }
-    }
-
-    write_core_output_file_summary(output_writer, results.try_into()?)?;
-
-    let corpus = &results.context.corpus;
-
-    let primary_input = primary_input.ok_or_else(|| {
-        anyhow!("Primary input should be available as there is a primary calculation.")
-    })?;
-
-    let HtcHlpCalculation {
-        total_htc: heat_transfer_coefficient,
-        total_hlp: heat_loss_parameter,
-        ..
-    } = calc_htc_hlp(primary_input)?;
-    let heat_capacity_parameter = corpus.calc_hcp();
-    let heat_loss_form_factor = corpus.calc_hlff();
-
-    write_core_output_file_static(
-        output_writer,
-        StaticOutputFileArgs {
-            output_key: "results_static".into(),
-            heat_transfer_coefficient,
-            heat_loss_parameter,
-            heat_capacity_parameter,
-            heat_loss_form_factor,
-            temp_internal_air: primary_input.temp_internal_air_static_calcs,
-            temp_external_air: corpus
-                .external_conditions
-                .air_temp_annual_daily_average_min(),
-        },
-    )?;
-
-    if detailed_output_heating_cooling {
-        let output_prefix = "results_emitters_";
-        write_core_output_file_emitters_detailed(
-            output_writer,
-            output_prefix,
-            emitters_output_dict,
-        )?;
-
-        let esh_output_prefix = "results_esh_";
-        write_core_output_file_esh_detailed(output_writer, esh_output_prefix, esh_output_dict)?;
-    }
-
-    Ok(())
+    // let CalculationResultsWithContext {
+    //     output:
+    //         RunResults {
+    //             timestep_array,
+    //             results_totals,
+    //             results_end_user,
+    //             energy_import,
+    //             energy_export,
+    //             energy_generated_consumed,
+    //             energy_to_storage,
+    //             energy_from_storage,
+    //             energy_diverted,
+    //             betafactor,
+    //             zone_dict,
+    //             zone_list,
+    //             hc_system_dict,
+    //             hot_water_dict,
+    //             ductwork_gains,
+    //             heat_balance_dict,
+    //             heat_source_wet_results_dict,
+    //             heat_source_wet_results_annual_dict,
+    //             vent_output_list,
+    //             emitters_output_dict,
+    //             storage_from_grid,
+    //             battery_state_of_charge,
+    //             esh_output_dict,
+    //             hot_water_source_results_dict,
+    //             ..
+    //         },
+    //     ..
+    // } = results;
+    //
+    // write_core_output_file(
+    //     output_writer,
+    //     OutputFileArgs {
+    //         output_key: "results".into(),
+    //         timestep_array,
+    //         results_totals,
+    //         results_end_user,
+    //         energy_import,
+    //         energy_export,
+    //         energy_generated_consumed,
+    //         energy_to_storage,
+    //         energy_from_storage,
+    //         storage_from_grid,
+    //         battery_state_of_charge,
+    //         energy_diverted,
+    //         betafactor,
+    //         zone_dict,
+    //         zone_list,
+    //         hc_system_dict,
+    //         hot_water_dict,
+    //         ductwork_gains,
+    //     },
+    // )?;
+    //
+    // if heat_balance {
+    //     for (hb_name, hb_map) in heat_balance_dict.iter() {
+    //         let output_key = format!(
+    //             "results_heat_balance_{}",
+    //             hb_name.to_string().to_case(Case::Snake)
+    //         )
+    //         .into();
+    //         write_core_output_file_heat_balance(
+    //             output_writer,
+    //             HeatBalanceOutputFileArgs {
+    //                 output_key,
+    //                 timestep_array,
+    //                 hour_per_step,
+    //                 heat_balance_map: hb_map,
+    //             },
+    //         )?;
+    //     }
+    // }
+    //
+    // if detailed_output_heating_cooling {
+    //     for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
+    //         let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
+    //         write_core_output_file_heat_source_wet(
+    //             output_writer,
+    //             &output_key,
+    //             timestep_array,
+    //             heat_source_wet_results,
+    //         )?;
+    //     }
+    //     for (heat_source_wet_name, heat_source_wet_results_annual) in
+    //         heat_source_wet_results_annual_dict.iter()
+    //     {
+    //         let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
+    //         write_core_output_file_heat_source_wet_summary(
+    //             output_writer,
+    //             &output_key,
+    //             heat_source_wet_results_annual,
+    //         )?;
+    //     }
+    //     // Function call to write detailed ventilation results
+    //     let vent_output_file = "ventilation_results";
+    //     write_core_output_file_ventilation_detailed(
+    //         output_writer,
+    //         vent_output_file,
+    //         vent_output_list,
+    //     )?;
+    //     for (hot_water_source_name, hot_water_source_results) in
+    //         hot_water_source_results_dict.iter()
+    //     {
+    //         let hot_water_source_file = format!(
+    //             "results_hot_water_source_summary__{}",
+    //             hot_water_source_name.replace(" ", "_")
+    //         );
+    //         write_core_output_file_hot_water_source_summary(
+    //             output_writer,
+    //             &hot_water_source_file,
+    //             hot_water_source_results,
+    //         );
+    //     }
+    // }
+    //
+    // write_core_output_file_summary(output_writer, results.try_into()?)?;
+    //
+    // let corpus = &results.context.corpus;
+    //
+    // let primary_input = primary_input.ok_or_else(|| {
+    //     anyhow!("Primary input should be available as there is a primary calculation.")
+    // })?;
+    //
+    // let HtcHlpCalculation {
+    //     total_htc: heat_transfer_coefficient,
+    //     total_hlp: heat_loss_parameter,
+    //     ..
+    // } = calc_htc_hlp(primary_input)?;
+    // let heat_capacity_parameter = corpus.calc_hcp();
+    // let heat_loss_form_factor = corpus.calc_hlff();
+    //
+    // write_core_output_file_static(
+    //     output_writer,
+    //     StaticOutputFileArgs {
+    //         output_key: "results_static".into(),
+    //         heat_transfer_coefficient,
+    //         heat_loss_parameter,
+    //         heat_capacity_parameter,
+    //         heat_loss_form_factor,
+    //         temp_internal_air: primary_input.temp_internal_air_static_calcs,
+    //         temp_external_air: corpus
+    //             .external_conditions
+    //             .air_temp_annual_daily_average_min(),
+    //     },
+    // )?;
+    //
+    // if detailed_output_heating_cooling {
+    //     let output_prefix = "results_emitters_";
+    //     write_core_output_file_emitters_detailed(
+    //         output_writer,
+    //         output_prefix,
+    //         emitters_output_dict,
+    //     )?;
+    //
+    //     let esh_output_prefix = "results_esh_";
+    //     write_core_output_file_esh_detailed(output_writer, esh_output_prefix, esh_output_dict)?;
+    // }
+    //
+    // Ok(())
 }
 
 fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
@@ -420,18 +424,14 @@ pub struct CalculationContext {
 }
 
 pub struct CalculationResultsWithContext {
-    pub results: RunResults,
+    pub output: Output,
     pub context: CalculationContext,
 }
 
 impl CalculationResultsWithContext {
-    fn new(
-        input: Arc<Input>,
-        corpus: Corpus,
-        results: RunResults,
-    ) -> CalculationResultsWithContext {
+    fn new(input: Arc<Input>, corpus: Corpus, output: Output) -> CalculationResultsWithContext {
         Self {
-            results,
+            output,
             context: CalculationContext { input, corpus },
         }
     }
@@ -439,24 +439,25 @@ impl CalculationResultsWithContext {
 
 impl CalculationResultsWithContext {
     fn daily_hw_demand_percentile(&self, percentage: usize) -> anyhow::Result<f64> {
-        Ok(percentile(
-            &convert_profile_to_daily(
-                match &self.results.hot_water_dict
-                    [&HotWaterResultKey::HotWaterEnergyDemandIncludingPipeworkLoss]
-                {
-                    HotWaterResultMap::Float(results) => results
-                        .get("energy_demand_incl_pipework_loss")
-                        .ok_or(anyhow!(
-                    "Hot water energy demand incl pipework_loss field not set in hot water output"
-                ))?,
-                    HotWaterResultMap::Int(_) => unreachable!(
-                        "Hot water energy demand incl pipework_loss is not expected to be an integer"
-                    ),
-                },
-                self.context.corpus.simulation_time.step_in_hours(),
-            ),
-            percentage,
-        ))
+        todo!();
+        // Ok(percentile(
+        //     &convert_profile_to_daily(
+        //         match &self.output.hot_water_dict
+        //             [&HotWaterResultKey::HotWaterEnergyDemandIncludingPipeworkLoss]
+        //         {
+        //             HotWaterResultMap::Float(results) => results
+        //                 .get("energy_demand_incl_pipework_loss")
+        //                 .ok_or(anyhow!(
+        //             "Hot water energy demand incl pipework_loss field not set in hot water output"
+        //         ))?,
+        //             HotWaterResultMap::Int(_) => unreachable!(
+        //                 "Hot water energy demand incl pipework_loss is not expected to be an integer"
+        //             ),
+        //         },
+        //         self.context.corpus.simulation_time.step_in_hours(),
+        //     ),
+        //     percentage,
+        // ))
     }
 }
 
@@ -932,26 +933,27 @@ impl TryFrom<&CalculationResultsWithContext> for SummaryOutputFileArgs {
     type Error = anyhow::Error;
 
     fn try_from(value: &CalculationResultsWithContext) -> Result<Self, Self::Error> {
-        Ok(SummaryOutputFileArgs {
-            output_key: "results_summary".into(),
-            input: (&value.context.input).as_ref().into(),
-            timestep_array: value.results.timestep_array.clone(),
-            results_end_user: value.results.results_end_user.clone(),
-            energy_generated_consumed: value.results.energy_generated_consumed.clone(),
-            energy_to_storage: value.results.energy_to_storage.clone(),
-            energy_from_storage: value.results.energy_from_storage.clone(),
-            energy_diverted: value.results.energy_diverted.clone(),
-            energy_import: value.results.energy_import.clone(),
-            energy_export: value.results.energy_export.clone(),
-            storage_from_grid: value.results.storage_from_grid.clone(),
-            space_heat_demand_total: value.results.space_heat_demand_total(),
-            space_cool_demand_total: value.results.space_cool_demand_total(),
-            total_floor_area: value.context.corpus.total_floor_area,
-            heat_cop_dict: value.results.heat_cop_dict.clone(),
-            cool_cop_dict: value.results.cool_cop_dict.clone(),
-            dhw_cop_dict: value.results.dhw_cop_dict.clone(),
-            daily_hw_demand_75th_percentile: value.daily_hw_demand_percentile(75)?,
-        })
+        todo!();
+        // Ok(SummaryOutputFileArgs {
+        //     output_key: "results_summary".into(),
+        //     input: (&value.context.input).as_ref().into(),
+        //     timestep_array: value.output.timestep_array.clone(),
+        //     results_end_user: value.output.results_end_user.clone(),
+        //     energy_generated_consumed: value.output.energy_generated_consumed.clone(),
+        //     energy_to_storage: value.output.energy_to_storage.clone(),
+        //     energy_from_storage: value.output.energy_from_storage.clone(),
+        //     energy_diverted: value.output.energy_diverted.clone(),
+        //     energy_import: value.output.energy_import.clone(),
+        //     energy_export: value.output.energy_export.clone(),
+        //     storage_from_grid: value.output.storage_from_grid.clone(),
+        //     space_heat_demand_total: value.output.space_heat_demand_total(),
+        //     space_cool_demand_total: value.output.space_cool_demand_total(),
+        //     total_floor_area: value.context.corpus.total_floor_area,
+        //     heat_cop_dict: value.output.heat_cop_dict.clone(),
+        //     cool_cop_dict: value.output.cool_cop_dict.clone(),
+        //     dhw_cop_dict: value.output.dhw_cop_dict.clone(),
+        //     daily_hw_demand_75th_percentile: value.daily_hw_demand_percentile(75)?,
+        // })
     }
 }
 
@@ -959,18 +961,19 @@ impl TryFrom<&CalculationResultsWithContext> for SummaryDataArgs {
     type Error = anyhow::Error;
 
     fn try_from(results: &CalculationResultsWithContext) -> Result<Self, Self::Error> {
-        Ok(SummaryDataArgs {
-            timestep_array: results.results.timestep_array.clone(),
-            input: (&results.context.input).as_ref().into(),
-            results_end_user: results.results.results_end_user.clone(),
-            energy_generated_consumed: results.results.energy_generated_consumed.clone(),
-            energy_to_storage: results.results.energy_to_storage.clone(),
-            energy_from_storage: results.results.energy_from_storage.clone(),
-            storage_from_grid: results.results.storage_from_grid.clone(),
-            energy_diverted: results.results.energy_diverted.clone(),
-            energy_import: results.results.energy_import.clone(),
-            energy_export: results.results.energy_export.clone(),
-        })
+        todo!();
+        // Ok(SummaryDataArgs {
+        //     timestep_array: results.output.timestep_array.clone(),
+        //     input: (&results.context.input).as_ref().into(),
+        //     results_end_user: results.output.results_end_user.clone(),
+        //     energy_generated_consumed: results.output.energy_generated_consumed.clone(),
+        //     energy_to_storage: results.output.energy_to_storage.clone(),
+        //     energy_from_storage: results.output.energy_from_storage.clone(),
+        //     storage_from_grid: results.output.storage_from_grid.clone(),
+        //     energy_diverted: results.output.energy_diverted.clone(),
+        //     energy_import: results.output.energy_import.clone(),
+        //     energy_export: results.output.energy_export.clone(),
+        // })
     }
 }
 
