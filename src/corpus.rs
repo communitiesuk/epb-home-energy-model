@@ -695,12 +695,12 @@ pub struct Corpus {
     vent_adjust_max_control: Option<Arc<Control>>,
     temp_internal_air_prev: Arc<AtomicF64>,
     smart_appliance_controls: IndexMap<String, Arc<SmartApplianceControl>>,
-    energy_supply_input: EnergySupplyInput,
+    input: Arc<Input>,
 }
 
 impl Corpus {
     pub fn from_inputs(
-        input: &Input,
+        input: Arc<Input>,
         external_conditions: Option<&ExternalConditions>,
         tariff_file_path: Option<&str>,
         output_options: &OutputOptions,
@@ -1068,7 +1068,7 @@ impl Corpus {
             vent_adjust_max_control,
             temp_internal_air_prev,
             smart_appliance_controls,
-            energy_supply_input: input.energy_supply.clone(),
+            input,
         })
     }
 
@@ -2821,7 +2821,8 @@ impl Corpus {
 
         // Get Energy Supply objects with fuel type 'electricity'.
         let electricity_keys = self
-            .energy_supply_input
+            .input
+            .energy_supply
             .iter()
             .filter_map(|(key, value)| (value.fuel == FuelType::Electricity).then_some(key))
             .map(String::from)

@@ -154,9 +154,10 @@ pub fn run_project(
             Ok(input)
         }
 
-        let input = merge_external_conditions_data(input, external_conditions_data
+        let input: Arc<Input> = merge_external_conditions_data(input, external_conditions_data
             .as_ref()
-            .map(ExternalConditionsInput::from))?;
+            .map(ExternalConditionsInput::from))?
+            .into();
 
         // 1. Determine external conditions to use for calculations.
         #[instrument(skip_all)]
@@ -175,7 +176,7 @@ pub fn run_project(
             // 2. Build corpus from input and external conditions.
             #[instrument(skip_all)]
             fn build_corpus(
-                input: &Input,
+                input: Arc<Input>,
                 external_conditions: &ExternalConditions,
                 tariff_data_file: Option<&str>,
                 print_heat_balance: bool,
@@ -185,7 +186,7 @@ pub fn run_project(
                 Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options)
             }
 
-            build_corpus(&input, &external_conditions, tariff_data_file, heat_balance, detailed_output_heating_cooling).map_err(|e| {
+            build_corpus(input.clone(), &external_conditions, tariff_data_file, heat_balance, detailed_output_heating_cooling).map_err(|e| {
                 capture_specific_error_case(&e).unwrap_or_else(|| HemError::InvalidRequest(e))
             })?
         };
@@ -414,7 +415,7 @@ fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
 }
 
 pub struct CalculationContext {
-    pub input: Input,
+    pub input: Arc<Input>,
     pub corpus: Corpus,
 }
 
@@ -424,7 +425,11 @@ pub struct CalculationResultsWithContext {
 }
 
 impl CalculationResultsWithContext {
-    fn new(input: Input, corpus: Corpus, results: RunResults) -> CalculationResultsWithContext {
+    fn new(
+        input: Arc<Input>,
+        corpus: Corpus,
+        results: RunResults,
+    ) -> CalculationResultsWithContext {
         Self {
             results,
             context: CalculationContext { input, corpus },
@@ -929,7 +934,7 @@ impl TryFrom<&CalculationResultsWithContext> for SummaryOutputFileArgs {
     fn try_from(value: &CalculationResultsWithContext) -> Result<Self, Self::Error> {
         Ok(SummaryOutputFileArgs {
             output_key: "results_summary".into(),
-            input: (&value.context.input).into(),
+            input: (&value.context.input).as_ref().into(),
             timestep_array: value.results.timestep_array.clone(),
             results_end_user: value.results.results_end_user.clone(),
             energy_generated_consumed: value.results.energy_generated_consumed.clone(),
@@ -956,7 +961,7 @@ impl TryFrom<&CalculationResultsWithContext> for SummaryDataArgs {
     fn try_from(results: &CalculationResultsWithContext) -> Result<Self, Self::Error> {
         Ok(SummaryDataArgs {
             timestep_array: results.results.timestep_array.clone(),
-            input: (&results.context.input).into(),
+            input: (&results.context.input).as_ref().into(),
             results_end_user: results.results.results_end_user.clone(),
             energy_generated_consumed: results.results.energy_generated_consumed.clone(),
             energy_to_storage: results.results.energy_to_storage.clone(),
