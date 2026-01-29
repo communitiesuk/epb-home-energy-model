@@ -2288,12 +2288,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_temp_hot_water_for_water_direct(mut heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect, simulation_time_iteration: SimulationTimeIteration) {
-
+    fn test_get_temp_hot_water_for_water_direct(
+        mut heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) {
         heat_battery_service_water_direct.cold_feed = WaterSupply::Mock(MockWaterSupply::new(25.));
 
         let expected = vec![(60., 20.)];
-        let actual = heat_battery_service_water_direct.get_temp_hot_water(20., None, simulation_time_iteration).unwrap();
+        let actual = heat_battery_service_water_direct
+            .get_temp_hot_water(20., None, simulation_time_iteration)
+            .unwrap();
 
         assert_eq!(actual, expected)
     }

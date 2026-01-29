@@ -863,12 +863,10 @@ mod tests {
         SimulationTime::new(0., 3., 1.)
     }
 
-    // no longer using #[once] or Arc<Mutex<>> for this fixture 
+    // no longer using #[once] or Arc<Mutex<>> for this fixture
     // as they caused a race condition between tests
     #[fixture]
-    fn heat_network_for_service_space(
-        three_len_simulation_time: SimulationTime,
-    ) -> HeatNetwork {
+    fn heat_network_for_service_space(three_len_simulation_time: SimulationTime) -> HeatNetwork {
         let energy_supply =
             EnergySupplyBuilder::new(FuelType::MainsGas, three_len_simulation_time.total_steps())
                 .build();
@@ -956,9 +954,7 @@ mod tests {
                 ),
                 [5.0, 5.0, 0.0][t_idx]
             );
-            heat_network_for_service_space
-                .timestep_end(t_idx)
-                .unwrap();
+            heat_network_for_service_space.timestep_end(t_idx).unwrap();
         }
     }
 
