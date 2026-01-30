@@ -1452,38 +1452,7 @@ fn write_core_output_file_heat_source_wet(
     let mut col_units_row: Vec<Arc<str>> = vec!["count".into()];
     let mut columns: IndexMap<Arc<str>, Vec<(Arc<str>, Option<Arc<str>>)>> = Default::default();
 
-    for (service_name, service_results) in heat_source_wet_results.iter() {
-        columns.insert(
-            service_name.clone(),
-            service_results.keys().cloned().collect(),
-        );
-        col_headings.extend(
-            service_results
-                .keys()
-                .cloned()
-                .collect::<IndexMap<_, _>>()
-                .values()
-                .map(|col_heading| match col_heading {
-                    None => service_name.clone(),
-                    Some(col_heading) => format!("{service_name}: {col_heading}").into(),
-                })
-                .collect::<Vec<Arc<str>>>(),
-        );
-        col_units_row.extend(
-            service_results
-                .keys()
-                .cloned()
-                .collect::<IndexMap<_, _>>()
-                .keys()
-                .cloned()
-                .collect::<Vec<Arc<str>>>(),
-        );
-    }
-
-    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
-    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
     // TODO what type should heat_source_wet_results be?
-
     // for (service_name, service_results) in heat_source_wet_results.iter() {
     //     columns.insert(
     //         service_name.clone(),
@@ -1499,7 +1468,7 @@ fn write_core_output_file_heat_source_wet(
     //                 None => service_name.clone(),
     //                 Some(col_heading) => format!("{service_name}: {col_heading}").into(),
     //             })
-    //             .collect::<Vec<String>>(),
+    //             .collect::<Vec<Arc<str>>>(),
     //     );
     //     col_units_row.extend(
     //         service_results
@@ -1508,7 +1477,7 @@ fn write_core_output_file_heat_source_wet(
     //             .collect::<IndexMap<_, _>>()
     //             .keys()
     //             .cloned()
-    //             .collect::<Vec<String>>(),
+    //             .collect::<Vec<Arc<str>>>(),
     //     );
     // }
     //
@@ -1517,17 +1486,17 @@ fn write_core_output_file_heat_source_wet(
     //
     // // Write column headings and units
     // writer.write_record(
-        &col_headings
-            .iter()
-            .map(|x| x.as_bytes())
-            .collect::<Vec<_>>(),
-    )?;
+    //     &col_headings
+    //         .iter()
+    //         .map(|x| x.as_bytes())
+    //         .collect::<Vec<_>>(),
+    // )?;
     // writer.write_record(
-        &col_units_row
-            .iter()
-            .map(|x| x.as_bytes())
-            .collect::<Vec<_>>(),
-    )?;
+    //     &col_units_row
+    //         .iter()
+    //         .map(|x| x.as_bytes())
+    //         .collect::<Vec<_>>(),
+    // )?;
     //
     // // Write rows
     // for t_idx in 0..timestep_array.len() {
