@@ -33,7 +33,7 @@ use crate::corpus::{
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input};
-use crate::output::{Output, OUTPUT_ZONE_DATA_FIELD_HEADINGS};
+use crate::output::{Output, OutputStatic, OUTPUT_ZONE_DATA_FIELD_HEADINGS};
 use crate::output_writer::OutputWriter;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
@@ -116,14 +116,14 @@ pub fn run_project_from_input_file(
 
     let steps_in_hours = results.context.corpus.simulation_time.step_in_hours();
 
-    write_core_output_files(
-        Some(&results.context.input),
-        output_writer,
-        &results,
-        steps_in_hours,
-        heat_balance,
-        detailed_output_heating_cooling,
-    )?;
+    // write_core_output_files(
+    //     Some(&results.context.input),
+    //     output_writer,
+    //     &results,
+    //     steps_in_hours,
+    //     heat_balance,
+    //     detailed_output_heating_cooling,
+    // )?;
 
     Ok(results)
 }
@@ -233,76 +233,48 @@ pub fn run_project(
         })?
 }
 
+#[derive(PartialEq)]
+enum OutputFormat {
+    // TODO move
+    JSON,
+    CSV,
+}
+
 #[instrument(skip_all)]
 fn write_core_output_files(
+    output: &Output,
+    output_key: &str,
     primary_input: Option<&Input>,
     output_writer: &impl OutputWriter,
-    results: &CalculationResultsWithContext,
+    output_formats: Option<Vec<OutputFormat>>,
     hour_per_step: f64,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<()> {
-    if output_writer.is_noop() {
+    if output_writer.is_noop() || output_formats.is_none() {
         return Ok(());
     }
 
-    todo!();
+    if let Some(output_formats) = output_formats {
+        if output_formats.contains(&OutputFormat::JSON) {
+            write_output_json_file(output_key, output, output_writer)?;
+        }
 
-    // let CalculationResultsWithContext {
-    //     output:
-    //         RunResults {
-    //             timestep_array,
-    //             results_totals,
-    //             results_end_user,
-    //             energy_import,
-    //             energy_export,
-    //             energy_generated_consumed,
-    //             energy_to_storage,
-    //             energy_from_storage,
-    //             energy_diverted,
-    //             betafactor,
-    //             zone_dict,
-    //             zone_list,
-    //             hc_system_dict,
-    //             hot_water_dict,
-    //             ductwork_gains,
-    //             heat_balance_dict,
-    //             heat_source_wet_results_dict,
-    //             heat_source_wet_results_annual_dict,
-    //             vent_output_list,
-    //             emitters_output_dict,
-    //             storage_from_grid,
-    //             battery_state_of_charge,
-    //             esh_output_dict,
-    //             hot_water_source_results_dict,
-    //             ..
-    //         },
-    //     ..
-    // } = results;
-    //
-    // write_core_output_file(
-    //     output_writer,
-    //     OutputFileArgs {
-    //         output_key: "results".into(),
-    //         timestep_array,
-    //         results_totals,
-    //         results_end_user,
-    //         energy_import,
-    //         energy_export,
-    //         energy_generated_consumed,
-    //         energy_to_storage,
-    //         energy_from_storage,
-    //         storage_from_grid,
-    //         battery_state_of_charge,
-    //         energy_diverted,
-    //         betafactor,
-    //         zone_dict,
-    //         zone_list,
-    //         hc_system_dict,
-    //         hot_water_dict,
-    //         ductwork_gains,
-    //     },
-    // )?;
+        if output_formats.contains(&OutputFormat::CSV) {
+            write_core_output_file_static(&output.static_, "results_static", output_writer)?;
+
+            write_core_output_file(output, "results.csv", output_writer)?;
+
+            write_core_output_file_summary(
+                output,
+                "results_summary.csv",
+                output_writer,
+                primary_input
+                    .ok_or_else(|| anyhow!("Input required to write out core summary file"))?,
+            )?;
+        }
+    }
+
     //
     // if heat_balance {
     //     for (hb_name, hb_map) in heat_balance_dict.iter() {
@@ -365,7 +337,7 @@ fn write_core_output_files(
     //     }
     // }
     //
-    // write_core_output_file_summary(output_writer, results.try_into()?)?;
+
     //
     // let corpus = &results.context.corpus;
     //
@@ -380,22 +352,7 @@ fn write_core_output_files(
     // } = calc_htc_hlp(primary_input)?;
     // let heat_capacity_parameter = corpus.calc_hcp();
     // let heat_loss_form_factor = corpus.calc_hlff();
-    //
-    // write_core_output_file_static(
-    //     output_writer,
-    //     StaticOutputFileArgs {
-    //         output_key: "results_static".into(),
-    //         heat_transfer_coefficient,
-    //         heat_loss_parameter,
-    //         heat_capacity_parameter,
-    //         heat_loss_form_factor,
-    //         temp_internal_air: primary_input.temp_internal_air_static_calcs,
-    //         temp_external_air: corpus
-    //             .external_conditions
-    //             .air_temp_annual_daily_average_min(),
-    //     },
-    // )?;
-    //
+
     // if detailed_output_heating_cooling {
     //     let output_prefix = "results_emitters_";
     //     write_core_output_file_emitters_detailed(
@@ -408,7 +365,7 @@ fn write_core_output_files(
     //     write_core_output_file_esh_detailed(output_writer, esh_output_prefix, esh_output_dict)?;
     // }
     //
-    // Ok(())
+    Ok(())
 }
 
 fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
@@ -541,9 +498,9 @@ struct OutputFileArgs<'a> {
 }
 
 fn write_core_output_file(
-    output_writer: &impl OutputWriter,
     output: &Output,
     output_key: &str,
+    output_writer: &impl OutputWriter,
 ) -> anyhow::Result<()> {
     let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
@@ -860,9 +817,9 @@ impl TryFrom<&CalculationResultsWithContext> for SummaryDataArgs {
 }
 
 fn write_core_output_file_summary(
-    output_writer: &impl OutputWriter,
-    output: Output,
+    output: &Output,
     output_key: &str,
+    output_writer: &impl OutputWriter,
     input: &Input,
 ) -> Result<(), anyhow::Error> {
     if output_writer.is_noop() {
@@ -963,7 +920,7 @@ fn write_core_output_file_summary(
     writer.write_record(["Energy Supply Summary"])?;
     writer.write_record(["", "kWh", "timestep", "month", "day", "hour of day"])?;
 
-    let peak_consumption = output.summary.electricity_peak_consumption;
+    let peak_consumption = &output.summary.electricity_peak_consumption;
     writer.write_record([
         "Peak half-hour consumption (electricity)".to_string(), // TODO (from Python) TODO technically per-step, not half-hour
         peak_consumption.peak.to_string(),
@@ -1113,6 +1070,22 @@ fn write_core_output_file_summary(
 const MONTH_NAMES: [&str; 12] = [
     "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
 ];
+
+fn write_output_json_file(
+    output_key: &str,
+    output: &Output,
+    output_writer: &impl OutputWriter,
+) -> anyhow::Result<()> {
+    if output_writer.is_noop() {
+        return Ok(());
+    }
+    let writer = output_writer.writer_for_location_key(&output_key, "json")?;
+    serde_json::to_writer_pretty(writer, &output)?;
+
+    // TODO review - python have 'by_alias=True', is this handled by our rename attribute in Output.rs?
+
+    Ok(())
+}
 
 pub struct SummaryDataArgs {
     timestep_array: Vec<f64>,
@@ -1355,19 +1328,10 @@ struct StaticOutputFileArgs {
 }
 
 fn write_core_output_file_static(
+    output: &OutputStatic,
+    output_key: &str,
     output_writer: &impl OutputWriter,
-    args: StaticOutputFileArgs,
 ) -> Result<(), anyhow::Error> {
-    let StaticOutputFileArgs {
-        output_key,
-        heat_transfer_coefficient,
-        heat_loss_parameter,
-        heat_capacity_parameter,
-        heat_loss_form_factor,
-        temp_internal_air,
-        temp_external_air,
-    } = args;
-
     debug!("writing out to {output_key}");
 
     let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
@@ -1376,33 +1340,33 @@ fn write_core_output_file_static(
     writer.write_record([
         "Heat transfer coefficient".to_owned(),
         "W / K".to_owned(),
-        heat_transfer_coefficient.to_string(),
+        output.heat_transfer_coefficient.to_string(),
     ])?;
     writer.write_record([
         "Heat loss parameter".to_owned(),
         "W / m2.K".to_owned(),
-        heat_loss_parameter.to_string(),
+        output.heat_loss_param.to_string(),
     ])?;
     writer.write_record([
         "Heat capacity parameter".to_owned(),
         "kJ / m2.K".to_owned(),
-        heat_capacity_parameter.to_string(),
+        output.heat_capacity_param.to_string(),
     ])?;
     writer.write_record([
         "Heat loss form factor".to_owned(),
         "".to_owned(),
-        heat_loss_form_factor.to_string(),
+        output.heat_loss_form_factor.to_string(),
     ])?;
     writer.write_record(["Assumptions used for HTC/HLP calculation:"])?;
     writer.write_record([
         "Internal air temperature".to_owned(),
         "Celsius".to_owned(),
-        temp_internal_air.to_string(),
+        output.temperature_air_internal.to_string(),
     ])?;
     writer.write_record([
         "External air temperature".to_owned(),
         "Celsius".to_owned(),
-        temp_external_air.to_string(),
+        output.temperature_air_external.to_string(),
     ])?;
 
     debug!("flushing out static CSV");
