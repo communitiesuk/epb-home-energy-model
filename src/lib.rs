@@ -19,28 +19,21 @@ pub mod output_writer;
 pub mod read_weather_file;
 pub mod statistics;
 
-use crate::core::heating_systems::elec_storage_heater::StorageHeaterDetailedResult;
-use crate::core::heating_systems::emitters::EmittersDetailedResult;
-use crate::core::heating_systems::storage_tank::StorageTankDetailedResult;
-use crate::core::space_heat_demand::ventilation::VentilationDetailedResult;
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 pub use crate::corpus::RunResults;
 use crate::corpus::{
-    Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, HtcHlpCalculation,
-    NumberOrDivisionByZero, OutputOptions, ResultsAnnual, ResultsEndUser, ResultsPerTimestep,
-    ZoneResultKey,
+    Corpus, HotWaterResultKey, HotWaterResultMap, HtcHlpCalculation, NumberOrDivisionByZero,
+    OutputOptions, ResultsAnnual, ResultsEndUser, ResultsPerTimestep, ZoneResultKey,
 };
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
-use crate::input::{ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input};
+use crate::input::{ExternalConditionsInput, HotWaterSourceDetails, Input};
 use crate::output::{Output, OutputEmitters, OutputStatic, OUTPUT_ZONE_DATA_FIELD_HEADINGS};
 use crate::output_writer::OutputWriter;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
 use anyhow::{anyhow, bail};
-use chrono::prelude::*;
-use chrono::{TimeDelta, Utc};
 use convert_case::{Case, Casing};
 use csv::WriterBuilder;
 use erased_serde::Serialize as ErasedSerialize;
@@ -50,7 +43,6 @@ use indexmap::IndexMap;
 use serde::{Serialize, Serializer};
 use smartstring::alias::String;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::io::Read;
 use std::ops::AddAssign;
