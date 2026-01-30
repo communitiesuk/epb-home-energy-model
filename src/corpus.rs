@@ -2261,7 +2261,6 @@ impl Corpus {
         let mut list_hot_water_source_names_incl_electric_showers: Vec<Arc<str>> = self
             .hot_water_sources
             .keys()
-            .cloned()
             .map(|x| x.to_string().into())
             .collect();
         list_hot_water_source_names_incl_electric_showers

@@ -706,7 +706,6 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         let mut all_keys: Vec<Arc<str>> = self
             .hot_water_sources
             .keys()
-            .cloned()
             .map(|x| x.to_string().into())
             .collect();
         all_keys.push(ELECTRIC_SHOWERS_HWS_NAME.into());

@@ -1706,7 +1706,6 @@ impl HeatBatteryDryCore {
             .energy_supply_connections
             .read()
             .keys()
-            .cloned()
             .map(|x| x.to_string().into())
             .collect();
         for service_name in service_names.iter() {

@@ -995,7 +995,7 @@ fn write_core_output_file_static(
 
 fn write_core_output_file_heat_balance(
     output_key: &str,
-    timestep_array: &Vec<f64>,
+    timestep_array: &[f64],
     hour_per_step: f64,
     heat_balance_map: &IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
     output_writer: &impl OutputWriter,
@@ -1070,7 +1070,7 @@ fn write_core_output_file_heat_balance(
 
 fn write_core_output_file_heat_source_wet(
     output_key: &str,
-    timestep_array: &Vec<f64>,
+    timestep_array: &[f64],
     heat_source_wet_results: &ResultsPerTimestep,
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
@@ -1254,7 +1254,7 @@ fn write_core_output_file_esh_detailed(
 
 fn write_core_output_file_ventilation_detailed(
     output_key: &str,
-    vent_output_list: &Vec<Vec<StringOrNumber>>,
+    vent_output_list: &[Vec<StringOrNumber>],
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     let writer = output_writer.writer_for_location_key(output_key, "csv")?;
