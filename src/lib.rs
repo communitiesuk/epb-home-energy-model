@@ -906,7 +906,7 @@ fn write_core_output_file_summary(
         .iter()
         .map(|(h_name, h_cop)| {
             vec![
-                StringOrNumber::from(h_name.as_str()),
+                StringOrNumber::from(h_name.to_string()),
                 h_cop
                     .map(StringOrNumber::from)
                     .unwrap_or(StringOrNumber::from("DIV/0")),
@@ -920,7 +920,7 @@ fn write_core_output_file_summary(
         .iter()
         .map(|(c_name, c_cop)| {
             vec![
-                StringOrNumber::from(c_name.as_str()),
+                StringOrNumber::from(c_name.to_string()),
                 c_cop
                     .map(StringOrNumber::from)
                     .unwrap_or(StringOrNumber::from("DIV/0")),
@@ -934,7 +934,7 @@ fn write_core_output_file_summary(
         .iter()
         .map(|(hw_name, hw_cop)| {
             vec![
-                StringOrNumber::from(hw_name.as_str()),
+                StringOrNumber::from(hw_name.to_string()),
                 hw_cop
                     .map(StringOrNumber::from)
                     .unwrap_or(StringOrNumber::from("DIV/0")),

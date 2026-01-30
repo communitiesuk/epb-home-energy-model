@@ -178,11 +178,11 @@ impl OutputHotWaterSystems {
 #[derive(Debug, Serialize)]
 pub struct OutputCop {
     /// Overall coefficient of performance for each heating system (unitless)
-    pub(crate) space_heating_system: IndexMap<String, Option<f64>>,
+    pub(crate) space_heating_system: IndexMap<Arc<str>, Option<f64>>,
     /// Overall coefficient of performance for each heating system (unitless)
-    pub(crate) space_cooling_system: IndexMap<String, Option<f64>>,
+    pub(crate) space_cooling_system: IndexMap<Arc<str>, Option<f64>>,
     /// Overall coefficient of performance for each heating system (unitless)
-    pub(crate) hot_water_system: IndexMap<String, Option<f64>>,
+    pub(crate) hot_water_system: IndexMap<Arc<str>, Option<f64>>,
 }
 
 /// Emitters data for every time step.
