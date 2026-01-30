@@ -911,7 +911,7 @@ impl Corpus {
         for (source_name, source_details) in &input.pre_heated_water_source {
             let (heat_source, energy_conn_names, preheated_source_names_for_service) =
                 hot_water_source_from_input(
-                    &source_name,
+                    source_name,
                     source_details,
                     &cold_water_sources,
                     &pre_heated_water_sources,
@@ -2350,12 +2350,9 @@ impl Corpus {
             let mut gains_internal_hb = 0.;
             // Adding heat battery losses to internal gains
             for heat_source_wet in self.heat_sources_wet.values() {
-                match heat_source_wet {
-                    WetHeatSource::HeatBattery(battery) => {
-                        gains_internal_hb +=
-                            battery.get_battery_losses() * WATTS_PER_KILOWATT as f64 / t_it.timestep
-                    }
-                    _ => {}
+                if let WetHeatSource::HeatBattery(battery) = heat_source_wet {
+                    gains_internal_hb +=
+                        battery.get_battery_losses() * WATTS_PER_KILOWATT as f64 / t_it.timestep
                 }
             }
 
@@ -2708,16 +2705,16 @@ impl Corpus {
             hot_water_source_results_summary,
             emitters: emitters_output_dict
                 .into_iter()
-                .map(|(k, v)| (k.into(), v.into_iter().enumerate().collect()))
+                .map(|(k, v)| (k, v.into_iter().enumerate().collect()))
                 .collect(),
             electric_storage_heaters: esh_output_dict
                 .into_iter()
                 .map(|(k, v)| {
                     (
-                        k.into(),
+                        k,
                         v.into_iter()
                             .enumerate()
-                            .map(|(k, v)| (k.into(), v.into()))
+                            .map(|(k, v)| (k, v.into()))
                             .collect(),
                     )
                 })
@@ -2832,12 +2829,14 @@ impl Corpus {
             let total_gross_import: f64 = output_core.energy_import[key].iter().sum();
             let total_gross_export: f64 = output_core.energy_export[key].iter().sum();
 
-            let storage_eff = (gen_to_storage > 0.)
-                .then(|| {
+            let storage_eff = if gen_to_storage > 0. {
+                {
                     storage_to_consumption
                         / (gen_to_storage + output_core.storage_from_grid[key].iter().sum::<f64>())
-                })
-                .unwrap_or(f64::NAN);
+                }
+            } else {
+                f64::NAN
+            };
 
             energy_supply_stats.insert(
                 key.clone(),
@@ -2868,7 +2867,7 @@ impl Corpus {
         for (fuel, end_uses) in &output_core.results_end_user {
             // TODO (from Python) are these keys EnergySupplyType ? Why hot water source names too?
             let fuel_found_in_hot_water_sources =
-                self.hot_water_sources.keys().collect_vec().contains(&&fuel);
+                self.hot_water_sources.keys().collect_vec().contains(&fuel);
 
             if !fuel_found_in_hot_water_sources && fuel.as_ref() != "_unmet_demand" {
                 delivered_energy_dict.insert(fuel.clone(), IndexMap::from([("total".into(), 0.)]));
@@ -2920,7 +2919,7 @@ impl Corpus {
             total_floor_area: self.total_floor_area,
             space_heat_demand_total,
             space_cool_demand_total,
-            electricity_peak_consumption: self.calculate_peak_electricity_consumption(&output_core),
+            electricity_peak_consumption: self.calculate_peak_electricity_consumption(output_core),
             energy_supply: energy_supply_stats,
             delivered_energy: delivered_energy_dict,
             hot_water_demand_daily_75th_percentile: hot_water_demand_daily_75th_percentile_dict,
@@ -2961,7 +2960,6 @@ impl Corpus {
             .filter_map(|(key, value)| {
                 (value.fuel == FuelType::Electricity).then_some(Arc::<str>::from(key.to_string()))
             })
-            .map(Into::into)
             .collect_vec();
 
         // Calculate net import per timestep by adding gross import and export figures.
@@ -5434,7 +5432,7 @@ fn hot_water_source_from_input(
             let energy_supply_conn_name = name;
             energy_supply_conn_names.push(energy_supply_conn_name.to_string().into());
             let energy_supply_conn =
-                EnergySupply::connection(energy_supply.clone(), &energy_supply_conn_name)?;
+                EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name)?;
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
             HotWaterSource::PointOfUse(PointOfUse::new(

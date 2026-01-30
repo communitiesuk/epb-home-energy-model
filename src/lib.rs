@@ -264,7 +264,7 @@ fn write_core_output_files(
             for (hb_name, hb_map) in &output.core.heat_balance_all {
                 let output_key = format!("results_heat_balance_{}", hb_name.to_case(Case::Snake));
                 write_core_output_file_heat_balance(
-                    &output_key.as_str(),
+                    output_key.as_str(),
                     &output.core.timestep_array,
                     hour_per_step,
                     hb_map,
@@ -279,7 +279,7 @@ fn write_core_output_files(
             {
                 let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
                 write_core_output_file_heat_source_wet(
-                    &output_key.as_str(),
+                    output_key.as_str(),
                     &output.core.timestep_array,
                     heat_source_wet_results,
                     output_writer,
@@ -291,7 +291,7 @@ fn write_core_output_files(
             {
                 let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
                 write_core_output_file_heat_source_wet_summary(
-                    &output_key.as_str(),
+                    output_key.as_str(),
                     heat_source_wet_results_annual,
                     output_writer,
                 )?;
@@ -421,7 +421,7 @@ fn write_core_output_file(
     output_key: &str,
     output_writer: &impl OutputWriter,
 ) -> anyhow::Result<()> {
-    let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     let mut headings: Vec<Cow<'static, str>> = vec!["Timestep".into()];
@@ -707,7 +707,7 @@ fn write_core_output_file_summary(
         })
         .collect::<Vec<_>>();
 
-    let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     let blank_line: Vec<&'static str> = vec![];
@@ -887,7 +887,7 @@ fn write_output_json_file(
     if output_writer.is_noop() {
         return Ok(());
     }
-    let writer = output_writer.writer_for_location_key(&output_key, "json")?;
+    let writer = output_writer.writer_for_location_key(output_key, "json")?;
     serde_json::to_writer_pretty(writer, &output)?;
 
     Ok(())
@@ -952,7 +952,7 @@ fn write_core_output_file_static(
 ) -> Result<(), anyhow::Error> {
     debug!("writing out to {output_key}");
 
-    let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     writer.write_record([
@@ -1000,7 +1000,7 @@ fn write_core_output_file_heat_balance(
     heat_balance_map: &IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
-    let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     let mut headings = vec!["Timestep".to_string()];
@@ -1112,13 +1112,13 @@ fn write_core_output_file_heat_source_wet(
 
     // Write column headings and units
     writer.write_record(
-        &col_headings
+        col_headings
             .iter()
             .map(|x| x.as_bytes())
             .collect::<Vec<_>>(),
     )?;
     writer.write_record(
-        &col_units_row
+        col_units_row
             .iter()
             .map(|x| x.as_bytes())
             .collect::<Vec<_>>(),

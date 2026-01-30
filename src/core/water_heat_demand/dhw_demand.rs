@@ -855,7 +855,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             match event.event_result_type {
                 WaterEventResultType::PipeFlush => {
                     let (pw_losses_internal_i, pw_losses_external_i) = self.calc_pipework_losses(
-                        &hot_water_source_name,
+                        hot_water_source_name,
                         1,
                         event.temperature_warm,
                         internal_air_temperature,

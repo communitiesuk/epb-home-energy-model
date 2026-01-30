@@ -2847,7 +2847,7 @@ impl SolarRadiationInteraction for BuildingElementTransparent {
     }
 
     fn orientation(&self) -> Option<f64> {
-        self.orientation.into()
+        self.orientation
     }
 
     fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>) {

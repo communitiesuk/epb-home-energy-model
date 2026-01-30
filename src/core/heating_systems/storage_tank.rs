@@ -4493,7 +4493,7 @@ mod tests {
         // With value for input_energy_adj
         let input_energy_adj = 3.;
 
-        for (_, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
+        for t_it in simulation_time_for_storage_tank.iter() {
             assert_eq!(
                 storage_tank1.calculate_primary_pipework_losses(input_energy_adj, setpnt_max, t_it),
                 (0.04746228058715814, 10.657894331822993),
@@ -5185,7 +5185,7 @@ mod tests {
     }
 
     fn get_usage_event() -> Vec<WaterEventResult> {
-        get_event_data_immersion().get(0).unwrap().clone().unwrap()
+        get_event_data_immersion().first().unwrap().clone().unwrap()
     }
 
     fn get_event_data_solthermal() -> Vec<Option<Vec<WaterEventResult>>> {
