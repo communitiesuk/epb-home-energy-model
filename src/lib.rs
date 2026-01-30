@@ -21,8 +21,7 @@ pub mod statistics;
 
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 use crate::corpus::{
-    Corpus, HotWaterResultKey, HotWaterResultMap, HtcHlpCalculation, NumberOrDivisionByZero,
-    OutputOptions, ResultsAnnual, ResultsEndUser, ResultsPerTimestep, ZoneResultKey,
+    Corpus, NumberOrDivisionByZero, OutputOptions, ResultsAnnual, ResultsPerTimestep,
 };
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
@@ -31,7 +30,6 @@ use crate::output::{Output, OutputEmitters, OutputStatic, OUTPUT_ZONE_DATA_FIELD
 use crate::output_writer::OutputWriter;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
-use crate::statistics::percentile;
 use anyhow::{anyhow, bail};
 use convert_case::{Case, Casing};
 use csv::WriterBuilder;
@@ -54,6 +52,7 @@ pub const HEM_VERSION: &str = "1.0.0a1";
 pub const HEM_VERSION_DATE: &str = "2025-10-02";
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum OutputFormat {
     Json,
     Csv,
@@ -82,7 +81,7 @@ pub fn run_project_from_input_file(
     input: impl Read,
     output_writer: &impl OutputWriter,
     external_conditions_data: Option<ExternalConditionsFromFile>,
-    // output_formats: Option<&Vec<OutputFormat>>,
+    output_formats: Option<&Vec<OutputFormat>>,
     tariff_data_file: Option<&str>,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
@@ -112,19 +111,19 @@ pub fn run_project_from_input_file(
         detailed_output_heating_cooling,
     )?;
 
-    // if let Some(output_formats) = output_formats {
-    //     let steps_in_hours = results.context.corpus.simulation_time.step_in_hours();
+    if let Some(output_formats) = output_formats {
+        let steps_in_hours = results.input.simulation_time.step;
 
-    // write_core_output_files(
-    //     Some(&results.context.input),
-    //     output_writer,
-    //     &results,
-    //     steps_in_hours,
-    // output_formats
-    //     heat_balance,
-    //     detailed_output_heating_cooling,
-    // )?;
-    // }
+        write_core_output_files(
+            &results.output,
+            results.input.as_ref(),
+            output_writer,
+            output_formats,
+            steps_in_hours,
+            heat_balance,
+            detailed_output_heating_cooling,
+        )?;
+    }
 
     Ok(results)
 }
@@ -237,10 +236,9 @@ pub fn run_project(
 #[instrument(skip_all)]
 fn write_core_output_files(
     output: &Output,
-    output_key: &str,
-    primary_input: Option<&Input>,
+    primary_input: &Input,
     output_writer: &impl OutputWriter,
-    output_formats: Vec<OutputFormat>,
+    output_formats: &[OutputFormat],
     hour_per_step: f64,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
@@ -250,18 +248,17 @@ fn write_core_output_files(
     }
 
     if output_formats.contains(&OutputFormat::Json) {
-        write_output_json_file(output_key, output, output_writer)?;
+        write_output_json_file("output", output, output_writer)?;
     }
 
     if output_formats.contains(&OutputFormat::Csv) {
-        let input =
-            primary_input.ok_or_else(|| anyhow!("Input required to write core output CSVs"))?;
+        let input = primary_input;
 
         write_core_output_file_static(&output.static_, "results_static", output_writer)?;
 
-        write_core_output_file(output, "results.csv", output_writer)?;
+        write_core_output_file(output, "results", output_writer)?;
 
-        write_core_output_file_summary(output, "results_summary.csv", output_writer, input)?;
+        write_core_output_file_summary(output, "results_summary", output_writer, input)?;
 
         if heat_balance {
             for (hb_name, hb_map) in &output.core.heat_balance_all {
@@ -359,30 +356,6 @@ pub struct CalculationResult {
 impl CalculationResult {
     fn new(input: Arc<Input>, output: Output) -> CalculationResult {
         Self { output, input }
-    }
-}
-
-impl CalculationResult {
-    fn daily_hw_demand_percentile(&self, percentage: usize) -> anyhow::Result<f64> {
-        todo!();
-        // Ok(percentile(
-        //     &convert_profile_to_daily(
-        //         match &self.output.hot_water_dict
-        //             [&HotWaterResultKey::HotWaterEnergyDemandIncludingPipeworkLoss]
-        //         {
-        //             HotWaterResultMap::Float(results) => results
-        //                 .get("energy_demand_incl_pipework_loss")
-        //                 .ok_or(anyhow!(
-        //             "Hot water energy demand incl pipework_loss field not set in hot water output"
-        //         ))?,
-        //             HotWaterResultMap::Int(_) => unreachable!(
-        //                 "Hot water energy demand incl pipework_loss is not expected to be an integer"
-        //             ),
-        //         },
-        //         self.context.corpus.simulation_time.step_in_hours(),
-        //     ),
-        //     percentage,
-        // ))
     }
 }
 

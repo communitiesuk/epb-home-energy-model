@@ -4,7 +4,7 @@ use home_energy_model::output_writer::FileOutputWriter;
 use home_energy_model::read_weather_file::{
     epw_weather_data_to_external_conditions, ExternalConditions,
 };
-use home_energy_model::run_project_from_input_file;
+use home_energy_model::{run_project_from_input_file, OutputFormat};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
@@ -20,6 +20,12 @@ struct SapArgs {
     weather_file: WeatherFileType,
     #[arg(long, short, help = "Path to tariff data file in .csv format")]
     tariff_file: Option<String>,
+    #[clap(
+        long,
+        value_enum,
+        help = "output format(s): csv, json, or both; default to csv"
+    )]
+    output: Option<Vec<OutputFormat>>,
     #[clap(
         long,
         default_value_t = false,
@@ -106,6 +112,7 @@ fn main() -> anyhow::Result<()> {
         BufReader::new(File::open(Path::new(input_file))?),
         &file_output,
         external_conditions,
+        args.output.as_ref(),
         args.tariff_file.as_ref().map(|f| f.as_str()),
         false,
         false,

@@ -3100,7 +3100,7 @@ impl SolarThermalSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::{MockControl, SetpointBounds, SetpointTimeControl};
+    use crate::core::controls::time_control::{MockControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::material_properties::WATER;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
