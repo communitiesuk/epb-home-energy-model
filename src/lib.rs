@@ -86,7 +86,7 @@ pub fn run_project_from_input_file(
     tariff_data_file: Option<&str>,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
-) -> Result<CalculationResultsWithContext, HemError> {
+) -> Result<CalculationResult, HemError> {
     #[instrument(skip_all)]
     fn finalize(input: impl Read) -> anyhow::Result<Input> {
         let input = serde_json::from_reader(input)?;
@@ -136,7 +136,7 @@ pub fn run_project(
     tariff_data_file: Option<&str>,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
-) -> Result<CalculationResultsWithContext, HemError> {
+) -> Result<CalculationResult, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
         #[instrument(skip_all)]
         fn merge_external_conditions_data(
@@ -221,7 +221,7 @@ pub fn run_project(
         };
 
         let contextualised_results =
-            CalculationResultsWithContext::new(input, corpus, output);
+            CalculationResult::new(input, output);
 
         Ok(contextualised_results)
     }))
@@ -351,26 +351,18 @@ fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
     None
 }
 
-pub struct CalculationContext {
-    pub input: Arc<Input>,
-    pub corpus: Corpus,
-}
-
-pub struct CalculationResultsWithContext {
+pub struct CalculationResult {
     pub output: Output,
-    pub context: CalculationContext,
+    pub input: Arc<Input>,
 }
 
-impl CalculationResultsWithContext {
-    fn new(input: Arc<Input>, corpus: Corpus, output: Output) -> CalculationResultsWithContext {
-        Self {
-            output,
-            context: CalculationContext { input, corpus },
-        }
+impl CalculationResult {
+    fn new(input: Arc<Input>, output: Output) -> CalculationResult {
+        Self { output, input }
     }
 }
 
-impl CalculationResultsWithContext {
+impl CalculationResult {
     fn daily_hw_demand_percentile(&self, percentage: usize) -> anyhow::Result<f64> {
         todo!();
         // Ok(percentile(
@@ -924,8 +916,6 @@ fn write_output_json_file(
     }
     let writer = output_writer.writer_for_location_key(&output_key, "json")?;
     serde_json::to_writer_pretty(writer, &output)?;
-
-    // TODO review - python have 'by_alias=True', is this handled by our rename attribute in Output.rs?
 
     Ok(())
 }

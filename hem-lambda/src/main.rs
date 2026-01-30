@@ -1,6 +1,6 @@
 use home_energy_model::output_writer::OutputWriter;
 use home_energy_model::read_weather_file::epw_weather_data_to_external_conditions;
-use home_energy_model::{run_project_from_input_file, CalculationResultsWithContext};
+use home_energy_model::{run_project_from_input_file, CalculationResult};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
 use parking_lot::Mutex;
 use serde_json::json;
@@ -28,7 +28,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     .ok();
 
     let resp = match run_project_from_input_file(input, &output, external_conditions, None, false, false) {
-        Ok(CalculationResultsWithContext { .. }) => {
+        Ok(CalculationResult { .. }) => {
             Response::builder()
             .status(200)
             .header("Content-Type", "text/plain")
