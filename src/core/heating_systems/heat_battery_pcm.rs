@@ -1780,8 +1780,8 @@ impl HeatBatteryPcm {
     /// Output detailed results of heat battery calculation
     pub(crate) fn output_detailed_results(
         &self,
-        hot_water_energy_output: &IndexMap<String, Vec<ResultParamValue>>,
-        hot_water_source_name_for_heat_battery_service: &IndexMap<String, String>,
+        hot_water_energy_output: &IndexMap<Arc<str>, Vec<ResultParamValue>>,
+        hot_water_source_name_for_heat_battery_service: &IndexMap<Arc<str>, Arc<str>>,
     ) -> Result<(ResultsPerTimestep, ResultsAnnual), OutputDetailedResultsNotEnabledError> {
         let detailed_results = self
             .detailed_results
@@ -1794,7 +1794,7 @@ impl HeatBatteryPcm {
         // Report auxiliary parameters (not specific to a service)
         for (parameter, param_unit, _) in AUX_PARAMETERS {
             if ["Temps_after_losses", "hb_after_only_charge_zone_temp"].contains(&parameter) {
-                let mut labels: Option<Vec<String>> = Default::default();
+                let mut labels: Option<Vec<Arc<str>>> = Default::default();
                 for service_results in detailed_results.read().iter() {
                     let summary = &service_results.summary;
                     let param_values = match parameter {
@@ -1814,7 +1814,7 @@ impl HeatBatteryPcm {
                     }
                     for (label, result) in labels.as_ref().unwrap().iter().zip(param_values) {
                         results_per_timestep["auxiliary"]
-                            .entry((label.as_str().into(), param_unit.map(Into::into)))
+                            .entry((label.clone(), param_unit.map(Into::into)))
                             .or_default()
                             .push(result.into());
                     }
@@ -1836,7 +1836,8 @@ impl HeatBatteryPcm {
 
         // For each service, report required output parameters
         for (service_idx, service_name) in self.energy_supply_connections.keys().enumerate() {
-            let mut current_results: IndexMap<(String, Option<String>), Vec<ResultParamValue>> =
+            let service_name: Arc<str> = service_name.as_str().into();
+            let mut current_results: IndexMap<(Arc<str>, Option<Arc<str>>), Vec<ResultParamValue>> =
                 Default::default();
 
             // Look up each required parameter
@@ -1845,22 +1846,22 @@ impl HeatBatteryPcm {
                 for service_results in detailed_results.read().iter() {
                     let current_result = &service_results.results[service_idx];
                     if parameter == "hb_zone_temperatures" {
-                        let labels = (0..current_result.hb_zone_temperatures.len())
-                            .map(|i| format!("{parameter}{i}"))
+                        let labels: Vec<Arc<str>> = (0..current_result.hb_zone_temperatures.len())
+                            .map(|i| format!("{parameter}{i}").into())
                             .collect_vec();
                         for (label, result) in labels
                             .into_iter()
                             .zip(current_result.hb_zone_temperatures.iter())
                         {
                             current_results
-                                .entry((String::from(label), param_unit.map(String::from)))
+                                .entry((label.clone(), param_unit.map(|x| x.to_string().into())))
                                 .or_default()
                                 .push(result.into());
                         }
                     } else {
                         let result = current_result.param(parameter);
                         current_results
-                            .entry((String::from(parameter), param_unit.map(String::from)))
+                            .entry((parameter.into(), param_unit.map(|x| x.to_string().into())))
                             .or_default()
                             .push(result);
                     }
@@ -1878,7 +1879,7 @@ impl HeatBatteryPcm {
                     // For DHW, need to include storage and primary circuit losses.
                     // Can do this by replacing H5 numerator with total energy
                     // draw-off from hot water cylinder.
-                    let hws_name = &hot_water_source_name_for_heat_battery_service[service_name];
+                    let hws_name = &hot_water_source_name_for_heat_battery_service[&service_name];
 
                     if !hot_water_energy_output.contains_key(hws_name) {
                         vec![ResultParamValue::Empty; energy_delivered_total_len]
@@ -1890,7 +1891,7 @@ impl HeatBatteryPcm {
                 }
             });
 
-            results_per_timestep.insert(service_name.to_owned(), current_results);
+            results_per_timestep.insert(service_name.clone(), current_results);
         }
 
         let mut results_annual: ResultsAnnual = [
@@ -1900,7 +1901,10 @@ impl HeatBatteryPcm {
                     .iter()
                     .filter_map(|(parameter, param_units, incl_in_manual)| {
                         incl_in_manual.then_some((
-                            (String::from(*parameter), param_units.map(String::from)),
+                            (
+                                (*parameter).into(),
+                                param_units.map(|x| x.to_string().into()),
+                            ),
                             0.0f64.into(),
                         ))
                     })
@@ -1917,11 +1921,13 @@ impl HeatBatteryPcm {
         for (parameter, param_unit, incl_in_annual) in AUX_PARAMETERS.iter() {
             if *incl_in_annual {
                 results_annual["auxiliary"].insert(
-                    (String::from(*parameter), param_unit.map(Into::into)),
+                    ((*parameter).into(), param_unit.map(Into::into)),
                     ResultParamValue::from(
                         FSum::with_all(
-                            results_per_timestep["auxiliary"]
-                                [&(String::from(*parameter), param_unit.map(Into::into))]
+                            results_per_timestep["auxiliary"][&(
+                                (*parameter).into(),
+                                param_unit.map(|x| x.to_string().into()),
+                            )]
                                 .iter()
                                 .map(ResultParamValue::as_f64),
                         )
@@ -1932,19 +1938,20 @@ impl HeatBatteryPcm {
         }
         // For each service, report required output parameters
         for service_name in self.energy_supply_connections.keys() {
+            let service_name: Arc<str> = service_name.as_str().into();
             results_annual.insert(service_name.clone(), Default::default());
             for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
                 if incl_in_annual {
                     let parameter_annual_total = ResultParamValue::from(
                         FSum::with_all(
-                            results_per_timestep[service_name]
+                            results_per_timestep[&service_name]
                                 [&(parameter.into(), param_unit.map(Into::into))]
                                 .iter()
                                 .map(ResultParamValue::as_f64),
                         )
                         .value(),
                     );
-                    results_annual[service_name].insert(
+                    results_annual[&service_name].insert(
                         (parameter.into(), param_unit.map(Into::into)),
                         parameter_annual_total.clone(),
                     );
@@ -1953,11 +1960,11 @@ impl HeatBatteryPcm {
                         .or_insert(ResultParamValue::Number(0.)) += parameter_annual_total;
                 }
             }
-            if results_per_timestep[service_name]
+            if results_per_timestep[&service_name]
                 [&("energy_delivered_H4".into(), Some("kWh".into()))]
                 .contains(&ResultParamValue::Empty)
             {
-                results_annual.get_mut(service_name).unwrap().insert(
+                results_annual.get_mut(&service_name).unwrap().insert(
                     ("energy_delivered_H4".into(), Some("kWh".into())),
                     ResultParamValue::Empty,
                 );
@@ -1966,11 +1973,11 @@ impl HeatBatteryPcm {
                     ResultParamValue::Empty,
                 );
             } else {
-                results_annual.get_mut(service_name).unwrap().insert(
+                results_annual.get_mut(&service_name).unwrap().insert(
                     ("energy_delivered_H4".into(), Some("kWh".into())),
                     ResultParamValue::from(
                         FSum::with_all(
-                            results_per_timestep[service_name]
+                            results_per_timestep[&service_name]
                                 [&("energy_delivered_H4".into(), Some("kWh".into()))]
                                 .iter()
                                 .map(ResultParamValue::as_f64),
@@ -1982,7 +1989,7 @@ impl HeatBatteryPcm {
                 if results_annual["Overall"][&("energy_delivered_H4".into(), Some("kWh".into()))]
                     != ResultParamValue::Empty
                 {
-                    let service_energy_delivered = results_annual[service_name]
+                    let service_energy_delivered = results_annual[&service_name]
                         [&("energy_delivered_H4".into(), Some("kWh".into()))]
                         .clone();
                     results_annual["Overall"]
@@ -2966,11 +2973,12 @@ mod tests {
             .read()
             .results_by_end_user();
 
-        let end_user_name = heat_battery
+        let end_user_name: Arc<str> = heat_battery
             .read()
             .energy_supply_connection
             .end_user_name
-            .clone();
+            .to_string()
+            .into();
 
         let results_by_end_user = results_by_end_user.get(&end_user_name).unwrap();
 

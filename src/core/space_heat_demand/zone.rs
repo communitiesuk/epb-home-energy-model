@@ -1449,7 +1449,7 @@ impl AirChangesPerHourArgument {
 }
 
 pub(crate) trait GainsLossesAsIndexMap {
-    fn as_index_map(&self) -> IndexMap<String, f64>;
+    fn as_index_map(&self) -> IndexMap<Arc<str>, f64>;
 }
 
 #[derive(Debug, FieldName, PartialEq)]
@@ -1464,7 +1464,7 @@ pub struct HeatBalanceAirNode {
     pub fabric_heat_loss: f64,
 }
 
-impl From<HeatBalanceAirNodeFieldName> for String {
+impl From<HeatBalanceAirNodeFieldName> for Arc<str> {
     fn from(value: HeatBalanceAirNodeFieldName) -> Self {
         serde_json::to_value(&value)
             .unwrap()
@@ -1475,7 +1475,7 @@ impl From<HeatBalanceAirNodeFieldName> for String {
 }
 
 impl GainsLossesAsIndexMap for HeatBalanceAirNode {
-    fn as_index_map(&self) -> IndexMap<String, f64> {
+    fn as_index_map(&self) -> IndexMap<Arc<str>, f64> {
         let Self {
             solar_gains,
             internal_gains,
@@ -1524,7 +1524,7 @@ pub struct HeatBalanceInternalBoundary {
     pub fabric_int_heat_cool: f64,
 }
 
-impl From<HeatBalanceInternalBoundaryFieldName> for String {
+impl From<HeatBalanceInternalBoundaryFieldName> for Arc<str> {
     fn from(value: HeatBalanceInternalBoundaryFieldName) -> Self {
         serde_json::to_value(&value)
             .unwrap()
@@ -1535,7 +1535,7 @@ impl From<HeatBalanceInternalBoundaryFieldName> for String {
 }
 
 impl GainsLossesAsIndexMap for HeatBalanceInternalBoundary {
-    fn as_index_map(&self) -> IndexMap<String, f64> {
+    fn as_index_map(&self) -> IndexMap<Arc<str>, f64> {
         let Self {
             fabric_int_air_convective,
             fabric_int_sol,
@@ -1592,8 +1592,18 @@ impl From<HeatBalanceExternalBoundaryFieldName> for String {
     }
 }
 
+impl From<HeatBalanceExternalBoundaryFieldName> for Arc<str> {
+    fn from(value: HeatBalanceExternalBoundaryFieldName) -> Self {
+        serde_json::to_value(&value)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into()
+    }
+}
+
 impl GainsLossesAsIndexMap for HeatBalanceExternalBoundary {
-    fn as_index_map(&self) -> IndexMap<String, f64> {
+    fn as_index_map(&self) -> IndexMap<Arc<str>, f64> {
         let Self {
             solar_gains,
             internal_gains,
@@ -1680,7 +1690,7 @@ pub struct HeatBalance {
 }
 
 impl HeatBalance {
-    pub(crate) fn as_index_map(&self) -> IndexMap<HeatBalanceFieldName, IndexMap<String, f64>> {
+    pub(crate) fn as_index_map(&self) -> IndexMap<HeatBalanceFieldName, IndexMap<Arc<str>, f64>> {
         let Self {
             air_node,
             internal_boundary,
@@ -2214,8 +2224,8 @@ mod tests {
     fn test_fast_solver() {}
 
     fn maps_approx_equal(
-        actual: &IndexMap<String, f64>,
-        expected: &IndexMap<String, f64>,
+        actual: &IndexMap<Arc<str>, f64>,
+        expected: &IndexMap<Arc<str>, f64>,
         tol: f64,
     ) -> bool {
         if actual.len() != expected.len() {
@@ -2279,20 +2289,10 @@ mod tests {
             },
         }
         .as_index_map();
-        let simulatio_time_iteration = simulation_time().iter().next().unwrap();
+        let simtime = simulation_time().iter().next().unwrap();
         let actual_heat_balance = zone(thermal_bridging_objects, None)
             .unwrap()
-            .update_temperatures(
-                1800.,
-                10.,
-                200.,
-                220.,
-                0.,
-                1.,
-                0.4,
-                10.,
-                simulatio_time_iteration,
-            )
+            .update_temperatures(1800., 10., 200., 220., 0., 1., 0.4, 10., simtime)
             .unwrap()
             .unwrap()
             .as_index_map();

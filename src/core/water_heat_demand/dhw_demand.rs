@@ -36,10 +36,10 @@ pub(crate) struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour, U: HotWater
     showers: HashMap<String, Shower>,
     baths: HashMap<String, Bath>,
     other: HashMap<String, OtherHotWater>,
-    hot_water_sources: IndexMap<String, T>,
-    energy_supply_conn_unmet_demand: IndexMap<String, EnergySupplyConnection>,
-    source_supplying_outlet: HashMap<(OutletType, String), String>,
-    hot_water_distribution_pipework: IndexMap<String, Vec<PipeworkSimple>>,
+    hot_water_sources: IndexMap<Arc<str>, T>,
+    energy_supply_conn_unmet_demand: IndexMap<Arc<str>, EnergySupplyConnection>,
+    source_supplying_outlet: HashMap<(OutletType, Arc<str>), Arc<str>>,
+    hot_water_distribution_pipework: IndexMap<Arc<str>, Vec<PipeworkSimple>>,
     event_schedules: EventSchedule,
     pre_heated_water_sources: IndexMap<String, U>,
 }
@@ -119,7 +119,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         wwhrs: &IndexMap<String, Arc<Mutex<WwhrsInstantaneous>>>,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         event_schedules: EventSchedule,
-        hot_water_sources: IndexMap<String, T>,
+        hot_water_sources: IndexMap<Arc<str>, T>,
         pre_heated_water_sources: IndexMap<String, U>,
     ) -> anyhow::Result<Self> {
         let showers: HashMap<String, Shower> = showers_input
@@ -153,20 +153,20 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             .count();
         let total_number_tapping_points = mixer_shower_count + baths.len() + other.len();
 
-        let mut hot_water_distribution_pipework: IndexMap<String, Vec<PipeworkSimple>> =
+        let mut hot_water_distribution_pipework: IndexMap<Arc<str>, Vec<PipeworkSimple>> =
             hot_water_sources
                 .keys()
-                .map(|key| -> (String, Vec<PipeworkSimple>) { (key.clone(), vec![]) })
+                .map(|key| -> (Arc<str>, Vec<PipeworkSimple>) { (key.to_string().into(), vec![]) })
                 .collect();
 
         // if we have a list (and only one heat source) convert it into map
-        let mut hw_pipework_inputs: IndexMap<String, Vec<WaterPipeworkSimple>> =
+        let mut hw_pipework_inputs: IndexMap<Arc<str>, Vec<WaterPipeworkSimple>> =
             match hw_pipework_inputs {
                 WaterDistributionInput::List(pipeworks) => {
                     if hot_water_sources.len() == 1 {
                         hot_water_sources
                             .keys()
-                            .map(|key| -> (String, Vec<WaterPipeworkSimple>) {
+                            .map(|key| -> (Arc<str>, Vec<WaterPipeworkSimple>) {
                                 (key.clone(), pipeworks.clone())
                             })
                             .collect()
@@ -176,8 +176,8 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                 }
                 WaterDistributionInput::Map(index_map) => index_map
                     .iter()
-                    .map(|(key, value)| -> (String, Vec<WaterPipeworkSimple>) {
-                        (key.into(), value.clone())
+                    .map(|(key, value)| -> (Arc<str>, Vec<WaterPipeworkSimple>) {
+                        (key.as_str().into(), value.clone())
                     })
                     .collect(),
             };
@@ -223,7 +223,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         }
 
         // Set up unmet demand connection for each hot water source
-        let energy_supply_conn_unmet_demand: IndexMap<String, EnergySupplyConnection> =
+        let energy_supply_conn_unmet_demand: IndexMap<Arc<str>, EnergySupplyConnection> =
             hot_water_sources
                 .keys()
                 .map(|name| {
@@ -261,14 +261,14 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         showers_dict: &ShowersInput,
         baths_dict: &BathInput,
         other_hw_users_dict: &OtherWaterUseInput,
-        hot_water_sources: &IndexMap<String, impl HotWaterSourceBehaviour>,
-    ) -> HashMap<(OutletType, String), String> {
-        let mut mapping = HashMap::<(OutletType, String), String>::default();
+        hot_water_sources: &IndexMap<Arc<str>, impl HotWaterSourceBehaviour>,
+    ) -> HashMap<(OutletType, Arc<str>), Arc<str>> {
+        let mut mapping = HashMap::<(OutletType, Arc<str>), Arc<str>>::default();
         for (shower_name, shower) in showers_dict.0.iter() {
             match shower {
                 ShowerInput::InstantElectricShower { .. } => {
                     mapping.insert(
-                        (OutletType::Shower, shower_name.into()),
+                        (OutletType::Shower, shower_name.as_str().into()),
                         ELECTRIC_SHOWERS_HWS_NAME.into(),
                     );
                     continue;
@@ -278,15 +278,15 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                 } => match hot_water_source {
                     Some(hot_water_source) => {
                         mapping.insert(
-                            (OutletType::Shower, shower_name.into()),
-                            hot_water_source.clone(),
+                            (OutletType::Shower, shower_name.as_str().into()),
+                            hot_water_source.as_str().into(),
                         );
                     }
                     None => {
                         if hot_water_sources.len() == 1 {
                             let default_hot_water_source = hot_water_sources.first().unwrap().0;
                             mapping.insert(
-                                (OutletType::Shower, shower_name.into()),
+                                (OutletType::Shower, shower_name.as_str().into()),
                                 default_hot_water_source.clone(),
                             );
                         } else {
@@ -301,15 +301,15 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             match &bath.hot_water_source {
                 Some(hot_water_source) => {
                     mapping.insert(
-                        (OutletType::Bath, bath_name.into()),
-                        hot_water_source.clone(),
+                        (OutletType::Bath, bath_name.as_str().into()),
+                        hot_water_source.as_str().into(),
                     );
                 }
                 None => {
                     if hot_water_sources.len() == 1 {
                         let default_hot_water_source = hot_water_sources.first().unwrap().0;
                         mapping.insert(
-                            (OutletType::Bath, bath_name.into()),
+                            (OutletType::Bath, bath_name.as_str().into()),
                             default_hot_water_source.clone(),
                         );
                     } else {
@@ -323,15 +323,15 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             match &other.hot_water_source {
                 Some(hot_water_source) => {
                     mapping.insert(
-                        (OutletType::Other, other_name.into()),
-                        hot_water_source.clone(),
+                        (OutletType::Other, other_name.as_str().into()),
+                        hot_water_source.as_str().into(),
                     );
                 }
                 None => {
                     if hot_water_sources.len() == 1 {
                         let default_hot_water_source = hot_water_sources.first().unwrap().0;
                         mapping.insert(
-                            (OutletType::Other, other_name.into()),
+                            (OutletType::Other, other_name.as_str().into()),
                             default_hot_water_source.clone(),
                         );
                     } else {
@@ -372,7 +372,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
     pub(crate) fn get_tapping_point_for_event(
         &'_ self,
         event: TypedScheduleEvent,
-    ) -> (TappingPoint<'_>, OutletType, String) {
+    ) -> (TappingPoint<'_>, OutletType, Arc<str>) {
         // TODO Results instead of panics
         match event.event_type {
             WaterScheduleEventType::Shower => {
@@ -415,28 +415,32 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         &'a self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, u32>,
-        IndexMap<String, f64>,
-        IndexMap<String, Vec<WaterEventResult>>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, u32>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, Vec<WaterEventResult>>,
     )> {
-        let hot_water_source_keys = self.hot_water_sources.keys();
+        let hot_water_source_keys: Vec<Arc<str>> = self
+            .hot_water_sources
+            .keys()
+            .map(|key| key.to_string().into())
+            .collect_vec();
 
-        let mut hw_demand_volume: IndexMap<String, f64> = hot_water_source_keys
-            .clone()
+        let mut hw_demand_volume: IndexMap<Arc<str>, f64> = hot_water_source_keys
+            .iter()
             .map(|key| (key.clone(), 0.))
             .collect();
-        let mut hw_energy_demand: IndexMap<String, f64> = hot_water_source_keys
-            .clone()
+        let mut hw_energy_demand: IndexMap<Arc<str>, f64> = hot_water_source_keys
+            .iter()
             .map(|key| (key.clone(), 0.))
             .collect();
-        let mut hw_duration: IndexMap<String, f64> = hot_water_source_keys
-            .clone()
+        let mut hw_duration: IndexMap<Arc<str>, f64> = hot_water_source_keys
+            .iter()
             .map(|key| (key.clone(), 0.))
             .collect();
-        let mut all_events: IndexMap<String, u32> = hot_water_source_keys
-            .clone()
+        let mut all_events: IndexMap<Arc<str>, u32> = hot_water_source_keys
+            .iter()
             .map(|key| (key.clone(), 0))
             .collect();
 
@@ -445,12 +449,12 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         hw_duration.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), 0.);
         all_events.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), 0);
 
-        let mut volume_hot_water_left_in_pipework: IndexMap<String, f64> = hot_water_source_keys
-            .clone()
+        let mut volume_hot_water_left_in_pipework: IndexMap<Arc<str>, f64> = hot_water_source_keys
+            .iter()
             .map(|key| (key.clone(), 0.))
             .collect();
 
-        for hws_name in self.hot_water_sources.keys() {
+        for hws_name in hot_water_source_keys.iter() {
             for pipework in self.hot_water_distribution_pipework.get(hws_name).unwrap() {
                 *volume_hot_water_left_in_pipework.get_mut(hws_name).unwrap() += pipework.volume()
             }
@@ -470,8 +474,9 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         let mut usage_events: Option<Vec<TypedScheduleEvent>> =
             self.event_schedules[simtime.index].clone();
 
-        let mut usage_events_with_flushes: IndexMap<String, Vec<WaterEventResult>> =
+        let mut usage_events_with_flushes: IndexMap<Arc<str>, Vec<WaterEventResult>> =
             hot_water_source_keys
+                .iter()
                 .map(|key| (key.clone(), vec![]))
                 .collect();
         usage_events_with_flushes.insert(ELECTRIC_SHOWERS_HWS_NAME.into(), vec![]);
@@ -488,7 +493,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                     hw_demand_target_i,
                     energy_supply_conn_unmet_demand,
                 ): (
-                    String,
+                    Arc<str>,
                     Option<&T>,
                     Option<f64>,
                     f64,
@@ -666,16 +671,16 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         internal_air_temperature: f64,
         external_air_temperature: f64,
     ) -> anyhow::Result<(
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, u32>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, u32>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, f64>,
+        IndexMap<Arc<str>, f64>,
     )> {
         let (
             hw_demand_vol,
@@ -691,14 +696,19 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             hot_water_source.demand_hot_water(vec![], simtime)?;
         }
 
-        let mut hw_energy_demand_at_hot_water_source: IndexMap<String, f64> = Default::default();
-        let mut hw_energy_output: IndexMap<String, f64> = Default::default();
-        let mut pw_losses_total: IndexMap<String, f64> = Default::default();
-        let mut gains_internal_dhw: IndexMap<String, f64> = Default::default();
-        let mut primary_pw_losses: IndexMap<String, f64> = Default::default();
-        let mut storage_losses: IndexMap<String, f64> = Default::default();
+        let mut hw_energy_demand_at_hot_water_source: IndexMap<Arc<str>, f64> = Default::default();
+        let mut hw_energy_output: IndexMap<Arc<str>, f64> = Default::default();
+        let mut pw_losses_total: IndexMap<Arc<str>, f64> = Default::default();
+        let mut gains_internal_dhw: IndexMap<Arc<str>, f64> = Default::default();
+        let mut primary_pw_losses: IndexMap<Arc<str>, f64> = Default::default();
+        let mut storage_losses: IndexMap<Arc<str>, f64> = Default::default();
 
-        let mut all_keys: Vec<String> = self.hot_water_sources.keys().cloned().collect();
+        let mut all_keys: Vec<Arc<str>> = self
+            .hot_water_sources
+            .keys()
+            .cloned()
+            .map(|x| x.to_string().into())
+            .collect();
         all_keys.push(ELECTRIC_SHOWERS_HWS_NAME.into());
 
         for hws_name in all_keys {
@@ -707,7 +717,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                 pw_losses_external_for_hws,
                 gains_internal_dhw_use_for_hws,
             ) = self.pipework_losses_and_internal_gains_from_hot_water_events(
-                hws_name.clone(),
+                hws_name.as_ref(),
                 usage_events.get(&hws_name.clone()).unwrap(),
                 internal_air_temperature,
                 external_air_temperature,
@@ -790,7 +800,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
 
     pub fn calc_pipework_losses(
         &self,
-        hot_water_source_name: &String,
+        hot_water_source_name: &str,
         no_of_hw_events: u32,
         demand_water_temperature: f64,
         internal_air_temperature: f64,
@@ -832,7 +842,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
 
     fn pipework_losses_and_internal_gains_from_hot_water_events(
         &self,
-        hot_water_source_name: String,
+        hot_water_source_name: &str,
         usage_events: &Vec<WaterEventResult>,
         internal_air_temperature: f64,
         external_air_temperature: f64,
@@ -1274,7 +1284,7 @@ mod tests {
 
     fn create_dhw_demand<T: HotWaterSourceBehaviour>(
         simulation_time: SimulationTime,
-        hot_water_sources: IndexMap<String, T>,
+        hot_water_sources: IndexMap<Arc<str>, T>,
         pre_heated_water_sources: IndexMap<String, T>,
         cold_water_source: Arc<ColdWaterSource>,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
@@ -1422,7 +1432,7 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
         cold_water_source: Arc<ColdWaterSource>,
     ) {
-        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> =
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithUniqueHotWaterTemperature> =
             IndexMap::from([(
                 "hw cylinder".into(),
                 HotWaterSourceMockWithUniqueHotWaterTemperature {},
@@ -1441,11 +1451,11 @@ mod tests {
         );
 
         let expected_results: Vec<(
-            IndexMap<String, f64>,
-            IndexMap<String, f64>,
-            IndexMap<String, u32>,
-            IndexMap<String, f64>,
-            IndexMap<String, Vec<WaterEventResult>>,
+            IndexMap<Arc<str>, f64>,
+            IndexMap<Arc<str>, f64>,
+            IndexMap<Arc<str>, u32>,
+            IndexMap<Arc<str>, f64>,
+            IndexMap<Arc<str>, Vec<WaterEventResult>>,
         )> = vec![
             (
                 IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
@@ -1888,7 +1898,7 @@ mod tests {
             },
         ]);
 
-        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> =
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithUniqueHotWaterTemperature> =
             IndexMap::from([(
                 "hw cylinder".into(),
                 HotWaterSourceMockWithUniqueHotWaterTemperature {},
@@ -1908,11 +1918,11 @@ mod tests {
         );
 
         let expected: (
-            IndexMap<String, f64>,
-            IndexMap<String, f64>,
-            IndexMap<String, u32>,
-            IndexMap<String, f64>,
-            IndexMap<String, Vec<WaterEventResult>>,
+            IndexMap<Arc<str>, f64>,
+            IndexMap<Arc<str>, f64>,
+            IndexMap<Arc<str>, u32>,
+            IndexMap<Arc<str>, f64>,
+            IndexMap<Arc<str>, Vec<WaterEventResult>>,
         ) = (
             IndexMap::from([("_electric_showers".into(), 0.), ("hw cylinder".into(), 0.)]),
             IndexMap::from([
@@ -1966,7 +1976,7 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
         cold_water_source: Arc<ColdWaterSource>,
     ) {
-        let hot_water_sources: IndexMap<String, HotWaterSourceMock> = IndexMap::from([(
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMock> = IndexMap::from([(
             "hw cylinder".into(),
             HotWaterSourceMock {
                 cold_feed: WaterSupply::ColdWaterSource(cold_water_source.clone()),
@@ -1991,7 +2001,7 @@ mod tests {
             event_schedules,
         );
 
-        let hw_demand_vol_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let hw_demand_vol_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2029,7 +2039,7 @@ mod tests {
                 ],
             ),
         ]);
-        let hw_duration_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let hw_duration_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2045,7 +2055,7 @@ mod tests {
                 ],
             ),
         ]);
-        let no_events_expected: IndexMap<String, Vec<u32>> = IndexMap::from([
+        let no_events_expected: IndexMap<Arc<str>, Vec<u32>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2059,7 +2069,7 @@ mod tests {
                 ],
             ),
         ]);
-        let hw_energy_demand_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let hw_energy_demand_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2119,7 +2129,7 @@ mod tests {
                 ],
             ),
         ]);
-        let hw_energy_demand_incl_pipework_loss_expected: IndexMap<String, Vec<f64>> =
+        let hw_energy_demand_incl_pipework_loss_expected: IndexMap<Arc<str>, Vec<f64>> =
             IndexMap::from([
                 (
                     "hw cylinder".into(),
@@ -2151,7 +2161,7 @@ mod tests {
                     ],
                 ), // NOTE - no _electric_showers entry expected
             ]);
-        let hw_energy_output_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let hw_energy_output_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2189,7 +2199,7 @@ mod tests {
                 ],
             ),
         ]);
-        let dist_pw_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let dist_pw_losses_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2227,7 +2237,7 @@ mod tests {
                 ],
             ),
         ]);
-        let primary_pw_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let primary_pw_losses_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2243,7 +2253,7 @@ mod tests {
                 ],
             ),
         ]);
-        let storage_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let storage_losses_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2259,7 +2269,7 @@ mod tests {
                 ],
             ),
         ]);
-        let gains_internal_dhw_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let gains_internal_dhw_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2338,7 +2348,7 @@ mod tests {
                 gains_internal_dhw,
             ) = actual;
 
-            let keys: Vec<String> = vec!["hw cylinder".into(), "_electric_showers".into()];
+            let keys: Vec<Arc<str>> = vec!["hw cylinder".into(), "_electric_showers".into()];
             for key in keys {
                 assert_eq!(
                     *hw_demand_vol.get(&key).unwrap(),
@@ -2366,7 +2376,7 @@ mod tests {
                 );
 
                 // don't check for _electric_showers entry for the below
-                if &key == "_electric_showers" {
+                if key.as_ref() == "_electric_showers" {
                     continue;
                 };
                 assert_eq!(
@@ -2398,7 +2408,7 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
         cold_water_source: Arc<ColdWaterSource>,
     ) {
-        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> =
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithInternalGains> =
             IndexMap::from([(
                 "hw cylinder".into(),
                 HotWaterSourceMockWithInternalGains {
@@ -2420,7 +2430,7 @@ mod tests {
             event_schedules,
         );
 
-        let hw_demand_vol_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let hw_demand_vol_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2458,7 +2468,7 @@ mod tests {
                 ],
             ),
         ]);
-        let hw_duration_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let hw_duration_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2474,7 +2484,7 @@ mod tests {
                 ],
             ),
         ]);
-        let no_events_expected: IndexMap<String, Vec<u32>> = IndexMap::from([
+        let no_events_expected: IndexMap<Arc<str>, Vec<u32>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2488,7 +2498,7 @@ mod tests {
                 ],
             ),
         ]);
-        let hw_energy_demand_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let hw_energy_demand_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2548,7 +2558,7 @@ mod tests {
                 ],
             ),
         ]);
-        let hw_energy_demand_incl_pipework_loss_expected: IndexMap<String, Vec<f64>> =
+        let hw_energy_demand_incl_pipework_loss_expected: IndexMap<Arc<str>, Vec<f64>> =
             IndexMap::from([
                 (
                     "hw cylinder".into(),
@@ -2580,7 +2590,7 @@ mod tests {
                     ],
                 ), // NOTE - no _electric_showers entry expected
             ]);
-        let hw_energy_output_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let hw_energy_output_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2618,7 +2628,7 @@ mod tests {
                 ],
             ),
         ]);
-        let dist_pw_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let dist_pw_losses_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2656,7 +2666,7 @@ mod tests {
                 ],
             ),
         ]);
-        let primary_pw_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let primary_pw_losses_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2672,7 +2682,7 @@ mod tests {
                 ],
             ),
         ]);
-        let storage_losses_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let storage_losses_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2688,7 +2698,7 @@ mod tests {
                 ],
             ),
         ]);
-        let gains_internal_dhw_expected: IndexMap<String, Vec<f64>> = IndexMap::from([
+        let gains_internal_dhw_expected: IndexMap<Arc<str>, Vec<f64>> = IndexMap::from([
             (
                 "hw cylinder".into(),
                 vec![
@@ -2767,7 +2777,7 @@ mod tests {
                 gains_internal_dhw,
             ) = actual;
 
-            let keys: Vec<String> = vec!["hw cylinder".into(), "_electric_showers".into()];
+            let keys: Vec<Arc<str>> = vec!["hw cylinder".into(), "_electric_showers".into()];
             for key in keys {
                 assert_eq!(
                     *hw_demand_vol.get(&key).unwrap(),
@@ -2795,7 +2805,7 @@ mod tests {
                 );
 
                 // don't check for _electric_showers entry for the below
-                if &key == "_electric_showers" {
+                if key.as_ref() == "_electric_showers" {
                     continue;
                 };
                 assert_eq!(
@@ -2826,7 +2836,7 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
         cold_water_source: Arc<ColdWaterSource>,
     ) {
-        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> =
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithInternalGains> =
             IndexMap::from([(
                 "hw cylinder".into(),
                 HotWaterSourceMockWithInternalGains {
@@ -2881,7 +2891,7 @@ mod tests {
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
             let actual = dhw_demand.calc_pipework_losses(
-                &"hw cylinder".into(),
+                "hw cylinder",
                 no_of_hw_events[t_idx],
                 demand_water_temperature[t_idx],
                 20.,
@@ -2897,7 +2907,7 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
         cold_water_source: Arc<ColdWaterSource>,
     ) {
-        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> =
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithInternalGains> =
             IndexMap::from([(
                 "hw cylinder".into(),
                 HotWaterSourceMockWithInternalGains {
@@ -2916,7 +2926,7 @@ mod tests {
             event_schedules,
         );
 
-        let actual = dhw_demand.calc_pipework_losses(&"hw cylinder".into(), 0, 55., 20., 5.);
+        let actual = dhw_demand.calc_pipework_losses("hw cylinder", 0, 55., 20., 5.);
         assert_eq!(actual, (0., 0.));
     }
 
@@ -2961,7 +2971,7 @@ mod tests {
             None,
         ];
 
-        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> =
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithUniqueHotWaterTemperature> =
             IndexMap::from([(
                 "hw cylinder".into(),
                 HotWaterSourceMockWithUniqueHotWaterTemperature {},
@@ -2996,9 +3006,8 @@ mod tests {
             usage_events_with_flushes,
         ) = actual;
 
-        let usage_events_with_flushes_for_hw_cylinder = usage_events_with_flushes
-            .get::<String>(&"hw cylinder".into())
-            .unwrap();
+        let usage_events_with_flushes_for_hw_cylinder =
+            usage_events_with_flushes.get("hw cylinder").unwrap();
 
         // Verify that the Other event was processed
         assert_eq!(usage_events_with_flushes_for_hw_cylinder.len(), 2); // should have 1 event + 1 pipe flush
@@ -3049,7 +3058,7 @@ mod tests {
             None,
         ];
 
-        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> =
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithUniqueHotWaterTemperature> =
             IndexMap::from([(
                 "hw cylinder".into(),
                 HotWaterSourceMockWithUniqueHotWaterTemperature {},
@@ -3084,9 +3093,8 @@ mod tests {
             usage_events_with_flushes,
         ) = actual;
 
-        let usage_events_with_flushes_for_hw_cylinder = usage_events_with_flushes
-            .get::<String>(&"hw cylinder".into())
-            .unwrap();
+        let usage_events_with_flushes_for_hw_cylinder =
+            usage_events_with_flushes.get("hw cylinder").unwrap();
 
         // Verify that the mixer shower event was processed
         assert_eq!(usage_events_with_flushes_for_hw_cylinder.len(), 2); // should have 1 event + 1 pipe flush
@@ -3149,7 +3157,7 @@ mod tests {
             None,
         ];
 
-        let hot_water_sources: IndexMap<String, HotWaterSourceMockWithUniqueHotWaterTemperature> =
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithUniqueHotWaterTemperature> =
             IndexMap::from([(
                 "hw cylinder".into(),
                 HotWaterSourceMockWithUniqueHotWaterTemperature {},
@@ -3184,9 +3192,8 @@ mod tests {
             usage_events_with_flushes,
         ) = actual;
 
-        let usage_events_with_flushes_for_hw_cylinder = usage_events_with_flushes
-            .get::<String>(&"hw cylinder".into())
-            .unwrap();
+        let usage_events_with_flushes_for_hw_cylinder =
+            usage_events_with_flushes.get("hw cylinder").unwrap();
 
         // Verify that both mixer shower events were processed
         assert_eq!(usage_events_with_flushes_for_hw_cylinder.len(), 4); // should have 2 event + 2 pipe flushes

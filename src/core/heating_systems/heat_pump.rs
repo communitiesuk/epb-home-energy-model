@@ -3987,8 +3987,8 @@ impl HeatPump {
 
     pub fn output_detailed_results(
         &self,
-        hot_water_energy_output: &IndexMap<String, Vec<ResultParamValue>>,
-        hot_water_source_name_for_heat_pump_service: &IndexMap<String, String>,
+        hot_water_energy_output: &IndexMap<Arc<str>, Vec<ResultParamValue>>,
+        hot_water_source_name_for_heat_pump_service: &IndexMap<Arc<str>, Arc<str>>,
     ) -> anyhow::Result<(ResultsPerTimestep, ResultsAnnual)> {
         let detailed_results = self.detailed_results.as_ref().ok_or_else(||
             anyhow!("Detailed results cannot be output when the option to collect them was not selected")
@@ -4019,6 +4019,7 @@ impl HeatPump {
 
         // For each service, report required output parameters
         for (service_idx, service_name) in energy_supply_connections.keys().enumerate() {
+            let service_name: Arc<str> = service_name.to_string().into();
             let results_entry = results_per_timestep
                 .entry(service_name.clone())
                 .or_default();
@@ -4049,16 +4050,17 @@ impl HeatPump {
                 },
                 HeatingServiceType::DomesticHotWaterRegular
             ) {
-                let energy_delivered_total_len = results_per_timestep[service_name]
+                let energy_delivered_total_len = results_per_timestep[&service_name]
                     [&("energy_delivered_total".into(), Some("kWh".into()))]
                     .len();
-                results_per_timestep.get_mut(service_name).unwrap().insert(
+                results_per_timestep.get_mut(&service_name).unwrap().insert(
                     ("energy_delivered_H5".into(), Some("kWh".into())),
                     {
                         // For DHW, need to include storage and primary circuit losses.
                         // Can do this by replacing H5 numerator with total energy
                         // draw-off from hot water cylinder.
-                        let hws_name = &hot_water_source_name_for_heat_pump_service[service_name];
+                        let hws_name =
+                            hot_water_source_name_for_heat_pump_service[&service_name].as_ref();
                         if !hot_water_energy_output.contains_key(hws_name) {
                             vec![ResultParamValue::Empty; energy_delivered_total_len]
                         } else {
@@ -4067,10 +4069,10 @@ impl HeatPump {
                     },
                 );
             } else {
-                let energy_delivered_total_results = results_per_timestep[service_name]
+                let energy_delivered_total_results = results_per_timestep[&service_name]
                     [&("energy_delivered_total".into(), Some("kWh".into()))]
                     .clone();
-                results_per_timestep.get_mut(service_name).unwrap().insert(
+                results_per_timestep.get_mut(&service_name).unwrap().insert(
                     ("energy_delivered_H5".into(), Some("kWh".into())),
                     energy_delivered_total_results,
                 );
@@ -4085,11 +4087,14 @@ impl HeatPump {
                 .filter(|param| param.2)
                 .map(|(parameter, param_units, _)| {
                     (
-                        ((*parameter).into(), param_units.map(Into::into).to_owned()),
+                        (
+                            (*parameter).into(),
+                            param_units.map(|x| x.to_string().into()),
+                        ),
                         ResultParamValue::Number(0.0),
                     )
                 })
-                .collect::<ResultAnnual>(),
+                .collect(),
         );
         results_annual.insert("auxiliary".into(), Default::default());
         results_annual.get_mut("Overall").unwrap().insert(
@@ -4116,13 +4121,14 @@ impl HeatPump {
 
         // For each service, report required output parameters
         for service_name in energy_supply_connections.keys() {
+            let service_name: Arc<str> = service_name.as_str().into();
             let param_totals_for_overall = {
                 let annual_results_entry = results_annual.entry(service_name.clone()).or_default();
                 let mut param_totals_for_overall: HashMap<(&str, &str), ResultParamValue> =
                     Default::default();
                 for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
                     if incl_in_annual {
-                        let parameter_annual_total = results_per_timestep[service_name.as_str()]
+                        let parameter_annual_total = results_per_timestep[&service_name]
                             [&(parameter.into(), param_unit.map(Into::into))]
                             .iter()
                             .cloned()
@@ -4148,11 +4154,11 @@ impl HeatPump {
                     .unwrap() += param_total_for_overall;
             }
 
-            if results_per_timestep[service_name]
+            if results_per_timestep[&service_name]
                 [&("energy_delivered_H5".into(), Some("kWh".into()))]
                 .contains(&ResultParamValue::Empty)
             {
-                results_annual.get_mut(service_name).unwrap().insert(
+                results_annual.get_mut(&service_name).unwrap().insert(
                     ("energy_delivered_H5".into(), Some("kWh".into())),
                     ResultParamValue::Empty,
                 );
@@ -4162,9 +4168,9 @@ impl HeatPump {
                     .get_mut(&("energy_delivered_H5".into(), Some("kWh".into())))
                     .unwrap() = ResultParamValue::Empty;
             } else {
-                results_annual.get_mut(service_name).unwrap().insert(
+                results_annual.get_mut(&service_name).unwrap().insert(
                     ("energy_delivered_H5".into(), Some("kWh".into())),
-                    results_per_timestep[service_name.as_str()]
+                    results_per_timestep[&service_name]
                         [&("energy_delivered_H5".into(), Some("kWh".into()))]
                         .iter()
                         .cloned()
@@ -4174,7 +4180,7 @@ impl HeatPump {
                 if results_annual["Overall"][&("energy_delivered_H5".into(), Some("kWh".into()))]
                     != ResultParamValue::Empty
                 {
-                    let service_energy_delivered_results = results_annual[service_name.as_str()]
+                    let service_energy_delivered_results = results_annual[&service_name]
                         [&("energy_delivered_H5".into(), Some("kWh".into()))]
                         .clone();
 
@@ -4186,7 +4192,7 @@ impl HeatPump {
                 }
             }
 
-            self.calc_service_cop(results_annual.get_mut(service_name).unwrap(), None);
+            self.calc_service_cop(results_annual.get_mut(&service_name).unwrap(), None);
         }
 
         // Calculate overall CoP for all services combined
@@ -4317,7 +4323,7 @@ const AUX_PARAMETERS: [(&str, &str, bool); 3] = [
     ("energy_off_mode", "kWh", true),
 ];
 
-type ResultAnnual = IndexMap<(String, Option<String>), ResultParamValue>;
+type ResultAnnual = IndexMap<(Arc<str>, Option<Arc<str>>), ResultParamValue>;
 
 fn result_str(string: &str) -> String {
     string.into()

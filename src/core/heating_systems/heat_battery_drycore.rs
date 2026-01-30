@@ -1702,11 +1702,12 @@ impl HeatBatteryDryCore {
         }
 
         // For each service, report required output parameters
-        let service_names: Vec<String> = self
+        let service_names: Vec<Arc<str>> = self
             .energy_supply_connections
             .read()
             .keys()
             .cloned()
+            .map(|x| x.to_string().into())
             .collect();
         for service_name in service_names.iter() {
             results_per_timestep.insert(service_name.clone(), Default::default());
@@ -1723,7 +1724,7 @@ impl HeatBatteryDryCore {
                         let services_list = &timestep_data.services;
                         let service_data = services_list
                             .iter()
-                            .find(|service| service.service_name == *service_name);
+                            .find(|service| service.service_name.as_str() == service_name.as_ref());
                         let result = if let Some(service_data) = service_data {
                             service_data.param(parameter)
                         } else {
@@ -1746,7 +1747,7 @@ impl HeatBatteryDryCore {
                     .into_iter()
                     .filter_map(|(parameter, param_unit, incl_in_annual)| {
                         incl_in_annual.then_some((
-                            (String::from(parameter), param_unit.map(Into::into)),
+                            (parameter.into(), param_unit.map(Into::into)),
                             0.0f64.into(),
                         ))
                     })
@@ -1762,9 +1763,9 @@ impl HeatBatteryDryCore {
             for (parameter, param_unit, incl_in_annual) in AUX_PARAMETERS {
                 if incl_in_annual {
                     auxiliary_results_annual.insert(
-                        (String::from(parameter), param_unit.map(Into::into)),
+                        (parameter.into(), param_unit.map(Into::into)),
                         auxiliary_results_per_timestep
-                            [&(String::from(parameter), param_unit.map(Into::into))]
+                            [&(parameter.into(), param_unit.map(Into::into))]
                             .iter()
                             .cloned()
                             .sum::<ResultParamValue>(),

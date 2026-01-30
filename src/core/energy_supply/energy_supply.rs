@@ -346,7 +346,7 @@ impl EnergySupply {
     /// Return the demand from each end user on this energy source for each timestep.
     ///
     /// Returns dictionary of lists, where dictionary keys are names of end users.
-    pub fn results_by_end_user(&self) -> IndexMap<String, Vec<f64>> {
+    pub fn results_by_end_user(&self) -> IndexMap<Arc<str>, Vec<f64>> {
         if self
             .demand_by_end_user
             .keys()
@@ -363,7 +363,7 @@ impl EnergySupply {
                 .iter()
                 .map(|(end_user, demand)| {
                     (
-                        end_user.clone(),
+                        end_user.to_string().into(),
                         demand.iter().map(|d| d.load(Ordering::SeqCst)).collect(),
                     )
                 })
@@ -379,7 +379,7 @@ impl EnergySupply {
             if demand.0 == energy_out.0 {
                 let user_name = demand.0.clone(); // can use demand.0 or energy_out.0 to get end user name
                 all_results_by_end_user.insert(
-                    user_name,
+                    user_name.to_string().into(),
                     demand
                         .1
                         .iter()

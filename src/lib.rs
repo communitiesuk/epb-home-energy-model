@@ -1468,9 +1468,9 @@ fn write_core_output_file_heat_source_wet(
     heat_source_wet_results: &ResultsPerTimestep,
 ) -> Result<(), anyhow::Error> {
     // Repeat column headings for each service
-    let mut col_headings = vec![String::from("Timestep")];
-    let mut col_units_row = vec![String::from("count")];
-    let mut columns: IndexMap<String, Vec<(String, Option<String>)>> = Default::default();
+    let mut col_headings: Vec<Arc<str>> = vec!["Timestep".into()];
+    let mut col_units_row: Vec<Arc<str>> = vec!["count".into()];
+    let mut columns: IndexMap<Arc<str>, Vec<(Arc<str>, Option<Arc<str>>)>> = Default::default();
 
     for (service_name, service_results) in heat_source_wet_results.iter() {
         columns.insert(
@@ -1487,7 +1487,7 @@ fn write_core_output_file_heat_source_wet(
                     None => service_name.clone(),
                     Some(col_heading) => format!("{service_name}: {col_heading}").into(),
                 })
-                .collect::<Vec<String>>(),
+                .collect::<Vec<Arc<str>>>(),
         );
         col_units_row.extend(
             service_results
@@ -1496,7 +1496,7 @@ fn write_core_output_file_heat_source_wet(
                 .collect::<IndexMap<_, _>>()
                 .keys()
                 .cloned()
-                .collect::<Vec<String>>(),
+                .collect::<Vec<Arc<str>>>(),
         );
     }
 
@@ -1504,8 +1504,18 @@ fn write_core_output_file_heat_source_wet(
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     // Write column headings and units
-    writer.write_record(&col_headings)?;
-    writer.write_record(&col_units_row)?;
+    writer.write_record(
+        &col_headings
+            .iter()
+            .map(|x| x.as_bytes())
+            .collect::<Vec<_>>(),
+    )?;
+    writer.write_record(
+        &col_units_row
+            .iter()
+            .map(|x| x.as_bytes())
+            .collect::<Vec<_>>(),
+    )?;
 
     // Write rows
     for t_idx in 0..timestep_array.len() {
