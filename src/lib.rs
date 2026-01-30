@@ -1116,64 +1116,63 @@ fn write_core_output_file_heat_source_wet(
     let mut col_units_row: Vec<Arc<str>> = vec!["count".into()];
     let mut columns: IndexMap<Arc<str>, Vec<(Arc<str>, Option<Arc<str>>)>> = Default::default();
 
-    // TODO what type should heat_source_wet_results be?
-    // for (service_name, service_results) in heat_source_wet_results.iter() {
-    //     columns.insert(
-    //         service_name.clone(),
-    //         service_results.keys().cloned().collect(),
-    //     );
-    //     col_headings.extend(
-    //         service_results
-    //             .keys()
-    //             .cloned()
-    //             .collect::<IndexMap<_, _>>()
-    //             .values()
-    //             .map(|col_heading| match col_heading {
-    //                 None => service_name.clone(),
-    //                 Some(col_heading) => format!("{service_name}: {col_heading}").into(),
-    //             })
-    //             .collect::<Vec<Arc<str>>>(),
-    //     );
-    //     col_units_row.extend(
-    //         service_results
-    //             .keys()
-    //             .cloned()
-    //             .collect::<IndexMap<_, _>>()
-    //             .keys()
-    //             .cloned()
-    //             .collect::<Vec<Arc<str>>>(),
-    //     );
-    // }
-    //
-    // let writer = output_writer.writer_for_location_key(output_key, "csv")?;
-    // let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
-    //
-    // // Write column headings and units
-    // writer.write_record(
-    //     &col_headings
-    //         .iter()
-    //         .map(|x| x.as_bytes())
-    //         .collect::<Vec<_>>(),
-    // )?;
-    // writer.write_record(
-    //     &col_units_row
-    //         .iter()
-    //         .map(|x| x.as_bytes())
-    //         .collect::<Vec<_>>(),
-    // )?;
-    //
-    // // Write rows
-    // for t_idx in 0..timestep_array.len() {
-    //     let mut row: Vec<String> = vec![t_idx.to_string().into()];
-    //     for (service_name, service_results) in heat_source_wet_results {
-    //         row.extend(
-    //             columns[service_name]
-    //                 .iter()
-    //                 .map(|col| service_results[col][t_idx].clone().into()),
-    //         );
-    //     }
-    //     writer.write_record(row.iter().map(|x| x.to_string().into_bytes()))?;
-    // }
+    for (service_name, service_results) in heat_source_wet_results.iter() {
+        columns.insert(
+            service_name.clone(),
+            service_results.keys().cloned().collect(),
+        );
+        col_headings.extend(
+            service_results
+                .keys()
+                .cloned()
+                .collect::<IndexMap<_, _>>()
+                .values()
+                .map(|col_heading| match col_heading {
+                    None => service_name.clone(),
+                    Some(col_heading) => format!("{service_name}: {col_heading}").into(),
+                })
+                .collect::<Vec<Arc<str>>>(),
+        );
+        col_units_row.extend(
+            service_results
+                .keys()
+                .cloned()
+                .collect::<IndexMap<_, _>>()
+                .keys()
+                .cloned()
+                .collect::<Vec<Arc<str>>>(),
+        );
+    }
+
+    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+
+    // Write column headings and units
+    writer.write_record(
+        &col_headings
+            .iter()
+            .map(|x| x.as_bytes())
+            .collect::<Vec<_>>(),
+    )?;
+    writer.write_record(
+        &col_units_row
+            .iter()
+            .map(|x| x.as_bytes())
+            .collect::<Vec<_>>(),
+    )?;
+
+    // Write rows
+    for t_idx in 0..timestep_array.len() {
+        let mut row: Vec<String> = vec![t_idx.to_string().into()];
+        for (service_name, service_results) in heat_source_wet_results {
+            row.extend(
+                columns[service_name]
+                    .iter()
+                    .map(|col| service_results[col][t_idx].clone().into()),
+            );
+        }
+        writer.write_record(row.iter().map(|x| x.to_string().into_bytes()))?;
+    }
 
     Ok(())
 }
@@ -1186,19 +1185,17 @@ fn write_core_output_file_heat_source_wet_summary(
     let writer = output_writer.writer_for_location_key(output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
-    // TODO what type should heat_source_wet_results_annual be?
-
-    // for (service_name, service_results) in heat_source_wet_results_annual {
-    //     writer.write_record([service_name.to_string()])?;
-    //     for (name, value) in service_results.iter() {
-    //         writer.write_record([
-    //             name.0.as_bytes(),
-    //             name.1.as_ref().map(|x| x.as_bytes()).unwrap_or_default(),
-    //             String::from(value).as_bytes(),
-    //         ])?;
-    //     }
-    //     writer.write_record([""])?;
-    // }
+    for (service_name, service_results) in heat_source_wet_results_annual {
+        writer.write_record([service_name.to_string()])?;
+        for (name, value) in service_results.iter() {
+            writer.write_record([
+                name.0.as_bytes(),
+                name.1.as_ref().map(|x| x.as_bytes()).unwrap_or_default(),
+                String::from(value).as_bytes(),
+            ])?;
+        }
+        writer.write_record([""])?;
+    }
 
     Ok(())
 }
