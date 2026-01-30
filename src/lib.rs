@@ -62,6 +62,12 @@ use zerocopy::IntoBytes;
 pub const HEM_VERSION: &str = "1.0.0a1";
 pub const HEM_VERSION_DATE: &str = "2025-10-02";
 
+#[derive(PartialEq)]
+enum OutputFormat {
+    JSON,
+    CSV,
+}
+
 #[derive(Serialize)]
 pub struct HemResponse {
     #[serde(flatten)]
@@ -231,13 +237,6 @@ pub fn run_project(
                     .to_owned(),
             )
         })?
-}
-
-#[derive(PartialEq)]
-enum OutputFormat {
-    // TODO move
-    JSON,
-    CSV,
 }
 
 #[instrument(skip_all)]
@@ -460,27 +459,6 @@ pub static UNITS_MAP: LazyLock<IndexMap<&'static str, &'static str>> = LazyLock:
     ])
 });
 
-struct OutputFileArgs<'a> {
-    output_key: String,
-    timestep_array: &'a [f64],
-    results_totals: &'a IndexMap<String, Vec<f64>>,
-    results_end_user: &'a IndexMap<String, IndexMap<String, Vec<f64>>>,
-    energy_import: &'a IndexMap<String, Vec<f64>>,
-    energy_export: &'a IndexMap<String, Vec<f64>>,
-    energy_generated_consumed: &'a IndexMap<String, Vec<f64>>,
-    energy_to_storage: &'a IndexMap<String, Vec<f64>>,
-    energy_from_storage: &'a IndexMap<String, Vec<f64>>,
-    storage_from_grid: &'a IndexMap<String, Vec<f64>>,
-    battery_state_of_charge: &'a IndexMap<String, Vec<f64>>,
-    energy_diverted: &'a IndexMap<String, Vec<f64>>,
-    betafactor: &'a IndexMap<String, Vec<f64>>,
-    zone_dict: &'a IndexMap<ZoneResultKey, IndexMap<String, Vec<f64>>>,
-    zone_list: &'a [String],
-    hc_system_dict: &'a IndexMap<HeatingCoolingSystemResultKey, IndexMap<String, Vec<f64>>>,
-    hot_water_dict: &'a IndexMap<HotWaterResultKey, HotWaterResultMap>,
-    ductwork_gains: &'a IndexMap<String, Vec<f64>>,
-}
-
 fn write_core_output_file(
     output: &Output,
     output_key: &str,
@@ -684,120 +662,6 @@ fn write_core_output_file(
     }
 
     Ok(())
-}
-
-struct SummaryOutputFileArgs {
-    output_key: String,
-    input: SummaryInputDigest,
-    timestep_array: Vec<f64>,
-    results_end_user: IndexMap<String, IndexMap<String, Vec<f64>>>,
-    energy_generated_consumed: IndexMap<String, Vec<f64>>,
-    energy_to_storage: IndexMap<String, Vec<f64>>,
-    energy_from_storage: IndexMap<String, Vec<f64>>,
-    energy_diverted: IndexMap<String, Vec<f64>>,
-    energy_import: IndexMap<String, Vec<f64>>,
-    energy_export: IndexMap<String, Vec<f64>>,
-    storage_from_grid: IndexMap<String, Vec<f64>>,
-    space_heat_demand_total: f64,
-    space_cool_demand_total: f64,
-    total_floor_area: f64,
-    heat_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
-    cool_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
-    dhw_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
-    daily_hw_demand_75th_percentile: f64,
-}
-
-/// A digest of data from the input that is used when generating a summary file.
-#[derive(Clone)]
-struct SummaryInputDigest {
-    simulation_time: SimulationTime,
-    hot_water_source_digests: IndexMap<String, SummaryInputHotWaterSourceDigest>,
-    electricity_keys: Vec<String>,
-}
-
-impl From<&Input> for SummaryInputDigest {
-    fn from(input: &Input) -> Self {
-        Self {
-            simulation_time: input.simulation_time,
-            hot_water_source_digests: input
-                .hot_water_source
-                .iter()
-                .map(|(key, details)| (key.into(), details.into()))
-                .collect::<IndexMap<_, _>>(),
-            electricity_keys: input
-                .energy_supply
-                .iter()
-                .filter(|&(_, energy_supply_details)| {
-                    energy_supply_details.fuel == FuelType::Electricity
-                })
-                .map(|(key, _)| key.into())
-                .collect(),
-        }
-    }
-}
-
-/// A digest specifically of hot water source data from the input that is used for the summary file.
-#[derive(Clone, Copy)]
-struct SummaryInputHotWaterSourceDigest {
-    source_is_storage_tank: bool,
-    source_volume: Option<f64>,
-}
-
-impl From<&HotWaterSourceDetails> for SummaryInputHotWaterSourceDigest {
-    fn from(value: &HotWaterSourceDetails) -> Self {
-        Self {
-            source_is_storage_tank: matches!(value, HotWaterSourceDetails::StorageTank { .. }),
-            source_volume: value.volume(),
-        }
-    }
-}
-
-impl TryFrom<&CalculationResultsWithContext> for SummaryOutputFileArgs {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &CalculationResultsWithContext) -> Result<Self, Self::Error> {
-        todo!();
-        // Ok(SummaryOutputFileArgs {
-        //     output_key: "results_summary".into(),
-        //     input: (&value.context.input).as_ref().into(),
-        //     timestep_array: value.output.timestep_array.clone(),
-        //     results_end_user: value.output.results_end_user.clone(),
-        //     energy_generated_consumed: value.output.energy_generated_consumed.clone(),
-        //     energy_to_storage: value.output.energy_to_storage.clone(),
-        //     energy_from_storage: value.output.energy_from_storage.clone(),
-        //     energy_diverted: value.output.energy_diverted.clone(),
-        //     energy_import: value.output.energy_import.clone(),
-        //     energy_export: value.output.energy_export.clone(),
-        //     storage_from_grid: value.output.storage_from_grid.clone(),
-        //     space_heat_demand_total: value.output.space_heat_demand_total(),
-        //     space_cool_demand_total: value.output.space_cool_demand_total(),
-        //     total_floor_area: value.context.corpus.total_floor_area,
-        //     heat_cop_dict: value.output.heat_cop_dict.clone(),
-        //     cool_cop_dict: value.output.cool_cop_dict.clone(),
-        //     dhw_cop_dict: value.output.dhw_cop_dict.clone(),
-        //     daily_hw_demand_75th_percentile: value.daily_hw_demand_percentile(75)?,
-        // })
-    }
-}
-
-impl TryFrom<&CalculationResultsWithContext> for SummaryDataArgs {
-    type Error = anyhow::Error;
-
-    fn try_from(results: &CalculationResultsWithContext) -> Result<Self, Self::Error> {
-        todo!();
-        // Ok(SummaryDataArgs {
-        //     timestep_array: results.output.timestep_array.clone(),
-        //     input: (&results.context.input).as_ref().into(),
-        //     results_end_user: results.output.results_end_user.clone(),
-        //     energy_generated_consumed: results.output.energy_generated_consumed.clone(),
-        //     energy_to_storage: results.output.energy_to_storage.clone(),
-        //     energy_from_storage: results.output.energy_from_storage.clone(),
-        //     storage_from_grid: results.output.storage_from_grid.clone(),
-        //     energy_diverted: results.output.energy_diverted.clone(),
-        //     energy_import: results.output.energy_import.clone(),
-        //     energy_export: results.output.energy_export.clone(),
-        // })
-    }
 }
 
 fn write_core_output_file_summary(
@@ -1071,19 +935,6 @@ fn write_output_json_file(
     Ok(())
 }
 
-pub struct SummaryDataArgs {
-    timestep_array: Vec<f64>,
-    input: SummaryInputDigest,
-    results_end_user: ResultsEndUser,
-    energy_generated_consumed: IndexMap<String, Vec<f64>>,
-    energy_to_storage: IndexMap<String, Vec<f64>>,
-    energy_from_storage: IndexMap<String, Vec<f64>>,
-    storage_from_grid: IndexMap<String, Vec<f64>>,
-    energy_diverted: IndexMap<String, Vec<f64>>,
-    energy_import: IndexMap<String, Vec<f64>>,
-    energy_export: IndexMap<String, Vec<f64>>,
-}
-
 #[derive(Clone, Copy)]
 struct EnergySupplyStat {
     elec_generated: f64,
@@ -1136,181 +987,6 @@ enum EnergySupplyStatKey {
     StorageEfficiency,
 }
 
-pub fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
-    let SummaryDataArgs {
-        timestep_array,
-        input,
-        results_end_user,
-        energy_generated_consumed,
-        energy_to_storage,
-        energy_from_storage,
-        storage_from_grid,
-        energy_diverted,
-        energy_import,
-        energy_export,
-    } = args;
-
-    // Energy Supply breakdown for all EnergySupply objects
-    let stats: IndexMap<String, EnergySupplyStat> = results_end_user
-        .iter()
-        .map(|(key, value)| {
-            (key.clone(), {
-                let (elec_generated, elec_consumed) = value.iter().fold(
-                    (0.0, 0.0),
-                    |(elec_generated_acc, elec_consumed_acc), (_end_use, values)| {
-                        let values_sum = values.iter().sum::<f64>();
-                        if values_sum < 0.0 {
-                            (elec_generated_acc + values_sum.abs(), elec_consumed_acc)
-                        } else {
-                            (elec_generated_acc, elec_consumed_acc + values_sum)
-                        }
-                    },
-                );
-
-                let grid_to_consumption = energy_import[key].iter().sum::<f64>();
-                let generation_to_grid = energy_export[key].iter().sum::<f64>().abs();
-                let gen_to_storage = energy_to_storage[key].iter().sum::<f64>();
-                let storage_to_consumption = energy_from_storage[key].iter().sum::<f64>().abs();
-                let gen_to_diverter = energy_diverted[key].iter().sum::<f64>();
-                let storage_eff = if gen_to_storage > 0.0 {
-                    NumberOrDivisionByZero::Number(
-                        storage_to_consumption
-                            / (gen_to_storage + storage_from_grid[key].iter().sum::<f64>()),
-                    )
-                } else {
-                    NumberOrDivisionByZero::DivisionByZero
-                };
-
-                EnergySupplyStat {
-                    elec_generated,
-                    elec_consumed,
-                    gen_to_consumption: energy_generated_consumed[key].iter().sum::<f64>(),
-                    grid_to_consumption,
-                    generation_to_grid,
-                    net_import: grid_to_consumption - generation_to_grid,
-                    gen_to_storage,
-                    storage_to_consumption,
-                    storage_from_grid: storage_from_grid[key].iter().sum::<f64>().abs(),
-                    gen_to_diverter,
-                    storage_eff,
-                }
-            })
-        })
-        .collect();
-
-    // get peak electricity consumption, and when it happens
-    let start_timestep = input.simulation_time.start_time();
-    let stepping = input.simulation_time.step;
-
-    // Get energy supply objects with fuel type 'electricity'
-    let electricity_keys = &input.electricity_keys;
-
-    // Calculate net import by adding gross import and export figures. Add
-    // because export figures are already negative
-    let net_import_per_timestep = (0..timestep_array.len())
-        .map(|i| {
-            electricity_keys
-                .iter()
-                .map(|k| energy_import[k][i] + energy_export[k][i])
-                .sum::<f64>()
-        })
-        .collect::<Vec<_>>();
-
-    // Find peak electricity consumption
-    let peak_elec_consumption = *net_import_per_timestep
-        .iter()
-        .max_by(|a, b| a.total_cmp(b))
-        .expect("Net import per timestep collection was empty.");
-    let index_peak_elec_consumption = net_import_per_timestep
-        .iter()
-        .position(|&x| x == peak_elec_consumption)
-        .expect("Could not find index for peak electricity consumption.");
-
-    // must reflect hour or half hour in the year (hour 0 to hour 8759)
-    // to work with the dictionary below timestep_to_date
-    // hence + start_timestep
-    let step_peak_elec_consumption = index_peak_elec_consumption as f64 + start_timestep;
-
-    let mut timestep_to_date: HashMap<usize, HourForTimestep> = Default::default();
-
-    // Set the base for any non-leap year
-    let base_time = Utc.with_ymd_and_hms(2023, 1, 1, 0, 0, 0).unwrap();
-
-    let mut step = start_timestep as usize;
-    for t in timestep_array.iter() {
-        let current_time = base_time + TimeDelta::minutes((*t * 60.).round() as i64);
-        timestep_to_date.insert(
-            step,
-            HourForTimestep {
-                month: current_time
-                    .format("%b")
-                    .to_string()
-                    .to_ascii_uppercase()
-                    .into(),
-                day: current_time.day() as usize,
-                hour: (step as f64 % (24. / stepping)) * stepping + 1.,
-            },
-        );
-        step += 1;
-    }
-
-    // Delivered energy by end-use and by fuel
-    // TODO (from Python) Ensure end_uses not consuming fuel directly are filtered out on this report
-    let mut delivered_energy_map: IndexMap<String, IndexMap<String, f64>> =
-        IndexMap::from([("total".into(), Default::default())]);
-    for (fuel, end_uses) in results_end_user {
-        if ["_unmet_demand", "hw cylinder"].contains(&fuel.as_str()) {
-            continue;
-        }
-        let mut fuel_results: IndexMap<String, f64> =
-            IndexMap::from([("total".into(), Default::default())]);
-        for (end_use, delivered_energy) in end_uses {
-            let delivered_energy_sum = delivered_energy.iter().sum::<f64>();
-            if delivered_energy_sum >= 0. {
-                fuel_results.insert(end_use.to_owned(), delivered_energy_sum);
-                *fuel_results
-                    .get_mut("total")
-                    .expect("Total key was not present in fuel results.") += delivered_energy_sum;
-                *delivered_energy_map["total"]
-                    .entry(end_use.to_owned())
-                    .or_default() += delivered_energy_sum;
-                *delivered_energy_map["total"]
-                    .entry("total".into())
-                    .or_default() += delivered_energy_sum;
-            }
-        }
-        delivered_energy_map.insert(fuel.clone(), fuel_results);
-    }
-
-    SummaryData {
-        delivered_energy_map,
-        stats,
-        peak_elec_consumption,
-        index_peak_elec_consumption,
-        step_peak_elec_consumption,
-        timestep_to_date,
-    }
-}
-
-pub struct SummaryData {
-    pub delivered_energy_map: IndexMap<String, IndexMap<String, f64>>,
-    stats: IndexMap<String, EnergySupplyStat>,
-    peak_elec_consumption: f64,
-    index_peak_elec_consumption: usize,
-    step_peak_elec_consumption: f64,
-    timestep_to_date: HashMap<usize, HourForTimestep>,
-}
-
-struct StaticOutputFileArgs {
-    output_key: String,
-    heat_transfer_coefficient: f64,
-    heat_loss_parameter: f64,
-    heat_capacity_parameter: f64,
-    heat_loss_form_factor: f64,
-    temp_internal_air: f64,
-    temp_external_air: f64,
-}
-
 fn write_core_output_file_static(
     output: &OutputStatic,
     output_key: &str,
@@ -1357,13 +1033,6 @@ fn write_core_output_file_static(
     writer.flush()?;
 
     Ok(())
-}
-
-struct HeatBalanceOutputFileArgs<'a> {
-    output_key: String,
-    timestep_array: &'a [f64],
-    hour_per_step: f64,
-    heat_balance_map: &'a IndexMap<String, IndexMap<String, Vec<f64>>>,
 }
 
 fn write_core_output_file_heat_balance(
