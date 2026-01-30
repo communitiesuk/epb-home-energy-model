@@ -85,6 +85,23 @@ impl StorageHeaterDetailedResult {
     }
 }
 
+impl From<StorageHeaterDetailedResult> for Vec<f64> {
+    fn from(value: StorageHeaterDetailedResult) -> Self {
+        vec![
+            value.timestep_idx as f64,
+            value.n_units as f64,
+            value.energy_demand,
+            value.energy_delivered,
+            value.energy_instant,
+            value.energy_charged,
+            value.energy_for_fan,
+            value.state_of_charge,
+            value.final_soc,
+            value.time_used_max,
+        ]
+    }
+}
+
 impl ElecStorageHeater {
     /// Arguments:
     /// * `pwr_in` - in kW (Charging)

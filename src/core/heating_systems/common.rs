@@ -1,4 +1,4 @@
-use super::emitters::{Emitters, EmittersDetailedResult};
+use super::emitters::Emitters;
 use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult};
 use crate::core::common::WaterSupply;
 use crate::core::heating_systems::boiler::{
@@ -20,6 +20,7 @@ use crate::core::heating_systems::heat_pump::{
     HeatPumpHotWaterOnly, HeatPumpServiceSpace, HeatPumpServiceSpaceWarmAir, HeatPumpServiceWater,
 };
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
+use crate::output::OutputEmitters;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{bail, Error};
 use serde_enum_str::Serialize_enum_str;
@@ -335,7 +336,7 @@ impl SpaceHeatSystem {
         }
     }
 
-    pub(crate) fn output_emitter_results(&self) -> Option<Vec<EmittersDetailedResult>> {
+    pub(crate) fn output_emitter_results(&self) -> Option<Vec<OutputEmitters>> {
         if let SpaceHeatSystem::WetDistribution(emitters) = self {
             emitters
                 .output_emitter_results()

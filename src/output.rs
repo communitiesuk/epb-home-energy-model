@@ -1,3 +1,4 @@
+use crate::corpus::{NumberOrDivisionByZero, ResultsAnnual, ResultsPerTimestep};
 use crate::{EnergySupplyStatKey, StringOrNumber};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -178,15 +179,15 @@ impl OutputHotWaterSystems {
 #[derive(Debug, Serialize)]
 pub struct OutputCop {
     /// Overall coefficient of performance for each heating system (unitless)
-    pub(crate) space_heating_system: IndexMap<Arc<str>, Option<f64>>,
+    pub(crate) space_heating_system: IndexMap<Arc<str>, NumberOrDivisionByZero>,
     /// Overall coefficient of performance for each heating system (unitless)
-    pub(crate) space_cooling_system: IndexMap<Arc<str>, Option<f64>>,
+    pub(crate) space_cooling_system: IndexMap<Arc<str>, NumberOrDivisionByZero>,
     /// Overall coefficient of performance for each heating system (unitless)
-    pub(crate) hot_water_system: IndexMap<Arc<str>, Option<f64>>,
+    pub(crate) hot_water_system: IndexMap<Arc<str>, NumberOrDivisionByZero>,
 }
 
 /// Emitters data for every time step.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct OutputEmitters {
     /// Current time step
     pub(crate) simulation_time_idx: usize,
@@ -199,7 +200,7 @@ pub struct OutputEmitters {
     /// Energy provided by heat source (unit: kWh)
     pub(crate) energy_provided_by_heat_source: f64,
     /// Temperature of the emitter (unit: Celsius)
-    pub(crate) temp_emitter: f64,
+    pub(crate) temp_emitter: StringOrNumber,
     /// Maximum temperature the emitter can safely reach (unit: Celsius)
     pub(crate) temp_emitter_max: f64,
     /// Energy released from emitters (unit: kWh)
@@ -265,9 +266,9 @@ pub struct OutputCore {
     pub(crate) heat_balance_all:
         IndexMap<Arc<str>, IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>>,
     /// Heat source wet detailed results.
-    pub(crate) heat_source_wet_results: IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
+    pub(crate) heat_source_wet_results: IndexMap<Arc<str>, ResultsPerTimestep>,
     /// Annual heat source wet detailed results.
-    pub(crate) heat_source_wet_results_annual: IndexMap<Arc<str>, IndexMap<Arc<str>, f64>>,
+    pub(crate) heat_source_wet_results_annual: IndexMap<Arc<str>, ResultsAnnual>,
     /// Hot water source results summary.
     /// Currently unstructured, see CSV for column-order.
     pub(crate) hot_water_source_results_summary:
@@ -397,7 +398,7 @@ impl OutputSummary {
 
 #[derive(Debug, Serialize)]
 pub struct OutputMetadata {
-    pub(crate) hem_core_version: String,
+    pub(crate) hem_core_version: &'static str, // we'd expect this to always be statically available
 }
 
 #[derive(Debug, Serialize)]

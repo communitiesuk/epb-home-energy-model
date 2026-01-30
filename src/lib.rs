@@ -20,7 +20,6 @@ pub mod read_weather_file;
 pub mod statistics;
 
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
-pub use crate::corpus::RunResults;
 use crate::corpus::{
     Corpus, HotWaterResultKey, HotWaterResultMap, HtcHlpCalculation, NumberOrDivisionByZero,
     OutputOptions, ResultsAnnual, ResultsEndUser, ResultsPerTimestep, ZoneResultKey,
@@ -705,9 +704,10 @@ fn write_core_output_file_summary(
         .map(|(h_name, h_cop)| {
             vec![
                 StringOrNumber::from(h_name.to_string()),
-                h_cop
-                    .map(StringOrNumber::from)
-                    .unwrap_or(StringOrNumber::from("DIV/0")),
+                match h_cop {
+                    NumberOrDivisionByZero::Number(number) => number.into(),
+                    NumberOrDivisionByZero::DivisionByZero => "DIV/0".into(),
+                },
             ]
         })
         .collect::<Vec<_>>();
@@ -719,9 +719,10 @@ fn write_core_output_file_summary(
         .map(|(c_name, c_cop)| {
             vec![
                 StringOrNumber::from(c_name.to_string()),
-                c_cop
-                    .map(StringOrNumber::from)
-                    .unwrap_or(StringOrNumber::from("DIV/0")),
+                match c_cop {
+                    NumberOrDivisionByZero::Number(number) => number.into(),
+                    NumberOrDivisionByZero::DivisionByZero => "DIV/0".into(),
+                },
             ]
         })
         .collect::<Vec<_>>();
@@ -733,9 +734,10 @@ fn write_core_output_file_summary(
         .map(|(hw_name, hw_cop)| {
             vec![
                 StringOrNumber::from(hw_name.to_string()),
-                hw_cop
-                    .map(StringOrNumber::from)
-                    .unwrap_or(StringOrNumber::from("DIV/0")),
+                match hw_cop {
+                    NumberOrDivisionByZero::Number(number) => number.into(),
+                    NumberOrDivisionByZero::DivisionByZero => "DIV/0".into(),
+                },
             ]
         })
         .collect::<Vec<_>>();
@@ -1106,7 +1108,7 @@ fn write_core_output_file_heat_balance(
 fn write_core_output_file_heat_source_wet(
     output_key: &str,
     timestep_array: &Vec<f64>,
-    heat_source_wet_results: &IndexMap<Arc<str>, Vec<f64>>,
+    heat_source_wet_results: &ResultsPerTimestep,
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     // Repeat column headings for each service
@@ -1178,7 +1180,7 @@ fn write_core_output_file_heat_source_wet(
 
 fn write_core_output_file_heat_source_wet_summary(
     output_key: &str,
-    heat_source_wet_results_annual: &IndexMap<Arc<str>, f64>,
+    heat_source_wet_results_annual: &ResultsAnnual,
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     let writer = output_writer.writer_for_location_key(output_key, "csv")?;

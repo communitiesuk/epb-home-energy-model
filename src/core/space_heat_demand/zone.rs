@@ -1689,6 +1689,16 @@ pub struct HeatBalance {
     pub external_boundary: HeatBalanceExternalBoundary,
 }
 
+impl From<HeatBalanceFieldName> for Arc<str> {
+    fn from(value: HeatBalanceFieldName) -> Self {
+        serde_json::to_value(&value)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into()
+    }
+}
+
 impl HeatBalance {
     pub(crate) fn as_index_map(&self) -> IndexMap<HeatBalanceFieldName, IndexMap<Arc<str>, f64>> {
         let Self {

@@ -20,6 +20,7 @@ use crate::input::{
     VentilationShieldClass, WindowPart as WindowPartInput, ZoneDictionary,
 };
 use crate::simulation_time::SimulationTimeIteration;
+use crate::StringOrNumber;
 use anyhow::{anyhow, bail, Error};
 use argmin::{
     core::{CostFunction, Executor},
@@ -2872,6 +2873,36 @@ impl VentilationDetailedResult {
                 .into(),
             self.qm_in.to_string().into(),
             self.qm_out.to_string().into(),
+        ]
+    }
+}
+
+impl From<VentilationDetailedResult> for Vec<StringOrNumber> {
+    fn from(value: VentilationDetailedResult) -> Self {
+        vec![
+            value.timestep_index.into(),
+            value.reporting_flag.to_string().into(),
+            value.r_v_arg.into(),
+            value.incoming_air_flow.into(),
+            value.total_volume.into(),
+            value.air_changes_per_hour.into(),
+            value.temp_interior_air.into(),
+            value.p_z_ref.into(),
+            value.qm_in_through_window_opening.into(),
+            value.qm_out_through_window_opening.into(),
+            value.qm_in_through_vents.into(),
+            value.qm_out_through_vents.into(),
+            value.qm_in_through_leaks.into(),
+            value.qm_out_through_leaks.into(),
+            value.qm_in_through_comb.into(),
+            value.qm_out_through_comb.into(),
+            value.qm_in_through_passive_hybrid_ducts.into(),
+            value.qm_out_through_passive_hybrid_ducts.into(),
+            value.qm_sup_to_vent_zone.into(),
+            value.qm_eta_from_vent_zone.into(),
+            value.qm_in_effective_heat_recovery_saving_total.into(),
+            value.qm_in.into(),
+            value.qm_out.into(),
         ]
     }
 }

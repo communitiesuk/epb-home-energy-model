@@ -11,6 +11,7 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCollectorLoopLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
+use crate::StringOrNumber;
 use anyhow::{anyhow, bail};
 use arc_swap::ArcSwapOption;
 use atomic_float::AtomicF64;
@@ -1505,7 +1506,7 @@ impl StorageTank {
         Ok(list_temp_vol)
     }
 
-    pub(crate) fn output_results(&self) -> Option<Vec<StorageTankDetailedResult>> {
+    pub(crate) fn output_results(&self) -> Option<Vec<Vec<Option<StringOrNumber>>>> {
         None // TODO implement this
     }
 }
@@ -1922,7 +1923,7 @@ impl SmartHotWaterTank {
         self.storage_tank.internal_gains()
     }
 
-    pub(crate) fn output_results(&self) -> Option<Vec<StorageTankDetailedResult>> {
+    pub(crate) fn output_results(&self) -> Option<Vec<Vec<Option<StringOrNumber>>>> {
         self.storage_tank.output_results()
     }
 

@@ -18,6 +18,7 @@ use crate::input::{
     EcoDesignController, EcoDesignControllerClass, FanSpeedData, FancoilTestData, WaterPipework,
     WaterPipeworkLocation, WetEmitter as WetEmitterInput,
 };
+use crate::output::OutputEmitters;
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use crate::StringOrNumber;
@@ -72,7 +73,7 @@ pub(crate) struct Emitters {
     temp_emitter_prev: AtomicF64,
     target_flow_temp: AtomicF64, // In Python this is set from inside demand energy and does not exist before then
     output_detailed_results: bool,
-    emitters_detailed_results: Option<Arc<RwLock<Vec<Option<EmittersDetailedResult>>>>>,
+    emitters_detailed_results: Option<Arc<RwLock<Vec<Option<OutputEmitters>>>>>,
     energy_supply_fan_coil_conn: Option<Arc<EnergySupplyConnection>>,
     min_flow_rate: f64,
     max_flow_rate: f64,
@@ -1569,10 +1570,10 @@ impl Emitters {
 
         // If detailed results flag is set populate dict with values
         if self.output_detailed_results && update_heat_source_state {
-            let result = EmittersDetailedResult {
-                timestep_index: simtime.index,
+            let result = OutputEmitters {
+                simulation_time_idx: simtime.index,
                 energy_demand,
-                temp_emitter_req,
+                temp_emitter_required: temp_emitter_req,
                 time_heating_start,
                 energy_provided_by_heat_source,
                 temp_emitter: temp_emitter_output,
@@ -1581,7 +1582,7 @@ impl Emitters {
                 temp_flow_target,
                 temp_return_target,
                 temp_emitter_max_is_final_temp,
-                energy_req_from_heat_source,
+                energy_required_from_heat_source: energy_req_from_heat_source,
                 fan_energy_kwh,
             };
 
@@ -1879,7 +1880,7 @@ impl Emitters {
     //     )
     // }
 
-    pub(crate) fn output_emitter_results(&self) -> Option<Vec<Option<EmittersDetailedResult>>> {
+    pub(crate) fn output_emitter_results(&self) -> Option<Vec<Option<OutputEmitters>>> {
         self.emitters_detailed_results
             .as_ref()
             .map(|results| results.read().clone())
@@ -3647,10 +3648,10 @@ mod tests {
 
         assert_eq!(
             result,
-            Some(EmittersDetailedResult {
-                timestep_index: 0,
+            Some(OutputEmitters {
+                simulation_time_idx: 0,
                 energy_demand: 0.0,
-                temp_emitter_req: 45.,
+                temp_emitter_required: 45.,
                 time_heating_start: 0.0,
                 energy_provided_by_heat_source: 0.0,
                 temp_emitter: "n/a".into(),
@@ -3659,9 +3660,9 @@ mod tests {
                 temp_flow_target: 50.,
                 temp_return_target: 40.,
                 temp_emitter_max_is_final_temp: false,
-                energy_req_from_heat_source: 0.0,
+                energy_required_from_heat_source: 0.0,
                 fan_energy_kwh: 0.0,
-            })
+            }),
         );
     }
 
