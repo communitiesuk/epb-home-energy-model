@@ -62,10 +62,10 @@ use zerocopy::IntoBytes;
 pub const HEM_VERSION: &str = "1.0.0a1";
 pub const HEM_VERSION_DATE: &str = "2025-10-02";
 
-#[derive(PartialEq)]
-enum OutputFormat {
-    JSON,
-    CSV,
+#[derive(Clone, Debug, PartialEq)]
+pub enum OutputFormat {
+    Json,
+    Csv,
 }
 
 #[derive(Serialize)]
@@ -91,6 +91,7 @@ pub fn run_project_from_input_file(
     input: impl Read,
     output_writer: &impl OutputWriter,
     external_conditions_data: Option<ExternalConditionsFromFile>,
+    // output_formats: Option<&Vec<OutputFormat>>,
     tariff_data_file: Option<&str>,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
@@ -120,16 +121,19 @@ pub fn run_project_from_input_file(
         detailed_output_heating_cooling,
     )?;
 
-    let steps_in_hours = results.context.corpus.simulation_time.step_in_hours();
+    // if let Some(output_formats) = output_formats {
+    //     let steps_in_hours = results.context.corpus.simulation_time.step_in_hours();
 
     // write_core_output_files(
     //     Some(&results.context.input),
     //     output_writer,
     //     &results,
     //     steps_in_hours,
+    // output_formats
     //     heat_balance,
     //     detailed_output_heating_cooling,
     // )?;
+    // }
 
     Ok(results)
 }
@@ -254,11 +258,11 @@ fn write_core_output_files(
         return Ok(());
     }
 
-    if output_formats.contains(&OutputFormat::JSON) {
+    if output_formats.contains(&OutputFormat::Json) {
         write_output_json_file(output_key, output, output_writer)?;
     }
 
-    if output_formats.contains(&OutputFormat::CSV) {
+    if output_formats.contains(&OutputFormat::Csv) {
         let input =
             primary_input.ok_or_else(|| anyhow!("Input required to write core output CSVs"))?;
 
