@@ -33,7 +33,7 @@ use crate::corpus::{
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input};
-use crate::output::{Output, OutputStatic, OUTPUT_ZONE_DATA_FIELD_HEADINGS};
+use crate::output::{Output, OutputEmitters, OutputStatic, OUTPUT_ZONE_DATA_FIELD_HEADINGS};
 use crate::output_writer::OutputWriter;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
@@ -246,7 +246,7 @@ fn write_core_output_files(
     output_key: &str,
     primary_input: Option<&Input>,
     output_writer: &impl OutputWriter,
-    output_formats: Option<Vec<OutputFormat>>,
+    output_formats: Option<Vec<OutputFormat>>, // TODO optional in Python but there is check if None in run_project_from_input_file so make non optional?
     hour_per_step: f64,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
@@ -261,110 +261,94 @@ fn write_core_output_files(
         }
 
         if output_formats.contains(&OutputFormat::CSV) {
+            let input =
+                primary_input.ok_or_else(|| anyhow!("Input required to write core output CSVs"))?;
+
             write_core_output_file_static(&output.static_, "results_static", output_writer)?;
 
             write_core_output_file(output, "results.csv", output_writer)?;
 
-            write_core_output_file_summary(
-                output,
-                "results_summary.csv",
-                output_writer,
-                primary_input
-                    .ok_or_else(|| anyhow!("Input required to write out core summary file"))?,
-            )?;
+            write_core_output_file_summary(output, "results_summary.csv", output_writer, input)?;
+
+            if heat_balance {
+                for (hb_name, hb_map) in &output.core.heat_balance_all {
+                    let output_key =
+                        format!("results_heat_balance_{}", hb_name.to_case(Case::Snake));
+                    write_core_output_file_heat_balance(
+                        &output_key.as_str(),
+                        &output.core.timestep_array,
+                        hour_per_step,
+                        hb_map,
+                        output_writer,
+                    )?;
+                }
+            }
+
+            if detailed_output_heating_cooling {
+                for (heat_source_wet_name, heat_source_wet_results) in
+                    &output.core.heat_source_wet_results
+                {
+                    let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
+                    write_core_output_file_heat_source_wet(
+                        &output_key.as_str(),
+                        &output.core.timestep_array,
+                        heat_source_wet_results,
+                        output_writer,
+                    )?;
+                }
+
+                for (heat_source_wet_name, heat_source_wet_results_annual) in
+                    &output.core.heat_source_wet_results_annual
+                {
+                    let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
+                    write_core_output_file_heat_source_wet_summary(
+                        &output_key.as_str(),
+                        heat_source_wet_results_annual,
+                        output_writer,
+                    )?;
+                }
+
+                // Function call to write detailed ventilation results
+                let vent_output_key = "ventilation_results";
+                write_core_output_file_ventilation_detailed(
+                    vent_output_key,
+                    &output.core.ventilation,
+                    output_writer,
+                )?;
+
+                for (hot_water_source_name, hot_water_source_results) in
+                    &output.core.hot_water_source_results_summary
+                {
+                    let hot_water_source_file = format!(
+                        "results_hot_water_source_summary__{}",
+                        hot_water_source_name.replace(" ", "_")
+                    );
+                    write_core_output_file_hot_water_source_summary(
+                        hot_water_source_file.as_str(),
+                        hot_water_source_results,
+                        output_writer,
+                    );
+                }
+
+                // Create a file for emitters detailed output and write
+                let emitters_output_prefix = "results_emitters_";
+                write_core_output_file_emitters_detailed(
+                    emitters_output_prefix,
+                    &output.core.emitters,
+                    output_writer,
+                )?;
+
+                // Create a file for esh detailed output and write
+                let esh_output_prefix = "results_esh_";
+                write_core_output_file_esh_detailed(
+                    esh_output_prefix,
+                    &output.core.electric_storage_heaters,
+                    output_writer,
+                )?;
+            }
         }
     }
 
-    //
-    // if heat_balance {
-    //     for (hb_name, hb_map) in heat_balance_dict.iter() {
-    //         let output_key = format!(
-    //             "results_heat_balance_{}",
-    //             hb_name.to_string().to_case(Case::Snake)
-    //         )
-    //         .into();
-    //         write_core_output_file_heat_balance(
-    //             output_writer,
-    //             HeatBalanceOutputFileArgs {
-    //                 output_key,
-    //                 timestep_array,
-    //                 hour_per_step,
-    //                 heat_balance_map: hb_map,
-    //             },
-    //         )?;
-    //     }
-    // }
-    //
-    // if detailed_output_heating_cooling {
-    //     for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
-    //         let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
-    //         write_core_output_file_heat_source_wet(
-    //             output_writer,
-    //             &output_key,
-    //             timestep_array,
-    //             heat_source_wet_results,
-    //         )?;
-    //     }
-    //     for (heat_source_wet_name, heat_source_wet_results_annual) in
-    //         heat_source_wet_results_annual_dict.iter()
-    //     {
-    //         let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
-    //         write_core_output_file_heat_source_wet_summary(
-    //             output_writer,
-    //             &output_key,
-    //             heat_source_wet_results_annual,
-    //         )?;
-    //     }
-    //     // Function call to write detailed ventilation results
-    //     let vent_output_file = "ventilation_results";
-    //     write_core_output_file_ventilation_detailed(
-    //         output_writer,
-    //         vent_output_file,
-    //         vent_output_list,
-    //     )?;
-    //     for (hot_water_source_name, hot_water_source_results) in
-    //         hot_water_source_results_dict.iter()
-    //     {
-    //         let hot_water_source_file = format!(
-    //             "results_hot_water_source_summary__{}",
-    //             hot_water_source_name.replace(" ", "_")
-    //         );
-    //         write_core_output_file_hot_water_source_summary(
-    //             output_writer,
-    //             &hot_water_source_file,
-    //             hot_water_source_results,
-    //         );
-    //     }
-    // }
-    //
-
-    //
-    // let corpus = &results.context.corpus;
-    //
-    // let primary_input = primary_input.ok_or_else(|| {
-    //     anyhow!("Primary input should be available as there is a primary calculation.")
-    // })?;
-    //
-    // let HtcHlpCalculation {
-    //     total_htc: heat_transfer_coefficient,
-    //     total_hlp: heat_loss_parameter,
-    //     ..
-    // } = calc_htc_hlp(primary_input)?;
-    // let heat_capacity_parameter = corpus.calc_hcp();
-    // let heat_loss_form_factor = corpus.calc_hlff();
-
-    // if detailed_output_heating_cooling {
-    //     let output_prefix = "results_emitters_";
-    //     write_core_output_file_emitters_detailed(
-    //         output_writer,
-    //         output_prefix,
-    //         emitters_output_dict,
-    //     )?;
-    //
-    //     let esh_output_prefix = "results_esh_";
-    //     write_core_output_file_esh_detailed(output_writer, esh_output_prefix, esh_output_dict)?;
-    // }
-    //
     Ok(())
 }
 
@@ -1383,16 +1367,12 @@ struct HeatBalanceOutputFileArgs<'a> {
 }
 
 fn write_core_output_file_heat_balance(
+    output_key: &str,
+    timestep_array: &Vec<f64>,
+    hour_per_step: f64,
+    heat_balance_map: &IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
     output_writer: &impl OutputWriter,
-    args: HeatBalanceOutputFileArgs,
 ) -> Result<(), anyhow::Error> {
-    let HeatBalanceOutputFileArgs {
-        output_key,
-        timestep_array,
-        hour_per_step,
-        heat_balance_map,
-    } = args;
-
     let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
@@ -1433,7 +1413,7 @@ fn write_core_output_file_heat_balance(
         }
     }
 
-    for (t_idx, _) in timestep_array.iter().enumerate() {
+    for t_idx in 0..timestep_array.len() {
         let mut row = vec![StringOrNumber::Integer(t_idx)];
         let mut annual_totals_index = 1;
         for heat_loss_gain_map in heat_balance_map.values() {
@@ -1462,10 +1442,10 @@ fn write_core_output_file_heat_balance(
 }
 
 fn write_core_output_file_heat_source_wet(
-    output_writer: &impl OutputWriter,
     output_key: &str,
-    timestep_array: &[f64],
-    heat_source_wet_results: &ResultsPerTimestep,
+    timestep_array: &Vec<f64>,
+    heat_source_wet_results: &IndexMap<Arc<str>, Vec<f64>>,
+    output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     // Repeat column headings for each service
     let mut col_headings: Vec<Arc<str>> = vec!["Timestep".into()];
@@ -1502,69 +1482,106 @@ fn write_core_output_file_heat_source_wet(
 
     let writer = output_writer.writer_for_location_key(output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+    // TODO what type should heat_source_wet_results be?
 
-    // Write column headings and units
-    writer.write_record(
+    // for (service_name, service_results) in heat_source_wet_results.iter() {
+    //     columns.insert(
+    //         service_name.clone(),
+    //         service_results.keys().cloned().collect(),
+    //     );
+    //     col_headings.extend(
+    //         service_results
+    //             .keys()
+    //             .cloned()
+    //             .collect::<IndexMap<_, _>>()
+    //             .values()
+    //             .map(|col_heading| match col_heading {
+    //                 None => service_name.clone(),
+    //                 Some(col_heading) => format!("{service_name}: {col_heading}").into(),
+    //             })
+    //             .collect::<Vec<String>>(),
+    //     );
+    //     col_units_row.extend(
+    //         service_results
+    //             .keys()
+    //             .cloned()
+    //             .collect::<IndexMap<_, _>>()
+    //             .keys()
+    //             .cloned()
+    //             .collect::<Vec<String>>(),
+    //     );
+    // }
+    //
+    // let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    // let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+    //
+    // // Write column headings and units
+    // writer.write_record(
         &col_headings
             .iter()
             .map(|x| x.as_bytes())
             .collect::<Vec<_>>(),
     )?;
-    writer.write_record(
+    // writer.write_record(
         &col_units_row
             .iter()
             .map(|x| x.as_bytes())
             .collect::<Vec<_>>(),
     )?;
-
-    // Write rows
-    for t_idx in 0..timestep_array.len() {
-        let mut row: Vec<String> = vec![t_idx.to_string().into()];
-        for (service_name, service_results) in heat_source_wet_results {
-            row.extend(
-                columns[service_name]
-                    .iter()
-                    .map(|col| service_results[col][t_idx].clone().into()),
-            );
-        }
-        writer.write_record(row.iter().map(|x| x.to_string().into_bytes()))?;
-    }
+    //
+    // // Write rows
+    // for t_idx in 0..timestep_array.len() {
+    //     let mut row: Vec<String> = vec![t_idx.to_string().into()];
+    //     for (service_name, service_results) in heat_source_wet_results {
+    //         row.extend(
+    //             columns[service_name]
+    //                 .iter()
+    //                 .map(|col| service_results[col][t_idx].clone().into()),
+    //         );
+    //     }
+    //     writer.write_record(row.iter().map(|x| x.to_string().into_bytes()))?;
+    // }
 
     Ok(())
 }
 
 fn write_core_output_file_heat_source_wet_summary(
-    output_writer: &impl OutputWriter,
     output_key: &str,
-    heat_source_wet_results_annual: &ResultsAnnual,
+    heat_source_wet_results_annual: &IndexMap<Arc<str>, f64>,
+    output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     let writer = output_writer.writer_for_location_key(output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
-    for (service_name, service_results) in heat_source_wet_results_annual.iter() {
-        writer.write_record([service_name.to_string()])?;
-        for (name, value) in service_results.iter() {
-            writer.write_record([
-                name.0.as_bytes(),
-                name.1.as_ref().map(|x| x.as_bytes()).unwrap_or_default(),
-                String::from(value).as_bytes(),
-            ])?;
-        }
-        writer.write_record([""])?;
-    }
+    // TODO what type should heat_source_wet_results_annual be?
+
+    // for (service_name, service_results) in heat_source_wet_results_annual {
+    //     writer.write_record([service_name.to_string()])?;
+    //     for (name, value) in service_results.iter() {
+    //         writer.write_record([
+    //             name.0.as_bytes(),
+    //             name.1.as_ref().map(|x| x.as_bytes()).unwrap_or_default(),
+    //             String::from(value).as_bytes(),
+    //         ])?;
+    //     }
+    //     writer.write_record([""])?;
+    // }
 
     Ok(())
 }
 
 fn write_core_output_file_emitters_detailed(
-    output_writer: &impl OutputWriter,
     output_prefix: &str,
-    emitters_output_dict: &IndexMap<String, Vec<EmittersDetailedResult>>,
+    emitters_output_map: &IndexMap<Arc<str>, IndexMap<usize, OutputEmitters>>,
+    output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
-    for (emitter_name, emitters_detailed_results) in emitters_output_dict {
+    for (emitter_name, emitters_detailed_results) in emitters_output_map {
         let output_key = format!("{}{}", output_prefix, emitter_name);
         let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
-        let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+        let mut writer = WriterBuilder::new()
+            .flexible(true)
+            .has_headers(false)
+            .from_writer(writer);
 
         writer.write_record([
             "timestep",
@@ -1596,8 +1613,8 @@ fn write_core_output_file_emitters_detailed(
             "[kWh]",
             "[kWh]",
         ])?;
-        for emitters_detailed_result in emitters_detailed_results {
-            writer.write_record(emitters_detailed_result.as_string_values())?;
+        for emitters_detailed_result in emitters_detailed_results.values() {
+            writer.serialize(emitters_detailed_result)?;
         }
     }
 
@@ -1605,9 +1622,9 @@ fn write_core_output_file_emitters_detailed(
 }
 
 fn write_core_output_file_esh_detailed(
-    output_writer: &impl OutputWriter,
     output_prefix: &str,
-    esh_output: &IndexMap<String, Vec<StorageHeaterDetailedResult>>,
+    esh_output: &IndexMap<Arc<str>, IndexMap<usize, Vec<f64>>>,
+    output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     let headings = [
         "timestep",
@@ -1632,18 +1649,20 @@ fn write_core_output_file_esh_detailed(
         let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
         writer.write_record(headings)?;
         writer.write_record(units_row)?;
-        for esh_results in esh_output {
-            writer.write_record(esh_results.as_string_values())?;
+        for esh_results in esh_output.values() {
+            writer.serialize(esh_results)?;
         }
+
+        writer.flush()?;
     }
 
     Ok(())
 }
 
 fn write_core_output_file_ventilation_detailed(
-    output_writer: &impl OutputWriter,
     output_key: &str,
-    vent_output_list: &[VentilationDetailedResult],
+    vent_output_list: &Vec<Vec<StringOrNumber>>,
+    output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     let writer = output_writer.writer_for_location_key(output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
@@ -1700,16 +1719,16 @@ fn write_core_output_file_ventilation_detailed(
     ])?;
 
     for ventilation_results in vent_output_list.iter() {
-        writer.write_record(ventilation_results.as_string_values())?;
+        writer.write_record(ventilation_results.iter().map(StringOrNumber::as_bytes))?;
     }
 
     Ok(())
 }
 
 fn write_core_output_file_hot_water_source_summary(
-    _output_writer: &impl OutputWriter,
     _output_file: &str,
-    _hot_water_source_results: &[StorageTankDetailedResult],
+    _hot_water_source_results: &Vec<Vec<Option<StringOrNumber>>>,
+    _output_writer: &impl OutputWriter,
 ) {
     // TODO complete when hot water source results defined
 }

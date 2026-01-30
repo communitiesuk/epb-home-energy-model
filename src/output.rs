@@ -262,7 +262,8 @@ pub struct OutputCore {
     /// Ventilation ductwork gains (unit: kWh)
     pub(crate) ductwork_gains: Vec<f64>,
     /// Heat balance data for each zone.
-    pub(crate) heat_balance_all: IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
+    pub(crate) heat_balance_all:
+        IndexMap<Arc<str>, IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>>,
     /// Heat source wet detailed results.
     pub(crate) heat_source_wet_results: IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
     /// Annual heat source wet detailed results.
