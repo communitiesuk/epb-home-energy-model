@@ -1837,8 +1837,7 @@ impl HeatBatteryPcm {
         // For each service, report required output parameters
         for (service_idx, service_name) in self.energy_supply_connections.keys().enumerate() {
             let service_name: Arc<str> = service_name.as_str().into();
-            let mut current_results: IndexMap<(Arc<str>, Option<Arc<str>>), Vec<ResultParamValue>> =
-                Default::default();
+            let mut current_results: ResultPerTimestep = Default::default();
 
             // Look up each required parameter
             for (parameter, param_unit, _) in OUTPUT_PARAMETERS {
@@ -2015,6 +2014,8 @@ impl HeatBatteryPcm {
 #[derive(Debug, Error)]
 #[error("Tried to call output_detailed_results when option to collect detailed results was not selected")]
 pub(crate) struct OutputDetailedResultsNotEnabledError;
+
+type ResultPerTimestep = IndexMap<(Arc<str>, Option<Arc<str>>), Vec<ResultParamValue>>;
 
 #[cfg(test)]
 mod tests {

@@ -263,8 +263,7 @@ pub struct OutputCore {
     /// Ventilation ductwork gains (unit: kWh)
     pub(crate) ductwork_gains: Vec<f64>,
     /// Heat balance data for each zone.
-    pub(crate) heat_balance_all:
-        IndexMap<Arc<str>, IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>>,
+    pub(crate) heat_balance_all: OutputHeatBalanceAll,
     /// Heat source wet detailed results.
     pub(crate) heat_source_wet_results: IndexMap<Arc<str>, ResultsPerTimestep>,
     /// Annual heat source wet detailed results.
@@ -284,6 +283,9 @@ pub struct OutputCore {
     pub(crate) ventilation: Vec<Vec<StringOrNumber>>,
     pub(crate) hot_water_systems: OutputHotWaterSystems,
 }
+
+pub(crate) type OutputHeatBalanceAll =
+    IndexMap<Arc<str>, IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>>;
 
 /// Details of the time-step with the peak electricity consumption within the simulation.
 #[derive(Debug, Serialize)]
@@ -465,6 +467,7 @@ mod tests {
             );
         }
 
+        #[allow(clippy::type_complexity)]
         let delivered_energy_data: [(
             f64,
             IndexMap<Arc<str>, IndexMap<Arc<str>, f64>>,

@@ -63,8 +63,8 @@ use crate::core::space_heat_demand::zone::{
 };
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
 use crate::core::water_heat_demand::dhw_demand::ELECTRIC_SHOWERS_HWS_NAME;
+use crate::core::water_heat_demand::dhw_demand::{DomesticHotWaterDemand, WaterHeatingCalculation};
 use crate::core::water_heat_demand::misc::WaterEventResult;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::hem_core::simulation_time::SimulationTime;
@@ -1222,11 +1222,7 @@ impl Corpus {
         &self,
         z_name: &str,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(
-        Vec<Arc<str>>,
-        Vec<Arc<str>>,
-        SetpointsAndConvectiveFractions,
-    )> {
+    ) -> anyhow::Result<HeatCoolSystemsForZone> {
         let SetpointsAndConvectiveFractions {
             temp_setpnt_heat: temp_setpnt_heat_system,
             temp_setpnt_cool: temp_setpnt_cool_system,
@@ -1254,16 +1250,16 @@ impl Corpus {
             .map(|x| x.0.to_owned())
             .collect();
 
-        Ok((
-            h_name_list_sorted,
-            c_name_list_sorted,
-            SetpointsAndConvectiveFractions {
+        Ok(HeatCoolSystemsForZone {
+            h_sorted_names: h_name_list_sorted,
+            c_sorted_names: c_name_list_sorted,
+            setpoints_and_convective_fractions: SetpointsAndConvectiveFractions {
                 temp_setpnt_heat: temp_setpnt_heat_system,
                 temp_setpnt_cool: temp_setpnt_cool_system,
                 frac_convective_heat: frac_convective_heat_system,
                 frac_convective_cool: frac_convective_cool_system,
             },
-        ))
+        })
     }
 
     fn setpoints_and_convective_fractions(
@@ -1606,16 +1602,17 @@ impl Corpus {
             gains_solar_zone.insert(z_name.into(), zone.gains_solar(simtime));
 
             // Get heating and cooling characteristics for the current zone
-            let (
-                h_name_list_sorted_zone_current,
-                c_name_list_sorted_zone_current,
-                SetpointsAndConvectiveFractions {
-                    temp_setpnt_heat: temp_setpnt_heat_zone_system_current,
-                    temp_setpnt_cool: temp_setpnt_cool_zone_system_current,
-                    frac_convective_heat: frac_convective_heat_zone_system_current,
-                    frac_convective_cool: frac_convective_cool_zone_system_current,
-                },
-            ) = self.heat_cool_systems_for_zone(z_name, simtime)?;
+            let HeatCoolSystemsForZone {
+                h_sorted_names: h_name_list_sorted_zone_current,
+                c_sorted_names: c_name_list_sorted_zone_current,
+                setpoints_and_convective_fractions:
+                    SetpointsAndConvectiveFractions {
+                        temp_setpnt_heat: temp_setpnt_heat_zone_system_current,
+                        temp_setpnt_cool: temp_setpnt_cool_zone_system_current,
+                        frac_convective_heat: frac_convective_heat_zone_system_current,
+                        frac_convective_cool: frac_convective_cool_zone_system_current,
+                    },
+            } = self.heat_cool_systems_for_zone(z_name, simtime)?;
 
             h_name_list_sorted_zone.insert(z_name, h_name_list_sorted_zone_current);
             c_name_list_sorted_zone.insert(z_name, c_name_list_sorted_zone_current);
@@ -2327,7 +2324,7 @@ impl Corpus {
             timestep_array.push(t_it.time);
             self.update_temp_internal_air();
 
-            let (
+            let WaterHeatingCalculation {
                 hw_demand_vol,
                 hw_duration,
                 no_events,
@@ -2338,7 +2335,7 @@ impl Corpus {
                 primary_pw_losses,
                 storage_losses,
                 gains_internal_dhw,
-            ) = self.domestic_hot_water_demand.calc_water_heating(
+            } = self.domestic_hot_water_demand.calc_water_heating(
                 t_it,
                 self.temp_internal_air_prev_timestep(),
                 self.external_conditions.air_temp(&t_it),
@@ -3095,6 +3092,12 @@ impl SpaceHeatCoolSystems<'_> {
             SpaceHeatCoolSystems::Cool(cool) => Ok(cool[system_name].in_required_period(&simtime)),
         }
     }
+}
+
+struct HeatCoolSystemsForZone {
+    h_sorted_names: Vec<Arc<str>>,
+    c_sorted_names: Vec<Arc<str>>,
+    setpoints_and_convective_fractions: SetpointsAndConvectiveFractions,
 }
 
 pub type ColdWaterSources = IndexMap<String, Arc<ColdWaterSource>>;
@@ -4666,6 +4669,12 @@ fn heat_source_wet_from_input(
     }
 }
 
+struct HeatSourceFromInput {
+    heat_source: HeatSource,
+    energy_supply_conn_name: String,
+    heat_source_name_pair: Option<(String, String)>,
+}
+
 fn heat_source_from_input(
     name: &str,
     hot_water_source_name: &str,
@@ -4680,7 +4689,7 @@ fn heat_source_from_input(
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
-) -> anyhow::Result<(HeatSource, String, Option<(String, String)>)> {
+) -> anyhow::Result<HeatSourceFromInput> {
     match input {
         HeatSourceInput::ImmersionHeater {
             power,
@@ -4698,19 +4707,19 @@ fn heat_source_from_input(
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)).ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for an ImmersionHeater object."))?;
 
-            Ok((
-                HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
-                    ImmersionHeater::new(
+            Ok(HeatSourceFromInput {
+                heat_source: HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(
+                    Mutex::new(ImmersionHeater::new(
                         *power,
                         energy_supply_conn,
                         simulation_time.step_in_hours(),
                         Some(control_min),
                         Some(control_max),
-                    ),
-                )))),
-                name.into(),
-                None,
-            ))
+                    )),
+                ))),
+                energy_supply_conn_name: name.into(),
+                heat_source_name_pair: None,
+            })
         }
         HeatSourceInput::SolarThermalSystem {
             solar_cell_location,
@@ -4743,9 +4752,9 @@ fn heat_source_from_input(
                 EnergySupply::connection(energy_supply_from_environment.clone(), name)?;
             let contents = &WATER;
 
-            Ok((
-                HeatSource::Storage(HeatSourceWithStorageTank::Solar(Arc::new(Mutex::new(
-                    SolarThermalSystem::new(
+            Ok(HeatSourceFromInput {
+                heat_source: HeatSource::Storage(HeatSourceWithStorageTank::Solar(Arc::new(
+                    Mutex::new(SolarThermalSystem::new(
                         *solar_cell_location,
                         *area_module,
                         *modules,
@@ -4766,11 +4775,11 @@ fn heat_source_from_input(
                         control_max,
                         **contents,
                         Some(energy_supply_from_environment_conn),
-                    ),
-                )))),
-                name.into(),
-                None,
-            ))
+                    )),
+                ))),
+                energy_supply_conn_name: name.into(),
+                heat_source_name_pair: None,
+            })
         }
         HeatSourceInput::ServiceWaterRegular {
             name,
@@ -4800,8 +4809,8 @@ fn heat_source_from_input(
             })?;
             let mut heat_source_wet_clone = heat_source_wet.clone();
 
-            Ok((
-                match heat_source_wet_clone {
+            Ok(HeatSourceFromInput {
+                heat_source: match heat_source_wet_clone {
                     WetHeatSource::HeatPump(heat_pump) => HeatSource::Wet(Box::new(
                         HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
                             heat_pump.clone(),
@@ -4853,9 +4862,10 @@ fn heat_source_from_input(
                         }),
                     )),
                 },
-                energy_supply_conn_name.clone(),
-                (energy_supply_conn_name, hot_water_source_name.into()).into(),
-            ))
+                energy_supply_conn_name: energy_supply_conn_name.clone(),
+                heat_source_name_pair: (energy_supply_conn_name, hot_water_source_name.into())
+                    .into(),
+            })
         }
         HeatSourceInput::HeatPumpHotWaterOnly {
             power_max,
@@ -4881,8 +4891,8 @@ fn heat_source_from_input(
                 .get_with_string(control_max)
                 .ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a HeatPumpHotWaterOnly object."))?;
 
-            Ok((
-                HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
+            Ok(HeatSourceFromInput {
+                heat_source: HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
                     HeatPumpHotWaterOnly::new(
                         *power_max,
                         energy_supply_connection,
@@ -4890,8 +4900,8 @@ fn heat_source_from_input(
                         *vol_hw_daily_average,
                         volume,
                         daily_losses,
-                        heat_exchanger_surface_area.ok_or(anyhow!("A heat exchanger surface_area is expected for a HeatPumpHotWaterOnly heat source"))?,
-                        *in_use_factor_mismatch,
+                        heat_exchanger_surface_area.ok_or(anyhow!("A heat exchanger surface_area is expected for a HeatPumpHotWaterOnly heat source")) ?,
+                        * in_use_factor_mismatch,
                         *tank_volume_declared,
                         *heat_exchanger_surface_area_declared,
                         *daily_losses_declared,
@@ -4900,9 +4910,9 @@ fn heat_source_from_input(
                         control_max,
                     ),
                 ))),
-                energy_supply_conn_name.into(),
-                None,
-            ))
+                energy_supply_conn_name: energy_supply_conn_name.into(),
+                heat_source_name_pair: None,
+            })
         }
     }
 }
@@ -5170,22 +5180,25 @@ fn hot_water_source_from_input(
                 }
             };
 
-            let (heat_source, energy_supply_conn_name, heat_source_name_pair) =
-                heat_source_from_input(
-                    heat_source_name.as_str(),
-                    name,
-                    heat_source_data,
-                    &cold_water_source,
-                    *volume,
-                    *daily_losses,
-                    heat_exchanger_surface_area,
-                    wet_heat_sources,
-                    simulation_time,
-                    controls,
-                    energy_supplies,
-                    temp_internal_air_fn.clone(),
-                    external_conditions.clone(),
-                )?;
+            let HeatSourceFromInput {
+                heat_source,
+                energy_supply_conn_name,
+                heat_source_name_pair,
+            } = heat_source_from_input(
+                heat_source_name.as_str(),
+                name,
+                heat_source_data,
+                &cold_water_source,
+                *volume,
+                *daily_losses,
+                heat_exchanger_surface_area,
+                wet_heat_sources,
+                simulation_time,
+                controls,
+                energy_supplies,
+                temp_internal_air_fn.clone(),
+                external_conditions.clone(),
+            )?;
             let heat_source = Arc::new(Mutex::new(heat_source));
 
             heat_sources.insert(

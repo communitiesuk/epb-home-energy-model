@@ -413,6 +413,8 @@ pub static UNITS_MAP: LazyLock<IndexMap<&'static str, &'static str>> = LazyLock:
     ])
 });
 
+type ReorganisedMapForOutput = IndexMap<Option<Arc<str>>, IndexMap<Arc<str>, Vec<f64>>>;
+
 fn write_core_output_file(
     output: &Output,
     output_key: &str,
@@ -456,8 +458,7 @@ fn write_core_output_file(
     // Reorganising this dictionary so system names can be grouped together
 
     // Initialize the reorganized dictionary for grouping systems from OutputHeatingCoolingSystem
-    let mut reorganised_dict: IndexMap<Option<Arc<str>>, IndexMap<Arc<str>, Vec<f64>>> =
-        Default::default();
+    let mut reorganised_dict: ReorganisedMapForOutput = Default::default();
 
     // Iterate over the original structures
     for (key, value) in [
@@ -1066,6 +1067,8 @@ fn write_core_output_file_heat_balance(
     Ok(())
 }
 
+type HeatSourceWetServiceResultColumn = Vec<(Arc<str>, Option<Arc<str>>)>;
+
 fn write_core_output_file_heat_source_wet(
     output_key: &str,
     timestep_array: &[f64],
@@ -1075,7 +1078,7 @@ fn write_core_output_file_heat_source_wet(
     // Repeat column headings for each service
     let mut col_headings: Vec<Arc<str>> = vec!["Timestep".into()];
     let mut col_units_row: Vec<Arc<str>> = vec!["count".into()];
-    let mut columns: IndexMap<Arc<str>, Vec<(Arc<str>, Option<Arc<str>>)>> = Default::default();
+    let mut columns: IndexMap<Arc<str>, HeatSourceWetServiceResultColumn> = Default::default();
 
     for (service_name, service_results) in heat_source_wet_results.iter() {
         columns.insert(

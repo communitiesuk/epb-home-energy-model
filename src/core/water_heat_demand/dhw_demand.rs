@@ -344,7 +344,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         mapping
     }
 
-    pub(crate) fn temp_hot_water(
+    fn temp_hot_water(
         &self,
         hot_water_source: T,
         volume_required_already: f64,
@@ -369,7 +369,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         Ok(sum_t_by_v / sum_v)
     }
 
-    pub(crate) fn get_tapping_point_for_event(
+    fn get_tapping_point_for_event(
         &'_ self,
         event: TypedScheduleEvent,
     ) -> (TappingPoint<'_>, OutletType, Arc<str>) {
@@ -411,16 +411,10 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         }
     }
 
-    pub(crate) fn hot_water_demand<'a>(
+    fn hot_water_demand<'a>(
         &'a self,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, u32>,
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, Vec<WaterEventResult>>,
-    )> {
+    ) -> anyhow::Result<HotWaterDemandResult> {
         let hot_water_source_keys: Vec<Arc<str>> = self
             .hot_water_sources
             .keys()
@@ -651,39 +645,28 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         // - number of events in timestep
         // - hot water energy demand (kWh)
         // - usage_events updated to reflect pipework volumes and bath durations
-        Ok((
-            hw_demand_volume,
+        Ok(HotWaterDemandResult {
+            hw_demand_vol: hw_demand_volume,
             hw_duration,
-            all_events,
-            hw_energy_demand,
-            usage_events_with_flushes,
-        ))
+            no_events: all_events,
+            hw_energy_demand_at_tapping_points: hw_energy_demand,
+            usage_events: usage_events_with_flushes,
+        })
     }
 
-    pub fn calc_water_heating(
+    pub(crate) fn calc_water_heating(
         &self,
         simtime: SimulationTimeIteration,
         internal_air_temperature: f64,
         external_air_temperature: f64,
-    ) -> anyhow::Result<(
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, u32>,
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, f64>,
-        IndexMap<Arc<str>, f64>,
-    )> {
-        let (
+    ) -> anyhow::Result<WaterHeatingCalculation> {
+        let HotWaterDemandResult {
             hw_demand_vol,
             hw_duration,
             no_events,
             hw_energy_demand_at_tapping_points,
             usage_events,
-        ) = self.hot_water_demand(simtime)?;
+        } = self.hot_water_demand(simtime)?;
 
         // Running heat sources of pre-heated tanks and updating thermal losses, etc.
         for hot_water_source in self.pre_heated_water_sources.values() {
@@ -778,7 +761,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             storage_losses.insert(hws_name.clone(), storage);
         }
 
-        Ok((
+        Ok(WaterHeatingCalculation {
             hw_demand_vol,
             hw_duration,
             no_events,
@@ -789,7 +772,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             primary_pw_losses,
             storage_losses,
             gains_internal_dhw,
-        ))
+        })
     }
 
     pub fn calc_pipework_losses(
@@ -898,6 +881,27 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
     }
 }
 
+struct HotWaterDemandResult {
+    hw_demand_vol: IndexMap<Arc<str>, f64>,
+    hw_duration: IndexMap<Arc<str>, f64>,
+    no_events: IndexMap<Arc<str>, u32>,
+    hw_energy_demand_at_tapping_points: IndexMap<Arc<str>, f64>,
+    usage_events: IndexMap<Arc<str>, Vec<WaterEventResult>>,
+}
+
+pub(crate) struct WaterHeatingCalculation {
+    pub(crate) hw_demand_vol: IndexMap<Arc<str>, f64>,
+    pub(crate) hw_duration: IndexMap<Arc<str>, f64>,
+    pub(crate) no_events: IndexMap<Arc<str>, u32>,
+    pub(crate) hw_energy_demand_at_tapping_points: IndexMap<Arc<str>, f64>,
+    pub(crate) hw_energy_demand_at_hot_water_source: IndexMap<Arc<str>, f64>,
+    pub(crate) hw_energy_output: IndexMap<Arc<str>, f64>,
+    pub(crate) pw_losses_total: IndexMap<Arc<str>, f64>,
+    pub(crate) primary_pw_losses: IndexMap<Arc<str>, f64>,
+    pub(crate) storage_losses: IndexMap<Arc<str>, f64>,
+    pub(crate) gains_internal_dhw: IndexMap<Arc<str>, f64>,
+}
+
 fn shower_from_input(
     name: &str,
     input: &ShowerInput,
@@ -920,10 +924,9 @@ fn shower_from_input(
                     wwhrs
                         .get(w)
                         .cloned()
-                        .ok_or_else(
-                            || anyhow!("Could not find WWHRS instance for shower '{name}'"),
-                        )
-                }).transpose()?;
+                        .ok_or_else(|| anyhow!("Could not find WWHRS instance for shower '{name}'"))
+                })
+                .transpose()?;
 
             Shower::MixerShower(MixerShower::new(
                 *flowrate,
@@ -1435,6 +1438,7 @@ mod tests {
             event_schedules,
         );
 
+        #[allow(clippy::type_complexity)]
         let expected_results: Vec<(
             IndexMap<Arc<str>, f64>,
             IndexMap<Arc<str>, f64>,
@@ -1814,13 +1818,13 @@ mod tests {
         ];
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            let (
-                hw_demand_volume,
+            let HotWaterDemandResult {
+                hw_demand_vol: hw_demand_volume,
                 hw_duration,
-                all_events,
-                hw_energy_demand,
-                _usage_events_with_flushes,
-            ) = dhw_demand.hot_water_demand(t_it).unwrap();
+                no_events: all_events,
+                hw_energy_demand_at_tapping_points: hw_energy_demand,
+                usage_events: _usage_events_with_flushes,
+            } = dhw_demand.hot_water_demand(t_it).unwrap();
 
             let (
                 expected_hw_demand_volume,
@@ -1902,6 +1906,7 @@ mod tests {
             event_schedules_modified,
         );
 
+        #[allow(clippy::type_complexity)]
         let expected: (
             IndexMap<Arc<str>, f64>,
             IndexMap<Arc<str>, f64>,
@@ -1937,13 +1942,13 @@ mod tests {
             .hot_water_demand(simulation_time.iter().current_iteration())
             .unwrap();
 
-        let (
-            hw_demand_volume,
+        let HotWaterDemandResult {
+            hw_demand_vol: hw_demand_volume,
             hw_duration,
-            all_events,
-            hw_energy_demand,
-            _usage_events_with_flushes,
-        ) = actual;
+            no_events: all_events,
+            hw_energy_demand_at_tapping_points: hw_energy_demand,
+            usage_events: _usage_events_with_flushes,
+        } = actual;
 
         assert_eq!(hw_demand_volume, expected_hw_demand_volume);
         assert_eq!(hw_duration, expected_hw_duration);
@@ -2320,18 +2325,18 @@ mod tests {
                 .calc_water_heating(t_it, temp_int_air, temp_ext_air)
                 .unwrap();
 
-            let (
+            let WaterHeatingCalculation {
                 hw_demand_vol,
                 hw_duration,
                 no_events,
-                hw_energy_demand,
-                hw_energy_demand_incl_pipework_loss,
+                hw_energy_demand_at_tapping_points: hw_energy_demand,
+                hw_energy_demand_at_hot_water_source: hw_energy_demand_incl_pipework_loss,
                 hw_energy_output,
-                dist_pw_losses,
+                pw_losses_total: dist_pw_losses,
                 primary_pw_losses,
                 storage_losses,
                 gains_internal_dhw,
-            ) = actual;
+            } = actual;
 
             let keys: Vec<Arc<str>> = vec!["hw cylinder".into(), "_electric_showers".into()];
             for key in keys {
@@ -2750,18 +2755,18 @@ mod tests {
                 .calc_water_heating(t_it, temp_int_air, temp_ext_air)
                 .unwrap();
 
-            let (
+            let WaterHeatingCalculation {
                 hw_demand_vol,
                 hw_duration,
                 no_events,
-                hw_energy_demand,
-                hw_energy_demand_incl_pipework_loss,
+                hw_energy_demand_at_tapping_points: hw_energy_demand,
+                hw_energy_demand_at_hot_water_source: hw_energy_demand_incl_pipework_loss,
                 hw_energy_output,
-                dist_pw_losses,
+                pw_losses_total: dist_pw_losses,
                 primary_pw_losses,
                 storage_losses,
                 gains_internal_dhw,
-            ) = actual;
+            } = actual;
 
             let keys: Vec<Arc<str>> = vec!["hw cylinder".into(), "_electric_showers".into()];
             for key in keys {
@@ -2985,13 +2990,13 @@ mod tests {
                 timestep: 1.,
             })
             .unwrap();
-        let (
-            _hw_demand_volume,
-            _hw_duration,
-            _all_events,
-            _hw_energy_demand,
-            usage_events_with_flushes,
-        ) = actual;
+        let HotWaterDemandResult {
+            hw_demand_vol: _hw_demand_volume,
+            hw_duration: _hw_duration,
+            no_events: _all_events,
+            hw_energy_demand_at_tapping_points: _hw_energy_demand,
+            usage_events: usage_events_with_flushes,
+        } = actual;
 
         let usage_events_with_flushes_for_hw_cylinder =
             usage_events_with_flushes.get("hw cylinder").unwrap();
@@ -3072,13 +3077,13 @@ mod tests {
                 timestep: 1.,
             })
             .unwrap();
-        let (
-            _hw_demand_volume,
-            _hw_duration,
-            _all_events,
-            _hw_energy_demand,
-            usage_events_with_flushes,
-        ) = actual;
+        let HotWaterDemandResult {
+            hw_demand_vol: _hw_demand_volume,
+            hw_duration: _hw_duration,
+            no_events: _all_events,
+            hw_energy_demand_at_tapping_points: _hw_energy_demand,
+            usage_events: usage_events_with_flushes,
+        } = actual;
 
         let usage_events_with_flushes_for_hw_cylinder =
             usage_events_with_flushes.get("hw cylinder").unwrap();
@@ -3171,13 +3176,13 @@ mod tests {
                 timestep: 1.,
             })
             .unwrap();
-        let (
-            _hw_demand_volume,
-            _hw_duration,
-            _all_events,
-            _hw_energy_demand,
-            usage_events_with_flushes,
-        ) = actual;
+        let HotWaterDemandResult {
+            hw_demand_vol: _hw_demand_volume,
+            hw_duration: _hw_duration,
+            no_events: _all_events,
+            hw_energy_demand_at_tapping_points: _hw_energy_demand,
+            usage_events: usage_events_with_flushes,
+        } = actual;
 
         let usage_events_with_flushes_for_hw_cylinder =
             usage_events_with_flushes.get("hw cylinder").unwrap();
