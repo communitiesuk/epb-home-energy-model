@@ -5265,16 +5265,7 @@ impl InputForCalcHtcHlp for ReducedInputForCalcHtcHlp {
 
 #[expect(unused)]
 static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
-    let schema = serde_json::from_str(include_str!("../schemas/input_core.schema.json")).unwrap();
-    jsonschema::validator_for(&schema).unwrap()
-});
-
-#[expect(unused)]
-static CORE_INCLUDING_FHS_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
-    let schema = serde_json::from_str(include_str!(
-        "../schemas/input_core_allowing_fhs.schema.json"
-    ))
-    .unwrap();
+    let schema = serde_json::from_str(include_str!("../schemas/core-input.json")).unwrap();
     jsonschema::validator_for(&schema).unwrap()
 });
 
