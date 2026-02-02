@@ -483,8 +483,8 @@ fn write_core_output_file(
         }
     }
 
-    // Loop over reorganised dictionary to add  column and unit headers
-    // Check if the system name is set ,else add a designated empty 'None' string
+    // Loop over reorganised dictionary to add column and unit headers
+    // Check if the system name is set, else add a designated empty 'None' string
     for system in reorganised_dict.keys() {
         if let Some(system) = system {
             for hc_name in reorganised_dict[&Some(system.clone())].keys() {
@@ -577,6 +577,7 @@ fn write_core_output_file(
                 zone_row.push(zone_outputs[t_idx]);
             }
         }
+
         // Loop over system names and print the heating and cooling energy demand and output
         for system in reorganised_dict.keys() {
             let system_key = &system.as_ref().map(|x| x.clone());
@@ -1324,12 +1325,6 @@ fn write_core_output_file_hot_water_source_summary(
     _output_writer: &impl OutputWriter,
 ) {
     // TODO complete when hot water source results defined
-}
-
-struct HourForTimestep {
-    month: String,
-    day: usize,
-    hour: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
