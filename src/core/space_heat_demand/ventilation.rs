@@ -3358,14 +3358,14 @@ mod tests {
                     "test_result": 1.2,
                     "env_area": 220,
                 },
-                "CombustionAppliances": {
-                    "Fireplace": {
-                        "supply_situation": "room_air",
-                        "exhaust_situation": "into_separate_duct",
-                        "fuel_type": "wood",
-                        "appliance_type": "open_fireplace",
-                    }
-                },
+                // "CombustionAppliances": {
+                //     "Fireplace": {
+                //         "supply_situation": "room_air",
+                //         "exhaust_situation": "into_separate_duct",
+                //         "fuel_type": "wood",
+                //         "appliance_type": "open_fireplace",
+                //     }
+                // }, // CombustionAppliances is no longer a field on this type, but present in upstream fixture JSON erroneously
                 "MechanicalVentilation": {
                     "mechvent1": {
                         "sup_air_flw_ctrl": "ODA",
