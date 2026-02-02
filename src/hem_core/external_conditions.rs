@@ -26,7 +26,7 @@ pub enum DaylightSavingsConfig {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-// #[serde(deny_unknown_fields)] // TODO: restore this for all versions after 0.36
+#[serde(deny_unknown_fields)]
 pub struct ShadingSegment {
     /// Starting angle of the shading segment
     #[serde(rename = "start360")]

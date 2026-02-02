@@ -28,7 +28,7 @@ const HOURS_IN_YEAR: usize = 8760;
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(rename_all = "PascalCase")] // TODO: add `deny_unknown_fields` declaration back in for versions newer than 0.36
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[validate(custom = validate_shower_waste_water_heat_recovery_systems)]
 #[validate(custom = validate_exhaust_air_heat_pump_ventilation_compatibility)]
 pub struct Input {
@@ -501,23 +501,6 @@ fn validate_threshold_value_fractions(
     }
 
     Ok(())
-}
-
-impl EnergySupplyDetails {
-    // TODO review after migration as we expect it may be removed
-    pub fn with_fuel(fuel_type: FuelType) -> Self {
-        Self {
-            fuel: fuel_type,
-            diverter: None,
-            electric_battery: None,
-            factor: None,
-            priority: None,
-            is_export_capable: false,
-            threshold_charges: None,
-            threshold_prices: None,
-            tariff: None,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -3549,7 +3532,7 @@ pub enum ThermalBridging {
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` serde annotation after 0.36 (once FHS is extracted)
+#[serde(tag = "type", deny_unknown_fields)]
 pub enum ThermalBridgingDetails {
     #[serde(rename = "ThermalBridgeLinear")]
     Linear {
@@ -3584,7 +3567,7 @@ pub(crate) type SpaceCoolSystem = IndexMap<std::string::String, SpaceCoolSystemD
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` serde annotation after 0.36 (once FHS is extracted)
+#[serde(tag = "type", deny_unknown_fields)]
 pub(crate) enum SpaceCoolSystemDetails {
     AirConditioning {
         /// Maximum cooling capacity of the system (unit: kW)
@@ -4466,7 +4449,7 @@ pub enum BuildType {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-// #[serde(deny_unknown_fields)] // TODO: restore `deny_unknown_fields` declaration after 0.36
+#[serde(deny_unknown_fields)]
 pub struct InfiltrationVentilation {
     #[serde(
         rename = "Control_VentAdjustMax",
@@ -5118,7 +5101,7 @@ pub struct Appliance {
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-// #[serde(deny_unknown_fields)] // TODO: possibly restore `deny_unknown_fields` declaration after 0.36
+#[serde(deny_unknown_fields)]
 pub(crate) struct ApplianceLoadShifting {
     #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
     pub(crate) control: Option<String>,
