@@ -219,10 +219,7 @@ pub fn run_project(
             }
         };
 
-        let contextualised_results =
-            CalculationResult::new(input, output);
-
-        Ok(contextualised_results)
+        Ok(CalculationResult::new(input, output))
     }))
         .map_err(|e| {
             HemError::GeneralPanic(
