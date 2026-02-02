@@ -172,12 +172,12 @@ pub(crate) fn expand_events_from_json_values(
 /// * `event_type` - type of the events being processed (e.g., "Shower", "Bath", "Others")
 /// * `schedule` - the existing schedule dictionary to update
 pub fn expand_events(
-    events: Vec<ScheduleEvent>, // todo: review type as part of migration to 1.0.0a1, in Python: list[dict[str, Any]],
+    events: Vec<ScheduleEvent>,
     simulation_timestep: f64,
     total_timesteps: usize,
     name: &str,
     event_type: WaterScheduleEventType,
-    mut schedule: Vec<Option<Vec<TypedScheduleEvent>>>, // todo: review type as part of migration to 1.0.0a1, in Python: dict[int, Any]
+    mut schedule: Vec<Option<Vec<TypedScheduleEvent>>>,
 ) -> anyhow::Result<Vec<Option<Vec<TypedScheduleEvent>>>> {
     for event in events {
         let starting_timestep = (event.start / simulation_timestep).floor() as usize;
