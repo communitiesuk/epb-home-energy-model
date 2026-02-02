@@ -731,7 +731,7 @@ fn write_core_output_file_summary(
 
     let peak_consumption = &output.summary.electricity_peak_consumption;
     writer.write_record([
-        "Peak half-hour consumption (electricity)".to_string(), // TODO (from Python) TODO technically per-step, not half-hour
+        "Peak half-hour consumption (electricity)".to_string(), // TODO (from Python) technically per-step, not half-hour
         peak_consumption.peak.to_string(),
         peak_consumption.index.to_string(),
         peak_consumption.index.to_string(),
