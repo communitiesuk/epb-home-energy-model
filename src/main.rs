@@ -23,6 +23,7 @@ struct SapArgs {
     #[clap(
         long,
         value_enum,
+        num_args = 1..=2,
         help = "output format(s): csv, json, or both; default to csv"
     )]
     output: Option<Vec<OutputFormat>>,

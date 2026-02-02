@@ -886,6 +886,9 @@ fn write_output_json_file(
     if output_writer.is_noop() {
         return Ok(());
     }
+
+    debug!("writing JSON output file");
+
     let writer = output_writer.writer_for_location_key(output_key, "json")?;
     serde_json::to_writer_pretty(writer, &output)?;
 
