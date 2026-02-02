@@ -289,7 +289,7 @@ impl HeatBatteryPcmServiceSpace {
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> Self {
         Self {
             heat_battery,
@@ -722,7 +722,7 @@ impl HeatBatteryPcm {
     pub(crate) fn create_service_space_heating(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> anyhow::Result<HeatBatteryPcmServiceSpace> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceSpace::new(

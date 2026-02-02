@@ -1364,8 +1364,8 @@ impl HeatPumpServiceWater {
         service_name: String,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<WaterSupply>,
-        control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl
-        control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl
+        control_min: Arc<Control>, // in Python this is TimeControl
+        control_max: Arc<Control>, // in Python this is TimeControl
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
     ) -> Self {
         let control = control_min.clone();
@@ -1414,14 +1414,9 @@ impl HeatPumpServiceWater {
     pub fn energy_output_max(
         &self,
         temp_flow: f64,
-        temp_return: f64,
+        temp_return: f64, // optional in upstream Python, but declaring as non-optional is simpler and more accurate (nothing calls this with an option)
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<BufferTankEmittersDataWithResult>)> {
-        // In the Python, temp_return has been updated to optional in 0.34 but update may be erroneous so leaving as non-optional for now
-        // In 1.0.0a1 it looks like making temp_return optional is more intentional/correct due to a check of whether it's None at the beginning of this method before it's used:
-        //         if not self.is_on() or temp_return is None:
-        //             return 0.0
-        // but wherever it's called, a float(non-optional) is passed in so leaving non-optional TODO review in later migrations
         let temp_return_k = celsius_to_kelvin(temp_return)?;
         if !self.is_on(simulation_time_iteration) {
             return Ok((0.0, None));
@@ -1453,9 +1448,6 @@ impl HeatPumpServiceWater {
         temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        // In the Python, temp_return has been updated to optional in 0.34 but update may be erroneous so leaving as non-optional for now
-        // (it's passed from here through methods to run_demand_energy_calc, where it is treated as non-optional and will cause an error if none
-        // above is still the case in 1.0.0a1 TODO review in later migrations
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
@@ -1545,7 +1537,7 @@ impl HeatPumpServiceSpace {
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl | None (not making this optional in Rust 1.0.0a1 as there will always be a control)
+        control: Arc<Control>, // in Python this is TimeControl | None (not making this optional in Rust as there will always be a control)
         volume_heated: f64,
         boiler_service_space: Option<Arc<Mutex<BoilerServiceSpace>>>,
     ) -> Self {
@@ -1785,7 +1777,7 @@ impl HeatPumpServiceSpaceWarmAir {
         service_name: &str,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl | None (not making this optional in Rust 1.0.0a1 as there will always be a control)
+        control: Arc<Control>, // in Python this is TimeControl | None (not making this optional in Rust as there will always be a control)
         temp_flow: f64,
         frac_convective: f64,
         volume_heated: f64,
@@ -2461,8 +2453,8 @@ impl HeatPump {
         service_name: &str,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<WaterSupply>,
-        control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
-        control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control_min: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control_max: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> anyhow::Result<HeatPumpServiceWater> {
         Self::create_service_connection(heat_pump.clone(), service_name)?;
         let boiler_service = heat_pump
@@ -2499,7 +2491,7 @@ impl HeatPump {
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust 1.0.0a1 as there will always be a control)
+        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust as there will always be a control)
         volume_heated: f64,
     ) -> HeatPumpServiceSpace {
         let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
@@ -2533,7 +2525,7 @@ impl HeatPump {
     pub(crate) fn create_service_space_heating_warm_air(
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust 1.0.0a1 as there will always be a control)
+        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust as there will always be a control)
         frac_convective: f64,
         volume_heated: f64,
     ) -> anyhow::Result<HeatPumpServiceSpaceWarmAir> {
@@ -4518,8 +4510,8 @@ impl HeatPumpHotWaterOnly {
         heat_exchanger_surface_area_declared: f64,
         daily_losses_declared: f64,
         simulation_timestep: f64,
-        control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl
-        control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is TimeControl
+        control_min: Arc<Control>, // in Python this is TimeControl
+        control_max: Arc<Control>, // in Python this is TimeControl
     ) -> Self {
         let efficiencies = Efficiencies {
             l: test_data.l.as_ref().map(|profile_data| {

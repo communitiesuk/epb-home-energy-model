@@ -735,11 +735,11 @@ impl StorageTank {
                             .energy_output_max(simulation_time, false),
                         HeatSource::Storage(HeatSourceWithStorageTank::Solar(_)) => unreachable!(), // this case was already covered in the first arm of this if let clause, so can't repeat here
                         HeatSource::Wet(heat_source_wet) => {
-                            // TODO Use different temperatures for flow and return in the call to
+                            // TODO (from Python) Use different temperatures for flow and return in the call to
                             // heat_source.energy_output_max below
                             // Fallback to current tank temperature at heater layer when heat source has no setpoint
                             heat_source_wet.energy_output_max(
-                                Some(temp_flow),
+                                temp_flow,
                                 temp_flow,
                                 simulation_time,
                             )?
@@ -1886,7 +1886,7 @@ impl SmartHotWaterTank {
                             // heat_source.energy_output_max below
                             // Fallback to current tank temperature at heater layer when heat source has no setpoint
                             heat_source_wet.energy_output_max(
-                                Some(temp_flow),
+                                temp_flow,
                                 temp_flow,
                                 simulation_time,
                             )?

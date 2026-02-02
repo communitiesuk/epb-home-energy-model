@@ -254,8 +254,8 @@ impl BoilerServiceWaterRegular {
     pub(crate) fn new(
         boiler: Arc<RwLock<Boiler>>,
         service_name: String,
-        control_min: Arc<Control>, // TODO In Python 1.0.0a1 this can be one of SetpointTimeControl or CombinationTimeControl
-        control_max: Arc<Control>, // TODO In Python 1.0.0a1 this can be one of SetpointTimeControl or CombinationTimeControl
+        control_min: Arc<Control>, // in Python this can be one of SetpointTimeControl or CombinationTimeControl
+        control_max: Arc<Control>, // in Python this can be one of SetpointTimeControl or CombinationTimeControl
     ) -> anyhow::Result<Self> {
         Ok(Self {
             boiler,
@@ -338,7 +338,7 @@ impl BoilerServiceSpace {
     pub(crate) fn new(
         boiler: Arc<RwLock<Boiler>>,
         service_name: String,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> Self {
         Self {
             boiler,
@@ -641,8 +641,8 @@ impl Boiler {
     pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control_min: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
-        control_max: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control_min: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control_max: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
         BoilerServiceWaterRegular::new(
@@ -656,7 +656,7 @@ impl Boiler {
     pub(crate) fn create_service_space_heating(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control: Arc<Control>, // TODO in Python 1.0.0a1 this is SetpointTimeControl | CombinationTimeControl
+        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> BoilerServiceSpace {
         boiler
             .write()
