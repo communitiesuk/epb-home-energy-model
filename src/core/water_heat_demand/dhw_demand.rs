@@ -500,24 +500,18 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                     Option<&EnergySupplyConnection>,
                 ) =
                     match tapping_point {
-                        TappingPoint::Shower(shower)
-                            if matches!(shower, Shower::InstantElectricShower(_)) =>
-                        {
+                        TappingPoint::Shower(Shower::InstantElectricShower(shower)) => {
                             let hot_water_source_name = ELECTRIC_SHOWERS_HWS_NAME;
 
-                            if let Shower::InstantElectricShower(instant_electric_shower) = shower {
-                                let (hw_demand_i, hw_demand_target_i) = instant_electric_shower
-                                    .hot_water_demand(event.into(), simtime)?;
-                                (
-                                    hot_water_source_name.into(),
-                                    None,
-                                    Some(hw_demand_i),
-                                    hw_demand_target_i,
-                                    None,
-                                )
-                            } else {
-                                unreachable!()
-                            }
+                            let (hw_demand_i, hw_demand_target_i) =
+                                shower.hot_water_demand(event.into(), simtime)?;
+                            (
+                                hot_water_source_name.into(),
+                                None,
+                                Some(hw_demand_i),
+                                hw_demand_target_i,
+                                None,
+                            )
                         }
                         _ => {
                             let hot_water_source_name = self
@@ -581,6 +575,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                     cold_water_temperature,
                 );
 
+                *hw_energy_demand.get_mut(&hot_water_source_name).unwrap() += hw_energy_demand_i;
                 *hw_duration.get_mut(&hot_water_source_name).unwrap() +=
                     Self::get_duration_for_tapping_point_event(&tapping_point, event);
                 *all_events.get_mut(&hot_water_source_name).unwrap() += 1;
@@ -1013,6 +1008,7 @@ mod tests {
         WaterPipeworkLocation,
     };
     use crate::simulation_time::SimulationTime;
+    use approx::assert_relative_eq;
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
@@ -1093,18 +1089,6 @@ mod tests {
             let volume_req_cumulative = volume_required + volume_required_already;
             Ok(vec![(55.0, volume_req_cumulative)])
         }
-
-        fn internal_gains(&self) -> Option<f64> {
-            Some(0.) // Python doesn't mock this
-        }
-
-        fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
-            (0., 0.) // Python doesn't mock this
-        }
-
-        fn is_point_of_use(&self) -> bool {
-            false
-        }
     }
 
     #[derive(Debug, Clone)]
@@ -1146,15 +1130,11 @@ mod tests {
         }
 
         fn internal_gains(&self) -> Option<f64> {
-            Some(20.)
+            Some(20.0)
         }
 
         fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
             (5., 15.)
-        }
-
-        fn is_point_of_use(&self) -> bool {
-            false
         }
     }
 
@@ -1431,7 +1411,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "work in progress for migration to 1.0.0a1"]
+    // #[ignore = "work in progress for migration to 1.0.0a1"]
     fn test_hot_water_demand(
         simulation_time: SimulationTime,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
@@ -1546,11 +1526,11 @@ mod tests {
             ),
             (
                 IndexMap::from([
-                    ("_electric_showers".into(), 0.),
+                    ("_electric_showers".into(), 0.0),
                     ("hw cylinder".into(), 81.141483189812),
                 ]),
                 IndexMap::from([
-                    ("_electric_showers".into(), 0.),
+                    ("_electric_showers".into(), 6.0),
                     ("hw cylinder".into(), 12.5),
                 ]),
                 IndexMap::from([("_electric_showers".into(), 1), ("hw cylinder".into(), 1)]),
@@ -1641,7 +1621,7 @@ mod tests {
                 ]),
                 IndexMap::from([
                     ("_electric_showers".into(), 0.),
-                    ("hw cylinder".into(), 2.0),
+                    ("hw cylinder".into(), 9.0),
                 ]),
                 IndexMap::from([("_electric_showers".into(), 0), ("hw cylinder".into(), 2)]),
                 IndexMap::from([
@@ -1863,7 +1843,7 @@ mod tests {
     // Skipping Python test test_unmet_demand_connection_failure
 
     #[rstest]
-    #[ignore = "work in progress for migration to 1.0.0a1"]
+    // #[ignore = "work in progress for migration to 1.0.0a1"]
     fn test_hot_water_demand_unmet(
         simulation_time: SimulationTime,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
@@ -1975,7 +1955,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "work in progress for migration to 1.0.0a1"]
+    // #[ignore = "work in progress for migration to 1.0.0a1"]
     fn test_calc_water_heating(
         simulation_time: SimulationTime,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
@@ -2355,9 +2335,10 @@ mod tests {
 
             let keys: Vec<Arc<str>> = vec!["hw cylinder".into(), "_electric_showers".into()];
             for key in keys {
-                assert_eq!(
+                assert_relative_eq!(
                     *hw_demand_vol.get(&key).unwrap(),
-                    hw_demand_vol_expected.get(&key).unwrap()[t_idx]
+                    hw_demand_vol_expected.get(&key).unwrap()[t_idx],
+                    epsilon = 1e-7
                 );
                 assert_eq!(
                     *hw_duration.get(&key).unwrap(),
@@ -2407,7 +2388,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "work in progress for migration to 1.0.0a1"]
+    // #[ignore = "work in progress for migration to 1.0.0a1"]
     fn test_calc_water_heating_with_internal_gains(
         simulation_time: SimulationTime,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
@@ -2784,9 +2765,10 @@ mod tests {
 
             let keys: Vec<Arc<str>> = vec!["hw cylinder".into(), "_electric_showers".into()];
             for key in keys {
-                assert_eq!(
+                assert_relative_eq!(
                     *hw_demand_vol.get(&key).unwrap(),
-                    hw_demand_vol_expected.get(&key).unwrap()[t_idx]
+                    hw_demand_vol_expected.get(&key).unwrap()[t_idx],
+                    epsilon = 1e-7
                 );
                 assert_eq!(
                     *hw_duration.get(&key).unwrap(),
