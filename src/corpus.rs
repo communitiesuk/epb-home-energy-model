@@ -4803,11 +4803,6 @@ fn heat_source_from_input(
             let control_max = control_max
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)).ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for wet heat source with the name '{name}'"))?;
-            let temp_flow_limit_upper = temp_flow_limit_upper.ok_or_else(|| {
-                anyhow!(
-                    "A temp_flow_limit_upper is needed for wet heat source with the name '{name}'"
-                )
-            })?;
             let mut heat_source_wet_clone = heat_source_wet.clone();
 
             Ok(HeatSourceFromInput {
@@ -4816,7 +4811,7 @@ fn heat_source_from_input(
                         HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
                             heat_pump.clone(),
                             &energy_supply_conn_name,
-                            temp_flow_limit_upper,
+                            temp_flow_limit_upper.ok_or_else(|| anyhow!("A temp_flow_limit_upper is needed for heat pump with the name '{name}'"))?,
                             Arc::new(cold_water_source.clone()),
                             control_min,
                             control_max,
