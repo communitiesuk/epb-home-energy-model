@@ -2977,20 +2977,20 @@ impl Corpus {
             .iter()
             .max_by(|a, b| a.total_cmp(b))
             .expect("Expected to be able to find a max for a non-empty list of net imports");
-        let index_peak_elec_consumption = *net_import_per_timestep
+        let index_peak_elec_consumption = net_import_per_timestep
             .iter()
-            .find(|v| **v == peak_elec_consumption)
+            .position(|v| *v == peak_elec_consumption)
             .expect("Expected to be able to find the index for the peak that we just found");
 
         // must reflect hour or half hour in the year (hour 0 to hour 8759)
         // to work with the dictionary below timestep_to_date
         // hence + start_timestep
-        let peak_step = index_peak_elec_consumption + start_timestep;
+        let peak_step = index_peak_elec_consumption as f64 + start_timestep;
         let peak_datetime = timestep_to_date[&OrderedFloat(peak_step)];
 
         OutputSummaryPeakElectricityConsumption {
             peak: peak_elec_consumption,
-            index: index_peak_elec_consumption as usize,
+            index: index_peak_elec_consumption,
             month: peak_datetime.month() as u8,
             day: peak_datetime.day() as u8,
             hour: ((peak_step % (24. / stepping)) * stepping + 1.) as u8,

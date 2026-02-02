@@ -405,6 +405,7 @@ pub struct OutputMetadata {
 
 #[derive(Debug, Serialize)]
 pub struct Output {
+    #[serde(rename = "static")]
     pub(crate) static_: OutputStatic,
     pub(crate) core: OutputCore,
     pub(crate) summary: OutputSummary,
