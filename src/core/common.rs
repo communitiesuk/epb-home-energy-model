@@ -40,6 +40,7 @@ impl WaterSupplyBehaviour for WaterSupply {
             WaterSupply::ColdWaterSource(cold_water_source) => {
                 cold_water_source.get_temp_cold_water(volume_needed, simtime)
             }
+            WaterSupply::Wwhrs(wwhrs) => Ok(vec![wwhrs.lock().get_temp_cold_water(volume_needed)]),
             WaterSupply::Preheated(storage_tank) => match storage_tank {
                 HotWaterStorageTank::StorageTank(rw_lock) => {
                     Ok(rw_lock.read().get_temp_cold_water(volume_needed))
@@ -50,7 +51,6 @@ impl WaterSupplyBehaviour for WaterSupply {
             },
             #[cfg(test)]
             WaterSupply::Mock(mock) => mock.get_temp_cold_water(volume_needed, simtime),
-            _ => unimplemented!("TODO during migration 1.0.0a1"),
         }
     }
 
@@ -63,6 +63,7 @@ impl WaterSupplyBehaviour for WaterSupply {
             WaterSupply::ColdWaterSource(cold_water_source) => {
                 cold_water_source.draw_off_water(volume_needed, simtime)
             }
+            WaterSupply::Wwhrs(wwhrs) => Ok(vec![wwhrs.lock().draw_off_water(volume_needed)]),
             WaterSupply::Preheated(storage_tank) => match storage_tank {
                 HotWaterStorageTank::StorageTank(rw_lock) => {
                     rw_lock.read().draw_off_water(volume_needed, simtime)
@@ -73,7 +74,6 @@ impl WaterSupplyBehaviour for WaterSupply {
             },
             #[cfg(test)]
             WaterSupply::Mock(mock) => mock.draw_off_water(volume_needed, simtime),
-            _ => unimplemented!("TODO during migration 1.0.0a1"),
         }
     }
 }
