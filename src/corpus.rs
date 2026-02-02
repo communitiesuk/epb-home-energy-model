@@ -2738,10 +2738,11 @@ impl Corpus {
         let mut hc_output_overall: IndexMap<Arc<str>, f64> = Default::default();
         let mut hc_input_overall: IndexMap<Arc<str>, f64> = Default::default();
         let mut cop_dict: IndexMap<Arc<str>, NumberOrDivisionByZero> = Default::default();
+        // TODO review hc_name type, we're using "" instead of None
         for (hc_name, hc_output) in energy_provided {
             let hc_name = match hc_name.as_ref() {
-                Some(hc_name) => hc_name,
-                None => continue,
+                Some(hc_name) if !hc_name.is_empty() => hc_name,
+                _ => continue,
             };
             hc_output_overall.insert(hc_name.clone(), hc_output.iter().sum::<f64>().abs());
             hc_input_overall.insert(hc_name.clone(), 0.);
