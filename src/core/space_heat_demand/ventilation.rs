@@ -1583,7 +1583,7 @@ impl MechanicalVentilation {
 
                 (qv_sup_dis_req, qv_eta_dis_req)
             }
-            SupplyAirFlowRateControlType::Load => unimplemented!(), // TODO: complete as part of migration (not yet implemented in Python 1.0.0a1 )
+            SupplyAirFlowRateControlType::Load => unimplemented!(), // this variant is removed in later version of Python (1.0.0a6)
         };
 
         // Calculate effective flow rate of external air
@@ -1643,7 +1643,9 @@ impl MechanicalVentilation {
                 // Balanced, therefore split power between extract and supply fans
                 (fan_energy_use_kwh / 2., fan_energy_use_kwh / 2.)
             }
-            MechVentType::PositiveInputVentilation => unimplemented!(), // TODO PIV code has been commented out in upstream Python 1.0.0a1
+            MechVentType::PositiveInputVentilation => {
+                bail!("Positive input ventilation not yet fully supported in HEM")
+            }
         };
         self.energy_supply_conn
             .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration.index)?;
@@ -2659,7 +2661,9 @@ impl InfiltrationVentilation {
                     MechVentData::IntermittentMev { .. }
                     | MechVentData::CentralisedContinuousMev { .. }
                     | MechVentData::DecentralisedContinuousMev { .. } => None,
-                    MechVentData::PositiveInputVentilation { .. } => unimplemented!(), // TODO: presumably to be completed during migration to 1.0.0a1
+                    MechVentData::PositiveInputVentilation { .. } => {
+                        bail!("Positive input ventilation not yet fully supported in HEM")
+                    }
                 },
                 None,
                 orientation_intake,
@@ -3662,8 +3666,7 @@ mod tests {
 
         assert_eq!(infiltration_ventilation.leaks[4].facade_direction, Roof10);
 
-        // Test without combustion appliances - skipping as combustion appliances not currently implemented
-        // TODO migrations later than 1.0.0a1, check if they've been reimplemented, if not, remove comment
+        // tests for combustion appliances not relevant as this type has been removed
     }
 
     #[fixture]
@@ -4444,10 +4447,6 @@ mod tests {
         assert!(qm_eta_dis_req < 0.);
         assert_eq!(qm_in_effective_heat_recovery_saving, 0.);
     }
-
-    // TODO migration 1.0.0a3 or later - check whether test_calc_req_ODA_flow_rates_at_ATDs_PIV
-    // and test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone_supply_only should be added,
-    // as of 1.0.0a1 the test and or implementation is not complete
 
     #[fixture]
     fn infiltration_ventilation(
