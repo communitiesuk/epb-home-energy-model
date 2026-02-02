@@ -921,8 +921,14 @@ fn shower_from_input(
             let wwhrs_instance: Option<Arc<Mutex<WwhrsInstantaneous>>> = wwhrs_config
                 .as_ref()
                 .map(|config| &config.waste_water_heat_recovery_system)
-                .map(|w| wwhrs.get(w).cloned())
-                .ok_or_else(|| anyhow!("Could not find WWHRS instance for shower '{name}'",))?;
+                .map(|w| {
+                    wwhrs
+                        .get(w)
+                        .cloned()
+                        .ok_or_else(
+                            || anyhow!("Could not find WWHRS instance for shower '{name}'"),
+                        )
+                }).transpose()?;
 
             Shower::MixerShower(MixerShower::new(
                 *flowrate,
