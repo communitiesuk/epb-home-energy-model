@@ -95,7 +95,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "until completed migration to 1.0.0a1"]
     fn test_hot_water_demand(simulation_time: SimulationTime, other_hot_water: OtherHotWater) {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             let result = other_hot_water
