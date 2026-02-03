@@ -270,8 +270,7 @@ pub struct OutputCore {
     pub(crate) heat_source_wet_results_annual: IndexMap<Arc<str>, ResultsAnnual>,
     /// Hot water source results summary.
     /// Currently unstructured, see CSV for column-order.
-    pub(crate) hot_water_source_results_summary:
-        IndexMap<Arc<str>, Vec<Vec<Option<StringOrNumber>>>>,
+    pub(crate) hot_water_source_results_summary: IndexMap<Arc<str>, Vec<Vec<StringOrNumber>>>,
     /// Heating system emitters detailed outputs.
     /// Currently unstructured, see CSV for column-order.
     pub(crate) emitters: IndexMap<Arc<str>, IndexMap<usize, OutputEmitters>>,

@@ -2225,10 +2225,8 @@ impl Corpus {
         let mut esh_output_dict: IndexMap<Arc<str>, Vec<StorageHeaterDetailedResult>> =
             Default::default();
         let mut vent_output_list: Vec<VentilationDetailedResult> = Default::default();
-        let mut hot_water_source_results_summary: IndexMap<
-            Arc<str>,
-            Vec<Vec<Option<StringOrNumber>>>,
-        > = Default::default();
+        let mut hot_water_source_results_summary: IndexMap<Arc<str>, Vec<Vec<StringOrNumber>>> =
+            Default::default();
 
         for z_name in self.zones.keys() {
             gains_internal_dict.insert(z_name.clone(), vec_capacity());
@@ -5298,13 +5296,13 @@ fn hot_water_source_from_input(
                 heat_sources.clone(),
                 temp_internal_air_fn,
                 external_conditions,
+                detailed_output_heating_cooling,
                 Some(24),
                 primary_pipework_lst,
                 *WATER,
                 None,
                 None,
                 None,
-                detailed_output_heating_cooling,
             )?));
 
             connect_diverter_for_hot_water_tank(

@@ -313,7 +313,7 @@ fn write_core_output_files(
                     hot_water_source_file.as_str(),
                     hot_water_source_results,
                     output_writer,
-                );
+                )?;
             }
 
             // Create a file for emitters detailed output and write
@@ -1323,11 +1323,18 @@ fn write_core_output_file_ventilation_detailed(
 }
 
 fn write_core_output_file_hot_water_source_summary(
-    _output_file: &str,
-    _hot_water_source_results: &Vec<Vec<Option<StringOrNumber>>>,
-    _output_writer: &impl OutputWriter,
-) {
-    // TODO complete when hot water source results defined
+    output_key: &str,
+    hot_water_source_results: &[Vec<StringOrNumber>],
+    output_writer: &impl OutputWriter,
+) -> anyhow::Result<()> {
+    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+
+    for hot_water_source_row in hot_water_source_results {
+        writer.write_record(hot_water_source_row.iter().map(StringOrNumber::as_bytes))?;
+    }
+
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1406,21 +1413,27 @@ impl From<std::string::String> for StringOrNumber {
     }
 }
 
-impl From<f64> for StringOrNumber {
-    fn from(value: f64) -> Self {
-        StringOrNumber::Float(value)
-    }
-}
-
 impl From<&f64> for StringOrNumber {
     fn from(value: &f64) -> Self {
         StringOrNumber::Float(*value)
     }
 }
 
+impl From<f64> for StringOrNumber {
+    fn from(value: f64) -> Self {
+        StringOrNumber::Float(value)
+    }
+}
+
 impl From<usize> for StringOrNumber {
     fn from(value: usize) -> Self {
         StringOrNumber::Integer(value)
+    }
+}
+
+impl From<u32> for StringOrNumber {
+    fn from(value: u32) -> Self {
+        StringOrNumber::Integer(value as usize)
     }
 }
 

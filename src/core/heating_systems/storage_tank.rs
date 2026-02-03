@@ -5,7 +5,7 @@ use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
 use crate::core::units::{MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
-use crate::core::water_heat_demand::misc::WaterEventResult;
+use crate::core::water_heat_demand::misc::{summarise_events, WaterEventResult};
 use crate::corpus::{HeatSource, HotWaterSourceBehaviour, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCollectorLoopLocation, WaterPipework};
@@ -123,10 +123,8 @@ pub struct StorageTank {
     temp_average_drawoff_volweighted: AtomicF64, // In Python this is created from inside extract_hot_water()
     total_volume_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
     ambient_temperature: f64,
+    detailed_results: Option<Arc<RwLock<Vec<Vec<StringOrNumber>>>>>,
 }
-
-#[derive(Debug)]
-pub(crate) struct StorageTankDetailedResult {} // TODO implement detailed results for StorageTank
 
 impl StorageTank {
     /// Arguments:
@@ -157,13 +155,13 @@ impl StorageTank {
         // In Python this is "project" but only temp_internal_air is accessed from it
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
+        detailed_output: bool,
         number_of_volumes: Option<usize>,
         primary_pipework_lst: Option<&Vec<WaterPipework>>,
         contents: MaterialProperties,
         ambient_temperature: Option<f64>,
         pipework_primary_gains_for_timestep: Option<f64>, // TODO check we need this
         previous_event_time_end: Option<f64>,
-        _detailed_output_heating_cooling: bool, // TODO implement logic for this to match Python 0.32
     ) -> anyhow::Result<Self> {
         let q_std_ls_ref = losses;
         let ambient_temperature = ambient_temperature.unwrap_or(DEFAULT_AMBIENT_TEMPERATURE);
@@ -258,6 +256,7 @@ impl StorageTank {
             temp_average_drawoff_volweighted: Default::default(),
             total_volume_drawoff: Default::default(),
             ambient_temperature,
+            detailed_results: detailed_output.then_some(Default::default()),
         })
     }
 
@@ -275,9 +274,11 @@ impl StorageTank {
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let mut q_use_w = 0.;
-        let mut _volume_demanded = 0.;
+        let q_unmet_w = 0.;
+        let mut volume_demanded = 0.;
 
         let mut temp_s3_n = self.temp_n.read().clone();
+        let temp_ini_n = temp_s3_n.clone();
 
         self.temp_average_drawoff_volweighted
             .store(0., Ordering::SeqCst);
@@ -319,7 +320,7 @@ impl StorageTank {
 
             *self.temp_n.write() = temp_s3_n.clone();
 
-            _volume_demanded += volume_used;
+            volume_demanded += volume_used;
             q_use_w += energy_withdrawn;
         }
 
@@ -345,10 +346,16 @@ impl StorageTank {
         let mut temp_after_prev_heat_source = temp_s3_n.clone();
         let mut q_ls = 0.0;
         *self.q_ls_n_prev_heat_source.write() = vec![0.0; self.number_of_volumes];
-        // In Python extra variables initialized and assigned here
-        // for the purpose of passing them to the testoutput method
-        // which we have decided to port (for now)
-        let mut temp_s8_n = temp_s3_n;
+
+        // With the possibility of not having heat sources now, some parameters might not be defined now
+        // in the for loop before and wouldn't be available for the testoutput unless initialised here.
+        let mut q_x_in_n = vec![0.; self.number_of_volumes];
+        let mut q_s6 = 0.;
+        let mut q_in_h_w = 0.;
+        let mut temp_s6_n = temp_s3_n.clone();
+        let mut temp_s7_n = temp_s3_n.clone();
+        let mut temp_s8_n = temp_s3_n.clone();
+        let mut q_ls_this_heat_source = 0.;
 
         for (heat_source_name, positioned_heat_source) in self.heat_source_data.clone() {
             let (_, _setpntmax) = positioned_heat_source.heat_source.lock().setpnt(simtime)?;
@@ -363,12 +370,7 @@ impl StorageTank {
                 None => heater_layer,
             };
 
-            let TemperatureCalculation {
-                temp_s8_n: temp_s8_n_step,
-                q_ls: q_ls_this_heat_source,
-                q_ls_n: q_ls_n_this_heat_source,
-                ..
-            } = self.run_heat_sources(
+            let calc = self.run_heat_sources(
                 temp_after_prev_heat_source.clone(),
                 &positioned_heat_source.heat_source.lock(),
                 &heat_source_name,
@@ -377,16 +379,24 @@ impl StorageTank {
                 &self.q_ls_n_prev_heat_source.read().clone(),
                 simtime,
             )?;
+            let _ = std::mem::replace(&mut temp_s8_n, calc.temp_s8_n);
+            let _ = std::mem::replace(&mut q_x_in_n, calc.q_x_in_n);
+            q_s6 = calc.q_s6;
+            let _ = std::mem::replace(&mut temp_s6_n, calc.temp_s6_n);
+            let _ = std::mem::replace(&mut temp_s7_n, calc.temp_s7_n);
+            q_in_h_w = calc.q_in_h_w;
+            q_ls_this_heat_source = calc.q_ls;
+            let q_ls_n_this_heat_source = calc.q_ls_n;
 
-            temp_after_prev_heat_source = temp_s8_n_step.clone();
+            temp_after_prev_heat_source = temp_s8_n.clone();
             q_ls += q_ls_this_heat_source;
 
-            for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
+            {
                 let mut q_ls_n_prev = self.q_ls_n_prev_heat_source.write();
-                q_ls_n_prev[i] += q_ls_n;
+                for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
+                    q_ls_n_prev[i] += q_ls_n;
+                }
             }
-
-            temp_s8_n = temp_s8_n_step;
 
             // Trigger heating to stop
             self.determine_heat_source_switch_off(
@@ -398,6 +408,24 @@ impl StorageTank {
                 simtime,
             )?;
         }
+
+        self.testoutput(
+            usage_events.as_ref().unwrap_or(&vec![]),
+            volume_demanded,
+            q_use_w,
+            q_unmet_w,
+            &temp_ini_n,
+            &temp_s3_n,
+            &q_x_in_n,
+            q_s6,
+            &temp_s6_n,
+            &temp_s7_n,
+            q_in_h_w,
+            q_ls_this_heat_source,
+            &temp_s8_n,
+            self.temp_average_drawoff.load(Ordering::SeqCst),
+            simtime,
+        )?;
 
         // Additional calculations
         // 6.4.6 Calculation of the auxiliary energy
@@ -1215,6 +1243,131 @@ impl StorageTank {
         )
     }
 
+    fn testoutput(
+        &self,
+        usage_events: &[WaterEventResult],
+        volume_extracted: f64,
+        q_use_w: f64,
+        q_unmet_w: f64,
+        temp_ini_n: &[f64],
+        temp_s3_n: &[f64],
+        q_x_in_n: &[f64],
+        q_s6: f64,
+        temp_s6_n: &[f64],
+        temp_s7_n: &[f64],
+        q_in_h_w: f64,
+        q_ls: f64,
+        temp_s8_n: &[f64],
+        temp_average: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<()> {
+        let mut detailed_output = match self.detailed_results.as_ref() {
+            None => return Ok(()),
+            Some(detailed_output) => detailed_output.write(),
+        };
+
+        let demand = summarise_events(usage_events);
+        if simtime.index == 0 {
+            fn header_dup(header: &str, n: usize) -> Vec<StringOrNumber> {
+                (0..n)
+                    .map(|i| format!("{header} {}", (i + 1).to_string()).into())
+                    .collect()
+            }
+
+            let mut header_row: Vec<StringOrNumber> = [
+                "time",
+                "volume total",
+                "specific heat",
+                "density",
+                "cold water",
+                "events",
+                "volume extracted",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect();
+            header_row.extend(header_dup("initial temp.", temp_ini_n.len()).into_iter());
+            header_row.extend(["energy withdrawn", "energy unmet"].map(Into::into));
+            header_row
+                .extend(header_dup("temp. after volume withdrawn", temp_s3_n.len()).into_iter());
+            header_row.extend(header_dup("potential energy input", q_x_in_n.len()).into_iter());
+            header_row.push("theoretical energy stored after energy input".into());
+            header_row.extend(
+                header_dup("theoretical temp. after energy input", temp_s6_n.len()).into_iter(),
+            );
+            header_row.extend(header_dup("temp. after volume mixing", temp_s7_n.len()).into_iter());
+            header_row.extend(
+                ["energy input (adjusted)", "thermal losses"]
+                    .into_iter()
+                    .map(Into::into),
+            );
+            header_row
+                .extend(header_dup("temp. after thermal losses", temp_s8_n.len()).into_iter());
+            header_row.push("temp_average_drawoff".into());
+
+            detailed_output.push(header_row);
+
+            let mut units_row: Vec<StringOrNumber> = [
+                "h",
+                "litres",
+                "kWh/kgK",
+                "kg/l",
+                "oC",
+                "Type: litres hot (litres @ oC)",
+                "litres",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect();
+            units_row.extend(iter::repeat_n("oC".into(), temp_ini_n.len()));
+            units_row.extend(["kWh", "kWh"].into_iter().map(Into::into));
+            units_row.extend(iter::repeat_n("oC".into(), temp_s3_n.len()));
+            units_row.extend(iter::repeat_n("kWh".into(), q_x_in_n.len()));
+            units_row.push("kWh".into());
+            units_row.extend(iter::repeat_n("oC".into(), temp_s6_n.len()));
+            units_row.extend(iter::repeat_n("oC".into(), temp_s7_n.len()));
+            units_row.extend(["kWh", "kWh"].into_iter().map(Into::into));
+            units_row.extend(iter::repeat_n("oC".into(), temp_s8_n.len()));
+            units_row.push("oC".into());
+
+            detailed_output.push(units_row);
+        }
+
+        let temp_cold_water: StringOrNumber = if is_close!(volume_extracted, 0.0, abs_tol = 1e-10) {
+            "".into() // using empty string to represent None
+        } else {
+            let list_temp_vol = self
+                .cold_feed
+                .get_temp_cold_water(volume_extracted, simtime)?;
+            (list_temp_vol.iter().map(|(t, v)| t * v).sum::<f64>()
+                / list_temp_vol.iter().map(|(_, v)| v).sum::<f64>())
+            .into()
+        };
+
+        let mut values_row: Vec<StringOrNumber> = vec![
+            simtime.hour_of_day().into(),
+            self.volume_total_in_litres.into(),
+            self.cp.into(),
+            self.rho.into(),
+            temp_cold_water,
+            demand.into(),
+            volume_extracted.into(),
+        ];
+        values_row.extend(temp_ini_n.iter().map(|t| t.into()));
+        values_row.extend([q_use_w.into(), q_unmet_w.into()]);
+        values_row.extend(temp_s3_n.iter().map(|t| t.into()));
+        values_row.extend(q_x_in_n.iter().map(|q| q.into()));
+        values_row.push(q_s6.into());
+        values_row.extend(temp_s6_n.iter().map(|t| t.into()));
+        values_row.extend(temp_s7_n.iter().map(|t| t.into()));
+        values_row.extend([q_in_h_w.into(), q_ls.into()]);
+        values_row.extend(temp_s8_n.iter().map(|t| t.into()));
+        values_row.push(temp_average.into());
+
+        detailed_output.push(values_row);
+
+        Ok(())
+    }
     // NB. there is a testoutput() function here in the Python to output to a test file - will not reimplement unless seen as necessary
 
     /// draw off hot water layers until required volume is provided.
@@ -1504,7 +1657,7 @@ impl StorageTank {
         Ok(list_temp_vol)
     }
 
-    pub(crate) fn output_results(&self) -> Option<Vec<Vec<Option<StringOrNumber>>>> {
+    pub(crate) fn output_results(&self) -> Option<Vec<Vec<StringOrNumber>>> {
         None // TODO implement this
     }
 }
@@ -1587,13 +1740,13 @@ impl SmartHotWaterTank {
             heat_sources,
             temp_internal_air_fn,
             external_conditions,
+            detailed_output,
             number_of_volumes.into(),
             primary_pipework_lst,
             contents,
             None,
             None,
             None,
-            detailed_output,
         )?;
 
         Ok(Self {
@@ -1921,7 +2074,7 @@ impl SmartHotWaterTank {
         self.storage_tank.internal_gains()
     }
 
-    pub(crate) fn output_results(&self) -> Option<Vec<Vec<Option<StringOrNumber>>>> {
+    pub(crate) fn output_results(&self) -> Option<Vec<Vec<StringOrNumber>>> {
         self.storage_tank.output_results()
     }
 
@@ -3325,13 +3478,13 @@ mod tests {
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
+            false,
             None,
             None,
             *WATER,
             None,
             None,
             None,
-            false,
         )
         .unwrap();
 
@@ -3397,13 +3550,13 @@ mod tests {
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
+            false,
             None,
             None,
             *WATER,
             None,
             None,
             None,
-            false,
         )
         .unwrap();
 
@@ -3533,13 +3686,13 @@ mod tests {
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions_for_pv_diverter.clone(),
+            false,
             None,
             None,
             *WATER,
             None,
             None,
             None,
-            false,
         )
         .unwrap()
     }
@@ -3764,13 +3917,13 @@ mod tests {
             )]),
             temp_internal_air_fn,
             external_conditions_for_solar_thermal,
+            false,
             None,
             None,
             *WATER,
             None,
             None,
             None,
-            false,
         )
         .unwrap();
 
@@ -4599,13 +4752,13 @@ mod tests {
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
+            false,
             None,
             None,
             *WATER,
             None,
             None,
             None,
-            false,
         )
         .unwrap();
 
