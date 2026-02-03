@@ -1414,7 +1414,6 @@ mod tests {
     }
 
     #[rstest]
-    // #[ignore = "work in progress for migration to 1.0.0a1"]
     fn test_hot_water_demand(
         simulation_time: SimulationTime,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
@@ -1847,7 +1846,6 @@ mod tests {
     // Skipping Python test test_unmet_demand_connection_failure
 
     #[rstest]
-    // #[ignore = "work in progress for migration to 1.0.0a1"]
     fn test_hot_water_demand_unmet(
         simulation_time: SimulationTime,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
@@ -1960,7 +1958,6 @@ mod tests {
     }
 
     #[rstest]
-    // #[ignore = "work in progress for migration to 1.0.0a1"]
     fn test_calc_water_heating(
         simulation_time: SimulationTime,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
@@ -2393,7 +2390,6 @@ mod tests {
     }
 
     #[rstest]
-    // #[ignore = "work in progress for migration to 1.0.0a1"]
     fn test_calc_water_heating_with_internal_gains(
         simulation_time: SimulationTime,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
