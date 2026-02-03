@@ -1,13 +1,17 @@
-use super::emitters::{Emitters, EmittersDetailedResult};
+use super::emitters::Emitters;
 use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult};
+use crate::core::common::WaterSupply;
 use crate::core::heating_systems::boiler::{
     BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
 };
 use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
-use crate::core::heating_systems::heat_battery::{
-    HeatBatteryServiceSpace, HeatBatteryServiceWaterRegular,
+use crate::core::heating_systems::heat_battery_drycore::{
+    HeatBatteryDryCoreServiceSpace, HeatBatteryDryCoreServiceWaterRegular,
+};
+use crate::core::heating_systems::heat_battery_pcm::{
+    HeatBatteryPcmServiceSpace, HeatBatteryPcmServiceWaterRegular,
 };
 use crate::core::heating_systems::heat_network::{
     HeatNetworkServiceSpace, HeatNetworkServiceWaterStorage,
@@ -16,8 +20,19 @@ use crate::core::heating_systems::heat_pump::{
     HeatPumpHotWaterOnly, HeatPumpServiceSpace, HeatPumpServiceSpaceWarmAir, HeatPumpServiceWater,
 };
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
+use crate::output::OutputEmitters;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{bail, Error};
+use serde_enum_str::Serialize_enum_str;
+use std::sync::Arc;
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize_enum_str)]
+pub(crate) enum HeatingServiceType {
+    DomesticHotWaterCombi,
+    DomesticHotWaterRegular,
+    Space,
+    DomesticHotWaterDirect,
+}
 
 #[derive(Debug)]
 pub(crate) enum HeatSourceWet {
@@ -27,7 +42,7 @@ pub(crate) enum HeatSourceWet {
     #[allow(dead_code)]
     Space(BoilerServiceSpace),
     HeatNetworkWaterStorage(HeatNetworkServiceWaterStorage),
-    HeatBatteryHotWater(HeatBatteryServiceWaterRegular),
+    HeatBatteryHotWater(HeatBatteryWaterService),
     HeatPumpWater(HeatPumpServiceWater),
     HeatPumpWaterOnly(HeatPumpHotWaterOnly),
 }
@@ -36,7 +51,7 @@ impl HeatSourceWet {
     /// Common way of calling energy_output_max() on heat sources, implementing equivalent of duck-typing happening in upstream Python.
     pub(crate) fn energy_output_max(
         &self,
-        temp_flow: Option<f64>,
+        temp_flow: f64,
         temperature: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -69,22 +84,10 @@ impl HeatSourceWet {
             }
             HeatSourceWet::HeatBatteryHotWater(battery) => {
                 // passing default for _temp_return as it is unused
-                battery.energy_output_max(
-                    temp_flow.expect(
-                        "HeatBatteryHotWater requires a temp_flow when calling energy_output_max",
-                    ),
-                    Default::default(),
-                    simtime,
-                )
+                battery.energy_output_max(temp_flow, Default::default(), simtime)
             }
             HeatSourceWet::HeatPumpWater(hp_water) => hp_water
-                .energy_output_max(
-                    temp_flow.expect(
-                        "HeatPumpWater requires a temp_flow when calling energy_output_max",
-                    ),
-                    temperature,
-                    simtime,
-                )
+                .energy_output_max(temp_flow, temperature, simtime)
                 .map(|x| x.0),
             HeatSourceWet::HeatPumpWaterOnly(hp_water_only) => {
                 Ok(hp_water_only.energy_output_max(temperature, simtime))
@@ -129,14 +132,17 @@ impl HeatSourceWet {
             HeatSourceWet::HeatNetworkWaterStorage(water_storage) => Ok(water_storage
                 .demand_energy(energy_demand, Default::default(), temperature, &simtime)),
             HeatSourceWet::HeatBatteryHotWater(battery) => {
-                battery.demand_energy(energy_demand, temperature, None, simtime)
+                battery.demand_energy(energy_demand, temp_flow, temperature, None, simtime)
             }
             HeatSourceWet::HeatPumpWater(water) => {
                 water.demand_energy(energy_demand, temp_flow, temperature, simtime)
             }
-            HeatSourceWet::HeatPumpWaterOnly(water_only) => {
-                Ok(water_only.demand_energy(energy_demand, temperature, simtime))
-            }
+            HeatSourceWet::HeatPumpWaterOnly(water_only) => Ok(water_only.demand_energy(
+                energy_demand,
+                Default::default(),
+                temperature,
+                simtime,
+            )),
         }
     }
 
@@ -156,30 +162,91 @@ impl HeatSourceWet {
                 (minmax, minmax)
             }
             HeatSourceWet::HeatNetworkWaterStorage(storage) => storage.setpnt(simtime),
-            HeatSourceWet::HeatBatteryHotWater(battery) => battery.setpnt(simtime)?,
-            HeatSourceWet::HeatPumpWater(heat_pump_water) => heat_pump_water.setpnt(simtime),
+            HeatSourceWet::HeatBatteryHotWater(battery) => battery.setpnt(simtime),
+            HeatSourceWet::HeatPumpWater(heat_pump_water) => heat_pump_water.setpnt(simtime)?,
             HeatSourceWet::HeatPumpWaterOnly(heat_pump_water_only) => {
-                heat_pump_water_only.setpnt(simtime)
+                heat_pump_water_only.setpnt(simtime)?
             }
         })
     }
 }
 
 #[derive(Debug)]
+pub(crate) enum HeatBatteryWaterService {
+    Pcm(HeatBatteryPcmServiceWaterRegular),
+    DryCore(HeatBatteryDryCoreServiceWaterRegular<WaterSupply>),
+}
+
+impl HeatBatteryWaterService {
+    fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
+        match self {
+            HeatBatteryWaterService::Pcm(service) => service.setpnt(simtime),
+            HeatBatteryWaterService::DryCore(service) => service.setpnt(simtime),
+        }
+    }
+
+    fn demand_energy(
+        &self,
+        energy_demand: f64,
+        temp_flow: Option<f64>,
+        temp_return: f64,
+        update_heat_source_state: Option<bool>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            HeatBatteryWaterService::Pcm(service) => service.demand_energy(
+                energy_demand,
+                temp_flow,
+                temp_return,
+                update_heat_source_state,
+                simtime,
+            ),
+            HeatBatteryWaterService::DryCore(service) => service.demand_energy(
+                energy_demand,
+                temp_flow,
+                temp_return,
+                update_heat_source_state,
+                simtime,
+            ),
+        }
+    }
+    fn energy_output_max(
+        &self,
+        temp_flow: f64,
+        temp_return: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            HeatBatteryWaterService::Pcm(service) => {
+                service.energy_output_max(temp_flow, temp_return, simtime)
+            }
+            HeatBatteryWaterService::DryCore(service) => {
+                service.energy_output_max(temp_flow, temp_return, simtime)
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) enum SpaceHeatSystem {
-    ElecStorage(ElecStorageHeater),
+    ElecStorage(Arc<ElecStorageHeater>),
     Instant(InstantElecHeater),
     WarmAir(HeatPumpServiceSpaceWarmAir),
     WetDistribution(Emitters),
 }
 
 impl SpaceHeatSystem {
-    pub fn temp_setpnt(&self, simulation_time_iteration: SimulationTimeIteration) -> Option<f64> {
+    pub fn temp_setpnt(
+        &self,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<Option<f64>> {
         match self {
             SpaceHeatSystem::ElecStorage(elec_storage) => {
-                elec_storage.temp_setpnt(&simulation_time_iteration)
+                Ok(elec_storage.temp_setpnt(&simulation_time_iteration))
             }
-            SpaceHeatSystem::Instant(instant) => instant.temp_setpnt(&simulation_time_iteration),
+            SpaceHeatSystem::Instant(instant) => {
+                Ok(instant.temp_setpnt(&simulation_time_iteration))
+            }
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
                 wet_distribution.temp_setpnt(&simulation_time_iteration)
@@ -240,13 +307,13 @@ impl SpaceHeatSystem {
     pub fn in_required_period(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> Option<bool> {
+    ) -> anyhow::Result<Option<bool>> {
         match self {
             SpaceHeatSystem::ElecStorage(elec_storage) => {
-                elec_storage.in_required_period(&simulation_time_iteration)
+                Ok(elec_storage.in_required_period(&simulation_time_iteration))
             }
             SpaceHeatSystem::Instant(instant) => {
-                instant.in_required_period(&simulation_time_iteration)
+                Ok(instant.in_required_period(&simulation_time_iteration))
             }
             SpaceHeatSystem::WarmAir(warm_air) => {
                 warm_air.in_required_period(&simulation_time_iteration)
@@ -257,7 +324,7 @@ impl SpaceHeatSystem {
         }
     }
 
-    pub(crate) fn output_emitter_results(&self) -> Option<Vec<EmittersDetailedResult>> {
+    pub(crate) fn output_emitter_results(&self) -> Option<Vec<OutputEmitters>> {
         if let SpaceHeatSystem::WetDistribution(emitters) = self {
             emitters
                 .output_emitter_results()
@@ -286,18 +353,20 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::Instant(instant) => Ok(instant.energy_output_min()),
             SpaceHeatSystem::WarmAir(warm_air) => Ok(warm_air.energy_output_min()),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
-                Ok(wet_distribution.energy_output_min(simulation_time_iteration))
+                wet_distribution.energy_output_min(simulation_time_iteration)
             }
         }
     }
 }
 
-#[derive(Debug)]
-pub enum SpaceHeatingService {
+#[derive(Clone, Debug)]
+pub(crate) enum SpaceHeatingService {
     HeatPump(HeatPumpServiceSpace),
     Boiler(BoilerServiceSpace),
     HeatNetwork(HeatNetworkServiceSpace),
     HeatBattery(HeatBatteryServiceSpace),
+    #[cfg(test)]
+    Mock,
 }
 
 impl SpaceHeatingService {
@@ -306,7 +375,7 @@ impl SpaceHeatingService {
         temp_output: f64,
         temp_return_feed: f64,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersData>,
-        simulation_time_iteration: SimulationTimeIteration,
+        simtime: SimulationTimeIteration,
     ) -> Result<(f64, Option<BufferTankEmittersDataWithResult>), Error> {
         match self {
             SpaceHeatingService::HeatPump(heat_pump_service_space) => heat_pump_service_space
@@ -315,7 +384,7 @@ impl SpaceHeatingService {
                     temp_return_feed,
                     None,
                     emitters_data_for_buffer_tank,
-                    simulation_time_iteration,
+                    simtime,
                 ),
             SpaceHeatingService::Boiler(boiler_service_space) => Ok((
                 boiler_service_space.energy_output_max(
@@ -323,7 +392,7 @@ impl SpaceHeatingService {
                     temp_return_feed,
                     None,
                     None,
-                    simulation_time_iteration,
+                    simtime,
                 ),
                 None,
             )),
@@ -332,18 +401,26 @@ impl SpaceHeatingService {
                     temp_output,
                     temp_return_feed,
                     None,
-                    &simulation_time_iteration,
+                    &simtime,
                 ),
                 None,
             )),
-            SpaceHeatingService::HeatBattery(heat_battery_service_space) => Ok((
-                heat_battery_service_space.energy_output_max(
+            SpaceHeatingService::HeatBattery(heat_battery_service_space) => {
+                Ok(heat_battery_service_space.energy_output_max(
                     temp_output,
                     temp_return_feed,
-                    None,
-                    simulation_time_iteration,
-                )?,
-                None,
+                    simtime,
+                )?)
+            }
+            #[cfg(test)]
+            SpaceHeatingService::Mock => Ok((
+                2.5,
+                emitters_data_for_buffer_tank.map(|emitters_data| {
+                    BufferTankEmittersDataWithResult {
+                        data: emitters_data,
+                        result: Default::default(),
+                    }
+                }),
             )),
         }
     }
@@ -393,7 +470,7 @@ impl SpaceHeatingService {
                 ),
                 None,
             )),
-            SpaceHeatingService::HeatBattery(ref heat_battery_service_space) => Ok((
+            SpaceHeatingService::HeatBattery(ref mut heat_battery_service_space) => {
                 heat_battery_service_space.demand_energy(
                     energy_demand,
                     temp_flow,
@@ -401,9 +478,10 @@ impl SpaceHeatingService {
                     time_start,
                     update_heat_source_state,
                     simulation_time_iteration,
-                )?,
-                None,
-            )),
+                )
+            }
+            #[cfg(test)]
+            SpaceHeatingService::Mock => Ok(((0.0f64).max(2.5f64.min(energy_demand)), None)),
         }
     }
 
@@ -426,6 +504,81 @@ impl SpaceHeatingService {
                     simulation_time_iteration,
                 ),
             _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum HeatBatteryServiceSpace {
+    Pcm(HeatBatteryPcmServiceSpace),
+    DryCore(HeatBatteryDryCoreServiceSpace),
+}
+
+impl HeatBatteryServiceSpace {
+    fn energy_output_max(
+        &self,
+        temp_output: f64,
+        temp_return_feed: f64,
+        simtime: SimulationTimeIteration,
+    ) -> Result<(f64, Option<BufferTankEmittersDataWithResult>), Error> {
+        Ok(match self {
+            Self::Pcm(pcm) => (
+                pcm.energy_output_max(temp_output, temp_return_feed, None, simtime)?,
+                None,
+            ),
+            Self::DryCore(dry_core) => (
+                dry_core.energy_output_max(temp_output, temp_return_feed, None, simtime)?,
+                None,
+            ),
+        })
+    }
+
+    fn demand_energy(
+        &mut self,
+        energy_demand: f64,
+        temp_flow: f64,
+        temp_return: f64,
+        time_start: Option<f64>,
+        update_heat_source_state: Option<bool>,
+        simtime: SimulationTimeIteration,
+    ) -> Result<(f64, Option<f64>), Error> {
+        Ok(match self {
+            Self::Pcm(pcm) => (
+                pcm.demand_energy(
+                    energy_demand,
+                    temp_flow,
+                    temp_return,
+                    time_start,
+                    update_heat_source_state,
+                    simtime,
+                )?,
+                None,
+            ),
+            Self::DryCore(dry_core) => (
+                dry_core.demand_energy(
+                    energy_demand,
+                    temp_flow,
+                    temp_return,
+                    time_start,
+                    update_heat_source_state,
+                    simtime,
+                )?,
+                None,
+            ),
+        })
+    }
+
+    pub(crate) fn temp_setpnt(&self, simtime: SimulationTimeIteration) -> Option<f64> {
+        match self {
+            HeatBatteryServiceSpace::Pcm(pcm) => pcm.temp_setpnt(simtime),
+            HeatBatteryServiceSpace::DryCore(dry_core) => dry_core.temp_setpnt(simtime),
+        }
+    }
+
+    pub(crate) fn in_required_period(&self, simtime: SimulationTimeIteration) -> Option<bool> {
+        match self {
+            HeatBatteryServiceSpace::Pcm(pcm) => pcm.in_required_period(simtime),
+            HeatBatteryServiceSpace::DryCore(dry_core) => dry_core.in_required_period(simtime),
         }
     }
 }

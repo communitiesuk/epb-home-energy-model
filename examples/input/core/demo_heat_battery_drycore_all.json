@@ -1,0 +1,1472 @@
+{
+    "metadata": {
+        "hem_core_version": "1.0.0a1"
+    },
+    "temp_internal_air_static_calcs": 20.0,
+    "SimulationTime": {
+        "start": 0,
+        "end": 24,
+        "step": 1
+    },
+    "ExternalConditions": {
+        "air_temperatures": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "wind_speeds": [
+            3.9,
+            3.8,
+            3.9,
+            4.1,
+            3.8,
+            4.2,
+            4.3,
+            4.1,
+            3.9,
+            3.8,
+            3.9,
+            4.1,
+            3.8,
+            4.2,
+            4.3,
+            4.1,
+            3.9,
+            3.8,
+            3.9,
+            4.1,
+            3.8,
+            4.2,
+            4.3,
+            4.1
+        ],
+        "diffuse_horizontal_radiation": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            52,
+            85,
+            95,
+            88,
+            80,
+            58,
+            21,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "direct_beam_radiation": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            169,
+            284,
+            328,
+            397,
+            354,
+            205,
+            60,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "solar_reflectivity_of_ground": [
+            0.2,
+            0.22,
+            0.2,
+            0.22,
+            0.247,
+            0.24,
+            0.26,
+            0.233,
+            0.287,
+            0.233,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.213,
+            0.227,
+            0.22,
+            0.24
+        ],
+        "latitude": 51.383,
+        "longitude": -0.783,
+        "direct_beam_conversion_needed": false,
+        "shading_segments": [
+            {
+                "start360": 0,
+                "end360": 45
+            },
+            {
+                "start360": 45,
+                "end360": 90
+            },
+            {
+                "start360": 90,
+                "end360": 135
+            },
+            {
+                "start360": 135,
+                "end360": 180,
+                "shading": [
+                    {
+                        "type": "obstacle",
+                        "height": 10.5,
+                        "distance": 12
+                    }
+                ]
+            },
+            {
+                "start360": 180,
+                "end360": 225
+            },
+            {
+                "start360": 225,
+                "end360": 270
+            },
+            {
+                "start360": 270,
+                "end360": 315
+            },
+            {
+                "start360": 315,
+                "end360": 360
+            }
+        ]
+    },
+    "InternalGains": {
+        "metabolic gains": {
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    512,
+                    736,
+                    1168,
+                    832,
+                    1424,
+                    896,
+                    1632,
+                    1296,
+                    512,
+                    736,
+                    1168,
+                    832,
+                    1424,
+                    896,
+                    1632,
+                    1296,
+                    512,
+                    736,
+                    1168,
+                    832,
+                    1424,
+                    896,
+                    1632,
+                    1296
+                ]
+            }
+        },
+        "other": {
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    176,
+                    400,
+                    368,
+                    752,
+                    1152,
+                    1088,
+                    1456,
+                    1216,
+                    176,
+                    400,
+                    368,
+                    752,
+                    1152,
+                    1088,
+                    1456,
+                    1216,
+                    176,
+                    400,
+                    368,
+                    752,
+                    1152,
+                    1088,
+                    1456,
+                    1216
+                ]
+            }
+        }
+    },
+    "ApplianceGains": {
+        "lighting": {
+            "start_day": 0,
+            "time_series_step": 1,
+            "gains_fraction": 0.5,
+            "EnergySupply": "mains elec",
+            "schedule": {
+                "8hrs": [
+                    32.0,
+                    46.0,
+                    33.0,
+                    21.0,
+                    12.0,
+                    17.0,
+                    25.0,
+                    46.0
+                ],
+                "main": [
+                    {
+                        "value": "8hrs",
+                        "repeat": 3
+                    }
+                ]
+            }
+        },
+        "cooking": {
+            "start_day": 0,
+            "time_series_step": 1,
+            "gains_fraction": 1,
+            "EnergySupply": "mains elec",
+            "schedule": {
+                "8hrs": [
+                    300.0,
+                    120.0,
+                    220.0,
+                    750.0,
+                    890.0,
+                    150.0,
+                    550.0,
+                    280.0
+                ],
+                "main": [
+                    {
+                        "value": "8hrs",
+                        "repeat": 3
+                    }
+                ]
+            }
+        }
+    },
+    "ColdWaterSource": {
+        "mains water": {
+            "start_day": 0,
+            "temperatures": [
+                9.0,
+                9.1,
+                9.2,
+                9.3,
+                9.4,
+                9.5,
+                9.6,
+                9.7,
+                9.0,
+                9.1,
+                9.2,
+                9.3,
+                9.4,
+                9.5,
+                9.6,
+                9.7,
+                9.0,
+                9.1,
+                9.2,
+                9.3,
+                9.4,
+                9.5,
+                9.6,
+                9.7
+            ],
+            "time_series_step": 1
+        }
+    },
+    "EnergySupply": {
+        "mains elec": {
+            "fuel": "electricity",
+            "is_export_capable": true
+        }
+    },
+    "Control": {
+        "min_temp": {
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    {
+                        "value": 52.0,
+                        "repeat": 24
+                    }
+                ]
+            }
+        },
+        "setpoint_temp_max": {
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    {
+                        "value": 55.0,
+                        "repeat": 24
+                    }
+                ]
+            }
+        },
+        "space heat timer": {
+            "type": "OnOffTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    true,
+                    false,
+                    false,
+                    {
+                        "value": true,
+                        "repeat": 21
+                    }
+                ]
+            }
+        },
+        "hb_charge_control": {
+            "type": "ChargeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "logic_type": "heat_battery",
+            "charge_level": 1.0,
+            "schedule": {
+                "main": [
+                    {
+                        "value": true,
+                        "repeat": 7
+                    },
+                    {
+                        "value": true,
+                        "repeat": 5
+                    },
+                    {
+                        "value": false,
+                        "repeat": 8
+                    },
+                    {
+                        "value": true,
+                        "repeat": 4
+                    }
+                ]
+            }
+        },
+        "zone 1 radiators__space heat timer__converted_from_OnOffTimeControl": {
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    15.0,
+                    15.0,
+                    15.0,
+                    {
+                        "value": 21.0,
+                        "repeat": 21
+                    }
+                ]
+            }
+        }
+    },
+    "HotWaterSource": {
+        "hw cylinder": {
+            "type": "HeatBattery",
+            "ColdWaterSource": "mains water",
+            "setpoint_temp": 60.0,
+            "HeatSourceWet": "dry_core_hb"
+        }
+    },
+    "HotWaterDemand": {
+        "Shower": {
+            "mixer": {
+                "type": "MixerShower",
+                "flowrate": 8.0,
+                "ColdWaterSource": "mains water"
+            },
+            "IES": {
+                "type": "InstantElecShower",
+                "rated_power": 9.0,
+                "ColdWaterSource": "mains water",
+                "EnergySupply": "mains elec"
+            }
+        },
+        "Bath": {},
+        "Other": {},
+        "Distribution": [
+            {
+                "location": "internal",
+                "internal_diameter_mm": 25,
+                "length": 8.0
+            },
+            {
+                "location": "internal",
+                "internal_diameter_mm": 25,
+                "length": 8.0
+            },
+            {
+                "location": "external",
+                "internal_diameter_mm": 25,
+                "length": 8.0
+            },
+            {
+                "location": "external",
+                "internal_diameter_mm": 25,
+                "length": 8.0
+            }
+        ]
+    },
+    "Events": {
+        "Shower": {
+            "IES": [
+                {
+                    "start": 4.1,
+                    "duration": 6,
+                    "temperature": 41.0
+                },
+                {
+                    "start": 4.5,
+                    "duration": 6,
+                    "temperature": 41.0
+                },
+                {
+                    "start": 6,
+                    "duration": 6,
+                    "temperature": 41.0
+                }
+            ],
+            "mixer": [
+                {
+                    "start": 7,
+                    "duration": 6,
+                    "temperature": 41.0
+                }
+            ]
+        }
+    },
+    "HeatSourceWet": {
+        "dry_core_hb": {
+            "type": "HeatBattery",
+            "battery_type": "dry_core",
+            "EnergySupply": "mains elec",
+            "electricity_circ_pump": 0.06,
+            "electricity_standby": 0.024,
+            "pwr_in": 15.0,
+            "rated_power_instant": 2.5,
+            "heat_storage_capacity": 20.0,
+            "number_of_units": 1,
+            "state_of_charge_init": 0,
+            "ControlCharge": "hb_charge_control",
+            "dry_core_min_output": [
+                [
+                    0,
+                    0
+                ],
+                [
+                    0.001,
+                    5e-07
+                ],
+                [
+                    0.002,
+                    2e-06
+                ],
+                [
+                    0.003,
+                    4.5e-06
+                ],
+                [
+                    0.005,
+                    1.25e-05
+                ],
+                [
+                    0.0075,
+                    2.8125e-05
+                ],
+                [
+                    0.01,
+                    5e-05
+                ],
+                [
+                    0.015,
+                    0.0001125
+                ],
+                [
+                    0.02,
+                    0.0002
+                ],
+                [
+                    0.03,
+                    0.00045
+                ],
+                [
+                    0.05,
+                    0.00125
+                ],
+                [
+                    0.1,
+                    0.005
+                ],
+                [
+                    0.2,
+                    0.02
+                ],
+                [
+                    0.3,
+                    0.045
+                ],
+                [
+                    0.4,
+                    0.08
+                ],
+                [
+                    0.5,
+                    0.125
+                ],
+                [
+                    0.6,
+                    0.18
+                ],
+                [
+                    0.7,
+                    0.245
+                ],
+                [
+                    0.8,
+                    0.32
+                ],
+                [
+                    0.9,
+                    0.405
+                ],
+                [
+                    1,
+                    0.5
+                ]
+            ],
+            "dry_core_max_output": [
+                [
+                    0,
+                    0
+                ],
+                [
+                    0.001,
+                    1.40420839159243
+                ],
+                [
+                    0.002,
+                    1.66989461022824
+                ],
+                [
+                    0.003,
+                    1.84804217294461
+                ],
+                [
+                    0.005,
+                    2.09978130694835
+                ],
+                [
+                    0.0075,
+                    2.32379000772445
+                ],
+                [
+                    0.01,
+                    2.49707487017269
+                ],
+                [
+                    0.015,
+                    2.76346761095814
+                ],
+                [
+                    0.02,
+                    2.96953920230386
+                ],
+                [
+                    0.03,
+                    3.286335345031
+                ],
+                [
+                    0.05,
+                    3.73399786373087
+                ],
+                [
+                    0.1,
+                    4.44049682695371
+                ],
+                [
+                    0.2,
+                    5.28067042076036
+                ],
+                [
+                    0.3,
+                    5.84402247855178
+                ],
+                [
+                    0.4,
+                    6.27981083635263
+                ],
+                [
+                    0.5,
+                    6.64009151820193
+                ],
+                [
+                    0.6,
+                    6.94975311172961
+                ],
+                [
+                    0.7,
+                    7.2228080610163
+                ],
+                [
+                    0.8,
+                    7.46799572746174
+                ],
+                [
+                    0.9,
+                    7.69116611513221
+                ],
+                [
+                    1,
+                    7.89644407771495
+                ]
+            ],
+            "fan_pwr": 11.0
+        }
+    },
+    "SpaceHeatSystem": {
+        "space_heat_system_livingroom": {
+            "type": "WetDistribution",
+            "thermal_mass": 0.14,
+            "emitters": [
+                {
+                    "wet_emitter_type": "radiator",
+                    "c": 0.08,
+                    "n": 1.2,
+                    "frac_convective": 0.4
+                },
+                {
+                    "wet_emitter_type": "radiator",
+                    "c": 0.1,
+                    "n": 1.3,
+                    "frac_convective": 0.4
+                }
+            ],
+            "pipework": [],
+            "temp_diff_emit_dsgn": 10.0,
+            "variable_flow": true,
+            "min_flow_rate": 3,
+            "max_flow_rate": 18,
+            "HeatSource": {
+                "name": "dry_core_hb",
+                "temp_flow_limit_upper": 65.0
+            },
+            "Control": "zone 1 radiators__space heat timer__converted_from_OnOffTimeControl",
+            "ecodesign_controller": {
+                "ecodesign_control_class": 1
+            },
+            "design_flow_temp": 55,
+            "Zone": "zone1_livingroom"
+        },
+        "space_heat_system_restofdwelling": {
+            "type": "WetDistribution",
+            "thermal_mass": 0.14,
+            "emitters": [
+                {
+                    "wet_emitter_type": "radiator",
+                    "c": 0.1,
+                    "n": 1.3,
+                    "frac_convective": 0.4
+                }
+            ],
+            "pipework": [],
+            "temp_diff_emit_dsgn": 10.0,
+            "variable_flow": true,
+            "min_flow_rate": 3,
+            "max_flow_rate": 18,
+            "HeatSource": {
+                "name": "dry_core_hb",
+                "temp_flow_limit_upper": 65.0
+            },
+            "Control": "zone 1 radiators__space heat timer__converted_from_OnOffTimeControl",
+            "ecodesign_controller": {
+                "ecodesign_control_class": 1
+            },
+            "design_flow_temp": 55,
+            "Zone": "zone2_restofdwelling"
+        }
+    },
+    "InfiltrationVentilation": {
+        "cross_vent_possible": true,
+        "shield_class": "Normal",
+        "terrain_class": "OpenWater",
+        "ventilation_zone_base_height": 5,
+        "altitude": 30,
+        "Vents": {
+            "vent1": {
+                "mid_height_air_flow_path": 1.5,
+                "area_cm2": 100,
+                "pressure_difference_ref": 20,
+                "orientation360": 180,
+                "pitch": 60
+            }
+        },
+        "Leaks": {
+            "ventilation_zone_height": 6,
+            "test_pressure": 50,
+            "test_result": 1.2,
+            "env_area": 220
+        },
+        "MechanicalVentilation": {
+            "mechvent1": {
+                "sup_air_flw_ctrl": "ODA",
+                "sup_air_temp_ctrl": "NO_CTRL",
+                "vent_type": "Centralised continuous MEV",
+                "SFP": 1.5,
+                "EnergySupply": "mains elec",
+                "design_outdoor_air_flow_rate": 80,
+                "orientation360": 0,
+                "pitch": 90,
+                "mid_height_air_flow_path": 2.5
+            }
+        }
+    },
+    "Zone": {
+        "zone1_livingroom": {
+            "area": 21.96,
+            "volume": 58.8528,
+            "SpaceHeatSystem": "space_heat_system_livingroom",
+            "temp_setpnt_init": 21,
+            "BuildingElement": {
+                "Z1_exw_N_GF_6": {
+                    "type": "BuildingElementOpaque",
+                    "width": 3.05,
+                    "height": 2.68,
+                    "area": 5.444,
+                    "base_height": 0,
+                    "orientation360": 0,
+                    "pitch": 90,
+                    "solar_absorption_coeff": 0.6,
+                    "u_value": 0.18,
+                    "areal_heat_capacity": 110000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z1_exw_S_GF_8": {
+                    "type": "BuildingElementOpaque",
+                    "width": 3.05,
+                    "height": 2.68,
+                    "area": 5.774,
+                    "base_height": 0,
+                    "orientation360": 180,
+                    "pitch": 90,
+                    "solar_absorption_coeff": 0.6,
+                    "u_value": 0.18,
+                    "areal_heat_capacity": 110000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z1_exf_|_GF_1": {
+                    "type": "BuildingElementGround",
+                    "total_area": 37.45,
+                    "area": 21.96,
+                    "perimeter": 6.2,
+                    "pitch": 180,
+                    "u_value": 0.13,
+                    "thermal_resistance_floor_construction": 7.1,
+                    "thickness_walls": 0.4,
+                    "floor_type": "Slab_no_edge_insulation",
+                    "psi_wall_floor_junc": 0.159,
+                    "areal_heat_capacity": 175000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z1_win_N_GF_7": {
+                    "type": "BuildingElementTransparent",
+                    "width": 1.3,
+                    "height": 2.1,
+                    "area": 2.73,
+                    "base_height": 0,
+                    "orientation360": 0,
+                    "pitch": 90,
+                    "g_value": 0.7,
+                    "frame_area_fraction": 0.19,
+                    "u_value": 1.2,
+                    "free_area_height": 1.05,
+                    "mid_height": 1.05,
+                    "max_window_open_area": 0.1365,
+                    "window_part_list": [
+                        {
+                            "mid_height_air_flow_path": 1.05
+                        }
+                    ],
+                    "shading": [
+                        {
+                            "type": "overhang",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinleft",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinright",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        }
+                    ]
+                },
+                "Z1_win_S_GF_8": {
+                    "type": "BuildingElementTransparent",
+                    "width": 1.5,
+                    "height": 1.6,
+                    "area": 2.4,
+                    "base_height": 0.5,
+                    "orientation360": 180,
+                    "pitch": 90,
+                    "g_value": 0.7,
+                    "frame_area_fraction": 0.2,
+                    "u_value": 1.2,
+                    "free_area_height": 1.3,
+                    "mid_height": 1.3,
+                    "max_window_open_area": 0.12,
+                    "window_part_list": [
+                        {
+                            "mid_height_air_flow_path": 1.3
+                        }
+                    ],
+                    "shading": [
+                        {
+                            "type": "overhang",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinleft",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinright",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        }
+                    ]
+                },
+                "Z1_inw_x_GF_1": {
+                    "type": "BuildingElementAdjacentConditionedSpace",
+                    "area": 14.136,
+                    "pitch": 90,
+                    "u_value": 0.3,
+                    "areal_heat_capacity": 12500,
+                    "mass_distribution_class": "IE"
+                }
+            },
+            "ThermalBridging": {
+                "Z1_tbr_E2": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.05,
+                    "length": 2.8
+                },
+                "Z1_tbr_E3": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.05,
+                    "length": 2.8
+                },
+                "Z1_tbr_E4": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.05,
+                    "length": 7.4
+                },
+                "Z1_tbr_E5": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.159,
+                    "length": 6.2
+                },
+                "Z1_tbr_E6": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0,
+                    "length": 6.2
+                },
+                "Z1_tbr_E18": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.04,
+                    "length": 5.18
+                },
+                "Z1_tbr_P1": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.148,
+                    "length": 7.2
+                }
+            }
+        },
+        "zone2_restofdwelling": {
+            "area": 52.92,
+            "volume": 133.2086,
+            "SpaceHeatSystem": "space_heat_system_restofdwelling",
+            "temp_setpnt_init": 20,
+            "BuildingElement": {
+                "Z2_exw_N_1F_1": {
+                    "type": "BuildingElementOpaque",
+                    "width": 5.2,
+                    "height": 2.5,
+                    "area": 10.85,
+                    "base_height": 2.68,
+                    "orientation360": 0,
+                    "pitch": 90,
+                    "solar_absorption_coeff": 0.6,
+                    "u_value": 0.18,
+                    "areal_heat_capacity": 110000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_exw_W_1F_2": {
+                    "type": "BuildingElementOpaque",
+                    "width": 7.2,
+                    "height": 2.5,
+                    "area": 15.46,
+                    "base_height": 2.68,
+                    "orientation360": 270,
+                    "pitch": 90,
+                    "solar_absorption_coeff": 0.6,
+                    "u_value": 0.18,
+                    "areal_heat_capacity": 110000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_exw_S_1F_3": {
+                    "type": "BuildingElementOpaque",
+                    "width": 5.2,
+                    "height": 2.5,
+                    "area": 9.82,
+                    "base_height": 2.68,
+                    "orientation360": 180,
+                    "pitch": 90,
+                    "solar_absorption_coeff": 0.6,
+                    "u_value": 0.18,
+                    "areal_heat_capacity": 110000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_exw_W_GF_4": {
+                    "type": "BuildingElementOpaque",
+                    "width": 7.2,
+                    "height": 2.68,
+                    "area": 19.296,
+                    "base_height": 0,
+                    "orientation360": 270,
+                    "pitch": 90,
+                    "solar_absorption_coeff": 0.6,
+                    "u_value": 0.18,
+                    "areal_heat_capacity": 110000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_exw_N_GF_5": {
+                    "type": "BuildingElementOpaque",
+                    "width": 2.15,
+                    "height": 2.68,
+                    "area": 3.15,
+                    "base_height": 0,
+                    "orientation360": 0,
+                    "pitch": 90,
+                    "solar_absorption_coeff": 0.6,
+                    "u_value": 0.18,
+                    "areal_heat_capacity": 110000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_exw_S_GF_7": {
+                    "type": "BuildingElementOpaque",
+                    "width": 2.15,
+                    "height": 2.68,
+                    "area": 3.872,
+                    "base_height": 0,
+                    "orientation360": 180,
+                    "pitch": 90,
+                    "solar_absorption_coeff": 0.6,
+                    "u_value": 0.18,
+                    "areal_heat_capacity": 110000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_exf_|_GF_2": {
+                    "type": "BuildingElementGround",
+                    "total_area": 37.45,
+                    "area": 15.49,
+                    "perimeter": 11.4,
+                    "pitch": 180,
+                    "u_value": 0.13,
+                    "thermal_resistance_floor_construction": 7.1,
+                    "thickness_walls": 0.4,
+                    "floor_type": "Slab_no_edge_insulation",
+                    "psi_wall_floor_junc": 0.159,
+                    "areal_heat_capacity": 175000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_exr_|_1F_1": {
+                    "type": "BuildingElementOpaque",
+                    "width": 5.2,
+                    "height": 3.6,
+                    "area": 37.45,
+                    "base_height": 5.18,
+                    "orientation360": 0,
+                    "pitch": 0,
+                    "is_unheated_pitched_roof": true,
+                    "solar_absorption_coeff": 0.9,
+                    "u_value": 0.11,
+                    "areal_heat_capacity": 50000,
+                    "mass_distribution_class": "I"
+                },
+                "Z2_win_N_1F_1": {
+                    "type": "BuildingElementTransparent",
+                    "width": 0.8,
+                    "height": 0.9,
+                    "area": 0.72,
+                    "base_height": 3.8,
+                    "orientation360": 0,
+                    "pitch": 90,
+                    "g_value": 0.7,
+                    "frame_area_fraction": 0.34,
+                    "u_value": 1.2,
+                    "free_area_height": 4.25,
+                    "mid_height": 4.25,
+                    "max_window_open_area": 0.216,
+                    "window_part_list": [
+                        {
+                            "mid_height_air_flow_path": 4.25
+                        }
+                    ],
+                    "shading": [
+                        {
+                            "type": "overhang",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinleft",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinright",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        }
+                    ]
+                },
+                "Z2_win_N_1F_2": {
+                    "type": "BuildingElementTransparent",
+                    "width": 1.3,
+                    "height": 1.1,
+                    "area": 1.43,
+                    "base_height": 3.6,
+                    "orientation360": 0,
+                    "pitch": 90,
+                    "g_value": 0.7,
+                    "frame_area_fraction": 0.25,
+                    "u_value": 1.2,
+                    "free_area_height": 4.15,
+                    "mid_height": 4.15,
+                    "max_window_open_area": 0.429,
+                    "window_part_list": [
+                        {
+                            "mid_height_air_flow_path": 4.15
+                        }
+                    ],
+                    "shading": [
+                        {
+                            "type": "overhang",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinleft",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinright",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        }
+                    ]
+                },
+                "Z2_win_S_1F_3": {
+                    "type": "BuildingElementTransparent",
+                    "width": 1.5,
+                    "height": 1.4,
+                    "area": 2.1,
+                    "base_height": 3.3,
+                    "orientation360": 180,
+                    "pitch": 90,
+                    "g_value": 0.7,
+                    "frame_area_fraction": 0.21,
+                    "u_value": 1.2,
+                    "free_area_height": 4,
+                    "mid_height": 4,
+                    "max_window_open_area": 0.63,
+                    "window_part_list": [
+                        {
+                            "mid_height_air_flow_path": 4.0
+                        }
+                    ],
+                    "shading": [
+                        {
+                            "type": "overhang",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinleft",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinright",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        }
+                    ]
+                },
+                "Z2_win_S_1F_4": {
+                    "type": "BuildingElementTransparent",
+                    "width": 0.9,
+                    "height": 1.2,
+                    "area": 1.08,
+                    "base_height": 3.6,
+                    "orientation360": 180,
+                    "pitch": 90,
+                    "g_value": 0.7,
+                    "frame_area_fraction": 0.29,
+                    "u_value": 1.2,
+                    "free_area_height": 4.2,
+                    "mid_height": 4.2,
+                    "max_window_open_area": 0.324,
+                    "window_part_list": [
+                        {
+                            "mid_height_air_flow_path": 4.2
+                        }
+                    ],
+                    "shading": [
+                        {
+                            "type": "overhang",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinleft",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinright",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        }
+                    ]
+                },
+                "Z2_win_W_1F_5": {
+                    "type": "BuildingElementTransparent",
+                    "width": 1,
+                    "height": 2.54,
+                    "area": 2.54,
+                    "base_height": 2.68,
+                    "orientation360": 270,
+                    "pitch": 90,
+                    "g_value": 0.7,
+                    "frame_area_fraction": 0.21,
+                    "u_value": 1.2,
+                    "free_area_height": 3.95,
+                    "mid_height": 3.95,
+                    "max_window_open_area": 0.762,
+                    "window_part_list": [
+                        {
+                            "mid_height_air_flow_path": 3.95
+                        }
+                    ],
+                    "shading": [
+                        {
+                            "type": "overhang",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinleft",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinright",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        }
+                    ]
+                },
+                "Z2_win_N_GF_6": {
+                    "type": "BuildingElementTransparent",
+                    "width": 0.9,
+                    "height": 2.1,
+                    "area": 1.89,
+                    "base_height": 0,
+                    "orientation360": 0,
+                    "pitch": 90,
+                    "g_value": 0.7,
+                    "frame_area_fraction": 0.24,
+                    "u_value": 1.2,
+                    "free_area_height": 1.05,
+                    "mid_height": 1.05,
+                    "max_window_open_area": 0.08505,
+                    "window_part_list": [
+                        {
+                            "mid_height_air_flow_path": 1.05
+                        }
+                    ],
+                    "shading": [
+                        {
+                            "type": "overhang",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinleft",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinright",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        }
+                    ]
+                },
+                "Z2_win_N_GF_9": {
+                    "type": "BuildingElementTransparent",
+                    "width": 0.8,
+                    "height": 0.9,
+                    "area": 0.72,
+                    "base_height": 1.2,
+                    "orientation360": 0,
+                    "pitch": 90,
+                    "g_value": 0.7,
+                    "frame_area_fraction": 0.34,
+                    "u_value": 1.2,
+                    "free_area_height": 1.65,
+                    "mid_height": 1.65,
+                    "max_window_open_area": 0.0378,
+                    "window_part_list": [
+                        {
+                            "mid_height_air_flow_path": 1.65
+                        }
+                    ],
+                    "shading": [
+                        {
+                            "type": "overhang",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinleft",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        },
+                        {
+                            "type": "sidefinright",
+                            "depth": 0.1,
+                            "distance": 0.08
+                        }
+                    ]
+                },
+                "Z2_doo_S_GF_1": {
+                    "type": "BuildingElementOpaque",
+                    "width": 0.9,
+                    "height": 2.1,
+                    "area": 1.89,
+                    "base_height": 0,
+                    "orientation360": 180,
+                    "pitch": 90,
+                    "solar_absorption_coeff": 0.6,
+                    "u_value": 1,
+                    "areal_heat_capacity": 110000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_inw_|_GF_2": {
+                    "type": "BuildingElementAdjacentConditionedSpace",
+                    "area": 5.494,
+                    "pitch": 90,
+                    "u_value": 0.3,
+                    "areal_heat_capacity": 25000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_inw_x_1F_3": {
+                    "type": "BuildingElementAdjacentConditionedSpace",
+                    "area": 18,
+                    "pitch": 90,
+                    "u_value": 0.3,
+                    "areal_heat_capacity": 25000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_inw_|_1F_4": {
+                    "type": "BuildingElementAdjacentConditionedSpace",
+                    "area": 7.625,
+                    "pitch": 90,
+                    "u_value": 0.3,
+                    "areal_heat_capacity": 25000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_inw_|_1F_5": {
+                    "type": "BuildingElementAdjacentConditionedSpace",
+                    "area": 5.125,
+                    "pitch": 90,
+                    "u_value": 0.3,
+                    "areal_heat_capacity": 25000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_inw_|_1F_6": {
+                    "type": "BuildingElementAdjacentConditionedSpace",
+                    "area": 5.125,
+                    "pitch": 90,
+                    "u_value": 0.3,
+                    "areal_heat_capacity": 25000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_inw_|_1F_7": {
+                    "type": "BuildingElementAdjacentConditionedSpace",
+                    "area": 4.025,
+                    "pitch": 90,
+                    "u_value": 0.3,
+                    "areal_heat_capacity": 25000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z1_inw_x_GF_1": {
+                    "type": "BuildingElementAdjacentConditionedSpace",
+                    "area": 14.136,
+                    "pitch": 90,
+                    "u_value": 0.3,
+                    "areal_heat_capacity": 12500,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_par_|_1F_1": {
+                    "type": "BuildingElementAdjacentConditionedSpace",
+                    "area": 18,
+                    "pitch": 90,
+                    "u_value": 0.3,
+                    "areal_heat_capacity": 25000,
+                    "mass_distribution_class": "IE"
+                },
+                "Z2_par_|_GF_2": {
+                    "type": "BuildingElementAdjacentConditionedSpace",
+                    "area": 19.296,
+                    "pitch": 90,
+                    "u_value": 0.3,
+                    "areal_heat_capacity": 25000,
+                    "mass_distribution_class": "IE"
+                }
+            },
+            "ThermalBridging": {
+                "Z2_tbr_E2": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.05,
+                    "length": 8.1
+                },
+                "Z2_tbr_E3": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.05,
+                    "length": 8.1
+                },
+                "Z2_tbr_E4": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.05,
+                    "length": 22.68
+                },
+                "Z2_tbr_E5": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.159,
+                    "length": 11.4
+                },
+                "Z2_tbr_E6": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0,
+                    "length": 11.4
+                },
+                "Z2_tbr_E10": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.08,
+                    "length": 10.4
+                },
+                "Z2_tbr_E12": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.119,
+                    "length": 7.2
+                },
+                "Z2_tbr_E16": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.05,
+                    "length": 10.36
+                },
+                "Z2_tbr_E18": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.04,
+                    "length": 5.18
+                },
+                "Z2_tbr_P2": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.0,
+                    "length": 7.2
+                },
+                "Z2_tbr_P4": {
+                    "type": "ThermalBridgeLinear",
+                    "linear_thermal_transmittance": 0.111,
+                    "length": 7.2
+                }
+            }
+        }
+    }
+}

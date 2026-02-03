@@ -4,7 +4,11 @@ use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 #[cfg(test)]
 use serde_json::Value;
 
-pub(crate) fn reject_nulls<T>(vec_of_options: Vec<Option<T>>) -> anyhow::Result<Vec<T>> {
+// This module provides ways to define schedules which can be expressed concisely
+// and built from sub-schedules (e.g. construct a weekly schedule from daily schedules)
+// in input files.
+
+pub fn reject_nulls<T>(vec_of_options: Vec<Option<T>>) -> anyhow::Result<Vec<T>> {
     vec_of_options
         .into_iter()
         .collect::<Option<Vec<_>>>()
@@ -22,20 +26,20 @@ pub(crate) fn expand_boolean_schedule(schedule: &BooleanSchedule) -> Vec<Option<
     schedule.expand()
 }
 
-pub(crate) fn expand_numeric_schedule(schedule: &NumericSchedule) -> Vec<Option<f64>> {
+pub fn expand_numeric_schedule(schedule: &NumericSchedule) -> Vec<Option<f64>> {
     schedule.expand()
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ScheduleEvent {
-    pub(crate) start: f64,
-    pub(crate) duration: Option<f64>,
-    pub(crate) volume: Option<f64>,
-    pub(crate) temperature: Option<f64>,
+pub struct ScheduleEvent {
+    pub start: f64,
+    pub duration: Option<f64>,
+    pub volume: Option<f64>,
+    pub temperature: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
-pub(crate) enum WaterScheduleEventType {
+pub enum WaterScheduleEventType {
     Shower,
     Bath,
     Other,
@@ -52,7 +56,7 @@ impl From<WaterHeatingEventType> for WaterScheduleEventType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TypedScheduleEvent {
+pub struct TypedScheduleEvent {
     pub(crate) start: f64,
     pub(crate) duration: Option<f64>,
     pub(crate) temperature: f64,
@@ -86,6 +90,17 @@ impl TypedScheduleEvent {
             warm_volume: None,
             pipework_volume: None,
         })
+    }
+}
+
+impl From<&TypedScheduleEvent> for WaterHeatingEvent {
+    fn from(item: &TypedScheduleEvent) -> WaterHeatingEvent {
+        WaterHeatingEvent {
+            start: item.start,
+            duration: item.duration,
+            volume: item.volume,
+            temperature: item.temperature,
+        }
     }
 }
 
@@ -156,7 +171,7 @@ pub(crate) fn expand_events_from_json_values(
 /// * `name`
 /// * `event_type` - type of the events being processed (e.g., "Shower", "Bath", "Others")
 /// * `schedule` - the existing schedule dictionary to update
-pub(crate) fn expand_events(
+pub fn expand_events(
     events: Vec<ScheduleEvent>,
     simulation_timestep: f64,
     total_timesteps: usize,
@@ -170,8 +185,8 @@ pub(crate) fn expand_events(
         if starting_timestep < total_timesteps {
             let event_with_type_name =
                 TypedScheduleEvent::from_simple_event(event, name.to_string(), event_type)?;
-
-            match schedule.get_mut(starting_timestep).unwrap() {
+            let existing_event = schedule.get_mut(starting_timestep).unwrap();
+            match existing_event {
                 Some(events) => {
                     // Insert the event into the correct position to maintain order by 'start' time
                     let mut inserted = false;
@@ -209,14 +224,15 @@ impl From<&WaterHeatingEvent> for ScheduleEvent {
 pub(crate) mod input {
     use itertools::Itertools;
     use serde::{Deserialize, Serialize};
+    use serde_valid::Validate;
     use std::collections::HashMap;
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-    pub(crate) struct Schedule<T: Copy> {
-        pub(crate) main: Vec<ScheduleEntry<T>>,
+    pub struct Schedule<T: Copy> {
+        pub main: Vec<ScheduleEntry<T>>,
         #[serde(flatten)]
-        pub(crate) references: HashMap<String, ScheduleReferenceEntry<T>>,
+        pub references: HashMap<String, ScheduleReferenceEntry<T>>,
     }
 
     impl<T> Schedule<T>
@@ -234,16 +250,20 @@ pub(crate) mod input {
             match entry {
                 ScheduleEntry::Null(_) => vec![None],
                 ScheduleEntry::Value(v) => vec![Some(*v)],
-                ScheduleEntry::Repeater(repeater) => std::iter::repeat([match &repeater.value {
-                    ScheduleRepeaterValue::Reference(reference) => self.expand_reference(reference),
-                    ScheduleRepeaterValue::Entry(ScheduleRepeaterEntry::Null(_)) => {
-                        vec![None]
-                    }
-                    ScheduleRepeaterValue::Entry(ScheduleRepeaterEntry::Value(v)) => {
-                        vec![Some(*v)]
-                    }
-                }])
-                .take(repeater.repeat)
+                ScheduleEntry::Repeater(repeater) => std::iter::repeat_n(
+                    [match &repeater.value {
+                        ScheduleRepeaterValue::Reference(reference) => {
+                            self.expand_reference(reference)
+                        }
+                        ScheduleRepeaterValue::Entry(ScheduleRepeaterEntry::Null(_)) => {
+                            vec![None]
+                        }
+                        ScheduleRepeaterValue::Entry(ScheduleRepeaterEntry::Value(v)) => {
+                            vec![Some(*v)]
+                        }
+                    }],
+                    repeater.repeat,
+                )
                 .flatten()
                 .flatten()
                 .collect_vec(),
@@ -265,7 +285,7 @@ pub(crate) mod input {
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
-    pub(crate) enum ScheduleEntry<T: Copy> {
+    pub enum ScheduleEntry<T: Copy> {
         Null(()),
         Value(T),
         Repeater(ScheduleRepeater<T>),
@@ -275,7 +295,7 @@ pub(crate) mod input {
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
-    pub(crate) enum ScheduleReferenceEntry<T: Copy> {
+    pub enum ScheduleReferenceEntry<T: Copy> {
         Multi(Vec<ScheduleEntry<T>>),
         Single(ScheduleEntry<T>),
     }
@@ -283,28 +303,48 @@ pub(crate) mod input {
     #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
-    pub(crate) enum ScheduleRepeaterEntry<T> {
+    pub enum ScheduleRepeaterEntry<T> {
         Null(()),
         Value(T),
     }
 
-    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+    /// Defines a repeating pattern for schedule values.
+    ///
+    ///    Examples (boolean):
+    ///        # Repeat 'true' 24 times (once per hour)
+    ///        {"repeat": 24, "value": true}
+    ///
+    ///        # Reference another schedule, repeat 7 times (once per day)
+    ///        {"repeat": 7, "value": "weekday_schedule"}
+    ///
+    ///    Examples (float):
+    ///        # Repeat temperature setpoint 21.5°C 24 times (once per hour)
+    ///        {"repeat": 24, "value": 21.5}
+    ///
+    ///        # Reference another schedule, repeat 7 times (once per day)
+    ///        {"repeat": 7, "value": "weekday_temp_schedule"}
+    ///
+    ///        # Repeat power level 2.5 kW for 8 hours
+    ///        {"repeat": 8, "value": 2.5}
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-    pub(crate) struct ScheduleRepeater<T: Copy> {
-        pub(crate) value: ScheduleRepeaterValue<T>,
-        pub(crate) repeat: usize,
+    pub struct ScheduleRepeater<T: Copy> {
+        /// Value to repeat or schedule reference
+        pub value: ScheduleRepeaterValue<T>,
+        /// Number of times to repeat the value
+        pub repeat: usize,
     }
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
-    pub(crate) enum ScheduleRepeaterValue<T: Copy> {
+    pub enum ScheduleRepeaterValue<T: Copy> {
         Reference(String),
         Entry(ScheduleRepeaterEntry<T>),
     }
 
     pub(crate) type BooleanSchedule = Schedule<bool>;
-    pub(crate) type NumericSchedule = Schedule<f64>;
+    pub type NumericSchedule = Schedule<f64>;
 
     #[cfg(test)]
     mod schedule_test {
@@ -400,7 +440,7 @@ pub(crate) mod input {
 }
 
 pub(crate) use input::BooleanSchedule;
-pub(crate) use input::NumericSchedule;
+pub use input::NumericSchedule;
 
 #[cfg(test)]
 mod tests {
@@ -563,8 +603,9 @@ mod tests {
     fn events() -> Vec<Value> {
         json!([
             {"start": 2, "duration": 6, "temperature": 52},
-            {"start": 2.1, "duration": 6, "temperature": 52},
+            {"start": 2.2, "duration": 6, "temperature": 52},
             {"start": 3, "duration": 6, "temperature": 52},
+            {"start": 2.1, "duration": 6, "temperature": 52},
         ])
         .as_array()
         .unwrap()
@@ -601,6 +642,16 @@ mod tests {
                 },
                 TypedScheduleEvent {
                     start: 2.1,
+                    duration: Some(6.0),
+                    temperature: 52.0,
+                    name: "name".to_string(),
+                    event_type: WaterScheduleEventType::Shower,
+                    volume: None,
+                    warm_volume: None,
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 2.2,
                     duration: Some(6.0),
                     temperature: 52.0,
                     name: "name".to_string(),

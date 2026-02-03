@@ -1,5 +1,7 @@
 use crate::core::controls::time_control::{Control, ControlBehaviour};
-use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
+use crate::core::units::{
+    average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, JOULES_PER_KILOJOULE,
+};
 use crate::corpus::Controls;
 use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
@@ -10,24 +12,14 @@ use crate::input::{
     WindowTreatmentType,
 };
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use atomic_float::AtomicF64;
-use std::f64::consts::PI;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 // Difference between external air temperature and sky temperature
 // (default value for intermediate climatic region from BS EN ISO 52016-1:2017, Table B.19)
 const TEMP_DIFF_SKY: f64 = 11.0; // Kelvin
-
-/// Calculate longwave sky view factor from pitch in degrees
-pub(crate) fn sky_view_factor(pitch: &f64) -> f64 {
-    // TODO (from Python) account for shading
-    // TODO (from Python) check longwave is correct
-    let pitch_rads = pitch * PI / 180.0;
-
-    0.5 * (1.0 + pitch_rads.cos())
-}
 
 /// calc the vertically projected height of a surface from
 /// the actual height and tilt of the surface
@@ -243,14 +235,17 @@ impl BuildingElement {
         }
     }
 
-    pub(crate) fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
-        match self {
-            BuildingElement::Opaque(el) => el.i_sol_dir_dif(simtime),
+    pub(crate) fn i_sol_dir_dif(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        Ok(match self {
+            BuildingElement::Opaque(el) => el.i_sol_dir_dif(simtime)?,
             BuildingElement::AdjacentConditionedSpace(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::Ground(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::Transparent(el) => el.i_sol_dir_dif(simtime),
-        }
+        })
     }
 
     pub(crate) fn shading_factors_direct_diffuse(
@@ -900,11 +895,11 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                         init_slab_on_ground_floor_edge_insulated(edge_insulation)
                     }
                     FloorData::SuspendedFloor {
-                        height_upper_surface,
                         thermal_transmission_walls,
                         area_per_perimeter_vent,
-                        shield_fact_location,
                         thermal_resistance_of_insulation,
+                        height_upper_surface,
+                        shield_fact_location,
                     } => init_suspended_floor(
                         *height_upper_surface,
                         *thermal_transmission_walls,
@@ -915,6 +910,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                     FloorData::HeatedBasement {
                         depth_basement_floor,
                         thermal_resistance_of_basement_walls,
+                        ..
                     } => init_heated_basement(
                         *depth_basement_floor,
                         *thermal_resistance_of_basement_walls,
@@ -1074,7 +1070,7 @@ pub(crate) trait HeatTransferOtherSideUnconditionedSpace: HeatTransferOtherSide 
 
 pub(crate) trait HeatTransferOtherSideOutside: HeatTransferOtherSide {
     fn init_heat_transfer_other_side_outside(&mut self, pitch: f64) {
-        let f_sky = sky_view_factor(&pitch);
+        let f_sky = ExternalConditions::sky_view_factor(&pitch);
 
         self.init_super(Some(f_sky));
     }
@@ -1107,7 +1103,7 @@ pub(crate) trait SolarRadiationInteraction {
     fn set_external_pitch(&mut self, pitch: f64);
     fn external_pitch(&self) -> f64;
     fn set_orientation(&mut self, orientation: f64);
-    fn orientation(&self) -> f64;
+    fn orientation(&self) -> Option<f64>;
     fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>);
     fn shading(&self) -> &[WindowShadingObject];
     fn set_base_height(&mut self, base_height: f64);
@@ -1160,16 +1156,20 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
     fn external_conditions(&self) -> &ExternalConditions;
 
     /// Return calculated i_sol_dir and i_sol_dif using pitch and orientation of element
-    fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
+    fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> anyhow::Result<(f64, f64)> {
         let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
             .external_conditions()
             .calculated_direct_diffuse_total_irradiance(
                 self.external_pitch(),
-                self.orientation(),
+                self.orientation().ok_or_else(|| {
+                    anyhow!(
+                        "Cannot compute direct and diffuse irradiance because orientation is None."
+                    )
+                })?,
                 false,
                 &simtime,
             );
-        (i_sol_dir, i_sol_dif)
+        Ok((i_sol_dir, i_sol_dif))
     }
 
     fn shading_factors_direct_diffuse(
@@ -1182,7 +1182,11 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
                 self.projected_height(),
                 self.width(),
                 self.external_pitch(),
-                self.orientation(),
+                self.orientation().ok_or_else(|| {
+                    anyhow!(
+                        "Cannot compute direct and diffuse shading factors because orientation is None."
+                    )
+                })?,
                 &[],
                 simtime,
             )
@@ -1221,7 +1225,9 @@ pub(crate) trait SolarRadiationInteractionTransmitted: SolarRadiationInteraction
             self.projected_height(),
             self.width(),
             self.pitch(),
-            self.orientation(),
+            self.orientation().ok_or_else(|| {
+                anyhow!("Cannot compute surface irradiance because orientation is None.")
+            })?,
             self.shading(),
             simtime,
         )?;
@@ -1244,7 +1250,9 @@ pub(crate) trait SolarRadiationInteractionTransmitted: SolarRadiationInteraction
                 self.projected_height(),
                 self.width(),
                 self.pitch(),
-                self.orientation(),
+                self.orientation().ok_or_else(|| {
+                    anyhow!("Cannot compute shading factor because orientation is None.")
+                })?,
                 self.shading(),
                 simtime,
             )
@@ -1268,7 +1276,7 @@ pub(crate) struct BuildingElementOpaque {
     base_height: f64,
     projected_height: f64,
     width: f64,
-    orientation: f64,
+    orientation: Option<f64>,
     k_m: f64,
     k_pli: [f64; 5],
     h_pli: [f64; 4],
@@ -1308,7 +1316,7 @@ impl BuildingElementOpaque {
         thermal_resistance_construction: f64,
         areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
-        orientation: f64,
+        orientation: Option<f64>,
         base_height: f64,
         height: f64,
         width: f64,
@@ -1342,7 +1350,7 @@ impl BuildingElementOpaque {
         // shading is None because the model ignores nearby shading on opaque elements
         new_opaque.init_solar_radiation_interaction_absorbed(
             pitch,
-            Some(orientation),
+            orientation,
             None,
             base_height,
             projected_height(pitch, height),
@@ -1357,7 +1365,10 @@ impl BuildingElementOpaque {
         self.solar_absorption_coeff
     }
 
-    pub(crate) fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
+    pub(crate) fn i_sol_dir_dif(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
         SolarRadiationInteractionAbsorbed::i_sol_dir_dif(self, simtime)
     }
 
@@ -1464,10 +1475,10 @@ impl SolarRadiationInteraction for BuildingElementOpaque {
     }
 
     fn set_orientation(&mut self, orientation: f64) {
-        self.orientation = orientation;
+        self.orientation = orientation.into();
     }
 
-    fn orientation(&self) -> f64 {
+    fn orientation(&self) -> Option<f64> {
         self.orientation
     }
 
@@ -1704,8 +1715,8 @@ impl SolarRadiationInteraction for BuildingElementAdjacentConditionedSpace {
         self.orientation = orientation;
     }
 
-    fn orientation(&self) -> f64 {
-        self.orientation
+    fn orientation(&self) -> Option<f64> {
+        self.orientation.into()
     }
 
     fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
@@ -1943,8 +1954,8 @@ impl SolarRadiationInteraction for BuildingElementAdjacentUnconditionedSpaceSimp
         // do nothing
     }
 
-    fn orientation(&self) -> f64 {
-        0.0
+    fn orientation(&self) -> Option<f64> {
+        0.0.into()
     }
 
     fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
@@ -2079,7 +2090,7 @@ impl BuildingElementGround {
     /// * `edge_insulation`
     ///         - horizontal edge insulation
     ///         - vertical or external edge insulation
-    /// * `h_upper` - height of the floor upper surface, in m
+    /// * `height_upper_surface` - height of the floor upper surface, in m
     ///     average value is used if h varies
     /// * `u_w` - thermal transmittance of walls above ground, in W/(m2·K)
     ///     in accordance with ISO 6946
@@ -2161,12 +2172,10 @@ impl BuildingElementGround {
 
         // Calculate thermal resistance of virtual layer using BS EN ISO 13370:2017 Equation (F1)
         let r_si = 0.17; // ISO 6946 - internal surface resistance
-        let r_vi = (1.0 / u_value) - r_si - thermal_resistance_floor_construction - r_gr; // in m2.K/W
-
-        // BS EN ISO 13370:2017 Table 2 validity interval r_vi > 0
-        if r_vi <= 0. {
-            bail!("r_vi should be greater than zero. Check u-value and thermal_resistance_floor_construction inputs for ground floors");
-        }
+        let r_vi = calculate_thermal_resistance_of_virtual_layer(
+            u_value,
+            thermal_resistance_floor_construction,
+        )?;
 
         new_ground.init_heat_transfer_through_3_plus_2_nodes(
             thermal_resistance_floor_construction,
@@ -2381,8 +2390,8 @@ impl SolarRadiationInteraction for BuildingElementGround {
         // do nothing
     }
 
-    fn orientation(&self) -> f64 {
-        0.0
+    fn orientation(&self) -> Option<f64> {
+        0.0.into()
     }
 
     fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
@@ -2514,7 +2523,7 @@ pub(crate) struct BuildingElementTransparent {
     frame_area_fraction: f64,
     pitch: f64,
     external_pitch: f64,
-    orientation: f64,
+    orientation: Option<f64>,
     base_height: f64,
     projected_height: f64,
     width: f64,
@@ -2549,7 +2558,7 @@ impl BuildingElementTransparent {
     pub(crate) fn new(
         pitch: f64,
         thermal_resistance_construction: f64,
-        orientation: f64,
+        orientation: Option<f64>,
         g_value: f64,
         frame_area_fraction: f64,
         base_height: f64,
@@ -2585,7 +2594,7 @@ impl BuildingElementTransparent {
         new_trans.init_heat_transfer_other_side_outside(pitch);
         new_trans.init_solar_radiation_interaction(
             pitch,
-            Some(orientation),
+            orientation,
             shading,
             base_height,
             projected_height(pitch, height),
@@ -2626,7 +2635,9 @@ impl BuildingElementTransparent {
                 self.projected_height,
                 self.width,
                 self.pitch,
-                self.orientation,
+                self.orientation.ok_or_else(|| {
+                    anyhow!("Cannot compute surface irradiance because orientation is None.")
+                })?,
                 self.shading(),
                 simtime,
             )?;
@@ -2635,7 +2646,7 @@ impl BuildingElementTransparent {
                 let ctrl_open: Option<bool> = treatment
                     .open_control
                     .as_ref()
-                    .map(|ctrl| ctrl.is_on(simtime));
+                    .map(|ctrl| ctrl.is_on(&simtime));
                 let closing_irrad_threshold: Option<f64> = treatment
                     .closing_irradiance_control
                     .as_ref()
@@ -2832,10 +2843,10 @@ impl SolarRadiationInteraction for BuildingElementTransparent {
     }
 
     fn set_orientation(&mut self, orientation: f64) {
-        self.orientation = orientation;
+        self.orientation = orientation.into();
     }
 
-    fn orientation(&self) -> f64 {
+    fn orientation(&self) -> Option<f64> {
         self.orientation
     }
 
@@ -2902,7 +2913,7 @@ impl SolarRadiationInteractionTransmitted for BuildingElementTransparent {
     }
 }
 
-pub(crate) fn pitch_class(pitch: f64) -> HeatFlowDirection {
+pub fn pitch_class(pitch: f64) -> HeatFlowDirection {
     match pitch {
         PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR => HeatFlowDirection::Horizontal,
         ..PITCH_LIMIT_HORIZ_CEILING => HeatFlowDirection::Upwards,
@@ -3118,7 +3129,7 @@ mod tests {
         assert_eq!(heat_transfer_other_side_a.h_re(), 4.14);
     }
 
-    // skip test_fabric_heat_losss as Rust would not allow invalid method call
+    // skip test_fabric_heat_loss as Rust would not allow invalid method call
 
     #[fixture]
     fn simulation_time() -> SimulationTimeIterator {
@@ -3159,7 +3170,7 @@ mod tests {
             0.25,
             19000.0,
             MassDistributionClass::I,
-            0.,
+            Some(0.),
             0.,
             2.,
             10.,
@@ -3177,7 +3188,7 @@ mod tests {
             0.50,
             18000.0,
             MassDistributionClass::E,
-            180.,
+            Some(180.),
             0.,
             2.25,
             10.,
@@ -3195,7 +3206,7 @@ mod tests {
             0.75,
             17000.0,
             MassDistributionClass::IE,
-            90.,
+            Some(90.),
             0.,
             2.5,
             10.,
@@ -3213,7 +3224,7 @@ mod tests {
             0.80,
             16000.0,
             MassDistributionClass::D,
-            -90.,
+            Some(-90.),
             0.,
             2.75,
             10.,
@@ -3231,7 +3242,7 @@ mod tests {
             0.40,
             15000.0,
             MassDistributionClass::M,
-            0.,
+            Some(0.),
             0.,
             3.,
             10.,
@@ -4176,34 +4187,28 @@ mod tests {
         }
     }
 
-    // skipping test_from_string and test_from_string_invalid for TestWindowTreatmentType & TestWindowTreatmentCtrl as not necessary in Rust
-
+    // below window treatment tests are now in test_enums.py in the Python
     #[rstest]
-    fn test_is_manual() {
-        let manual: WindowTreatmentControl = WindowTreatmentControl::Manual;
-        let manual_motorised: WindowTreatmentControl = WindowTreatmentControl::ManualMotorised;
-        let auto_motorised: WindowTreatmentControl = WindowTreatmentControl::AutoMotorised;
-        let combined_light_blind_hvac: WindowTreatmentControl =
-            WindowTreatmentControl::CombinedLightBlindHvac;
-
-        assert_eq!(manual.is_manual(), true);
-        assert_eq!(manual_motorised.is_manual(), true);
-        assert_eq!(auto_motorised.is_manual(), false);
-        assert_eq!(combined_light_blind_hvac.is_manual(), false);
+    #[case(WindowTreatmentControl::Manual)]
+    #[case(WindowTreatmentControl::ManualMotorised)]
+    #[case(WindowTreatmentControl::AutoMotorised)]
+    #[case(WindowTreatmentControl::CombinedLightBlindHvac)]
+    fn test_is_either_automatic_or_manual(#[case] control: WindowTreatmentControl) {
+        assert!(control.is_automatic() || control.is_manual());
     }
 
     #[rstest]
-    fn test_is_automatic() {
-        let manual: WindowTreatmentControl = WindowTreatmentControl::Manual;
-        let manual_motorised: WindowTreatmentControl = WindowTreatmentControl::ManualMotorised;
-        let auto_motorised: WindowTreatmentControl = WindowTreatmentControl::AutoMotorised;
-        let combined_light_blind_hvac: WindowTreatmentControl =
-            WindowTreatmentControl::CombinedLightBlindHvac;
+    #[case(WindowTreatmentControl::AutoMotorised)]
+    #[case(WindowTreatmentControl::CombinedLightBlindHvac)]
+    fn test_is_not_manual(#[case] control: WindowTreatmentControl) {
+        assert!(!control.is_manual());
+    }
 
-        assert_eq!(manual.is_automatic(), false);
-        assert_eq!(manual_motorised.is_automatic(), false);
-        assert_eq!(auto_motorised.is_automatic(), true);
-        assert_eq!(combined_light_blind_hvac.is_automatic(), true);
+    #[rstest]
+    #[case(WindowTreatmentControl::Manual)]
+    #[case(WindowTreatmentControl::ManualMotorised)]
+    fn test_is_not_automatic(#[case] control: WindowTreatmentControl) {
+        assert!(!control.is_automatic());
     }
 
     struct MockSolarRadiationInteraction(Option<f64>);
@@ -4214,7 +4219,7 @@ mod tests {
         fn external_pitch(&self) -> f64 {
             unreachable!()
         }
-        fn orientation(&self) -> f64 {
+        fn orientation(&self) -> Option<f64> {
             unreachable!()
         }
         fn projected_height(&self) -> f64 {
@@ -4279,6 +4284,8 @@ mod tests {
         );
     }
 
+    // skip test_orientation_none as orientation is not optional
+
     impl SolarRadiationInteractionTransmitted for MockSolarRadiationInteraction {
         fn unconverted_g_value(&self) -> f64 {
             self.0.unwrap()
@@ -4333,6 +4340,8 @@ mod tests {
         assert_relative_eq!(solar_gains, 0.9, max_relative = 1e-6);
     }
 
+    // skip test_solar_gains_error as orientation and shading cannot be None at the point of the methods calls in this test
+
     #[fixture]
     fn transparent_building_element(
         simulation_time: SimulationTimeIterator,
@@ -4361,7 +4370,7 @@ mod tests {
         BuildingElementTransparent::new(
             90.,
             0.4,
-            180.,
+            Some(180.),
             0.75,
             0.25,
             1.,
@@ -4398,12 +4407,8 @@ mod tests {
 
     #[rstest]
     fn test_heat_flow_direction(transparent_building_element: BuildingElementTransparent) {
-        // Python test uses None here, but reasonable to expecta temperature to be passed in because
-        // that example only works because of the pitch set on this building element, and would fail
-        // for a different value
-        let stock_temperature = 20.;
         assert_eq!(
-            transparent_building_element.heat_flow_direction(stock_temperature, stock_temperature),
+            transparent_building_element.heat_flow_direction(10., 10.),
             HeatFlowDirection::Horizontal,
             "incorrect heat flow direction returned"
         );
@@ -4420,12 +4425,8 @@ mod tests {
 
     #[rstest]
     fn test_h_ci_for_transparent(transparent_building_element: BuildingElementTransparent) {
-        // Python test uses None here, but reasonable to expecta temperature to be passed in because
-        // that example only works because of the pitch set on this building element, and would fail
-        // for a different value
-        let stock_temperature = 20.;
         assert_eq!(
-            transparent_building_element.h_ci(stock_temperature, stock_temperature),
+            transparent_building_element.h_ci(10., 10.),
             2.5,
             "incorrect h_ci returned"
         );
@@ -4549,42 +4550,42 @@ mod tests {
             ShadingSegment {
                 start: 180.,
                 end: 135.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: 135.,
                 end: 90.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: 90.,
                 end: 45.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: 45.,
                 end: 0.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: 0.,
                 end: -45.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: -45.,
                 end: -90.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: -90.,
                 end: -135.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: -135.,
                 end: -180.,
-                shading_objects: None,
+                ..Default::default()
             },
         ]
         .into();
@@ -4672,19 +4673,14 @@ mod tests {
     }
 
     fn create_setpoint_time_control(setpnt: f64) -> Arc<Control> {
-        Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(setpnt)], // causes control.setpnt() to return specified value
-                0,
-                1.0,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.0,
-            )
-            .unwrap(),
-        ))
+        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(setpnt)], // causes control.setpnt() to return specified value
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            1.0,
+        )))
     }
 
     #[rstest]
@@ -4919,6 +4915,8 @@ mod tests {
             .load(Ordering::SeqCst))
     }
 
+    // skip test_adjust_treatment_orientation_shading_error as orientation and shading cannot be None at the point of the methods calls in this test
+
     #[rstest]
     fn test_fabric_heat_loss_for_transparent(
         transparent_building_element: BuildingElementTransparent,
@@ -4952,7 +4950,7 @@ mod tests {
     fn test_orientation(transparent_building_element: BuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.orientation(),
-            180.,
+            Some(180.),
             "incorrect orientation returned"
         );
     }

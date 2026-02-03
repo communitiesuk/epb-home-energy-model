@@ -66,7 +66,7 @@ impl InstantElecHeater {
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
         let energy_supplied =
-            if self.control.as_ref().is_none() || self.control.as_ref().unwrap().is_on(simtime) {
+            if self.control.as_ref().is_none() || self.control.as_ref().unwrap().is_on(&simtime) {
                 min_of_2(
                     energy_demand,
                     self.rated_power_in_kw * self.simulation_timestep,
@@ -101,19 +101,14 @@ mod tests {
 
     #[fixture]
     pub fn instant_elec_heater(simulation_time: SimulationTime) -> InstantElecHeater {
-        let control = Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(21.0), Some(21.0), None, Some(21.0)],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                Default::default(),
-                simulation_time.step,
-            )
-            .unwrap(),
-        );
+        let control = Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(21.0), Some(21.0), None, Some(21.0)],
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            simulation_time.step,
+        ));
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
         ));

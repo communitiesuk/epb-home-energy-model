@@ -13,9 +13,10 @@ pub const SECONDS_PER_HOUR: u32 = 3_600;
 pub const HOURS_PER_DAY: u32 = 24;
 pub const DAYS_PER_YEAR: u32 = 365;
 pub const DAYS_IN_MONTH: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+pub(crate) const KNOTS_PER_METRES_PER_SECOND: f64 = 1. / (1852. / 3600.);
 pub const MILLIMETRES_IN_METRE: u32 = 1_000;
 
-pub fn average_monthly_to_annual(list_monthly_averages: [f64; 12]) -> f64 {
+pub(crate) fn average_monthly_to_annual(list_monthly_averages: [f64; 12]) -> f64 {
     list_monthly_averages
         .iter()
         .enumerate()
@@ -24,7 +25,25 @@ pub fn average_monthly_to_annual(list_monthly_averages: [f64; 12]) -> f64 {
         / DAYS_IN_MONTH.iter().sum::<u32>() as f64
 }
 
-pub fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f64> {
+// Python equivalent of this has an allow_none parameter. We know when we have Options in Rust so we
+// can check for Some value in calling code - no need to have defensive code/ extra params here.
+pub(crate) fn celsius_to_kelvin(temp_c: f64) -> Result<f64, BelowAbsoluteZeroError> {
+    if temp_c < -273.15 {
+        Err(BelowAbsoluteZeroError::from_c(temp_c))
+    } else {
+        Ok(temp_c + 273.15)
+    }
+}
+
+pub(crate) fn kelvin_to_celsius(temp_k: f64) -> Result<f64, BelowAbsoluteZeroError> {
+    if temp_k < 0.0 {
+        Err(BelowAbsoluteZeroError::from_k(temp_k))
+    } else {
+        Ok(temp_k - 273.15)
+    }
+}
+
+pub(crate) fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f64> {
     let total_steps = timestep_totals.len();
     let steps_per_day = (HOURS_PER_DAY as f64 / timestep).floor() as usize;
     (0..total_steps)
@@ -37,21 +56,29 @@ pub fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f
         .collect()
 }
 
-// Python equivalent of this has an allow_none parameter. We know when we have Options in Rust so we
-// can check for Some value in calling code - no need to have defensive code/ extra params here.
-pub(crate) fn kelvin_to_celsius(temp_k: f64) -> Result<f64, BelowAbsoluteZeroError> {
-    if temp_k < 0.0 {
-        Err(BelowAbsoluteZeroError::from_k(temp_k))
-    } else {
-        Ok(temp_k - 273.15)
-    }
-}
+pub(crate) fn calculate_thermal_resistance_of_virtual_layer(
+    u_value: f64,
+    thermal_resistance_floor_construction: f64,
+) -> Result<f64, BadThermalResistanceCalculationError> {
+    // Thermal properties of ground from BS EN ISO 13370:2017 Table 7
+    // Use values for clay or silt (same as BR 443 and SAP 10)
+    let thermal_conductivity = 1.5; // in W/(m.K)
 
-pub(crate) fn celsius_to_kelvin(temp_c: f64) -> Result<f64, BelowAbsoluteZeroError> {
-    if temp_c < -273.15 {
-        Err(BelowAbsoluteZeroError::from_c(temp_c))
-    } else {
-        Ok(temp_c + 273.15)
+    // Calculate thermal resistance and heat capacity of fixed ground layer
+    // using BS EN ISO 13370:2017
+    let thickness_ground_layer = 0.5; // in m. Specified in BS EN ISO 52016-1:2017 section 6.5.8.2
+
+    // thermal resistance in (m2.K)/W
+    let r_gr = thickness_ground_layer / thermal_conductivity;
+
+    // Calculate thermal resistance of virtual layer using BS EN ISO 13370:2017 Equation (F1)
+    let r_si = 0.17; // ISO 6946 - internal surface resistance
+    let r_vi = (1.0 / u_value) - r_si - thermal_resistance_floor_construction - r_gr; // in m2.K/W
+
+    // BS EN ISO 13370:2017 Table 2 validity interval r_vi > 0
+    match r_vi {
+        r_vi if r_vi <= 0. => Err(BadThermalResistanceCalculationError),
+        _ => Ok(r_vi),
     }
 }
 
@@ -60,6 +87,10 @@ pub(crate) fn celsius_to_kelvin(temp_c: f64) -> Result<f64, BelowAbsoluteZeroErr
 pub(crate) struct BelowAbsoluteZeroError {
     k: f64,
 }
+
+#[derive(Debug, Error)]
+#[error("Thermal resistance (r_vi) calculation produced a negative value. Check u-value and thermal_resistance_floor_construction inputs for floors.")]
+pub(crate) struct BadThermalResistanceCalculationError;
 
 impl BelowAbsoluteZeroError {
     fn from_k(k: f64) -> Self {

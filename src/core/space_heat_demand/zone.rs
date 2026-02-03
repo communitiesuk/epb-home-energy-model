@@ -1,7 +1,6 @@
 // This module provides objects to represent the thermal zones in the building,
 // and to calculate the temperatures in the zone and associated building elements.
-
-use crate::core::controls::time_control::{Control, ControlBehaviour};
+use crate::core::controls::time_control::ControlBehaviour;
 use crate::core::material_properties::AIR;
 use crate::core::space_heat_demand::building_element::BuildingElement;
 use crate::core::space_heat_demand::thermal_bridge::{
@@ -73,7 +72,7 @@ pub struct Zone {
     print_heat_balance: bool,
     // Python has a use_fast_solver field that we don't need because we always use the equivalent fast solver in Rust
     _ventilation: Arc<InfiltrationVentilation>,
-    control: Option<Arc<Control>>,
+    control: Option<Arc<dyn ControlBehaviour>>,
     temp_setpnt_basis: ZoneTemperatureControlBasis,
     /// list of temperatures (nodes and internal air) from
     ///                      previous timestep. Positions in list defined in
@@ -107,7 +106,7 @@ impl Zone {
         temp_ext_air_init: f64,
         temp_setpnt_init: f64,
         temp_setpnt_basis: ZoneTemperatureControlBasis,
-        control: Option<Arc<Control>>,
+        control: Option<Arc<dyn ControlBehaviour>>,
         print_heat_balance: bool,
         simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<Self> {
@@ -374,8 +373,8 @@ impl Zone {
             // Coeff for temperature of next node
             matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i, simtime)?;
             // RHS of heat balance eqn for this node
-            let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(simtime);
-            let (f_sh_dir, f_sh_dif) = eli.shading_factors_direct_diffuse(simtime).unwrap();
+            let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(simtime)?;
+            let (f_sh_dir, f_sh_dif) = eli.shading_factors_direct_diffuse(simtime)?;
             vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
                 + (h_ce + h_re) * eli.temp_ext(simtime)
                 + solar_absorption_coeff * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
@@ -556,14 +555,16 @@ impl Zone {
                 self.building_elements.iter().enumerate()
             {
                 // Get position in vector for the first (external) node of the building element
-                let idx = self.element_positions[eli_idx].1;
+                let idx = self.element_positions[eli_idx].0;
                 let temp_ext_surface = vector_x[idx];
-                let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(simtime);
+                let (i_sol_dir, i_sol_dif) = eli
+                    .i_sol_dir_dif(simtime)
+                    .expect("Expected i_sol_dir_dif to be calculable.");
                 let (f_sh_dir, f_sh_dif) = eli
                     .shading_factors_direct_diffuse(simtime)
                     .expect("Expected shading factors direct diffuse to be calculable.");
                 hb_fabric_ext_air_convective +=
-                    eli.area() * (eli.h_ce() * (eli.temp_ext(simtime) - temp_ext_surface));
+                    eli.area() * eli.h_ce() * (eli.temp_ext(simtime) - temp_ext_surface);
                 hb_fabric_ext_air_radiative +=
                     eli.area() * eli.h_re() * (eli.temp_ext(simtime) - temp_ext_surface);
                 hb_fabric_ext_sol += eli.area()
@@ -600,8 +601,8 @@ impl Zone {
                 solar_gains: gains_solar,
                 internal_gains: gains_internal,
                 heating_or_cooling_system_gains: gains_heat_cool,
-                thermal_bridges: hb_loss_thermal_bridges,
-                infiltration_ventilation: hb_loss_infiltration_ventilation,
+                thermal_bridges: -hb_loss_thermal_bridges,
+                infiltration_ventilation: -hb_loss_infiltration_ventilation,
                 fabric_ext_air_convective: hb_fabric_ext_air_convective,
                 fabric_ext_air_radiative: hb_fabric_ext_air_radiative,
                 fabric_ext_sol: hb_fabric_ext_sol,
@@ -917,13 +918,13 @@ impl Zone {
         temp_setpnt_heat: f64,
         temp_setpnt_cool: f64,
         temp_setpnt_cool_vent: f64,
-        temp_operative_free: f64,
+        temp_free: f64,
         temp_int_air_free: f64,
         ach_args: AirChangesPerHourArgument,
         avg_supply_temp: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, Option<f64>)> {
-        let mut temp_operative_free = temp_operative_free;
+        let mut temp_free = temp_free;
 
         // If ach required for cooling has not been provided, check if the
         // maximum air changes when window shut and open are different
@@ -946,17 +947,21 @@ impl Zone {
                     simtime,
                     self.print_heat_balance,
                 )?;
-
-                let temp_operative_vent_max =
-                    self.temp_operative_by_temp_vector(&temp_vector_vent_max);
                 let temp_int_air_vent_max = temp_vector_vent_max[self.zone_idx];
+
+                let temp_vent_max = match self.temp_setpnt_basis {
+                    ZoneTemperatureControlBasis::Operative => {
+                        self.temp_operative_by_temp_vector(&temp_vector_vent_max)
+                    }
+                    ZoneTemperatureControlBasis::Air => temp_int_air_vent_max,
+                };
 
                 let ach_to_trigger_heating = Self::ach_req_to_reach_temperature(
                     temp_setpnt_heat,
                     ach_target,
                     ach_windows_open,
-                    temp_operative_free,
-                    temp_operative_vent_max,
+                    temp_free,
+                    temp_vent_max,
                     temp_int_air_free,
                     temp_int_air_vent_max,
                     avg_supply_temp,
@@ -964,8 +969,8 @@ impl Zone {
 
                 // If there is cooling potential from additional ventilation, and
                 // free-floating temperature exceeds setpoint for additional ventilation
-                let ach_cooling = if temp_operative_vent_max < temp_operative_free
-                    && temp_operative_free > temp_setpnt_cool_vent
+                let ach_cooling = if temp_vent_max < temp_free
+                    && temp_free > temp_setpnt_cool_vent
                     && temp_int_air_free > avg_supply_temp
                 {
                     // Calculate ventilation required to reach cooling setpoint for ventilation
@@ -973,8 +978,8 @@ impl Zone {
                         temp_setpnt_cool_vent,
                         ach_target,
                         ach_windows_open,
-                        temp_operative_free,
-                        temp_operative_vent_max,
+                        temp_free,
+                        temp_vent_max,
                         temp_int_air_free,
                         temp_int_air_vent_max,
                         avg_supply_temp,
@@ -997,17 +1002,23 @@ impl Zone {
 
                     // Calculate internal operative temperature at free-floating conditions
                     // i.e. with no heating/cooling
-                    let temp_operative_free_vent_extra =
-                        self.temp_operative_by_temp_vector(&temp_vector_no_heat_cool_vent_extra);
+                    let temp_free_vent_extra = match self.temp_setpnt_basis {
+                        ZoneTemperatureControlBasis::Operative => {
+                            self.temp_operative_by_temp_vector(&temp_vector_no_heat_cool_vent_extra)
+                        }
+                        ZoneTemperatureControlBasis::Air => {
+                            temp_vector_no_heat_cool_vent_extra[self.zone_idx]
+                        }
+                    };
 
                     // If temperature achieved by additional ventilation is above setpoint
                     // for active cooling, assume cooling system will be used instead of
                     // additional ventilation. Otherwise, use resultant operative temperature
                     // in calculation of space heating/cooling demand.
-                    if temp_operative_free_vent_extra > temp_setpnt_cool {
+                    if temp_free_vent_extra > temp_setpnt_cool {
                         ach_cooling = ach_target;
                     } else {
-                        temp_operative_free = temp_operative_free_vent_extra;
+                        temp_free = temp_free_vent_extra;
                     }
 
                     Some(ach_cooling)
@@ -1026,7 +1037,7 @@ impl Zone {
             AirChangesPerHourArgument::Cooling { ach_cooling } => (None, ach_cooling),
         };
 
-        Ok((temp_operative_free, ach_cooling, ach_to_trigger_heating))
+        Ok((temp_free, ach_cooling, ach_to_trigger_heating))
     }
 
     fn interp_heat_cool_demand(
@@ -1034,27 +1045,20 @@ impl Zone {
         delta_t_h: f64,
         temp_setpnt: f64,
         heat_cool_load_upper: f64,
-        temp_operative_free: f64,
-        temp_operative_upper: f64,
-        temp_int_air_free: f64,
-        temp_int_air_upper: f64,
+        temp_free: f64,
+        temp_upper: f64,
     ) -> anyhow::Result<f64> {
-        let heat_cool_load_unrestricted = match self.temp_setpnt_basis {
-            ZoneTemperatureControlBasis::Operative => {
-                if temp_operative_upper - temp_operative_free == 0.0 {
-                    bail!("Divide-by-zero in calculation of heating/cooling demand. This may be caused by the specification of very low overall areal heat capacity of BuildingElements and/or very high thermal mass of WetDistribution.");
-                }
-                heat_cool_load_upper * (temp_setpnt - temp_operative_free)
-                    / (temp_operative_upper - temp_operative_free)
-            }
-            ZoneTemperatureControlBasis::Air => {
-                if temp_int_air_upper - temp_int_air_free == 0.0 {
-                    bail!("Divide-by-zero in calculation of heating/cooling demand. This may be caused by the specification of very low overall areal heat capacity of BuildingElements and/or very high thermal mass of WetDistribution.");
-                }
-                heat_cool_load_upper * (temp_setpnt - temp_int_air_free)
-                    / (temp_int_air_upper - temp_int_air_free)
-            }
-        };
+        if temp_upper - temp_free == 0.0 {
+            bail!(
+                "Divide-by-zero in calculation of heating/cooling demand.
+            This may be caused by the specification of very low overall
+            areal heat capacity of BuildingElements and/or very high thermal
+            mass of WetDistribution."
+            )
+        }
+
+        let heat_cool_load_unrestricted =
+            heat_cool_load_upper * (temp_setpnt - temp_free) / (temp_upper - temp_free);
 
         // Convert from W to kWh
         let heat_cool_demand = heat_cool_load_unrestricted / WATTS_PER_KILOWATT as f64 * delta_t_h;
@@ -1148,10 +1152,15 @@ impl Zone {
 
         // Calculate internal operative temperature at free-floating conditions
         // i.e. with no heating/cooling
-        let temp_operative_free = self.temp_operative_by_temp_vector(&temp_vector_no_heat_cool);
         let temp_int_air_free = temp_vector_no_heat_cool[self.zone_idx];
+        let temp_free = match self.temp_setpnt_basis {
+            ZoneTemperatureControlBasis::Operative => {
+                self.temp_operative_by_temp_vector(&temp_vector_no_heat_cool)
+            }
+            ZoneTemperatureControlBasis::Air => temp_int_air_free,
+        };
 
-        let (temp_operative_free, ach_cooling, ach_to_trigger_heating) = self
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = self
             .calc_cooling_potential_from_ventilation(
                 delta_t,
                 temp_ext_air,
@@ -1162,7 +1171,7 @@ impl Zone {
                 temp_setpnt_heat,
                 temp_setpnt_cool,
                 temp_setpnt_cool_vent,
-                temp_operative_free,
+                temp_free,
                 temp_int_air_free,
                 ach_args,
                 avg_air_supply_temp,
@@ -1171,20 +1180,23 @@ impl Zone {
 
         // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
         // Determine maximum heating/cooling
-        let (temp_setpnt, heat_cool_load_upper, frac_convective) =
-            if temp_operative_free > temp_setpnt_cool {
-                // Cooling
-                // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
-                //      Could max. power be available at this point for all heating/cooling systems?
-                (temp_setpnt_cool, -10. * self.area(), frac_convective_cool)
-            } else if temp_operative_free < temp_setpnt_heat {
-                // Heating
-                // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
-                //      Could max. power be available at this point for all heating/cooling systems?
-                (temp_setpnt_heat, 10. * self.area(), frac_convective_heat)
-            } else {
-                return Ok((0.0, 0.0, ach_cooling, ach_to_trigger_heating));
-            };
+        let (temp_setpnt, heat_cool_load_upper, frac_convective) = if temp_free > temp_setpnt_cool
+            && !is_close!(temp_free, temp_setpnt_cool, rel_tol = 1e-10)
+        {
+            // Cooling
+            // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
+            //      Could max. power be available at this point for all heating/cooling systems?
+            (temp_setpnt_cool, -10. * self.area(), frac_convective_cool)
+        } else if temp_free < temp_setpnt_heat
+            && !is_close!(temp_free, temp_setpnt_cool, rel_tol = 1e-10)
+        {
+            // Heating
+            // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
+            //      Could max. power be available at this point for all heating/cooling systems?
+            (temp_setpnt_heat, 10. * self.area(), frac_convective_heat)
+        } else {
+            return Ok((0.0, 0.0, ach_cooling, ach_to_trigger_heating));
+        };
 
         // Calculate node and internal air temperatures with maximum heating/cooling
         let gains_heat_cool_upper = gains_heat_cool + heat_cool_load_upper;
@@ -1206,17 +1218,20 @@ impl Zone {
         )?;
 
         // Calculate internal operative temperature with maximum heating/cooling
-        let temp_operative_upper = self.temp_operative_by_temp_vector(&temp_vector_upper_heat_cool);
+        let temp_upper = match self.temp_setpnt_basis {
+            ZoneTemperatureControlBasis::Operative => {
+                self.temp_operative_by_temp_vector(&temp_vector_upper_heat_cool)
+            }
+            ZoneTemperatureControlBasis::Air => temp_vector_upper_heat_cool[self.zone_idx],
+        };
 
         // Calculate heating (positive) or cooling (negative) required to reach setpoint
         let heat_cool_demand = self.interp_heat_cool_demand(
             delta_t_h,
             temp_setpnt,
             heat_cool_load_upper,
-            temp_operative_free,
-            temp_operative_upper,
-            temp_int_air_free,
-            temp_vector_upper_heat_cool[self.zone_idx],
+            temp_free,
+            temp_upper,
         )?;
 
         let mut space_heat_demand = 0.0;
@@ -1315,16 +1330,10 @@ impl Zone {
             .sum::<f64>()
     }
 
+    /// Return the total heat transfer coefficient for all
+    /// thermal bridges in a zone, in W / K
     pub fn total_thermal_bridges(&self) -> f64 {
         self.tb_heat_trans_coeff
-    }
-
-    /// Return the ventilation heat loss from all ventilation elements, in W / K
-    pub fn total_vent_heat_loss(&self) -> f64 {
-        // TODO (from Python) This doesn't work yet
-        //      if self.__vent_obj is not None:
-        //          total_vent_heat_loss = self.__vent_obj.h_ve_average(self.__volume)
-        0.0
     }
 }
 
@@ -1440,10 +1449,10 @@ impl AirChangesPerHourArgument {
 }
 
 pub(crate) trait GainsLossesAsIndexMap {
-    fn as_index_map(&self) -> IndexMap<String, f64>;
+    fn as_index_map(&self) -> IndexMap<Arc<str>, f64>;
 }
 
-#[derive(Debug, FieldName)]
+#[derive(Debug, FieldName, PartialEq)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceAirNode {
     pub solar_gains: f64,
@@ -1455,7 +1464,7 @@ pub struct HeatBalanceAirNode {
     pub fabric_heat_loss: f64,
 }
 
-impl From<HeatBalanceAirNodeFieldName> for String {
+impl From<HeatBalanceAirNodeFieldName> for Arc<str> {
     fn from(value: HeatBalanceAirNodeFieldName) -> Self {
         serde_json::to_value(&value)
             .unwrap()
@@ -1466,7 +1475,7 @@ impl From<HeatBalanceAirNodeFieldName> for String {
 }
 
 impl GainsLossesAsIndexMap for HeatBalanceAirNode {
-    fn as_index_map(&self) -> IndexMap<String, f64> {
+    fn as_index_map(&self) -> IndexMap<Arc<str>, f64> {
         let Self {
             solar_gains,
             internal_gains,
@@ -1506,7 +1515,7 @@ impl GainsLossesAsIndexMap for HeatBalanceAirNode {
     }
 }
 
-#[derive(Debug, FieldName)]
+#[derive(Debug, FieldName, PartialEq)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceInternalBoundary {
     pub fabric_int_air_convective: f64,
@@ -1515,7 +1524,7 @@ pub struct HeatBalanceInternalBoundary {
     pub fabric_int_heat_cool: f64,
 }
 
-impl From<HeatBalanceInternalBoundaryFieldName> for String {
+impl From<HeatBalanceInternalBoundaryFieldName> for Arc<str> {
     fn from(value: HeatBalanceInternalBoundaryFieldName) -> Self {
         serde_json::to_value(&value)
             .unwrap()
@@ -1526,7 +1535,7 @@ impl From<HeatBalanceInternalBoundaryFieldName> for String {
 }
 
 impl GainsLossesAsIndexMap for HeatBalanceInternalBoundary {
-    fn as_index_map(&self) -> IndexMap<String, f64> {
+    fn as_index_map(&self) -> IndexMap<Arc<str>, f64> {
         let Self {
             fabric_int_air_convective,
             fabric_int_sol,
@@ -1554,7 +1563,7 @@ impl GainsLossesAsIndexMap for HeatBalanceInternalBoundary {
     }
 }
 
-#[derive(Debug, FieldName)]
+#[derive(Debug, FieldName, PartialEq)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceExternalBoundary {
     pub solar_gains: f64,
@@ -1583,8 +1592,18 @@ impl From<HeatBalanceExternalBoundaryFieldName> for String {
     }
 }
 
+impl From<HeatBalanceExternalBoundaryFieldName> for Arc<str> {
+    fn from(value: HeatBalanceExternalBoundaryFieldName) -> Self {
+        serde_json::to_value(&value)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into()
+    }
+}
+
 impl GainsLossesAsIndexMap for HeatBalanceExternalBoundary {
-    fn as_index_map(&self) -> IndexMap<String, f64> {
+    fn as_index_map(&self) -> IndexMap<Arc<str>, f64> {
         let Self {
             solar_gains,
             internal_gains,
@@ -1662,7 +1681,7 @@ impl GainsLossesAsIndexMap for HeatBalanceExternalBoundary {
     }
 }
 
-#[derive(Debug, FieldName)]
+#[derive(Debug, FieldName, PartialEq)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalance {
     pub air_node: HeatBalanceAirNode,
@@ -1670,8 +1689,18 @@ pub struct HeatBalance {
     pub external_boundary: HeatBalanceExternalBoundary,
 }
 
+impl From<HeatBalanceFieldName> for Arc<str> {
+    fn from(value: HeatBalanceFieldName) -> Self {
+        serde_json::to_value(&value)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into()
+    }
+}
+
 impl HeatBalance {
-    pub(crate) fn as_index_map(&self) -> IndexMap<HeatBalanceFieldName, IndexMap<String, f64>> {
+    pub(crate) fn as_index_map(&self) -> IndexMap<HeatBalanceFieldName, IndexMap<Arc<str>, f64>> {
         let Self {
             air_node,
             internal_boundary,
@@ -1694,6 +1723,7 @@ impl HeatBalance {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::controls::time_control::{Control, MockControl};
     use crate::core::space_heat_demand::building_element::{
         BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple,
         BuildingElementGround, BuildingElementOpaque, BuildingElementTransparent,
@@ -1703,6 +1733,7 @@ mod tests {
     use crate::core::units::DAYS_IN_MONTH;
     use crate::corpus::CompletedVentilationLeaks;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+    use crate::hem_core::external_conditions::ShadingSegment;
     use crate::input::{
         FloorData, MassDistributionClass, TerrainClass, VentilationShieldClass, WindShieldLocation,
         WindowPart,
@@ -1711,7 +1742,7 @@ mod tests {
     use approx::assert_relative_eq;
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
-    use rstest::*;
+    use rstest::{fixture, rstest};
     use std::collections::HashMap;
 
     const BASE_AIR_TEMPS: [f64; 24] = [
@@ -1727,13 +1758,11 @@ mod tests {
         200., 320., 330., 340., 350., 355., 315., 5.,
     ];
 
-    #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
     }
 
-    #[fixture]
-    pub fn external_conditions(simulation_time: SimulationTime) -> Arc<ExternalConditions> {
+    fn external_conditions(simulation_time: SimulationTime) -> Arc<ExternalConditions> {
         let air_temp_day_jan = BASE_AIR_TEMPS;
         let air_temp_day_feb = BASE_AIR_TEMPS.map(|t| t + 1.0);
         let air_temp_day_mar = BASE_AIR_TEMPS.map(|t| t + 2.0);
@@ -1851,16 +1880,59 @@ mod tests {
             );
         }
 
+        let shading_segments = vec![
+            ShadingSegment {
+                start: 180.,
+                end: 135.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 135.,
+                end: 90.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 90.,
+                end: 45.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 45.,
+                end: 0.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: 0.,
+                end: -45.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: -45.,
+                end: -90.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: -90.,
+                end: -135.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                start: -135.,
+                end: -180.,
+                ..Default::default()
+            },
+        ];
+
         Arc::new(ExternalConditions::new(
             &simulation_time.iter(),
             air_temps,
             wind_speeds,
             wind_directions,
-            vec![0.0; 4],
-            vec![0.0; 4],
-            vec![0.2; 4],
-            55.0,
-            0.0,
+            vec![333.0, 610.0, 572.0, 420.0, 0.0, 10.0, 90.0, 275.0],
+            vec![420.0, 750.0, 425.0, 500.0, 0.0, 40.0, 0.0, 388.0],
+            vec![0.2; 8760],
+            51.42,
+            -0.75,
             0,
             0,
             None,
@@ -1869,16 +1941,16 @@ mod tests {
             Some(DaylightSavingsConfig::NotApplicable),
             false,
             false,
-            None,
+            shading_segments.into(),
         ))
     }
 
-    #[fixture]
-    pub fn zone(
-        external_conditions: Arc<ExternalConditions>,
-        simulation_time: SimulationTime,
-        infiltration_ventilation: InfiltrationVentilation,
-    ) -> Zone {
+    fn zone(
+        thermal_bridging: ThermalBridging,
+        control: Option<Arc<dyn ControlBehaviour>>,
+    ) -> anyhow::Result<Zone> {
+        let simulation_time = simulation_time();
+        let external_conditions = external_conditions(simulation_time);
         // Create objects for the different building elements in the zone
         let be_opaque_i = BuildingElement::Opaque(BuildingElementOpaque::new(
             20.,
@@ -1888,7 +1960,7 @@ mod tests {
             0.25,
             19000.0,
             MassDistributionClass::I,
-            0.,
+            Some(0.),
             0.,
             2.,
             10.,
@@ -1902,7 +1974,7 @@ mod tests {
             0.33,
             16000.0,
             MassDistributionClass::D,
-            0.,
+            Some(0.),
             0.,
             2.,
             10.,
@@ -1945,7 +2017,7 @@ mod tests {
         let be_transparent = BuildingElement::Transparent(BuildingElementTransparent::new(
             90.,
             0.4,
-            180.,
+            Some(180.),
             0.75,
             0.25,
             1.,
@@ -1977,6 +2049,27 @@ mod tests {
             ("be_ztu".into(), be_ztu.into()),
         ]);
 
+        let temp_ext_air_init = 2.2;
+        let temp_setpnt_init = 21.;
+        let temp_setpnt_basis = ZoneTemperatureControlBasis::Air;
+
+        Zone::new(
+            80.,
+            250.,
+            be_objs,
+            thermal_bridging,
+            Arc::new(infiltration_ventilation()),
+            temp_ext_air_init,
+            temp_setpnt_init,
+            temp_setpnt_basis,
+            control,
+            true,
+            &simulation_time.iter(),
+        )
+    }
+
+    #[fixture]
+    fn thermal_bridging_objects() -> ThermalBridging {
         // Create objects for thermal bridges
         let tb_linear_1 = ThermalBridge::Linear {
             linear_thermal_transmittance: 0.28,
@@ -1991,38 +2084,18 @@ mod tests {
         };
 
         // Put thermal bridge objects in a list that can be iterated over
-        let thermal_bridging = ThermalBridging::Bridges(IndexMap::from([
+        ThermalBridging::Bridges(IndexMap::from([
             ("tb_linear_1".into(), tb_linear_1),
             ("tb_linear_2".into(), tb_linear_2),
             ("tb_point".into(), tb_point),
-        ]));
-
-        let temp_ext_air_init = 2.2;
-        let temp_setpnt_init = 21.;
-        let temp_setpnt_basis = ZoneTemperatureControlBasis::Air;
-
-        Zone::new(
-            80.,
-            250.,
-            be_objs,
-            thermal_bridging,
-            Arc::new(infiltration_ventilation),
-            temp_ext_air_init,
-            temp_setpnt_init,
-            temp_setpnt_basis,
-            None,
-            false,
-            &simulation_time.iter(),
-        )
-        .unwrap()
+        ]))
     }
 
-    #[fixture]
     fn infiltration_ventilation() -> InfiltrationVentilation {
         let window_part_list = vec![WindowPart {
             mid_height_air_flow_path: 1.5,
         }];
-        let window = Window::new(1.6, 1., 3., window_part_list, 0., 0., 30., None, 2.5);
+        let window = Window::new(1.6, 1., 3., window_part_list, Some(0.), 0., 30., None, 2.5);
         let windows = HashMap::from([("window 0".to_string(), window)]);
 
         let vent = Vent::new(1.5, 100.0, 20.0, 180.0, 60.0, 30.0, 2.5);
@@ -2057,37 +2130,745 @@ mod tests {
         )
     }
 
-    #[rstest]
-    pub fn test_volume(zone: Zone) {
-        assert_eq!(zone.volume(), 250.);
+    #[test]
+    fn test_init_single_thermal_bridging_value() {
+        let thermal_bridging = ThermalBridging::Number(4.);
+        let zone = zone(thermal_bridging, None).unwrap();
+
+        assert_eq!(zone.tb_heat_trans_coeff, 4.)
     }
 
     #[rstest]
-    pub fn should_have_correct_total_fabric_heat_loss(zone: Zone) {
+    fn test_setpnt_init(thermal_bridging_objects: ThermalBridging) {
+        assert_eq!(
+            zone(thermal_bridging_objects, None).unwrap().setpnt_init(),
+            21.
+        );
+    }
+
+    #[rstest]
+    fn test_area(thermal_bridging_objects: ThermalBridging) {
+        assert_eq!(zone(thermal_bridging_objects, None).unwrap().area(), 80.);
+    }
+
+    #[rstest]
+    fn test_gains_solar(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
         assert_relative_eq!(
-            zone.total_fabric_heat_loss(),
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .gains_solar(simulation_time_iteration),
+            -2154.583062153444
+        );
+    }
+
+    #[rstest]
+    fn test_volume(thermal_bridging_objects: ThermalBridging) {
+        assert_eq!(zone(thermal_bridging_objects, None).unwrap().volume(), 250.);
+    }
+
+    #[rstest]
+    fn test_total_fabric_heat_loss(thermal_bridging_objects: ThermalBridging) {
+        assert_relative_eq!(
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .total_fabric_heat_loss(),
             181.99557093947166,
             max_relative = 1e-2
         );
     }
 
     #[rstest]
-    pub fn should_have_correct_heat_capacity(zone: Zone) {
-        assert_eq!(zone.total_heat_capacity(), 2166.);
+    fn test_total_heat_capacity(thermal_bridging_objects: ThermalBridging) {
+        assert_eq!(
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .total_heat_capacity(),
+            2166.
+        );
     }
 
     #[rstest]
-    pub fn should_have_correct_thermal_bridges(zone: Zone) {
-        assert_relative_eq!(zone.total_thermal_bridges(), 4.3, max_relative = 1e-2);
+    fn test_total_heat_loss_area(thermal_bridging_objects: ThermalBridging) {
+        assert_eq!(
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .total_heat_loss_area(),
+            106.
+        );
     }
 
-    // test is commented out in upstream
-    // #[rstest]
-    // pub fn should_have_correct_total_vent_heat_loss(zone: Zone) {
-    //     assert_relative_eq!(zone.total_vent_heat_loss(), 157.9, max_relative = 0.05);
-    // }
+    #[rstest]
+    fn test_total_thermal_bridges(thermal_bridging_objects: ThermalBridging) {
+        assert_relative_eq!(
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .total_thermal_bridges(),
+            4.3,
+            max_relative = 1e-2
+        );
+    }
 
     #[rstest]
+    fn test_temp_operative(thermal_bridging_objects: ThermalBridging) {
+        assert_relative_eq!(
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .temp_operative(),
+            18.92809674634258,
+        );
+    }
+
+    #[rstest]
+    fn test_temp_internal_air(thermal_bridging_objects: ThermalBridging) {
+        assert_relative_eq!(
+            zone(thermal_bridging_objects, None)
+                .unwrap()
+                .temp_internal_air(),
+            20.999999999999996,
+        );
+    }
+
+    #[rstest]
+    #[ignore = "TODO: Python uses np.linalg.solve, what would be valuable in Rust?"]
+    fn test_fast_solver() {}
+
+    fn maps_approx_equal(
+        actual: &IndexMap<Arc<str>, f64>,
+        expected: &IndexMap<Arc<str>, f64>,
+        tol: f64,
+    ) -> bool {
+        if actual.len() != expected.len() {
+            return false;
+        }
+
+        for (key, &expected_value) in expected.iter() {
+            match actual.get(key) {
+                Some(&actual_value) => {
+                    if (expected_value - actual_value).abs() > tol {
+                        eprintln!(
+                            "Field '{}' differs. Expected {}, got {}",
+                            key, expected_value, actual_value
+                        );
+                        return false;
+                    }
+                }
+                None => {
+                    eprintln!("Could not find expected key '{}'", key);
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    #[rstest]
+    fn test_update_temperatures(thermal_bridging_objects: ThermalBridging) {
+        let expected_heat_balance = HeatBalance {
+            air_node: HeatBalanceAirNode {
+                solar_gains: 22.,
+                internal_gains: 80.,
+                heating_or_cooling_system_gains: 0.,
+                energy_to_change_internal_temperature: 1617.0201164499708,
+                thermal_bridges: -31.655330373346523,
+                infiltration_ventilation: -247.6853738767846,
+                fabric_heat_loss: -1439.6794121998396,
+            },
+            internal_boundary: HeatBalanceInternalBoundary {
+                fabric_int_air_convective: 1439.679412199842,
+                fabric_int_sol: 198.,
+                fabric_int_int_gains: 120.,
+                fabric_int_heat_cool: 0.,
+            },
+            external_boundary: HeatBalanceExternalBoundary {
+                solar_gains: 220.,
+                internal_gains: 200.,
+                heating_or_cooling_system_gains: 0.,
+                thermal_bridges: -31.655330373346523,
+                infiltration_ventilation: -247.6853738767846,
+                fabric_ext_air_convective: 465.59408303760006,
+                fabric_ext_air_radiative: 355.39880327150297,
+                fabric_ext_sol: -3204.6068977063023,
+                fabric_ext_sky: -1124.4913565980596,
+                opaque_fabric_ext: -2118.880733022755,
+                transparent_fabric_ext: -137.91628674680447,
+                ground_fabric_ext: -816.8733439646372,
+                ztc_fabric_ext: 0.,
+                ztu_fabric_ext: -434.43500426106175,
+            },
+        }
+        .as_index_map();
+        let simtime = simulation_time().iter().next().unwrap();
+        let actual_heat_balance = zone(thermal_bridging_objects, None)
+            .unwrap()
+            .update_temperatures(1800., 10., 200., 220., 0., 1., 0.4, 10., simtime)
+            .unwrap()
+            .unwrap()
+            .as_index_map();
+
+        for (key, actual_value) in actual_heat_balance {
+            let expected_value = expected_heat_balance.get(&key).unwrap();
+            assert!(maps_approx_equal(&actual_value, expected_value, 1e-8));
+        }
+    }
+
+    #[test]
+    fn test_ach_req_to_reach_temperature() {
+        let ach = Zone::ach_req_to_reach_temperature(21., 0.08, 48., 9.9, 8.8, 9.8, 8.2, 8.1);
+        assert_relative_eq!(ach, 0.08);
+
+        let ach = Zone::ach_req_to_reach_temperature(21., 0.08, 48., 9.9, 12., 9.8, 8.2, 8.1);
+        assert_relative_eq!(ach, 0.08);
+
+        let ach = Zone::ach_req_to_reach_temperature(21., 0.08, 48., 9.9, 8.8, 12., 8.2, 10.);
+        assert_relative_eq!(ach, 21.65371789094187);
+
+        let ach = Zone::ach_req_to_reach_temperature(5., 0.08, 48., 9.9, 8.8, 12., 11., 10.);
+        assert_relative_eq!(ach, 48.);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_1(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects, None)
+            .unwrap()
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                24.0,
+                22.0,
+                20.0,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 20.0);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.13105245458346534);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_2(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects, None)
+            .unwrap()
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                24.0,
+                18.0,
+                20.0,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 17.52067994302452, max_relative = 1e-8);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.13105245458346534);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_3(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone(thermal_bridging_objects, None)
+            .unwrap()
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                15.0,
+                18.0,
+                20.0,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 20.);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.13105245458346534);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_4(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                24.0,
+                22.0,
+                19.9,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 19.9);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.1306962441148573);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_5(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                24.0,
+                18.0,
+                19.9,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 15.144632024928118, max_relative = 1e-8);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.1306962441148573);
+    }
+
+    #[rstest]
+    fn test_calc_cooling_potential_from_ventilation_6(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                15.0,
+                18.0,
+                19.9,
+                20.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 19.9);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.1306962441148573);
+    }
+
+    #[rstest]
+    fn test_interp_heat_cool_demand(thermal_bridging_objects: ThermalBridging) {
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
+
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Air;
+        let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 18., 21.2);
+
+        assert_relative_eq!(heat_cool_demand.unwrap(), 1.2500000000000002);
+
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 20., 19.);
+
+        assert_eq!(heat_cool_demand.unwrap(), 0.);
+    }
+
+    #[rstest]
+    /// Cases where temp upper and temp free are the same
+    fn test_interp_heat_cool_demand_invalid(thermal_bridging_objects: ThermalBridging) {
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
+
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 19., 19.);
+
+        assert!(heat_cool_demand.is_err());
+
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Air;
+        let heat_cool_demand = zone.interp_heat_cool_demand(0.5, 20., 4000., 18., 18.);
+
+        assert!(heat_cool_demand.is_err());
+    }
+
+    #[rstest]
+    /// errors when cooling setpoint is below heating setpoint
+    fn test_space_heat_cool_demand_1(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let zone = zone(thermal_bridging_objects, None).unwrap();
+        let space_heat_cool_demand = zone.space_heat_cool_demand(
+            0.5,
+            2.8,
+            13.5,
+            9.1,
+            0.4,
+            0.95,
+            24.0,
+            21.0,
+            2.8,
+            Some(0.0),
+            Some(0.0),
+            AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+            simulation_time_iteration,
+        );
+        assert!(space_heat_cool_demand.is_err());
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_2(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let zone = zone(thermal_bridging_objects, None).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.0),
+                Some(0.0),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    fn fake_control_with_setpnt(setpnt: Option<f64>) -> Arc<dyn ControlBehaviour> {
+        Arc::new(Control::Mock(MockControl::with_setpnt(setpnt)))
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_3(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = fake_control_with_setpnt(Some(25.));
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.0),
+                Some(0.0),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_4(thermal_bridging_objects: ThermalBridging) {
+        let fake_control = fake_control_with_setpnt(Some(20.));
+        let zone = zone(thermal_bridging_objects, Some(fake_control));
+        // In the Python test the error is raised when space_cool_heat_demand is called.
+        // In Rust we get the error earlier, when creating the Zone with the fake Control.
+        // This is because in the Python test set up, the Control object is None when Zone
+        // is created and is only added just before space_cool_heat_demand is called.
+        // Because of the above, this test deviates a bit from the Python and asserts that
+        // Zone itself returns an Error.
+
+        assert!(zone.is_err());
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_5(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = fake_control_with_setpnt(None);
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.0),
+                Some(0.0),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_6(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = fake_control_with_setpnt(None);
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let space_heat_cool_demand = zone.space_heat_cool_demand(
+            0.5,
+            2.8,
+            13.5,
+            9.1,
+            0.4,
+            0.95,
+            2.6e32,
+            2.7e32,
+            2.8,
+            Some(0.0),
+            Some(0.0),
+            AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+            simulation_time_iteration,
+        );
+
+        assert!(space_heat_cool_demand.is_err());
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_7(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = fake_control_with_setpnt(None);
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.2),
+                Some(0.3),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 2.153884539283528, max_relative = 1e-8);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_8(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = fake_control_with_setpnt(None);
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.),
+                Some(0.),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387, max_relative = 1e-8);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_9(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = fake_control_with_setpnt(None);
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                16.0,
+                24.0,
+                2.8,
+                Some(0.),
+                Some(0.),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 0.);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.17);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_10(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = fake_control_with_setpnt(None);
+        let zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                16.0,
+                16.0,
+                2.8,
+                Some(0.),
+                Some(0.),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 0.);
+        assert_eq!(space_cool_demand, -0.3774681469845284);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.17);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_11(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = fake_control_with_setpnt(None);
+        let mut zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                21.0,
+                24.0,
+                2.8,
+                Some(0.),
+                Some(0.),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 3.147608479695715, max_relative = 1e-8);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    #[rstest]
+    fn test_space_heat_cool_demand_12(thermal_bridging_objects: ThermalBridging) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let fake_control = fake_control_with_setpnt(None);
+        let mut zone = zone(thermal_bridging_objects, Some(fake_control)).unwrap();
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+
+        let (space_heat_demand, space_cool_demand, ach_cooling, ach_to_trigger_heating) = zone
+            .space_heat_cool_demand(
+                0.5,
+                2.8,
+                13.5,
+                9.1,
+                0.4,
+                0.95,
+                24.0,
+                24.0,
+                2.8,
+                Some(0.),
+                Some(0.),
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.14, 0.17),
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(space_heat_demand, 4.699947718442156, max_relative = 1e-8);
+        assert_eq!(space_cool_demand, 0.);
+        assert_relative_eq!(ach_cooling, 0.14);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
+    }
+
+    // In Python there are two more assertions in test_space_heat_cool_demand that we have skipped
+    // they both use a canned return value for zone.interp_heat_cool_demand() which we cannot
+    // easily replicate in Rust
+    #[test]
+    #[ignore]
+    pub fn test_space_heat_cool_demand_fast_solver() {
+        todo!("we have skipped this for now as Python uses a difficult to replicate Mock");
+    }
+
+    #[test]
     pub fn should_replicate_numpy_isclose() {
         // test cases for python doctests
         assert!(!isclose(

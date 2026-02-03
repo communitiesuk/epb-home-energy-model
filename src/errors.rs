@@ -37,7 +37,7 @@ pub struct PostprocessingError {
 }
 
 impl PostprocessingError {
-    pub(crate) fn new(error: anyhow::Error) -> Self {
+    pub fn new(error: anyhow::Error) -> Self {
         Self { error }
     }
 }

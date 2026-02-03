@@ -1,23 +1,18 @@
 use crate::core::controls::time_control::{per_control, ControlBehaviour};
-use crate::core::units::HOURS_PER_DAY;
+use crate::core::heating_systems::heat_battery_drycore::{
+    convert_to_kwh, HeatBatteryDryCoreCommonBehaviour,
+};
+use crate::core::heating_systems::heat_battery_drycore::{HeatStorageDryCore, OutputMode};
 use crate::{
-    core::{
-        controls::time_control::Control, energy_supply::energy_supply::EnergySupplyConnection,
-        units::WATTS_PER_KILOWATT,
-    },
+    core::{controls::time_control::Control, energy_supply::energy_supply::EnergySupplyConnection},
     external_conditions::ExternalConditions,
     input::{ControlLogicType, ElectricStorageHeaterAirFlowType},
     simulation_time::{SimulationTimeIteration, SimulationTimeIterator},
-    statistics::{np_interp, np_interp_with_extrapolate},
 };
 use anyhow::bail;
-use atomic_float::AtomicF64;
 use derivative::Derivative;
-use itertools::Itertools;
 use nalgebra::{Vector1, Vector3};
-use ode_solvers::{dop_shared::OutputType, Dopri5, System};
 use parking_lot::RwLock;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 type State = Vector1<f64>;
@@ -26,48 +21,26 @@ type Time = f64;
 type EnergyOutputState = Vector3<f64>;
 
 // replicates numpys's linspace function
-fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
+pub(super) fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
     let step = (end - start) / f64::from(num - 1);
     (0..num).map(|n| start + (f64::from(n) * step)).collect()
-}
-
-// replicate numpy's clip function
-fn clip(n: f64, min: f64, max: f64) -> f64 {
-    if n < min {
-        min
-    } else if n > max {
-        max
-    } else {
-        n
-    }
 }
 
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub(crate) struct ElecStorageHeater {
-    pwr_in: f64,
+    storage: Arc<RwLock<HeatStorageDryCore>>,
     pwr_instant: f64,
-    storage_capacity: f64,
     air_flow_type: ElectricStorageHeaterAirFlowType,
     frac_convective: f64,
-    n_units: u32,
     energy_supply_conn: EnergySupplyConnection,
     control: Arc<Control>,
-    charge_control: Arc<Control>,
     fan_pwr: f64,
     external_conditions: Arc<ExternalConditions>,
     temp_air: f64,
-    state_of_charge: AtomicF64,
-    demand_met: AtomicF64,
-    demand_unmet: AtomicF64,
     zone_setpoint_init: f64,
     #[derivative(Debug = "ignore")]
     zone_internal_air_func: Arc<dyn Fn() -> f64 + Send + Sync>,
-    soc_max_array: Vec<f64>,
-    power_max_array: Vec<f64>,
-    soc_min_array: Vec<f64>,
-    power_min_array: Vec<f64>,
-    heat_retention_ratio: f64,
     current_energy_profile: RwLock<CurrentEnergyProfile>,
     esh_detailed_results: Option<Arc<RwLock<Vec<StorageHeaterDetailedResult>>>>,
 }
@@ -112,93 +85,21 @@ impl StorageHeaterDetailedResult {
     }
 }
 
-struct SocOdeFunction<'a> {
-    soc_array: &'a [f64],
-    power_array: &'a [f64],
-    storage_capacity: f64,
-}
-
-impl System<Time, State> for SocOdeFunction<'_> {
-    fn system(&self, _x: Time, y: &State, dy: &mut State) {
-        // Define the ODE for SOC and energy delivered (no charging, only discharging)
-
-        // Ensure SOC stays within bounds
-        let soc = clip(y[0], 0., 1.);
-
-        // Discharging: calculate power used based on SOC
-        let discharge_rate = -np_interp(soc, self.soc_array, self.power_array);
-
-        // Track the total energy delivered (discharged energy)
-        let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
-
-        // SOC rate of change (discharging), divided by storage capacity
-        let dsoc_dt = -ddelivered_dt / self.storage_capacity;
-
-        dy[0] = dsoc_dt;
+impl From<StorageHeaterDetailedResult> for Vec<f64> {
+    fn from(value: StorageHeaterDetailedResult) -> Self {
+        vec![
+            value.timestep_idx as f64,
+            value.n_units as f64,
+            value.energy_demand,
+            value.energy_delivered,
+            value.energy_instant,
+            value.energy_charged,
+            value.energy_for_fan,
+            value.state_of_charge,
+            value.final_soc,
+            value.time_used_max,
+        ]
     }
-}
-
-struct EnergyOutputSocOdeFunction<'a> {
-    soc_array: &'a Vec<f64>,
-    power_array: &'a Vec<f64>,
-    storage_capacity: f64,
-    soc_max: f64,
-    charge_rate: f64,
-    pwr_in: f64,
-    target_charge: f64,
-}
-
-impl System<Time, EnergyOutputState> for EnergyOutputSocOdeFunction<'_> {
-    fn system(&self, _x: Time, y: &EnergyOutputState, dy: &mut EnergyOutputState) {
-        // Ensure SOC stays within bounds
-        let soc = clip(y[0], 0., 1.);
-
-        // Discharging: calculate power used based on SOC
-
-        // // Python does two interpolations, which we've copied here
-        // TODO confirm this is intended
-        let power_max_func_result_arr = self
-            .soc_array
-            .iter()
-            .map(|s| np_interp(*s, self.soc_array, self.power_array))
-            .collect_vec();
-        let discharge_rate =
-            -np_interp_with_extrapolate(soc, self.soc_array, &power_max_func_result_arr);
-
-        // Single interpolation version:
-        // let discharge_rate =
-        //     -np_interp_with_extrapolate(soc, self.soc_array, &self.power_array);
-
-        // Track the total energy delivered (discharged energy)
-        let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
-
-        let dcharged_dt = if soc < self.soc_max {
-            self.charge_rate
-        } else if self.target_charge > 0. {
-            ddelivered_dt.min(self.pwr_in)
-        } else {
-            0.0
-        };
-
-        // Net SOC rate of change (discharge + charge), divided by storage capacity
-        let dsoc_dt = (-ddelivered_dt + dcharged_dt) / self.storage_capacity;
-
-        dy[0] = dsoc_dt;
-        dy[1] = dcharged_dt;
-        dy[2] = ddelivered_dt;
-    }
-
-    // TODO implement
-    // fn solout(&mut self, _x: Time, y: &EnergyOutputState, _dy: &EnergyOutputState) -> bool {
-    //     // TODO we want to check if we've passed this value, not that we are equal to it
-    //     // see Emitters for example of this
-    //     todo!()
-    // }
-}
-
-pub(crate) enum OutputMode {
-    Min,
-    Max,
 }
 
 impl ElecStorageHeater {
@@ -206,9 +107,9 @@ impl ElecStorageHeater {
     /// * `pwr_in` - in kW (Charging)
     /// * `rated_power_instant` - in kW (Instant backup)
     /// * `storage_capacity` - in kWh
-    /// * `air_flow_type` - string specifying type of Electric Storage Heater:
-    ///                   - fan-assisted
-    ///                   - damper-only
+    /// * `air_flow_type` - str enum specifying type of Electric Storage Heater:
+    ///     * AirFlowType.FAN_ASSISTED
+    ///     * AirFlowType.DAMPER_ONLY
     /// * `frac_convective`      - convective fraction for heating (TODO: Check if necessary)
     /// * `fan_pwr`              - Fan power [W]
     /// * `n_units`              - number of units install in zone
@@ -218,9 +119,9 @@ impl ElecStorageHeater {
     /// * `control`              - reference to a control object which must implement is_on() and setpnt() funcs
     /// * `charge_control`       - reference to a ChargeControl object which must implement different logic types
     ///                         for charging the Electric Storage Heaters.
-    /// * `esh_min_output`       - Data from test showing the output from the storage heater when not actively
+    /// * `dry_core_min_output`       - Data from test showing the output from the storage heater when not actively
     ///                         outputting heat, i.e. case losses only (with units kW)
-    /// * `esh_max_output`       - Data from test showing the output from the storage heater when it is actively
+    /// * `dry_core_max_output`       - Data from test showing the output from the storage heater when it is actively
     ///                         outputting heat, e.g. damper open / fan running (with units kW)
     /// * `external_conditions`  - reference to ExternalConditions object
     pub(crate) fn new(
@@ -237,116 +138,59 @@ impl ElecStorageHeater {
         simulation_time: &SimulationTimeIterator,
         control: Arc<Control>,
         charge_control: Arc<Control>,
-        esh_min_output: Vec<(f64, f64)>,
-        esh_max_output: Vec<(f64, f64)>,
+        dry_core_min_output: Vec<[f64; 2]>,
+        dry_core_max_output: Vec<[f64; 2]>,
         external_conditions: Arc<ExternalConditions>,
+        state_of_charge_init: f64,
         output_detailed_results: Option<bool>,
-    ) -> anyhow::Result<Self> {
+    ) -> anyhow::Result<Arc<Self>> {
         let output_detailed_results = output_detailed_results.unwrap_or(false);
 
-        if !matches!(charge_control.as_ref(), Control::Charge(_)) {
-            bail!("charge_control must be a ChargeControl");
+        match charge_control.as_ref() {
+            Control::Charge(charge) => {
+                if charge.logic_type() == ControlLogicType::HeatBattery {
+                    bail!("Control logic type HeatBattery is not valid for ElecStorageHeater.")
+                }
+            }
+            _ => bail!("charge_control must be a ChargeControl"),
         }
 
         let temp_air = zone_internal_air_func();
 
-        // Convert ESH_max_output to NumPy arrays without sorting
-        let soc_max_array = esh_max_output.iter().map(|f| f.0).collect_vec();
-        let power_max_array = esh_max_output.iter().map(|f| f.1).collect_vec();
-
-        // Convert ESH_min_output to NumPy arrays without sorting
-        let soc_min_array = esh_min_output.iter().map(|f| f.0).collect_vec();
-        let power_min_array = esh_min_output.iter().map(|f| f.1).collect_vec();
-
-        // Validate that both SOC arrays are in strictly increasing order
-        if !soc_max_array
-            .iter()
-            .zip(soc_max_array.iter().skip(1))
-            .all(|(a, b)| a <= b)
-        {
-            bail!("esh_max_output SOC values must be in increasing order (from 0.0 to 1.0).");
-        }
-
-        if !soc_min_array
-            .iter()
-            .zip(soc_min_array.iter().skip(1))
-            .all(|(a, b)| a <= b)
-        {
-            bail!("esh_min_output SOC values must be in increasing order (from 0.0 to 1.0).");
-        }
-
-        // Validate that both SOC arrays start at 0.0 and end at 1.0
-        if !is_close!(*soc_max_array.first().unwrap(), 0.) {
-            bail!("The first SOC value in esh_max_output must be 0.0 (fully discharged).");
-        }
-
-        if !is_close!(*soc_max_array.last().unwrap(), 1.) {
-            bail!("The last SOC value in esh_max_output must be 1.0 (fully charged).");
-        }
-
-        if !is_close!(*soc_min_array.first().unwrap(), 0.) {
-            bail!("The first SOC value in esh_min_output must be 0.0 (fully discharged).");
-        }
-
-        if !is_close!(*soc_min_array.last().unwrap(), 1.) {
-            bail!("The last SOC value in esh_min_output must be 1.0 (fully charged).");
-        }
-
-        // Validate that for any SOC, power_max >= power_min
-        // Sample a fine grid of SOCs and ensure power_max >= power_min
-        let fine_soc: Vec<f64> = linspace(0., 1., 100);
-
-        let power_max_fine: Vec<f64> = fine_soc
-            .iter()
-            .map(|s| np_interp(*s, &soc_max_array, &power_max_array))
-            .collect();
-
-        // TODO in Python a fill_value is used to make this return 0 when out of bounds
-        let power_min_fine: Vec<f64> = fine_soc
-            .iter()
-            .map(|s| np_interp(*s, &soc_min_array, &power_min_array))
-            .collect();
-
-        for i in 0..fine_soc.len() {
-            if power_max_fine[i] < power_min_fine[i] {
-                bail!("At all SOC levels, ESH_max_output must be >= ESH_min_output.")
-            }
-        }
-
-        // TODO can we pass these vecs/arrays by reference instead
-        let heat_retention_ratio =
-            Self::heat_retention_output(&soc_min_array, &power_min_array, storage_capacity);
-
-        Ok(Self {
+        let storage = Arc::new(RwLock::new(HeatStorageDryCore::new(
             pwr_in,
-            pwr_instant: rated_power_instant,
             storage_capacity,
+            n_units,
+            charge_control.clone(),
+            dry_core_min_output,
+            dry_core_max_output,
+            state_of_charge_init,
+        )?));
+
+        let heater = Self {
+            storage: storage.clone(),
+            pwr_instant: rated_power_instant,
             air_flow_type,
             frac_convective,
-            n_units,
             energy_supply_conn,
             control,
-            charge_control,
             fan_pwr,
             external_conditions,
             temp_air,
-            state_of_charge: Default::default(),
-            demand_met: Default::default(),
-            demand_unmet: Default::default(),
             zone_setpoint_init,
             zone_internal_air_func,
-            soc_max_array,
-            power_max_array,
-            soc_min_array,
-            power_min_array,
-            heat_retention_ratio,
             current_energy_profile: Default::default(),
             esh_detailed_results: output_detailed_results.then(|| {
                 Arc::new(RwLock::new(Vec::with_capacity(
                     simulation_time.total_steps(),
                 )))
             }),
-        })
+        };
+
+        let heater = Arc::new(heater);
+        storage.write().set_owner(heater.clone());
+
+        Ok(heater)
     }
 
     pub(crate) fn temp_setpnt(
@@ -367,208 +211,29 @@ impl ElecStorageHeater {
         self.frac_convective
     }
 
-    fn convert_to_kwh(power: f64, time: f64) -> f64 {
-        // Converts power value supplied to the correct energy unit
-        // Arguments
-        // power -- Power value in watts
-        // time -- length of the time active
-        // returns -- Energy in kWh
-        power / f64::from(WATTS_PER_KILOWATT) * time
-    }
-
-    pub fn heat_retention_output(
-        soc_array: &[f64],
-        power_array: &[f64],
-        storage_capacity: f64,
-    ) -> f64 {
-        // Simulates the heat retention over 16 hours in OutputMode.MIN.
-
-        // Starts with a SOC of 1.0 and calculates the SOC after 16 hours.
-        // This is a self-contained function, and the SOC is not stored in self.__state_of_charge.
-
-        // :return: Final SOC after 16 hours.
-
-        // Set initial state of charge to 1.0 (fully charged)
-        let initial_soc = 1.0;
-
-        // Total time for the simulation (16 hours)
-        let total_time = 16.0; // This is the value from BS EN 60531 for determining heat retention ability
-
-        // Select the SOC and power arrays for OutputMode.MIN
-        let soc_ode = SocOdeFunction {
-            soc_array,
-            power_array,
-            storage_capacity,
-        };
-
-        let f = soc_ode; // f - Structure implementing the System trait
-        let x = 0.; // x - Initial value of the independent variable (usually time)
-        let x_end = total_time; // x_end - Final value of the independent variable
-        let dx = 0.; // dx - Increment in the dense output. This argument has no effect if the output type is Sparse
-        let y0: State = State::new(initial_soc); // y - Initial value of the dependent variable(s)
-
-        // scipy implementation for reference:
-        // https://github.com/scipy/scipy/blob/6b657ede0c3c4cffef3156229afddf02a2b1d99a/scipy/integrate/_ivp/rk.py#L293
-        let rtol = 1e-3; // rtol - set from scipy docs - Relative tolerance used in the computation of the adaptive step size
-        let atol = 1e-6; // atol - set from scipy docs - Absolute tolerance used in the computation of the adaptive step size
-        let h = 0.; // initial step size - 0
-        let safety_factor = 0.9; // matches scipy implementation
-        let beta = 0.; // setting this to 0 gives us an alpha of 0.2 and matches scipy's adaptive step size logic (default was 0.04)
-        let fac_min = 0.2; // matches scipy implementation
-        let fac_max = 10.; // matches scipy implementation
-        let h_max = x_end - x;
-        let n_max = 100000;
-        let n_stiff = 1000;
-        let mut stepper = Dopri5::from_param(
-            f,
-            x,
-            x_end,
-            dx,
-            y0,
-            rtol,
-            atol,
-            safety_factor,
-            beta,
-            fac_min,
-            fac_max,
-            h_max,
-            h,
-            n_max,
-            n_stiff,
-            OutputType::Sparse,
-        );
-
-        // Solve the ODE for SOC and cumulative energy delivered
-        let _ = stepper.integrate();
-
-        // sol = solve_ivp(soc_ode, [0, total_time], [initial_soc], method='RK45', rtol=1e-1, atol=1e-3)
-
-        // Final state of charge after 16 hours
-        let final_soc = stepper.y_out().last().unwrap()[0];
-
-        // Clip the final SOC to ensure it's between 0 and 1
-
-        // Return the final state of charge after 16 hours
-        clip(final_soc, 0., 1.)
-    }
-
-    pub(crate) fn energy_output(
-        &self,
-        mode: OutputMode,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64, f64, f64)> {
-        let (soc_array, power_array) = match mode {
-            OutputMode::Min => (&self.soc_min_array, &self.power_min_array),
-            OutputMode::Max => (&self.soc_max_array, &self.power_max_array),
-        };
-
-        let target_charge = self.target_electric_charge(*simulation_time_iteration)?;
-
-        let (charge_rate, soc_max) = if target_charge > 0. {
-            (self.pwr_in, target_charge)
-        } else {
-            (0., 1.)
-        };
-
-        // TODO Stop function!!
-        let energy_output_soc_ode = EnergyOutputSocOdeFunction {
-            soc_array,
-            power_array,
-            storage_capacity: self.storage_capacity,
-            soc_max,
-            charge_rate,
-            pwr_in: self.pwr_in,
-            target_charge,
-        };
-
-        // Set initial conditions
-        let current_soc = self.state_of_charge.load(Ordering::SeqCst);
-        let initial_energy_charged = 0.; // No energy charged initially
-        let initial_energy_delivered = 0.; // No energy delivered initially
-        let time_remaining = simulation_time_iteration.timestep; // in hours
-
-        let f = energy_output_soc_ode; // f - Structure implementing the System trait
-        let x = 0.; // x - Initial value of the independent variable (usually time)
-        let x_end = time_remaining; // x_end - Final value of the independent variable
-        let dx = 0.; // dx - Increment in the dense output. This argument has no effect if the output type is Sparse
-        let y0: EnergyOutputState = EnergyOutputState::new(
-            current_soc,
-            initial_energy_charged,
-            initial_energy_delivered,
-        ); // y - Initial value of the dependent variable(s)
-
-        // scipy implementation for reference:
-        // https://github.com/scipy/scipy/blob/6b657ede0c3c4cffef3156229afddf02a2b1d99a/scipy/integrate/_ivp/rk.py#L293
-        let rtol = 1e-4; // rtol - set to match Python - Relative tolerance used in the computation of the adaptive step size
-        let atol = 1e-6; // atol - set from scipy docs - Absolute tolerance used in the computation of the adaptive step size
-        let h = 0.; // initial step size - 0
-        let safety_factor = 0.9; // matches scipy implementation
-        let beta = 0.; // setting this to 0 gives us an alpha of 0.2 and matches scipy's adaptive step size logic (default was 0.04)
-        let fac_min = 0.2; // matches scipy implementation
-        let fac_max = 10.; // matches scipy implementation
-        let h_max = x_end - x;
-        let n_max = 100000;
-        let n_stiff = 1000;
-        let mut stepper = Dopri5::from_param(
-            f,
-            x,
-            x_end,
-            dx,
-            y0,
-            rtol,
-            atol,
-            safety_factor,
-            beta,
-            fac_min,
-            fac_max,
-            h_max,
-            h,
-            n_max,
-            n_stiff,
-            OutputType::Sparse,
-        );
-
-        // Solve the ODE for SOC and cumulative energy delivered
-        let _ = stepper.integrate();
-
-        // Final state of charge after 16 hours
-        let final_soc = stepper.y_out().last().unwrap()[0];
-
-        // Total energy charged during the timestep
-        let total_energy_charged = stepper.y_out().last().unwrap()[1];
-
-        // Total energy delivered during the timestep
-        let total_energy_delivered = stepper.y_out().last().unwrap()[2];
-        // Total time used in delivering energy
-        let time_used = stepper.x_out().last().unwrap(); // TODO implement with root finder
-
-        // Return the total energy delivered, time used, and total energy charged
-        Ok((
-            total_energy_delivered,
-            *time_used,
-            total_energy_charged,
-            final_soc,
-        ))
-    }
-
-    pub fn energy_output_min(
+    /// Calculates the minimum energy that must be delivered based on dry_core_min_output.
+    /// :return: np.float64 (minimum energy deliverable in kWh * __n_units).
+    pub(crate) fn energy_output_min(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        // Calculates the minimum energy that must be delivered based on ESH_min_output.
-        // :return: Tuple containing (minimum energy deliverable in kWh, time used in hours).
-        let (soc, _, _, _) = self.energy_output(OutputMode::Min, simulation_time_iteration)?;
-        Ok(soc * f64::from(self.n_units))
+        Ok(self
+            .storage
+            .read()
+            .energy_output(OutputMode::Min, None, None, simulation_time_iteration)?
+            .0
+            * self.storage.read().n_units() as f64)
     }
 
-    #[cfg(test)]
     pub(crate) fn energy_output_max(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64, f64)> {
         // Calculates the maximum energy that can be delivered based on ESH_max_output.
         // :return: Tuple containing (maximum energy deliverable in kWh, time used in hours).
-        self.energy_output(OutputMode::Max, simulation_time_iteration)
+        self.storage
+            .read()
+            .energy_output(OutputMode::Max, None, None, simulation_time_iteration)
     }
 
     pub(crate) fn demand_energy(
@@ -583,16 +248,18 @@ impl ElecStorageHeater {
         let mut current_profile = self.current_energy_profile.write();
 
         let timestep = simulation_time_iteration.timestep;
-        let energy_demand = energy_demand / f64::from(self.n_units);
+        let n_units: u32 = self.storage.read().n_units();
+        let energy_demand = energy_demand / f64::from(n_units);
         current_profile.energy_instant = 0.;
 
         // Initialize time_used_max and energy_charged_max to default values
         let mut time_used_max = 0.;
-        let _energy_charged_max = 0.;
 
         // Calculate minimum energy that can be delivered
-        let (q_released_min, _, energy_charged, mut final_soc) =
-            self.energy_output(OutputMode::Min, simulation_time_iteration)?;
+        let (q_released_min, _, energy_charged, mut final_soc) = self
+            .storage
+            .read()
+            .energy_output(OutputMode::Min, None, None, simulation_time_iteration)?;
         current_profile.energy_charged = energy_charged;
 
         let mut q_released_max: Option<f64> = None;
@@ -600,62 +267,73 @@ impl ElecStorageHeater {
         if q_released_min > energy_demand {
             // Deliver at least the minimum energy
             current_profile.energy_delivered = q_released_min;
-            self.demand_met.store(q_released_min, Ordering::SeqCst);
-            self.demand_unmet.store(0., Ordering::SeqCst);
+            self.storage.write().set_demand_met(q_released_min);
+            self.storage.write().set_demand_unmet(0.);
         } else {
             // Calculate maximum energy that can be delivered
-            let (q_released_max_value, time_used_max_tmp, energy_charged, final_soc_override) =
-                self.energy_output(OutputMode::Max, simulation_time_iteration)?;
+            let (q_released_max_value, time_used_max_tmp, energy_charged_max, final_soc_override) =
+                self.energy_output_max(simulation_time_iteration)?;
             final_soc = final_soc_override;
 
             q_released_max = Some(q_released_max_value);
             time_used_max = time_used_max_tmp;
-            current_profile.energy_charged = energy_charged;
 
             if q_released_max_value < energy_demand {
                 // Deliver as much as possible up to the maximum energy
                 current_profile.energy_delivered = q_released_max_value;
-                self.demand_met
-                    .store(q_released_max_value, Ordering::SeqCst);
-                self.demand_unmet
-                    .store(energy_demand - q_released_max_value, Ordering::SeqCst);
+                self.storage.write().set_demand_met(q_released_max_value);
+                self.storage
+                    .write()
+                    .set_demand_unmet(energy_demand - q_released_max_value);
+                current_profile.energy_charged = energy_charged_max;
 
                 // For now, we assume demand not met from storage is topped-up by
                 // the direct top-up heater (if applicable). If still some unmet,
                 // this is reported as unmet demand.
                 if self.pwr_instant != 0. {
                     current_profile.energy_instant = self
-                        .demand_unmet
-                        .load(Ordering::SeqCst)
+                        .storage
+                        .read()
+                        .demand_unmet()
                         .min(self.pwr_instant * timestep); // kWh
                     let time_instant = current_profile.energy_instant / self.pwr_instant;
                     time_used_max += time_instant;
                     time_used_max = time_used_max.min(timestep);
                 }
             } else {
-                // Deliver the demanded energy
-                current_profile.energy_delivered = energy_demand;
+                // IMPROVED ACCURACY: Use exact energy target instead of linear proration
+                // Deliver exactly the demanded energy using the differential equation solver
+                let (energy_delivered, time_used_max_tmp, energy_charged, final_soc_override) =
+                    self.storage.read().energy_output(
+                        OutputMode::Max,
+                        None,
+                        Some(energy_demand),
+                        simulation_time_iteration,
+                    )?;
 
-                if q_released_max_value > 0. {
-                    time_used_max *= energy_demand / q_released_max_value;
-                }
+                time_used_max = time_used_max_tmp;
+                current_profile.energy_charged = energy_charged;
+                final_soc = final_soc_override;
 
-                self.demand_met.store(energy_demand, Ordering::SeqCst);
-                self.demand_unmet.store(0., Ordering::SeqCst);
+                // The solver should have delivered exactly what we requested
+                // (within numerical tolerances)
+                current_profile.energy_delivered = energy_delivered.min(energy_demand);
+                self.storage
+                    .write()
+                    .set_demand_met(current_profile.energy_delivered);
+                self.storage.write().set_demand_unmet(
+                    0.0_f64.max(energy_demand - current_profile.energy_delivered),
+                );
             }
         }
 
         // Ensure energy_delivered does not exceed q_released_max
         let max = q_released_max.unwrap_or(q_released_min);
-
         current_profile.energy_delivered = current_profile.energy_delivered.min(max);
 
-        let new_state_of_charge = self.state_of_charge.load(Ordering::SeqCst)
-            + (current_profile.energy_charged - current_profile.energy_delivered)
-                / self.storage_capacity;
-        let new_state_of_charge = clip(new_state_of_charge, 0., 1.);
-        self.state_of_charge
-            .store(new_state_of_charge, Ordering::SeqCst);
+        // Update state of charge using the final SOC from the differential equation solver
+        // The ODE has already integrated the charging and discharging accurately
+        self.storage.write().set_state_of_charge(final_soc);
 
         // Calculate fan energy
         current_profile.energy_for_fan = 0.;
@@ -664,11 +342,11 @@ impl ElecStorageHeater {
             && q_released_max.is_some()
         {
             let power_for_fan = self.fan_pwr;
-            current_profile.energy_for_fan = Self::convert_to_kwh(power_for_fan, time_used_max);
+            current_profile.energy_for_fan = convert_to_kwh(power_for_fan, time_used_max);
         }
 
         // Log the energy charged, fan energy, and total energy delivered
-        let amount_demanded = f64::from(self.n_units)
+        let amount_demanded = f64::from(n_units)
             * (current_profile.energy_charged
                 + current_profile.energy_instant
                 + current_profile.energy_for_fan);
@@ -685,13 +363,13 @@ impl ElecStorageHeater {
             } = *current_profile;
             let result = StorageHeaterDetailedResult {
                 timestep_idx: simulation_time_iteration.index,
-                n_units: self.n_units,
+                n_units,
                 energy_delivered,
                 energy_demand,
                 energy_instant,
                 energy_charged,
                 energy_for_fan,
-                state_of_charge: self.state_of_charge.load(Ordering::SeqCst),
+                state_of_charge: self.storage.read().state_of_charge(),
                 final_soc,
                 time_used_max,
             };
@@ -701,98 +379,18 @@ impl ElecStorageHeater {
         }
 
         // Return total net energy delivered (discharged + instant heat + fan energy)
-        Ok(f64::from(self.n_units)
-            * (current_profile.energy_delivered + current_profile.energy_instant))
+        Ok(
+            f64::from(n_units)
+                * (current_profile.energy_delivered + current_profile.energy_instant),
+        )
     }
 
     pub(crate) fn target_electric_charge(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        // Calculates target charge from potential to charge system
-
-        let charge_control = match self.charge_control.as_ref() {
-            Control::Charge(charge_control) => charge_control,
-            _ => unreachable!("charge_control must be of type ChargeControl"),
-        };
-
-        let logic_type = charge_control.logic_type();
-
-        let temp_air: f64 = (self.zone_internal_air_func)();
-
-        match logic_type {
-            ControlLogicType::Manual => {
-                // Implements the "Manual" control logic for ESH
-                charge_control.target_charge(simulation_time_iteration, None)
-            }
-            ControlLogicType::Automatic => {
-                // Implements the "Automatic" control logic for ESH
-                // Automatic charge control can be achieved using internal thermostat(s) to
-                // control the extent of charging of the heaters.
-                // Availability of electricity to the heaters may be controlled by the electricity
-                // supplier on the basis of daily weather predictions (see 24-hour tariff, 12.4.3);
-                // this should be treated as automatic charge control.
-                // This is currently included by the schedule parameter in charge control object
-
-                // TODO (from Python): Check and implement if external temperature sensors are also used for Automatic controls.
-                charge_control.target_charge(simulation_time_iteration, Some(temp_air))
-            }
-            ControlLogicType::Celect => {
-                // Implements the "CELECT" control logic for ESH
-                // A CELECT-type controller has electronic sensors throughout the dwelling linked
-                // to a central control device. It monitors the individual room sensors and optimises
-                // the charging of all the storage heaters individually (and may select direct acting
-                // heaters in preference to storage heaters).
-                charge_control.target_charge(simulation_time_iteration, Some(temp_air))
-            }
-            ControlLogicType::Hhrsh => {
-                // Implements the "HHRSH" control logic for ESH
-                // A ‘high heat retention storage heater’ is one with heat retention not less
-                // than 45% measured according to BS EN 60531. It incorporates a timer, electronic
-                // room thermostat and fan to control the heat output. It is also able to estimate
-                // the next day’s heating demand based on external temperature, room temperature
-                // settings and heat demand periods.
-
-                let mut energy_to_store = charge_control.energy_to_store(
-                    self.demand_met.load(Ordering::SeqCst)
-                        + self.demand_unmet.load(Ordering::SeqCst),
-                    self.zone_setpoint_init,
-                    simulation_time_iteration,
-                );
-
-                // None means not enough past data to do the calculation (Initial 24h of the calculation)
-                // We go for a full load of the hhrsh
-                if energy_to_store.is_nan() {
-                    energy_to_store = self.pwr_in * HOURS_PER_DAY as f64;
-                }
-
-                let target_charge_hhrsh = if energy_to_store > 0. {
-                    let current_state_of_charge = self.state_of_charge.load(Ordering::SeqCst);
-                    let energy_stored = current_state_of_charge * self.storage_capacity; // kWh
-
-                    let energy_to_add = if self.heat_retention_ratio <= 0. {
-                        self.storage_capacity - energy_stored // kWh
-                    } else {
-                        (1.0 / self.heat_retention_ratio) * (energy_to_store - energy_stored)
-                        // kWh
-                    };
-                    let target_charge_hhrsh =
-                        current_state_of_charge + energy_to_add / self.storage_capacity;
-                    clip(target_charge_hhrsh, 0., 1.)
-                } else {
-                    0.
-                };
-
-                // target_charge (from input file, or zero when control is off) applied here
-                // is treated as an upper limit for target charge
-                charge_control
-                    .target_charge(simulation_time_iteration, None)
-                    .map(|tc| tc.min(target_charge_hhrsh))
-            }
-            ControlLogicType::HeatBattery => {
-                unimplemented!("HeatBattery control logic not implemented for ESH")
-            }
-        }
+        let storage = self.storage.read();
+        storage.target_electric_charge(simulation_time_iteration)
     }
 
     pub(crate) fn output_esh_results(&self) -> Option<Vec<StorageHeaterDetailedResult>> {
@@ -822,6 +420,18 @@ impl ElecStorageHeater {
     }
 }
 
+impl HeatBatteryDryCoreCommonBehaviour for ElecStorageHeater {
+    /// Get temperature for charge control calculations.
+    fn get_temp_for_charge_control(&self) -> Option<f64> {
+        Some((self.zone_internal_air_func)())
+    }
+
+    /// Get zone setpoint for HHRSH calculations.
+    fn get_zone_setpoint(&self) -> f64 {
+        self.zone_setpoint_init
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::excessive_precision)]
@@ -841,8 +451,8 @@ mod tests {
     use serde_json::json;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
-    const ESH_MIN_OUTPUT: [(f64, f64); 3] = [(0.0, 0.0), (0.5, 0.02), (1.0, 0.05)];
-    const ESH_MAX_OUTPUT: [(f64, f64); 3] = [(0.0, 0.0), (0.5, 1.5), (1.0, 3.0)];
+    const DRY_CORE_MIN_OUTPUT: [[f64; 2]; 3] = [[0.0, 0.0], [0.5, 0.02], [1.0, 0.05]];
+    const DRY_CORE_MAX_OUTPUT: [[f64; 2]; 3] = [[0.0, 0.0], [0.5, 1.5], [1.0, 3.0]];
 
     #[fixture]
     fn simulation_time() -> SimulationTime {
@@ -932,27 +542,33 @@ mod tests {
     }
 
     #[fixture]
+    fn charge_control_schedule() -> Vec<bool> {
+        vec![
+            true, true, true, true, true, true, true, true, false, false, false, false, false,
+            false, false, false, true, true, true, true, false, false, false, false,
+        ]
+    }
+
+    #[fixture]
     fn charge_control(
+        simulation_time_iteration: SimulationTimeIteration,
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
+        charge_control_schedule: Vec<bool>,
     ) -> Arc<Control> {
         Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Automatic,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
-                1.,
+                charge_control_schedule,
+                &simulation_time_iteration,
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                None,
-                None,
-                external_conditions,
+                Some(external_conditions),
                 Some(external_sensor),
+                None,
             )
             .unwrap(),
         ))
@@ -963,10 +579,14 @@ mod tests {
         let mut schedule = vec![Some(21.), Some(21.), None, Some(21.)];
         schedule.extend(vec![None; 20]);
 
-        Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(schedule, 0, 1., None, None, None, Default::default(), 1.)
-                .unwrap(),
-        ))
+        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            schedule,
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            1.,
+        )))
     }
 
     fn create_elec_storage_heater(
@@ -974,10 +594,10 @@ mod tests {
         charge_control: Arc<Control>,
         control: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
-        esh_min_output: Vec<(f64, f64)>,
-        esh_max_output: Vec<(f64, f64)>,
+        dry_core_min_output: Vec<[f64; 2]>,
+        dry_core_max_output: Vec<[f64; 2]>,
         output_detailed_results: Option<bool>,
-    ) -> ElecStorageHeater {
+    ) -> Arc<ElecStorageHeater> {
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
         ));
@@ -998,16 +618,15 @@ mod tests {
             &simulation_time.iter(),
             control,
             charge_control,
-            esh_min_output,
-            esh_max_output,
-            external_conditions, // NOTE this is None in Python
+            dry_core_min_output,
+            dry_core_max_output,
+            external_conditions, // NOTE this is None in Python,
+            0.,
             output_detailed_results,
         )
         .unwrap();
 
-        elec_storage_heater
-            .state_of_charge
-            .store(0.5, Ordering::SeqCst);
+        elec_storage_heater.storage.write().set_state_of_charge(0.5);
 
         elec_storage_heater
     }
@@ -1018,35 +637,30 @@ mod tests {
         charge_control: Arc<Control>,
         control: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
-    ) -> ElecStorageHeater {
+    ) -> Arc<ElecStorageHeater> {
         create_elec_storage_heater(
             simulation_time,
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         )
     }
 
     #[rstest]
-    fn test_initialisation(elec_storage_heater: ElecStorageHeater) {
-        assert_eq!(elec_storage_heater.pwr_in, 3.5);
-        assert_eq!(elec_storage_heater.storage_capacity, 10.0);
+    fn test_initialisation(
+        elec_storage_heater: Arc<ElecStorageHeater>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) {
+        let energy = elec_storage_heater.demand_energy(1., &simulation_time_iteration);
+        assert!(energy.unwrap() > 0.); // Should provide some energy
+
+        // Test air flow type is set correctly by checking if fan energy is calculated
         assert_eq!(
             elec_storage_heater.air_flow_type,
             ElectricStorageHeaterAirFlowType::FanAssisted
-        );
-        assert_eq!(
-            elec_storage_heater.state_of_charge.load(Ordering::SeqCst),
-            0.5
-        );
-
-        assert_relative_eq!(
-            elec_storage_heater.heat_retention_ratio,
-            0.92372001,
-            max_relative = EIGHT_DECIMAL_PLACES
         );
     }
 
@@ -1057,46 +671,48 @@ mod tests {
         control: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
     ) {
-        let test_cases = [(
-                vec![(0.0, 0.0), (0.5, 0.02), (0.3, 0.02), (1.0, 0.05)],
-                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.)],
+        let test_cases = [
+            (
+                vec![[0.0, 0.0], [0.5, 0.02], [0.3, 0.02], [1.0, 0.05]],
+                vec![[0.0, 0.0], [0.5, 1.5], [0.7, 0.02], [1.0, 3.]],
                 "shouldn't allow esh_min_output values in non-increasing order",
             ),
             (
-                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
-                vec![(0.0, 0.0), (0.5, 1.5), (0.3, 0.02), (1.0, 3.)],
+                vec![[0.0, 0.0], [0.5, 0.02], [0.7, 0.02], [1.0, 0.05]],
+                vec![[0.0, 0.0], [0.5, 1.5], [0.3, 0.02], [1.0, 3.]],
                 "shouldn't allow esh_max_output values in non-increasing order",
             ),
             (
-                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (0.9, 0.05)],
-                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.)],
+                vec![[0.0, 0.0], [0.5, 0.02], [0.7, 0.02], [0.9, 0.05]],
+                vec![[0.0, 0.0], [0.5, 1.5], [0.7, 0.02], [1.0, 3.]],
                 "shouldn't allow esh_min_output values not ending in 1.0",
             ),
             (
-                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
-                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (0.9, 3.)],
+                vec![[0.0, 0.0], [0.5, 0.02], [0.7, 0.02], [1.0, 0.05]],
+                vec![[0.0, 0.0], [0.5, 1.5], [0.7, 0.02], [0.9, 3.]],
                 "shouldn't allow esh_max_output values not ending in 1.0",
             ),
             (
-                vec![(0.2, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
-                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.0)],
+                vec![[0.2, 0.0], [0.5, 0.02], [0.7, 0.02], [1.0, 0.05]],
+                vec![[0.0, 0.0], [0.5, 1.5], [0.7, 0.02], [1.0, 3.0]],
                 "shouldn't allow esh_min_output values not starting at 1.0",
             ),
             (
-                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
-                vec![(0.2, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.0)],
+                vec![[0.0, 0.0], [0.5, 0.02], [0.7, 0.02], [1.0, 0.05]],
+                vec![[0.2, 0.0], [0.5, 1.5], [0.7, 0.02], [1.0, 3.0]],
                 "shouldn't allow esh_max_output values not starting at 1.0",
             ),
             (
-                vec![(0.0, 0.0), (1.0, 1.0)],
-                vec![(0.0, 0.0), (1.0, 0.5)],
+                vec![[0.0, 0.0], [1.0, 1.0]],
+                vec![[0.0, 0.0], [1.0, 0.5]],
                 "shouldn't allow any power_max values below power_min",
             ),
             (
-                vec![(0.0, 0.0), (1.0, 1.0)],
-                vec![(0.0, 0.0), (0.5, 0.4), (1.0, 1.0)],
+                vec![[0.0, 0.0], [1.0, 1.0]],
+                vec![[0.0, 0.0], [0.5, 0.4], [1.0, 1.0]],
                 "shouldn't allow any power_max values below power_min",
-            )];
+            ),
+        ];
 
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
@@ -1122,7 +738,8 @@ mod tests {
                     charge_control.clone(),
                     esh_min_output.clone(),
                     esh_max_output.clone(),
-                    external_conditions.clone(), // NOTE this is None in Python
+                    external_conditions.clone(), // NOTE this is None in Python,
+                    0.,
                     None,
                 )
                 .is_err(),
@@ -1139,13 +756,13 @@ mod tests {
         control: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
     ) {
-        let esh_max_output = vec![(0.0, 0.0), (0.5, 30.0), (1.0, 50.0)];
+        let esh_max_output = vec![[0.0, 0.0], [0.5, 30.0], [1.0, 50.0]];
         let heater_with_detailed_results = create_elec_storage_heater(
             simulation_time,
             charge_control.clone(),
             control.clone(),
             external_conditions.clone(),
-            ESH_MIN_OUTPUT.to_vec().clone(),
+            DRY_CORE_MIN_OUTPUT.to_vec().clone(),
             esh_max_output.clone(),
             Some(true),
         );
@@ -1154,7 +771,7 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
             esh_max_output,
             None,
         );
@@ -1168,7 +785,7 @@ mod tests {
     #[rstest]
     fn test_temp_setpnt(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let mut expected_setpoints = vec![Some(21.), Some(21.), None, Some(21.)];
         expected_setpoints.extend(vec![None; 20]);
@@ -1184,7 +801,7 @@ mod tests {
     #[rstest]
     fn test_in_required_period(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let mut expected_values = vec![true, true, false, true];
         expected_values.extend(vec![false; 20]);
@@ -1198,33 +815,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_frac_convective(elec_storage_heater: ElecStorageHeater) {
+    fn test_frac_convective(elec_storage_heater: Arc<ElecStorageHeater>) {
         assert_eq!(elec_storage_heater.frac_convective(), 0.7);
-    }
-
-    #[rstest]
-    fn test_energy_output_min_single(
-        simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
-    ) {
-        let min_energy_output = elec_storage_heater
-            .energy_output_min(&simulation_time_iterator.current_iteration())
-            .unwrap();
-        let _ =
-            elec_storage_heater.demand_energy(5.0, &simulation_time_iterator.current_iteration());
-
-        assert_relative_eq!(
-            min_energy_output,
-            0.019999999999999997,
-            max_relative = EIGHT_DECIMAL_PLACES
-        );
     }
 
     #[rstest]
     #[ignore = "known issue"]
     fn test_energy_output_min(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         // Test minimum energy output calculation across all timesteps.
 
@@ -1271,7 +870,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_output_max(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         // Test maximum energy output calculation across all timesteps.
         let expected_max_energy_output = [
@@ -1315,141 +914,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_energy_output_max_with_zero_event_single(
-        simulation_time: SimulationTime,
-        simulation_time_iterator: SimulationTimeIterator,
-        charge_control: Arc<Control>,
-        control: Arc<Control>,
-        external_conditions: Arc<ExternalConditions>,
-    ) {
-        let esh_max_output = vec![(0.0, 0.0), (0.5, 30.0), (1.0, 50.0)];
-        let elec_storage_heater = create_elec_storage_heater(
-            simulation_time,
-            charge_control,
-            control,
-            external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            esh_max_output,
-            None,
-        );
-
-        let expected_max_energy_output = 7.905696339321716;
-
-        let expected_time_used = 1.0;
-
-        let max_energy_output = elec_storage_heater
-            .energy_output_max(&simulation_time_iterator.current_iteration())
-            .unwrap();
-        let _ =
-            elec_storage_heater.demand_energy(5.0, &simulation_time_iterator.current_iteration());
-        let (energy, time_used, _, _) = max_energy_output;
-
-        assert_relative_eq!(energy, expected_max_energy_output, max_relative = 1e-2);
-
-        assert_relative_eq!(
-            time_used,
-            expected_time_used,
-            max_relative = EIGHT_DECIMAL_PLACES
-        );
-    }
-
-    #[rstest]
-    #[ignore = "known issue"]
-    fn test_energy_output_max_with_zero_event(
-        simulation_time: SimulationTime,
-        simulation_time_iterator: SimulationTimeIterator,
-        charge_control: Arc<Control>,
-        control: Arc<Control>,
-        external_conditions: Arc<ExternalConditions>,
-    ) {
-        let elec_storage_heater = create_elec_storage_heater(
-            simulation_time,
-            charge_control,
-            control,
-            external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
-            None,
-        );
-
-        // Test maximum energy output calculation across all timesteps.
-        let expected_max_energy_output = [
-            7.905696339321716,
-            6.409423918606012,
-            4.913144554873739,
-            3.503509067065079,
-            3.4999662250517263,
-            3.5000272321002064,
-            3.4999664471092706,
-            3.5000359941220256,
-            0.5819017195075272,
-            0.0014406990152162622,
-            7.97047184775446e-06,
-            9.068336550842638e-08,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            2.9181276338320536,
-            3.4985510038277714,
-            3.5000309931442937,
-            3.4999785113707134,
-            0.5818631932808774,
-            0.0014406043531798149,
-            7.969521833559643e-06,
-            9.066927928048405e-08,
-        ];
-
-        let expected_time_used = [
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            0.37318890798358917,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            0.37318890798725507,
-        ];
-
-        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
-            let max_energy_output = elec_storage_heater.energy_output_max(&t_it).unwrap();
-            let _ = elec_storage_heater.demand_energy(5.0, &t_it);
-            let (energy, time_used, _, _) = max_energy_output;
-
-            assert_relative_eq!(
-                energy,
-                expected_max_energy_output[t_idx],
-                max_relative = 1e-2
-            );
-
-            assert_relative_eq!(
-                time_used,
-                expected_time_used[t_idx],
-                max_relative = EIGHT_DECIMAL_PLACES
-            );
-        }
-    }
-
-    #[rstest]
     fn test_electric_charge_automatic(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         // Test electric charge calculation across all timesteps.
         let expected_target_elec_charge = [
@@ -1491,24 +958,21 @@ mod tests {
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
         control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
     ) {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
-                1.,
+                charge_control_schedule,
+                &simulation_time.iter().current_iteration(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                None,
-                None,
-                external_conditions.clone(),
+                Some(external_conditions.clone()),
                 Some(external_sensor),
+                None,
             )
             .unwrap(),
         ));
@@ -1517,8 +981,8 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
         let expected_target_elec_charge = [
@@ -1539,24 +1003,21 @@ mod tests {
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
         control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
     ) {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Celect,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
-                1.,
+                charge_control_schedule,
+                &simulation_time.iter().current_iteration(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                None,
-                None,
-                external_conditions.clone(),
+                Some(external_conditions.clone()),
                 Some(external_sensor),
+                None,
             )
             .unwrap(),
         ));
@@ -1565,8 +1026,8 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
         let expected_target_elec_charge = [
@@ -1587,24 +1048,21 @@ mod tests {
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
         control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
     ) {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
-                1.,
+                charge_control_schedule,
+                &simulation_time.iter().current_iteration(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                None,
-                None,
-                external_conditions.clone(),
+                Some(external_conditions.clone()),
                 Some(external_sensor),
+                None,
             )
             .unwrap(),
         ));
@@ -1613,8 +1071,8 @@ mod tests {
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
         let expected_target_elec_charge = [
@@ -1635,38 +1093,36 @@ mod tests {
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
         control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
     ) {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
-                1.,
+                charge_control_schedule,
+                &simulation_time.iter().current_iteration(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                None,
-                None,
-                external_conditions.clone(),
+                Some(external_conditions.clone()),
                 Some(external_sensor),
+                None,
             )
             .unwrap(),
         ));
-        let mut heater = create_elec_storage_heater(
+        let heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
             control,
             external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             None,
         );
-        heater.heat_retention_ratio = -0.9;
-        heater.state_of_charge.store(0.5, Ordering::SeqCst);
+
+        heater.storage.write().set_heat_retention_ratio(-0.9);
+        heater.storage.write().set_state_of_charge(0.5);
 
         let expected_target_elec_charge = [
             1., 1., 1., 1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 0., 0.,
@@ -1681,52 +1137,132 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
     fn test_electric_charge_invalid_logic_type(
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
         control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
     ) {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
-                vec![
-                    true, true, true, true, true, true, true, true, false, false, false, false,
-                    false, false, false, false, true, true, true, true, false, false, false, false,
-                ],
-                1.,
+                charge_control_schedule,
+                &simulation_time.iter().current_iteration(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
-                None,
-                None,
-                external_conditions.clone(),
+                Some(external_conditions.clone()),
                 Some(external_sensor),
+                None,
             )
             .unwrap(),
         ));
-        let heater = create_elec_storage_heater(
-            simulation_time,
-            charge_control,
+
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn =
+            EnergySupply::connection(energy_supply.clone(), "storage_heater").unwrap();
+
+        let elec_storage_heater = ElecStorageHeater::new(
+            3.5,
+            2.5,
+            10.0,
+            ElectricStorageHeaterAirFlowType::FanAssisted,
+            0.7,
+            11.,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
             control,
-            external_conditions,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            charge_control,
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
+            external_conditions, // NOTE this is None in Python,
+            0.,
             None,
         );
 
-        heater
-            .target_electric_charge(simulation_time.iter().current_iteration())
-            .unwrap();
+        assert!(elec_storage_heater.is_err());
+        assert_eq!(
+            elec_storage_heater.unwrap_err().to_string(),
+            "Control logic type HeatBattery is not valid for ElecStorageHeater."
+        );
+    }
+
+    #[ignore = "fails probably because heat_retention_ratio cannot be set to None in Rust"]
+    #[rstest]
+    fn test_electric_charge_hhrsh_no_heat_retention_ratio(
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+        simulation_time: SimulationTime,
+        control: Arc<Control>,
+        charge_control_schedule: Vec<bool>,
+    ) {
+        let charge_control = Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::Hhrsh,
+                charge_control_schedule,
+                &simulation_time.iter().current_iteration(),
+                0,
+                1.,
+                [1.0, 0.8].into_iter().map(Into::into).collect(),
+                Some(22.),
+                None,
+                Some(external_conditions.clone()),
+                Some(external_sensor),
+                None,
+            )
+            .unwrap(),
+        ));
+
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn =
+            EnergySupply::connection(energy_supply.clone(), "storage_heater").unwrap();
+
+        let heater = ElecStorageHeater::new(
+            3.5,
+            2.5,
+            10.0,
+            ElectricStorageHeaterAirFlowType::FanAssisted,
+            0.7,
+            11.,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
+            control,
+            charge_control,
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
+            external_conditions,
+            0.,
+            None,
+        )
+        .unwrap();
+
+        heater.storage.write().set_heat_retention_ratio(0.);
+
+        let result = heater
+            .storage
+            .read()
+            .target_electric_charge(simulation_time.iter().current_iteration());
+
+        assert!(result.is_err())
     }
 
     #[rstest]
     fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy = [
             4.0,
@@ -1765,7 +1301,7 @@ mod tests {
     #[ignore = "known issue (energy_output)"]
     fn test_demand_energy_no_demand(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy = [
             0.019999999999999997,
@@ -1826,9 +1362,10 @@ mod tests {
             &simulation_time.iter(),
             control,
             charge_control,
-            ESH_MIN_OUTPUT.to_vec(),
-            ESH_MAX_OUTPUT.to_vec(),
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
             external_conditions, // NOTE this is None in Python
+            0.,
             Some(true),
         )
         .unwrap();
@@ -2158,33 +1695,33 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy_for_fan = [
-            0.003666666666666666,
-            0.002707621094790285,
-            0.0019580976410457644,
-            0.0018707482993197276,
-            0.0019298245614035089,
-            0.0019713261648745518,
-            0.001950354609929078,
-            0.0022916666666666662,
-            0.0021220628632204496,
-            0.002233750362976654,
-            0.0023578475867206904,
-            0.0024965444862427343,
-            0.0026525785014320812,
-            0.0028294170564121318,
-            0.003031518268419362,
-            0.0032647119841350417,
-            0.003666666666666666,
-            0.003666666666666666,
-            0.003666666666666666,
-            0.003666666666666666,
-            0.0021220628632204505,
-            0.0022337503629766544,
-            0.0023578475867206913,
-            0.002496544486242736,
+            0.003666666666666663,
+            0.0034561513858793556,
+            0.003133016027878955,
+            0.0029047621124394848,
+            0.0027330949708021268,
+            0.0025983637642646956,
+            0.0024893028132490476,
+            0.002398927856611201,
+            0.00243802553077851,
+            0.0026117536650591346,
+            0.002812153391189732,
+            0.003045881325103026,
+            0.0033220118367143004,
+            0.003653245351058463,
+            0.004057922556940931,
+            0.004563550936407075,
+            0.004342298713919709,
+            0.0037302627836201,
+            0.0036666666666666644,
+            0.0036666666666666644,
+            0.003861966010382251,
+            0.004317143115057025,
+            0.004894130588434899,
+            0.005649492532217881,
         ]; // Expected energy for fan for each timestep
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
@@ -2202,7 +1739,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_instant(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy_instant = [
             2.5,
@@ -2246,7 +1783,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_charged(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy_charged = [
             1.5,
@@ -2290,7 +1827,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_stored_delivered(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: Arc<ElecStorageHeater>,
     ) {
         let expected_energy_delivered = [
             1.5,
@@ -2330,14 +1867,205 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_heat_retention_output() {
-        let soc_array = vec![0., 0.5, 1.];
-        let power_array = vec![0., 0.02, 0.05];
-        let storage_capacity = 10.;
-        let actual =
-            ElecStorageHeater::heat_retention_output(&soc_array, &power_array, storage_capacity);
+    // skip test_invalid_air_flow_type as not replicable, Rust ensures only valid air flow types can be used
 
-        assert_relative_eq!(actual, 0.92372001, max_relative = EIGHT_DECIMAL_PLACES);
+    #[rstest]
+    fn test_damper_only(
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        control: Arc<Control>,
+        charge_control: Arc<Control>,
+    ) {
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
+
+        let heater = ElecStorageHeater::new(
+            3.5,
+            2.5,
+            10.0,
+            ElectricStorageHeaterAirFlowType::DamperOnly,
+            0.7,
+            11.,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
+            control,
+            charge_control,
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
+            external_conditions,
+            0.,
+            None,
+        )
+        .unwrap();
+
+        heater.storage.write().set_state_of_charge(0.5);
+        let _ = heater.demand_energy(1., &simulation_time.iter().current_iteration());
+
+        assert_eq!(heater.energy_for_fan(), 0.)
+    }
+
+    #[rstest]
+    fn test_protected_accessor_methods(elec_storage_heater: Arc<ElecStorageHeater>) {
+        // skipped methods we did not port to Rust
+
+        // Test getter methods
+        assert_eq!(elec_storage_heater.storage.read().state_of_charge(), 0.5);
+        assert_eq!(elec_storage_heater.storage.read().storage_capacity(), 10.);
+        assert_eq!(elec_storage_heater.storage.read().n_units(), 1);
+        assert_eq!(elec_storage_heater.storage.read().demand_met(), 0.);
+        assert_eq!(elec_storage_heater.storage.read().demand_unmet(), 0.);
+
+        // Test setter methods
+        elec_storage_heater.storage.write().set_state_of_charge(0.8);
+        assert_eq!(elec_storage_heater.storage.read().state_of_charge(), 0.8);
+
+        elec_storage_heater.storage.write().set_demand_met(1.5);
+        assert_eq!(elec_storage_heater.storage.read().demand_met(), 1.5);
+
+        elec_storage_heater.storage.write().set_demand_unmet(0.5);
+        assert_eq!(elec_storage_heater.storage.read().demand_unmet(), 0.5);
+
+        // Test SOC clipping
+        elec_storage_heater.storage.write().set_state_of_charge(1.5); // Above 1.0
+        assert_eq!(elec_storage_heater.storage.read().state_of_charge(), 1.);
+
+        elec_storage_heater.storage.write().set_state_of_charge(0.); // Below 1.0
+        assert_eq!(elec_storage_heater.storage.read().state_of_charge(), 0.);
+    }
+
+    // skipped test_invalid_charge_control_logic_error as not able to replicate in Rust
+    // & Rust ensures no invalid logic type can be used
+
+    #[rstest]
+    fn test_elec_storage_heater_no_instant_power(
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        control: Arc<Control>,
+        charge_control: Arc<Control>,
+    ) {
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
+
+        let heater = ElecStorageHeater::new(
+            3.5,
+            0.,
+            10.0,
+            ElectricStorageHeaterAirFlowType::FanAssisted,
+            0.7,
+            11.,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
+            control,
+            charge_control,
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
+            external_conditions,
+            0.,
+            None,
+        )
+        .unwrap();
+
+        // Set low SOC
+        heater.storage.write().set_state_of_charge(0.1);
+
+        // Demand high energy
+        let actual_energy = heater
+            .demand_energy(10., &simulation_time.iter().current_iteration())
+            .unwrap();
+
+        assert!(actual_energy < 10.);
+    }
+
+    #[ignore = "known issue"]
+    #[rstest]
+    fn test_elec_storage_energy_output_modes(
+        elec_storage_heater: Arc<ElecStorageHeater>,
+        simulation_time: SimulationTime,
+    ) {
+        let energy_min = elec_storage_heater
+            .storage
+            .read()
+            .energy_output(
+                OutputMode::Min,
+                None,
+                None,
+                &simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+        assert_eq!(energy_min.0, 0.);
+
+        let energy_max = elec_storage_heater
+            .storage
+            .read()
+            .energy_output(
+                OutputMode::Max,
+                None,
+                None,
+                &simulation_time.iter().current_iteration(),
+            )
+            .unwrap();
+        assert_eq!(energy_max.0, energy_min.0);
+    }
+
+    #[rstest]
+    fn test_get_temp_for_charge_control(elec_storage_heater: Arc<ElecStorageHeater>) {
+        let temp = elec_storage_heater.get_temp_for_charge_control().unwrap();
+        assert_eq!(temp, 20.0);
+    }
+
+    #[rstest]
+    fn test_get_zone_setpoint(elec_storage_heater: Arc<ElecStorageHeater>) {
+        let setpoint = elec_storage_heater.get_zone_setpoint();
+        assert_eq!(setpoint, 21.);
+    }
+
+    // skipped test_output_mode_enum_values as not adding value in Rust
+    // skippped test_heat_storage_dry_core_boundary_soc_values as no current_core_soc exists on
+    // HeatStorageDryCore & otherwise the test is same as test_elec_storage_energy_output_modes
+
+    #[rstest]
+    fn test_heat_storage_dry_core_zero_capacity(
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        control: Arc<Control>,
+        charge_control: Arc<Control>,
+    ) {
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
+
+        let heater = ElecStorageHeater::new(
+            0.55,
+            0.23,
+            0.,
+            ElectricStorageHeaterAirFlowType::DamperOnly,
+            0.4,
+            0.02,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
+            control,
+            charge_control,
+            vec![[0.0, 0.5], [100., 0.15]],
+            vec![[0.0, 0.3], [100.0, 0.8]],
+            external_conditions,
+            0.,
+            None,
+        );
+
+        assert!(heater.is_err())
     }
 }

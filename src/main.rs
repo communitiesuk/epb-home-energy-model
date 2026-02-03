@@ -1,15 +1,15 @@
-extern crate hem;
-
 use clap::{Args, Parser};
-use hem::output::FileOutput;
-use hem::read_weather_file::{weather_data_to_vec, ExternalConditions};
-use hem::{run_project, ProjectFlags};
+
+use home_energy_model::output_writer::FileOutputWriter;
+use home_energy_model::read_weather_file::{
+    epw_weather_data_to_external_conditions, ExternalConditions,
+};
+use home_energy_model::{run_project_from_input_file, OutputFormat};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use tracing::debug;
 use tracing_subscriber::fmt::format::FmtSpan;
 
 #[derive(Parser, Default, Debug)]
@@ -20,16 +20,13 @@ struct SapArgs {
     weather_file: WeatherFileType,
     #[arg(long, short, help = "Path to tariff data file in .csv format")]
     tariff_file: Option<String>,
-    #[arg(
+    #[clap(
         long,
-        short,
-        default_value_t = false,
-        help = "Run preprocessing step only"
+        value_enum,
+        num_args = 1..=2,
+        help = "output format(s): csv, json, or both; default to csv"
     )]
-    preprocess_only: bool,
-    #[command(flatten)]
-    #[cfg(feature = "fhs")]
-    wrapper_choice: WrapperChoice,
+    output: Option<Vec<OutputFormat>>,
     #[clap(
         long,
         default_value_t = false,
@@ -44,44 +41,6 @@ struct SapArgs {
         help = "Whether to output detailed information about heating and cooling"
     )]
     detailed_output_heating_cooling: bool,
-}
-
-#[derive(Args, Clone, Copy, Default, Debug)]
-#[group(required = false, multiple = false)]
-#[cfg(feature = "fhs")]
-struct WrapperChoice {
-    #[arg(long, help = "Use Future Homes Standard calculation assumptions")]
-    future_homes_standard: bool,
-    #[arg(
-        long = "future-homes-standard-FEE",
-        help = "Use Future Homes Standard Fabric Energy Efficiency assumptions"
-    )]
-    future_homes_standard_fee: bool,
-    #[arg(
-        long = "future-homes-standard-notA",
-        help = "Use Future Homes Standard calculation assumptions for notional option A"
-    )]
-    future_homes_standard_not_a: bool,
-    #[arg(
-        long = "future-homes-standard-notB",
-        help = "Use Future Homes Standard calculation assumptions for notional option B"
-    )]
-    future_homes_standard_not_b: bool,
-    #[arg(
-        long = "future-homes-standard-FEE-notA",
-        help = "Use Future Homes Standard Fabric Energy Efficiency assumptions for notional option A"
-    )]
-    future_homes_standard_fee_not_a: bool,
-    #[arg(
-        long = "future-homes-standard-FEE-notB",
-        help = "Use Future Homes Standard Fabric Energy Efficiency assumptions for notional option B"
-    )]
-    future_homes_standard_fee_not_b: bool,
-    #[arg(
-        long = "fhs-compliance",
-        help = "Run an FHS compliance calculation. This overrides all other FHS related flags"
-    )]
-    fhs_compliance: bool,
 }
 
 #[derive(Args, Clone, Default, Debug)]
@@ -125,9 +84,8 @@ fn main() -> anyhow::Result<()> {
     output_path.push(format!("{}__results", input_file_stem.to_str().unwrap()));
     fs::create_dir_all(&output_path)?;
     let input_file_name = input_file_stem.file_name().unwrap().to_str().unwrap();
-    // following is rough initial mapping given existing fhs options
-    let output_type = output_type_from_wrapper_choice(&args.wrapper_choice);
-    let file_output = FileOutput::new(
+    let output_type = "core";
+    let file_output = FileOutputWriter::new(
         output_path,
         format!("{input_file_name}__{output_type}__{{}}.{{}}"),
     );
@@ -137,7 +95,8 @@ fn main() -> anyhow::Result<()> {
             epw_file: Some(ref file),
             cibse_weather_file: None,
         } => {
-            let external_conditions_data = weather_data_to_vec(File::open(file)?);
+            let external_conditions_data =
+                epw_weather_data_to_external_conditions(File::open(file)?);
             match external_conditions_data {
                 Ok(data) => Some(data),
                 Err(_) => panic!("Could not parse the weather file!"),
@@ -150,82 +109,15 @@ fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
-    let project_flags = (&args).into();
-
-    let response = run_project(
+    run_project_from_input_file(
         BufReader::new(File::open(Path::new(input_file))?),
-        file_output,
+        &file_output,
         external_conditions,
+        args.output.as_ref(),
         args.tariff_file.as_ref().map(|f| f.as_str()),
-        &project_flags,
+        args.heat_balance,
+        args.detailed_output_heating_cooling,
     )?;
 
-    if let Some(response) = response {
-        debug!(
-            "JSON response: {}",
-            serde_json::to_string_pretty(&response)?
-        );
-    }
-
     Ok(())
-}
-
-fn output_type_from_wrapper_choice(wrapper_choice: &WrapperChoice) -> &str {
-    if wrapper_choice.future_homes_standard {
-        "FHS"
-    } else if wrapper_choice.future_homes_standard_fee {
-        "FHS_FEE"
-    } else if wrapper_choice.future_homes_standard_not_a {
-        "FHS_notA"
-    } else if wrapper_choice.future_homes_standard_not_b {
-        "FHS_notB"
-    } else if wrapper_choice.future_homes_standard_fee_not_a {
-        "FHS_FEE_notA"
-    } else if wrapper_choice.future_homes_standard_fee_not_b {
-        "FHS_FEE_notB"
-    } else {
-        "core"
-    }
-}
-
-impl From<&SapArgs> for ProjectFlags {
-    fn from(args: &SapArgs) -> Self {
-        let mut flags = ProjectFlags::empty();
-        if args.preprocess_only {
-            flags.insert(ProjectFlags::PRE_PROCESS_ONLY);
-        }
-        if args.heat_balance {
-            flags.insert(ProjectFlags::HEAT_BALANCE);
-        }
-        if args.detailed_output_heating_cooling {
-            flags.insert(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING);
-        }
-        #[cfg(feature = "fhs")]
-        {
-            let fhs = args.wrapper_choice;
-            if fhs.future_homes_standard {
-                flags.insert(ProjectFlags::FHS_ASSUMPTIONS);
-            }
-            if fhs.future_homes_standard_fee {
-                flags.insert(ProjectFlags::FHS_FEE_ASSUMPTIONS);
-            }
-            if fhs.future_homes_standard_not_a {
-                flags.insert(ProjectFlags::FHS_NOT_A_ASSUMPTIONS);
-            }
-            if fhs.future_homes_standard_not_b {
-                flags.insert(ProjectFlags::FHS_NOT_B_ASSUMPTIONS);
-            }
-            if fhs.future_homes_standard_fee_not_a {
-                flags.insert(ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS)
-            }
-            if fhs.future_homes_standard_fee_not_b {
-                flags.insert(ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS)
-            }
-            if fhs.fhs_compliance {
-                flags.insert(ProjectFlags::FHS_COMPLIANCE);
-            }
-        }
-
-        flags
-    }
 }

@@ -1,4 +1,7 @@
 {
+    "metadata": {
+        "hem_core_version": "1.0.0a1"
+    },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
         "start": 0,
@@ -6,43 +9,244 @@
         "step": 1
     },
     "ExternalConditions": {
-        "air_temperatures": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        "wind_speeds": [3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1],
-        "diffuse_horizontal_radiation": [0, 0, 0, 0, 0, 0, 0, 0, 52, 85, 95, 88, 80, 58, 21, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        "direct_beam_radiation": [0, 0, 0, 0, 0, 0, 0, 0, 169, 284, 328, 397, 354, 205, 60, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        "solar_reflectivity_of_ground": [0.2, 0.22, 0.2, 0.22, 0.247, 0.24, 0.26, 0.233, 0.287, 0.233, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.213, 0.227, 0.22, 0.24],
+        "air_temperatures": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "wind_speeds": [
+            3.9,
+            3.8,
+            3.9,
+            4.1,
+            3.8,
+            4.2,
+            4.3,
+            4.1,
+            3.9,
+            3.8,
+            3.9,
+            4.1,
+            3.8,
+            4.2,
+            4.3,
+            4.1,
+            3.9,
+            3.8,
+            3.9,
+            4.1,
+            3.8,
+            4.2,
+            4.3,
+            4.1
+        ],
+        "diffuse_horizontal_radiation": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            52,
+            85,
+            95,
+            88,
+            80,
+            58,
+            21,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "direct_beam_radiation": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            169,
+            284,
+            328,
+            397,
+            354,
+            205,
+            60,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "solar_reflectivity_of_ground": [
+            0.2,
+            0.22,
+            0.2,
+            0.22,
+            0.247,
+            0.24,
+            0.26,
+            0.233,
+            0.287,
+            0.233,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.213,
+            0.227,
+            0.22,
+            0.24
+        ],
         "latitude": 51.383,
         "longitude": -0.783,
         "direct_beam_conversion_needed": false,
         "shading_segments": [
-            {"start360": 0, "end360": 45},
-            {"start360": 45, "end360": 90},
-            {"start360": 90, "end360": 135},
-            {"start360": 135, "end360": 180,
+            {
+                "start360": 0,
+                "end360": 45
+            },
+            {
+                "start360": 45,
+                "end360": 90
+            },
+            {
+                "start360": 90,
+                "end360": 135
+            },
+            {
+                "start360": 135,
+                "end360": 180,
                 "shading": [
-                    {"type": "obstacle", "height": 10.5, "distance": 12}
+                    {
+                        "type": "obstacle",
+                        "height": 10.5,
+                        "distance": 12
+                    }
                 ]
             },
-            {"start360": 180, "end360": 225},
-            {"start360": 225, "end360": 270},
-            {"start360": 270, "end360": 315},
-            {"start360": 315, "end360": 360}
+            {
+                "start360": 180,
+                "end360": 225
+            },
+            {
+                "start360": 225,
+                "end360": 270
+            },
+            {
+                "start360": 270,
+                "end360": 315
+            },
+            {
+                "start360": 315,
+                "end360": 360
+            }
         ]
-
     },
     "InternalGains": {
         "metabolic gains": {
             "start_day": 0,
             "time_series_step": 1,
             "schedule": {
-                "main": [256, 368, 584, 416, 712, 448, 816, 648, 256, 368, 584, 416, 712, 448, 816, 648, 256, 368, 584, 416, 712, 448, 816, 648]
+                "main": [
+                    256,
+                    368,
+                    584,
+                    416,
+                    712,
+                    448,
+                    816,
+                    648,
+                    256,
+                    368,
+                    584,
+                    416,
+                    712,
+                    448,
+                    816,
+                    648,
+                    256,
+                    368,
+                    584,
+                    416,
+                    712,
+                    448,
+                    816,
+                    648
+                ]
             }
         },
         "other": {
             "start_day": 0,
             "time_series_step": 1,
             "schedule": {
-                "main": [88, 200, 184, 376, 576, 544, 728, 608, 88, 200, 184, 376, 576, 544, 728, 608, 88, 200, 184, 376, 576, 544, 728, 608]
+                "main": [
+                    88,
+                    200,
+                    184,
+                    376,
+                    576,
+                    544,
+                    728,
+                    608,
+                    88,
+                    200,
+                    184,
+                    376,
+                    576,
+                    544,
+                    728,
+                    608,
+                    88,
+                    200,
+                    184,
+                    376,
+                    576,
+                    544,
+                    728,
+                    608
+                ]
             }
         }
     },
@@ -53,8 +257,22 @@
             "gains_fraction": 0.5,
             "EnergySupply": "mains elec",
             "schedule": {
-                "8hrs": [32.0, 46.0, 33.0, 21.0, 12.0, 17.0, 25.0, 46.0],
-                "main": [{"value": "8hrs", "repeat": 3}]
+                "8hrs": [
+                    32.0,
+                    46.0,
+                    33.0,
+                    21.0,
+                    12.0,
+                    17.0,
+                    25.0,
+                    46.0
+                ],
+                "main": [
+                    {
+                        "value": "8hrs",
+                        "repeat": 3
+                    }
+                ]
             }
         },
         "cooking": {
@@ -63,16 +281,54 @@
             "gains_fraction": 1,
             "EnergySupply": "mains elec",
             "schedule": {
-                "8hrs": [300.0, 120.0, 220.0, 750.0, 890.0, 150.0, 550.0, 280.0],
-                "main": [{"value": "8hrs", "repeat": 3}]
+                "8hrs": [
+                    300.0,
+                    120.0,
+                    220.0,
+                    750.0,
+                    890.0,
+                    150.0,
+                    550.0,
+                    280.0
+                ],
+                "main": [
+                    {
+                        "value": "8hrs",
+                        "repeat": 3
+                    }
+                ]
             }
         }
     },
     "ColdWaterSource": {
         "mains water": {
             "start_day": 0,
-            "temperatures": [9.0, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.0, 9.1, 9.2, 9.3,
-                             9.4, 9.5, 9.6, 9.7, 9.0, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7],
+            "temperatures": [
+                9.0,
+                9.1,
+                9.2,
+                9.3,
+                9.4,
+                9.5,
+                9.6,
+                9.7,
+                9.0,
+                9.1,
+                9.2,
+                9.3,
+                9.4,
+                9.5,
+                9.6,
+                9.7,
+                9.0,
+                9.1,
+                9.2,
+                9.3,
+                9.4,
+                9.5,
+                9.6,
+                9.7
+            ],
             "time_series_step": 1
         }
     },
@@ -83,24 +339,38 @@
         }
     },
     "Control": {
-        "min_temp":{
+        "min_temp": {
             "type": "SetpointTimeControl",
             "start_day": 0,
             "time_series_step": 1,
-            "schedule":{
+            "schedule": {
                 "main": [
-                    {"value": null, "repeat": 8},
-                    {"value": 52.0, "repeat": 12},
-                    {"value": null, "repeat": 4}
+                    {
+                        "value": null,
+                        "repeat": 8
+                    },
+                    {
+                        "value": 52.0,
+                        "repeat": 12
+                    },
+                    {
+                        "value": null,
+                        "repeat": 4
+                    }
                 ]
             }
         },
-        "setpoint_temp_max":{
+        "setpoint_temp_max": {
             "type": "SetpointTimeControl",
             "start_day": 0,
             "time_series_step": 1,
-            "schedule":{
-                "main": [{"value": 55.0, "repeat": 24}]
+            "schedule": {
+                "main": [
+                    {
+                        "value": 55.0,
+                        "repeat": 24
+                    }
+                ]
             }
         },
         "main__hw timer__converted_from_OnOffTimeControl": {
@@ -108,8 +378,32 @@
             "start_day": 0,
             "time_series_step": 1,
             "schedule": {
-                "main": [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 21.0, 21.0, 21.0, 21.0, 21.0,
-                         21.0, 21.0, 21.0, 21.0,21.0, 21.0, 21.0, 21.0, 12.0, 12.0, 12.0, 12.0]
+                "main": [
+                    2.0,
+                    2.0,
+                    2.0,
+                    2.0,
+                    2.0,
+                    2.0,
+                    2.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    12.0,
+                    12.0,
+                    12.0,
+                    12.0
+                ]
             }
         }
     },
@@ -186,21 +480,42 @@
     "Events": {
         "Shower": {
             "IES": [
-                {"start": 4.1, "duration": 6, "temperature": 41.0},
-                {"start": 6, "duration": 6, "temperature": 41.0}
+                {
+                    "start": 4.1,
+                    "duration": 6,
+                    "temperature": 41.0
+                },
+                {
+                    "start": 6,
+                    "duration": 6,
+                    "temperature": 41.0
+                }
             ],
             "mixer": [
-                {"start": 7, "duration": 6, "temperature": 41.0}
+                {
+                    "start": 7,
+                    "duration": 6,
+                    "temperature": 41.0
+                }
             ]
         },
-        "Bath":{
+        "Bath": {
             "medium": [
-                {"start": 6, "temperature": 41.0, "volume":73, "duration":9}
+                {
+                    "start": 6,
+                    "temperature": 41.0,
+                    "volume": 73,
+                    "duration": 9
+                }
             ]
         },
         "Other": {
             "other": [
-                {"start": 7, "duration": 1, "temperature": 41.0}
+                {
+                    "start": 7,
+                    "duration": 1,
+                    "temperature": 41.0
+                }
             ]
         }
     },
@@ -213,7 +528,6 @@
             "Control": "main__hw timer__converted_from_OnOffTimeControl"
         }
     },
-
     "InfiltrationVentilation": {
         "cross_vent_possible": true,
         "shield_class": "Normal",
@@ -229,145 +543,167 @@
                 "pitch": 60
             }
         },
-        "Leaks" : {
-            "ventilation_zone_height" : 6,
+        "Leaks": {
+            "ventilation_zone_height": 6,
             "test_pressure": 50,
             "test_result": 1.2,
-            "env_area":220
+            "env_area": 220
         },
         "MechanicalVentilation": {
-            "mechvent1":{
+            "mechvent1": {
                 "sup_air_flw_ctrl": "ODA",
                 "sup_air_temp_ctrl": "NO_CTRL",
                 "vent_type": "Centralised continuous MEV",
-                "SFP":1.5,
+                "SFP": 1.5,
                 "EnergySupply": "mains elec",
-                "design_outdoor_air_flow_rate": 80
+                "design_outdoor_air_flow_rate": 80,
+                "orientation360": 180,
+                "pitch": 90,
+                "mid_height_air_flow_path": 2
             }
         }
     },
     "Zone": {
         "zone 1": {
             "SpaceHeatSystem": "main",
-            "area": 80.0,
-            "volume": 250.0,
-            "temp_setpnt_init": 21.0,
+            "area": 48.0,
+            "volume": 129.6,
+            "temp_setpnt_init": 20.0,
             "BuildingElement": {
+                "roof 0": {
+                    "type": "BuildingElementOpaque",
+                    "is_unheated_pitched_roof": false,
+                    "solar_absorption_coeff": 0.6,
+                    "thermal_resistance_construction": 2.992,
+                    "areal_heat_capacity": 18170,
+                    "mass_distribution_class": "D",
+                    "pitch": 0,
+                    "orientation360": 90,
+                    "base_height": 2.7,
+                    "height": 6,
+                    "width": 8,
+                    "area": 48.0
+                },
                 "wall 0": {
                     "type": "BuildingElementOpaque",
                     "solar_absorption_coeff": 0.6,
-                    "thermal_resistance_construction": 1.7,
-                    "areal_heat_capacity": 19000,
-                    "mass_distribution_class": "IE",
-                    "pitch": 90,
-                    "orientation360": 90,
-                    "base_height": 0,
-                    "height": 2.5,
-                    "width": 10,
-                    "area": 20.0
-                },
-                "wall 1":{
-                    "type": "BuildingElementOpaque",
-                    "solar_absorption_coeff": 0.61,
-                    "thermal_resistance_construction": 1.71,
-                    "areal_heat_capacity": 19100,
-                    "mass_distribution_class": "M",
-                    "pitch": 90,
-                    "orientation360": 270,
-                    "base_height": 0,
-                    "height": 2.5,
-                    "width": 10,
-                    "area": 25.0
-                },
-                "wall 2": {
-                    "type": "BuildingElementOpaque",
-                    "solar_absorption_coeff": 0.62,
-                    "thermal_resistance_construction": 1.72,
-                    "areal_heat_capacity": 19200,
-                    "mass_distribution_class": "E",
+                    "thermal_resistance_construction": 1.797,
+                    "areal_heat_capacity": 145154,
+                    "mass_distribution_class": "I",
                     "pitch": 90,
                     "orientation360": 0,
                     "base_height": 0,
-                    "height": 2.5,
+                    "height": 2.7,
                     "width": 8,
-                    "area": 20.0
+                    "area": 21.6
                 },
-                "wall 3":{
+                "wall 1": {
                     "type": "BuildingElementOpaque",
-                    "solar_absorption_coeff": 0.63,
-                    "thermal_resistance_construction": 1.73,
-                    "areal_heat_capacity": 19300,
+                    "solar_absorption_coeff": 0.6,
+                    "thermal_resistance_construction": 1.797,
+                    "areal_heat_capacity": 145154,
+                    "mass_distribution_class": "I",
+                    "pitch": 90,
+                    "orientation360": 90,
+                    "base_height": 0,
+                    "height": 2.7,
+                    "width": 6,
+                    "area": 16.2
+                },
+                "wall 2": {
+                    "type": "BuildingElementOpaque",
+                    "solar_absorption_coeff": 0.6,
+                    "thermal_resistance_construction": 1.797,
+                    "areal_heat_capacity": 145154,
                     "mass_distribution_class": "I",
                     "pitch": 90,
                     "orientation360": 180,
                     "base_height": 0,
-                    "height": 2.5,
-                    "width": 6,
-                    "area": 15.0
+                    "height": 2.7,
+                    "width": 8,
+                    "area": 9.6
                 },
-                "window 0":{
-                    "type": "BuildingElementTransparent",
-                    "thermal_resistance_construction": 0.4,
+                "wall 3": {
+                    "type": "BuildingElementOpaque",
+                    "solar_absorption_coeff": 0.6,
+                    "thermal_resistance_construction": 1.797,
+                    "areal_heat_capacity": 145154,
+                    "mass_distribution_class": "I",
                     "pitch": 90,
-                    "orientation360": 90,
-                    "g_value": 0.75,
-                    "frame_area_fraction": 0.25,
-                    "base_height": 1,
-                    "height": 1.25,
-                    "width": 4,
-                    "free_area_height": 1.6,
-                    "mid_height": 1.5,
-                    "max_window_open_area": 3,
+                    "orientation360": 270,
+                    "base_height": 0,
+                    "height": 2.7,
+                    "width": 6,
+                    "area": 16.2
+                },
+                "window 0": {
+                    "type": "BuildingElementTransparent",
+                    "thermal_resistance_construction": 0.34,
+                    "pitch": 90,
+                    "orientation360": 180,
+                    "g_value": 0.71,
+                    "frame_area_fraction": 0.0,
+                    "base_height": 0.2,
+                    "height": 2,
+                    "width": 3,
+                    "free_area_height": 0.2,
+                    "mid_height": 1.2,
+                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                        "mid_height_air_flow_path":1.5
+                            "mid_height_air_flow_path": 1.2
                         }
                     ],
                     "shading": [
-                        {"type": "overhang", "depth": 0.5, "distance": 0.5},
-                        {"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
-                        {"type": "sidefinright", "depth":0.25, "distance":0.1}
+                        {
+                            "type": "overhang",
+                            "depth": 0,
+                            "distance": 400
+                        }
                     ]
                 },
-                "ground":{
-                    "type": "BuildingElementGround",
-                    "total_area": 15.0,
-                    "area": 15.0,
-                    "pitch": 180.0,
-                    "u_value": 0.4,
-                    "thermal_resistance_floor_construction": 0.2,
-                    "areal_heat_capacity": 19300,
-                    "mass_distribution_class": "D",
-                    "floor_type": "Slab_no_edge_insulation",
-                    "thickness_walls": 0.2,
-                    "perimeter": 16.0,
-                    "psi_wall_floor_junc": 0.5
+                "window 1": {
+                    "type": "BuildingElementTransparent",
+                    "thermal_resistance_construction": 0.34,
+                    "pitch": 90,
+                    "orientation360": 180,
+                    "g_value": 0.71,
+                    "frame_area_fraction": 0.0,
+                    "base_height": 0.2,
+                    "height": 2,
+                    "width": 3,
+                    "free_area_height": 0.2,
+                    "mid_height": 1.2,
+                    "max_window_open_area": 0,
+                    "window_part_list": [
+                        {
+                            "mid_height_air_flow_path": 1.2
+                        }
+                    ],
+                    "shading": [
+                        {
+                            "type": "overhang",
+                            "depth": 0,
+                            "distance": 400
+                        }
+                    ]
                 },
-                "wall 4":{
-                    "type": "BuildingElementAdjacentConditionedSpace",
-                    "area": 20.0,
-                    "pitch": 0.0,
-                    "thermal_resistance_construction": 1.74,
-                    "areal_heat_capacity": 19400,
-                    "mass_distribution_class": "I"
+                "ground": {
+                    "type": "BuildingElementGround",
+                    "total_area": 48.0,
+                    "area": 48.0,
+                    "pitch": 180.0,
+                    "u_value": 0.0396,
+                    "thermal_resistance_floor_construction": 24.488,
+                    "areal_heat_capacity": 112000,
+                    "mass_distribution_class": "I",
+                    "floor_type": "Slab_no_edge_insulation",
+                    "thickness_walls": 0.1705,
+                    "perimeter": 28.0,
+                    "psi_wall_floor_junc": 0.0
                 }
             },
-            "ThermalBridging": {
-                "TB1": {
-                    "type": "ThermalBridgeLinear",
-                    "linear_thermal_transmittance": 1.0,
-                    "length": 3.0
-                },
-                "TB2": {
-                    "type": "ThermalBridgeLinear",
-                    "linear_thermal_transmittance": 0.1,
-                    "length": 2.0
-                },
-                "TB3": {
-                    "type": "ThermalBridgePoint",
-                    "heat_transfer_coeff": 2.0
-                }
-            }
+            "ThermalBridging": {}
         }
     },
     "OnSiteGeneration": {
@@ -377,9 +713,9 @@
             "ventilation_strategy": "moderately_ventilated",
             "pitch": 30,
             "orientation360": 180,
-            "base_height":10,
-            "height":1,
-            "width":1,
+            "base_height": 10,
+            "height": 1,
+            "width": 1,
             "EnergySupply": "mains elec",
             "shading": [],
             "inverter_peak_power_dc": 2,

@@ -4,8 +4,8 @@ use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ControlCombination, ControlCombinationOperation, ControlCombinations, ControlLogicType,
-    ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SmartApplianceBattery,
-    MAIN_REFERENCE,
+    ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SetpointBoundsInput,
+    SmartApplianceBattery, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
@@ -25,9 +25,11 @@ use std::sync::Arc;
 pub(crate) enum Control {
     OnOffTime(OnOffTimeControl),
     Charge(ChargeControl),
-    OnOffMinimisingTime(OnOffMinimisingTimeControl),
+    OnOffMinimisingTime(OnOffCostMinimisingTimeControl),
     SetpointTime(SetpointTimeControl),
     CombinationTime(CombinationTimeControl),
+    #[cfg(test)]
+    Mock(MockControl),
 }
 
 // macro so accessing individual controls through the enum isn't so repetitive
@@ -44,15 +46,18 @@ macro_rules! per_control {
             Control::SetpointTime($pattern) => $res,
             #[allow(noop_method_call)]
             Control::CombinationTime($pattern) => $res,
+            #[cfg(test)]
+            #[allow(noop_method_call)]
+            Control::Mock($pattern) => $res,
         }
     };
 }
 
-use crate::compare_floats::min_of_2;
+use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::energy_supply::energy_supply::EnergySupply;
 pub(crate) use per_control;
 
-pub trait ControlBehaviour: Send + Sync {
+pub(crate) trait ControlBehaviour: Send + Sync {
     fn in_required_period(
         &self,
         _simulation_time_iteration: &SimulationTimeIteration,
@@ -63,18 +68,16 @@ pub trait ControlBehaviour: Send + Sync {
     fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
         None
     }
+
+    fn is_on(&self, _simulation_time_iteration: &SimulationTimeIteration) -> bool {
+        true
+    }
 }
 
 impl Debug for dyn ControlBehaviour {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // if we can downcast self to e.g. Control (if it is one), which we know is Debug, this would be better
         write!(f, "A control object")
-    }
-}
-
-impl Control {
-    pub fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
-        per_control!(self, c => {c.is_on(&simulation_time_iteration)})
     }
 }
 
@@ -88,6 +91,10 @@ impl ControlBehaviour for Control {
 
     fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
         per_control!(self, c => { c.setpnt(simulation_time_iteration) })
+    }
+
+    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
+        per_control!(self, c => {c.is_on(simulation_time_iteration)})
     }
 }
 
@@ -119,7 +126,7 @@ impl HeatSourceControl {
 
 /// An object to model a time-only control with on/off (not modulating) operation
 #[derive(Clone, Debug)]
-pub struct OnOffTimeControl {
+pub(crate) struct OnOffTimeControl {
     /// list of boolean values where true means "on" (one entry per hour)
     schedule: Vec<Option<bool>>,
     start_day: u32,
@@ -127,7 +134,7 @@ pub struct OnOffTimeControl {
 }
 
 impl OnOffTimeControl {
-    pub fn new(
+    pub(crate) fn new(
         schedule: Vec<Option<bool>>,
         start_day: u32,
         time_series_step: f64,
@@ -138,37 +145,34 @@ impl OnOffTimeControl {
             time_series_step,
         }
     }
+}
 
-    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+impl ControlBehaviour for OnOffTimeControl {
+    fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
             .unwrap_or(false)
     }
 }
-
-impl ControlBehaviour for OnOffTimeControl {}
 
 /// An object to model a control that governs electrical charging of a heat storage device
 /// that can respond to signals from the grid, for example when carbon intensity is low
 #[derive(Debug)]
 pub(crate) struct ChargeControl {
     logic_type: ControlLogicType,
-    /// list of boolean values where true means "on" (one entry per hour)
-    pub schedule: Vec<bool>,
-    pub start_day: u32,
-    pub time_series_step: f64,
-    /// Proportion of the charge targeted for each day
-    pub charge_level: Vec<Option<f64>>,
+    schedule: Vec<bool>,
+    start_day: u32,
+    time_series_step: f64,
+    charge_level: Vec<Option<f64>>,
     temp_charge_cut: Option<f64>,
     temp_charge_cut_delta: Option<Vec<f64>>,
-    _min_target_charge_factor: Option<f64>,
-    _full_charge_temp_diff: Option<f64>,
-    external_conditions: Arc<ExternalConditions>,
+    external_conditions: Option<Arc<ExternalConditions>>,
     external_sensor: Option<ExternalSensor>,
-    hhrsh: Option<ChargeControlHhrshFields>,
+    heat_retention_data: Option<ChargeControlHeatRetentionFields>,
+    charge_calc_time: f64,
 }
 
 #[derive(Debug)]
-pub(crate) struct ChargeControlHhrshFields {
+pub(crate) struct ChargeControlHeatRetentionFields {
     steps_day: usize,
     demand: Arc<RwLock<BoundedVecDeque<Option<f64>>>>,
     past_ext_temp: Arc<RwLock<BoundedVecDeque<Option<f64>>>>,
@@ -177,21 +181,42 @@ pub(crate) struct ChargeControlHhrshFields {
 }
 
 impl ChargeControl {
+    /// Construct a ChargeControl object
+    /// Arguments:
+    /// * `logic_type`              - ControlLogicType enum
+    /// * `schedule`                - list of boolean values where true means "on" (one entry per hour)
+    /// * `simulation_time`         - reference to SimulationTime object
+    /// * `start_day`               - first day of the time series, day of the year, 0 to 365 (single value)
+    /// * `time_series_step`        - timestep of the time series data, in hours__get_heat_cool_systems_for_zone
+    /// * `charge_level`            - Proportion of the charge targeted for each day
+    /// * `temp_charge_cut`         - Room temperature at which, if sensed during a charging hour, the control stops charging
+    ///                             (Required for AUTOMATIC, CELECT, and HHRSH logic types only)
+    /// * `temp_charge_cut_delta`   - array with values for a temperature adjustment which is applied
+    ///                                  to the nominal internal air temperature above which the control stops
+    ///                                  charging the device with heat.
+    ///                                  (Optional for AUTOMATIC, CELECT, and HHRSH logic types)
+    /// * `extcond`                 - reference to ExternalConditions object (for HHRSH and HEAT_BATTERY logic)
+    /// * `external_sensor`         - external weather sensor that acts as a limiting device to prevent storage
+    ///                                  heaters from overcharging (for AUTOMATIC and CELECT logic)
+    /// * `charge_calc_time`        - Indicates from which hour of the day the system starts to target the charge level
+    ///                             for the next day rather than the current day
     pub(crate) fn new(
         logic_type: ControlLogicType,
         schedule: Vec<bool>,
-        simulation_timestep: f64,
+        simulation_time_iteration: &SimulationTimeIteration,
         start_day: u32,
         time_series_step: f64,
         charge_level: Vec<Option<f64>>,
         temp_charge_cut: Option<f64>,
         temp_charge_cut_delta: Option<Vec<f64>>,
-        min_target_charge_factor: Option<f64>,
-        full_charge_temp_diff: Option<f64>,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: Option<Arc<ExternalConditions>>,
         external_sensor: Option<ExternalSensor>,
+        charge_calc_time: Option<f64>,
     ) -> anyhow::Result<Self> {
-        let hhrsh_fields: Option<ChargeControlHhrshFields> = match logic_type {
+        let simulation_timestep = simulation_time_iteration.timestep;
+        let charge_calc_time = charge_calc_time.unwrap_or(21.);
+
+        let heat_retention_data: Option<ChargeControlHeatRetentionFields> = match logic_type {
             ControlLogicType::Manual => {
                 // do nothing
                 None
@@ -204,15 +229,21 @@ impl ChargeControl {
             }
             ControlLogicType::Celect => {
                 if temp_charge_cut.is_none() {
-                    bail!("CElect ChargeControl definition is missing input parameters.");
+                    bail!("Celect ChargeControl definition is missing input parameters.");
                 }
                 None
             }
             ControlLogicType::Hhrsh => {
                 if temp_charge_cut.is_none() {
-                    bail!("Hhrsh ChargeControl definition is missing input parameters.");
+                    bail!("Hhrsh ChargeControl definition is missing input temp_charge_cut parameters.");
                 }
 
+                if external_conditions.is_none() {
+                    bail!("Hhrsh ChargeControl definition is missing external conditions.");
+                }
+                let external_conditions = external_conditions.as_ref().unwrap(); // we know it exists at this point
+
+                // Initialize HHRSH-specific attributes
                 let steps_day = (HOURS_PER_DAY as f64 / simulation_timestep) as usize;
                 let demand = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
                     repeat(None),
@@ -226,8 +257,13 @@ impl ChargeControl {
                     repeat(Some(0.0)),
                     steps_day,
                 )));
+                for i in 0..steps_day {
+                    future_ext_temp.write().push_back(Some(
+                        external_conditions.air_temp_with_offset(simulation_time_iteration, i),
+                    ));
+                }
                 let energy_to_store = AtomicF64::new(0.0);
-                Some(ChargeControlHhrshFields {
+                Some(ChargeControlHeatRetentionFields {
                     steps_day,
                     demand,
                     past_ext_temp,
@@ -238,9 +274,39 @@ impl ChargeControl {
                 // TODO (from Python) Consider adding solar data for HHRSH logic in addition to heating degree hours.
             }
             ControlLogicType::HeatBattery => {
-                // in the Python, energy_to_store is initialised at 0, but this value is not then accessed
-                // therefore, just eliding this field as it's defined here within ChargeControlHhrshFields
-                None
+                // Heat battery doesn't require temp_charge_cut but needs other parameters
+                if external_conditions.is_none() {
+                    bail!("Heat_battery ChargeControl definition is missing external conditions.");
+                }
+                let external_conditions = external_conditions.as_ref().unwrap(); // we know it exists at this point
+
+                // Initialize heat battery-specific attributes
+                let steps_day = (HOURS_PER_DAY as f64 / simulation_timestep) as usize;
+                let demand = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
+                    repeat(None),
+                    steps_day,
+                )));
+                let past_ext_temp = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
+                    repeat(None),
+                    steps_day,
+                )));
+                let future_ext_temp = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
+                    repeat(Some(0.0)),
+                    steps_day,
+                )));
+                for i in 0..steps_day {
+                    future_ext_temp.write().push_back(Some(
+                        external_conditions.air_temp_with_offset(simulation_time_iteration, i),
+                    ));
+                }
+                let energy_to_store = AtomicF64::new(0.0);
+                Some(ChargeControlHeatRetentionFields {
+                    steps_day,
+                    demand,
+                    past_ext_temp,
+                    future_ext_temp,
+                    energy_to_store,
+                })
             }
         };
 
@@ -252,11 +318,10 @@ impl ChargeControl {
             charge_level,
             temp_charge_cut,
             temp_charge_cut_delta,
-            _min_target_charge_factor: min_target_charge_factor,
-            _full_charge_temp_diff: full_charge_temp_diff,
             external_conditions,
             external_sensor,
-            hhrsh: hhrsh_fields,
+            heat_retention_data,
+            charge_calc_time,
         })
     }
 
@@ -264,10 +329,7 @@ impl ChargeControl {
         self.logic_type
     }
 
-    pub(crate) fn is_on(&self, iteration: &SimulationTimeIteration) -> bool {
-        self.schedule[iteration.time_series_idx(self.start_day, self.time_series_step)]
-    }
-
+    // In Python there is an abstract method target_charge on the ControlCharge class and a concrete implementation here
     /// Return the charge level value from the list given in inputs; one value per day
     pub(crate) fn target_charge(
         &self,
@@ -276,23 +338,27 @@ impl ChargeControl {
     ) -> anyhow::Result<f64> {
         // Calculate target charge nominal when unit is on
         let mut target_charge_nominal = if self.is_on(&simtime) {
-            self.charge_level[simtime.time_series_idx_days(self.start_day, self.time_series_step)]
-                .unwrap_or_default()
+            self.charge_level
+                [simtime.time_series_idx_days(self.start_day, Some(self.charge_calc_time))]
+            .unwrap_or_default()
         } else {
             // If unit is off send 0.0 for target charge
             0.
         };
 
-        Ok(match self.logic_type {
-            ControlLogicType::Manual | ControlLogicType::HeatBattery => target_charge_nominal,
+        let target_charge = match self.logic_type {
+            ControlLogicType::Manual => target_charge_nominal,
             _ => {
                 // automatic, celect and hhrsh control include temperature charge cut logic
-                let temp_charge_cut = self.temp_charge_cut_corr(simtime)?;
+                let temp_charge_cut = self.temp_charge_cut_corr(simtime);
 
-                if temp_air.is_some_and(|temp_air| temp_air >= temp_charge_cut) {
+                if temp_charge_cut.is_some_and(|temp_charge_cut| {
+                    temp_air.is_some_and(|temp_air| temp_air >= temp_charge_cut)
+                }) {
                     // Control logic cut when temp_air is over temp_charge cut
                     target_charge_nominal = 0.;
                 }
+
                 match self.logic_type {
                     ControlLogicType::Automatic => {
                         // Automatic charge control can be achieved using internal thermostat(s) to
@@ -300,9 +366,12 @@ impl ChargeControl {
 
                         // Controls can also be supplemented by an external weather sensor,
                         // which tends to act as a limiting device to prevent the storage heaters from overcharging.
-                        if self.external_sensor.is_some() {
+                        if let (Some(_), Some(external_conditions)) = (
+                            self.external_sensor.as_ref(),
+                            self.external_conditions.as_ref(),
+                        ) {
                             let limit =
-                                self.get_limit_factor(self.external_conditions.air_temp(&simtime))?;
+                                self.get_limit_factor(external_conditions.air_temp(&simtime))?;
                             target_charge_nominal * limit
                         } else {
                             target_charge_nominal
@@ -319,15 +388,18 @@ impl ChargeControl {
                         //
                         // Controls can also be supplemented by an external weather sensor,
                         // which tends to act as a limiting device to prevent the storage heaters from overcharging.
-                        if self.external_sensor.is_some() {
+                        if let (Some(_), Some(external_conditions)) = (
+                            self.external_sensor.as_ref(),
+                            self.external_conditions.as_ref(),
+                        ) {
                             let limit =
-                                self.get_limit_factor(self.external_conditions.air_temp(&simtime))?;
+                                self.get_limit_factor(external_conditions.air_temp(&simtime))?;
                             target_charge_nominal * limit
                         } else {
                             target_charge_nominal
                         }
                     }
-                    ControlLogicType::Hhrsh => {
+                    ControlLogicType::Hhrsh | ControlLogicType::HeatBattery => {
                         // A ‘high heat retention storage heater’ is one with heat retention not less
                         // than 45% measured according to BS EN 60531. It incorporates a timer, electronic
                         // room thermostat and fan to control the heat output. It is also able to estimate
@@ -340,12 +412,11 @@ impl ChargeControl {
                         }
                     }
                     ControlLogicType::Manual => unreachable!(),
-                    ControlLogicType::HeatBattery => {
-                        unimplemented!("HeatBattery ChargeControl logic is not implemented yet.");
-                    }
                 }
             }
-        })
+        };
+
+        Ok(target_charge)
     }
 
     pub(crate) fn energy_to_store(
@@ -354,25 +425,30 @@ impl ChargeControl {
         base_temp: f64,
         simtime: SimulationTimeIteration,
     ) -> f64 {
-        // ugly, but this method cannot be called when control does not have HHRSH logic type
-        if !matches!(self.logic_type, ControlLogicType::Hhrsh) {
-            unreachable!("energy_to_store() should not be called when control does not have HHRSH logic type.");
-        }
-        let ChargeControlHhrshFields {
+        // ugly, but this method cannot be called when control does not have HHRSH or Heat Battery logic type
+        let heat_retention_data = if let Some(heat_retention_data) =
+            self.heat_retention_data.as_ref()
+        {
+            heat_retention_data
+        } else {
+            unreachable!("energy_to_store() should not be called when control does not have HHRSH or HeatBattery logic type.");
+        };
+        let ChargeControlHeatRetentionFields {
             steps_day,
             demand,
             past_ext_temp,
             future_ext_temp,
             energy_to_store: energy_to_store_atomic,
-        } = self.hhrsh.as_ref().expect("HHRSH fields should be set.");
+        } = heat_retention_data;
         demand.write().push_front(Some(energy_demand));
-        future_ext_temp.write().push_front(Some(
-            self.external_conditions
-                .air_temp_with_offset(&simtime, *steps_day),
-        ));
-        past_ext_temp
-            .write()
-            .push_front(Some(self.external_conditions.air_temp(&simtime)));
+        if let Some(external_conditions) = self.external_conditions.as_ref() {
+            future_ext_temp.write().push_front(Some(
+                external_conditions.air_temp_with_offset(&simtime, *steps_day),
+            ));
+            past_ext_temp
+                .write()
+                .push_front(Some(external_conditions.air_temp(&simtime)));
+        }
 
         let future_hdh =
             self.calculate_heating_degree_hours(future_ext_temp.read().as_ref(), base_temp);
@@ -397,22 +473,24 @@ impl ChargeControl {
         energy_to_store
     }
 
-    /// Correct nominal/json temp_charge_cut with monthly table
-    pub(crate) fn temp_charge_cut_corr(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        let temp_charge_cut_delta = if let Some(temp_charge_cut_delta) =
-            self.temp_charge_cut_delta.as_ref()
-        {
-            temp_charge_cut_delta[simtime.time_series_idx(self.start_day, self.time_series_step)]
-        } else {
-            0.0
-        };
+    ///Correct nominal/json temp_charge_cut with monthly table
+    /// Arguments
+    /// returns -- temp_charge_cut (corrected)
+    pub(crate) fn temp_charge_cut_corr(&self, simtime: SimulationTimeIteration) -> Option<f64> {
+        if let Some(temp_charge_cut) = self.temp_charge_cut.as_ref() {
+            let temp_charge_cut_delta =
+                if let Some(temp_charge_cut_delta) = self.temp_charge_cut_delta.as_ref() {
+                    temp_charge_cut_delta
+                        [simtime.time_series_idx(self.start_day, self.time_series_step)]
+                } else {
+                    0.0
+                };
 
-        Ok(self.temp_charge_cut.ok_or_else(|| {
-            anyhow!("temp_charge_cut in this ChargeControl was expected to be set.")
-        })? + temp_charge_cut_delta)
+            Some(temp_charge_cut + temp_charge_cut_delta)
+        } else {
+            // Return None if temp_charge_cut is not set (e.g., for heat batteries)
+            None
+        }
     }
 
     fn calculate_heating_degree_hours(
@@ -473,161 +551,261 @@ impl ChargeControl {
     }
 }
 
-impl ControlBehaviour for ChargeControl {}
-
-#[derive(Clone, Debug)]
-pub struct OnOffMinimisingTimeControl {
-    /// list of boolean values where true means "on" (one entry per hour)
-    schedule: Vec<bool>,
-    start_day: u32,
-    time_series_step: f64,
+impl ControlBehaviour for ChargeControl {
+    // In Python this is inherited from the BoolTimeControl class
+    fn is_on(&self, iteration: &SimulationTimeIteration) -> bool {
+        self.schedule[iteration.time_series_idx(self.start_day, self.time_series_step)]
+    }
 }
 
-impl OnOffMinimisingTimeControl {
-    pub fn new(
+#[derive(Clone, Debug)]
+pub(crate) struct OnOffCostMinimisingTimeControl {
+    schedule: Vec<f64>,
+    start_day: u32,
+    time_series_step: f64,
+    time_on_daily: f64,
+    on_off_schedule: Vec<bool>,
+}
+
+impl OnOffCostMinimisingTimeControl {
+    /// Construct an OnOffCostMinimisingControl object
+    ///
+    /// Arguments:
+    /// * `schedule` - list of cost values (one entry per time_series_step)
+    /// * `simulation_time` - reference to SimulationTime object
+    /// * `start_day` - first day of the time series, day of the year, 0 to 365 (single value)
+    /// * `time_series_step` - timestep of the time series data, in hours
+    /// * `time_on_daily` - number of "on" hours to be set per day
+    pub(crate) fn new(
         schedule: Vec<f64>,
         start_day: u32,
         time_series_step: f64,
         time_on_daily: f64,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let timesteps_per_day = (HOURS_IN_DAY as f64 / time_series_step) as usize;
         let timesteps_on_daily = (time_on_daily / time_series_step) as usize;
         let time_series_len_days =
             ((schedule.len() as f64 * time_series_step / HOURS_IN_DAY as f64).ceil()) as usize;
 
-        let mut built_schedule: Vec<bool> = vec![];
+        // For each day of schedule, find the specified number of hours with the lowest cost
+        let mut on_off_schedule: Vec<bool> = vec![];
         for day in 0..time_series_len_days {
             // Get part of the schedule for current day
             let schedule_day_start = day * timesteps_per_day;
             let schedule_day_end = schedule_day_start + timesteps_per_day;
+
+            // Added below check in the Rust before we try to access `schedule` elements by range
+            // just below. This ensures that we handle the case when the end of the range is greater
+            // than the length of the schedule (otherwise we'd get a panic in Rust). Python is more
+            // lenient and will assume access elements up to the last one and will not error.
+            if schedule.len() < schedule_day_end {
+                bail!("There is a mismatch between the schedule length and the timesteps per day (hours_per_day / time_series_step)")
+            }
             let schedule_day = schedule[schedule_day_start..schedule_day_end].to_vec();
 
             // Find required number of timesteps with lowest costs
             let mut schedule_day_cost_lowest = schedule_day.clone();
             schedule_day_cost_lowest.sort_by(f64::total_cmp);
-            let schedule_day_cost_lowest = schedule_day_cost_lowest[0..timesteps_on_daily].to_vec();
+            let schedule_day_cost_lowest = schedule_day_cost_lowest[0..timesteps_on_daily]
+                .iter()
+                .dedup()
+                .collect_vec();
 
             // Initialise boolean schedule for day
             let mut schedule_onoff_day = vec![false; timesteps_per_day];
 
-            assert_eq!(schedule_onoff_day.len(), schedule_day.len());
+            // Set lowest cost times to True, then next lowest etc. until required
+            // number of timesteps have been set to True
+            if schedule_onoff_day.len() != schedule_day.len() {
+                bail!("Different lengths for schedule_onoff_day and schedule_day")
+            }
+
             let mut timesteps_to_be_allocated = timesteps_on_daily;
             for cost in schedule_day_cost_lowest.iter() {
                 for (idx, entry) in schedule_day.iter().enumerate() {
                     if timesteps_to_be_allocated < 1 {
                         break;
                     }
-                    if entry == cost {
+                    if entry == *cost {
                         schedule_onoff_day[idx] = true;
                         timesteps_to_be_allocated -= 1;
                     }
                 }
             }
-            built_schedule.extend(schedule_onoff_day);
+            // Add day of schedule to overall
+            on_off_schedule.extend(schedule_onoff_day);
         }
 
-        OnOffMinimisingTimeControl {
-            schedule: built_schedule,
+        Ok(OnOffCostMinimisingTimeControl {
+            schedule,
             start_day,
             time_series_step,
-        }
-    }
-
-    pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
-        self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
+            time_on_daily,
+            on_off_schedule,
+        })
     }
 }
 
-impl ControlBehaviour for OnOffMinimisingTimeControl {}
+impl ControlBehaviour for OnOffCostMinimisingTimeControl {
+    /// Return true if control will allow system to run
+    fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+        self.on_off_schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
+    }
+}
 
 #[derive(Clone, Debug)]
-pub struct SetpointTimeControl {
+/// An object to model a control with a setpoint which varies per timestep
+pub(crate) struct SetpointTimeControl {
     /// list of float values (one entry per hour)
     schedule: Vec<Option<f64>>,
     /// first day of the time series, day of the year, 0 to 365 (single value)
     start_day: u32,
     /// timestep of the time series data, in hours
     time_series_step: f64,
-    /// min setpoint allowed
-    setpoint_min: Option<f64>,
-    /// max setpoint allowed
-    setpoint_max: Option<f64>,
-    /// if both min and max limits are set but setpoint isn't,
-    /// whether to default to min (false) or max (true)
-    default_to_max: bool,
+    setpoint_bounds: SetpointBounds,
     /// how long before heating period the system
     /// should switch on, in hours
     timesteps_advstart: u32,
 }
 
-/// Return true if current time is inside specified time for heating/cooling
-///
-/// (not including timesteps where system is only on due to min or max
-/// setpoint or advanced start)
 impl SetpointTimeControl {
-    pub fn new(
+    /// Construct a SetpointTimeControl object
+    ///
+    /// Arguments:
+    /// * `schedule` - list of float values (one entry per hour)
+    /// * `simulation_time` - reference to SimulationTime object
+    /// * `start_day` - first day of the time series, day of the year, 0 to 365 (single value)
+    /// * `time_series_step` - timestep of the time series data, in hours
+    /// * `setpoint_min` - min setpoint allowed
+    /// * `setpoint_max` - max setpoint allowed
+    /// * `default_to_max` - if both min and max limits are set but setpoint isn't,
+    ///                      whether to default to min (False) or max (True)
+    /// * `duration_advanced_start` - how long before heating period the system
+    ///                               should switch on, in hours
+    pub(crate) fn new(
         schedule: Vec<Option<f64>>,
         start_day: u32,
         time_series_step: f64,
-        setpoint_min: Option<f64>,
-        setpoint_max: Option<f64>,
-        default_to_max: Option<bool>,
-        duration_advanced_start: f64,
+        setpoint_bounds: Option<SetpointBoundsInput>,
+        duration_advanced_start: Option<f64>,
         timestep: f64,
-    ) -> Result<Self, &'static str> {
-        if setpoint_min.is_some() && setpoint_max.is_some() && default_to_max.is_none() {
-            return Err(
-                "default_to_max should be set when both setpoint_min and setpoint_max are set",
-            );
-        }
-
-        Ok(SetpointTimeControl {
-            schedule,
-            start_day,
-            time_series_step,
-            setpoint_min,
-            setpoint_max,
-            default_to_max: default_to_max.unwrap_or(false),
+    ) -> Self {
+        let duration_advanced_start = duration_advanced_start.unwrap_or(0.0);
+        Self {
+            schedule, // in Python now part of initialising base class (FloatOrNoneTimeControl > BaseTimeControl)
+            start_day, // in Python now part of initialising base class (FloatOrNoneTimeControl > BaseTimeControl)
+            time_series_step, // in Python now part of initialising base class (FloatOrNoneTimeControl > BaseTimeControl)
+            setpoint_bounds: setpoint_bounds.into(),
             timesteps_advstart: (duration_advanced_start / timestep).round() as u32,
-        })
+        }
     }
 
-    pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
-        let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
-
-        self.is_on_for_timestep_idx(schedule_idx)
-    }
+    // in_required_period method can be found here in Python, in Rust it's part of the
+    // implementation block of ControlBehaviour further down
 
     fn is_on_for_timestep_idx(&self, schedule_idx: usize) -> bool {
         let setpnt = self.schedule[schedule_idx];
 
         if setpnt.is_none() {
+            // Look ahead for duration of warmup period: system is on if setpoint
+            // is not None heating period if found
             for timesteps_ahead in 1..(self.timesteps_advstart + 1) {
                 let timesteps_ahead = timesteps_ahead as usize;
                 if self.schedule.len() <= (schedule_idx + timesteps_ahead) {
+                    // Stop looking ahead if we have reached the end of the schedule
                     break;
                 }
                 if self.schedule[schedule_idx + timesteps_ahead].is_some() {
+                    // If heating period starts within duration of warmup period
+                    // from now, system is on
                     return true;
                 }
             }
         }
 
-        !(setpnt.is_none() && self.setpoint_min.is_none() && self.setpoint_max.is_none())
+        // For this type of control, system is always on if min or max are set
+        !(setpnt.is_none() && matches!(self.setpoint_bounds, SetpointBounds::NoSetpoints))
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum SetpointBounds {
+    MinAndMax {
+        /// Minimum setpoint allowed
+        setpoint_min: f64,
+
+        /// Maximum setpoint allowed
+        setpoint_max: f64,
+
+        /// If both min and max limits are set but setpoint is not, whether to default to min (false) or max (true)
+        default_to_max: bool,
+    },
+    MinOnly {
+        /// Minimum setpoint allowed
+        setpoint_min: f64,
+    },
+    MaxOnly {
+        /// Maximum setpoint allowed
+        setpoint_max: f64,
+    },
+    NoSetpoints,
+}
+
+impl SetpointBounds {
+    fn setpoint_max(&self) -> Option<f64> {
+        match self {
+            Self::MinAndMax { setpoint_max, .. } => Some(*setpoint_max),
+            Self::MaxOnly { setpoint_max } => Some(*setpoint_max),
+            _ => None,
+        }
+    }
+
+    fn setpoint_min(&self) -> Option<f64> {
+        match self {
+            Self::MinAndMax { setpoint_min, .. } => Some(*setpoint_min),
+            Self::MinOnly { setpoint_min } => Some(*setpoint_min),
+            _ => None,
+        }
+    }
+}
+
+impl From<Option<SetpointBoundsInput>> for SetpointBounds {
+    fn from(value: Option<SetpointBoundsInput>) -> Self {
+        match value {
+            Some(input) => match input {
+                SetpointBoundsInput::MinAndMax {
+                    setpoint_min,
+                    setpoint_max,
+                    default_to_max,
+                } => Self::MinAndMax {
+                    setpoint_min,
+                    setpoint_max,
+                    default_to_max,
+                },
+                SetpointBoundsInput::MinOnly { setpoint_min } => Self::MinOnly { setpoint_min },
+                SetpointBoundsInput::MaxOnly { setpoint_max } => Self::MaxOnly { setpoint_max },
+            },
+            None => Self::NoSetpoints,
+        }
     }
 }
 
 impl ControlBehaviour for SetpointTimeControl {
+    /// Return true if current time is inside specified time for heating/cooling
+    ///
+    /// (not including timesteps where system is only on due to min or max
+    /// setpoint or advanced start)
     fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
         let schedule_idx =
             simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
-
-        Some(self.schedule[schedule_idx].is_some())
+        let setpnt = self.schedule[schedule_idx];
+        Some(setpnt.is_some())
     }
 
+    /// Return setpoint for the current timestep
     fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
         let schedule_idx =
             simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
@@ -635,41 +813,59 @@ impl ControlBehaviour for SetpointTimeControl {
         let mut setpnt = self.schedule[schedule_idx];
 
         if setpnt.is_none() {
+            // Look ahead for duration of warmup period and use setpoint from
+            // start of heating period if found
             for timesteps_ahead in 1..(self.timesteps_advstart + 1) {
                 let timesteps_ahead = timesteps_ahead as usize;
                 if self.schedule.len() <= (schedule_idx + timesteps_ahead) {
+                    // Stop looking ahead if we have reached the end of the schedule
                     break;
                 }
                 if let Some(s) = self.schedule[schedule_idx + timesteps_ahead] {
+                    // If heating period starts within duration of warmup period
+                    // from now, use setpoint from start of heating period
                     setpnt = Some(s);
                 }
             }
         }
 
-        match (setpnt, self.setpoint_min, self.setpoint_max) {
-            (None, None, None) => None,
-            (None, None, Some(max)) => Some(max),
-            (None, Some(min), None) => Some(min),
-            (None, Some(min), Some(max)) => match self.default_to_max {
-                true => Some(max),
-                false => Some(min),
+        match (setpnt, self.setpoint_bounds) {
+            // If no setpoint value is in the schedule, use the min/max if set
+            (None, SetpointBounds::NoSetpoints) => None, // Use setpnt None
+            (None, SetpointBounds::MaxOnly { setpoint_max }) => Some(setpoint_max),
+            (None, SetpointBounds::MinOnly { setpoint_min }) => Some(setpoint_min),
+            (
+                None,
+                SetpointBounds::MinAndMax {
+                    setpoint_min,
+                    setpoint_max,
+                    default_to_max,
+                },
+            ) => match default_to_max {
+                true => Some(setpoint_max),
+                false => Some(setpoint_min),
             },
-            (Some(_s), _, _) => {
-                if self.setpoint_max.is_some() {
-                    setpnt = match self.setpoint_max < setpnt {
-                        true => self.setpoint_max,
-                        false => setpnt,
-                    }
+            (Some(s), _) => {
+                let mut setpnt = s;
+
+                if let Some(setpoint_max) = self.setpoint_bounds.setpoint_max() {
+                    // If there is a maximum limit, take the lower of this and the schedule value
+                    setpnt = min_of_2(setpoint_max, setpnt);
                 }
-                if self.setpoint_min.is_some() {
-                    setpnt = match self.setpoint_min > setpnt {
-                        true => self.setpoint_min,
-                        false => setpnt,
-                    }
+                if let Some(setpoint_min) = self.setpoint_bounds.setpoint_min() {
+                    // If there is a minimum limit, take the higher of this and the schedule value
+                    setpnt = max_of_2(setpoint_min, setpnt);
                 }
-                setpnt
+                Some(setpnt)
             }
         }
+    }
+
+    /// Return true if control will allow system to run
+    fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+        let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
+
+        self.is_on_for_timestep_idx(schedule_idx)
     }
 }
 
@@ -688,20 +884,20 @@ pub(crate) struct SmartApplianceControl {
 }
 
 impl SmartApplianceControl {
+    /// Construct a SmartApplianceControl object
+    ///
     /// Arguments:
-    /// * `power_timeseries`  - dictionary of lists containing expected power for appliances
-    ///                         for each energy supply, for the entire length of the simulation
-    /// * `weight_timeseries` - dictionary of lists containing demand weight for each
-    ///                         energy supply, for the entire length of the simulation
-    /// * `timeseries_step`   - timestep of weight and demand timeseries
-    ///                         (not necessarily equal to simulation_time.timestep())
-    /// * `simulation_time`   - reference to a SimulationTime object
+    /// * `power_timeseries` - dictionary of lists containing expected power for appliances
+    ///                        for each energy supply, for the entire length of the simulation
+    /// * `timeseries_step` - timestep of the power timeseries
+    ///                       (not necessarily equal to simulation_time.timestep())
+    /// * `simulation_time` - reference to a SimulationTime object
     /// * `non_appliance_demand_24hr` - dictionary of lists containing 24 hour buffers of
     ///                                 demand per end user for each energy supply
-    /// * `battery_24hr`      - dictionary of lists containing 24 hour buffers of
-    ///                         battery state of charge for each energy supply
-    /// * `energy_supplies`   - dictionary of energy supply objects in the simulation
-    /// * `appliance_names`   - list of names of all appliance objects in the simulation
+    /// * `battery_24hr` - dictionary of lists containing 24 hour buffers of
+    ///                    battery state of charge for each energy supply
+    /// * `energysupplies` - dictionary of energysupply objects in the simulation
+    /// * `appliances` - list of names of all appliance objects in the simulation
     pub(crate) fn new(
         power_timeseries: &IndexMap<String, Vec<f64>>,
         timeseries_step: f64,
@@ -872,24 +1068,24 @@ impl SmartApplianceControl {
             }
         }
     }
-
-    /// Controls generally have this method, though this control does not in Python implementation.
-    /// Defaulting to returning true for a fallback implementation here.
-    #[allow(dead_code)]
-    pub(crate) fn is_on(&self, _simtime: &SimulationTimeIteration) -> bool {
-        true
-    }
 }
 
 impl ControlBehaviour for SmartApplianceControl {}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
+/// An object to model a control with nested combinations of other control types
 pub(crate) struct CombinationTimeControl {
     combinations: ControlCombinations,
     controls: IndexMap<String, Arc<Control>>,
 }
 
 impl CombinationTimeControl {
+    /// Construct a CombinationTimeControl object
+    ///
+    /// Arguments:
+    /// * `combination` - mapping of combination names to combination configurations (read-only)
+    /// * `controls` - mapping of control names to control instances (read-only)
+    /// * `simulation_time` - reference to SimulationTime object
     pub(crate) fn new(
         combinations: ControlCombinations,
         controls: IndexMap<String, Arc<Control>>,
@@ -925,14 +1121,14 @@ impl CombinationTimeControl {
     fn evaluate_boolean_operation_is_on(
         &self,
         operation: ControlCombinationOperation,
-        control_results: &mut impl Iterator<Item = bool>,
+        control_results: &mut impl ExactSizeIterator<Item = bool>,
     ) -> bool {
         match operation {
             ControlCombinationOperation::And => control_results.all(|x| x),
             ControlCombinationOperation::Or => control_results.any(|x| x),
             ControlCombinationOperation::Xor => control_results.filter(|x| *x).count() % 2 == 1,
             ControlCombinationOperation::Not => {
-                if control_results.count() != 1 {
+                if control_results.len() != 1 {
                     unreachable!()
                 }
                 !control_results
@@ -946,9 +1142,10 @@ impl CombinationTimeControl {
     /// Evaluate a single control
     fn evaluate_control_is_on(&self, control_name: &str, simtime: SimulationTimeIteration) -> bool {
         let control = self.controls[control_name].as_ref();
-        control.is_on(simtime)
+        control.is_on(&simtime)
     }
 
+    /// Evaluate a combination of controls
     fn evaluate_combination_is_on(
         &self,
         combination_name: &str,
@@ -962,8 +1159,11 @@ impl CombinationTimeControl {
 
         let mut results = controls.iter().map(|control| {
             if self.combinations.contains_key(control) {
+                // If the control is a combination, recursively evaluate it
+                // Infinite recursion has been avoided by adding checks during control object creation
                 self.evaluate_combination_is_on(control, simtime)
             } else {
+                // Otherwise, evaluate a single control
                 self.evaluate_control_is_on(control, simtime)
             }
         });
@@ -976,7 +1176,7 @@ impl CombinationTimeControl {
             }
             ControlCombinationOperation::Max
             | ControlCombinationOperation::Min
-            | ControlCombinationOperation::Mean => results.all(|x| x),
+            | ControlCombinationOperation::Mean => results.any(|x| x),
         }
     }
 
@@ -990,7 +1190,7 @@ impl CombinationTimeControl {
         match control {
             c @ Control::OnOffTime(_)
             | c @ Control::Charge(_)
-            | c @ Control::OnOffMinimisingTime(_) => c.is_on(simtime),
+            | c @ Control::OnOffMinimisingTime(_) => c.is_on(&simtime),
             Control::SetpointTime(c) => c
                 .in_required_period(&simtime)
                 .expect("SetpointTimeControl in_required_period() method will always return Some"),
@@ -998,10 +1198,8 @@ impl CombinationTimeControl {
         }
     }
 
-    /// This function processes a combination of control elements,
-    /// applying boolean logic (AND, OR, XOR, etc.) to their evaluation results.
-    /// It checks the type of controls, validates allowed
-    /// combinations and returns the evaluation result based on the specified operation.
+    /// This function processes a combination of control elements applying boolean logic (AND, OR, XOR, etc.) to their evaluation results.
+    /// It checks the type of controls , validates allowed combinations and returns the evaluation result based on the specified operation.
     /// Unsupported combinations or operations raise an error.
     fn evaluate_combination_in_req_period(
         &self,
@@ -1047,6 +1245,7 @@ impl CombinationTimeControl {
                     if !matches!(operation, ControlCombinationOperation::And) {
                         bail!("OnOff + Setpoint combination in_req_period() only supports the AND operation")
                     }
+                    // Combine results using AND for OnOff + Setpoint combination
                     results
                         .into_iter()
                         .process_results(|mut iter| iter.all(|x| x))?
@@ -1088,7 +1287,7 @@ impl CombinationTimeControl {
                         }
                     }
                 }
-                _ => bail!("Invalid combination of controls encountered"),
+                _ => bail!("Invalid combination of controls encountered. No OnOff or Setpoint in in_req_period()"),
             },
         )
     }
@@ -1103,7 +1302,7 @@ impl CombinationTimeControl {
         match control {
             c @ Control::OnOffTime(_)
             | c @ Control::Charge(_)
-            | c @ Control::OnOffMinimisingTime(_) => SetpointOrBoolean::Boolean(c.is_on(simtime)),
+            | c @ Control::OnOffMinimisingTime(_) => SetpointOrBoolean::Boolean(c.is_on(&simtime)),
             Control::SetpointTime(c) => SetpointOrBoolean::Setpoint(c.setpnt(&simtime)),
             _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
         }
@@ -1131,7 +1330,7 @@ impl CombinationTimeControl {
                     self.evaluate_combination_setpnt(control_name, simtime)?
                 } else {
                     // Track the types of controls for logic enforcement
-                    match self.controls[control_name].as_ref() {
+                    match self.controls.get(control_name).ok_or_else(|| anyhow!("Control '{control_name}' not found"))?.as_ref() {
                         Control::OnOffTime(_)
                         | Control::Charge(_)
                         | Control::OnOffMinimisingTime(_) => {
@@ -1309,10 +1508,6 @@ impl CombinationTimeControl {
         })
     }
 
-    pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
-        self.evaluate_combination_is_on(MAIN_REFERENCE, *simtime)
-    }
-
     #[cfg(test)]
     fn target_charge(
         &self,
@@ -1320,6 +1515,16 @@ impl CombinationTimeControl {
         temp_air: Option<f64>,
     ) -> anyhow::Result<f64> {
         self.evaluate_combination_target_charge(MAIN_REFERENCE, *simtime, temp_air)
+    }
+
+    #[cfg(test)]
+    fn set_combinations(&mut self, combinations: ControlCombinations) {
+        self.combinations = combinations;
+    }
+
+    #[cfg(test)]
+    fn set_controls(&mut self, controls: IndexMap<String, Arc<Control>>) {
+        self.controls = controls;
     }
 }
 
@@ -1340,12 +1545,81 @@ impl ControlBehaviour for CombinationTimeControl {
                 }
             })
     }
+
+    fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
+        self.evaluate_combination_is_on(MAIN_REFERENCE, *simtime)
+    }
 }
 
-#[derive(Clone, Copy)]
+#[cfg(test)]
+#[derive(Copy, Clone, Debug, Default)]
+/// A mock control implementation that allows setting canned responses for common control methods.
+pub(crate) struct MockControl {
+    canned_setpnt: Option<f64>,
+    canned_is_on: Option<bool>,
+    canned_in_req_period: Option<bool>,
+}
+
+#[cfg(test)]
+impl MockControl {
+    pub(crate) fn new(
+        canned_setpnt: Option<f64>,
+        canned_is_on: Option<bool>,
+        canned_in_req_period: Option<bool>,
+    ) -> Self {
+        Self {
+            canned_setpnt,
+            canned_is_on,
+            canned_in_req_period,
+        }
+    }
+
+    pub(crate) fn with_setpnt(setpnt: Option<f64>) -> Self {
+        Self {
+            canned_setpnt: setpnt,
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn with_is_on(is_on: bool) -> Self {
+        Self {
+            canned_is_on: Some(is_on),
+            ..Default::default()
+        }
+    }
+}
+
+#[cfg(test)]
+impl ControlBehaviour for MockControl {
+    fn in_required_period(&self, _simtime: &SimulationTimeIteration) -> Option<bool> {
+        self.canned_in_req_period
+    }
+
+    fn setpnt(&self, _simtime: &SimulationTimeIteration) -> Option<f64> {
+        self.canned_setpnt
+    }
+
+    fn is_on(&self, _simtime: &SimulationTimeIteration) -> bool {
+        self.canned_is_on.unwrap_or(true)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum SetpointOrBoolean {
     Setpoint(Option<f64>),
     Boolean(bool),
+}
+
+impl From<f64> for SetpointOrBoolean {
+    fn from(t: f64) -> Self {
+        SetpointOrBoolean::Setpoint(Some(t))
+    }
+}
+
+impl From<bool> for SetpointOrBoolean {
+    fn from(b: bool) -> Self {
+        SetpointOrBoolean::Boolean(b)
+    }
 }
 
 // utility functions to assist with comparing setpoint values where the comparisons are fallible
@@ -1382,518 +1656,1012 @@ mod tests {
     use super::*;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
-    use pretty_assertions::assert_eq;
     use rstest::*;
     use serde_json::json;
 
-    const ON_OFF_SCHEDULE: [bool; 8] = [true, false, true, true, false, true, false, false];
-
     #[fixture]
-    pub fn simulation_time() -> SimulationTimeIterator {
+    fn simulation_time() -> SimulationTimeIterator {
         SimulationTime::new(0.0, 8.0, 1.0).iter()
     }
 
-    #[fixture]
-    pub fn on_off_time_control() -> OnOffTimeControl {
-        OnOffTimeControl::new(
-            ON_OFF_SCHEDULE.iter().map(|&v| Some(v)).collect_vec(),
-            0,
-            1.0,
-        )
-    }
+    mod test_on_off_time_control {
+        use super::*;
+        use pretty_assertions::assert_eq;
 
-    #[rstest]
-    pub fn should_be_on_for_on_off_time_control(
-        on_off_time_control: OnOffTimeControl,
-        simulation_time: SimulationTimeIterator,
-    ) {
-        for it in simulation_time {
-            assert_eq!(on_off_time_control.is_on(&it), ON_OFF_SCHEDULE[it.index]);
+        #[test]
+        fn test_is_on() {
+            let simulation_time_iterator = SimulationTime::new(0.0, 8.0, 1.0).iter();
+            let schedule = [true, false, true, true, false, true, false, false];
+            let time_control =
+                OnOffTimeControl::new(schedule.iter().map(|&v| Some(v)).collect_vec(), 0, 1.0);
+
+            for iteration in simulation_time_iterator {
+                assert_eq!(time_control.is_on(&iteration), schedule[iteration.index]);
+            }
         }
     }
 
-    #[fixture]
-    pub fn on_off_minimising_control() -> OnOffMinimisingTimeControl {
-        let schedule = [
-            vec![5.0; 7],
-            vec![10.0; 2],
-            vec![7.5; 8],
-            vec![15.0; 6],
-            vec![5.0],
-        ]
-        .to_vec()
-        .concat();
-        let schedule = [&schedule[..], &schedule[..]].concat();
-        OnOffMinimisingTimeControl::new(schedule, 0, 1.0, 12.0)
+    mod test_on_off_cost_minimising_time_control {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[test]
+        fn test_init_invalid_schedule_length() {
+            let cost_schedule = [vec![5.0; 7], vec![10.0; 2], vec![7.5; 8], vec![15.0; 6]]
+                .to_vec()
+                .concat();
+            let cost_schedule = [&cost_schedule[..], &cost_schedule[..]].concat();
+            let control = OnOffCostMinimisingTimeControl::new(cost_schedule, 0, 1.0, 12.0);
+            assert!(control.is_err());
+            let error = control.unwrap_err().to_string();
+            assert_eq!(
+                error,
+                "There is a mismatch between the schedule length and the timesteps per day (hours_per_day / time_series_step)"
+            );
+        }
+
+        #[rstest]
+        fn test_is_on() {
+            let schedule = [
+                vec![5.0; 7],
+                vec![10.0; 2],
+                vec![7.5; 8],
+                vec![15.0; 6],
+                vec![5.0],
+            ]
+            .to_vec()
+            .concat();
+            let schedule = [&schedule[..], &schedule[..]].concat();
+            let cost_minimising_ctrl =
+                OnOffCostMinimisingTimeControl::new(schedule, 0, 1.0, 12.0).unwrap();
+
+            let resulting_schedule = [
+                vec![true; 7],
+                vec![false; 2],
+                vec![true; 4],
+                vec![false; 4],
+                vec![false; 6],
+                vec![true],
+            ]
+            .to_vec()
+            .concat();
+            let resulting_schedule = [&resulting_schedule[..], &resulting_schedule[..]].concat();
+            let simulation_time_iterator = SimulationTime::new(0.0, 48.0, 1.0).iter();
+            for iteration in simulation_time_iterator {
+                pretty_assertions::assert_eq!(
+                    cost_minimising_ctrl.is_on(&iteration),
+                    resulting_schedule[iteration.index]
+                );
+            }
+        }
     }
 
-    #[rstest]
-    pub fn should_be_on_for_cost_minimising_control(
-        on_off_minimising_control: OnOffMinimisingTimeControl,
-        simulation_time: SimulationTimeIterator,
-    ) {
-        let resulting_schedule = [
-            vec![true; 7],
-            vec![false; 2],
-            vec![true; 4],
-            vec![false; 4],
-            vec![false; 6],
-            vec![true],
-        ]
-        .to_vec()
-        .concat();
-        let resulting_schedule = [&resulting_schedule[..], &resulting_schedule[..]].concat();
-        for it in simulation_time {
+    mod test_setpoint_time_control {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[fixture]
+        fn simulation_time_iterator() -> SimulationTimeIterator {
+            SimulationTime::new(0.0, 8.0, 1.0).iter()
+        }
+        fn default_schedule() -> Vec<Option<f64>> {
+            vec![
+                Some(21.0),
+                None,
+                None,
+                Some(21.0),
+                None,
+                Some(21.0),
+                Some(25.0),
+                Some(15.0),
+            ]
+        }
+
+        fn create_time_control(
+            schedule: Option<Vec<Option<f64>>>,
+            setpoint_bounds: Option<SetpointBoundsInput>,
+            duration_advanced_start: Option<f64>,
+        ) -> SetpointTimeControl {
+            let schedule = schedule.unwrap_or(default_schedule());
+            SetpointTimeControl::new(
+                schedule,
+                0,
+                1.,
+                setpoint_bounds,
+                duration_advanced_start,
+                1., // simulation_time.step_in_hours()
+            )
+        }
+
+        #[fixture]
+        fn time_control() -> SetpointTimeControl {
+            create_time_control(None, None, None)
+        }
+
+        #[fixture]
+        fn time_control_min() -> SetpointTimeControl {
+            let setpoint_bounds = SetpointBoundsInput::MinOnly { setpoint_min: 16. };
+            create_time_control(None, Some(setpoint_bounds), None)
+        }
+
+        #[fixture]
+        fn time_control_max() -> SetpointTimeControl {
+            let setpoint_bounds = SetpointBoundsInput::MaxOnly { setpoint_max: 24. };
+            create_time_control(None, Some(setpoint_bounds), None)
+        }
+
+        #[fixture]
+        fn time_control_min_max() -> SetpointTimeControl {
+            let setpoint_bounds = SetpointBoundsInput::MinAndMax {
+                setpoint_min: 16.,
+                setpoint_max: 24.,
+                default_to_max: false,
+            };
+            create_time_control(None, Some(setpoint_bounds), None)
+        }
+
+        #[fixture]
+        fn time_control_advstart() -> SetpointTimeControl {
+            create_time_control(None, None, Some(1.))
+        }
+
+        #[fixture]
+        fn time_control_advstart_min_max() -> SetpointTimeControl {
+            let setpoint_bounds = SetpointBoundsInput::MinAndMax {
+                setpoint_min: 16.,
+                setpoint_max: 24.,
+                default_to_max: false,
+            };
+            create_time_control(None, Some(setpoint_bounds), Some(1.))
+        }
+
+        #[rstest]
+        fn test_in_required_period(
+            simulation_time_iterator: SimulationTimeIterator,
+            time_control: SetpointTimeControl,
+            time_control_min: SetpointTimeControl,
+            time_control_max: SetpointTimeControl,
+            time_control_min_max: SetpointTimeControl,
+            time_control_advstart: SetpointTimeControl,
+            time_control_advstart_min_max: SetpointTimeControl,
+        ) {
+            let expected = [true, false, false, true, false, true, true, true];
+            for t_it in simulation_time_iterator {
+                assert_eq!(
+                    time_control.in_required_period(&t_it).unwrap(),
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with no min or max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_min.in_required_period(&t_it).unwrap(),
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with min set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_max.in_required_period(&t_it).unwrap(),
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_min_max.in_required_period(&t_it).unwrap(),
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with min and max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_advstart.in_required_period(&t_it).unwrap(),
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with advanced start, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_advstart_min_max
+                        .in_required_period(&t_it)
+                        .unwrap(),
+                    expected[t_it.index],
+                    "incorrect in_required_period value returned for control with advanced start, iteration {}",
+                    t_it.index + 1
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_is_on(
+            simulation_time_iterator: SimulationTimeIterator,
+            time_control: SetpointTimeControl,
+            time_control_min: SetpointTimeControl,
+            time_control_max: SetpointTimeControl,
+            time_control_min_max: SetpointTimeControl,
+            time_control_advstart: SetpointTimeControl,
+            time_control_advstart_min_max: SetpointTimeControl,
+        ) {
+            for t_it in simulation_time_iterator {
+                assert_eq!(time_control.is_on(&t_it),
+                           [true, false, false, true, false, true, true, true][t_it.index],
+                           "incorrect is_on value returned for control with no min or max set, iteration {}",
+                           t_it.index + 1 );
+                assert_eq!(
+                    time_control_min.is_on(&t_it),
+                    true, // Should always be true for this type of control
+                    "incorrect is_on value returned for control with min set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_max.is_on(&t_it),
+                    true, // Should always be true for this type of control
+                    "incorrect is_on value returned for control with max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_min_max.is_on(&t_it),
+                    true, // Should always be true for this type of control
+                    "incorrect is_on value returned for control with min and max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_advstart.is_on(&t_it),
+                    [true, false, true, true, true, true, true, true][t_it.index],
+                    "incorrect is_on value returned for control with advanced start, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_advstart_min_max.is_on(&t_it),
+                    true,
+                    "incorrect is_on value returned for control with advanced start and min/max, iteration {}",
+                    t_it.index + 1
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_is_on_lookahead(simulation_time_iterator: SimulationTimeIterator) {
+            let schedule = vec![None; 24];
+            let control = create_time_control(Some(schedule), None, Some(30.));
+            assert!(!control.is_on(&simulation_time_iterator.current_iteration()));
+
+            let schedule = vec![Some(20.); 24];
+            let control = create_time_control(Some(schedule), None, None);
+            assert!(control.is_on(&simulation_time_iterator.current_iteration()));
+        }
+
+        #[rstest]
+        fn test_setpnt(
+            time_control: SetpointTimeControl,
+            time_control_min: SetpointTimeControl,
+            time_control_max: SetpointTimeControl,
+            time_control_min_max: SetpointTimeControl,
+            time_control_advstart: SetpointTimeControl,
+            time_control_advstart_min_max: SetpointTimeControl,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            let results_min: [Option<f64>; 8] = [
+                Some(21.0),
+                Some(16.0),
+                Some(16.0),
+                Some(21.0),
+                Some(16.0),
+                Some(21.0),
+                Some(25.0),
+                Some(16.0),
+            ];
+            let results_max: [Option<f64>; 8] = [
+                Some(21.0),
+                Some(24.0),
+                Some(24.0),
+                Some(21.0),
+                Some(24.0),
+                Some(21.0),
+                Some(24.0),
+                Some(15.0),
+            ];
+            let results_minmax: [Option<f64>; 8] = [
+                Some(21.0),
+                Some(16.0),
+                Some(16.0),
+                Some(21.0),
+                Some(16.0),
+                Some(21.0),
+                Some(24.0),
+                Some(16.0),
+            ];
+            let results_advstart: [Option<f64>; 8] = [
+                Some(21.0),
+                None,
+                Some(21.0),
+                Some(21.0),
+                Some(21.0),
+                Some(21.0),
+                Some(25.0),
+                Some(15.0),
+            ];
+            let results_advstart_minmax: [Option<f64>; 8] = [
+                Some(21.0),
+                Some(16.0),
+                Some(21.0),
+                Some(21.0),
+                Some(21.0),
+                Some(21.0),
+                Some(24.0),
+                Some(16.0),
+            ];
+            for t_it in simulation_time_iterator {
+                assert_eq!(
+                    time_control.setpnt(&t_it),
+                    default_schedule()[t_it.index],
+                    "incorrect schedule returned for control with no min or max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_min.setpnt(&t_it),
+                    results_min[t_it.index],
+                    "incorrect schedule returned for control with min set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_max.setpnt(&t_it),
+                    results_max[t_it.index],
+                    "incorrect schedule returned for control with max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_min_max.setpnt(&t_it),
+                    results_minmax[t_it.index],
+                    "incorrect schedule returned for control with min and max set, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_advstart.setpnt(&t_it),
+                    results_advstart[t_it.index],
+                    "incorrect schedule returned for control with advanced start, iteration {}",
+                    t_it.index + 1
+                );
+                assert_eq!(
+                    time_control_advstart_min_max.setpnt(&t_it),
+                    results_advstart_minmax[t_it.index],
+                    "incorrect schedule returned for control with advanced start and min and max set, iteration {}",
+                    t_it.index + 1
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_setpnt_lookahead(simulation_time_iterator: SimulationTimeIterator) {
+            let schedule = vec![None; 24];
+            let control = create_time_control(Some(schedule), None, Some(30.));
+            assert!(control
+                .setpnt(&simulation_time_iterator.current_iteration())
+                .is_none());
+
+            let schedule = vec![Some(20.); 24];
+            let control = create_time_control(Some(schedule), None, Some(30.));
             assert_eq!(
-                on_off_minimising_control.is_on(&it),
-                resulting_schedule[it.index]
+                control
+                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .unwrap(),
+                20.
+            );
+        }
+
+        #[rstest]
+        fn test_setpnt_minmax(simulation_time_iterator: SimulationTimeIterator) {
+            let schedule = vec![None; 24];
+            let control = create_time_control(
+                Some(schedule.clone()),
+                SetpointBoundsInput::MinOnly { setpoint_min: 10. }.into(),
+                None,
+            );
+            assert_eq!(
+                control
+                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .unwrap(),
+                10.
+            );
+
+            // skip assertion as not possible to replicate (Rust is more prescriptive here, so not a problem)
+
+            let control = create_time_control(
+                Some(schedule.clone()),
+                SetpointBoundsInput::MinAndMax {
+                    setpoint_min: 10.,
+                    setpoint_max: 20.,
+                    default_to_max: true,
+                }
+                .into(),
+                Some(30.),
+            );
+            assert_eq!(
+                control
+                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .unwrap(),
+                20.
+            );
+
+            let control = create_time_control(
+                Some(schedule.clone()),
+                SetpointBoundsInput::MinAndMax {
+                    setpoint_min: 10.,
+                    setpoint_max: 20.,
+                    default_to_max: false,
+                }
+                .into(),
+                Some(30.),
+            );
+            assert_eq!(
+                control
+                    .setpnt(&simulation_time_iterator.current_iteration())
+                    .unwrap(),
+                10.
             );
         }
     }
 
-    #[fixture]
-    pub fn setpoint_schedule() -> Vec<Option<f64>> {
-        vec![
-            Some(21.0),
-            None,
-            None,
-            Some(21.0),
-            None,
-            Some(21.0),
-            Some(25.0),
-            Some(15.0),
-        ]
-    }
+    mod test_smart_appliance_control {
+        use super::*;
+        use crate::core::energy_supply::elec_battery::ElectricBattery;
+        use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+        use crate::input::{BatteryLocation, FuelType};
+        use approx::assert_relative_eq;
+        use pretty_assertions::assert_eq;
 
-    #[fixture]
-    pub fn setpoint_time_control(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            None,
-            None,
-            None,
-            Default::default(),
-            simulation_time.step_in_hours(),
-        )
-        .unwrap()
-    }
+        #[fixture]
+        fn simulation_time_iterator() -> SimulationTimeIterator {
+            SimulationTime::new(0., 24., 1.).iter()
+        }
 
-    #[fixture]
-    pub fn setpoint_time_control_min(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            Some(16.0),
-            None,
-            None,
-            Default::default(),
-            simulation_time.step_in_hours(),
-        )
-        .unwrap()
-    }
+        #[fixture]
+        // create dummy external conditions
+        fn external_conditions(
+            simulation_time_iterator: SimulationTimeIterator,
+        ) -> ExternalConditions {
+            ExternalConditions::new(
+                &simulation_time_iterator,
+                vec![0.0; 24],
+                vec![3.7; 24],
+                vec![200.; 24],
+                vec![333.; 24],
+                vec![0.; 24],
+                vec![0.2; 8760],
+                51.42,
+                -0.75,
+                0,
+                0,
+                None,
+                1.,
+                None,
+                None,
+                false,
+                false,
+                None,
+            )
+        }
 
-    #[fixture]
-    pub fn setpoint_time_control_max(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            None,
-            Some(24.0),
-            None,
-            0.0,
-            simulation_time.step_in_hours(),
-        )
-        .unwrap()
-    }
-
-    #[fixture]
-    pub fn setpoint_time_control_minmax(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            Some(16.0),
-            Some(24.0),
-            Some(false),
-            Default::default(),
-            simulation_time.step_in_hours(),
-        )
-        .unwrap()
-    }
-
-    #[fixture]
-    pub fn setpoint_time_control_advstart(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            None,
-            None,
-            Some(false),
-            1.0,
-            simulation_time.step_in_hours(),
-        )
-        .unwrap()
-    }
-
-    #[fixture]
-    pub fn setpoint_time_control_advstart_minmax(
-        setpoint_schedule: Vec<Option<f64>>,
-        simulation_time: SimulationTimeIterator,
-    ) -> SetpointTimeControl {
-        SetpointTimeControl::new(
-            setpoint_schedule,
-            0,
-            1.0,
-            Some(16.0),
-            Some(24.0),
-            Some(false),
-            1.0,
-            simulation_time.step_in_hours(),
-        )
-        .unwrap()
-    }
-
-    #[rstest]
-    pub fn should_be_in_required_time_for_setpoint_control(
-        setpoint_time_control: SetpointTimeControl,
-        setpoint_time_control_min: SetpointTimeControl,
-        setpoint_time_control_max: SetpointTimeControl,
-        setpoint_time_control_minmax: SetpointTimeControl,
-        setpoint_time_control_advstart: SetpointTimeControl,
-        setpoint_time_control_advstart_minmax: SetpointTimeControl,
-        simulation_time: SimulationTimeIterator,
-    ) {
-        let results: [bool; 8] = [true, false, false, true, false, true, true, true];
-        for it in simulation_time {
-            assert_eq!(
-                setpoint_time_control.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with no min or max set, iteration {}",
-                it.index + 1
+        #[fixture]
+        fn energy_supply(
+            simulation_time_iterator: SimulationTimeIterator,
+            external_conditions: ExternalConditions,
+        ) -> Arc<RwLock<EnergySupply>> {
+            let electric_battery = ElectricBattery::new(
+                100., // significant for test_add_appliance_demand, in Python Magic Mock is used instead
+                1., // significant for test_add_appliance_demand, in Python Magic Mock is used instead
+                0., // significant for test_add_appliance_demand, in Python Magic Mock is used instead
+                0.001,
+                1.5,
+                -100., // significant for test_add_appliance_demand, in Python Magic Mock is used instead
+                BatteryLocation::Inside, // significant for test_add_appliance_demand, in Python Magic Mock is used instead
+                false,
+                simulation_time_iterator.step_in_hours(),
+                Arc::new(external_conditions),
             );
-            assert_eq!(
-                setpoint_time_control_min.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with min set, iteration {}",
-                it.index + 1
+
+            Arc::new(RwLock::new(
+                EnergySupply::new(
+                    FuelType::Electricity,
+                    simulation_time_iterator.total_steps(),
+                    None,
+                    Some(electric_battery),
+                    None,
+                    None,
+                )
+                .unwrap(),
+            ))
+        }
+
+        #[fixture]
+        fn smart_appliance_control(
+            simulation_time_iterator: SimulationTimeIterator,
+            energy_supply: Arc<RwLock<EnergySupply>>,
+        ) -> SmartApplianceControl {
+            let power_timeseries = &IndexMap::from([("mains elec".into(), vec![100.; 12])]);
+            let non_appliance_demand_24hr =
+                IndexMap::from([("mains elec".into(), vec![[0.1, 0.2]; 6].into_flattened())]);
+            let battery_state_of_charge: IndexMap<String, Vec<f64>> =
+                IndexMap::from([("mains elec".into(), vec![0.5; 12])]);
+            let battery_24hr = SmartApplianceBattery {
+                battery_state_of_charge,
+                energy_into_battery_from_generation: IndexMap::new(),
+                energy_into_battery_from_grid: IndexMap::new(),
+                energy_out_of_battery: IndexMap::new(),
+            };
+            let energy_supplies = &IndexMap::from([("mains elec".into(), energy_supply)]);
+
+            SmartApplianceControl::new(
+                power_timeseries,
+                2.,
+                &simulation_time_iterator,
+                non_appliance_demand_24hr,
+                battery_24hr,
+                energy_supplies,
+                vec!["Clothes_drying".into()],
+            )
+            .unwrap()
+        }
+
+        #[rstest]
+        fn test_init_invalid_length(
+            simulation_time_iterator: SimulationTimeIterator,
+            energy_supply: Arc<RwLock<EnergySupply>>,
+        ) {
+            let battery_state_of_charge: IndexMap<String, Vec<f64>> =
+                IndexMap::from([("mains elec".into(), vec![0.; 12])]);
+            let battery_24hr = SmartApplianceBattery {
+                battery_state_of_charge,
+                energy_into_battery_from_generation: IndexMap::new(),
+                energy_into_battery_from_grid: IndexMap::new(),
+                energy_out_of_battery: IndexMap::new(),
+            };
+            let smart_appliance_control = SmartApplianceControl::new(
+                &IndexMap::from([("mains elec".into(), vec![100.; 11])]),
+                2.,
+                &simulation_time_iterator,
+                IndexMap::from([("mains elec".into(), vec![[0.1, 0.2]; 12].into_flattened())]),
+                battery_24hr,
+                &IndexMap::from([("mains elec".into(), energy_supply)]),
+                vec!["Clothes_drying".into()],
             );
-            assert_eq!(
-                setpoint_time_control_max.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_minmax.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with min and max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with advanced start, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart_minmax.in_required_period(&it).unwrap(),
-                results[it.index],
-                "incorrect in_required_period value returned for control with advanced start and min/max, iteration {}",
-                it.index + 1
-            );
+
+            assert!(smart_appliance_control.is_err());
+        }
+
+        #[rstest]
+        fn test_ts_step(smart_appliance_control: SmartApplianceControl) {
+            assert_eq!(smart_appliance_control.ts_step(0), 0);
+            assert_eq!(smart_appliance_control.ts_step(23), 11);
+            assert_eq!(smart_appliance_control.ts_step(24), 12);
+        }
+
+        #[rstest]
+        fn test_add_appliance_demand(
+            smart_appliance_control: SmartApplianceControl,
+            mut simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            let iteration = simulation_time_iterator.nth(5).unwrap();
+            smart_appliance_control.add_appliance_demand(iteration, 100., "mains elec");
+            assert_eq!(smart_appliance_control.get_demand(5, "mains elec"), -9950.2);
+        }
+
+        #[rstest]
+        fn test_update_demand_buffer(
+            smart_appliance_control: SmartApplianceControl,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            for t_it in simulation_time_iterator {
+                smart_appliance_control.update_demand_buffer(t_it);
+                assert_eq!(
+                    smart_appliance_control.get_demand(t_it.index, "mains elec"),
+                    0.1
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_get_demand(smart_appliance_control: SmartApplianceControl) {
+            assert_relative_eq!(smart_appliance_control.get_demand(0, "mains elec"), -0.3);
+            assert_relative_eq!(smart_appliance_control.get_demand(1, "mains elec"), -0.2);
+        }
+
+        #[rstest]
+        fn test_get_demand_no_battery(simulation_time_iterator: SimulationTimeIterator) {
+            let smart_appliance_control = SmartApplianceControl::new(
+                &IndexMap::from([("mains elec".into(), vec![100.; 12])]),
+                2.,
+                &simulation_time_iterator,
+                IndexMap::from([("mains elec".into(), vec![[0.1, 0.2]; 12].into_flattened())]),
+                SmartApplianceBattery {
+                    battery_state_of_charge: IndexMap::new(),
+                    energy_into_battery_from_generation: IndexMap::new(),
+                    energy_into_battery_from_grid: IndexMap::new(),
+                    energy_out_of_battery: IndexMap::new(),
+                },
+                &IndexMap::from([(
+                    "mains elec".into(),
+                    Arc::new(RwLock::new(
+                        EnergySupplyBuilder::new(
+                            FuelType::Electricity,
+                            simulation_time_iterator.total_steps(),
+                        )
+                        .build(),
+                    )),
+                )]),
+                vec!["Clothes_drying".into()],
+            )
+            .unwrap();
+
+            assert_relative_eq!(smart_appliance_control.get_demand(0, "mains elec"), 0.2);
+            assert_relative_eq!(smart_appliance_control.get_demand(1, "mains elec"), 0.3);
         }
     }
 
-    #[rstest]
-    pub fn should_be_on_for_setpoint_control(
-        setpoint_time_control: SetpointTimeControl,
-        setpoint_time_control_min: SetpointTimeControl,
-        setpoint_time_control_max: SetpointTimeControl,
-        setpoint_time_control_minmax: SetpointTimeControl,
-        setpoint_time_control_advstart: SetpointTimeControl,
-        setpoint_time_control_advstart_minmax: SetpointTimeControl,
-        simulation_time: SimulationTimeIterator,
-    ) {
-        for it in simulation_time {
-            assert_eq!(
-                setpoint_time_control.is_on(&it),
-                [true, false, false, true, false, true, true, true][it.index],
-                "incorrect is_on value returned for control with no min or max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_min.is_on(&it),
-                true, // Should always be true for this type of control
-                "incorrect is_on value returned for control with min set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_max.is_on(&it),
-                true, // Should always be true for this type of control
-                "incorrect is_on value returned for control with max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_minmax.is_on(&it),
-                true, // Should always be true for this type of control
-                "incorrect is_on value returned for control with min and max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart.is_on(&it),
-                [true, false, true, true, true, true, true, true][it.index],
-                "incorrect is_on value returned for control with advanced start, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart_minmax.is_on(&it),
-                true,
-                "incorrect is_on value returned for control with advanced start and min/max, iteration {}",
-                it.index + 1
-            );
+    mod test_charge_control {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        fn simulation_time() -> SimulationTime {
+            SimulationTime::new(0.0, 24.0, 1.0)
         }
-    }
 
-    #[rstest]
-    pub fn should_have_correct_setpnt(
-        setpoint_time_control: SetpointTimeControl,
-        setpoint_time_control_min: SetpointTimeControl,
-        setpoint_time_control_max: SetpointTimeControl,
-        setpoint_time_control_minmax: SetpointTimeControl,
-        setpoint_time_control_advstart: SetpointTimeControl,
-        setpoint_time_control_advstart_minmax: SetpointTimeControl,
-        simulation_time: SimulationTimeIterator,
-    ) {
-        let results_min: [Option<f64>; 8] = [
-            Some(21.0),
-            Some(16.0),
-            Some(16.0),
-            Some(21.0),
-            Some(16.0),
-            Some(21.0),
-            Some(25.0),
-            Some(16.0),
-        ];
-        let results_max: [Option<f64>; 8] = [
-            Some(21.0),
-            Some(24.0),
-            Some(24.0),
-            Some(21.0),
-            Some(24.0),
-            Some(21.0),
-            Some(24.0),
-            Some(15.0),
-        ];
-        let results_minmax: [Option<f64>; 8] = [
-            Some(21.0),
-            Some(16.0),
-            Some(16.0),
-            Some(21.0),
-            Some(16.0),
-            Some(21.0),
-            Some(24.0),
-            Some(16.0),
-        ];
-        let results_advstart: [Option<f64>; 8] = [
-            Some(21.0),
-            None,
-            Some(21.0),
-            Some(21.0),
-            Some(21.0),
-            Some(21.0),
-            Some(25.0),
-            Some(15.0),
-        ];
-        let results_advstart_minmax: [Option<f64>; 8] = [
-            Some(21.0),
-            Some(16.0),
-            Some(21.0),
-            Some(21.0),
-            Some(21.0),
-            Some(21.0),
-            Some(24.0),
-            Some(16.0),
-        ];
-        for it in simulation_time {
-            assert_eq!(
-                setpoint_time_control.setpnt(&it),
-                setpoint_schedule()[it.index],
-                "incorrect schedule returned for control with no min or max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_min.setpnt(&it),
-                results_min[it.index],
-                "incorrect schedule returned for control with min set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_max.setpnt(&it),
-                results_max[it.index],
-                "incorrect schedule returned for control with max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_minmax.setpnt(&it),
-                results_minmax[it.index],
-                "incorrect schedule returned for control with min and max set, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart.setpnt(&it),
-                results_advstart[it.index],
-                "incorrect schedule returned for control with advanced start, iteration {}",
-                it.index + 1
-            );
-            assert_eq!(
-                setpoint_time_control_advstart_minmax.setpnt(&it),
-                results_advstart_minmax[it.index],
-                "incorrect schedule returned for control with advanced start and min and max set, iteration {}",
-                it.index + 1
-            );
+        fn simulation_time_48_hours() -> SimulationTime {
+            SimulationTime::new(0.0, 48.0, 1.0)
         }
-    }
 
-    #[fixture]
-    fn simulation_time_for_charge_control() -> SimulationTime {
-        SimulationTime::new(0.0, 24.0, 1.0)
-    }
+        fn schedule() -> Vec<bool> {
+            vec![
+                true, true, true, true, true, true, true, true, false, false, false, false, false,
+                false, false, false, true, true, true, true, false, false, false, false,
+            ]
+        }
 
-    #[fixture]
-    fn schedule_for_charge_control() -> Vec<bool> {
-        vec![
-            true, true, true, true, true, true, true, true, false, false, false, false, false,
-            false, false, false, true, true, true, true, false, false, false, false,
-        ]
-    }
+        fn schedule_48_hours() -> Vec<bool> {
+            [schedule(), vec![true; 24]].concat()
+        }
 
-    #[fixture]
-    fn charge_control(
-        simulation_time_for_charge_control: SimulationTime,
-        schedule_for_charge_control: Vec<bool>,
-    ) -> ChargeControl {
-        let external_conditions = ExternalConditions::new(
-            &simulation_time_for_charge_control.iter(),
+        fn air_temperatures() -> Vec<f64> {
             vec![
                 19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
                 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
-            ],
+            ]
+        }
+
+        fn wind_speeds() -> Vec<f64> {
             vec![
                 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
                 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
-            ],
+            ]
+        }
+
+        fn wind_directions() -> Vec<f64> {
             vec![
                 300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
                 190., 200., 320., 330., 340., 350., 355., 315., 5.,
-            ],
+            ]
+        }
+
+        fn diffuse_horizontal_radiation() -> Vec<f64> {
             vec![
                 0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225.,
                 198., 121., 68., 19., 0., 0., 0., 0., 0.,
-            ],
+            ]
+        }
+
+        fn direct_beam_radiation() -> Vec<f64> {
             vec![
                 0., 0., 0., 0., 0., 0., 7., 53., 63., 164., 339., 242., 315., 577., 385., 285.,
                 332., 126., 7., 0., 0., 0., 0., 0.,
-            ],
+            ]
+        }
+
+        fn solar_reflectivity_of_ground() -> Vec<f64> {
             vec![
                 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
                 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-            ],
-            51.383,
-            -0.783,
-            0,
-            0,
-            Some(0),
-            1.,
-            Some(1),
-            Some(DaylightSavingsConfig::NotApplicable),
-            false,
-            false,
-            // following starts/ends are corrected from Python tests which erroneously use previous
-            // "start" field instead of "start360" (which has different origin for angle)
-            serde_json::from_value(json!([
-                {"start360": 0, "end360": 45},
-                {"start360": 45, "end360": 90},
-                {"start360": 90, "end360": 135},
-                {"start360": 135, "end360": 180,
-                    "shading": [
-                        {"type": "obstacle", "height": 10.5, "distance": 12}
-                    ]
-                },
-                {"start360": 180, "end360": 225},
-                {"start360": 225, "end360": 270},
-                {"start360": 270, "end360": 315},
-                {"start360": 315, "end360": 360}
-            ]))
-            .unwrap(),
-        );
-        let external_sensor: ExternalSensor = serde_json::from_value(json!({
-            "correlation": [
-                {"temperature": 0.0, "max_charge": 1.0},
-                {"temperature": 10.0, "max_charge": 0.9},
-                {"temperature": 18.0, "max_charge": 0.0}
             ]
-        }))
-        .unwrap();
-
-        ChargeControl::new(
-            ControlLogicType::Automatic,
-            schedule_for_charge_control,
-            simulation_time_for_charge_control.step,
-            0,
-            1.,
-            vec![Some(1.0), Some(0.8)],
-            Some(15.5),
-            None,
-            None,
-            None,
-            external_conditions.into(),
-            Some(external_sensor),
-        )
-        .unwrap()
-    }
-
-    #[rstest]
-    fn test_is_on_for_charge_control(
-        charge_control: ChargeControl,
-        simulation_time_for_charge_control: SimulationTime,
-        schedule_for_charge_control: Vec<bool>,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
-            assert_eq!(
-                charge_control.is_on(&t_it),
-                schedule_for_charge_control[t_idx],
-                "incorrect schedule returned"
-            );
         }
-    }
 
-    #[rstest]
-    fn test_target_charge(
-        charge_control: ChargeControl,
-        simulation_time_for_charge_control: SimulationTime,
-    ) {
-        let expected_target_charges = (
-            vec![
+        fn external_conditions() -> ExternalConditions {
+            ExternalConditions::new(
+                &simulation_time().iter(),
+                air_temperatures(),
+                wind_speeds(),
+                wind_directions(),
+                diffuse_horizontal_radiation(),
+                direct_beam_radiation(),
+                solar_reflectivity_of_ground(),
+                51.383,
+                -0.783,
+                0,
+                0,
+                Some(0),
+                1.,
+                Some(1),
+                Some(DaylightSavingsConfig::NotApplicable),
+                false,
+                false,
+                // following starts/ends are corrected from Python tests which erroneously use previous
+                // "start" field instead of "start360" (which has different origin for angle)
+                serde_json::from_value(json!([
+                    {"start360": 0, "end360": 45},
+                    {"start360": 45, "end360": 90},
+                    {"start360": 90, "end360": 135},
+                    {"start360": 135, "end360": 180,
+                        "shading": [
+                            {"type": "obstacle", "height": 10.5, "distance": 12}
+                        ]
+                    },
+                    {"start360": 180, "end360": 225},
+                    {"start360": 225, "end360": 270},
+                    {"start360": 270, "end360": 315},
+                    {"start360": 315, "end360": 360}
+                ]))
+                .unwrap(),
+            )
+        }
+
+        fn external_conditions_48_hours() -> ExternalConditions {
+            ExternalConditions::new(
+                &simulation_time_48_hours().iter(),
+                [air_temperatures(), air_temperatures()].concat(),
+                [wind_speeds(), wind_speeds()].concat(),
+                [wind_directions(), wind_directions()].concat(),
+                [
+                    diffuse_horizontal_radiation(),
+                    diffuse_horizontal_radiation(),
+                ]
+                .concat(),
+                [direct_beam_radiation(), direct_beam_radiation()].concat(),
+                [
+                    solar_reflectivity_of_ground(),
+                    solar_reflectivity_of_ground(),
+                ]
+                .concat(),
+                51.383,
+                -0.783,
+                0,
+                0,
+                Some(0),
+                1.,
+                Some(1),
+                Some(DaylightSavingsConfig::NotApplicable),
+                false,
+                false,
+                // following starts/ends are corrected from Python tests which erroneously use previous
+                // "start" field instead of "start360" (which has different origin for angle)
+                serde_json::from_value(json!([
+                    {"start360": 0, "end360": 45},
+                    {"start360": 45, "end360": 90},
+                    {"start360": 90, "end360": 135},
+                    {"start360": 135, "end360": 180,
+                        "shading": [
+                            {"type": "obstacle", "height": 10.5, "distance": 12}
+                        ]
+                    },
+                    {"start360": 180, "end360": 225},
+                    {"start360": 225, "end360": 270},
+                    {"start360": 270, "end360": 315},
+                    {"start360": 315, "end360": 360}
+                ]))
+                .unwrap(),
+            )
+        }
+
+        fn external_sensor() -> ExternalSensor {
+            serde_json::from_value(json!({
+                "correlation": [
+                    {"temperature": 0.0, "max_charge": 1.0},
+                    {"temperature": 10.0, "max_charge": 0.9},
+                    {"temperature": 18.0, "max_charge": 0.0}
+                ]
+            }))
+            .unwrap()
+        }
+
+        fn create_charge_control(
+            logic_type: ControlLogicType,
+            temp_charge_cut: Option<f64>,
+            external_conditions: Option<ExternalConditions>,
+            schedule: Vec<bool>,
+        ) -> anyhow::Result<ChargeControl> {
+            ChargeControl::new(
+                logic_type,
+                schedule,
+                &simulation_time().iter().current_iteration(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
+                temp_charge_cut,
+                None,
+                external_conditions.map(Arc::new),
+                Some(external_sensor()),
+                None,
+            )
+        }
+
+        #[fixture]
+        // In the Pyhon set up code charge_control_1 and charge_control_2 are identical
+        fn charge_control_1() -> ChargeControl {
+            create_charge_control(
+                ControlLogicType::Automatic,
+                Some(15.5),
+                Some(external_conditions()),
+                schedule(),
+            )
+            .unwrap()
+        }
+
+        #[fixture]
+        fn charge_control_3() -> ChargeControl {
+            create_charge_control(
+                ControlLogicType::Manual,
+                None,
+                Some(external_conditions()),
+                schedule(),
+            )
+            .unwrap()
+        }
+
+        #[test]
+        fn test_init() {
+            let charge_control = create_charge_control(
+                ControlLogicType::Manual,
+                None,
+                Some(external_conditions()),
+                schedule(),
+            )
+            .unwrap();
+            // in Python the checks are against energy_to_store, in Rust heat_retention_data combines data including energy_to_store
+            assert!(charge_control.heat_retention_data.is_none());
+
+            let charge_control = create_charge_control(
+                ControlLogicType::HeatBattery,
+                None,
+                Some(external_conditions()),
+                schedule(),
+            )
+            .unwrap();
+            assert_eq!(
+                charge_control.heat_retention_data.unwrap().energy_to_store,
+                (0.).into()
+            )
+        }
+
+        #[test]
+        fn test_init_missing_parameters() {
+            // When temp_charge_cut is None
+            for logic_type in [
+                ControlLogicType::Automatic,
+                ControlLogicType::Celect,
+                ControlLogicType::Hhrsh,
+            ] {
+                let charge_control = create_charge_control(
+                    logic_type,
+                    None,
+                    Some(external_conditions()),
+                    schedule(),
+                );
+                assert!(charge_control.is_err());
+            }
+
+            // When external_conditions is None
+            for logic_type in [ControlLogicType::Hhrsh, ControlLogicType::HeatBattery] {
+                let charge_control =
+                    create_charge_control(logic_type, Some(15.5), None, schedule());
+                assert!(charge_control.is_err());
+            }
+        }
+
+        #[rstest]
+        fn test_is_on(charge_control_1: ChargeControl) {
+            for (t_idx, t_it) in simulation_time().iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.is_on(&t_it),
+                    schedule()[t_idx],
+                    "incorrect schedule returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_logic_type(charge_control_1: ChargeControl) {
+            assert_eq!(charge_control_1.logic_type(), ControlLogicType::Automatic)
+        }
+
+        #[rstest]
+        fn test_calculate_heating_degree_hours(charge_control_1: ChargeControl) {
+            assert_eq!(
+                charge_control_1
+                    .calculate_heating_degree_hours(&VecDeque::from([Some(20.), Some(21.)]), 25.)
+                    .unwrap(),
+                9.
+            );
+
+            assert_eq!(
+                charge_control_1
+                    .calculate_heating_degree_hours(&VecDeque::from([Some(20.), Some(21.)]), 15.)
+                    .unwrap(),
+                0.
+            );
+
+            assert!(charge_control_1
+                .calculate_heating_degree_hours(&VecDeque::from([Some(20.), Some(21.), None]), 15.)
+                .is_none())
+        }
+
+        #[rstest]
+        fn test_target_charge_automatic(charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = (
+                vec![
+                    0.0,
+                    1.0,
+                    0.99,
+                    0.98,
+                    0.95,
+                    0.93,
+                    0.9400000000000001,
+                    0.675,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+                vec![
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                ],
+            );
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges.0[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(19.5)).unwrap(),
+                    expected_target_charges.1[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge_manual(mut charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = vec![
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            ];
+
+            charge_control_1.logic_type = ControlLogicType::Manual;
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge_celect(mut charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = vec![
                 0.0,
                 1.0,
                 0.99,
@@ -1918,44 +2686,1011 @@ mod tests {
                 0.0,
                 0.0,
                 0.0,
-            ],
-            vec![
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            ],
-        );
+            ];
 
-        for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
-            assert_eq!(
-                charge_control.target_charge(t_it, Some(12.5)).unwrap(),
-                expected_target_charges.0[t_idx],
-                "incorrect target charge returned"
-            );
+            charge_control_1.logic_type = ControlLogicType::Celect;
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
         }
-        for (t_idx, t_it) in simulation_time_for_charge_control.iter().enumerate() {
+
+        #[rstest]
+        fn test_target_charge_automatic_no_sensor(mut charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = vec![
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            ];
+
+            charge_control_1.external_sensor = None;
+            charge_control_1.logic_type = ControlLogicType::Automatic;
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge_celect_no_sensor(mut charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = vec![
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            ];
+
+            charge_control_1.external_sensor = None;
+            charge_control_1.logic_type = ControlLogicType::Celect;
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge_hhrsh(mut charge_control_1: ChargeControl) {
+            let simulation_time = simulation_time();
+            let expected_target_charges = vec![
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            ];
+
+            charge_control_1.logic_type = ControlLogicType::Hhrsh;
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    expected_target_charges[t_idx],
+                    "incorrect target charge returned"
+                );
+            }
+        }
+
+        // (from Python) Check correction of nominal/json temp_charge_cut with monthly table.
+        //               This function will most likely be superseded when the Electric Storage methodology
+        //               is upgraded to consider more realistic manufacturers' controls and corresponding
+        //               unit_test will be deprecated.
+        #[rstest]
+        fn test_temp_charge_cut_corr(
+            charge_control_1: ChargeControl,
+            charge_control_3: ChargeControl,
+        ) {
+            let simulation_time_iteration = simulation_time().iter().next().unwrap();
             assert_eq!(
-                charge_control.target_charge(t_it, Some(19.5)).unwrap(),
-                expected_target_charges.1[t_idx],
-                "incorrect target charge returned"
+                charge_control_1
+                    .temp_charge_cut_corr(simulation_time_iteration)
+                    .unwrap(),
+                15.5
             );
+            assert!(charge_control_3
+                .temp_charge_cut_corr(simulation_time_iteration)
+                .is_none())
+        }
+
+        #[rstest]
+        fn test_temp_charge_cut_corr_temp_charge_cut_delta(mut charge_control_1: ChargeControl) {
+            charge_control_1.temp_charge_cut_delta = Some(vec![
+                0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16., 17.,
+                18., 19., 20., 21., 22., 23.,
+            ]);
+
+            for t_it in simulation_time().iter() {
+                assert_eq!(
+                    charge_control_1.temp_charge_cut_corr(t_it).unwrap(),
+                    15.5 + t_it.index as f64
+                );
+            }
+        }
+
+        #[test]
+        fn test_energy_to_store() {
+            let simulation_time = simulation_time_48_hours();
+
+            // Using an ExternalConditions with a 48 simtime & fields with length of 48, because we
+            // need air-temps to have a length of 48. Otherwise, a panic in `air_temp_with_offset`
+            // occurs when trying to access `air_temps` by index. This doesn't happen in Python
+            // because the 24 hour simtime from ExternalConditions is used to create the index,
+            // rather than the simtime being passed through from ChargeControl. This might mean that
+            // the Python test isn't set up correctly (reported upstream)
+            let external_conditions = external_conditions_48_hours();
+
+            let charge_control = ChargeControl::new(
+                ControlLogicType::Hhrsh,
+                schedule_48_hours(),
+                &simulation_time.iter().current_iteration(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
+                Some(15.5),
+                None,
+                Some(Arc::new(external_conditions)),
+                Some(external_sensor()),
+                None,
+            );
+
+            let expected: Vec<f64> = [
+                vec![f64::NAN; 8],
+                vec![0.0; 8],
+                vec![f64::NAN; 4],
+                vec![0.0; 4],
+                vec![2400.0; 24],
+            ]
+            .concat();
+
+            for (t_it, expected) in simulation_time.iter().zip(&expected) {
+                let actual = charge_control
+                    .as_ref()
+                    .unwrap()
+                    .energy_to_store(100., 70., t_it);
+                assert!(actual.total_cmp(expected).is_eq()); // comparison including NaN values
+            }
+        }
+
+        #[ignore = "this test is set up incongruously in Python so we have decided to skip it for now"]
+        #[test]
+        fn test_energy_to_store_no_energy() {
+            let simulation_time = simulation_time_48_hours();
+
+            let mut charge_control = ChargeControl::new(
+                ControlLogicType::Hhrsh,
+                schedule_48_hours(),
+                &simulation_time.iter().current_iteration(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
+                Some(15.5),
+                None,
+                Some(Arc::new(external_conditions_48_hours())),
+                Some(external_sensor()),
+                None,
+            )
+            .unwrap();
+
+            let past_ext_temp = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
+                repeat(Some(19.0)),
+                24,
+            )));
+
+            let heat_retention_data = &charge_control.heat_retention_data.unwrap();
+            charge_control.heat_retention_data = Some(ChargeControlHeatRetentionFields {
+                steps_day: heat_retention_data.steps_day,
+                demand: heat_retention_data.demand.clone(),
+                past_ext_temp,
+                future_ext_temp: heat_retention_data.future_ext_temp.clone(),
+                energy_to_store: AtomicF64::new(
+                    heat_retention_data.energy_to_store.load(Ordering::SeqCst),
+                ),
+            });
+
+            for t_it in simulation_time.iter() {
+                let actual = charge_control.energy_to_store(100., 19., t_it);
+                assert_eq!(actual, 0.);
+            }
+        }
+
+        #[rstest]
+        fn test_get_limit_factor_invalid(charge_control_1: ChargeControl) {
+            assert!(charge_control_1.get_limit_factor(f64::NAN).is_err())
         }
     }
 
-    // (from Python) Check correction of nominal/json temp_charge_cut with monthly table.
-    //               This function will most likely be superseded when the Electric Storage methodology
-    //               is upgraded to consider more realistic manufacturers' controls and corresponding
-    //               unit_test will be deprecated.
-    #[rstest]
-    fn test_temp_charge_cut_corr(
-        charge_control: ChargeControl,
-        simulation_time_for_charge_control: SimulationTime,
-    ) {
-        assert_eq!(
-            charge_control
-                .temp_charge_cut_corr(simulation_time_for_charge_control.iter().next().unwrap())
+    mod test_combination_time_control {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[fixture]
+        fn simulation_time_1() -> SimulationTime {
+            SimulationTime::new(0., 24., 1.)
+        }
+
+        #[fixture]
+        fn schedule() -> Vec<bool> {
+            vec![
+                true, true, true, true, true, true, false, true, false, false, false, false, false,
+                false, false, false, true, true, true, true, false, false, false, false,
+            ]
+        }
+
+        #[fixture]
+        fn external_conditions(simulation_time_1: SimulationTime) -> ExternalConditions {
+            ExternalConditions::new(
+                &simulation_time_1.iter(),
+                vec![
+                    19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+                    19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+                ],
+                vec![
+                    3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+                    3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+                ],
+                vec![
+                    300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100.,
+                    140., 190., 200., 320., 330., 340., 350., 355., 315., 5.,
+                ],
+                vec![
+                    0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225.,
+                    198., 121., 68., 19., 0., 0., 0., 0., 0.,
+                ],
+                vec![
+                    0., 0., 0., 0., 0., 0., 7., 53., 63., 164., 339., 242., 315., 577., 385., 285.,
+                    332., 126., 7., 0., 0., 0., 0., 0.,
+                ],
+                vec![
+                    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+                    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+                ],
+                51.383,
+                -0.783,
+                0,
+                0,
+                Some(0),
+                1.,
+                Some(1),
+                Some(DaylightSavingsConfig::NotApplicable),
+                false,
+                false,
+                // following starts/ends are corrected from Python tests which erroneously use previous
+                // "start" field instead of "start360" (which has different origin for angle)
+                serde_json::from_value(json!([
+                    {"start360": 0, "end360": 45},
+                    {"start360": 45, "end360": 90},
+                    {"start360": 90, "end360": 135},
+                    {"start360": 135, "end360": 180,
+                        "shading": [
+                            {"type": "obstacle", "height": 10.5, "distance": 12}
+                        ]
+                    },
+                    {"start360": 180, "end360": 225},
+                    {"start360": 225, "end360": 270},
+                    {"start360": 270, "end360": 315},
+                    {"start360": 315, "end360": 360}
+                ]))
                 .unwrap(),
-            15.5
-        );
+            )
+        }
+
+        #[fixture]
+        fn external_sensor() -> ExternalSensor {
+            serde_json::from_value(json!({
+                "correlation": [
+                    {"temperature": 0.0, "max_charge": 1.0},
+                    {"temperature": 10.0, "max_charge": 0.9},
+                    {"temperature": 18.0, "max_charge": 0.0}
+                ]
+            }))
+            .unwrap()
+        }
+
+        #[fixture]
+        fn charge_control(
+            simulation_time_1: SimulationTime,
+            schedule: Vec<bool>,
+            external_conditions: ExternalConditions,
+            external_sensor: ExternalSensor,
+        ) -> ChargeControl {
+            ChargeControl::new(
+                ControlLogicType::Automatic,
+                schedule,
+                &simulation_time_1.iter().current_iteration(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
+                Some(15.5),
+                None,
+                Some(Arc::new(external_conditions)),
+                Some(external_sensor),
+                None,
+            )
+            .unwrap()
+        }
+
+        #[fixture]
+        fn controls_1(charge_control: ChargeControl) -> IndexMap<String, Arc<Control>> {
+            IndexMap::from([
+                (
+                    "ctrl11".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        [true, false, false, true, true, true, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                ("ctrl12".into(), Control::Charge(charge_control).into()),
+                (
+                    "ctrl13".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        [true, true, false, false, true, false, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+            ])
+        }
+
+        #[rstest]
+        fn test_evaluate_boolean_operation_is_on(
+            combination_control_target_charge: CombinationTimeControl,
+        ) {
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::And,
+                    &mut [false, false].iter().copied(),
+                ),
+                false
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::And,
+                    &mut [true, false].iter().copied(),
+                ),
+                false
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::And,
+                    &mut [false, true].iter().copied(),
+                ),
+                false
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::And,
+                    &mut [true, true].iter().copied(),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Or,
+                    &mut [false, false].iter().copied(),
+                ),
+                false
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Or,
+                    &mut [false, true].iter().copied(),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Or,
+                    &mut [true, false].iter().copied(),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Or,
+                    &mut [true, true].iter().copied(),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Xor,
+                    &mut [false, false].iter().copied(),
+                ),
+                false
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Xor,
+                    &mut [false, true].iter().copied(),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Xor,
+                    &mut [true, false].iter().copied(),
+                ),
+                true
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Xor,
+                    &mut [true, true].iter().copied(),
+                ),
+                false
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Not,
+                    &mut [true].iter().copied(),
+                ),
+                false
+            );
+
+            assert_eq!(
+                combination_control_target_charge.evaluate_boolean_operation_is_on(
+                    ControlCombinationOperation::Not,
+                    &mut [false].iter().copied(),
+                ),
+                true
+            );
+        }
+
+        // TODO: proper error handling, e.g. evaluate_boolean_operation_is_on should return Result
+        #[should_panic]
+        #[rstest]
+        fn test_evaluate_boolean_operation_is_on_invalid_1(
+            combination_control_target_charge: CombinationTimeControl,
+        ) {
+            combination_control_target_charge.evaluate_boolean_operation_is_on(
+                ControlCombinationOperation::Not,
+                &mut [true, true].iter().copied(),
+            );
+        }
+
+        #[should_panic]
+        #[rstest]
+        fn test_evaluate_boolean_operation_is_on_invalid_2(
+            combination_control_target_charge: CombinationTimeControl,
+        ) {
+            combination_control_target_charge.evaluate_boolean_operation_is_on(
+                ControlCombinationOperation::Max,
+                &mut [true].iter().copied(),
+            );
+        }
+
+        #[should_panic]
+        #[rstest]
+        fn test_evaluate_boolean_operation_is_on_invalid_3(
+            combination_control_target_charge: CombinationTimeControl,
+        ) {
+            combination_control_target_charge.evaluate_boolean_operation_is_on(
+                ControlCombinationOperation::Min,
+                &mut [true].iter().copied(),
+            );
+        }
+
+        // skipped the following tests as Rust compiler makes it impossible to pass in an invalid
+        // control type:
+        // test_evaluate_control_in_req_period_invalid
+        // test_evaluate_control_setpnt
+
+        // skipped: test_evaluate_combination_target_charge & test_evaluate_combination_target_charge_more_charge_control
+        // as method under test (evaluate_combination_target_charge) not actually used by any
+        // implementation code
+
+        #[rstest]
+        fn test_evaluate_combination_in_req_period(
+            combination_control_req: CombinationTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let simtime: SimulationTime = (&simulation_time).into();
+
+            let mut control = combination_control_req.clone();
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "AND", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [true, false, true, true, true, false, true, true][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "OR", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [true, true, true, true, true, true, true, true][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "XOR", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [false, true, false, false, false, true, false, false][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MAX", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [true, true, true, true, true, true, true, true][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MIN", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [true, false, true, true, true, false, true, true][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MEAN", "controls": ["ctrl4", "ctrl9"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control
+                        .evaluate_combination_in_req_period("main", t_it)
+                        .unwrap(),
+                    [true, false, true, true, true, false, true, true][t_idx]
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(json!({"main": {"operation": "AND", "controls": []}}))
+                    .unwrap(),
+            );
+
+            assert!(control
+                .evaluate_combination_in_req_period("main", simtime.iter().current_iteration())
+                .is_err());
+        }
+
+        fn test_evaluate_combination_in_req_period_invalid(
+            combination_control_req: CombinationTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let simtime: SimulationTime = (&simulation_time).into();
+
+            let mut control = combination_control_req.clone();
+
+            // OnOff + Setpoint combination in_req_perdioc() only supports the AND operation
+
+            control.set_combinations(
+                serde_json::from_value(json!({
+                    "main": {"operation": "OR", "controls": ["ctrl9", "comb1"]},
+                    "comb1": {"operation": "OR", "controls": ["ctrl4", "ctrl1"]},
+                }))
+                .unwrap(),
+            );
+
+            assert!(control
+                .evaluate_combination_in_req_period("main", simtime.iter().current_iteration())
+                .is_err());
+
+            // OnOff + OnOff combination is not applicable for in_req_period() operation
+
+            control.set_combinations(
+                serde_json::from_value(json!({
+                    "main": {"operation": "OR", "controls": ["ctrl2", "ctrl1"]},
+                }))
+                .unwrap(),
+            );
+
+            assert!(control
+                .evaluate_combination_in_req_period("main", simtime.iter().current_iteration())
+                .is_err());
+
+            control.set_combinations(
+                serde_json::from_value(json!({
+                    "main": {"operation": "AND", "controls": []},
+                }))
+                .unwrap(),
+            );
+
+            assert!(control
+                .evaluate_combination_in_req_period("main", simtime.iter().current_iteration())
+                .is_err());
+        }
+
+        #[rstest]
+        fn test_evaluate_combination_setpnt(
+            combination_control_req: CombinationTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let simtime: SimulationTime = (&simulation_time).into();
+
+            let mut control = combination_control_req.clone();
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MIN", "controls": ["ctrl4", "ctrl5"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control.evaluate_combination_setpnt("main", t_it).unwrap(),
+                    [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0][t_idx].into()
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MAX", "controls": ["ctrl4", "ctrl5"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control.evaluate_combination_setpnt("main", t_it).unwrap(),
+                    [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0][t_idx].into()
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "MEAN", "controls": ["ctrl4", "ctrl5"]}}),
+                )
+                .unwrap(),
+            );
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    control.evaluate_combination_setpnt("main", t_it).unwrap(),
+                    [true, true, true, true, true, true, true, true][t_idx].into()
+                );
+            }
+
+            control.set_combinations(
+                serde_json::from_value(json!({"main": {"operation": "AND", "controls": []}}))
+                    .unwrap(),
+            );
+
+            assert!(control
+                .evaluate_combination_setpnt("main", simtime.iter().current_iteration())
+                .is_err());
+        }
+
+        #[rstest]
+        fn test_evaluate_combination_setpnt_invalid(
+            combination_control_req: CombinationTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let simtime: SimulationTime = (&simulation_time).into();
+
+            let mut control = combination_control_req.clone();
+
+            // Only one numerical value allowed in AND operation
+
+            // (cannot port this setup and assertion because the OnOffTimeControl objects
+            // in the Python are given a float, which is contra the typing in Python and
+            // inexpressible in Rust)
+
+            // OnOff + Setpoint combination setpnt() only supports the AND operation
+
+            // NB. the Python here, incorrectly, uses OnOffTimeControls for both control objects
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "OR", "controls": ["ctrl1", "ctrl2"]}}),
+                )
+                .unwrap(),
+            );
+            control.set_controls(IndexMap::from([
+                (
+                    "ctrl1".into(),
+                    Control::SetpointTime(SetpointTimeControl::new(
+                        vec![Some(20.); 8],
+                        0,
+                        1.,
+                        None,
+                        None,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                (
+                    "ctr12".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.)).into(),
+                ),
+            ]));
+
+            assert!(control
+                .evaluate_combination_setpnt("main", simtime.iter().current_iteration())
+                .is_err());
+
+            // Unsupported operation: SupportedOperation.AND
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "AND", "controls": ["ctrl1", "ctrl2"]}}),
+                )
+                .unwrap(),
+            );
+            control.set_controls(IndexMap::from([
+                (
+                    "ctrl1".into(),
+                    Control::SetpointTime(SetpointTimeControl::new(
+                        vec![45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                        None,
+                        None,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                (
+                    "ctr12".into(),
+                    Control::SetpointTime(SetpointTimeControl::new(
+                        vec![45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                        None,
+                        None,
+                        1.,
+                    ))
+                    .into(),
+                ),
+            ]));
+
+            assert!(control
+                .evaluate_combination_setpnt("main", simtime.iter().current_iteration())
+                .is_err());
+
+            // OnOff + OnOff combination is not applicable for setpnt() operation
+
+            control.set_combinations(
+                serde_json::from_value(
+                    json!({"main": {"operation": "OR", "controls": ["ctrl1", "ctrl2"]}}),
+                )
+                .unwrap(),
+            );
+            control.set_controls(IndexMap::from([
+                (
+                    "ctrl1".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        vec![false, false, false, true, true, true, true, true]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                (
+                    "ctrl2".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        vec![false, true, false, false, true, false, true, true]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+            ]));
+
+            assert!(control
+                .evaluate_combination_setpnt("main", simtime.iter().current_iteration())
+                .is_err());
+        }
+
+        #[rstest]
+        fn test_is_on(
+            combination_control_on_off: CombinationTimeControl,
+            simulation_time_for_combinations: SimulationTime,
+        ) {
+            for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
+                assert_eq!(
+                    combination_control_on_off.is_on(&t_it),
+                    [false, false, false, false, false, false, true, false][t_idx]
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_setpnt(
+            combination_control_setpoint: CombinationTimeControl,
+            simulation_time_for_combinations: SimulationTime,
+        ) {
+            for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
+                assert_eq!(
+                    combination_control_setpoint.setpnt(&t_it),
+                    [None, Some(52.0), None, None, None, None, Some(52.0), None][t_idx]
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_in_required_period(
+            combination_control_req: CombinationTimeControl,
+            simulation_time_for_combinations: SimulationTime,
+        ) {
+            for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
+                assert_eq!(
+                    combination_control_req.in_required_period(&t_it),
+                    Some([true, false, false, true, true, false, true, true][t_idx]),
+                    "incorrect required period returned on iteration {}",
+                    t_idx + 1
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_is_on_cost(
+            combination_control_on_off_cost: CombinationTimeControl,
+            simulation_time_for_combinations: SimulationTime,
+        ) {
+            for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
+                assert_eq!(
+                    combination_control_on_off_cost.is_on(&t_it),
+                    [false, true, false, false, false, false, true, false][t_idx]
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_target_charge(
+            combination_control_target_charge: CombinationTimeControl,
+            combination_control_target_charge1: CombinationTimeControl,
+            simulation_time: SimulationTimeIterator,
+        ) {
+            let simtime: SimulationTime = (&simulation_time).into();
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                assert_eq!(
+                    combination_control_target_charge
+                        .target_charge(&t_it, None)
+                        .unwrap(),
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx]
+                );
+            }
+
+            assert!(combination_control_target_charge1
+                .target_charge(&simtime.iter().current_iteration(), None)
+                .is_err());
+        }
+
+        #[rstest]
+        fn test_max_min_mean_operations_logic() {
+            let simtime_short = SimulationTime::new(0., 4., 1.);
+
+            let controls: IndexMap<String, Arc<Control>> = IndexMap::from([
+                (
+                    "ctrl_a".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        vec![false, false, true, true]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                (
+                    "ctrl_b".into(),
+                    Control::OnOffTime(OnOffTimeControl::new(
+                        vec![false, false, false, true]
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        0,
+                        1.,
+                    ))
+                    .into(),
+                ),
+                (
+                    "ctrl_c".into(),
+                    Control::SetpointTime(SetpointTimeControl::new(
+                        vec![None, Some(20.0), None, None],
+                        0,
+                        1.,
+                        None,
+                        None,
+                        1.,
+                    ))
+                    .into(),
+                ),
+            ]);
+
+            for operation in ["MAX", "MIN", "MEAN"] {
+                let combination: ControlCombinations = serde_json::from_value(json!({
+                    "main": {"operation": operation, "controls": ["ctrl_a", "ctrl_b", "ctrl_c"]}
+                }))
+                .unwrap();
+
+                let combination_control =
+                    CombinationTimeControl::new(combination, controls.clone()).unwrap();
+
+                let expected_results = [false, true, true, true];
+
+                for (t_idx, t_it) in simtime_short.iter().enumerate() {
+                    let result = combination_control.is_on(&t_it);
+                    assert_eq!(result, expected_results[t_idx]);
+                }
+            }
+        }
+    }
+
+    #[fixture]
+    fn simulation_time_for_charge_control() -> SimulationTime {
+        SimulationTime::new(0.0, 24.0, 1.0)
+    }
+
+    #[fixture]
+    fn schedule_for_charge_control() -> Vec<bool> {
+        vec![
+            true, true, true, true, true, true, true, true, false, false, false, false, false,
+            false, false, false, true, true, true, true, false, false, false, false,
+        ]
     }
 
     #[fixture]
@@ -2034,16 +3769,17 @@ mod tests {
         ChargeControl::new(
             ControlLogicType::Automatic,
             schedule_for_charge_control,
-            simulation_time_for_charge_control.step,
+            &simulation_time_for_charge_control
+                .iter()
+                .current_iteration(),
             0,
             1.,
             [1.0, 0.8].into_iter().map(Some).collect(),
             Some(15.5),
             None,
-            None,
-            None,
-            external_conditions.into(),
+            Some(external_conditions.into()),
             Some(external_sensor),
+            None,
         )
         .unwrap()
     }
@@ -2054,13 +3790,15 @@ mod tests {
             5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0,
             10.0, 10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
         ];
-        let cost_minimising_control =
-            Control::OnOffMinimisingTime(OnOffMinimisingTimeControl::new(
+        let cost_minimising_control = Control::OnOffMinimisingTime(
+            OnOffCostMinimisingTimeControl::new(
                 cost_schedule,
                 0,
                 1.,
                 5.0, // Need 12 "on" hours
-            ));
+            )
+            .unwrap(),
+        );
 
         IndexMap::from([
             (
@@ -2101,42 +3839,32 @@ mod tests {
             ),
             (
                 "ctrl4".into(),
-                Control::SetpointTime(
-                    SetpointTimeControl::new(
-                        [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                        None,
-                        None,
-                        None,
-                        Default::default(),
-                        1.,
-                    )
-                    .unwrap(),
-                )
+                Control::SetpointTime(SetpointTimeControl::new(
+                    [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
+                        .into_iter()
+                        .map(Some)
+                        .collect_vec(),
+                    0,
+                    1.,
+                    Default::default(),
+                    Default::default(),
+                    1.,
+                ))
                 .into(),
             ),
             (
                 "ctrl5".into(),
-                Control::SetpointTime(
-                    SetpointTimeControl::new(
-                        [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                        None,
-                        None,
-                        None,
-                        Default::default(),
-                        1.,
-                    )
-                    .unwrap(),
-                )
+                Control::SetpointTime(SetpointTimeControl::new(
+                    [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
+                        .into_iter()
+                        .map(Some)
+                        .collect_vec(),
+                    0,
+                    1.,
+                    Default::default(),
+                    Default::default(),
+                    1.,
+                ))
                 .into(),
             ),
             (
@@ -2177,28 +3905,23 @@ mod tests {
             ),
             (
                 "ctrl9".into(),
-                Control::SetpointTime(
-                    SetpointTimeControl::new(
-                        vec![
-                            Some(45.0),
-                            None,
-                            Some(50.0),
-                            Some(48.0),
-                            Some(48.0),
-                            None,
-                            Some(48.0),
-                            Some(48.0),
-                        ],
-                        0,
-                        1.,
+                Control::SetpointTime(SetpointTimeControl::new(
+                    vec![
+                        Some(45.0),
                         None,
+                        Some(50.0),
+                        Some(48.0),
+                        Some(48.0),
                         None,
-                        None,
-                        Default::default(),
-                        1.,
-                    )
-                    .unwrap(),
-                )
+                        Some(48.0),
+                        Some(48.0),
+                    ],
+                    0,
+                    1.,
+                    Default::default(),
+                    Default::default(),
+                    1.,
+                ))
                 .into(),
             ),
             ("ctrl10".into(), cost_minimising_control.into()),
@@ -2326,83 +4049,6 @@ mod tests {
     #[fixture]
     fn simulation_time_for_combinations() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
-    }
-
-    #[rstest]
-    fn test_is_on_for_combination(
-        combination_control_on_off: CombinationTimeControl,
-        simulation_time_for_combinations: SimulationTime,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
-            assert_eq!(
-                combination_control_on_off.is_on(&t_it),
-                [false, false, false, false, false, false, true, false][t_idx]
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_setpnt_for_combination(
-        combination_control_setpoint: CombinationTimeControl,
-        simulation_time_for_combinations: SimulationTime,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
-            assert_eq!(
-                combination_control_setpoint.setpnt(&t_it),
-                [None, Some(52.0), None, None, None, None, Some(52.0), None][t_idx]
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_in_required_period_for_combination(
-        combination_control_req: CombinationTimeControl,
-        simulation_time_for_combinations: SimulationTime,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
-            assert_eq!(
-                combination_control_req.in_required_period(&t_it),
-                Some([true, false, false, true, true, false, true, true][t_idx]),
-                "incorrect required period returned on iteration {}",
-                t_idx + 1
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_is_on_cost_for_combination(
-        combination_control_on_off_cost: CombinationTimeControl,
-        simulation_time_for_combinations: SimulationTime,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
-            assert_eq!(
-                combination_control_on_off_cost.is_on(&t_it),
-                [false, true, false, false, false, false, true, false][t_idx]
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_target_charge_for_combination(
-        combination_control_target_charge: CombinationTimeControl,
-        combination_control_target_charge1: CombinationTimeControl,
-        simulation_time_for_combinations: SimulationTime,
-    ) {
-        for (t_idx, t_it) in simulation_time_for_combinations.iter().enumerate() {
-            assert_eq!(
-                combination_control_target_charge
-                    .target_charge(&t_it, None)
-                    .unwrap(),
-                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx]
-            );
-        }
-
-        assert!(combination_control_target_charge1
-            .target_charge(
-                &simulation_time_for_combinations.iter().next().unwrap(),
-                None
-            )
-            .is_err());
     }
 
     #[fixture]

@@ -1,27 +1,26 @@
 // This module provides objects to represent Infiltration and Ventilation.
 // The calculations are based on Method 1 of BS EN 16798-7.
 
-use crate::compare_floats::max_of_2;
+use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::AIR;
-use crate::core::solvers::fsolve;
 use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 use crate::core::units::{
     celsius_to_kelvin, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
     WATTS_PER_KILOWATT,
 };
 use crate::corpus::{CompletedVentilationLeaks, Controls, ReportingFlag};
-use crate::errors::NotImplementedError;
 use crate::input::{
     init_orientation, BuildingElement, CombustionAirSupplySituation, CombustionApplianceType,
     CombustionFuelType, DuctShape, FlueGasExhaustSituation,
-    InfiltrationVentilation as InfiltrationVentilationInput, MechVentType,
+    InfiltrationVentilation as InfiltrationVentilationInput, MechVentData,
     SupplyAirFlowRateControlType, SupplyAirTemperatureControlType, TerrainClass,
     VentilationShieldClass, WindowPart as WindowPartInput, ZoneDictionary,
 };
 use crate::simulation_time::SimulationTimeIteration;
+use crate::StringOrNumber;
 use anyhow::{anyhow, bail, Error};
 use argmin::{
     core::{CostFunction, Executor},
@@ -30,7 +29,9 @@ use argmin::{
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
+use serde::Serialize;
 use smartstring::alias::String;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -80,7 +81,16 @@ fn calculate_pressure_difference_at_an_airflow_path(
 ) -> f64 {
     let p_e_path = p_a_ref() * T_E_REF / t_e * (0.5 * c_p_path * u_site.powi(2) - h_path * G); //(5)
     let p_z_path = p_z_ref - p_a_ref() * h_path * G * T_E_REF / t_z; //(6)
-    p_e_path - p_z_path //(4)
+
+    // TODO (from Python): Investigate why, due to differences in internal temperature, these values are different in
+    // Windows implementation when compared to Linux
+    let delta_p_path = if is_close!(p_e_path, p_z_path, abs_tol = 1e-12) {
+        0.
+    } else {
+        p_e_path - p_z_path // (4)
+    };
+
+    delta_p_path
 }
 
 /// Convert infiltration rate from ach to m^3/s
@@ -130,9 +140,9 @@ fn get_appliance_system_factor(
 
 /// Adjust air density for altitude above sea level.
 /// Arguments:
-/// h_alt -- altitude above sea level (m)
-fn adjust_air_density_for_altitude(h_alt: f64) -> f64 {
-    p_a_ref() * (1. - ((0.00651 * h_alt) / 293.)).powf(4.255)
+/// altitude -- altitude above sea level (m)
+fn adjust_air_density_for_altitude(altitude: f64) -> f64 {
+    p_a_ref() * (1. - ((0.00651 * altitude) / 293.)).powf(4.255)
 }
 
 /// Recalculate air density based on the current temperature
@@ -186,11 +196,11 @@ fn convert_mass_flow_rate_to_volume_flow_rate(qm: f64, temperature: f64, p_a_alt
 ///
 ///     Args:
 ///     * `terrain_class` - The terrain type ('OpenWater', 'OpenField', 'Suburban', 'Urban').
-///     * `relative_airflow_path_height` - Height of airflow path relative to the ground (m).
+///     * `z` - Height of airflow path relative to the ground (m).
 ///
 ///    Returns:
 ///        float: Calculated roughness coefficient CR.
-fn ter_class_to_roughness_coeff(terrain: &TerrainClass, relative_airflow_path_height: f64) -> f64 {
+fn terrain_class_to_roughness_coeff(terrain: &TerrainClass, z: f64) -> f64 {
     let (kr, z0, zmin) = match terrain {
         TerrainClass::OpenWater => (0.17, 0.01, 2.),
         TerrainClass::OpenField => (0.19, 0.05, 4.),
@@ -199,7 +209,7 @@ fn ter_class_to_roughness_coeff(terrain: &TerrainClass, relative_airflow_path_he
     };
 
     // ensure z is at least zmin
-    let z = relative_airflow_path_height.max(zmin);
+    let z = z.max(zmin);
 
     // calculate the roughness coefficient
     kr * (z / z0).ln()
@@ -248,24 +258,36 @@ enum FacadeDirection {
     Roof10,
     Roof10_30,
     Roof30,
-    Windward,
-    Leeward,
-    Neither,
+    WindSeg1,
+    WindSeg2,
+    WindSeg3,
+    WindSeg4,
+    WindSeg5,
 }
 
 /// Gets direction of the facade from pitch and orientation
 /// Arguments:
-/// f_cross -- boolean, dependant on if cross ventilation is possible or not
+/// f_cross -- boolean, dependent on if cross ventilation is possible or not
 /// orientation -- orientation of the facade (degrees)
 /// pitch -- pitch of the facade (degrees)
 /// wind_direction -- direction the wind is blowing (degrees)
+/// There are now eight wind angle segments but the pressure coefficients
+/// associated to these segments are symmetric around 180 degrees so we can
+/// continue to use the same orientation_difference method with five
+/// segments as follows:
+///     wind_seg1 0 - 22.5 degrees
+///     wind_seg2 22.5 - 67.5 degrees
+///     wind_seg3 67.5 - 112.5 degrees
+///     wind_seg4 112.5 - 157.5 degrees
+///     wind_seg5 157.5 - 180 degrees
+/// these replace Windward and Leeward from EN 16798-7
 fn get_facade_direction(
     f_cross: bool,
-    orientation: f64,
+    orientation: Option<f64>,
     pitch: f64,
     wind_direction: f64,
-) -> FacadeDirection {
-    if f_cross {
+) -> anyhow::Result<FacadeDirection> {
+    Ok(if f_cross {
         if pitch < 10. {
             FacadeDirection::Roof10
         } else if pitch <= 30. {
@@ -273,134 +295,167 @@ fn get_facade_direction(
         } else if pitch < 60. {
             FacadeDirection::Roof30
         } else {
-            let orientation_diff = orientation_difference(orientation, wind_direction);
-            if orientation_diff <= 60. {
-                FacadeDirection::Windward
-            } else if orientation_diff < 120. {
-                FacadeDirection::Neither
+            let orientation_diff = orientation_difference(
+                orientation
+                    .ok_or_else(|| anyhow!("Orientation for a facade was expected to be set"))?,
+                wind_direction,
+            );
+            if orientation_diff <= 22.5 {
+                FacadeDirection::WindSeg1
+            } else if orientation_diff <= 67.5 {
+                FacadeDirection::WindSeg2
+            } else if orientation_diff <= 112.5 {
+                FacadeDirection::WindSeg3
+            } else if orientation_diff <= 157.5 {
+                FacadeDirection::WindSeg4
             } else {
-                FacadeDirection::Leeward
+                FacadeDirection::WindSeg5
             }
         }
     } else if pitch < 60. {
         FacadeDirection::Roof
     } else {
-        let orientation_diff = orientation_difference(orientation, wind_direction);
-        if orientation_diff <= 60. {
-            FacadeDirection::Windward
-        } else if orientation_diff < 120. {
-            FacadeDirection::Neither
+        let orientation_diff = orientation_difference(
+            orientation
+                .ok_or_else(|| anyhow!("Orientation for a facade was expected to be set"))?,
+            wind_direction,
+        );
+        if orientation_diff <= 22.5 {
+            FacadeDirection::WindSeg1
+        } else if orientation_diff <= 67.5 {
+            FacadeDirection::WindSeg2
+        } else if orientation_diff <= 112.5 {
+            FacadeDirection::WindSeg3
+        } else if orientation_diff <= 157.5 {
+            FacadeDirection::WindSeg4
         } else {
-            FacadeDirection::Leeward
+            FacadeDirection::WindSeg5
         }
-    }
+    })
 }
 
 // we split the python get_c_p_path method into two methods below:
-fn get_c_p_path_from_pitch_and_orientation(
+fn get_pressure_coefficient_from_pitch_and_orientation(
     f_cross: bool,
     shield_class: VentilationShieldClass,
-    relative_airflow_path_height: f64,
+    z: f64,
     wind_direction: f64,
-    orientation: f64,
+    orientation: Option<f64>,
     pitch: f64,
-) -> f64 {
-    let facade_direction = get_facade_direction(f_cross, orientation, pitch, wind_direction);
-    get_c_p_path(
+) -> anyhow::Result<f64> {
+    let facade_direction = get_facade_direction(f_cross, orientation, pitch, wind_direction)?;
+    Ok(get_pressure_coefficient(
         f_cross,
         shield_class,
-        relative_airflow_path_height,
+        z,
         facade_direction,
-    )
+    ))
 }
 
-/// Interpreted from Table B.7 for determining dimensionless wind pressure coefficients
+/// wind pressure coefficients are based on AIVC Technical Note 44
 /// Arguments:
-/// * `f_cross` - boolean, dependant on if cross ventilation is possible or not
+/// * `f_cross` - boolean, dependent on if cross ventilation is possible or not
 /// * `shield_class` - indicates exposure to wind
-/// * `relative_airflow_path_height` - height of air flow path relative to ground (m)
-/// * `h_path` - height of flow path (m)
+/// * `z` - height of air flow path relative to ground (m)
 /// * `wind_direction` - direction the wind is blowing (degrees)
 /// * `orientation` - orientation of the facade (degrees)
 /// * `pitch` - pitch of the facade (degrees)
 /// * `facade_direction` - direction of the facade (from get_facade_direction or manual entry)
-fn get_c_p_path(
+fn get_pressure_coefficient(
     f_cross: bool,
     shield_class: VentilationShieldClass,
-    relative_airflow_path_height: f64,
+    z: f64,
     facade_direction: FacadeDirection,
 ) -> f64 {
     if f_cross {
-        if relative_airflow_path_height < 15. {
+        if z < 15. {
             match shield_class {
                 VentilationShieldClass::Open => match facade_direction {
-                    FacadeDirection::Windward => 0.50,
-                    FacadeDirection::Leeward => -0.70,
-                    FacadeDirection::Neither => 0.0,
-                    FacadeDirection::Roof10 => -0.70,
-                    FacadeDirection::Roof10_30 => -0.60,
-                    FacadeDirection::Roof30 => -0.20,
+                    FacadeDirection::WindSeg1 => 0.7,
+                    FacadeDirection::WindSeg2 => 0.35,
+                    FacadeDirection::WindSeg3 => -0.5,
+                    FacadeDirection::WindSeg4 => -0.4,
+                    FacadeDirection::WindSeg5 => -0.2,
+                    FacadeDirection::Roof10 => -0.60,
+                    FacadeDirection::Roof10_30 => -0.50,
+                    FacadeDirection::Roof30 => -0.38,
                     _ => panic!("Invalid combination of shield_class and facade_direction"),
                 },
                 VentilationShieldClass::Normal => match facade_direction {
-                    FacadeDirection::Windward => 0.25,
-                    FacadeDirection::Leeward => -0.50,
-                    FacadeDirection::Neither => 0.0,
-                    FacadeDirection::Roof10 => -0.60,
-                    FacadeDirection::Roof10_30 => -0.50,
-                    FacadeDirection::Roof30 => -0.20,
+                    FacadeDirection::WindSeg1 => 0.4,
+                    FacadeDirection::WindSeg2 => 0.1,
+                    FacadeDirection::WindSeg3 => -0.3,
+                    FacadeDirection::WindSeg4 => -0.35,
+                    FacadeDirection::WindSeg5 => -0.2,
+                    FacadeDirection::Roof10 => -0.50,
+                    FacadeDirection::Roof10_30 => -0.45,
+                    FacadeDirection::Roof30 => -0.43,
                     _ => panic!("Invalid combination of shield_class and facade_direction"),
                 },
                 VentilationShieldClass::Shielded => match facade_direction {
-                    FacadeDirection::Windward => 0.05,
-                    FacadeDirection::Leeward => -0.30,
-                    FacadeDirection::Neither => 0.0,
-                    FacadeDirection::Roof10 => -0.50,
+                    FacadeDirection::WindSeg1 => 0.2,
+                    FacadeDirection::WindSeg2 => 0.05,
+                    FacadeDirection::WindSeg3 => -0.25,
+                    FacadeDirection::WindSeg4 => -0.3,
+                    FacadeDirection::WindSeg5 => -0.25,
+                    FacadeDirection::Roof10 => -0.48,
                     FacadeDirection::Roof10_30 => -0.40,
-                    FacadeDirection::Roof30 => -0.20,
+                    FacadeDirection::Roof30 => -0.3,
                     _ => panic!("Invalid combination of shield_class and facade_direction"),
                 },
             }
-        } else if (15. ..50.).contains(&relative_airflow_path_height) {
+        // Above 15m we currently only have a single set of coefficients.
+        // We preserve the split by exposure type here, for future update to values.
+        // Coefficient data currently has only a single value for (flat) roofs
+        // and so that is applied here to all roof pitches for now.
+        } else if (15. ..50.).contains(&z) {
             match shield_class {
                 VentilationShieldClass::Open => match facade_direction {
-                    FacadeDirection::Windward => 0.65,
-                    FacadeDirection::Leeward => -0.70,
-                    FacadeDirection::Neither => 0.0,
-                    FacadeDirection::Roof10 => -0.70,
-                    FacadeDirection::Roof10_30 => -0.60,
-                    FacadeDirection::Roof30 => -0.20,
+                    FacadeDirection::WindSeg1 => 0.49,
+                    FacadeDirection::WindSeg2 => 0.24,
+                    FacadeDirection::WindSeg3 => -0.61,
+                    FacadeDirection::WindSeg4 => -0.47,
+                    FacadeDirection::WindSeg5 => -0.34,
+                    FacadeDirection::Roof10 => -0.61,
+                    FacadeDirection::Roof10_30 => -0.61,
+                    FacadeDirection::Roof30 => -0.61,
                     _ => panic!("Invalid combination of shield_class and facade_direction"),
                 },
                 VentilationShieldClass::Normal => match facade_direction {
-                    FacadeDirection::Windward => 0.45,
-                    FacadeDirection::Leeward => -0.50,
-                    FacadeDirection::Neither => 0.0,
-                    FacadeDirection::Roof10 => -0.60,
-                    FacadeDirection::Roof10_30 => -0.50,
-                    FacadeDirection::Roof30 => -0.20,
+                    FacadeDirection::WindSeg1 => 0.49,
+                    FacadeDirection::WindSeg2 => 0.24,
+                    FacadeDirection::WindSeg3 => -0.61,
+                    FacadeDirection::WindSeg4 => -0.47,
+                    FacadeDirection::WindSeg5 => -0.34,
+                    FacadeDirection::Roof10 => -0.61,
+                    FacadeDirection::Roof10_30 => -0.61,
+                    FacadeDirection::Roof30 => -0.61,
                     _ => panic!("Invalid combination of shield_class and facade_direction"),
                 },
                 VentilationShieldClass::Shielded => match facade_direction {
-                    FacadeDirection::Windward => 0.25,
-                    FacadeDirection::Leeward => -0.30,
-                    FacadeDirection::Neither => 0.0,
-                    FacadeDirection::Roof10 => -0.50,
-                    FacadeDirection::Roof10_30 => -0.40,
-                    FacadeDirection::Roof30 => -0.20,
+                    FacadeDirection::WindSeg1 => 0.49,
+                    FacadeDirection::WindSeg2 => 0.24,
+                    FacadeDirection::WindSeg3 => -0.61,
+                    FacadeDirection::WindSeg4 => -0.47,
+                    FacadeDirection::WindSeg5 => -0.34,
+                    FacadeDirection::Roof10 => -0.61,
+                    FacadeDirection::Roof10_30 => -0.61,
+                    FacadeDirection::Roof30 => -0.61,
                     _ => panic!("Invalid combination of shield_class and facade_direction"),
                 },
             }
         } else {
-            // In python this is an elif h_path >= 50.
+            // In python this is an elif z >= 50.
             match shield_class {
                 VentilationShieldClass::Open => match facade_direction {
-                    FacadeDirection::Windward => 0.80,
-                    FacadeDirection::Leeward => -0.70,
-                    FacadeDirection::Neither => 0.0,
-                    FacadeDirection::Roof10 => -0.70,
-                    FacadeDirection::Roof10_30 => -0.60,
-                    FacadeDirection::Roof30 => -0.20,
+                    FacadeDirection::WindSeg1 => 0.49,
+                    FacadeDirection::WindSeg2 => 0.24,
+                    FacadeDirection::WindSeg3 => -0.61,
+                    FacadeDirection::WindSeg4 => -0.47,
+                    FacadeDirection::WindSeg5 => -0.34,
+                    FacadeDirection::Roof10 => -0.61,
+                    FacadeDirection::Roof10_30 => -0.61,
+                    FacadeDirection::Roof30 => -0.61,
                     _ => panic!("Invalid combination of shield_class and facade_direction"),
                 },
                 _ => panic!("Invalid combination of shield_class and facade_direction"),
@@ -408,9 +463,11 @@ fn get_c_p_path(
         }
     } else {
         match facade_direction {
-            FacadeDirection::Windward => 0.05,
-            FacadeDirection::Leeward => -0.05,
-            FacadeDirection::Neither => 0.0,
+            FacadeDirection::WindSeg1 => 0.05,
+            FacadeDirection::WindSeg2 => 0.05,
+            FacadeDirection::WindSeg3 => -0.05,
+            FacadeDirection::WindSeg4 => -0.05,
+            FacadeDirection::WindSeg5 => -0.05,
             FacadeDirection::Roof => 0.,
             _ => panic!("Invalid combination of shield_class and facade_direction"),
         }
@@ -429,12 +486,107 @@ fn sign(value: f64) -> i8 {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub(crate) enum MechVentType {
+    #[serde(rename = "Intermittent MEV")]
+    IntermittentMev,
+    #[serde(rename = "Centralised continuous MEV")]
+    CentralisedContinuousMev,
+    #[serde(rename = "Decentralised continuous MEV")]
+    DecentralisedContinuousMev,
+    #[serde(rename = "MVHR")]
+    Mvhr,
+    #[serde(rename = "Positive input ventilation")]
+    PositiveInputVentilation,
+}
+
+impl Display for MechVentType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            serde_json::to_value(self).unwrap().as_str().unwrap()
+        )
+    }
+}
+
+impl MechVentType {
+    /// Check if this ventilation type is a balanced system (both supply and extract).
+    fn is_balanced(&self) -> bool {
+        matches!(self, Self::Mvhr { .. })
+    }
+
+    /// Check if this ventilation type is an extract-only system.
+    fn is_extract_only(&self) -> bool {
+        matches!(
+            self,
+            Self::IntermittentMev { .. }
+                | Self::CentralisedContinuousMev { .. }
+                | Self::DecentralisedContinuousMev { .. }
+        )
+    }
+
+    /// Check if this ventilation type is a supply-only system.
+    fn is_supply_only(&self) -> bool {
+        matches!(self, Self::PositiveInputVentilation { .. })
+    }
+
+    /// Check if this ventilation type includes supply air.
+    fn has_supply(&self) -> bool {
+        self.is_balanced() || self.is_supply_only()
+    }
+
+    /// Check if this ventilation type includes extract air.
+    fn has_extract(&self) -> bool {
+        self.is_balanced() || self.is_extract_only()
+    }
+
+    /// Check if this ventilation type operates continuously.
+    fn is_continuous(&self) -> bool {
+        matches!(
+            self,
+            Self::CentralisedContinuousMev { .. }
+                | Self::DecentralisedContinuousMev { .. }
+                | Self::Mvhr { .. }
+        )
+    }
+
+    /// Check if this ventilation type operates intermittently.
+    fn is_intermittent(&self) -> bool {
+        matches!(self, Self::IntermittentMev { .. })
+    }
+
+    // Flow change coefficients for different mechanical ventilation types
+    // From "Sensitivity of fans to back pressure – generic values for HEM - Technical Note"
+    fn flow_change_coefficients(&self) -> f64 {
+        match self {
+            Self::Mvhr => 0.5,
+            Self::CentralisedContinuousMev => 0.5,
+            Self::DecentralisedContinuousMev => 0.1,
+            Self::IntermittentMev => 0.5,
+            Self::PositiveInputVentilation => 0.1,
+        }
+    }
+}
+
+impl From<MechVentData> for MechVentType {
+    fn from(value: MechVentData) -> Self {
+        match value {
+            MechVentData::Mvhr { .. } => Self::Mvhr,
+            MechVentData::IntermittentMev { .. } => Self::IntermittentMev,
+            MechVentData::CentralisedContinuousMev { .. } => Self::CentralisedContinuousMev,
+            MechVentData::DecentralisedContinuousMev { .. } => Self::DecentralisedContinuousMev,
+            MechVentData::PositiveInputVentilation { .. } => Self::PositiveInputVentilation,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Window {
     a_w_max: f64,
     c_d_w: f64,
     n_w: f64,
-    orientation: f64,
+    orientation: Option<f64>,
     pitch: f64,
     on_off_ctrl_obj: Option<Arc<Control>>,
     _altitude: f64,
@@ -444,12 +596,24 @@ pub(crate) struct Window {
 }
 
 impl Window {
+    /// Construct a Window object
+    /// Arguments:
+    ///     free_area_height -- The free area height of the window
+    ///     midheight -- The midheight of the window.
+    ///     max_opening_area -- The maximum window opening area.
+    ///     window_part_list -- The list of window parts.
+    ///     orientation -- The orientation of the window.
+    ///     pitch -- The pitch of the window.
+    ///     altitude -- altitude of dwelling above sea level (m)
+    ///     on_off_ctrl_obj -
+    /// Method
+    ///     - Based on Section 6.4.3.5 Airflow due to windows opening section.
     pub(crate) fn new(
-        h_w_fa: f64,
-        h_w_path: f64,
-        a_w_max: f64,
+        free_area_height: f64,
+        midheight: f64,
+        max_opening_area: f64,
         window_part_list: Vec<WindowPartInput>,
-        orientation: f64,
+        orientation: Option<f64>,
         pitch: f64,
         altitude: f64,
         on_off_ctrl_obj: Option<Arc<Control>>,
@@ -457,7 +621,7 @@ impl Window {
     ) -> Self {
         let n_w_div = max_of_2(window_part_list.len() - 1, 0usize) as f64;
         Self {
-            a_w_max,
+            a_w_max: max_opening_area,
             c_d_w: 0.67,
             n_w: 0.5,
             orientation,
@@ -465,14 +629,14 @@ impl Window {
             on_off_ctrl_obj,
             _altitude: altitude,
             p_a_alt: adjust_air_density_for_altitude(altitude),
-            z: h_w_path + ventilation_zone_base_height,
+            z: midheight + ventilation_zone_base_height,
             window_parts: window_part_list
                 .iter()
                 .enumerate()
                 .map(|(window_part_number, window_part_input)| {
                     WindowPart::new(
                         window_part_input.mid_height_air_flow_path,
-                        h_w_fa,
+                        free_area_height,
                         n_w_div,
                         window_part_number + 1,
                         ventilation_zone_base_height,
@@ -489,13 +653,13 @@ impl Window {
     fn calculate_window_opening_free_area(
         &self,
         r_w_arg: f64,
-        simulation_time_iteration: SimulationTimeIteration,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
         // Assume windows are shut if the control object is empty
         match &self.on_off_ctrl_obj {
             None => 0.,
             Some(ctrl) => {
-                if ctrl.is_on(simulation_time_iteration) {
+                if ctrl.is_on(&simtime) {
                     r_w_arg * self.a_w_max
                 } else {
                     0.
@@ -511,14 +675,14 @@ impl Window {
     fn calculate_flow_coeff_for_window(
         &self,
         r_w_arg: f64,
-        simulation_time: SimulationTimeIteration,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
         // Assume windows are shut if the control object is empty
         match &self.on_off_ctrl_obj {
             None => 0.,
             Some(ctrl) => {
-                if ctrl.is_on(simulation_time) {
-                    let a_w = self.calculate_window_opening_free_area(r_w_arg, simulation_time);
+                if ctrl.is_on(&simtime) {
+                    let a_w = self.calculate_window_opening_free_area(r_w_arg, simtime);
                     3600. * self.c_d_w * a_w * (2. / p_a_ref()).powf(self.n_w)
                 } else {
                     0.
@@ -548,13 +712,13 @@ impl Window {
         f_cross: bool,
         shield_class: VentilationShieldClass,
         r_w_arg: Option<f64>,
-        simulation_time: SimulationTimeIteration,
-    ) -> (f64, f64) {
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
         // Assume windows are shut if the control object is empty
         let r_w_arg = match &self.on_off_ctrl_obj {
             None => 0.,
             Some(control) => {
-                if !control.is_on(simulation_time) {
+                if !control.is_on(&simtime) {
                     0.
                 } else {
                     r_w_arg.expect("r_w_arg was None")
@@ -562,24 +726,29 @@ impl Window {
             }
         };
         // Wind pressure coefficient for the window
-        let c_p_path = get_c_p_path_from_pitch_and_orientation(
+        let pressure_coefficient_path = get_pressure_coefficient_from_pitch_and_orientation(
             f_cross,
             shield_class,
             self.z,
             wind_direction,
             self.orientation,
             self.pitch,
-        );
+        )?;
 
         // Airflow coefficient of the window
-        let c_w_path = self.calculate_flow_coeff_for_window(r_w_arg, simulation_time);
+        let c_w_path = self.calculate_flow_coeff_for_window(r_w_arg, simtime);
 
         //  Sum airflow through each window part entering and leaving - based on Equation 56 and 57
         let mut qv_in_through_window_opening = 0.;
         let mut qv_out_through_window_opening = 0.;
         for window_part in &self.window_parts {
             let air_flow = window_part.calculate_ventilation_through_windows_using_internal_p(
-                u_site, t_e, t_z, c_w_path, p_z_ref, c_p_path,
+                u_site,
+                t_e,
+                t_z,
+                c_w_path,
+                p_z_ref,
+                pressure_coefficient_path,
             );
             if air_flow >= 0. {
                 qv_in_through_window_opening += air_flow;
@@ -589,13 +758,13 @@ impl Window {
         }
 
         //  Convert volume air flow rate to mass air flow rate
-        convert_to_mass_air_flow_rate(
+        Ok(convert_to_mass_air_flow_rate(
             qv_in_through_window_opening,
             qv_out_through_window_opening,
             t_e,
             t_z,
             self.p_a_alt,
-        )
+        ))
     }
 }
 
@@ -608,23 +777,29 @@ struct WindowPart {
 }
 
 impl WindowPart {
+    /// Construct a WindowPart object
+    /// Argument:
+    ///     midheight -- Mid-height of the window
+    ///     free_area_height -- free area height of the window
+    ///     number_window_divisions -- number of window divisions
+    ///     window_part_number -- The identifying number of the window part
     fn new(
-        h_w_path: f64,
-        h_w_fa: f64,
-        n_w_div: f64,
+        midheight: f64,
+        free_area_height: f64,
+        number_window_divisions: f64,
         window_part_number: usize,
         ventilation_zone_base_height: f64,
     ) -> Self {
         Self {
-            n_w_div,
+            n_w_div: number_window_divisions,
             h_w_div_path: Self::calculate_height_for_delta_p_w_div_path(
-                h_w_path,
-                h_w_fa,
-                n_w_div,
+                midheight,
+                free_area_height,
+                number_window_divisions,
                 window_part_number,
             ),
             n_w: 0.5,
-            _z: h_w_path + ventilation_zone_base_height,
+            _z: midheight + ventilation_zone_base_height,
         }
     }
 
@@ -693,8 +868,8 @@ impl Vent {
     /// Construct a Vent object
     ///
     /// Arguments:
-    ///    h_path -- mid-height of air flow path relative to ventilation zone (m)
-    ///    A_vent - Equivalent area of a vent (m2)
+    ///    midheight -- mid-height of air flow path relative to ventilation zone (m)
+    ///    area - Equivalent area of a vent (cm2)
     ///    delta_p_vent_ref -- reference pressure difference for vent (Pa)
     ///    orientation -- The orientation of the vent (degrees)
     ///    pitch -- The pitch of the vent (degrees)
@@ -703,8 +878,8 @@ impl Vent {
     /// Method:
     ///    - Based on Section 6.4.3.6 Airflow through vents from BS EN 16798-7
     pub(crate) fn new(
-        h_path: f64,
-        a_vent: f64,
+        midheight: f64,
+        area: f64,
         delta_p_vent_ref: f64,
         orientation: f64,
         pitch: f64,
@@ -712,8 +887,8 @@ impl Vent {
         ventilation_zone_base_height: f64, // TODO: added as part of the 0.32 migration, still WIP
     ) -> Self {
         Self {
-            h_path,
-            a_vent,
+            h_path: midheight,
+            a_vent: area,
             delta_p_vent_ref,
             orientation,
             pitch,
@@ -721,7 +896,7 @@ impl Vent {
             n_vent: 0.5, // Flow exponent for vents based on Section B.3.2.2 from BS EN 16798-7
             c_d_vent: 0.6, // Discharge coefficient of vents based on B.3.2.1 from BS EN 16798-7
             p_a_alt: adjust_air_density_for_altitude(altitude),
-            z: h_path + ventilation_zone_base_height,
+            z: midheight + ventilation_zone_base_height,
         }
     }
 
@@ -799,16 +974,16 @@ impl Vent {
         f_cross: bool,
         shield_class: VentilationShieldClass,
         r_v_arg: f64,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         // Wind pressure coefficient for the air flow path
-        let c_p_path = get_c_p_path_from_pitch_and_orientation(
+        let pressure_coefficient_path = get_pressure_coefficient_from_pitch_and_orientation(
             f_cross,
             shield_class,
             self.z,
             wind_direction,
-            self.orientation,
+            Some(self.orientation),
             self.pitch,
-        );
+        )?;
 
         let c_vent_path = self.calculate_flow_coeff_for_vent(r_v_arg);
         // Calculate airflow through each vent
@@ -817,7 +992,7 @@ impl Vent {
             t_e,
             t_z,
             c_vent_path,
-            c_p_path,
+            pressure_coefficient_path,
             p_z_ref,
         );
 
@@ -832,13 +1007,13 @@ impl Vent {
         }
 
         // Convert volume air flow rate to mass air flow rate
-        convert_to_mass_air_flow_rate(
+        Ok(convert_to_mass_air_flow_rate(
             qv_in_through_vent,
             qv_out_through_vent,
             t_e,
             t_z,
             self.p_a_alt,
-        )
+        ))
     }
 }
 
@@ -866,40 +1041,40 @@ struct Leaks {
 
 impl Leaks {
     /// Arguments:
-    /// * `h_path` - mid-height of the air flow path relative to ventilation zone floor level
+    /// * `midheight` - mid-height of the air flow path relative to ventilation zone floor level
     /// * `delta_p_leak_ref` - Reference pressure difference (From pressure test e.g. blower door = 50Pa)
     /// * `qv_delta_p_leak_ref` - flow rate through
     /// * `facade_direction` - The direction of the facade the leak is on.
-    /// * `a_roof` - Surface area of the roof of the ventilation zone (m2)
-    /// * `a_facades` - Surface area of facades (m2)
-    /// * `a_leak` - Reference area of the envelope airtightness index qv_delta_p_leak_ref (depends on national context)
+    /// * `area_roof` - Surface area of the roof of the ventilation zone (m2)
+    /// * `area_facades` - Surface area of facades (m2)
+    /// * `area_leak` - Reference area of the envelope airtightness index qv_delta_p_leak_ref (depends on national context)
     /// * `altitude` - altitude of dwelling above sea level (m)
     /// * `ventilation_zone_base_height` - Base height of the ventilation zone relative to ground (m)
     ///
     /// Based on Section 6.4.3.6 Airflow through leaks from BS EN 16798-7.
     //
     fn new(
-        h_path: f64,
+        midheight: f64,
         delta_p_leak_ref: f64,
         qv_delta_p_leak_ref: f64,
         facade_direction: FacadeDirection,
-        a_roof: f64,
-        a_facades: f64,
-        a_leak: f64,
+        area_roof: f64,
+        area_facades: f64,
+        area_leak: f64,
         altitude: f64,
         ventilation_zone_base_height: f64,
     ) -> Self {
         Self {
-            h_path,
+            h_path: midheight,
             delta_p_leak_ref,
-            a_roof,
-            a_facades,
-            a_leak,
+            a_roof: area_roof,
+            a_facades: area_facades,
+            a_leak: area_leak,
             qv_delta_p_leak_ref,
             facade_direction,
             _altitude: altitude,
             p_a_alt: adjust_air_density_for_altitude(altitude),
-            z: h_path + ventilation_zone_base_height,
+            z: midheight + ventilation_zone_base_height,
         }
     }
 
@@ -910,13 +1085,20 @@ impl Leaks {
 
         // Leakage coefficient of roof, estimated to be proportional to ratio
         // of surface area of the facades to that of the facades plus the roof.
-        if self.facade_direction != FacadeDirection::Windward
-            && self.facade_direction != FacadeDirection::Leeward
-        {
+        fn is_wind_segment(facade_direction: FacadeDirection) -> bool {
+            matches!(
+                facade_direction,
+                FacadeDirection::WindSeg1
+                    | FacadeDirection::WindSeg2
+                    | FacadeDirection::WindSeg3
+                    | FacadeDirection::WindSeg4
+                    | FacadeDirection::WindSeg5
+            )
+        }
+        if !is_wind_segment(self.facade_direction) {
             // leak in roof
-
             let c_leak_roof = c_leak * self.a_roof / (self.a_facades + self.a_roof);
-            return c_leak_roof;
+            return c_leak_roof; // Table B.12
         }
 
         // Leakage coefficient of facades, estimated to be proportional to ratio
@@ -967,13 +1149,18 @@ impl Leaks {
         shield_class: VentilationShieldClass,
     ) -> (f64, f64) {
         // Wind pressure coefficient for the air flow path
-        let c_p_path = get_c_p_path(f_cross, shield_class, self.z, self.facade_direction); // #TABLE from annex B
+        let pressure_coefficient_path =
+            get_pressure_coefficient(f_cross, shield_class, self.z, self.facade_direction); // #TABLE from annex B
 
         // Calculate airflow through each leak
         let mut qv_in_through_leak = 0.;
         let mut qv_out_through_leak = 0.;
         let air_flow = self.calculate_ventilation_through_leaks_using_internal_p(
-            u_site, t_e, t_z, c_p_path, p_z_ref,
+            u_site,
+            t_e,
+            t_z,
+            pressure_coefficient_path,
+            p_z_ref,
         );
 
         // Add airflow entering and leaving through leak
@@ -1005,86 +1192,86 @@ pub(crate) struct AirTerminalDevices {
     delta_p_atd_ref: f64,
     // NOTE - in Python we have c_atd_path as an instance variable but here we calculate it when needed instead
 }
-
-// remove following directive when things start referencing AirTerminalDevices (upstream is not fully implemented as of 0.30)
-#[allow(dead_code)]
-impl AirTerminalDevices {
-    /// Construct a AirTerminalDevices object
-    /// Arguments:
-    /// a_atd -- equivalent area of the air terminal device (m2)
-    /// delta_p_atd_ref -- Reference pressure difference for an air terminal device (Pa)
-    /// Method: Based on Section 6.4.3.2.2 from BS EN 16798-7
-    fn new(a_atd: f64, delta_p_atd_ref: f64) -> Self {
-        Self {
-            c_d_atd: 0.6, // Discharge coefficient for air terminal devices based on B.3.2.1
-            n_atd: 0.5,   // Flow exponent of air terminal devices based on B.3.2.2
-            a_atd,
-            delta_p_atd_ref,
-        }
-    }
-
-    /// The airflow coefficient of the ATD is calculated
-    /// from the equivalent area A_vent value, according to
-    /// EN 13141-1 and EN 13141-2.
-    /// Equation 26 from BS EN 16798-7.
-    fn calculate_flow_coeff_for_atd(&self) -> f64 {
-        // NOTE: The standard does not define what the below 3600 and 10000 are.
-        (3600. / 10000.)
-            * self.c_d_atd
-            * self.a_atd
-            * (2. / p_a_ref()).powf(0.5)
-            * (1. / self.delta_p_atd_ref).powf(self.n_atd - 0.5)
-    }
-
-    /// The pressure loss at internal air terminal devices is calculated from
-    /// the total air flow rate passing through the device.
-    /// Equation 25 from BS EN 16798-7.
-    /// Solving for qv_pdu.
-    /// Arguments:
-    /// qv_pdu - volume flow rate through passive and hybrid ducts.
-    fn calculate_pressure_difference_atd(&self, qv_pdu: f64) -> f64 {
-        let c_atd_path = self.calculate_flow_coeff_for_atd();
-
-        -(f64::from(sign(qv_pdu))) * (qv_pdu.abs() / c_atd_path).powf(1. / self.n_atd)
-    }
-}
-
-/// An object to represent Cowls
-// remove following directive when something references Cowls type
-#[allow(dead_code)]
-struct Cowls {
-    c_p_cowl_roof: f64,
-    height: f64,
-    // NOTE - in Python we have delta_cowl_height as an instance variable but here we calculate it when needed from the height
-}
-
-// remove following directive when something references Cowls type
-#[allow(dead_code)]
-impl Cowls {
-    /// Construct a Cowls object
-    /// Arguments:
-    /// height - height Between the top of the roof and the roof outlet in m (m)
-    fn new(height: f64) -> Self {
-        Self {
-            c_p_cowl_roof: 0., // Default B.3.3.5
-            height,
-        }
-    }
-
-    /// Interpreted Table B.9 from BS EN 16798-7
-    /// Get values for delta_C_cowl_height.
-    /// Arguments:
-    /// height - height Between the top of the roof and the roof outlet in m (m)
-    fn get_delta_cowl_height(&self) -> f64 {
-        if self.height < 0.5 {
-            -0.0
-        } else if (0.5..=1.).contains(&self.height) {
-            -0.1
-        } else {
-            0.2
-        }
-    }
-}
+// TODO (from Python) uncomment when re-implementing ATDs
+// // remove following directive when things start referencing AirTerminalDevices (upstream is not fully implemented as of 0.30)
+// #[allow(dead_code)]
+// impl AirTerminalDevices {
+//     /// Construct a AirTerminalDevices object
+//     /// Arguments:
+//     /// a_atd -- equivalent area of the air terminal device (m2)
+//     /// delta_p_atd_ref -- Reference pressure difference for an air terminal device (Pa)
+//     /// Method: Based on Section 6.4.3.2.2 from BS EN 16798-7
+//     fn new(a_atd: f64, delta_p_atd_ref: f64) -> Self {
+//         Self {
+//             c_d_atd: 0.6, // Discharge coefficient for air terminal devices based on B.3.2.1
+//             n_atd: 0.5,   // Flow exponent of air terminal devices based on B.3.2.2
+//             a_atd,
+//             delta_p_atd_ref,
+//         }
+//     }
+//
+//     /// The airflow coefficient of the ATD is calculated
+//     /// from the equivalent area A_vent value, according to
+//     /// EN 13141-1 and EN 13141-2.
+//     /// Equation 26 from BS EN 16798-7.
+//     fn calculate_flow_coeff_for_atd(&self) -> f64 {
+//         // NOTE: The standard does not define what the below 3600 and 10000 are.
+//         (3600. / 10000.)
+//             * self.c_d_atd
+//             * self.a_atd
+//             * (2. / p_a_ref()).powf(0.5)
+//             * (1. / self.delta_p_atd_ref).powf(self.n_atd - 0.5)
+//     }
+//
+//     /// The pressure loss at internal air terminal devices is calculated from
+//     /// the total air flow rate passing through the device.
+//     /// Equation 25 from BS EN 16798-7.
+//     /// Solving for qv_pdu.
+//     /// Arguments:
+//     /// qv_pdu - volume flow rate through passive and hybrid ducts.
+//     fn calculate_pressure_difference_atd(&self, qv_pdu: f64) -> f64 {
+//         let c_atd_path = self.calculate_flow_coeff_for_atd();
+//
+//         -(f64::from(sign(qv_pdu))) * (qv_pdu.abs() / c_atd_path).powf(1. / self.n_atd)
+//     }
+// }
+//
+// /// An object to represent Cowls
+// // remove following directive when something references Cowls type
+// #[allow(dead_code)]
+// struct Cowls {
+//     c_p_cowl_roof: f64,
+//     height: f64,
+//     // NOTE - in Python we have delta_cowl_height as an instance variable but here we calculate it when needed from the height
+// }
+//
+// // remove following directive when something references Cowls type
+// #[allow(dead_code)]
+// impl Cowls {
+//     /// Construct a Cowls object
+//     /// Arguments:
+//     /// height - height Between the top of the roof and the roof outlet in m (m)
+//     fn new(height: f64) -> Self {
+//         Self {
+//             c_p_cowl_roof: 0., // Default B.3.3.5
+//             height,
+//         }
+//     }
+//
+//     /// Interpreted Table B.9 from BS EN 16798-7
+//     /// Get values for delta_C_cowl_height.
+//     /// Arguments:
+//     /// height - height Between the top of the roof and the roof outlet in m (m)
+//     fn get_delta_cowl_height(&self) -> f64 {
+//         if self.height < 0.5 {
+//             -0.0
+//         } else if (0.5..=1.).contains(&self.height) {
+//             -0.1
+//         } else {
+//             0.2
+//         }
+//     }
+// }
 
 /// An object to represent CombustionAppliances
 #[derive(Clone, Copy, Debug)]
@@ -1117,8 +1304,10 @@ impl CombustionAppliances {
     /// Calculate additional air flow rate required for the operation of
     /// combustion appliance q_v_comb.
     /// Arguments:
-    /// f_op_comp --  Operation requirement signal (combustion appliance) (0 =  OFF ; 1 = ON)
-    /// p_h_fi -- Combustion appliance heating fuel input power (kW)
+    ///     f_op_comp --  Operation requirement signal (combustion appliance) (0 =  OFF ; 1 = ON)
+    ///     p_h_fi -- Combustion appliance heating fuel input power (kW)
+    /// Returns:
+    ///     q_v_in_through_comb, q_v_out_through_comb
     fn calculate_air_flow_req_for_comb_appliance(&self, f_op_comp: f64, p_h_fi: f64) -> (f64, f64) {
         // TODO (from the Python) flue is considered as vertical passive duct, standard formulas in CIBSE guide.
         let q_v_in_through_comb = 0.; // (37)
@@ -1145,12 +1334,20 @@ pub(crate) struct MechanicalVentilation {
     _theta_ctrl_sys: Option<f64>,
     vent_type: MechVentType,
     _total_volume: f64,
-    ctrl_intermittent_mev: Option<Arc<Control>>,
+    ctrl_intermittent_mev: Option<Arc<dyn ControlBehaviour>>,
     sfp: f64,
     energy_supply_conn: EnergySupplyConnection,
     _altitude: f64,
+    orientation_exhaust: f64,
+    pitch_exhaust: f64,
+    h_path_exhaust: f64,
+    z_exhaust: f64,
     pub(crate) design_outdoor_air_flow_rate_m3_h: f64,
     mvhr_eff: f64,
+    orientation_intake: Option<f64>,
+    pitch_intake: Option<f64>,
+    h_path_intake: Option<f64>,
+    z_intake: Option<f64>,
     qv_oda_req_design: f64,
     p_a_alt: f64,
 }
@@ -1163,16 +1360,24 @@ impl MechanicalVentilation {
     /// q_h_des -- design zone heating need to be covered by the mechanical ventilation system
     /// q_c_des -- design zone cooling need to be covered by the mechanical ventilation system
     /// vent_type -- ventilation system type
-    /// specific_fan_power -- in W / (litre / second), inclusive of any in use factors
+    /// specific_fan_power -- in W / (litre / second), assumed inclusive of any in use factors if sfp_in_use_factor not supplied
     /// design_outdoor_air_flow_rate -- design outdoor air flow rate in m3/h
     /// simulation_time -- reference to Simulation time object
     /// energy_supply_conn -- Energy supply connection
     /// total_volume  -- Total zone volume (m3)
     /// altitude -- altitude of dwelling above sea level (m)
+    /// orientation_exhaust -- orientation of the exhaust (degrees) - for MVHR/MEV
+    /// pitch_exhaust -- pitch of the exhaust (degrees) - for MVHR/MEV
+    /// midheight_exhaust -- mid height of exhaust air flow path relative to ventilation zone (m) - for MVHR/MEV
+    /// ventilation_zone_base_height -- Base height of the ventilation zone relative to ground (m)
     /// ctrl_intermittent_MEV -- reference to Control object with boolean schedule
     /// defining when the MechVent should be on.
     /// mvhr_eff -- MVHR efficiency
     /// theta_ctrl_sys -- Temperature variation based on control system (K)
+    /// orientation_intake -- orientation of the intake (degrees) - for MVHR
+    /// pitch_intake -- pitch of the intake (degrees) - for MVHR
+    /// h_path_intake -- mid height of intake air flow path relative to ventilation zone (m) - for MVHR
+    /// sfp_in_use_factor -- in-use factor to be applied to specific_fan_power. default of 1 if not supplied
     pub(crate) fn new(
         _sup_air_flw_ctrl: SupplyAirFlowRateControlType,
         _sup_air_temp_ctrl: SupplyAirTemperatureControlType,
@@ -1184,13 +1389,23 @@ impl MechanicalVentilation {
         energy_supply_conn: EnergySupplyConnection,
         total_volume: f64,
         altitude: f64,
-        ctrl_intermittent_mev: Option<Arc<Control>>,
+        orientation_exhaust: f64, // For MVHR exhaust / MEV extract
+        pitch_exhaust: f64,
+        midheight_exhaust: f64,
+        ventilation_zone_base_height: f64,
+        ctrl_intermittent_mev: Option<Arc<dyn ControlBehaviour>>,
         mvhr_eff: Option<f64>,
         theta_ctrl_sys: Option<f64>, // Only required if sup_air_temp_ctrl = LOAD_COM
+        orientation_intake: Option<f64>,
+        pitch_intake: Option<f64>,
+        h_path_intake: Option<f64>,
+        sfp_in_use_factor: f64,
     ) -> Self {
         let f_ctrl = 1.; // From table B.4, for residential buildings, default f_ctrl = 1
         let f_sys = 1.1; // From table B.5, f_sys = 1.1
         let e_v = 1.; // Section B.3.3.7 defaults E_v = 1 (this is the assumption for perfect mixing)
+        let z_intake =
+            h_path_intake.map(|h_path_intake| h_path_intake + ventilation_zone_base_height);
 
         Self {
             _theta_z_t: 0., // TODO (from Python) get Thermal zone temperature - used for LOAD
@@ -1202,11 +1417,19 @@ impl MechanicalVentilation {
             vent_type,
             _total_volume: total_volume,
             ctrl_intermittent_mev,
-            sfp: specific_fan_power,
+            sfp: specific_fan_power * sfp_in_use_factor,
             energy_supply_conn,
             _altitude: altitude,
+            orientation_exhaust,
+            pitch_exhaust,
+            h_path_exhaust: midheight_exhaust,
+            z_exhaust: midheight_exhaust + ventilation_zone_base_height,
             design_outdoor_air_flow_rate_m3_h: design_outdoor_air_flow_rate, // in m3/h
             mvhr_eff: mvhr_eff.unwrap_or(0.0),
+            orientation_intake,
+            pitch_intake,
+            h_path_intake,
+            z_intake,
             // Calculated variables
             qv_oda_req_design: Self::calculate_required_outdoor_air_flow_rate(
                 f_ctrl,
@@ -1233,49 +1456,42 @@ impl MechanicalVentilation {
     /// Calculate required outdoor air flow rates at the air terminal devices
     /// Equations 10-17 from BS EN 16798-7
     /// Adjusted to be based on ventilation type instead of vent_sys_op.
-    fn calc_req_oda_flow_rates_at_atds(&self) -> (f64, f64) {
-        match &self.vent_type {
-            MechVentType::Mvhr => (self.qv_oda_req_design, -self.qv_oda_req_design),
-            MechVentType::IntermittentMev
-            | MechVentType::CentralisedContinuousMev
-            | MechVentType::DecentralisedContinuousMev => {
-                // NOTE: Calculation of effective flow rate of external air (in func
-                // calc_mech_vent_air_flw_rates_req_to_supply_vent_zone) assumes that
-                // supply and extract are perfectly balanced (as defined above), so
-                // any future change to this assumption will need to be considered
-                // with that in mind
-                (0., -self.qv_oda_req_design)
-            }
-            MechVentType::Piv => (self.qv_oda_req_design, 0.),
-        }
+    fn calc_req_oda_flow_rates_at_atds(&self) -> anyhow::Result<(f64, f64)> {
+        let (qv_sup_req, qv_eta_req) = if self.vent_type.is_balanced() {
+            // NOTE: Calculation of effective flow rate of external air (in func
+            // calc_mech_vent_air_flw_rates_req_to_supply_vent_zone) assumes that
+            // supply and extract are perfectly balanced (as defined above), so
+            // any future change to this assumption will need to be considered
+            // with that in mind
+            (self.qv_oda_req_design, -self.qv_oda_req_design)
+        } else if self.vent_type.is_extract_only() {
+            (0., -self.qv_oda_req_design)
+        } else if self.vent_type.is_supply_only() {
+            (self.qv_oda_req_design, 0.)
+        } else {
+            bail!("Unrecognised ventilation system type")
+        };
+
+        Ok((qv_sup_req, qv_eta_req))
     }
 
     /// Returns the fraction of the timestep for which the ventilation is running
-    fn f_op_v(&self, simulation_time: &SimulationTimeIteration) -> f64 {
-        match &self.vent_type {
-            MechVentType::IntermittentMev => {
-                let f_op_v = self
-                    .ctrl_intermittent_mev
-                    .as_ref()
-                    .expect("ctrl_intermittent_mev was expected to be set")
-                    .setpnt(simulation_time)
-                    .expect("A setpoint was expected to be derivable for a control.");
-
-                if !(0. ..=1.).contains(&f_op_v) {
-                    panic!("Error f_op_v is not between 0 and 1")
-                }
-
-                f_op_v
+    fn f_op_v(&self, simulation_time: &SimulationTimeIteration) -> anyhow::Result<f64> {
+        if self.vent_type.is_intermittent() {
+            let f_op_v = self
+                .ctrl_intermittent_mev
+                .as_ref()
+                .and_then(|ctrl| ctrl.setpnt(simulation_time));
+            match f_op_v {
+                Some(f_op_v) if (0. ..=1.).contains(&f_op_v) => Ok(f_op_v),
+                _ => bail!("Error f_op_v is not between 0 and 1"),
             }
-            MechVentType::DecentralisedContinuousMev
-            | MechVentType::CentralisedContinuousMev
-            | MechVentType::Mvhr => {
-                // Assumed to operate continuously
-                1.
-            }
+        } else if self.vent_type.is_continuous() {
+            Ok(1.)
+        } else {
             // NOTE - this will happen for VentType::Piv
             // same behaviour as Python
-            _ => panic!("Unknown mechanical ventilation system type"),
+            bail!("Unknown mechanical ventilation system type")
         }
     }
 
@@ -1283,22 +1499,91 @@ impl MechanicalVentilation {
     /// T_z -- thermal zone temperature (K)
     fn calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
         &self,
+        u_site: f64,
+        wind_direction: f64,
+        f_cross: bool,
+        shield_class: VentilationShieldClass,
         t_z: f64,
         t_e: f64,
+        p_z_ref: f64,
         simulation_time: &SimulationTimeIteration,
-    ) -> Result<(f64, f64, f64), NotImplementedError> {
+    ) -> anyhow::Result<(f64, f64, f64)> {
         // Required air flow at air terminal devices
-        let (qv_sup_req, qv_eta_req) = self.calc_req_oda_flow_rates_at_atds();
+        let (qv_sup_req, qv_eta_req) = self.calc_req_oda_flow_rates_at_atds()?;
+
+        // Calculate pressure differences based on system type
+        let (delta_p_intake, delta_p_exhaust) = if self.vent_type.has_supply() {
+            let pressure_coefficient_intake = get_pressure_coefficient_from_pitch_and_orientation(
+                f_cross,
+                shield_class,
+                self.z_intake.expect("z_intake was expected to be set"),
+                wind_direction,
+                self.orientation_intake,
+                self.pitch_intake
+                    .expect("pitch_intake was expected to be set"),
+            )?;
+            let delta_p_intake = calculate_pressure_difference_at_an_airflow_path(
+                self.h_path_intake
+                    .expect("h_path_intake was expected to be set"),
+                pressure_coefficient_intake,
+                u_site,
+                t_e,
+                t_z,
+                p_z_ref,
+            );
+
+            (delta_p_intake, 0.)
+        } else if self.vent_type.has_extract() {
+            let pressure_coefficient_exhaust = get_pressure_coefficient_from_pitch_and_orientation(
+                f_cross,
+                shield_class,
+                self.z_exhaust,
+                wind_direction,
+                Some(self.orientation_exhaust),
+                self.pitch_exhaust,
+            )?;
+            let delta_p_exhaust = calculate_pressure_difference_at_an_airflow_path(
+                self.h_path_exhaust,
+                pressure_coefficient_exhaust,
+                u_site,
+                t_e,
+                t_z,
+                p_z_ref,
+            );
+
+            (0., delta_p_exhaust)
+        } else {
+            bail!("Unrecognised ventilation system type");
+        };
 
         // Amount of air flow depends on controls
         let (qv_sup_dis_req, qv_eta_dis_req) = match self.sup_air_flw_ctrl {
             SupplyAirFlowRateControlType::Oda => {
-                let f_op_v = self.f_op_v(simulation_time);
-                let qv_sup_dis_req = f_op_v * qv_sup_req;
-                let qv_eta_dis_req = f_op_v * qv_eta_req;
+                let f_op_v = self.f_op_v(simulation_time)?;
+                let flow_change_coefficient = self.vent_type.flow_change_coefficients();
+
+                // Based on Equation 18 and 19
+                let mut qv_sup_dis_req = f_op_v * qv_sup_req;
+                if self.vent_type.has_supply() {
+                    let flow_intake_change_due_to_pressure =
+                        flow_change_coefficient * delta_p_intake / LITRES_PER_CUBIC_METRE as f64
+                            * SECONDS_PER_HOUR as f64;
+                    qv_sup_dis_req =
+                        max_of_2(0., qv_sup_dis_req + flow_intake_change_due_to_pressure);
+                }
+
+                let mut qv_eta_dis_req = f_op_v * qv_eta_req;
+                if self.vent_type.has_extract() {
+                    let flow_exhaust_change_due_to_pressure =
+                        flow_change_coefficient * delta_p_exhaust / LITRES_PER_CUBIC_METRE as f64
+                            * SECONDS_PER_HOUR as f64;
+                    qv_eta_dis_req =
+                        min_of_2(0., qv_eta_dis_req + flow_exhaust_change_due_to_pressure);
+                }
 
                 (qv_sup_dis_req, qv_eta_dis_req)
             }
+            SupplyAirFlowRateControlType::Load => unimplemented!(), // this variant is removed in later version of Python (1.0.0a6)
         };
 
         // Calculate effective flow rate of external air
@@ -1329,14 +1614,14 @@ impl MechanicalVentilation {
     /// zone_volume -- volume of the zone (m3)
     /// total_volume -- volume of the dwelling (m3)
     /// vent_type -- one of "Intermittent MEV", "Centralised continuous MEV",
-    /// "Decentralised continuous MEV", "MVHR" or "PIV".
+    /// "Decentralised continuous MEV", "MVHR" or "POSITIVE_INPUT_VENTILATION".
     pub(crate) fn fans(
         &self,
         zone_volume: f64,
         total_volume: f64,
         throughput_factor: Option<f64>,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let _throughput_factor = throughput_factor.unwrap_or(1.0);
         // Calculate energy use by fans
         let fan_power_w = (self.sfp
@@ -1345,7 +1630,7 @@ impl MechanicalVentilation {
             * (zone_volume / total_volume);
         let fan_energy_use_kwh = (fan_power_w / f64::from(WATTS_PER_KILOWATT))
             * simulation_time_iteration.timestep
-            * self.f_op_v(simulation_time_iteration);
+            * self.f_op_v(simulation_time_iteration)?;
 
         let (supply_fan_energy_use_kwh, extract_fan_energy_use_in_kwh) = match self.vent_type {
             MechVentType::IntermittentMev
@@ -1358,23 +1643,19 @@ impl MechanicalVentilation {
                 // Balanced, therefore split power between extract and supply fans
                 (fan_energy_use_kwh / 2., fan_energy_use_kwh / 2.)
             }
-            MechVentType::Piv => {
-                // Positive input, supply fans only
-                (fan_energy_use_kwh, 0.)
+            MechVentType::PositiveInputVentilation => {
+                bail!("Positive input ventilation not yet fully supported in HEM")
             }
         };
         self.energy_supply_conn
-            .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration.index)
-            .unwrap();
-        self.energy_supply_conn
-            .demand_energy(
-                extract_fan_energy_use_in_kwh,
-                simulation_time_iteration.index,
-            )
-            .unwrap();
+            .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration.index)?;
+        self.energy_supply_conn.demand_energy(
+            extract_fan_energy_use_in_kwh,
+            simulation_time_iteration.index,
+        )?;
 
-        supply_fan_energy_use_kwh
-            / (f64::from(WATTS_PER_KILOWATT) * simulation_time_iteration.timestep)
+        Ok(supply_fan_energy_use_kwh
+            / (f64::from(WATTS_PER_KILOWATT) * simulation_time_iteration.timestep))
     }
 
     pub fn vent_type(&self) -> MechVentType {
@@ -1457,7 +1738,7 @@ impl InfiltrationVentilation {
         Self {
             f_cross,
             shield_class,
-            c_rgh_site: ter_class_to_roughness_coeff(
+            c_rgh_site: terrain_class_to_roughness_coeff(
                 terrain_class,
                 ventilation_zone_base_height + ventilation_zone_height / 2.,
             ),
@@ -1542,11 +1823,14 @@ impl InfiltrationVentilation {
             FacadeDirection::Roof
         };
 
+        // interim approach until implementation of new envelope leakage method
+        // assign windward to wind segment 2, Leeward to wind segment 4
+        // facade_direction = ["Windward", "Leeward", "Windward", "Leeward", roof_pitch]
         let facade_direction = [
-            FacadeDirection::Windward,
-            FacadeDirection::Leeward,
-            FacadeDirection::Windward,
-            FacadeDirection::Leeward,
+            FacadeDirection::WindSeg2,
+            FacadeDirection::WindSeg4,
+            FacadeDirection::WindSeg2,
+            FacadeDirection::WindSeg4,
             roof_pitch,
         ];
 
@@ -1567,56 +1851,57 @@ impl InfiltrationVentilation {
             .collect()
     }
 
-    /// Implicit solver for qv_pdu
-    fn calculate_qv_pdu(
-        &self,
-        qv_pdu: f64,
-        p_z_ref: f64,
-        t_z: f64,
-        t_e: f64,
-        h_z: f64,
-    ) -> anyhow::Result<f64> {
-        let func = |qv_pdu, [p_z_ref, t_z, h_z]: [f64; 3]| {
-            Ok(self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, t_e, h_z))
-        };
-
-        fsolve(func, qv_pdu, [p_z_ref, t_z, h_z]) // returns qv_pdu
-    }
-
-    /// Implicit formula solving for qv_pdu as unknown.
-    /// Equation 30 from BS EN 16798-7
-    /// Arguments:
-    /// qv_pdu -- volume flow rate from passive and hybrid ducts (m3/h)
-    /// p_z_ref -- internal reference pressure (Pa)
-    /// T_z -- thermal zone temperature (K)
-    /// h_z -- height of ventilation zone (m)
-    fn implicit_formula_for_qv_pdu(
-        &self,
-        qv_pdu: f64,
-        p_z_ref: f64,
-        t_z: f64,
-        t_e: f64,
-        h_z: f64,
-    ) -> f64 {
-        let external_air_density = air_density_at_temp(t_e, self.p_a_alt);
-        let zone_air_density = air_density_at_temp(t_z, self.p_a_alt);
-
-        // TODO (from Python) Standard isn't clear if delta_p_ATD can be totalled or not.
-        let delta_p_atd_list: Vec<f64> = self
-            .air_terminal_devices
-            .iter()
-            .map(|atd| atd.calculate_pressure_difference_atd(qv_pdu))
-            .collect();
-
-        let delta_p_atd: f64 = delta_p_atd_list.iter().sum();
-
-        // Stack effect in passive and hybrid duct. As there is no air transfer
-        // between levels of the ventilation zone Equation B.1 is used.
-        let h_pdu_stack = h_z + 2.;
-
-        // TODO (from Python) include delta_p_dpu and delta_p_cowl in the return.
-        delta_p_atd - p_z_ref - h_pdu_stack * G * (external_air_density - zone_air_density)
-    }
+    // // TODO (from Python) uncomment when re-implementing ATDs
+    // /// Implicit solver for qv_pdu
+    // fn calculate_qv_pdu(
+    //     &self,
+    //     qv_pdu: f64,
+    //     p_z_ref: f64,
+    //     t_z: f64,
+    //     t_e: f64,
+    //     h_z: f64,
+    // ) -> anyhow::Result<f64> {
+    //     let func = |qv_pdu, [p_z_ref, t_z, h_z]: [f64; 3]| {
+    //         Ok(self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, t_e, h_z))
+    //     };
+    //
+    //     fsolve(func, qv_pdu, [p_z_ref, t_z, h_z]) // returns qv_pdu
+    // }
+    //
+    // /// Implicit formula solving for qv_pdu as unknown.
+    // /// Equation 30 from BS EN 16798-7
+    // /// Arguments:
+    // /// qv_pdu -- volume flow rate from passive and hybrid ducts (m3/h)
+    // /// p_z_ref -- internal reference pressure (Pa)
+    // /// T_z -- thermal zone temperature (K)
+    // /// h_z -- height of ventilation zone (m)
+    // fn implicit_formula_for_qv_pdu(
+    //     &self,
+    //     qv_pdu: f64,
+    //     p_z_ref: f64,
+    //     t_z: f64,
+    //     t_e: f64,
+    //     h_z: f64,
+    // ) -> f64 {
+    //     let external_air_density = air_density_at_temp(t_e, self.p_a_alt);
+    //     let zone_air_density = air_density_at_temp(t_z, self.p_a_alt);
+    //
+    //     // TODO (from Python) Standard isn't clear if delta_p_ATD can be totalled or not.
+    //     let delta_p_atd_list: Vec<f64> = self
+    //         .air_terminal_devices
+    //         .iter()
+    //         .map(|atd| atd.calculate_pressure_difference_atd(qv_pdu))
+    //         .collect();
+    //
+    //     let delta_p_atd: f64 = delta_p_atd_list.iter().sum();
+    //
+    //     // Stack effect in passive and hybrid duct. As there is no air transfer
+    //     // between levels of the ventilation zone Equation B.1 is used.
+    //     let h_pdu_stack = h_z + 2.;
+    //
+    //     // TODO (from Python) include delta_p_dpu and delta_p_cowl in the return.
+    //     delta_p_atd - p_z_ref - h_pdu_stack * G * (external_air_density - zone_air_density)
+    // }
 
     /// The root scalar function will iterate until it finds a value of p_z_ref
     /// that satisfies the mass balance equation.
@@ -1629,8 +1914,8 @@ impl InfiltrationVentilation {
         initial_p_z_ref_guess: f64,
         wind_speed: f64,
         wind_direction: f64,
-        temp_int_air: f64,
-        temp_ext_air: f64,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
         r_v_arg: f64,
         r_w_arg: Option<f64>,
         simtime: SimulationTimeIteration,
@@ -1645,8 +1930,8 @@ impl InfiltrationVentilation {
                 self,
                 wind_speed,
                 wind_direction,
-                temp_int_air,
-                temp_ext_air,
+                temp_interior_air,
+                temp_exterior_air,
                 r_v_arg,
                 r_w_arg,
                 simtime,
@@ -1661,7 +1946,7 @@ impl InfiltrationVentilation {
 
         Err(InternalReferencePressureCalculationError {
             initial_p_z_ref_guess,
-            temp_int_air,
+            temp_interior_air,
             r_w_arg,
         })
     }
@@ -1672,8 +1957,8 @@ impl InfiltrationVentilation {
         p_z_ref: f64,
         wind_speed: f64,
         wind_direction: f64,
-        temp_int_air: f64,
-        temp_ext_air: f64,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
         r_v_arg: f64,
         r_w_arg_min_max: Option<f64>,
         flag: Option<ReportingFlag>,
@@ -1684,8 +1969,8 @@ impl InfiltrationVentilation {
                 p_z_ref,
                 wind_speed,
                 wind_direction,
-                temp_int_air,
-                temp_ext_air,
+                temp_interior_air,
+                temp_exterior_air,
                 r_v_arg,
                 r_w_arg_min_max,
                 flag,
@@ -1700,8 +1985,8 @@ impl InfiltrationVentilation {
         p_z_ref: f64,
         wind_speed: f64,
         wind_direction: f64,
-        temp_int_air: f64,
-        temp_ext_air: f64,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
         r_v_arg: f64,
         r_w_arg_min_max: Option<f64>,
         reporting_flag: Option<ReportingFlag>,
@@ -1714,8 +1999,8 @@ impl InfiltrationVentilation {
                 p_z_ref,
                 wind_speed,
                 wind_direction,
-                temp_int_air,
-                temp_ext_air,
+                temp_interior_air,
+                temp_exterior_air,
                 r_v_arg,
                 r_w_arg_min_max,
                 reporting_flag,
@@ -1727,7 +2012,7 @@ impl InfiltrationVentilation {
         }
         Ok(convert_mass_flow_rate_to_volume_flow_rate(
             qm_in,
-            celsius_to_kelvin(temp_ext_air)?,
+            celsius_to_kelvin(temp_exterior_air)?,
             self.p_a_alt,
         ))
     }
@@ -1739,8 +2024,8 @@ impl InfiltrationVentilation {
     /// * `p_z_ref` - internal reference pressure (Pa)
     /// * `wind_speed` - wind speed, in m/s
     /// * `wind_direction` - direction wind is blowing from, in clockwise degrees from North
-    /// * `temp_int_air` - temperature of air in the zone (C)
-    /// * `temp_ext_air` - temperature of external air (C)
+    /// * `temp_interior_air` - temperature of air in the zone (C)
+    /// * `temp_exterior_air` - temperature of external air (C)
     /// * `reporting_flag` - flag used to give more detailed ventilation outputs (None = no additional reporting)
     ///
     /// Key Variables:
@@ -1761,16 +2046,16 @@ impl InfiltrationVentilation {
         p_z_ref: f64,
         wind_speed: f64,
         wind_direction: f64,
-        temp_int_air: f64,
-        temp_ext_air: f64,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
         r_v_arg: f64,
         r_w_arg_min_max: Option<f64>,
         reporting_flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64)> {
         let u_site = wind_speed_at_zone_level(self.c_rgh_site, wind_speed, None, None, None);
-        let t_e = celsius_to_kelvin(temp_ext_air)?;
-        let t_z = celsius_to_kelvin(temp_int_air)?;
+        let t_e = celsius_to_kelvin(temp_exterior_air)?;
+        let t_z = celsius_to_kelvin(temp_interior_air)?;
         let mut qm_in_through_window_opening = 0.;
         let mut qm_out_through_window_opening = 0.;
         let mut qm_in_through_vents = 0.;
@@ -1779,8 +2064,8 @@ impl InfiltrationVentilation {
         let mut qm_out_through_leaks = 0.;
         let mut qm_in_through_comb = 0.;
         let mut qm_out_through_comb = 0.;
-        let mut qm_in_through_passive_hybrid_ducts = 0.;
-        let mut qm_out_through_passive_hybrid_ducts = 0.;
+        let qm_in_through_passive_hybrid_ducts = 0.;
+        let qm_out_through_passive_hybrid_ducts = 0.;
         let mut qm_sup_to_vent_zone = 0.;
         let mut qm_eta_from_vent_zone = 0.;
         let mut qm_in_effective_heat_recovery_saving_total = 0.0;
@@ -1796,7 +2081,7 @@ impl InfiltrationVentilation {
                 self.shield_class,
                 r_w_arg_min_max,
                 simtime,
-            );
+            )?;
             qm_in_through_window_opening += qm_in;
             qm_out_through_window_opening += qm_out;
         }
@@ -1811,7 +2096,7 @@ impl InfiltrationVentilation {
                 self.f_cross,
                 self.shield_class,
                 r_v_arg,
-            );
+            )?;
             qm_in_through_vents += qm_in;
             qm_out_through_vents += qm_out;
         }
@@ -1829,23 +2114,24 @@ impl InfiltrationVentilation {
             qm_out_through_leaks += qm_out;
         }
 
-        for _atd in &self.air_terminal_devices {
-            let qv_pdu_initial = 0.; // TODO (from Python) get from prev timestep
-            let h_z = self.ventilation_zone_height;
-            let qv_pdu = self.calculate_qv_pdu(qv_pdu_initial, p_z_ref, t_z, t_e, h_z)?;
-
-            let (qv_pdu_in, qv_pdu_out) = if qv_pdu >= 0. {
-                (qv_pdu, 0.)
-            } else {
-                (0., qv_pdu)
-            };
-
-            let (qm_in_through_phds, qm_out_through_phds) =
-                convert_to_mass_air_flow_rate(qv_pdu_in, qv_pdu_out, t_e, t_z, self.p_a_alt);
-
-            qm_in_through_passive_hybrid_ducts += qm_in_through_phds;
-            qm_out_through_passive_hybrid_ducts += qm_out_through_phds;
-        }
+        // TODO (from Python) uncomment when re-implementing ATDs
+        // for _atd in &self.air_terminal_devices {
+        //     let qv_pdu_initial = 0.; // TODO (from Python) get from prev timestep
+        //     let h_z = self.ventilation_zone_height;
+        //     let qv_pdu = self.calculate_qv_pdu(qv_pdu_initial, p_z_ref, t_z, t_e, h_z)?;
+        //
+        //     let (qv_pdu_in, qv_pdu_out) = if qv_pdu >= 0. {
+        //         (qv_pdu, 0.)
+        //     } else {
+        //         (0., qv_pdu)
+        //     };
+        //
+        //     let (qm_in_through_phds, qm_out_through_phds) =
+        //         convert_to_mass_air_flow_rate(qv_pdu_in, qv_pdu_out, t_e, t_z, self.p_a_alt);
+        //
+        //     qm_in_through_passive_hybrid_ducts += qm_in_through_phds;
+        //     qm_out_through_passive_hybrid_ducts += qm_out_through_phds;
+        // }
 
         for combustion_appliance in &self.combustion_appliances {
             let p_h_fi = 0.; // TODO (from Python) to work out from previous zone temperature? - Combustion appliance heating fuel input power
@@ -1860,7 +2146,16 @@ impl InfiltrationVentilation {
 
         for mech_vent in &self.mech_vents {
             let (qm_sup, qm_eta, qm_in_effective_heat_recovery_saving) = mech_vent
-                .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(t_z, t_e, &simtime)?;
+                .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                    u_site,
+                    wind_direction,
+                    self.f_cross,
+                    self.shield_class,
+                    t_z,
+                    t_e,
+                    p_z_ref,
+                    &simtime,
+                )?;
             qm_sup_to_vent_zone += qm_sup;
             qm_eta_from_vent_zone += qm_eta;
             qm_in_effective_heat_recovery_saving_total += qm_in_effective_heat_recovery_saving;
@@ -1896,7 +2191,7 @@ impl InfiltrationVentilation {
                         incoming_air_flow,
                         total_volume: self.total_volume,
                         air_changes_per_hour,
-                        temp_int_air,
+                        temp_interior_air,
                         p_z_ref,
                         qm_in_through_window_opening,
                         qm_out_through_window_opening,
@@ -1928,8 +2223,8 @@ impl InfiltrationVentilation {
         &self,
         wind_speed: f64,
         wind_direction: f64,
-        temp_int_air: f64,
-        temp_ext_air: f64,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
         r_v_arg: f64,
         r_w_arg: Option<f64>,
         initial_p_z_ref_guess: f64,
@@ -1944,8 +2239,8 @@ impl InfiltrationVentilation {
                     self,
                     wind_speed,
                     wind_direction,
-                    temp_int_air,
-                    temp_ext_air,
+                    temp_interior_air,
+                    temp_exterior_air,
                     r_v_arg,
                     r_w_arg,
                     initial_p_z_ref_guess,
@@ -1959,8 +2254,8 @@ impl InfiltrationVentilation {
             initial_p_z_ref_guess,
             wind_speed,
             wind_direction,
-            temp_int_air,
-            temp_ext_air,
+            temp_interior_air,
+            temp_exterior_air,
             r_v_arg,
             r_w_arg,
             simtime,
@@ -1970,8 +2265,8 @@ impl InfiltrationVentilation {
             internal_reference_pressure,
             wind_speed,
             wind_direction,
-            temp_int_air,
-            temp_ext_air,
+            temp_interior_air,
+            temp_exterior_air,
             r_v_arg,
             r_w_arg,
             reporting_flag,
@@ -1988,8 +2283,8 @@ impl InfiltrationVentilation {
     /// * `r_v_arg` - Current vent position, where 0 means vents are fully closed and 1 means vents are fully open.
     /// * `wind_speed` - Speed of the wind.
     /// * `wind_direction` - Direction of the wind.
-    /// * `temp_int_air` - Interior air temperature.
-    /// * `temp_ext_air` - Exterior air temperature.
+    /// * `temp_interior_air` - Interior air temperature.
+    /// * `temp_exterior_air` - Exterior air temperature.
     /// * `ach_target` - The desired target ACH value that needs to be achieved.
     /// * `r_w_arg` - Parameter related to the wind or building ventilation.
     /// * `initial_p_z_ref_guess` -Initial guess for reference pressure.
@@ -2004,8 +2299,8 @@ impl InfiltrationVentilation {
         r_v_arg: f64,
         wind_speed: f64,
         wind_direction: f64,
-        temp_int_air: f64,
-        temp_ext_air: f64,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
         ach_target: f64,
         r_w_arg: Option<f64>,
         initial_p_z_ref_guess: f64,
@@ -2015,8 +2310,8 @@ impl InfiltrationVentilation {
         let ach = self.calc_air_changes_per_hour(
             wind_speed,
             wind_direction,
-            temp_int_air,
-            temp_ext_air,
+            temp_interior_air,
+            temp_exterior_air,
             r_v_arg,
             r_w_arg,
             initial_p_z_ref_guess,
@@ -2041,8 +2336,8 @@ impl InfiltrationVentilation {
     /// * `initial_r_v_arg` - Initial vent position, 0 = vents closed and 1 = vents fully open.
     /// * `wind_speed` - Speed of the wind.
     /// * `wind_direction` - Direction of the wind.
-    /// * `temp_int_air` - Interior air temperature.
-    /// * `temp_ext_air` - Exterior air temperature.
+    /// * `temp_interior_air` - Interior air temperature.
+    /// * `temp_exterior_air` - Exterior air temperature.
     /// * `r_w_arg` - Parameter related to the wind or building ventilation.
     /// * `initial_p_z_ref_guess` - Initial guess for reference pressure.
     /// * `reporting_flag` - Flag indicating whether to report detailed output.
@@ -2057,8 +2352,8 @@ impl InfiltrationVentilation {
         initial_r_v_arg: f64,
         wind_speed: f64,
         wind_direction: f64,
-        temp_int_air: f64,
-        temp_ext_air: f64,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
         r_w_arg: Option<f64>,
         initial_p_z_ref_guess: f64,
         reporting_flag: Option<ReportingFlag>,
@@ -2067,8 +2362,8 @@ impl InfiltrationVentilation {
         let initial_ach = self.calc_air_changes_per_hour(
             wind_speed,
             wind_direction,
-            temp_int_air,
-            temp_ext_air,
+            temp_interior_air,
+            temp_exterior_air,
             initial_r_v_arg,
             r_w_arg,
             initial_p_z_ref_guess,
@@ -2094,8 +2389,8 @@ impl InfiltrationVentilation {
                 let ach_vent_open = self.calc_air_changes_per_hour(
                     wind_speed,
                     wind_direction,
-                    temp_int_air,
-                    temp_ext_air,
+                    temp_interior_air,
+                    temp_exterior_air,
                     1., // vents fully open
                     r_w_arg,
                     initial_p_z_ref_guess,
@@ -2118,8 +2413,8 @@ impl InfiltrationVentilation {
                 let ach_vent_closed = self.calc_air_changes_per_hour(
                     wind_speed,
                     wind_direction,
-                    temp_int_air,
-                    temp_ext_air,
+                    temp_interior_air,
+                    temp_exterior_air,
                     0., // vents fully closed
                     r_w_arg,
                     initial_p_z_ref_guess,
@@ -2148,8 +2443,8 @@ impl InfiltrationVentilation {
             infiltration_ventilation: self,
             wind_speed,
             wind_direction,
-            temp_int_air,
-            temp_ext_air,
+            temp_interior_air,
+            temp_exterior_air,
             ach_target,
             r_w_arg,
             initial_p_z_ref_guess,
@@ -2193,17 +2488,18 @@ impl InfiltrationVentilation {
                     } = building_element
                     {
                         Some({
-                            let on_off_ctrl = window_openable_control.as_ref().and_then(
-                                |window_openable_control| {
+                            let on_off_ctrl = window_openable_control
+                                .as_ref()
+                                .and_then(|window_openable_control| {
                                     controls.get_with_string(window_openable_control)
-                                },
-                            );
+                                })
+                                .filter(|ctrl| matches!(&**ctrl, Control::OnOffTime(_)));
                             anyhow::Ok(Window::new(
                                 *free_area_height,
                                 *mid_height,
                                 *max_window_open_area,
                                 window_part_list.clone(),
-                                init_orientation(*orientation),
+                                orientation.map(init_orientation),
                                 *pitch,
                                 input.altitude,
                                 on_off_ctrl,
@@ -2223,10 +2519,10 @@ impl InfiltrationVentilation {
             .values()
             .flat_map(|zone| zone.building_elements.values())
             .flat_map(|building_element| match building_element {
-                BuildingElement::Opaque { pitch, area, .. }
-                    if pitch_class(*pitch) == HeatFlowDirection::Upwards =>
-                {
-                    Some((pitch, area))
+                BuildingElement::Opaque {
+                    pitch, area_input, ..
+                } if pitch_class(*pitch) == HeatFlowDirection::Upwards => {
+                    Some((pitch, area_input.area()))
                 }
                 _ => None,
             })
@@ -2250,20 +2546,20 @@ impl InfiltrationVentilation {
             .fold((vec![], vec![]), |(mut facades, mut roofs), item| {
                 match pitch_class(item.pitch()) {
                     HeatFlowDirection::Horizontal => match item {
-                        BuildingElement::Opaque { area, .. } => {
-                            facades.push(*area);
+                        BuildingElement::Opaque { area_input, .. } => {
+                            facades.push(area_input.area());
                         }
-                        BuildingElement::Transparent { height, width, .. } => {
-                            facades.push(*height * *width);
+                        BuildingElement::Transparent { area_input, .. } => {
+                            facades.push(area_input.area());
                         }
                         _ => {}
                     },
                     HeatFlowDirection::Upwards => match item {
-                        BuildingElement::Opaque { area, .. } => {
-                            roofs.push(*area);
+                        BuildingElement::Opaque { area_input, .. } => {
+                            roofs.push(area_input.area());
                         }
-                        BuildingElement::Transparent { height, width, .. } => {
-                            roofs.push(*height * *width)
+                        BuildingElement::Transparent { area_input, .. } => {
+                            roofs.push(area_input.area())
                         }
                         _ => {}
                     },
@@ -2326,8 +2622,9 @@ impl InfiltrationVentilation {
             let ctrl_intermittent_mev = mech_vents_data
                 .control
                 .as_ref()
-                .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
-
+                .and_then(|ctrl_name| controls.get_with_string(ctrl_name))
+                .filter(|ctrl| matches!(&**ctrl, Control::SetpointTime(_)))
+                .map(|ctrl| ctrl.clone() as Arc<dyn ControlBehaviour>);
             let energy_supply = energy_supplies
                 .get(&mech_vents_data.energy_supply)
                 .ok_or_else(|| {
@@ -2338,38 +2635,59 @@ impl InfiltrationVentilation {
                 })?;
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), mech_vents_name)?;
+            let (orientation_exhaust, pitch_exhaust, midheight_exhaust) =
+                mech_vents_data.vent_data.position_exhaust();
+            let (orientation_intake, pitch_intake, h_p_intake) =
+                mech_vents_data.vent_data.position_intake();
 
-            mechanical_ventilations.push(
-                Arc::new(MechanicalVentilation::new(mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type, 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, input.altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
-                    MechVentType::Mvhr => mech_vents_data.mvhr_efficiency,
-                    MechVentType::IntermittentMev
-                    | MechVentType::CentralisedContinuousMev
-                    | MechVentType::DecentralisedContinuousMev => {
-                        None
+            mechanical_ventilations.push(Arc::new(MechanicalVentilation::new(
+                mech_vents_data.supply_air_flow_rate_control,
+                mech_vents_data.supply_air_temperature_control_type,
+                0.,
+                0.,
+                mech_vents_data.vent_data.into(),
+                mech_vents_data.sfp,
+                mech_vents_data.design_outdoor_air_flow_rate,
+                energy_supply_connection,
+                total_volume,
+                input.altitude,
+                orientation_exhaust,
+                pitch_exhaust,
+                midheight_exhaust,
+                input.ventilation_zone_base_height,
+                ctrl_intermittent_mev,
+                match mech_vents_data.vent_data {
+                    MechVentData::Mvhr { .. } => mech_vents_data.mvhr_efficiency,
+                    MechVentData::IntermittentMev { .. }
+                    | MechVentData::CentralisedContinuousMev { .. }
+                    | MechVentData::DecentralisedContinuousMev { .. } => None,
+                    MechVentData::PositiveInputVentilation { .. } => {
+                        bail!("Positive input ventilation not yet fully supported in HEM")
                     }
-                    MechVentType::Piv => bail!("PIV vent type is not currently recognised when building up mechanical ventilation values for calculation"),
-                }, None)),
-            );
+                },
+                None,
+                orientation_intake,
+                pitch_intake,
+                h_p_intake,
+                mech_vents_data.sfp_in_use_factor,
+            )));
 
             // TODO (from Python) not all dwellings have mech vents - update to make mech vents optional
-            if mech_vents_data.vent_type == MechVentType::Mvhr {
+            if matches!(mech_vents_data.vent_data, MechVentData::Mvhr { .. }) {
                 space_heating_ductwork.insert(
-                    mech_vents_name.to_owned(),
+                    mech_vents_name.into(),
                     mech_vents_data
                         .ductwork
-                        .as_ref()
                         .iter()
-                        .flat_map(|ductworks| {
-                            ductworks.iter().map(|ductwork| -> anyhow::Result<Ductwork> {
-                                let (duct_perimeter, internal_diameter, external_diameter) =
-                                    match ductwork.cross_section_shape {
-                                        DuctShape::Circular => (None, Some(ductwork.internal_diameter_mm.ok_or_else(|| anyhow!("Expected an internal diameter value for ductwork with a circular cross-section."))? / MILLIMETRES_IN_METRE as f64), Some(ductwork.external_diameter_mm.ok_or_else(|| anyhow!("Expected an internal diameter value for ductwork with a circular cross-section."))? / MILLIMETRES_IN_METRE as f64)),
-                                        DuctShape::Rectangular => (Some(ductwork.duct_perimeter_mm.ok_or_else(|| anyhow!("Expected a duct perimeter value for ductwork with a rectangular cross-section."))? / MILLIMETRES_IN_METRE as f64), None, None),
-                                    };
-                                let thickness_insulation = ductwork.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64;
+                        .map(|ductwork| -> anyhow::Result<Ductwork> {
+                            let (duct_perimeter, internal_diameter, external_diameter) =
+                                match ductwork.cross_section_shape {
+                                    DuctShape::Circular => (None, Some(ductwork.internal_diameter_mm.ok_or_else(|| anyhow!("Expected an internal diameter value for ductwork with a circular cross-section."))? / MILLIMETRES_IN_METRE as f64), Some(ductwork.external_diameter_mm.ok_or_else(|| anyhow!("Expected an internal diameter value for ductwork with a circular cross-section."))? / MILLIMETRES_IN_METRE as f64)),
+                                    DuctShape::Rectangular => (Some(ductwork.duct_perimeter_mm.ok_or_else(|| anyhow!("Expected a duct perimeter value for ductwork with a rectangular cross-section."))? / MILLIMETRES_IN_METRE as f64), None, None),
+                                };
+                            let thickness_insulation = ductwork.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64;
 
-                                Ductwork::new(ductwork.cross_section_shape, duct_perimeter, internal_diameter, external_diameter, ductwork.length, ductwork.insulation_thermal_conductivity, thickness_insulation, ductwork.reflective, ductwork.duct_type, mech_vents_data.mvhr_location.ok_or_else(|| anyhow!("An MVHR location was expected for mechanical ventilation with an MVHR vent type."))?, mech_vents_data.mvhr_efficiency.ok_or_else(|| anyhow!("An MVHR efficiency value was expected for mechanical ventilation with an MVHR vent type."))?)
-                            })
+                            Ductwork::new(ductwork.cross_section_shape, duct_perimeter, internal_diameter, external_diameter, ductwork.length, ductwork.insulation_thermal_conductivity, thickness_insulation, ductwork.reflective, ductwork.duct_type, mech_vents_data.mvhr_location.ok_or_else(|| anyhow!("An MVHR location was expected for mechanical ventilation with an MVHR vent type."))?, mech_vents_data.mvhr_efficiency.ok_or_else(|| anyhow!("An MVHR efficiency value was expected for mechanical ventilation with an MVHR vent type."))?)
                         })
                         .collect::<anyhow::Result<Vec<Ductwork>>>()?,
                 );
@@ -2400,8 +2718,8 @@ struct FindRVArgProblem<'a> {
     infiltration_ventilation: &'a InfiltrationVentilation,
     wind_speed: f64,
     wind_direction: f64,
-    temp_int_air: f64,
-    temp_ext_air: f64,
+    temp_interior_air: f64,
+    temp_exterior_air: f64,
     ach_target: f64,
     r_w_arg: Option<f64>,
     initial_p_z_ref_guess: f64,
@@ -2419,8 +2737,8 @@ impl CostFunction for FindRVArgProblem<'_> {
             *param,
             self.wind_speed,
             self.wind_direction,
-            self.temp_int_air,
-            self.temp_ext_air,
+            self.temp_interior_air,
+            self.temp_exterior_air,
             self.ach_target,
             self.r_w_arg,
             self.initial_p_z_ref_guess,
@@ -2433,8 +2751,8 @@ impl CostFunction for FindRVArgProblem<'_> {
 struct ImplicitMassBalanceProblem<'a> {
     wind_speed: f64,
     wind_direction: f64,
-    temp_int_air: f64,
-    temp_ext_air: f64,
+    temp_interior_air: f64,
+    temp_exterior_air: f64,
     r_v_arg: f64,
     r_w_arg: Option<f64>,
     simtime: SimulationTimeIteration,
@@ -2452,8 +2770,8 @@ impl CostFunction for ImplicitMassBalanceProblem<'_> {
                 *p_z_ref,
                 self.wind_speed,
                 self.wind_direction,
-                self.temp_int_air,
-                self.temp_ext_air,
+                self.temp_interior_air,
+                self.temp_exterior_air,
                 self.r_v_arg,
                 self.r_w_arg,
                 None,
@@ -2467,8 +2785,8 @@ fn root_scalar_for_implicit_mass_balance(
     infiltration_ventilation: &InfiltrationVentilation,
     wind_speed: f64,
     wind_direction: f64,
-    temp_int_air: f64,
-    temp_ext_air: f64,
+    temp_interior_air: f64,
+    temp_exterior_air: f64,
     r_v_arg: f64,
     r_w_arg: Option<f64>,
     simtime: SimulationTimeIteration,
@@ -2477,8 +2795,8 @@ fn root_scalar_for_implicit_mass_balance(
     let problem = ImplicitMassBalanceProblem {
         wind_speed,
         wind_direction,
-        temp_int_air,
-        temp_ext_air,
+        temp_interior_air,
+        temp_exterior_air,
         r_v_arg,
         r_w_arg,
         simtime,
@@ -2504,7 +2822,7 @@ fn root_scalar_for_implicit_mass_balance(
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct VentilationDetailedResult {
     timestep_index: usize,
     reporting_flag: ReportingFlag,
@@ -2512,7 +2830,7 @@ pub(crate) struct VentilationDetailedResult {
     incoming_air_flow: f64,
     total_volume: f64,
     air_changes_per_hour: f64,
-    temp_int_air: f64,
+    temp_interior_air: f64,
     p_z_ref: f64,
     qm_in_through_window_opening: f64,
     qm_out_through_window_opening: f64,
@@ -2540,7 +2858,7 @@ impl VentilationDetailedResult {
             self.incoming_air_flow.to_string().into(),
             self.total_volume.to_string().into(),
             self.air_changes_per_hour.to_string().into(),
-            self.temp_int_air.to_string().into(),
+            self.temp_interior_air.to_string().into(),
             self.p_z_ref.to_string().into(),
             self.qm_in_through_window_opening.to_string().into(),
             self.qm_out_through_window_opening.to_string().into(),
@@ -2563,27 +2881,62 @@ impl VentilationDetailedResult {
     }
 }
 
+impl From<VentilationDetailedResult> for Vec<StringOrNumber> {
+    fn from(value: VentilationDetailedResult) -> Self {
+        vec![
+            value.timestep_index.into(),
+            value.reporting_flag.to_string().into(),
+            value.r_v_arg.into(),
+            value.incoming_air_flow.into(),
+            value.total_volume.into(),
+            value.air_changes_per_hour.into(),
+            value.temp_interior_air.into(),
+            value.p_z_ref.into(),
+            value.qm_in_through_window_opening.into(),
+            value.qm_out_through_window_opening.into(),
+            value.qm_in_through_vents.into(),
+            value.qm_out_through_vents.into(),
+            value.qm_in_through_leaks.into(),
+            value.qm_out_through_leaks.into(),
+            value.qm_in_through_comb.into(),
+            value.qm_out_through_comb.into(),
+            value.qm_in_through_passive_hybrid_ducts.into(),
+            value.qm_out_through_passive_hybrid_ducts.into(),
+            value.qm_sup_to_vent_zone.into(),
+            value.qm_eta_from_vent_zone.into(),
+            value.qm_in_effective_heat_recovery_saving_total.into(),
+            value.qm_in.into(),
+            value.qm_out.into(),
+        ]
+    }
+}
+
 #[derive(Debug, Error)]
-#[error("Could not resolve an internal reference pressure for infiltration ventilation. Initial p_z_ref_guess: {initial_p_z_ref_guess}, temp_int_air: {temp_int_air}, r_w_arg: {r_w_arg:?}"
+#[error("Could not resolve an internal reference pressure for infiltration ventilation. Initial p_z_ref_guess: {initial_p_z_ref_guess}, temp_interior_air: {temp_interior_air}, r_w_arg: {r_w_arg:?}"
 )]
 pub struct InternalReferencePressureCalculationError {
     initial_p_z_ref_guess: f64,
-    temp_int_air: f64,
+    temp_interior_air: f64,
     r_w_arg: Option<f64>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::OnOffTimeControl;
+    use crate::core::controls::time_control::Control::{OnOffTime, SetpointTime};
+    use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
-
+    use crate::core::space_heat_demand::ventilation::FacadeDirection::{
+        Roof, Roof10, Roof10_30, Roof30, WindSeg2, WindSeg4,
+    };
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, ShadingSegment};
     use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use parking_lot::lock_api::RwLock;
     use rstest::{fixture, rstest};
+    use serde_json::json;
+    use std::collections::HashMap;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
 
@@ -2600,6 +2953,12 @@ mod tests {
         );
         assert_relative_eq!(result, -2.2966793114, max_relative = EIGHT_DECIMAL_PLACES);
         // Use spreadsheet to find answer.
+    }
+
+    #[rstest]
+    fn test_air_change_rate_to_flow_rate() {
+        assert_relative_eq!(_air_change_rate_to_flow_rate(3600., 1.), 1.);
+        assert_relative_eq!(_air_change_rate_to_flow_rate(120., 20.), 0.6666666666666666);
     }
 
     #[test]
@@ -2632,6 +2991,19 @@ mod tests {
         #[case] expected: f64,
     ) {
         assert_eq!(get_fuel_flow_factor(fuel_type, appliance_type), expected);
+    }
+
+    #[rstest]
+    #[case(CombustionFuelType::Wood, CombustionApplianceType::OpenGasFire)]
+    #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenGasFire)]
+    #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenGasFire)]
+    #[case(CombustionFuelType::Gas, CombustionApplianceType::ClosedFire)]
+    #[should_panic]
+    fn test_get_fuel_flow_factor_invalid_combinations(
+        #[case] fuel_type: CombustionFuelType,
+        #[case] appliance_type: CombustionApplianceType,
+    ) {
+        get_fuel_flow_factor(fuel_type, appliance_type);
     }
 
     #[rstest]
@@ -2725,19 +3097,19 @@ mod tests {
     fn test_ter_class_to_roughness_coeff() {
         let z = 2.5;
         assert_eq!(
-            ter_class_to_roughness_coeff(&TerrainClass::OpenWater, z),
+            terrain_class_to_roughness_coeff(&TerrainClass::OpenWater, z),
             0.9386483560365819
         );
         assert_eq!(
-            ter_class_to_roughness_coeff(&TerrainClass::OpenField, z),
+            terrain_class_to_roughness_coeff(&TerrainClass::OpenField, z),
             0.8325850605880374
         );
         assert_eq!(
-            ter_class_to_roughness_coeff(&TerrainClass::Suburban, z),
+            terrain_class_to_roughness_coeff(&TerrainClass::Suburban, z),
             0.7223511561212699
         );
         assert_eq!(
-            ter_class_to_roughness_coeff(&TerrainClass::Urban, z),
+            terrain_class_to_roughness_coeff(&TerrainClass::Urban, z),
             0.6654212933375474
         );
     }
@@ -2770,140 +3142,531 @@ mod tests {
     #[test]
     fn test_get_facade_direction() {
         assert_eq!(
-            get_facade_direction(true, 0., 5., 0.),
+            get_facade_direction(true, Some(0.), 5., 0.).unwrap(),
             FacadeDirection::Roof10
         );
         assert_eq!(
-            get_facade_direction(true, 0., 20., 0.),
+            get_facade_direction(true, Some(0.), 20., 0.).unwrap(),
             FacadeDirection::Roof10_30
         );
         assert_eq!(
-            get_facade_direction(true, 0., 45., 0.),
+            get_facade_direction(true, Some(0.), 45., 0.).unwrap(),
             FacadeDirection::Roof30
         );
         assert_eq!(
-            get_facade_direction(true, 0., 70., 0.),
-            FacadeDirection::Windward
+            get_facade_direction(true, Some(0.), 70., 0.).unwrap(),
+            FacadeDirection::WindSeg1
         );
         assert_eq!(
-            get_facade_direction(true, 180., 70., 0.),
-            FacadeDirection::Leeward
+            get_facade_direction(true, Some(60.), 70., 0.).unwrap(),
+            FacadeDirection::WindSeg2
         );
         assert_eq!(
-            get_facade_direction(false, 0., 45., 0.),
+            get_facade_direction(true, Some(90.), 70., 0.).unwrap(),
+            FacadeDirection::WindSeg3
+        );
+        assert_eq!(
+            get_facade_direction(true, Some(140.), 70., 0.).unwrap(),
+            FacadeDirection::WindSeg4
+        );
+        assert_eq!(
+            get_facade_direction(true, Some(160.), 70., 0.).unwrap(),
+            FacadeDirection::WindSeg5
+        );
+        assert_eq!(
+            get_facade_direction(false, Some(0.), 45., 0.).unwrap(),
             FacadeDirection::Roof
         );
         assert_eq!(
-            get_facade_direction(false, 0., 70., 0.),
-            FacadeDirection::Windward
+            get_facade_direction(false, Some(0.), 70., 0.).unwrap(),
+            FacadeDirection::WindSeg1
         );
         assert_eq!(
-            get_facade_direction(false, 180., 70., 0.),
-            FacadeDirection::Leeward
+            get_facade_direction(false, Some(60.), 70., 0.).unwrap(),
+            FacadeDirection::WindSeg2
+        );
+        assert_eq!(
+            get_facade_direction(false, Some(90.), 70., 0.).unwrap(),
+            FacadeDirection::WindSeg3
+        );
+        assert_eq!(
+            get_facade_direction(false, Some(140.), 70., 0.).unwrap(),
+            FacadeDirection::WindSeg4
+        );
+        assert_eq!(
+            get_facade_direction(false, Some(160.), 70., 0.).unwrap(),
+            FacadeDirection::WindSeg5
         );
     }
 
     #[test]
-    fn test_get_c_p_path() {
+    fn test_get_pressure_coefficient() {
         assert_relative_eq!(
-            get_c_p_path_from_pitch_and_orientation(
+            get_pressure_coefficient_from_pitch_and_orientation(
                 true,
                 VentilationShieldClass::Open,
                 10.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
-            0.50
+            )
+            .unwrap(),
+            0.70
         );
         assert_relative_eq!(
-            get_c_p_path_from_pitch_and_orientation(
+            get_pressure_coefficient_from_pitch_and_orientation(
                 true,
                 VentilationShieldClass::Normal,
                 10.,
                 0.,
-                0.,
+                Some(45.),
                 70.
-            ),
-            0.25
+            )
+            .unwrap(),
+            0.1
         );
         assert_relative_eq!(
-            get_c_p_path_from_pitch_and_orientation(
+            get_pressure_coefficient_from_pitch_and_orientation(
                 true,
                 VentilationShieldClass::Shielded,
                 10.,
                 0.,
-                0.,
+                Some(90.),
                 70.
-            ),
-            0.05
+            )
+            .unwrap(),
+            -0.25
         );
         assert_relative_eq!(
-            get_c_p_path_from_pitch_and_orientation(
+            get_pressure_coefficient_from_pitch_and_orientation(
                 true,
                 VentilationShieldClass::Open,
                 30.,
                 0.,
-                0.,
+                Some(135.),
                 70.
-            ),
-            0.65
+            )
+            .unwrap(),
+            -0.47
         );
         assert_relative_eq!(
-            get_c_p_path_from_pitch_and_orientation(
+            get_pressure_coefficient_from_pitch_and_orientation(
                 true,
                 VentilationShieldClass::Normal,
                 30.,
                 0.,
-                0.,
+                Some(180.),
                 70.
-            ),
-            0.45
+            )
+            .unwrap(),
+            -0.34
         );
         assert_relative_eq!(
-            get_c_p_path_from_pitch_and_orientation(
+            get_pressure_coefficient_from_pitch_and_orientation(
                 true,
                 VentilationShieldClass::Shielded,
                 30.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
-            0.25
+            )
+            .unwrap(),
+            0.49
         );
         assert_relative_eq!(
-            get_c_p_path_from_pitch_and_orientation(
+            get_pressure_coefficient_from_pitch_and_orientation(
                 true,
                 VentilationShieldClass::Open,
                 60.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
-            0.80
+            )
+            .unwrap(),
+            0.49
         );
         assert_relative_eq!(
-            get_c_p_path_from_pitch_and_orientation(
+            get_pressure_coefficient_from_pitch_and_orientation(
+                true,
+                VentilationShieldClass::Normal,
+                30.,
+                90.,
+                Some(0.),
+                70.
+            )
+            .unwrap(),
+            -0.61
+        );
+        assert_relative_eq!(
+            get_pressure_coefficient_from_pitch_and_orientation(
                 false,
                 VentilationShieldClass::Normal,
                 10.,
                 0.,
-                0.,
+                Some(0.),
                 70.
-            ),
+            )
+            .unwrap(),
             0.05
         );
         assert_relative_eq!(
-            get_c_p_path_from_pitch_and_orientation(
+            get_pressure_coefficient_from_pitch_and_orientation(
                 false,
                 VentilationShieldClass::Normal,
                 10.,
                 0.,
-                0.,
+                Some(0.),
                 45.
-            ),
+            )
+            .unwrap(),
             0.00
         );
+        assert_relative_eq!(
+            get_pressure_coefficient_from_pitch_and_orientation(
+                false,
+                VentilationShieldClass::Normal,
+                15.,
+                270.,
+                Some(10.),
+                90.
+            )
+            .unwrap(),
+            -0.05
+        );
+    }
+
+    #[rstest]
+    fn test_create_infiltration_ventilation(
+        energy_supply: EnergySupply,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let infiltration_ventilation_input: InfiltrationVentilationInput =
+            serde_json::from_value(json!({
+                "cross_vent_possible": true,
+                "shield_class": "Normal",
+                "terrain_class": "OpenField",
+                "ventilation_zone_base_height": 2.5,
+                "altitude": 30,
+                "Vents": {
+                    "vent1": {
+                        "mid_height_air_flow_path": 1.5,
+                        "area_cm2": 100,
+                        "pressure_difference_ref": 20,
+                        "orientation360": 180,
+                        "pitch": 60,
+                    }
+                },
+                "Leaks": {
+                    "ventilation_zone_height": 6,
+                    "test_pressure": 50,
+                    "test_result": 1.2,
+                    "env_area": 220,
+                },
+                // "CombustionAppliances": {
+                //     "Fireplace": {
+                //         "supply_situation": "room_air",
+                //         "exhaust_situation": "into_separate_duct",
+                //         "fuel_type": "wood",
+                //         "appliance_type": "open_fireplace",
+                //     }
+                // }, // CombustionAppliances is no longer a field on this type, but present in upstream fixture JSON erroneously
+                "MechanicalVentilation": {
+                    "mechvent1": {
+                        "sup_air_flw_ctrl": "ODA",
+                        "sup_air_temp_ctrl": "NO_CTRL",
+                        "vent_type": "Centralised continuous MEV",
+                        "SFP": 1.5,
+                        "EnergySupply": "mains elec",
+                        "design_outdoor_air_flow_rate": 80,
+                        "orientation360": 180,
+                        "pitch": 90,
+                        "mid_height_air_flow_path": 2,
+                        "Control": "min_temp",
+                    },
+                    "mechvent2": {
+                        "sup_air_flw_ctrl": "ODA",
+                        "sup_air_temp_ctrl": "NO_CTRL",
+                        "vent_type": "MVHR",
+                        "mvhr_eff": 0.80,
+                        "SFP": 1.5,
+                        "EnergySupply": "mains elec",
+                        "design_outdoor_air_flow_rate": 80,
+                        "position_intake": {
+                            "orientation360": 180,
+                            "pitch": 90,
+                            "mid_height_air_flow_path": 3.0,
+                        },
+                        "position_exhaust": {
+                            "orientation360": 0,
+                            "pitch": 90,
+                            "mid_height_air_flow_path": 2.0,
+                        },
+                        "mvhr_location": "outside",
+                        "ductwork": [
+                            {
+                                "cross_section_shape": "circular",
+                                "internal_diameter_mm": 200,
+                                "external_diameter_mm": 300,
+                                "length": 10.0,
+                                "insulation_thermal_conductivity": 0.023,
+                                "insulation_thickness_mm": 100,
+                                "reflective": false,
+                                "duct_type": "supply",
+                            },
+                            {
+                                "cross_section_shape": "rectangular",
+                                "duct_perimeter_mm": 300,
+                                "length": 10.0,
+                                "insulation_thermal_conductivity": 0.023,
+                                "insulation_thickness_mm": 100,
+                                "reflective": false,
+                                "duct_type": "extract",
+                            },
+                            {
+                                "cross_section_shape": "circular",
+                                "internal_diameter_mm": 200,
+                                "external_diameter_mm": 300,
+                                "length": 10.0,
+                                "insulation_thermal_conductivity": 0.023,
+                                "insulation_thickness_mm": 100,
+                                "reflective": false,
+                                "duct_type": "intake",
+                            },
+                            {
+                                "cross_section_shape": "circular",
+                                "internal_diameter_mm": 200,
+                                "external_diameter_mm": 300,
+                                "length": 10.0,
+                                "insulation_thermal_conductivity": 0.023,
+                                "insulation_thickness_mm": 100,
+                                "reflective": false,
+                                "duct_type": "exhaust",
+                            },
+                        ],
+                    },
+                },
+            }))
+            .unwrap();
+        let zone_input: ZoneDictionary = serde_json::from_value(json!({
+            "zone 1": {
+                "SpaceHeatSystem": "zone 1 radiators",
+                "ThermalBridging": {},
+                "area": 80.0,
+                "volume": 250.0,
+                "temp_setpnt_init": 21.0,
+                "BuildingElement": {
+                    "wall 0": {
+                        "type": "BuildingElementOpaque",
+                        "solar_absorption_coeff": 0.6,
+                        "thermal_resistance_construction": 0.7,
+                        "areal_heat_capacity": 19000,
+                        "mass_distribution_class": "IE",
+                        "pitch": 90,
+                        "orientation360": 90,
+                        "base_height": 0,
+                        "height": 2.5,
+                        "width": 10,
+                        "area": 20.0,
+                    },
+                    "wall 1": {
+                        "type": "BuildingElementOpaque",
+                        "solar_absorption_coeff": 0.62,
+                        "thermal_resistance_construction": 0.72,
+                        "areal_heat_capacity": 19200,
+                        "mass_distribution_class": "E",
+                        "pitch": 50,
+                        "orientation360": 0,
+                        "base_height": 0,
+                        "height": 2.5,
+                        "width": 8,
+                        "area": 20.0,
+                    },
+                    "wall 2": {
+                        "type": "BuildingElementOpaque",
+                        "solar_absorption_coeff": 0.62,
+                        "thermal_resistance_construction": 0.72,
+                        "areal_heat_capacity": 19200,
+                        "mass_distribution_class": "E",
+                        "pitch": 40,
+                        "orientation360": 0,
+                        "base_height": 0,
+                        "height": 2.5,
+                        "width": 8,
+                        "area": 20.0,
+                    },
+                    "window 0": {
+                        "type": "BuildingElementTransparent",
+                        "Control_WindowOpenable": "_window_opening_closedsleeping",
+                        "thermal_resistance_construction": 0.4,
+                        "pitch": 90,
+                        "orientation360": 90,
+                        "g_value": 0.75,
+                        "frame_area_fraction": 0.25,
+                        "base_height": 1,
+                        "height": 1.25,
+                        "width": 4,
+                        "free_area_height": 1.6,
+                        "mid_height": 1.5,
+                        "max_window_open_area": 3,
+                        "window_part_list": [{"mid_height_air_flow_path": 1.5}],
+                        "shading": [
+                            {"type": "overhang", "depth": 0.5, "distance": 0.5},
+                            {"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
+                            {"type": "sidefinright", "depth": 0.25, "distance": 0.1},
+                        ],
+                    },
+                    "Window 1": {
+                        "type": "BuildingElementTransparent",
+                        "Control_WindowOpenable": "_window_opening_closedsleeping",
+                        "thermal_resistance_construction": 0.4,
+                        "pitch": 50,
+                        "orientation360": 90,
+                        "g_value": 0.75,
+                        "frame_area_fraction": 0.25,
+                        "base_height": 1,
+                        "height": 1.25,
+                        "width": 4,
+                        "free_area_height": 1.6,
+                        "mid_height": 1.5,
+                        "max_window_open_area": 3,
+                        "window_part_list": [{"mid_height_air_flow_path": 1.5}], // this is empty in the Python
+                        "shading": [],
+                    },
+                },
+        }}))
+        .unwrap();
+        let energy_supplies =
+            IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
+        let control1 = SetpointTime(SetpointTimeControl::new(
+            vec![],
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            1.,
+        ));
+        let control2 = OnOffTime(OnOffTimeControl::new(vec![], 0, 1.));
+        let controls: Controls = Controls::new(
+            vec![],
+            HashMap::from([
+                ("min_temp".into(), control1.into()),
+                ("_window_opening_closedsleeping".into(), control2.into()),
+            ]),
+        );
+
+        let infiltration_ventilation = InfiltrationVentilation::create(
+            &infiltration_ventilation_input,
+            &zone_input,
+            true,
+            &energy_supplies,
+            &controls,
+        )
+        .unwrap();
+
+        assert!(infiltration_ventilation.f_cross);
+        assert_eq!(
+            infiltration_ventilation.shield_class,
+            VentilationShieldClass::Normal
+        );
+        assert_eq!(infiltration_ventilation.ventilation_zone_height, 6.);
+        assert_eq!(infiltration_ventilation.c_rgh_site, 0.8930912695005592);
+        assert!(infiltration_ventilation.detailed_output_heating_cooling);
+        assert_eq!(infiltration_ventilation.p_a_alt, 1.200588938687906);
+        assert_eq!(infiltration_ventilation.total_volume, 250.);
+        assert_eq!(infiltration_ventilation.windows.len(), 2);
+        assert_eq!(infiltration_ventilation.vents.len(), 1);
+        assert_eq!(infiltration_ventilation.leaks.len(), 5);
+        assert_eq!(infiltration_ventilation.mech_vents.len(), 2);
+        assert_eq!(infiltration_ventilation.space_heating_ductworks.len(), 1);
+
+        for leak in infiltration_ventilation.leaks.iter() {
+            assert_eq!(leak.a_roof, 45.)
+        }
+
+        for leak in infiltration_ventilation.leaks.iter() {
+            assert_eq!(leak.a_facades, 25.)
+        }
+
+        assert!(infiltration_ventilation.mech_vents[0]
+            .ctrl_intermittent_mev
+            .is_some());
+        assert!(infiltration_ventilation.mech_vents[1]
+            .ctrl_intermittent_mev
+            .is_none());
+
+        let ductworks = infiltration_ventilation
+            .space_heating_ductworks()
+            .values()
+            .flatten()
+            .clone()
+            .collect_vec();
+        let resistances = ductworks
+            .iter()
+            .map(|ductwork| ductwork.internal_surface_resistance())
+            .collect_vec();
+
+        assert_relative_eq!(resistances[0], 0.10268060844638409);
+        assert_relative_eq!(resistances[1], 0.21505376344086025);
+        assert_relative_eq!(resistances[2], 0.10268060844638409);
+        assert_relative_eq!(resistances[3], 0.10268060844638409);
+        assert_eq!(ductworks[2].diameter_including_insulation_in_m, Some(0.5));
+
+        // Test removing window controls
+        assert!(infiltration_ventilation.windows[0]
+            .on_off_ctrl_obj
+            .is_some());
+
+        let mut zone_input_copy = zone_input.clone();
+        zone_input_copy["zone 1"].building_elements["window 0"].remove_window_openable_control();
+        let energy_supply = EnergySupplyBuilder::new(
+            FuelType::Electricity,
+            simulation_time_iterator.total_steps(),
+        )
+        .build();
+        let energy_supplies =
+            IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
+
+        let infiltration_ventilation = InfiltrationVentilation::create(
+            &infiltration_ventilation_input,
+            &zone_input_copy,
+            true,
+            &energy_supplies,
+            &controls,
+        )
+        .unwrap();
+
+        assert!(infiltration_ventilation.windows[0]
+            .on_off_ctrl_obj
+            .is_none());
+
+        // Test without walls
+        assert_eq!(infiltration_ventilation.leaks[4].facade_direction, Roof30);
+
+        let mut zone_input_copy = zone_input.clone();
+        if let Some(zone) = zone_input_copy.get_mut("zone 1") {
+            zone.building_elements.shift_remove("wall 1");
+            zone.building_elements.shift_remove("wall 2");
+        }
+        let energy_supply = EnergySupplyBuilder::new(
+            FuelType::Electricity,
+            simulation_time_iterator.total_steps(),
+        )
+        .build();
+        let energy_supplies =
+            IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
+
+        let infiltration_ventilation = InfiltrationVentilation::create(
+            &infiltration_ventilation_input,
+            &zone_input_copy,
+            true,
+            &energy_supplies,
+            &controls,
+        )
+        .unwrap();
+
+        assert_eq!(infiltration_ventilation.leaks[4].facade_direction, Roof10);
+
+        // tests for combustion appliances not relevant as this type has been removed
     }
 
     #[fixture]
@@ -2939,42 +3702,42 @@ mod tests {
             ShadingSegment {
                 start: 180.,
                 end: 135.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: 135.,
                 end: 90.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: 90.,
                 end: 45.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: 45.,
                 end: 0.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: 0.,
                 end: -45.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: -45.,
                 end: -90.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: -90.,
                 end: -135.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: -135.,
                 end: -180.,
-                shading_objects: None,
+                ..Default::default()
             },
         ]
         .into();
@@ -3000,7 +3763,7 @@ mod tests {
         ))
     }
 
-    fn create_window(ctrl: Control, altitude: f64) -> Window {
+    fn create_window(ctrl: Option<Control>, altitude: f64) -> Window {
         Window::new(
             1.6,
             1.5,
@@ -3008,10 +3771,10 @@ mod tests {
             vec![WindowPartInput {
                 mid_height_air_flow_path: 1.5,
             }],
-            0.,
+            Some(0.),
             90.,
             altitude,
-            Some(Arc::new(ctrl)),
+            ctrl.map(Arc::new),
             0.,
         )
     }
@@ -3033,11 +3796,25 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_window_opening_free_area_no_ctrl(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let window = create_window(None, 0.);
+        assert_eq!(
+            window.calculate_window_opening_free_area(
+                0.5,
+                simulation_time_iterator.current_iteration()
+            ),
+            0.
+        )
+    }
+
+    #[rstest]
     fn test_calculate_window_opening_free_area_ctrl_off(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
-        let window = create_window(ctrl, 0.);
+        let window = create_window(Some(ctrl), 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
                 0.5,
@@ -3052,7 +3829,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(ctrl, 0.);
+        let window = create_window(Some(ctrl), 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
                 0.5,
@@ -3063,11 +3840,23 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_flow_coeff_for_window_ctrl_no_ctrl(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let window = create_window(None, 0.);
+        assert_relative_eq!(
+            window
+                .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
+            0.
+        )
+    }
+
+    #[rstest]
     fn test_calculate_flow_coeff_for_window_ctrl_off(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
-        let window = create_window(ctrl, 0.);
+        let window = create_window(Some(ctrl), 0.);
         assert_relative_eq!(
             window
                 .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
@@ -3080,7 +3869,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(ctrl, 0.);
+        let window = create_window(Some(ctrl), 0.);
         let expected_a_w = 1.5;
         let expected_flow_coeff =
             3600. * window.c_d_w * expected_a_w * (2. / p_a_ref()).powf(window.n_w);
@@ -3098,35 +3887,99 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let u_site = 5.0;
-        let _p_a_alt = p_a_ref();
-        let _t_e = 290.15;
         let t_z = 293.15;
         let p_z_ref = 1.;
         let f_cross = true;
         let shield_class = VentilationShieldClass::Open;
         let r_w_arg = 0.5;
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(ctrl, 0.);
+        let window = create_window(Some(ctrl), 0.);
 
-        let (qm_in, qm_out) = window.calculate_flow_from_internal_p(
-            wind_directions[0],
-            u_site,
-            celsius_to_kelvin(air_temps[0]).unwrap(),
-            t_z,
-            p_z_ref,
-            f_cross,
-            shield_class,
-            Some(r_w_arg),
-            simulation_time_iterator.current_iteration(),
-        );
+        let (qm_in, qm_out) = window
+            .calculate_flow_from_internal_p(
+                wind_directions[0],
+                u_site,
+                celsius_to_kelvin(air_temps[0]).unwrap(),
+                t_z,
+                p_z_ref,
+                f_cross,
+                shield_class,
+                Some(r_w_arg),
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
 
-        // qm_in returns 0.0 and qm_out returns -20707.309683335046
         assert_relative_eq!(qm_in, 0.);
         assert_relative_eq!(
             qm_out,
-            -20707.309683335,
+            -13199.752632683054,
             max_relative = EIGHT_DECIMAL_PLACES
         );
+    }
+
+    #[rstest]
+    fn test_calculate_flow_from_internal_p_no_ctrl(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let wind_direction = 10.;
+        let u_site = 10.;
+        let t_e = 290.;
+        let t_z = 300.;
+        let p_z_ref = 1.;
+        let f_cross = true;
+        let shield_class = VentilationShieldClass::Open;
+        let r_w_arg = 1.;
+        let window = create_window(None, 0.);
+
+        let (qm_in, qm_out) = window
+            .calculate_flow_from_internal_p(
+                wind_direction,
+                u_site,
+                t_e,
+                t_z,
+                p_z_ref,
+                f_cross,
+                shield_class,
+                Some(r_w_arg),
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
+
+        assert_relative_eq!(qm_in, 0.);
+        assert_relative_eq!(qm_out, 0.);
+    }
+
+    #[rstest]
+    fn test_calculate_flow_from_internal_p_ctrl_off(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let wind_direction = 10.;
+        let u_site = 10.;
+        let t_e = 290.;
+        let t_z = 300.;
+        let p_z_ref = 1.;
+        let f_cross = true;
+        let shield_class = VentilationShieldClass::Open;
+        let r_w_arg = 1.;
+        let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
+        let window = create_window(Some(ctrl), 0.);
+
+        let (qm_in, qm_out) = window
+            .calculate_flow_from_internal_p(
+                wind_direction,
+                u_site,
+                t_e,
+                t_z,
+                p_z_ref,
+                f_cross,
+                shield_class,
+                Some(r_w_arg),
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
+
+        assert_relative_eq!(qm_in, 0.);
+        assert_relative_eq!(qm_out, 0.);
     }
 
     #[fixture]
@@ -3226,21 +4079,23 @@ mod tests {
         let shield_class = VentilationShieldClass::Open;
         let r_v_arg = 1.;
 
-        let (qm_in_through_vent, qm_out_through_vent) = vent.calculate_flow_from_internal_p(
-            wind_directions[0],
-            u_site,
-            celsius_to_kelvin(air_temps[0]).unwrap(),
-            t_z,
-            p_z_ref,
-            f_cross,
-            shield_class,
-            r_v_arg,
-        );
+        let (qm_in_through_vent, qm_out_through_vent) = vent
+            .calculate_flow_from_internal_p(
+                wind_directions[0],
+                u_site,
+                celsius_to_kelvin(air_temps[0]).unwrap(),
+                t_z,
+                p_z_ref,
+                f_cross,
+                shield_class,
+                r_v_arg,
+            )
+            .unwrap();
 
         assert_relative_eq!(qm_in_through_vent, 0.);
         assert_relative_eq!(
             qm_out_through_vent,
-            -95.136404151646,
+            -63.894177841661275,
             max_relative = EIGHT_DECIMAL_PLACES
         );
     }
@@ -3251,7 +4106,7 @@ mod tests {
             1.,
             50.,
             1.2,
-            FacadeDirection::Leeward,
+            FacadeDirection::WindSeg4,
             100.,
             120.,
             220.,
@@ -3273,7 +4128,7 @@ mod tests {
         let t_z = 293.15;
         let c_p_path = -0.7;
         let p_z_ref = 1.;
-        let expected_output = -10.6531458050959;
+        let expected_output = -10.653145805095907;
 
         assert_relative_eq!(
             leaks.calculate_ventilation_through_leaks_using_internal_p(
@@ -3303,7 +4158,7 @@ mod tests {
         );
 
         assert_relative_eq!(qm_in_through_leaks, 0.);
-        assert_relative_eq!(qm_out_through_leaks, -12.826387549335472);
+        assert_relative_eq!(qm_out_through_leaks, -9.825840128169913);
     }
 
     #[fixture]
@@ -3325,6 +4180,19 @@ mod tests {
 
         assert_relative_eq!(q_in_comb, 0.);
         assert_relative_eq!(q_out_comb, -10.08);
+    }
+
+    #[rstest]
+    fn test_calculate_air_flow_req_for_comb_appliance_no_op_comp(
+        combustion_appliances: CombustionAppliances,
+    ) {
+        let f_op_comp = 0.;
+        let p_h_fi = 1.;
+        let (q_in_comb, q_out_comb) =
+            combustion_appliances.calculate_air_flow_req_for_comb_appliance(f_op_comp, p_h_fi);
+
+        assert_relative_eq!(q_in_comb, 0.);
+        assert_relative_eq!(q_out_comb, 0.);
     }
 
     #[fixture]
@@ -3352,10 +4220,31 @@ mod tests {
             energy_supply_connection,
             250.,
             0.,
+            0.,
+            90.,
+            2.,
+            3.,
             None,
             Some(0.),
             None,
+            Some(180.),
+            Some(90.),
+            Some(3.),
+            1.,
         )
+    }
+
+    #[rstest]
+    fn test_mvhr_positions(mechanical_ventilation: MechanicalVentilation) {
+        assert_eq!(mechanical_ventilation.orientation_intake.unwrap(), 180.);
+        assert_eq!(mechanical_ventilation.pitch_intake.unwrap(), 90.);
+        assert_eq!(mechanical_ventilation.h_path_intake.unwrap(), 3.);
+        assert_eq!(mechanical_ventilation.z_intake.unwrap(), 6.); // 3 + 3
+
+        assert_eq!(mechanical_ventilation.orientation_exhaust, 0.);
+        assert_eq!(mechanical_ventilation.pitch_exhaust, 90.);
+        assert_eq!(mechanical_ventilation.h_path_exhaust, 2.);
+        assert_eq!(mechanical_ventilation.z_exhaust, 5.); // 2 + 3
     }
 
     #[rstest]
@@ -3370,10 +4259,26 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calc_req_oda_flow_rates_at_atds(mechanical_ventilation: MechanicalVentilation) {
-        let (qv_sup_req, qv_eta_req) = mechanical_ventilation.calc_req_oda_flow_rates_at_atds();
+    fn test_calc_req_oda_flow_rates_at_atds(mut mechanical_ventilation: MechanicalVentilation) {
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation
+            .calc_req_oda_flow_rates_at_atds()
+            .unwrap();
         assert_relative_eq!(qv_sup_req, 0.55);
         assert_relative_eq!(qv_eta_req, -0.55);
+
+        mechanical_ventilation.vent_type = MechVentType::IntermittentMev;
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation
+            .calc_req_oda_flow_rates_at_atds()
+            .unwrap();
+        assert_relative_eq!(qv_sup_req, 0.);
+        assert_relative_eq!(qv_eta_req, -0.55);
+
+        mechanical_ventilation.vent_type = MechVentType::PositiveInputVentilation;
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation
+            .calc_req_oda_flow_rates_at_atds()
+            .unwrap();
+        assert_relative_eq!(qv_sup_req, 0.55);
+        assert_relative_eq!(qv_eta_req, 0.);
     }
 
     #[rstest]
@@ -3385,26 +4290,172 @@ mod tests {
         let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
             mechanical_ventilation
                 .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                    4.135012577787589,
+                    140.,
+                    true,
+                    VentilationShieldClass::Normal,
                     293.15,
                     celsius_to_kelvin(air_temps[0]).unwrap(),
+                    1.7775065710163496,
                     &simulation_time_iterator.next().unwrap(),
                 )
                 .unwrap();
-        assert_relative_eq!(qm_sup_dis_req, 0.7106861797547136);
+        assert_relative_eq!(qm_sup_dis_req, 0.);
         assert_relative_eq!(qm_eta_dis_req, -0.6622);
         assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);
     }
 
-    // NOTE - Python has a commented out test here
+    fn mock_control_with_setpnt(setpnt: Option<f64>) -> Arc<dyn ControlBehaviour> {
+        Arc::new(Control::Mock(
+            crate::core::controls::time_control::MockControl::with_setpnt(setpnt),
+        ))
+    }
+
+    #[rstest]
+    #[case(0.5)]
+    #[should_panic(expected = "Error f_op_v is not between 0 and 1")]
+    #[case(1.5)]
+    fn test_f_op_v(
+        mut mechanical_ventilation: MechanicalVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+        #[case] setpoint: f64,
+    ) {
+        assert_relative_eq!(
+            mechanical_ventilation
+                .f_op_v(&simulation_time_iterator.current_iteration())
+                .unwrap(),
+            1.
+        );
+
+        mechanical_ventilation.vent_type = MechVentType::IntermittentMev;
+        mechanical_ventilation.ctrl_intermittent_mev =
+            Some(mock_control_with_setpnt(Some(setpoint)));
+        assert_eq!(
+            mechanical_ventilation
+                .f_op_v(&simulation_time_iterator.current_iteration())
+                .unwrap(),
+            0.5
+        );
+
+        mechanical_ventilation.ctrl_intermittent_mev =
+            Some(mock_control_with_setpnt(Some(setpoint)));
+        mechanical_ventilation
+            .f_op_v(&simulation_time_iterator.current_iteration())
+            .unwrap();
+    }
+
+    #[rstest]
+    fn test_fans(energy_supply: EnergySupply, simulation_time_iterator: SimulationTimeIterator) {
+        let simtime = &simulation_time_iterator.current_iteration();
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
+
+        let mut mechanical_ventilation = MechanicalVentilation::new(
+            SupplyAirFlowRateControlType::Oda,
+            SupplyAirTemperatureControlType::Constant,
+            1.,
+            3.4,
+            MechVentType::CentralisedContinuousMev,
+            1.5,
+            50.,
+            energy_supply_connection,
+            250.,
+            0.,
+            180.,
+            90.,
+            2.,
+            3.,
+            Some(mock_control_with_setpnt(None)),
+            Some(0.),
+            Some(1.1),
+            Some(180.),
+            Some(90.),
+            Some(2.),
+            1.,
+        );
+
+        assert_relative_eq!(
+            mechanical_ventilation
+                .fans(200., 2000., None, simtime)
+                .unwrap(),
+            0.
+        );
+
+        mechanical_ventilation.vent_type = MechVentType::Mvhr;
+
+        assert_relative_eq!(
+            mechanical_ventilation
+                .fans(200., 2000., None, simtime)
+                .unwrap(),
+            1.1458333333333335e-06,
+        );
+    }
+
+    #[rstest]
+    fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone_extract_only(
+        energy_supply: EnergySupply,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let simtime = &simulation_time_iterator.current_iteration();
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
+
+        let mechanical_ventilation = MechanicalVentilation::new(
+            SupplyAirFlowRateControlType::Oda,
+            SupplyAirTemperatureControlType::NoControl,
+            1.,
+            3.4,
+            MechVentType::CentralisedContinuousMev, // This is extract-only
+            1.5,
+            50.,
+            energy_supply_connection,
+            250.,
+            0.,
+            180.,
+            90.,
+            2.,
+            3.,
+            None,
+            Some(0.),
+            None,
+            None,
+            None,
+            None,
+            1.,
+        );
+
+        // Test with positive delta_p_mech_vent (back pressure)
+        let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
+            mechanical_ventilation
+                .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                    4.135012577787589,
+                    140.,
+                    true,
+                    VentilationShieldClass::Normal,
+                    293.15,
+                    celsius_to_kelvin(10.).unwrap(),
+                    2.,
+                    simtime,
+                )
+                .unwrap();
+
+        // For extract-only systems, supply should be 0
+        assert_eq!(qm_sup_dis_req, 0.);
+        // Extract should be negative (air leaving)
+        assert!(qm_eta_dis_req < 0.);
+        assert_eq!(qm_in_effective_heat_recovery_saving, 0.);
+    }
 
     #[fixture]
     fn infiltration_ventilation(
         simulation_time_iterator: SimulationTimeIterator,
         combustion_appliances: CombustionAppliances,
-        mechanical_ventilation: MechanicalVentilation,
+        energy_supply: EnergySupply,
     ) -> InfiltrationVentilation {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let windows = vec![create_window(ctrl, 30.)];
+        let windows = vec![create_window(Some(ctrl), 30.)];
         let vents = vec![Vent::new(1.5, 100., 20., 0., 90., 30., 2.5)];
         let leaks = CompletedVentilationLeaks {
             ventilation_zone_height: 6.,
@@ -3417,6 +4468,32 @@ mod tests {
         };
         let combustion_appliances_list = vec![combustion_appliances];
         let air_terminal_devices = Vec::<AirTerminalDevices>::new();
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
+        let mechanical_ventilation = MechanicalVentilation::new(
+            SupplyAirFlowRateControlType::Oda,
+            SupplyAirTemperatureControlType::Constant,
+            1.,
+            3.4,
+            MechVentType::Mvhr,
+            1.5,
+            0.5,
+            energy_supply_connection,
+            250.,
+            0.,
+            180.,
+            90.,
+            2.,
+            3.,
+            None,
+            Some(0.),
+            None,
+            Some(180.),
+            Some(90.),
+            Some(2.),
+            1.,
+        );
         let mechanical_ventilations = vec![Arc::new(mechanical_ventilation)];
 
         InfiltrationVentilation::new(
@@ -3466,15 +4543,40 @@ mod tests {
 
     // Python has a make_leaks_object test here which isn't required for Rust
 
+    #[rstest]
+    #[case(5., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof10])]
+    #[case(15., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof10_30])]
+    #[case(40., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof30])]
+    #[case(40., false, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof])]
+    #[should_panic = "Average roof pitch was not expected to be greater than 60 degrees."]
+    #[case(90., true, vec![WindSeg2, WindSeg4, Roof10])]
+    fn test_make_leak_objects_roof_pitch(
+        #[case] roof_pitch: f64,
+        #[case] f_cross: bool,
+        #[case] expected: Vec<FacadeDirection>,
+    ) {
+        let leaks = CompletedVentilationLeaks {
+            ventilation_zone_height: 6.,
+            test_pressure: 50.,
+            test_result: 1.2,
+            area_roof: 25.,
+            area_facades: 85.,
+            env_area: 220.,
+            altitude: 30.,
+        };
+
+        let leak_vec = InfiltrationVentilation::make_leak_objects(leaks, roof_pitch, 2.5, f_cross);
+
+        for (idx, leaks) in leak_vec.iter().enumerate() {
+            assert_eq!(leaks.facade_direction, expected[idx]);
+        }
+    }
+
     // NOTE - Python has a commented out test here for test_calculate_qv_pdu
     // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
 
     #[rstest]
-    #[case(20.,  0.5, -6.235527862635629)]
     fn test_calculate_internal_reference_pressure(
-        #[case] temp_int_air: f64,
-        #[case] r_w_arg: f64,
-        #[case] expected: f64,
         infiltration_ventilation: InfiltrationVentilation,
         wind_speeds: Vec<f64>,
         wind_directions: Vec<f64>,
@@ -3482,7 +4584,9 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let initial_p_z_ref_guess = 0.;
+        let temp_int_air = 20.;
         let r_v_arg = 1.;
+        let r_w_arg = 0.5;
         assert_relative_eq!(
             infiltration_ventilation
                 .calculate_internal_reference_pressure(
@@ -3496,13 +4600,116 @@ mod tests {
                     simulation_time_iterator.current_iteration()
                 )
                 .unwrap(),
-            expected,
+            -2.7081717145999975,
             max_relative = EIGHT_DECIMAL_PLACES
         )
     }
 
-    // TODO more cases here / different states
-    // copy expected values across from Python
+    #[rstest]
+    fn test_implicit_mass_balance_for_internal_reference_pressure_components(
+        mut infiltration_ventilation: InfiltrationVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let simtime = simulation_time_iterator.current_iteration();
+        infiltration_ventilation.detailed_output_heating_cooling = true;
+        // Check results for positive qv_pdu
+        let (qm_in, qm_out, qm_in_effective_heat_recovery_saving_total) = infiltration_ventilation
+            .implicit_mass_balance_for_internal_reference_pressure_components(
+                5.,
+                10.,
+                10.,
+                10.,
+                20.,
+                0.1,
+                Some(0.1),
+                Some(ReportingFlag::Min), // the Python passes in True here
+                simtime,
+            )
+            .unwrap();
+
+        assert_relative_eq!(qm_in, 6122.336725163513);
+        assert_relative_eq!(qm_out, -124.95154408329704);
+        assert_relative_eq!(qm_in_effective_heat_recovery_saving_total, 0.);
+
+        // Check results for negative qv_pdu
+        let (qm_in, qm_out, qm_in_effective_heat_recovery_saving_total) = infiltration_ventilation
+            .implicit_mass_balance_for_internal_reference_pressure_components(
+                5.,
+                10.,
+                10.,
+                10.,
+                30.,
+                0.1,
+                Some(0.1),
+                Some(ReportingFlag::Min), // the Python passes in True here
+                simtime,
+            )
+            .unwrap();
+
+        assert_relative_eq!(qm_in, 5868.964503688903);
+        assert_relative_eq!(qm_out, -117.00132730163227);
+        assert_relative_eq!(qm_in_effective_heat_recovery_saving_total, 0.);
+
+        let expected_result1 = VentilationDetailedResult {
+            timestep_index: 0,
+            reporting_flag: ReportingFlag::Min,
+            r_v_arg: 0.1,
+            incoming_air_flow: 5084.99728003614,
+            total_volume: 250.,
+            air_changes_per_hour: 20.339989120144562,
+            temp_interior_air: 10.,
+            p_z_ref: 5.,
+            qm_in_through_window_opening: 6054.2676951076,
+            qm_out_through_window_opening: 0.,
+            qm_in_through_vents: 18.072440880918208,
+            qm_out_through_vents: 0.,
+            qm_in_through_leaks: 49.99658917499436,
+            qm_out_through_leaks: -124.26595718589283,
+            qm_in_through_comb: 0.,
+            qm_out_through_comb: 0.,
+            qm_in_through_passive_hybrid_ducts: 0.,
+            qm_out_through_passive_hybrid_ducts: 0.,
+            qm_sup_to_vent_zone: 0.,
+            qm_eta_from_vent_zone: -0.6855868974042028,
+            qm_in_effective_heat_recovery_saving_total: 0.,
+            qm_in: 6122.336725163513,
+            qm_out: -124.95154408329704,
+        };
+        let expected_result2 = VentilationDetailedResult {
+            timestep_index: 0,
+            reporting_flag: ReportingFlag::Min,
+            r_v_arg: 0.1,
+            incoming_air_flow: 5040.837181234225,
+            total_volume: 250.,
+            air_changes_per_hour: 20.1633487249369,
+            temp_interior_air: 10.,
+            p_z_ref: 5.,
+            qm_in_through_window_opening: 5801.823062932729,
+            qm_out_through_window_opening: 0.,
+            qm_in_through_vents: 17.318874814724566,
+            qm_out_through_vents: 0.,
+            qm_in_through_leaks: 49.822565941449234,
+            qm_out_through_leaks: -116.31574040422807,
+            qm_in_through_comb: 0.,
+            qm_out_through_comb: 0.,
+            qm_in_through_passive_hybrid_ducts: 0.,
+            qm_out_through_passive_hybrid_ducts: 0.,
+            qm_sup_to_vent_zone: 0.,
+            qm_eta_from_vent_zone: -0.6855868974042028,
+            qm_in_effective_heat_recovery_saving_total: 0.,
+            qm_in: 5868.964503688903,
+            qm_out: -117.00132730163227,
+        };
+        let results = infiltration_ventilation.output_vent_results();
+
+        // Check detailed results
+        assert_eq!(results.read().len(), 2);
+        assert_eq!(results.read()[0].as_string_values().len(), 23);
+        assert_eq!(results.read()[1].as_string_values().len(), 23);
+        assert_eq!(results.read()[0], expected_result1);
+        assert_eq!(results.read()[1], expected_result2);
+    }
+
     #[rstest]
     fn test_implicit_mass_balance_for_internal_reference_pressure(
         infiltration_ventilation: InfiltrationVentilation,
@@ -3529,7 +4736,7 @@ mod tests {
                     simulation_time_iterator.current_iteration()
                 )
                 .unwrap(),
-            -30270.984047975235
+            -21682.238264921532
         )
     }
 
@@ -3561,7 +4768,7 @@ mod tests {
                     simulation_time_iterator.current_iteration()
                 )
                 .unwrap(),
-            4.846594835429536
+            5.682004429268872
         )
     }
 
@@ -3577,7 +4784,7 @@ mod tests {
         let ach_max = 1.;
         let temp_int_air = 20.;
         let initial_r_v_arg = 1.;
-        let expected_output = 0.5359731535118643;
+        let expected_output = 0.;
         let actual_output = infiltration_ventilation
             .find_r_v_arg_within_bounds(
                 Some(ach_min),
@@ -3602,8 +4809,8 @@ mod tests {
         let ach_min = 1.0;
         let ach_max = 1.4;
         let temp_int_air = 20.;
-        let initial_r_v_arg = 0.4;
-        let expected_output = 0.5359731535118643;
+        let initial_r_v_arg = 0.6;
+        let expected_output = 0.5452009507146588;
         let actual_output = infiltration_ventilation
             .find_r_v_arg_within_bounds(
                 Some(ach_min),
@@ -3623,6 +4830,113 @@ mod tests {
             actual_output,
             expected_output,
             max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
+    #[rstest]
+    #[should_panic = "ach_min must be less than ach_max"]
+    fn test_find_r_v_arg_within_bounds_min_over_max(
+        infiltration_ventilation: InfiltrationVentilation,
+        air_temps: Vec<f64>,
+        wind_directions: Vec<f64>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        infiltration_ventilation
+            .find_r_v_arg_within_bounds(
+                Some(1.4),
+                Some(1.),
+                0.4,
+                20.,
+                wind_directions[0],
+                20.,
+                air_temps[0],
+                Some(0.),
+                0.,
+                None,
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
+    }
+
+    #[rstest]
+    fn test_find_r_v_arg_within_bounds_below_min_vents(
+        infiltration_ventilation: InfiltrationVentilation,
+        air_temps: Vec<f64>,
+        wind_directions: Vec<f64>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        assert_relative_eq!(
+            infiltration_ventilation
+                .find_r_v_arg_within_bounds(
+                    Some(1.5),
+                    Some(20.),
+                    0.6,
+                    20.,
+                    wind_directions[0],
+                    20.,
+                    air_temps[0],
+                    Some(0.),
+                    0.,
+                    None,
+                    simulation_time_iterator.current_iteration(),
+                )
+                .unwrap(),
+            0.810203913567427,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
+    #[rstest]
+    fn test_find_r_v_arg_within_bounds_below_min(
+        infiltration_ventilation: InfiltrationVentilation,
+        air_temps: Vec<f64>,
+        wind_directions: Vec<f64>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        assert_relative_eq!(
+            infiltration_ventilation
+                .find_r_v_arg_within_bounds(
+                    Some(10.),
+                    Some(20.),
+                    0.6,
+                    20.,
+                    wind_directions[0],
+                    20.,
+                    air_temps[0],
+                    Some(0.),
+                    0.,
+                    None,
+                    simulation_time_iterator.current_iteration(),
+                )
+                .unwrap(),
+            1.,
+        );
+    }
+
+    #[rstest]
+    fn test_find_r_v_arg_within_bounds_above_max(
+        infiltration_ventilation: InfiltrationVentilation,
+        air_temps: Vec<f64>,
+        wind_directions: Vec<f64>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        assert_relative_eq!(
+            infiltration_ventilation
+                .find_r_v_arg_within_bounds(
+                    Some(0.1),
+                    Some(0.2),
+                    0.4,
+                    20.,
+                    wind_directions[0],
+                    20.,
+                    air_temps[0],
+                    Some(0.),
+                    0.,
+                    None,
+                    simulation_time_iterator.current_iteration(),
+                )
+                .unwrap(),
+            0.,
         );
     }
 

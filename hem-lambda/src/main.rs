@@ -1,6 +1,6 @@
-use hem::output::Output;
-use hem::read_weather_file::weather_data_to_vec;
-use hem::{run_project, ProjectFlags};
+use home_energy_model::output_writer::OutputWriter;
+use home_energy_model::read_weather_file::epw_weather_data_to_external_conditions;
+use home_energy_model::{run_project_from_input_file, CalculationResult};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
 use parking_lot::Mutex;
 use serde_json::json;
@@ -22,22 +22,19 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
 
     let output = LambdaOutput::new();
 
-    let external_conditions = weather_data_to_vec(BufReader::new(Cursor::new(include_str!(
-        "../../src/weather.epw"
-    ))))
+    let external_conditions = epw_weather_data_to_external_conditions(BufReader::new(Cursor::new(
+        include_str!("../../src/weather.epw"),
+    )))
     .ok();
 
-    let resp = match run_project(input, &output, external_conditions, None, &ProjectFlags::empty()) {
-        Ok(Some(resp)) => Response::builder()
+    let resp = match run_project_from_input_file(input, &output, external_conditions, None, None, false, false) {
+        Ok(CalculationResult { .. }) => {
+            Response::builder()
             .status(200)
-            .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_string(&json!({"data": resp}))?))
-            .map_err(Box::new)?,
-        Ok(None) => Response::builder()
-            .status(200)
-            .header("content-type", "text/plain")
+            .header("Content-Type", "text/plain")
             .body(Body::from(output))
-            .map_err(Box::new)?,
+            .map_err(Box::new)?
+        },
         Err(e) => Response::builder()
             .status(422)
             .header("Content-Type", "application/json")
@@ -69,7 +66,7 @@ impl LambdaOutput {
     }
 }
 
-impl Output for LambdaOutput {
+impl OutputWriter for LambdaOutput {
     fn writer_for_location_key(
         &self,
         location_key: &str,
@@ -83,13 +80,13 @@ impl Output for LambdaOutput {
     }
 }
 
-impl Output for &LambdaOutput {
+impl OutputWriter for &LambdaOutput {
     fn writer_for_location_key(
         &self,
         location_key: &str,
         file_extension: &str,
     ) -> anyhow::Result<impl Write> {
-        <LambdaOutput as Output>::writer_for_location_key(self, location_key, file_extension)
+        <LambdaOutput as OutputWriter>::writer_for_location_key(self, location_key, file_extension)
     }
 }
 
@@ -150,7 +147,7 @@ impl Write for FileLikeStringWriter {
         Ok(utf8.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }
