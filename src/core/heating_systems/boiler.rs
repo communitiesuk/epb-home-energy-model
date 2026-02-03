@@ -1232,7 +1232,7 @@ mod tests {
                 separate_dhw_tests: BoilerHotWaterTest::ML,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test fixture
                 rejected_energy_1: Some(0.0004),
-                // storage_loss_factor_1: 0.98328, // we don't have this field currently - unsure whether this is a mistake in the test fixture
+                storage_loss_factor_1: Some(0.98328),
                 storage_loss_factor_2: Some(0.91574),
                 rejected_factor_3: Some(0.),
                 setpoint_temp: None,
@@ -1310,7 +1310,7 @@ mod tests {
                 separate_dhw_tests: BoilerHotWaterTest::ML,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test data
                 rejected_energy_1: Some(0.0004),
-                // storage_loss_factor_1: 0.98328, // we don't have this field currently - unsure whether this is a mistake in the test data
+                storage_loss_factor_1: Some(0.98328),
                 // fuel_energy_2: 13.078 // we don't have this field currently - unsure whether this is a mistake in the test data
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),
@@ -1342,7 +1342,7 @@ mod tests {
                 separate_dhw_tests: BoilerHotWaterTest::MOnly,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test data
                 rejected_energy_1: Some(0.0004),
-                // storage_loss_factor_1: 0.98328, // we don't have this field currently - unsure whether this is a mistake in the test data
+                storage_loss_factor_1: Some(0.98328),
                 // fuel_energy_2: 13.078 // we don't have this field currently - unsure whether this is a mistake in the test data
                 // rejected_energy_2: 0.0008 // we don't have this field currently - unsure whether this is a mistake in the test data
                 storage_loss_factor_2: Some(0.91574),

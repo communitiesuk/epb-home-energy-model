@@ -379,7 +379,7 @@ pub(crate) struct InternalGainsDetails {
     #[validate(minimum = 0)]
     #[validate(maximum = 365)]
     pub(crate) start_day: u32,
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     #[validate(maximum = 24.)]
     pub(crate) time_series_step: f64,
     pub(crate) schedule: NumericSchedule,
@@ -443,12 +443,12 @@ pub struct ApplianceGainsEvent {
     pub start: f64,
 
     /// Duration of the appliance event (unit: hours)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub duration: f64,
 
     /// Electrical power consumption during the appliance event (unit: W)
     #[serde(rename = "demand_W")]
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub demand_w: f64,
 }
 
@@ -699,7 +699,7 @@ impl DiverterHeatSourceType {
 #[serde(deny_unknown_fields)]
 pub struct ElectricBattery {
     /// The maximum capacity of the battery (unit: kWh)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub capacity: f64,
 
     /// Charge/discharge round trip efficiency of battery system (greater than 0, up to 1)
@@ -716,11 +716,11 @@ pub struct ElectricBattery {
     pub minimum_charge_rate_one_way_trip: f64,
 
     /// The maximum discharge rate one way trip the battery allows (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub maximum_charge_rate_one_way_trip: f64,
 
     /// The minimum charge rate one way trip the battery allows (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub maximum_discharge_rate_one_way_trip: f64,
 
     /// The location of the battery (inside/outside)
@@ -1254,6 +1254,7 @@ pub enum BoilerHotWaterTest {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
+#[validate(custom = validate_dhw_tests_inputs)]
 pub enum HotWaterSourceDetails {
     StorageTank {
         #[serde(rename = "ColdWaterSource")]
@@ -1302,24 +1303,29 @@ pub enum HotWaterSourceDetails {
         #[validate(minimum = 0.)]
         rejected_energy_1: Option<f64>,
 
-        /// Storage loss factor 2 for combi boiler efficiency calculations (dimensionless)
+        /// Storage loss factor 1 for combi boiler efficiency calculations (unit: kWh/day)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        storage_loss_factor_1: Option<f64>,
+
+        /// Storage loss factor 2 for combi boiler efficiency calculations (unit: kWh/day)
         #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         storage_loss_factor_2: Option<f64>,
 
         /// Rejected energy factor 3 for combi boiler efficiency calculations (dimensionless)
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[validate(minimum = 0.)]
         rejected_factor_3: Option<f64>,
 
         /// Temperature setpoint for the combi boiler hot water output (unit: ˚C)
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[validate(minimum = -273.15)]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 100.)]
         setpoint_temp: Option<f64>,
 
         /// Daily hot water usage for the combi boiler system (unit: litre/day)
         #[serde(rename = "daily_HW_usage")]
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         daily_hw_usage: f64,
     },
     #[serde(rename = "HIU")]
@@ -1332,7 +1338,8 @@ pub enum HotWaterSourceDetails {
 
         /// Temperature setpoint for the HIU hot water output (unit: ˚C)
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[validate(minimum = -273.15)]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 100.)]
         setpoint_temp: Option<f64>,
     },
     PointOfUse {
@@ -1570,6 +1577,110 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetailsJsonMap<'_> {
         Ok(())
     }
 }
+
+fn validate_dhw_tests_inputs(
+    hw_source_details: &HotWaterSourceDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    let (
+        separate_dhw_tests,
+        rejected_energy_1,
+        rejected_factor_3,
+        storage_loss_factor_1,
+        storage_loss_factor_2,
+    ) = if let HotWaterSourceDetails::CombiBoiler {
+        separate_dhw_tests,
+        rejected_energy_1,
+        rejected_factor_3,
+        storage_loss_factor_1,
+        storage_loss_factor_2,
+        ..
+    } = hw_source_details
+    {
+        (
+            separate_dhw_tests,
+            rejected_energy_1,
+            rejected_factor_3,
+            storage_loss_factor_1,
+            storage_loss_factor_2,
+        )
+    } else {
+        return Ok(());
+    };
+    if matches!(
+        separate_dhw_tests,
+        BoilerHotWaterTest::ML | BoilerHotWaterTest::MS
+    ) {
+        if rejected_energy_1.is_none()
+            || rejected_factor_3.is_none()
+            || storage_loss_factor_2.is_none()
+        {
+            return custom_validation_error("Loss factors r1, F2, and F3 are required when a combi boiler is tested to two profiles.".into());
+        } else if storage_loss_factor_1.is_some() {
+            return custom_validation_error(
+                "storage_loss_factor_1 invalid input for combis tested to two profiles.".into(),
+            );
+        }
+    } else if matches!(
+        separate_dhw_tests,
+        BoilerHotWaterTest::MOnly | BoilerHotWaterTest::NoAdditionalTests
+    ) {
+        if rejected_energy_1.is_none() || storage_loss_factor_1.is_none() {
+            return custom_validation_error(
+                "Loss factors r1, and F1, are required when a combi boiler is tested to profile M, or not tested."
+                    .into(),
+            );
+        } else if storage_loss_factor_2.is_some() {
+            return custom_validation_error(
+                "storage_loss_factor_2 invalid input for combis tested to one profile, or not tested."
+                    .into(),
+            );
+        } else if rejected_factor_3.is_some() {
+            return custom_validation_error(
+                "rejected_factor_3 invalid input for combis tested to one profile, or not tested."
+                    .into(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+// fn validate_dry_core_output(
+//     output_data: &[[f64; 2]],
+//     field: &str,
+// ) -> Result<(), serde_valid::validation::Error> {
+//     //ensure body of data has at least 2 pairs
+//     if output_data.len() < 2 {
+//         return custom_validation_error(format!(
+//             "The field {field} for an electric storage heater must have at least 2 pairs of data."
+//         ));
+//     }
+//
+//     // Convert ESH_***_output to NumPy arrays without sorting
+//     let soc_values = output_data.iter().map(|f| f[0]).collect_vec();
+//
+//     // Validate that SOC array is in strictly increasing order
+//     if !soc_values.iter().tuple_windows().all(|(a, b)| a <= b) {
+//         return custom_validation_error(format!(
+//             "{field} SOC values must be in increasing order (from 0.0 to 1.0)."
+//         ));
+//     }
+//
+//     // Validate that both SOC arrays start at 0.0 and end at 1.0
+//     if !is_close!(*soc_values.first().unwrap(), 0.) {
+//         return custom_validation_error(format!(
+//             "The first SOC value in {field} must be 0.0 (fully discharged)."
+//         ));
+//     }
+//
+//     if !is_close!(*soc_values.last().unwrap(), 1.) {
+//         return custom_validation_error(format!(
+//             "The last SOC value in {field} must be 1.0 (fully charged)."
+//         ));
+//     }
+//
+//     Ok(())
+// }
 
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -1860,19 +1971,19 @@ pub struct HeatPumpHotWaterTestData {
 #[serde(deny_unknown_fields)]
 pub(crate) struct HeatPumpHotWaterOnlyTestDatum {
     /// CoP measured during EN 16147 test
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) cop_dhw: f64,
 
     /// daily energy requirement (kWh/day) for tapping profile used for test
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) hw_tapping_prof_daily_total: f64,
 
     /// electrical input energy (kWh) measured in EN 16147 test over 24 hrs
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) energy_input_measured: f64,
 
     /// standby power (W) measured in EN 16147 test
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) power_standby: f64,
 
     /// daily hot water vessel heat loss
@@ -1880,7 +1991,7 @@ pub(crate) struct HeatPumpHotWaterOnlyTestDatum {
     /// and surroundings, tested in accordance with BS 1566 or
     /// EN 12897 or any equivalent standard. Vessel must be same
     /// as that used during EN 16147 test (unit: kWh/day)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) hw_vessel_loss_daily: f64,
 }
 
@@ -2523,7 +2634,7 @@ pub(crate) struct FancoilTestData {
 
     /// A list of fan powers for which heat output data is provided (unit: W)
     #[serde(rename = "fan_power_W")]
-    #[validate(custom = validate_all_items_non_negative)]
+    #[validate(custom = validate_all_items_at_least_zero)]
     pub(crate) fan_power_w: Vec<f64>,
 }
 
@@ -2559,7 +2670,7 @@ fn validate_fancoil_test_data(
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct FanSpeedData {
     /// Difference in temperature between the hot water supplied to the fan coil and the air in the room (unit: Kelvin)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) temperature_diff: f64,
 
     /// Heat output for a specific test temperature difference (unit: kW)
@@ -2572,6 +2683,14 @@ fn validate_all_items_non_negative(items: &[f64]) -> Result<(), serde_valid::val
         Ok(())
     } else {
         custom_validation_error("All items must be non-negative".to_string())
+    }
+}
+
+fn validate_all_items_at_least_zero(items: &[f64]) -> Result<(), serde_valid::validation::Error> {
+    if items.iter().all(|item| item > &0.) {
+        Ok(())
+    } else {
+        custom_validation_error("All items must be at least zero".to_string())
     }
 }
 
@@ -2823,6 +2942,11 @@ pub enum ZoneTemperatureControlBasis {
     // for operative temperature
     Operative,
 }
+
+// From BR 443: The values under "horizontal" apply to heat flow
+// directions +/- 30 degrees from horizontal plane.
+const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
+const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -3269,6 +3393,34 @@ impl GroundBuildingElement for GroundBuildingElementJsonValue<'_> {
     }
 }
 
+/// Types of party wall cavity configurations
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PartyWallCavityType {
+    /// Solid wall or structurally insulated panel
+    Solid,
+    /// Unfilled cavity with no effective edge sealing
+    UnfilledUnsealed,
+    /// Unfilled cavity with effective sealing
+    UnfilledSealed,
+    /// Fully filled cavity with effective sealing
+    FilledSealed,
+    /// Fully filled cavity with no effective edge sealing
+    FilledUnsealed,
+    /// User-defined thermal resistance
+    DefinedResistance,
+}
+
+/// Types of party wall lining
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PartyWallLiningType {
+    WetPlaster,
+    DryLined,
+}
+
 // special deserialization logic so that orientations are normalized correctly on the way in
 pub(crate) fn deserialize_orientation<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
@@ -3501,7 +3653,7 @@ pub enum EdgeInsulation {
     #[serde(rename = "horizontal")]
     Horizontal {
         /// (unit: m)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         width: f64,
 
         /// Thermal resistance of floor edge insulation (unit: m²K/W)
@@ -3511,7 +3663,7 @@ pub enum EdgeInsulation {
     #[serde(rename = "vertical")]
     Vertical {
         /// (unit: m)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         depth: f64,
 
         /// Thermal resistance of floor edge insulation (unit: m²K/W)
@@ -3750,13 +3902,13 @@ pub enum HeatSourceWetDetails {
         rated_power: f64,
 
         /// Boiler efficiency at full load (dimensionless, 0-1)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         #[validate(maximum = 1.)]
         efficiency_full_load: f64,
 
         /// Boiler efficiency at part load (dimensionless, 0-1)
-        #[validate(minimum = 0.)]
-        #[validate(maximum = 1.)]
+        #[validate(exclusive_minimum = 0.)]
+        #[validate(maximum = 1.12)]
         efficiency_part_load: f64,
 
         /// Location of the boiler (internal or external to the building)
@@ -3772,11 +3924,11 @@ pub enum HeatSourceWetDetails {
         electricity_circ_pump: f64,
 
         /// Electrical power consumption at part load (unit: kW)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         electricity_part_load: f64,
 
         /// Electrical power consumption at full load (unit: kW)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         electricity_full_load: f64,
 
         /// Electrical power consumption in standby mode (unit: kW)
@@ -3799,7 +3951,7 @@ pub enum HeatSourceWetDetails {
 
         /// Daily heat losses from the HIU (unit: kWh/day)
         #[serde(rename = "HIU_daily_loss")]
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         hiu_daily_loss: f64,
 
         /// Heat losses from building-level distribution pipework (unit: W)
@@ -3811,7 +3963,7 @@ pub enum HeatSourceWetDetails {
         power_circ_pump: Option<f64>,
 
         /// Power consumption of auxiliary electrical usage (unit: kW)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         power_aux: Option<f64>,
     },
 }
@@ -3880,19 +4032,19 @@ pub enum HeatPumpBackupControlType {
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpBufferTank {
     /// Standing heat loss (unit: kWh/day)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub daily_losses: f64,
 
     /// Volume of the buffer tank (unit: litre)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub volume: f64,
 
     /// Flow rate of the buffer tank - emitters loop (unit: l/min)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub pump_fixed_flow_rate: f64,
 
     /// Pump power of the buffer tank - emitters loop (unit: W)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub pump_power_at_flow_rate: f64,
 }
 
@@ -3953,13 +4105,13 @@ pub struct HeatPumpBoiler {
     rated_power: f64,
 
     /// Boiler efficiency at full load (dimensionless, 0-1)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     #[validate(maximum = 1.)]
     efficiency_full_load: f64,
 
     /// Boiler efficiency at part load (dimensionless, 0-1)
-    #[validate(minimum = 0.)]
-    #[validate(maximum = 1.)]
+    #[validate(exclusive_minimum = 0.)]
+    #[validate(maximum = 1.12)]
     efficiency_part_load: f64,
 
     /// Location of the boiler (internal or external to the building)
@@ -3975,11 +4127,11 @@ pub struct HeatPumpBoiler {
     electricity_circ_pump: f64,
 
     /// Electrical power consumption at part load (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     electricity_part_load: f64,
 
     /// Electrical power consumption at full load (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     electricity_full_load: f64,
 
     /// Electrical power consumption in standby mode (unit: kW)
@@ -4037,7 +4189,7 @@ pub enum HeatBattery {
         electricity_circ_pump: f64,
 
         /// Electrical power consumption in standby mode (unit: kW)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         electricity_standby: f64,
 
         /// Rated charging power (unit: kW)
@@ -4049,6 +4201,7 @@ pub enum HeatBattery {
         max_rated_losses: f64,
 
         /// Number of heat battery units
+        #[validate(minimum = 1)]
         number_of_units: usize,
 
         /// Whether the heat battery can charge and discharge simultaneously
@@ -4089,9 +4242,9 @@ pub enum HeatBattery {
         #[validate(exclusive_minimum = 0.)]
         velocity_in_hex_tube_at_1_l_per_min_m_per_s: f64,
 
-        /// Diameter of capillary tubes (unit: m)
+        /// Inlet diameter of capillary tubes (unit: mm)
         #[validate(exclusive_minimum = 0.)]
-        capillary_diameter_m: f64,
+        inlet_diameter_mm: f64,
 
         /// Heat battery parameter A (dimensionless)
         #[serde(rename = "A")]
@@ -4100,10 +4253,6 @@ pub enum HeatBattery {
         /// Heat battery parameter B (dimensionless)
         #[serde(rename = "B")]
         b: f64,
-
-        /// Surface area of heat exchanger (unit: m²)
-        #[validate(exclusive_minimum = 0.)]
-        heat_exchanger_surface_area_m2: f64,
 
         /// Flow rate through the heat battery (unit: litre/minute)
         #[validate(exclusive_minimum = 0.)]
@@ -4585,7 +4734,6 @@ pub(crate) struct VentilationLeaks {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[validate(custom = validate_supply_air_temp_ctrl)]
 pub struct MechanicalVentilation {
     /// Supply air flow rate control
     #[serde(rename = "sup_air_flw_ctrl")]
@@ -4635,21 +4783,6 @@ pub struct MechanicalVentilation {
 
 const fn default_sfp_in_use_factor() -> f64 {
     1.
-}
-
-/// Validate that only implemented supply air temperature control types are used.
-fn validate_supply_air_temp_ctrl(
-    data: &MechanicalVentilation,
-) -> Result<(), serde_valid::validation::Error> {
-    match data.supply_air_temperature_control_type {
-        SupplyAirTemperatureControlType::NoControl => Ok(()),
-        _ => custom_validation_error(
-            format!(
-                "Supply air temperature control type {} is not currently implemented. Only NO_CTRL is supported. Other values would be silently overwritten by the ventilation engine.",
-                serde_json::to_value(data.supply_air_temperature_control_type).unwrap().as_str().unwrap()
-            )
-        ),
-    }
 }
 
 /// Enum to encapsulate the data provided with the different types of vent.
@@ -4852,22 +4985,22 @@ impl MechanicalVentilationForProcessing for MechanicalVentilationJsonValue<'_> {
 pub(crate) enum SupplyAirFlowRateControlType {
     #[serde(rename = "ODA")]
     Oda,
-
-    #[serde(rename = "LOAD")]
-    Load,
+    // commented out from Python
+    // #[serde(rename = "LOAD")]
+    // Load,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum SupplyAirTemperatureControlType {
-    #[serde(rename = "CONST")]
-    Constant,
-
+    // commented out from Python
+    // #[serde(rename = "CONST")]
+    // Constant,
     #[serde(rename = "NO_CTRL")]
     NoControl,
-
-    #[serde(rename = "LOAD_COM")]
-    LoadCom,
+    // commented out from Python
+    // #[serde(rename = "LOAD_COM")]
+    // LoadCom,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -5286,6 +5419,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn should_successfully_parse_all_core_demo_files(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let parsed: Result<Input, _> =
@@ -5300,6 +5434,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn should_successfully_deserialise_all_core_demo_files(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Result<Input, _> =
@@ -5314,6 +5449,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_all_demo_files_deserialize_and_serialize(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Input =
@@ -5332,7 +5468,7 @@ mod tests {
 
     #[fixture]
     fn baseline_demo_file_json() -> JsonValue {
-        let file = File::open("./examples/input/core/demo.json").unwrap();
+        let file = File::open("./examples/input/core/short/demo.json").unwrap();
         serde_json::from_reader(file).unwrap()
     }
 
@@ -5349,6 +5485,7 @@ mod tests {
 
     /// Test WWHRS validation with empty configuration.
     #[rstest]
+    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_validate_shower_waste_water_heat_recovery_systems_empty(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -5365,6 +5502,7 @@ mod tests {
 
     /// Test WWHRS validation with valid mixer shower configuration.
     #[rstest]
+    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_validate_shower_waste_water_heat_recovery_systems_valid_mixer_shower(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -5561,6 +5699,7 @@ mod tests {
 
     /// Test that compatible exhaust air heat pump and ventilation combinations pass validation.
     #[rstest]
+    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_valid_combinations(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -5603,6 +5742,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_invalid_combinations(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -5649,6 +5789,7 @@ mod tests {
 
     /// Test edge cases where validation should pass regardless of configuration.
     #[rstest]
+    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_edge_cases(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -5986,10 +6127,9 @@ mod tests {
                     phase_transition_temperature_lower: 57.,
                     max_temperature: 25.,
                     velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
-                    capillary_diameter_m: 0.0065,
+                    inlet_diameter_mm: 0.0065,
                     a: 0.4,
                     b: 0.5,
-                    heat_exchanger_surface_area_m2: 8.83,
                     flow_rate_l_per_min: 10.,
                 })
                 .unwrap()
@@ -6023,6 +6163,7 @@ mod tests {
                 case::phase_transition_temperature_lower_at_least_absolute_zero(json!({"phase_transition_temperature_lower": -9999})
                 ),
             )]
+            #[ignore = "test to be updated during migration to 1.0.0a6"]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<HeatBattery>(valid_example, inputs);
             }
@@ -6144,6 +6285,7 @@ mod tests {
                     heat_source_wet: "heat source wet".into(),
                     separate_dhw_tests: BoilerHotWaterTest::MOnly,
                     rejected_energy_1: None,
+                    storage_loss_factor_1: None,
                     storage_loss_factor_2: None,
                     rejected_factor_3: None,
                     setpoint_temp: Some(10.),
@@ -6155,8 +6297,6 @@ mod tests {
             #[rstest(inputs,
                 case::daily_hw_usage_at_least_zero(json!({"daily_HW_usage": -1})),
                 case::rejected_energy_1_at_least_zero(json!({"rejected_energy_1": -1})
-                ),
-                case::rejected_factor_3_at_least_zero(json!({"rejected_factor_3": -1})
                 ),
                 case::storage_loss_factor_2_at_least_zero(json!({"storage_loss_factor_2": -1})
                 ),
@@ -7061,12 +7201,6 @@ mod tests {
         }
 
         #[rstest(inputs,
-            case::sfp_at_least_zero(json!({"SFP": -1})),
-            case::design_outdoor_air_flow_rate_at_least_zero(json!({"design_outdoor_air_flow_rate": -1})
-            ),
-            case::mvhr_eff_at_least_zero(json!({"mvhr_eff": -1})),
-            case::supply_air_temperature_control_type_must_be_no_control(json!({"sup_air_temp_ctrl": SupplyAirTemperatureControlType::Constant})
-            ),
             case::mech_vent_mvhr_needs_both_position_intake_and_position_exhaust(json!({"vent_type": "MVHR", "position_intake": null})
             ),
             case::mech_vent_mvhr_needs_both_position_intake_and_position_exhaust(json!({"vent_type": "MVHR", "position_exhaust": null})

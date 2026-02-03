@@ -1583,7 +1583,6 @@ impl MechanicalVentilation {
 
                 (qv_sup_dis_req, qv_eta_dis_req)
             }
-            SupplyAirFlowRateControlType::Load => unimplemented!(), // this variant is removed in later version of Python (1.0.0a6)
         };
 
         // Calculate effective flow rate of external air
@@ -4211,7 +4210,7 @@ mod tests {
 
         MechanicalVentilation::new(
             SupplyAirFlowRateControlType::Oda,
-            SupplyAirTemperatureControlType::Constant,
+            SupplyAirTemperatureControlType::NoControl,
             1.,
             3.4,
             MechVentType::Mvhr,
@@ -4353,7 +4352,7 @@ mod tests {
 
         let mut mechanical_ventilation = MechanicalVentilation::new(
             SupplyAirFlowRateControlType::Oda,
-            SupplyAirTemperatureControlType::Constant,
+            SupplyAirTemperatureControlType::NoControl,
             1.,
             3.4,
             MechVentType::CentralisedContinuousMev,
@@ -4473,7 +4472,7 @@ mod tests {
             EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
         let mechanical_ventilation = MechanicalVentilation::new(
             SupplyAirFlowRateControlType::Oda,
-            SupplyAirTemperatureControlType::Constant,
+            SupplyAirTemperatureControlType::NoControl,
             1.,
             3.4,
             MechVentType::Mvhr,
