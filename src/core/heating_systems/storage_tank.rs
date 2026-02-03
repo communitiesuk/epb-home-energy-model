@@ -122,8 +122,7 @@ pub struct StorageTank {
     temp_average_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
     temp_average_drawoff_volweighted: AtomicF64, // In Python this is created from inside extract_hot_water()
     total_volume_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
-    ambient_temperature: f64,        // TODO should these be AtomicF64
-    previous_event_time_end: f64,
+    ambient_temperature: f64,
 }
 
 #[derive(Debug)]
@@ -170,7 +169,7 @@ impl StorageTank {
         let ambient_temperature = ambient_temperature.unwrap_or(DEFAULT_AMBIENT_TEMPERATURE);
         let pipework_primary_gains_for_timestep = pipework_primary_gains_for_timestep
             .unwrap_or(DEFAULT_PIPEWORK_PRIMARY_GAINS_FOR_TIMESTEP);
-        let previous_event_time_end =
+        let _previous_event_time_end =
             previous_event_time_end.unwrap_or(DEFAULT_PREVIOUS_EVENT_TIME_END);
 
         let volume_total_in_litres = volume;
@@ -259,7 +258,6 @@ impl StorageTank {
             temp_average_drawoff_volweighted: Default::default(),
             total_volume_drawoff: Default::default(),
             ambient_temperature,
-            previous_event_time_end,
         })
     }
 
