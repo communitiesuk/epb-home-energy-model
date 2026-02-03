@@ -115,8 +115,8 @@ fn main() -> anyhow::Result<()> {
         external_conditions,
         args.output.as_ref(),
         args.tariff_file.as_ref().map(|f| f.as_str()),
-        false,
-        false,
+        args.heat_balance,
+        args.detailed_output_heating_cooling,
     )?;
 
     Ok(())
