@@ -46,7 +46,6 @@ use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, instrument};
-use zerocopy::IntoBytes;
 
 pub const HEM_VERSION: &str = "1.0.0a1";
 pub const HEM_VERSION_DATE: &str = "2025-10-02";
@@ -1345,11 +1344,11 @@ enum StringOrNumber {
 }
 
 impl StringOrNumber {
-    pub(crate) fn as_bytes(&self) -> &[u8] {
+    pub(crate) fn as_bytes(&self) -> Cow<'_, [u8]> {
         match self {
-            StringOrNumber::String(s) => s.as_bytes(),
-            StringOrNumber::Float(f) => f.as_bytes(),
-            StringOrNumber::Integer(i) => i.as_bytes(),
+            StringOrNumber::String(s) => Cow::Borrowed(s.as_bytes()),
+            StringOrNumber::Float(f) => Cow::Owned(f.to_string().into_bytes()),
+            StringOrNumber::Integer(i) => Cow::Owned(i.to_string().into_bytes()),
         }
     }
 }
