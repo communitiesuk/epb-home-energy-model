@@ -1,5 +1,6 @@
 // This module provides structs to model time controls
 
+use crate::core::schedule::validate_schedule_length;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
@@ -203,7 +204,7 @@ impl ChargeControl {
     pub(crate) fn new(
         logic_type: ControlLogicType,
         schedule: Vec<bool>,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iterator: &SimulationTimeIterator,
         start_day: u32,
         time_series_step: f64,
         charge_level: Vec<Option<f64>>,
@@ -213,7 +214,14 @@ impl ChargeControl {
         external_sensor: Option<ExternalSensor>,
         charge_calc_time: Option<f64>,
     ) -> anyhow::Result<Self> {
-        let simulation_timestep = simulation_time_iteration.timestep;
+        if let Some(ref temp_charge_cut_delta) = temp_charge_cut_delta {
+            validate_schedule_length(
+                temp_charge_cut_delta,
+                simulation_time_iterator
+                    .total_steps_based_on_step(start_day, Some(time_series_step))?,
+            )?;
+        };
+        let simulation_timestep = simulation_time_iterator.step_in_hours();
         let charge_calc_time = charge_calc_time.unwrap_or(21.);
 
         let heat_retention_data: Option<ChargeControlHeatRetentionFields> = match logic_type {
@@ -259,7 +267,8 @@ impl ChargeControl {
                 )));
                 for i in 0..steps_day {
                     future_ext_temp.write().push_back(Some(
-                        external_conditions.air_temp_with_offset(simulation_time_iteration, i),
+                        external_conditions
+                            .air_temp_with_offset(&simulation_time_iterator.current_iteration(), i),
                     ));
                 }
                 let energy_to_store = AtomicF64::new(0.0);
@@ -296,7 +305,8 @@ impl ChargeControl {
                 )));
                 for i in 0..steps_day {
                     future_ext_temp.write().push_back(Some(
-                        external_conditions.air_temp_with_offset(simulation_time_iteration, i),
+                        external_conditions
+                            .air_temp_with_offset(&simulation_time_iterator.current_iteration(), i),
                     ));
                 }
                 let energy_to_store = AtomicF64::new(0.0);
@@ -2465,7 +2475,7 @@ mod tests {
             ChargeControl::new(
                 logic_type,
                 schedule,
-                &simulation_time().iter().current_iteration(),
+                &simulation_time().iter(),
                 0,
                 1.,
                 vec![Some(1.0), Some(0.8)],
@@ -2794,6 +2804,25 @@ mod tests {
             }
         }
 
+        #[rstest]
+        fn test_temp_charge_cut_delta_length() {
+            let charge_control = ChargeControl::new(
+                ControlLogicType::Automatic,
+                schedule(),
+                &simulation_time().iter(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
+                Some(15.5),
+                Some(vec![0., 0.]),
+                Some(external_conditions()).map(Arc::new),
+                Some(external_sensor()),
+                None,
+            );
+
+            assert!(charge_control.is_err());
+        }
+
         #[test]
         fn test_energy_to_store() {
             let simulation_time = simulation_time_48_hours();
@@ -2809,7 +2838,7 @@ mod tests {
             let charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
                 schedule_48_hours(),
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 vec![Some(1.0), Some(0.8)],
@@ -2846,7 +2875,7 @@ mod tests {
             let mut charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
                 schedule_48_hours(),
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 vec![Some(1.0), Some(0.8)],
@@ -2983,7 +3012,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Automatic,
                 schedule,
-                &simulation_time_1.iter().current_iteration(),
+                &simulation_time_1.iter(),
                 0,
                 1.,
                 vec![Some(1.0), Some(0.8)],
@@ -3769,9 +3798,7 @@ mod tests {
         ChargeControl::new(
             ControlLogicType::Automatic,
             schedule_for_charge_control,
-            &simulation_time_for_charge_control
-                .iter()
-                .current_iteration(),
+            &simulation_time_for_charge_control.iter(),
             0,
             1.,
             [1.0, 0.8].into_iter().map(Some).collect(),

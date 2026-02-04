@@ -2126,13 +2126,13 @@ mod tests {
     fn battery_control_off(
         external_conditions: ExternalConditions,
         external_sensor: ExternalSensor,
-        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) -> Control {
         create_control_with_value(
             false,
             external_conditions,
             external_sensor,
-            simulation_time_iteration,
+            simulation_time_iterator,
         )
     }
 
@@ -2140,13 +2140,13 @@ mod tests {
     fn battery_control_on(
         external_conditions: ExternalConditions,
         external_sensor: ExternalSensor,
-        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) -> Control {
         create_control_with_value(
             true,
             external_conditions,
             external_sensor,
-            simulation_time_iteration,
+            simulation_time_iterator,
         )
     }
 
@@ -2154,13 +2154,13 @@ mod tests {
         boolean: bool,
         external_conditions: ExternalConditions,
         external_sensor: ExternalSensor,
-        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) -> Control {
         Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
                 vec![boolean],
-                &simulation_time_iteration,
+                &simulation_time_iterator,
                 0,
                 1.,
                 vec![Some(0.2)],
@@ -2775,7 +2775,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Manual,
                 vec![false],
-                &simulation_time_iterator.current_iteration(),
+                &simulation_time_iterator,
                 0,
                 1.,
                 vec![Some(0.2), Some(0.3)],
@@ -3013,7 +3013,6 @@ mod tests {
     fn test_timestep_end(
         external_sensor: ExternalSensor,
         external_conditions: ExternalConditions,
-        simulation_time_iteration: SimulationTimeIteration,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
         // not using the fixture here
@@ -3022,7 +3021,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Manual,
                 vec![true, true, true],
-                &simulation_time_iteration,
+                &simulation_time_iterator,
                 0,
                 1.,
                 [1.0, 1.5].into_iter().map(Into::into).collect(),
@@ -3095,7 +3094,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Manual,
                 vec![true, true, true],
-                &simulation_time_iterator.current_iteration(),
+                &simulation_time_iterator,
                 0,
                 1.,
                 [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
@@ -3124,7 +3123,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Manual,
                 vec![true, true, true],
-                &simulation_time_iterator.current_iteration(),
+                &simulation_time_iterator,
                 0,
                 1.,
                 [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result

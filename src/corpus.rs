@@ -278,7 +278,7 @@ fn single_control_from_details(
             Control::Charge(ChargeControl::new(
                 logic_type,
                 schedule,
-                &simulation_time_iterator.current_iteration(),
+                simulation_time_iterator,
                 *start_day,
                 *time_series_step,
                 charge_level_vec,

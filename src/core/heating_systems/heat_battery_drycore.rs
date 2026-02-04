@@ -2018,7 +2018,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
                 schedule,
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 vec![Some(1.0), Some(1.8)],
@@ -2043,7 +2043,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
                 schedule,
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 vec![Some(0.0), Some(0.0)],
