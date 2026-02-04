@@ -195,11 +195,16 @@ impl ElectricBattery {
         simtime: SimulationTimeIteration,
     ) -> f64 {
         let timestep = self.simulation_timestep;
+        let total_time_charging_current_timestep = self
+            .total_time_charging_current_timestep
+            .load(Ordering::SeqCst);
 
-        if timestep
-            <= self
-                .total_time_charging_current_timestep
-                .load(Ordering::SeqCst)
+        if (timestep < total_time_charging_current_timestep
+            || is_close!(
+                timestep,
+                total_time_charging_current_timestep,
+                rel_tol = 1e-09
+            ))
             && energy_flow < 0.
         {
             // No more scope for charging
