@@ -1671,16 +1671,16 @@ impl HeatBatteryPcm {
         Ok(energy_delivered_hb * self.n_units as f64)
     }
 
-    /// Calculation of heat battery auxilary energy consumption
+    /// Calculation of heat battery auxiliary energy consumption
     fn calc_auxiliary_energy(
         &self,
         _timestep: f64,
         time_remaining_current_timestep: f64,
         timestep_idx: usize,
     ) -> anyhow::Result<f64> {
-        // Energy used by circulation pump
+        // Energy used by circulation pump (for regular hot water and space heating services)
         let mut energy_aux = self
-            .total_time_running_current_timestep
+            .pump_running_time_current_timestep
             .load(Ordering::SeqCst)
             * self.power_circ_pump;
 
@@ -1784,6 +1784,8 @@ impl HeatBatteryPcm {
         }
 
         self.total_time_running_current_timestep
+            .store(Default::default(), Ordering::SeqCst);
+        self.pump_running_time_current_timestep
             .store(Default::default(), Ordering::SeqCst);
         *self.service_results.write() = Default::default();
         self.energy_charged
