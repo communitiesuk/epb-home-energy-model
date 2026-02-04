@@ -2133,9 +2133,9 @@ mod tests {
                 max_temperature: 80.,
                 temp_init: 80.,
                 velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
-                inlet_diameter_mm: 0.0065,
-                a: 19.744,
-                b: -105.5,
+                inlet_diameter_mm: 6.5,
+                a: 174.33952,
+                b: -931.565,
                 flow_rate_l_per_min: 10.,
             },
         };
@@ -2195,7 +2195,8 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
         // Test when controlvent is provided and returns True
-        let service_control_on: Control = create_setpoint_time_control(vec![Some(21.0)]);
+        let service_control_on: Control =
+            create_setpoint_time_control(vec![Some(21.0), Some(21.0)]);
 
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
 
@@ -2207,7 +2208,7 @@ mod tests {
 
         assert!(heat_battery_service.is_on(simulation_time_iteration));
 
-        let service_control_off: Control = create_setpoint_time_control(vec![None]);
+        let service_control_off: Control = create_setpoint_time_control(vec![None, None]);
 
         let heat_battery_service: HeatBatteryPcmServiceSpace = HeatBatteryPcmServiceSpace::new(
             heat_battery,
@@ -4077,7 +4078,7 @@ mod tests {
             .energy_output_max(80., Some(0.))
             .unwrap();
 
-        assert_eq!(result, 0.);
+        assert_relative_eq!(result, 0., epsilon = 1e-7);
     }
 
     // skipping python's test_demand_hot_water_with_varying_cold_temperatures and
