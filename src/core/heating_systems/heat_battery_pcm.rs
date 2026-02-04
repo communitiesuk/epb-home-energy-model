@@ -1797,8 +1797,8 @@ impl HeatBatteryPcm {
     /// Output detailed results of heat battery calculation
     pub(crate) fn output_detailed_results(
         &self,
-        hot_water_energy_output: &IndexMap<Arc<str>, Vec<ResultParamValue>>,
-        hot_water_source_name_for_heat_battery_service: &IndexMap<Arc<str>, Arc<str>>,
+        _hot_water_energy_output: &IndexMap<Arc<str>, Vec<ResultParamValue>>,
+        _hot_water_source_name_for_heat_battery_service: &IndexMap<Arc<str>, Arc<str>>,
     ) -> Result<(ResultsPerTimestep, ResultsAnnual), OutputDetailedResultsNotEnabledError> {
         let detailed_results = self
             .detailed_results
@@ -1883,29 +1883,6 @@ impl HeatBatteryPcm {
                     }
                 }
             }
-            // For water heating service, record hot water energy delivered from tank
-            current_results.insert(("energy_delivered_H4".into(), Some("kWh".into())), {
-                if detailed_results.read().first().unwrap().results[service_idx].service_type
-                    == Some(HeatingServiceType::DomesticHotWaterRegular)
-                {
-                    let energy_delivered_total_len = current_results
-                        .get(&("energy_delivered_total".into(), Some("kWh".into())))
-                        .map(|vec| vec.len())
-                        .unwrap_or(0);
-                    // For DHW, need to include storage and primary circuit losses.
-                    // Can do this by replacing H5 numerator with total energy
-                    // draw-off from hot water cylinder.
-                    let hws_name = &hot_water_source_name_for_heat_battery_service[&service_name];
-
-                    if !hot_water_energy_output.contains_key(hws_name) {
-                        vec![ResultParamValue::Empty; energy_delivered_total_len]
-                    } else {
-                        hot_water_energy_output[hws_name].clone()
-                    }
-                } else {
-                    current_results[&("energy_delivered_total".into(), Some("kWh".into()))].clone()
-                }
-            });
 
             results_per_timestep.insert(service_name.clone(), current_results);
         }
@@ -1929,10 +1906,6 @@ impl HeatBatteryPcm {
             ("auxiliary".into(), Default::default()),
         ]
         .into();
-        results_annual["Overall"].insert(
-            ("energy_delivered_H4".into(), Some("kWh".into())),
-            0.0f64.into(),
-        );
         // Report auxiliary parameters (not specific to a service)
         for (parameter, param_unit, incl_in_annual) in AUX_PARAMETERS.iter() {
             if *incl_in_annual {
@@ -1974,43 +1947,6 @@ impl HeatBatteryPcm {
                     *results_annual["Overall"]
                         .entry((parameter.into(), param_unit.map(Into::into)))
                         .or_insert(ResultParamValue::Number(0.)) += parameter_annual_total;
-                }
-            }
-            if results_per_timestep[&service_name]
-                [&("energy_delivered_H4".into(), Some("kWh".into()))]
-                .contains(&ResultParamValue::Empty)
-            {
-                results_annual.get_mut(&service_name).unwrap().insert(
-                    ("energy_delivered_H4".into(), Some("kWh".into())),
-                    ResultParamValue::Empty,
-                );
-                results_annual.get_mut("Overall").unwrap().insert(
-                    ("energy_delivered_H4".into(), Some("kWh".into())),
-                    ResultParamValue::Empty,
-                );
-            } else {
-                results_annual.get_mut(&service_name).unwrap().insert(
-                    ("energy_delivered_H4".into(), Some("kWh".into())),
-                    ResultParamValue::from(
-                        FSum::with_all(
-                            results_per_timestep[&service_name]
-                                [&("energy_delivered_H4".into(), Some("kWh".into()))]
-                                .iter()
-                                .map(ResultParamValue::as_f64),
-                        )
-                        .value(),
-                    ),
-                );
-
-                if results_annual["Overall"][&("energy_delivered_H4".into(), Some("kWh".into()))]
-                    != ResultParamValue::Empty
-                {
-                    let service_energy_delivered = results_annual[&service_name]
-                        [&("energy_delivered_H4".into(), Some("kWh".into()))]
-                        .clone();
-                    results_annual["Overall"]
-                        [&("energy_delivered_H4".into(), Some("kWh".into()))] +=
-                        service_energy_delivered;
                 }
             }
         }
