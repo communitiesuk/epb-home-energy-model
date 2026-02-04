@@ -209,6 +209,18 @@ pub fn expand_events(
     Ok(schedule)
 }
 
+/// Validate a schedule length to avoid running out of values during the simulation
+pub(crate) fn validate_schedule_length(
+    schedule: &Vec<f64>,
+    expected_length: usize,
+) -> anyhow::Result<()> {
+    let schedule_length = schedule.len();
+    if schedule_length < expected_length {
+        bail!("Schedule length is less than the expected length ({schedule_length} / {expected_length}).")
+    }
+    Ok(())
+}
+
 impl From<&WaterHeatingEvent> for ScheduleEvent {
     fn from(event: &WaterHeatingEvent) -> Self {
         Self {
@@ -501,7 +513,7 @@ mod tests {
     }
 
     #[rstest]
-    fn should_expand_boolean_schedule_correctly(
+    fn test_expand_schedule(
         boolean_schedule: BooleanSchedule,
         boolean_schedule_expanded: Vec<bool>,
     ) {
@@ -510,6 +522,12 @@ mod tests {
             boolean_schedule_expanded,
             "Incorrect expansion of Boolean schedule"
         );
+    }
+
+    #[test]
+    fn test_validate_schedule_length() {
+        let result = validate_schedule_length(&vec![0.0, 0.1], 3);
+        assert!(result.is_err());
     }
 
     #[test]
