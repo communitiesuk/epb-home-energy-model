@@ -72,8 +72,8 @@ use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, BuildingElementHeightWidthInput, ChargeLevel,
     ColdWaterSourceDetails, ColdWaterSourceInput, Control as ControlInput, ControlCombinations,
-    ControlDetails, DuctType, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FlowData,
-    FuelType, HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FlowData, FuelType,
+    HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
     HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
     InternalGains as InternalGainsInput, InternalGainsDetails,
@@ -1158,33 +1158,9 @@ impl Corpus {
     }
 
     /// Calculate the losses/gains in the MVHR ductwork
-    fn calc_internal_gains_ductwork(&self, simulation_time: SimulationTimeIteration) -> f64 {
-        let mut internal_gains_ductwork_watts = 0.0;
-        let space_heating_ductwork = self.ventilation.space_heating_ductworks();
-        for mvhr_ductwork in space_heating_ductwork.values() {
-            // assume MVHR unit is running 100% of the time
-            for duct in mvhr_ductwork {
-                match duct.duct_type() {
-                    DuctType::Intake | DuctType::Exhaust => {
-                        // Heat loss from intake or exhaust ducts is to zone, so add
-                        // to internal gains (may be negative gains)
-                        internal_gains_ductwork_watts += duct.total_duct_heat_loss(
-                            self.temp_internal_air_prev_timestep(),
-                            self.external_conditions.air_temp(&simulation_time),
-                        );
-                    }
-                    DuctType::Supply | DuctType::Extract => {
-                        // Heat loss from supply and extract ducts is to outside, so
-                        // subtract from internal gains
-                        internal_gains_ductwork_watts -= duct.total_duct_heat_loss(
-                            self.temp_internal_air_prev_timestep(),
-                            self.external_conditions.air_temp(&simulation_time),
-                        );
-                    }
-                }
-            }
-        }
-        internal_gains_ductwork_watts
+    fn calc_internal_gains_ductwork(&self, _simulation_time: SimulationTimeIteration) -> f64 {
+        // TODO 1.0.0a6 migration
+        0.
     }
 
     fn space_heat_internal_gains_for_zone(

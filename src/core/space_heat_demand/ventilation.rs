@@ -2686,7 +2686,7 @@ impl InfiltrationVentilation {
                                 };
                             let thickness_insulation = ductwork.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64;
 
-                            Ductwork::new(ductwork.cross_section_shape, duct_perimeter, internal_diameter, external_diameter, ductwork.length, ductwork.insulation_thermal_conductivity, thickness_insulation, ductwork.reflective, ductwork.duct_type, mech_vents_data.mvhr_location.ok_or_else(|| anyhow!("An MVHR location was expected for mechanical ventilation with an MVHR vent type."))?, mech_vents_data.mvhr_efficiency.ok_or_else(|| anyhow!("An MVHR efficiency value was expected for mechanical ventilation with an MVHR vent type."))?)
+                            Ductwork::new(ductwork.cross_section_shape, duct_perimeter, internal_diameter, external_diameter, ductwork.length, ductwork.insulation_thermal_conductivity, thickness_insulation, ductwork.reflective, ductwork.duct_type)
                         })
                         .collect::<anyhow::Result<Vec<Ductwork>>>()?,
                 );
