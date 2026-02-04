@@ -6,7 +6,8 @@ use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnec
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
 use crate::core::units::{
-    KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
+    KILOJOULES_PER_KILOWATT_HOUR, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, SECONDS_PER_MINUTE,
+    WATTS_PER_KILOWATT,
 };
 use crate::core::water_heat_demand::misc::{
     calculate_volume_weighted_average_temperature, water_demand_to_kwh, WaterEventResult,
@@ -481,6 +482,7 @@ pub struct HeatBatteryPcm {
     // nothing external seems to read this - check upstream whether service_results field is necessary
     service_results: Arc<RwLock<Vec<HeatBatteryResult>>>,
     total_time_running_current_timestep: AtomicF64,
+    pump_running_time_current_timestep: AtomicF64,
     flag_first_call: AtomicBool,
     #[allow(dead_code)]
     charge_level: f64,
@@ -502,7 +504,6 @@ pub struct HeatBatteryPcm {
     capillary_diameter_m: f64,
     a: f64,
     b: f64,
-    heat_exchanger_surface_area_m2: f64,
     flow_rate_l_per_min: f64,
     detailed_results: Option<Arc<RwLock<Vec<HeatBatteryTimestepResult>>>>,
 }
@@ -541,10 +542,9 @@ impl HeatBatteryPcm {
             phase_transition_temperature_upper,
             phase_transition_temperature_lower,
             velocity_in_hex_tube,
-            capillary_diameter_m,
+            inlet_diameter_mm,
             a,
             b,
-            heat_exchanger_surface_area_m2,
             flow_rate_l_per_min,
             temp_init,
             ..,
@@ -564,7 +564,7 @@ impl HeatBatteryPcm {
                     phase_transition_temperature_upper,
                     phase_transition_temperature_lower,
                     velocity_in_hex_tube_at_1_l_per_min_m_per_s: velocity_in_hex_tube,
-                    inlet_diameter_mm: capillary_diameter_m,
+                    inlet_diameter_mm,
                     a,
                     b,
                     flow_rate_l_per_min,
@@ -587,10 +587,9 @@ impl HeatBatteryPcm {
                 *phase_transition_temperature_upper,
                 *phase_transition_temperature_lower,
                 *velocity_in_hex_tube,
-                *capillary_diameter_m,
+                *inlet_diameter_mm,
                 *a,
                 *b,
-                0., // TODO arg likely removed later in migration to 1.0.0a6
                 *flow_rate_l_per_min,
                 *temp_init,
             )
@@ -617,6 +616,7 @@ impl HeatBatteryPcm {
             charge_control,
             service_results: Default::default(),
             total_time_running_current_timestep: Default::default(),
+            pump_running_time_current_timestep: Default::default(),
             flag_first_call: true.into(),
             charge_level: Default::default(),
             battery_losses: Default::default(),
@@ -634,10 +634,9 @@ impl HeatBatteryPcm {
             phase_transition_temperature_upper,
             phase_transition_temperature_lower,
             velocity_in_hex_tube,
-            capillary_diameter_m,
+            capillary_diameter_m: inlet_diameter_mm / MILLIMETRES_IN_METRE as f64,
             a,
             b,
-            heat_exchanger_surface_area_m2,
             flow_rate_l_per_min,
             detailed_results,
         }
@@ -766,19 +765,14 @@ impl HeatBatteryPcm {
             * (1. - time_start / timestep)
     }
 
-    fn calculate_heat_transfer_coeff(
+    fn calculate_heat_transfer_kw_per_k(
         a: f64,
         b: f64,
         flow_rate_l_per_min: f64,
         reynold_number_at_1_l_per_min: f64,
     ) -> f64 {
-        // Equations parameters A and B are based on test data
-        // Consider adding further documentation and evidence for this in future updates
-        a * (reynold_number_at_1_l_per_min * flow_rate_l_per_min).ln() + b
-    }
-
-    fn calculate_heat_transfer_kw_per_k(heat_transfer_coeff: f64, surface_area_m2: f64) -> f64 {
-        (heat_transfer_coeff * surface_area_m2) / WATTS_PER_KILOWATT as f64
+        (a * (reynold_number_at_1_l_per_min * flow_rate_l_per_min).ln() + b)
+            / WATTS_PER_KILOWATT as f64
     }
 
     /// Heat transfer from heat battery zone to water flowing through it.
@@ -881,15 +875,11 @@ impl HeatBatteryPcm {
             HeatBatteryPcmOperationMode::Normal => {
                 // NORMAL mode include battery primarily hydraulic charging or discharging with or without simultaneous electric charging
                 let zone_temp_c_start = zone_temp_c_dist[index];
-                let heat_transfer_coeff = Self::calculate_heat_transfer_coeff(
+                let heat_transfer_kw_per_k = Self::calculate_heat_transfer_kw_per_k(
                     self.a,
                     self.b,
                     self.flow_rate_l_per_min,
                     reynold_number_at_1_l_per_min,
-                );
-                let heat_transfer_kw_per_k = Self::calculate_heat_transfer_kw_per_k(
-                    heat_transfer_coeff,
-                    self.heat_exchanger_surface_area_m2,
                 );
 
                 // Calculate outlet temperature and heat exchange for this zone
