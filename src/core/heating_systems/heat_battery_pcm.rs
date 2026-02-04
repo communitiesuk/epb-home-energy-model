@@ -1579,9 +1579,22 @@ impl HeatBatteryPcm {
                 self.capillary_diameter_m,
             );
 
+            let energy_transf_delivered_sum = FSum::with_all(&energy_transf_delivered).value();
+
+            //  We assume the heat battery controls would stop the pump if the HB is absorbing energy from the emitters loop instead of contributing to it
+            if energy_transf_delivered_sum < 0. {
+                // Break prevents negative energy output by stopping before the current sub-timestep's result
+                // is added to energy_delivered_HB. This occurs when the heat battery zones have cooled to the
+                // point where they would absorb heat from the inlet flow rather than deliver it. By breaking
+                // here, energy_delivered_HB retains only the positive contributions from previous sub-timesteps
+                // where the battery was actively heating the flow, ensuring the function never returns negative
+                // energy delivery values.
+                break;
+            }
+
             // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
-            let energy_delivered_ts: f64 = FSum::with_all(&energy_transf_delivered).value()
-                / KILOJOULES_PER_KILOWATT_HOUR as f64;
+            let energy_delivered_ts: f64 =
+                energy_transf_delivered_sum / KILOJOULES_PER_KILOWATT_HOUR as f64;
             energy_delivered_hb += energy_delivered_ts; // demand_per_time_step_kwh
                                                         // balance = total_energy - energy_charged
             let max_instant_power = energy_delivered_ts / time_step_s;
@@ -1618,6 +1631,19 @@ impl HeatBatteryPcm {
                 time_running_current_service / SECONDS_PER_HOUR as f64,
                 Ordering::SeqCst,
             );
+
+            // Track pump running time (only for regular DHW and space heating)
+            // Direct DHW services don't use circulation pumps
+            match service_type {
+                HeatingServiceType::DomesticHotWaterRegular | HeatingServiceType::Space => {
+                    self.pump_running_time_current_timestep.fetch_add(
+                        time_running_current_service / SECONDS_PER_HOUR as f64,
+                        Ordering::SeqCst,
+                    );
+                }
+                HeatingServiceType::DomesticHotWaterDirect => (), // Direct DHW doesn't use circulation pump
+                _ => bail!("Unexpected service type: {service_type}"),
+            }
 
             let current_hb_power = if time_running_current_service > 0. {
                 energy_delivered_hb * SECONDS_PER_HOUR as f64 / time_running_current_service
