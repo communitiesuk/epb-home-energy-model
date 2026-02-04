@@ -47,8 +47,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, instrument};
 
-pub const HEM_VERSION: &str = "1.0.0a1";
-pub const HEM_VERSION_DATE: &str = "2025-10-02";
+pub const HEM_VERSION: &str = "1.0.0a6";
+pub const HEM_VERSION_DATE: &str = "2026-01-17";
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
