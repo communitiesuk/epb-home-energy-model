@@ -2335,7 +2335,7 @@ impl HeatPump {
             temp_lower_op_limit,
             temp_diff_flow_return_min,
             var_flow_temp_ctrl_during_test,
-            power_heating_circ_pump: power_heating_circ_pump.unwrap_or(0.),
+            power_heating_circ_pump,
             power_heating_warm_air_fan,
             power_source_circ_pump,
             power_standby,

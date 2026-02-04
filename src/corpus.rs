@@ -471,6 +471,11 @@ fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f
             u_value_input,
             ..
         } => params_from_u_value_input_and_pitch(u_value_input, *pitch),
+        BuildingElementInput::PartyWall {
+            pitch,
+            u_value_input,
+            ..
+        } => params_from_u_value_input_and_pitch(u_value_input, *pitch),
     };
     init_resistance_or_uvalue_from_data(thermal_resistance_construction, u_value, pitch)
 }
@@ -540,10 +545,9 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
             BuildingElementInput::AdjacentConditionedSpace { .. } => 0.,
             BuildingElementInput::AdjacentUnconditionedSpace { area, .. } => {
                 let u_value = 1.0 / (thermal_resistance_construction + r_se + r_si);
-                area.ok_or_else(|| {
-                    anyhow!("AdjacentConditionedSpace building element is expected have an area")
-                })? * u_value
+                area * u_value
             }
+            BuildingElementInput::PartyWall { .. } => unimplemented!(), // TODO complete as part of 1.0.0a6 migration
         })
     }
 
@@ -3362,7 +3366,7 @@ fn wwhr_system_from_details(
     // Get efficiency data for all systems if provided
     let WasteWaterHeatRecoveryDetails {
         flow_rates,
-        system_a_efficiencies,
+        system_a_efficiencies: _system_a_efficiencies,
         system_a_utilisation_factor,
         system_b_efficiencies,
         system_b_utilisation_factor,
@@ -3374,8 +3378,9 @@ fn wwhr_system_from_details(
     } = system;
 
     WwhrsInstantaneous::new(
+        // TODO update/correct parameters during migration to 1.0.0a6
         flow_rates,
-        system_a_efficiencies,
+        Default::default(),
         cold_water_source.clone(),
         system_a_utilisation_factor,
         system_b_efficiencies,
@@ -3906,9 +3911,7 @@ fn building_element_from_input(
             ..
         } => {
             BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
-                area.ok_or_else(|| {
-                    anyhow!("AdjacentConditionedSpace building element is expected have an area")
-                })?,
+                *area,
                 *pitch,
                 init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
                 *areal_heat_capacity,
@@ -3925,9 +3928,7 @@ fn building_element_from_input(
             mass_distribution_class,
         } => BuildingElement::AdjacentUnconditionedSpaceSimple(
             BuildingElementAdjacentUnconditionedSpaceSimple::new(
-                area.ok_or_else(|| {
-                    anyhow!("AdjacentUnconditionedSpace building element is expected have an area")
-                })?,
+                *area,
                 *pitch,
                 init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
                 *thermal_resistance_unconditioned_space,
@@ -3936,6 +3937,7 @@ fn building_element_from_input(
                 external_conditions,
             ),
         ),
+        BuildingElementInput::PartyWall { .. } => unimplemented!(), // TODO complete as part of migration to 1.0.0a6
     }))
 }
 

@@ -332,6 +332,7 @@ pub(crate) mod input {
         /// Value to repeat or schedule reference
         pub value: ScheduleRepeaterValue<T>,
         /// Number of times to repeat the value
+        #[validate(minimum = 1)]
         pub repeat: usize,
     }
 

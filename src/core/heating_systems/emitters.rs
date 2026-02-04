@@ -354,6 +354,7 @@ impl Emitters {
                 constant_data,
                 exponent: n,
                 frac_convective,
+                ..
             } = emitter
             {
                 model_emitters[i].replace(Arc::new(WetEmitter::Radiator {
@@ -2327,6 +2328,8 @@ mod tests {
             constant_data: RadiatorConstantData::Constant { constant: 0.08 },
             exponent: 1.2,
             frac_convective: 0.4,
+            thermal_mass: None,
+            thermal_mass_per_m: None,
         }];
         assert!(Emitters::new(
             None,
@@ -3751,6 +3754,8 @@ mod tests {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
             frac_convective: 0.4,
+            thermal_mass: None,
+            thermal_mass_per_m: None,
             constant_data: RadiatorConstantData::Constant { constant: 0.08 },
         }];
 
@@ -3805,6 +3810,8 @@ mod tests {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
             frac_convective: 0.4,
+            thermal_mass: None,
+            thermal_mass_per_m: None,
             constant_data: RadiatorConstantData::Constant { constant: 0.08 },
         }];
 
@@ -3878,6 +3885,8 @@ mod tests {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
             frac_convective: 0.4,
+            thermal_mass: None,
+            thermal_mass_per_m: None,
             constant_data: RadiatorConstantData::Constant { constant: 0.08 },
         }];
 
@@ -3933,6 +3942,8 @@ mod tests {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
             frac_convective: 0.4,
+            thermal_mass: None,
+            thermal_mass_per_m: None,
             constant_data: RadiatorConstantData::Constant { constant: 0.08 },
         }];
 

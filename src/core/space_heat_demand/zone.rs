@@ -1996,6 +1996,7 @@ mod tests {
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered,
             thermal_resistance_of_insulation: 7.,
+            edge_insulation: Default::default(),
         };
         let be_ground = BuildingElement::Ground(
             BuildingElementGround::new(

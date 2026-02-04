@@ -43,6 +43,10 @@ impl SimulationTime {
         self.start_time
     }
 
+    pub(crate) fn end_time(&self) -> f64 {
+        self.end_time
+    }
+
     pub fn iter(&self) -> SimulationTimeIterator {
         SimulationTimeIterator::from(*self)
     }

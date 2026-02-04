@@ -900,6 +900,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                         thermal_resistance_of_insulation,
                         height_upper_surface,
                         shield_fact_location,
+                        ..
                     } => init_suspended_floor(
                         *height_upper_surface,
                         *thermal_transmission_walls,
@@ -2495,15 +2496,15 @@ impl WindowTreatment {
             delta_r: input.delta_r,
             trans_red: input.trans_red,
             closing_irradiance_control: input
-                .closing_irradiance_control
+                .control_closing_irrad
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)),
             opening_irradiance_control: input
-                .opening_irradiance_control
+                .control_opening_irrad
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)),
             open_control: input
-                .open_control
+                .control_open
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)),
             is_open: input.is_open.unwrap_or_default().into(),
@@ -3705,6 +3706,7 @@ mod tests {
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered,
             thermal_resistance_of_insulation: 7.,
+            edge_insulation: Default::default(),
         };
         let be_i = BuildingElementGround::new(
             20.0,
@@ -3768,6 +3770,7 @@ mod tests {
         let be_d_floor_data = FloorData::HeatedBasement {
             depth_basement_floor: 2.3,
             thermal_resistance_of_basement_walls: 6.,
+            edge_insulation: Default::default(),
         };
         let be_d = BuildingElementGround::new(
             27.5,
@@ -3790,6 +3793,7 @@ mod tests {
             depth_basement_floor: 2.3,
             height_basement_walls: 2.3,
             thermal_resistance_of_basement_walls: 0.5,
+            edge_insulation: Default::default(),
         };
         let be_m = BuildingElementGround::new(
             30.0,
@@ -3903,6 +3907,7 @@ mod tests {
             area_per_perimeter_vent: 1.,
             shield_fact_location: wind_shield_location,
             thermal_resistance_of_insulation: 1.,
+            edge_insulation: Default::default(),
         }
     }
 

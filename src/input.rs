@@ -31,6 +31,7 @@ const HOURS_IN_YEAR: usize = 8760;
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[validate(custom = validate_shower_waste_water_heat_recovery_systems)]
 #[validate(custom = validate_exhaust_air_heat_pump_ventilation_compatibility)]
+#[validate(custom = validate_time_series)]
 pub struct Input {
     /// Metadata for the input file
     #[serde(rename = "metadata")]
@@ -229,6 +230,24 @@ fn validate_only_storage_tanks(
         .ok_or_else(|| serde_valid::validation::Error::Custom("PreHeatedWaterSource input can only contain HotWaterSource data of the type StorageTank".to_owned()))
 }
 
+fn validate_time_series(input: &Input) -> Result<(), serde_valid::validation::Error> {
+    let Input {
+        cold_water_source,
+        simulation_time,
+        ..
+    } = input;
+
+    for cold_water_source in cold_water_source.values() {
+        let total_steps = (simulation_time.end_time() - simulation_time.start_time()).ceil()
+            / cold_water_source.time_series_step;
+        if (cold_water_source.temperatures.len() as f64) < total_steps {
+            return custom_validation_error("ColdWaterSource.temperatures does not contain enough values to cover the simulation.".to_string());
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
@@ -290,6 +309,7 @@ pub struct ExternalConditionsInput {
 }
 
 impl ExternalConditionsInput {
+    /// Assert that all required fields are set and valid, allowing the model to run without a weather file.
     pub(crate) fn are_all_fields_set(&self) -> bool {
         [
             self.air_temperatures.is_some(),
@@ -458,7 +478,7 @@ pub(crate) type EnergySupplyInput = IndexMap<std::string::String, EnergySupplyDe
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct EnergySupplyDetails {
-    /// Type of combustion fuel
+    /// Type of fuel
     pub fuel: FuelType,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1266,16 +1286,17 @@ pub enum HotWaterSourceDetails {
         heat_source: IndexMap<std::string::String, HeatSource>,
 
         /// Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         daily_losses: f64,
 
         /// Surface area of the heat exchanger within the storage tank (unit: m²)
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         heat_exchanger_surface_area: Option<f64>,
 
         /// Initial temperature of the storage tank at the start of simulation (unit: ˚C)
-        #[validate(minimum = -273.15)]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 100.)]
         init_temp: f64,
 
         /// List of primary pipework components connected to the storage tank
@@ -1284,7 +1305,7 @@ pub enum HotWaterSourceDetails {
         primary_pipework: Option<Vec<WaterPipework>>,
 
         /// Total volume of tank (unit: litre)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         volume: f64,
     },
     CombiBoiler {
@@ -1344,7 +1365,7 @@ pub enum HotWaterSourceDetails {
     },
     PointOfUse {
         /// Thermal efficiency of the point-of-use water heater (dimensionless, 0-1)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         #[validate(maximum = 1.)]
         efficiency: Option<f64>,
 
@@ -1355,36 +1376,39 @@ pub enum HotWaterSourceDetails {
         cold_water_source: String,
 
         /// Temperature setpoint for the point-of-use water heater output (unit: ˚C)
-        #[validate(minimum = -273.15)]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 100.)]
         setpoint_temp: f64,
     },
     SmartHotWaterTank {
         /// Total volume of tank (unit: litre)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         volume: f64,
 
         /// Electrical power consumption of the pump (unit: kW)
         #[serde(rename = "power_pump_kW")]
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         power_pump_kw: f64,
 
         /// Maximum flow rate of the pump (unit: litre/minute)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         max_flow_rate_pump_l_per_min: f64,
 
         /// Temperature below which water is considered unusable (unit: ˚C)
-        #[validate(minimum = -273.15)]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 100.)]
         temp_usable: f64,
 
         /// Reference to a control schedule of maximum state of charge values
         temp_setpnt_max: String,
 
         /// Daily standby losses due to tank insulation at standardised conditions (unit: kWh/24h)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         daily_losses: f64,
 
         /// Initial temperature of the smart hot water tank at the start of simulation (unit: ˚C)
-        #[validate(minimum = -273.15)]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 100.)]
         init_temp: f64,
 
         #[serde(rename = "ColdWaterSource")]
@@ -1411,7 +1435,8 @@ pub enum HotWaterSourceDetails {
         heat_source_wet: String,
 
         /// Temperature setpoint for the heat battery hot water output (unit: ˚C)
-        #[validate(minimum = -273.15)]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 100.)]
         setpoint_temp: f64,
     },
 }
@@ -1698,7 +1723,7 @@ pub(crate) enum HeatSourceControlType {
 pub enum HeatSource {
     ImmersionHeater {
         /// (unit: kW)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         power: f64,
 
         #[serde(rename = "EnergySupply")]
@@ -1729,24 +1754,24 @@ pub enum HeatSource {
         solar_cell_location: SolarCollectorLoopLocation,
 
         /// Collector module reference area (unit: m2)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         area_module: f64,
 
         /// Number of collector modules installed
         #[validate(minimum = 1)]
         modules: usize,
 
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         #[validate(maximum = 1.)]
         peak_collector_efficiency: f64,
 
         /// Hemispherical incidence angle modifier
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         #[validate(maximum = 1.)]
         incidence_angle_modifier: f64,
 
         /// First order heat loss coefficient
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         first_order_hlc: f64,
 
         /// Second order heat loss coefficient
@@ -1754,21 +1779,21 @@ pub enum HeatSource {
         second_order_hlc: f64,
 
         /// Mass flow rate solar loop (unit: kg/s)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         collector_mass_flow_rate: f64,
 
-        /// Power of collector pump (unit: W)
+        /// Power of collector pump (unit: kW)
         #[validate(minimum = 0.)]
         power_pump: f64,
 
-        /// Power of collector pump controller (unit: W)
+        /// Power of collector pump controller (unit: kW)
         #[validate(minimum = 0.)]
         power_pump_control: f64,
 
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
 
-        /// Tilt angle (inclination) of the PV panel from horizontal,
+        /// Tilt angle (inclination) of the solar thermal panel from horizontal,
         /// measured upwards facing, 0 to 90, in degrees.
         /// 0=horizontal surface, 90=vertical surface.
         /// Needed to calculate solar irradiation at the panel surface.
@@ -1786,7 +1811,7 @@ pub enum HeatSource {
         orientation: f64,
 
         /// Heat loss coefficient of the collector loop piping (unit: W/K)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         solar_loop_piping_hlc: f64,
 
         /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.
@@ -1811,7 +1836,7 @@ pub enum HeatSource {
 
         /// Upper operating limit for flow temperature (unit: °C). Optional.
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[validate(minimum = -273.15)]
+        #[validate(exclusive_minimum = 0.)]
         temp_flow_limit_upper: Option<f64>,
 
         #[serde(rename = "EnergySupply")]
@@ -1851,15 +1876,15 @@ pub enum HeatSource {
         tank_volume_declared: f64,
 
         /// Surface area of heat exchanger stored in the database (unit: m2)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         heat_exchanger_surface_area_declared: f64,
 
         /// Standing heat loss (unit: kWh/day)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         daily_losses_declared: f64,
 
         /// In use factor to be applied to heat pump efficiency
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         in_use_factor_mismatch: f64,
 
         /// Dictionary with keys denoting tapping profile letter (M or L)
@@ -2042,7 +2067,7 @@ pub struct WaterPipework {
     pub external_diameter_mm: f64,
 
     /// (unit: m)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub length: f64,
 
     /// Thermal conductivity of the insulation (unit: W / m K)
@@ -2152,7 +2177,7 @@ impl Showers {
 pub enum Shower {
     MixerShower {
         /// Shower flow rate (unit: litre/minute)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         flowrate: f64,
 
         #[serde(rename = "ColdWaterSource")]
@@ -2168,7 +2193,7 @@ pub enum Shower {
     #[serde(rename = "InstantElecShower")]
     InstantElectricShower {
         /// Shower's rated electrical power (unit: kW)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         rated_power: f64,
 
         #[serde(rename = "ColdWaterSource")]
@@ -2233,7 +2258,7 @@ pub struct BathDetails {
     pub(crate) hot_water_source: Option<String>,
 
     /// Tap/outlet flow rate (unit: litre/minute)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) flowrate: f64,
 }
 
@@ -2247,7 +2272,7 @@ pub struct OtherWaterUses(#[validate] pub IndexMap<std::string::String, OtherWat
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterUse {
     /// Tap/outlet flow rate (unit: litre/minute)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) flowrate: f64,
 
     #[serde(rename = "ColdWaterSource")]
@@ -2303,16 +2328,17 @@ pub struct WaterHeatingEvent {
 
     /// Duration of the water heating event (unit: minutes)
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub duration: Option<f64>,
 
     /// Volume of water for the event (unit: litre)
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub volume: Option<f64>,
 
     /// Target temperature for the water heating event (unit: ˚C)
-    #[validate(minimum = -273.15)]
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 100.)]
     pub temperature: f64,
 }
 
@@ -2333,7 +2359,7 @@ pub(crate) enum SpaceHeatSystemDetails {
     #[serde(rename = "InstantElecHeater")]
     InstantElectricHeater {
         //// Rated power of the instant electric heater. (Unit: kW)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         rated_power: f64,
 
         #[serde(rename = "EnergySupply")]
@@ -2386,7 +2412,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         n_units: u32,
 
         /// The rated power of the heating element which charges the storage medium with heat (unit: kW)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         pwr_in: f64,
 
         /// State of charge at initialisation of dry core heat storage (ratio)
@@ -2414,12 +2440,12 @@ pub(crate) enum SpaceHeatSystemDetails {
         /// Fraction of return back into flow water
         #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
-        #[validate(maximum = 1.)]
+        #[validate(exclusive_maximum = 1.)]
         bypass_fraction_recirculated: Option<f64>,
 
         /// Design flow temperature. (Unit: ˚C)
-        #[validate(exclusive_minimum = 0)]
-        design_flow_temp: i32,
+        #[validate(exclusive_minimum = 0.)]
+        design_flow_temp: f64,
 
         /// Wet emitter details of the heating system.
         #[validate(min_items = 1)]
@@ -2430,15 +2456,16 @@ pub(crate) enum SpaceHeatSystemDetails {
         #[validate]
         pipework: Vec<WaterPipework>,
 
+        #[validate]
         ecodesign_controller: EcoDesignController,
 
         /// Design temperature difference across the emitters. (Unit: deg C or K)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         temp_diff_emit_dsgn: f64,
 
         #[serde(skip_serializing_if = "Option::is_none")]
         /// Thermal mass of the emitters. (Unit: kWh/K)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         thermal_mass: Option<f64>,
 
         #[serde(rename = "Control")]
@@ -2516,11 +2543,11 @@ pub(crate) enum FlowData {
         _variable_flow: MustBe!(true),
 
         /// Maximum flow rate allowed (unit: litres/min)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         max_flow_rate: f64,
 
         /// Minimum flow rate allowed (unit: litres/min)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         min_flow_rate: f64,
     },
     Design {
@@ -2528,7 +2555,7 @@ pub(crate) enum FlowData {
         _variable_flow: MustBe!(false),
 
         /// Constant flow rate if the heat source can't modulate flow rate (unit: l/s)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         design_flow_rate: f64,
     },
 }
@@ -2536,6 +2563,7 @@ pub(crate) enum FlowData {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "wet_emitter_type", rename_all = "lowercase")]
+#[validate(custom = validate_radiator_required_fields)]
 pub(crate) enum WetEmitter {
     Radiator {
         /// Exponent from characteristic equation of emitters (e.g. derived from BS EN 442 tests)
@@ -2547,6 +2575,16 @@ pub(crate) enum WetEmitter {
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         frac_convective: f64,
+
+        // NB. thermal_mass* field should be logically exclusive but can coexist in upstream schema,
+        // so collecting as separate fields and applying validation logic for them
+        /// Thermal mass of the radiator (unit: kWh/K)
+        #[validate(exclusive_minimum = 0.)]
+        thermal_mass: Option<f64>,
+
+        /// Thermal mass per meter length of the radiator (unit: kWh/K/m)
+        #[validate(exclusive_minimum = 0.)]
+        thermal_mass_per_m: Option<f64>,
 
         #[serde(flatten)]
         #[validate]
@@ -2562,7 +2600,7 @@ pub(crate) enum WetEmitter {
         system_performance_factor: f64,
 
         /// (unit: m²)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         emitter_floor_area: f64,
 
         /// Convective fraction for heating
@@ -2619,6 +2657,35 @@ impl RadiatorConstantData {
             } => *constant_per_m * *length,
         }
     }
+}
+
+fn validate_radiator_required_fields(
+    data: &WetEmitter,
+) -> Result<(), serde_valid::validation::Error> {
+    // we don't need to check c versus c_per_m and length here because this invariant is
+    // already expressed in the RadiatorConstantData type
+
+    let (thermal_mass_per_m, radiator_constant_data) = if let WetEmitter::Radiator {
+        thermal_mass_per_m,
+        constant_data,
+        ..
+    } = data
+    {
+        (thermal_mass_per_m, constant_data)
+    } else {
+        return Ok(());
+    };
+
+    // If thermal_mass_per_m is specified, length must be too
+    if let (Some(_), RadiatorConstantData::Constant { .. }) =
+        (thermal_mass_per_m, radiator_constant_data)
+    {
+        return custom_validation_error(
+            "Must specify 'length' when 'thermal_mass_per_m' is provided".to_string(),
+        );
+    }
+
+    Ok(())
 }
 
 const fn default_n_units() -> usize {
@@ -2723,12 +2790,12 @@ pub(crate) struct SpaceHeatSystemHeatSource {
 
     /// Upper operating limit for temperature (unit: deg C)
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) temp_flow_limit_upper: Option<f64>,
 }
 
 // it is unclear whether this struct should be used - see reference to the struct above
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(dead_code)]
 #[serde(deny_unknown_fields)]
@@ -2737,14 +2804,17 @@ pub(crate) struct EcoDesignController {
 
     /// Minimum outdoor temperature (unit: Celsius)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = -273.15)]
     pub(crate) min_outdoor_temp: Option<f64>,
 
     /// Maximum outdoor temperature (unit: Celsius)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = -273.15)]
     pub(crate) max_outdoor_temp: Option<f64>,
 
     /// Minimum flow temperature (unit: Celsius)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) min_flow_temp: Option<f64>,
 }
 
@@ -2953,6 +3023,7 @@ const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")]
 #[validate(custom = validate_u_value_and_thermal_resistance_floor_construction)]
+#[validate(custom = validate_max_window_open_area_for_transparent)]
 pub enum BuildingElement {
     #[serde(rename = "BuildingElementOpaque")]
     Opaque {
@@ -2960,6 +3031,8 @@ pub enum BuildingElement {
         is_unheated_pitched_roof: Option<bool>,
 
         /// Solar absorption coefficient at the external surface (dimensionless)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         solar_absorption_coeff: f64,
 
         #[serde(flatten)]
@@ -2972,8 +3045,6 @@ pub enum BuildingElement {
 
         /// Mass distribution class of the building element, one of: evenly distributed (D); concentrated on external side (E); concentrated on internal side (I); concentrated on internal and external sides (IE); concentrated in middle (M)
         mass_distribution_class: MassDistributionClass,
-
-        is_external_door: Option<bool>,
 
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         #[validate(minimum = 0.)]
@@ -3014,7 +3085,7 @@ pub enum BuildingElement {
             rename = "Control_WindowOpenable",
             skip_serializing_if = "Option::is_none"
         )]
-        window_openable_control: Option<String>,
+        control_window_openable: Option<String>,
 
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
         #[validate(minimum = 0.)]
@@ -3036,6 +3107,8 @@ pub enum BuildingElement {
         g_value: f64,
 
         /// The frame area fraction of window, ratio of the projected frame area to the overall projected area of the glazed element of the window
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         frame_area_fraction: f64,
 
         /// The distance between the ground and the lowest edge of the element (unit: m)
@@ -3120,9 +3193,8 @@ pub enum BuildingElement {
 
     #[serde(rename = "BuildingElementAdjacentConditionedSpace")]
     AdjacentConditionedSpace {
-        #[serde(skip_serializing_if = "Option::is_none", default)]
         #[validate(exclusive_minimum = 0.)]
-        area: Option<f64>,
+        area: f64,
 
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         #[validate(minimum = 0.)]
@@ -3143,9 +3215,8 @@ pub enum BuildingElement {
     #[serde(rename = "BuildingElementAdjacentUnconditionedSpace_Simple")]
     AdjacentUnconditionedSpace {
         /// Area of this building element (unit: m²)
-        #[serde(skip_serializing_if = "Option::is_none", default)]
         #[validate(exclusive_minimum = 0.)]
-        area: Option<f64>,
+        area: f64,
 
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         #[validate(minimum = 0.)]
@@ -3165,6 +3236,41 @@ pub enum BuildingElement {
         areal_heat_capacity: f64,
 
         mass_distribution_class: MassDistributionClass,
+    },
+
+    /// Party wall element for all party wall types, with specific handling for cavity air movement heat loss.
+    ///
+    /// For cavity party walls, this accounts for non-negligible heat loss due to air movement
+    /// within the cavity, as identified by research. The thermal resistance of the
+    /// unconditioned space (cavity) is derived from the party wall cavity type and lining type.
+    /// Five cavity types are supported:
+    ///   solid, unfilled_unsealed, unfilled_sealed, filled_sealed, and defined_resistance.
+    /// Two lining types are supported:
+    ///   wet_plaster, and dry_lined
+    #[serde(rename = "BuildingElementPartyWall")]
+    PartyWall {
+        /// Tilt angle of the surface from horizontal, between 60 and 120 degrees (wall range), where 90 means vertical (unit: °)
+        #[validate(minimum = PITCH_LIMIT_HORIZ_CEILING)]
+        #[validate(maximum = PITCH_LIMIT_HORIZ_FLOOR)]
+        pitch: f64,
+
+        /// Area of this building element (unit: m²)
+        #[validate(exclusive_minimum = 0.)]
+        area: f64,
+
+        /// Areal heat capacity (unit: J/m2.K)
+        #[validate(exclusive_minimum = 0.)]
+        areal_heat_capacity: f64,
+
+        mass_distribution_class: MassDistributionClass,
+
+        #[serde(flatten)]
+        #[validate]
+        party_wall_cavity_data: PartyWallCavityData,
+
+        #[serde(flatten)]
+        #[validate]
+        u_value_input: UValueInput,
     },
 }
 
@@ -3249,6 +3355,32 @@ fn validate_area_height_width(
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[serde(tag = "party_wall_cavity_type")]
+pub enum PartyWallCavityData {
+    /// Solid wall or structurally insulated panel
+    Solid,
+    /// Unfilled cavity with no effective edge sealing
+    UnfilledUnsealed {
+        party_wall_lining_type: PartyWallLiningType,
+    },
+    /// Unfilled cavity with effective sealing
+    UnfilledSealed {
+        party_wall_lining_type: PartyWallLiningType,
+    },
+    /// Fully filled cavity with effective sealing
+    FilledSealed {
+        party_wall_lining_type: PartyWallLiningType,
+    },
+    /// Fully filled cavity with no effective edge sealing
+    FilledUnsealed,
+    /// User-defined thermal resistance
+    DefinedResistance {
+        #[validate(exclusive_minimum = 0.)]
+        thermal_resistance_cavity: Option<f64>,
+    },
+}
+
 fn validate_u_value_and_thermal_resistance_floor_construction(
     data: &BuildingElement,
 ) -> Result<(), serde_valid::validation::Error> {
@@ -3268,6 +3400,29 @@ fn validate_u_value_and_thermal_resistance_floor_construction(
     Ok(())
 }
 
+fn validate_max_window_open_area_for_transparent(
+    element: &BuildingElement,
+) -> Result<(), serde_valid::validation::Error> {
+    let (area, max_window_open_area) = if let BuildingElement::Transparent {
+        area_input,
+        max_window_open_area,
+        ..
+    } = element
+    {
+        (area_input.area(), *max_window_open_area)
+    } else {
+        return Ok(());
+    };
+
+    if max_window_open_area > area {
+        return custom_validation_error(
+            "max_window_open_area must be less than or equal to the area".to_string(),
+        );
+    }
+
+    Ok(())
+}
+
 impl BuildingElement {
     pub fn pitch(&self) -> f64 {
         *match self {
@@ -3276,6 +3431,7 @@ impl BuildingElement {
             BuildingElement::Ground { pitch, .. } => pitch,
             BuildingElement::AdjacentConditionedSpace { pitch, .. } => pitch,
             BuildingElement::AdjacentUnconditionedSpace { pitch, .. } => pitch,
+            BuildingElement::PartyWall { pitch, .. } => pitch,
         }
     }
 
@@ -3310,6 +3466,13 @@ impl BuildingElement {
                     None
                 }
             }
+            BuildingElement::PartyWall { u_value_input, .. } => {
+                if let UValueInput::UValue { u_value } = u_value_input {
+                    Some(*u_value)
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -3324,7 +3487,7 @@ impl BuildingElement {
     #[cfg(test)]
     pub fn remove_window_openable_control(&mut self) {
         if let BuildingElement::Transparent {
-            window_openable_control,
+            control_window_openable: window_openable_control,
             ..
         } = self
         {
@@ -3412,11 +3575,24 @@ pub(crate) enum PartyWallCavityType {
     DefinedResistance,
 }
 
+impl From<PartyWallCavityData> for PartyWallCavityType {
+    fn from(value: PartyWallCavityData) -> Self {
+        match value {
+            PartyWallCavityData::Solid => Self::Solid,
+            PartyWallCavityData::UnfilledUnsealed { .. } => Self::UnfilledUnsealed,
+            PartyWallCavityData::UnfilledSealed { .. } => Self::UnfilledSealed,
+            PartyWallCavityData::FilledSealed { .. } => Self::FilledSealed,
+            PartyWallCavityData::FilledUnsealed => Self::FilledUnsealed,
+            PartyWallCavityData::DefinedResistance { .. } => Self::DefinedResistance,
+        }
+    }
+}
+
 /// Types of party wall lining
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum PartyWallLiningType {
+pub enum PartyWallLiningType {
     WetPlaster,
     DryLined,
 }
@@ -3496,6 +3672,7 @@ pub struct WindowTreatment {
     pub(crate) controls: WindowTreatmentControl,
 
     /// Additional thermal resistance provided by a window treatment (unit: m²K/W)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) delta_r: f64,
 
     /// Dimensionless factor describing the reduction in the amount of transmitted radiation due to a window treatment
@@ -3508,18 +3685,18 @@ pub struct WindowTreatment {
         rename = "Control_closing_irrad",
         skip_serializing_if = "Option::is_none"
     )]
-    pub(crate) closing_irradiance_control: Option<String>,
+    pub(crate) control_closing_irrad: Option<String>,
 
     /// Irradiation level below which a window treatment is assumed to be open (unit: W/m²). References a key in $.Control.
     #[serde(
         rename = "Control_opening_irrad",
         skip_serializing_if = "Option::is_none"
     )]
-    pub(crate) opening_irradiance_control: Option<String>,
+    pub(crate) control_opening_irrad: Option<String>,
 
     /// Reference to a time control object containing a schedule of booleans describing when a window treatment is open. References a key in $.Control.
     #[serde(rename = "Control_open", skip_serializing_if = "Option::is_none")]
-    pub(crate) open_control: Option<String>,
+    pub(crate) control_open: Option<String>,
 
     /// A boolean describing the state of the window treatment
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -3571,7 +3748,7 @@ pub enum FloorData {
 
     #[serde(rename = "Slab_edge_insulation")]
     SlabEdgeInsulation {
-        #[validate(min_items = 1)]
+        #[serde(default)]
         #[validate]
         edge_insulation: Vec<EdgeInsulation>,
     },
@@ -3584,6 +3761,7 @@ pub enum FloorData {
 
         /// Thermal transmittance of walls above ground (unit: W/m².K)
         #[serde(rename = "thermal_transm_walls")]
+        #[validate(exclusive_minimum = 0.)]
         thermal_transmission_walls: f64,
 
         /// Area of ventilation openings per perimeter (unit: m²/m)
@@ -3597,18 +3775,28 @@ pub enum FloorData {
         #[serde(rename = "thermal_resist_insul")]
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_of_insulation: f64,
+
+        // Edge insulation not typically used for suspended floors
+        #[serde(default)]
+        #[validate]
+        edge_insulation: Vec<EdgeInsulation>,
     },
 
     #[serde(rename = "Heated_basement")]
     HeatedBasement {
         /// Depth of basement floor below ground level (unit: m)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         depth_basement_floor: f64,
 
         /// Thermal resistance of walls of the basement (unit: m².K/W)
         #[serde(rename = "thermal_resist_walls_base")]
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_of_basement_walls: f64,
+
+        // Optional - edge insulation can be used with basements
+        #[serde(default)]
+        #[validate]
+        edge_insulation: Vec<EdgeInsulation>,
     },
 
     #[serde(rename = "Unheated_basement")]
@@ -3624,7 +3812,7 @@ pub enum FloorData {
         thermal_transmission_walls: f64,
 
         /// Depth of basement floor below ground level (unit: m)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         depth_basement_floor: f64,
 
         /// Height of the basement walls above ground level (unit: m)
@@ -3635,6 +3823,11 @@ pub enum FloorData {
         #[serde(rename = "thermal_resist_walls_base")]
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_of_basement_walls: f64,
+
+        // Optional - edge insulation can be used with basements
+        #[serde(default)]
+        #[validate]
+        edge_insulation: Vec<EdgeInsulation>,
     },
 }
 
@@ -3723,11 +3916,11 @@ pub(crate) type SpaceCoolSystem = IndexMap<std::string::String, SpaceCoolSystemD
 pub(crate) enum SpaceCoolSystemDetails {
     AirConditioning {
         /// Maximum cooling capacity of the system (unit: kW)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         cooling_capacity: f64,
 
         /// Efficiency of the air conditioning system. SEER (Seasonal energy efficiency ratio)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         efficiency: f64,
 
         /// Convective fraction for cooling
@@ -3756,6 +3949,7 @@ pub type HeatSourceWet = IndexMap<std::string::String, HeatSourceWetDetails>;
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "type")]
+#[validate(custom = validate_backup_configuration)]
 pub enum HeatSourceWetDetails {
     HeatPump {
         /// Optional buffer tank configuration for the heat pump system
@@ -3818,6 +4012,7 @@ pub enum HeatSourceWetDetails {
         min_modulation_rate_55: Option<f64>,
 
         /// Minimum temperature difference between flow and return for heat pump operation (unit: K)
+        #[validate(minimum = 0.)]
         min_temp_diff_flow_return_for_hp_to_operate: f64,
 
         /// Whether the heat pump uses modulating control
@@ -3828,9 +4023,9 @@ pub enum HeatSourceWetDetails {
         power_crankcase_heater: f64,
 
         /// Power consumption of heating circuit pump (unit: kW)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
-        power_heating_circ_pump: Option<f64>,
+        #[serde(default = "default_power_heating_circ_pump")]
+        power_heating_circ_pump: f64,
 
         /// Power consumption of warm air fan (unit: kW)
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -3862,7 +4057,7 @@ pub enum HeatSourceWetDetails {
 
         /// Distribution temperature for heat network (unit: ˚C)
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[validate(minimum = -273.15)]
+        #[validate(exclusive_minimum = 0.)]
         temp_distribution_heat_network: Option<f64>,
 
         /// Lower temperature limit for heat pump operation (unit: ˚C)
@@ -3871,7 +4066,7 @@ pub enum HeatSourceWetDetails {
 
         /// Maximum return feed temperature (unit: ˚C)
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[validate(minimum = -273.15)]
+        #[validate(exclusive_minimum = 0.)]
         temp_return_feed_max: Option<f64>,
 
         #[serde(rename = "test_data_EN14825")]
@@ -3879,7 +4074,7 @@ pub enum HeatSourceWetDetails {
         test_data_en14825: Vec<HeatPumpTestDatum>,
 
         /// Time constant for on/off operation (unit: hours)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         time_constant_onoff_operation: f64,
 
         /// Time delay before backup operation (unit: hours)
@@ -3968,6 +4163,10 @@ pub enum HeatSourceWetDetails {
     },
 }
 
+const fn default_power_heating_circ_pump() -> f64 {
+    0.
+}
+
 fn validate_boxed_in_option<T: Validate>(
     value: &Option<Box<T>>,
 ) -> Result<(), serde_valid::validation::Error> {
@@ -4054,18 +4253,19 @@ pub struct HeatPumpBufferTank {
 pub struct HeatPumpTestDatum {
     /// Air flow rate through the heat pump for the test condition (unit: m³/h)
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) air_flow_rate: Option<f64>,
 
     /// Heat output capacity at this test condition (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) capacity: f64,
 
     /// Coefficient of performance at this test condition (dimensionless)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) cop: f64,
 
     /// Design flow temperature for the heating system (unit: Celsius)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) design_flow_temp: f64,
 
     /// Ratio of external air to recirculated air for exhaust air heat pumps (dimensionless)
@@ -4075,7 +4275,7 @@ pub struct HeatPumpTestDatum {
     pub(crate) eahp_mixed_ext_air_ratio: Option<f64>,
 
     /// Heat pump outlet temperature for the test condition (unit: Celsius)
-    #[validate(minimum = -273.15)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) temp_outlet: f64,
 
     /// Heat pump source temperature for the test condition (unit: Celsius)
@@ -4147,10 +4347,13 @@ pub struct HeatPumpBoiler {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BoilerCostScheduleHybrid {
-    /// Cost data for the fuel used by the hybrid's heat pump (can be any units, typically p/kWh)
+    /// Cost data for the fuel used by the hybrid system's boiler (can be any units, typically p/kWh,
+    /// as long as they are consistent across input fields
     pub(crate) cost_schedule_boiler: NumericSchedule,
 
-    /// Cost data for the fuel used by the hybrid's boiler (can be any units, typically p/kWh)
+    /// Cost data for the fuel used by the hybrid system's
+    /// heat pump (can be any units, typically p/kWh, as long as they are consistent
+    /// across input fields)"
     pub(crate) cost_schedule_hp: NumericSchedule,
 
     /// Day on which the cost data series begins
@@ -4298,12 +4501,68 @@ pub enum HeatBattery {
     },
 }
 
+fn validate_backup_configuration(
+    data: &HeatSourceWetDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    let (boiler, power_max_backup, backup_ctrl_type, time_delay_backup) =
+        if let HeatSourceWetDetails::HeatPump {
+            boiler,
+            power_max_backup,
+            backup_control_type,
+            time_delay_backup,
+            ..
+        } = data
+        {
+            (
+                boiler,
+                power_max_backup,
+                backup_control_type,
+                time_delay_backup,
+            )
+        } else {
+            return Ok(());
+        };
+
+    if boiler.is_some() && power_max_backup.is_some() {
+        return custom_validation_error(
+            "power_max_backup and boiler can not both be set.".to_string(),
+        );
+    }
+    if matches!(backup_ctrl_type, HeatPumpBackupControlType::None) {
+        if boiler.is_some() {
+            return custom_validation_error(
+                "boiler can not be set if backup_ctrl_type is 'None'.".to_string(),
+            );
+        }
+        if power_max_backup.is_some() {
+            return custom_validation_error(
+                "power_max_backup can not be set if backup_ctrl_type is 'None'.".to_string(),
+            );
+        }
+    } else {
+        if time_delay_backup.is_none() {
+            return custom_validation_error(
+                "time_delay_backup is required if backup_ctrl_type is set.".to_string(),
+            );
+        }
+        if boiler.is_none() && power_max_backup.is_none() {
+            return custom_validation_error(
+                "Either power_max_backup or boiler is required if backup_ctrl_type is set."
+                    .to_string(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) type WasteWaterHeatRecovery =
     IndexMap<std::string::String, WasteWaterHeatRecoveryDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
+#[validate(custom = validate_at_least_one_efficiency_set)]
 #[validate(custom = validate_flow_rates_and_efficiencies_length)]
 pub(crate) struct WasteWaterHeatRecoveryDetails {
     #[serde(rename = "type")]
@@ -4313,31 +4572,31 @@ pub(crate) struct WasteWaterHeatRecoveryDetails {
     pub(crate) cold_water_source: String,
 
     /// Test flow rates in litres per minute (e.g., [5., 7., 9., 11., 13.])
-    #[validate(custom = validate_all_items_non_negative)]
+    #[validate(custom = validate_all_items_at_least_zero)]
     pub(crate) flow_rates: Vec<f64>,
 
     /// Measured efficiencies for System A at the test flow rates
-    #[validate(custom = validate_all_items_non_negative)]
-    pub(crate) system_a_efficiencies: Vec<f64>,
+    #[validate(custom = validate_all_items_in_option_valid_system_efficiency)]
+    pub(crate) system_a_efficiencies: Option<Vec<f64>>,
 
     /// Utilisation factor for System A
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     #[validate(maximum = 1.)]
     pub(crate) system_a_utilisation_factor: Option<f64>,
 
     /// Measured efficiencies for System B (optional, uses system_b_efficiency_factor if not provided)
-    #[validate(custom = validate_all_items_in_option_non_negative)]
+    #[validate(custom = validate_all_items_in_option_valid_system_efficiency)]
     pub(crate) system_b_efficiencies: Option<Vec<f64>>,
 
     /// Utilisation factor for System B. Required when using either system_b_efficiencies (pre-corrected data) or when converting system_a_efficiencies to System B (used with system_b_efficiency_factor).
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     #[validate(maximum = 1.)]
     pub(crate) system_b_utilisation_factor: Option<f64>,
 
     /// Measured efficiencies for System C (optional, uses system_c_efficiency_factor if not provided)
-    #[validate(custom = validate_all_items_in_option_non_negative)]
+    #[validate(custom = validate_all_items_in_option_valid_system_efficiency)]
     pub(crate) system_c_efficiencies: Option<Vec<f64>>,
 
     /// Utilisation factor for System C. Required when using either system_c_efficiencies (pre-corrected data) or when converting system_a_efficiencies to System C (used with system_c_efficiency_factor).
@@ -4367,11 +4626,27 @@ const fn default_system_c_efficiency_factor() -> f64 {
     0.88
 }
 
+fn validate_at_least_one_efficiency_set(
+    data: &WasteWaterHeatRecoveryDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    if let WasteWaterHeatRecoveryDetails {
+        system_a_efficiencies: None,
+        system_b_efficiencies: None,
+        system_c_efficiencies: None,
+        ..
+    } = data
+    {
+        return custom_validation_error("At least one efficiency dataset must be provided: system_a_efficiencies, system_b_efficiencies, or system_c_efficiencies".to_string());
+    }
+
+    Ok(())
+}
+
 fn validate_flow_rates_and_efficiencies_length(
     data: &WasteWaterHeatRecoveryDetails,
 ) -> Result<(), serde_valid::validation::Error> {
     // Validate system A (always required)
-    if data.flow_rates.len() != data.system_a_efficiencies.len() {
+    if data.flow_rates.len() != data.system_a_efficiencies.iter().flatten().count() {
         return custom_validation_error(
             "flow_rates and system_a_efficiencies must have the same length".into(),
         );
@@ -4402,6 +4677,23 @@ fn validate_flow_rates_and_efficiencies_length(
     Ok(())
 }
 
+fn validate_all_items_in_option_valid_system_efficiency(
+    items: &Option<Vec<f64>>,
+) -> Result<(), serde_valid::validation::Error> {
+    if items
+        .iter()
+        .flatten()
+        .all(|&item| item > 0. && item <= 100.)
+    {
+        Ok(())
+    } else {
+        custom_validation_error(
+            "All items must be a number representing a valid efficiency for a WWHRS system"
+                .to_string(),
+        )
+    }
+}
+
 fn custom_validation_error(
     message: std::string::String,
 ) -> Result<(), serde_valid::validation::Error> {
@@ -4424,7 +4716,7 @@ pub(crate) struct PhotovoltaicPanel {
     /// Peak power; represents the electrical power of a photovoltaic system
     /// with a given area for a solar irradiance of 1 kW/m² on this surface (at 25 degrees)
     /// (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) peak_power: f64,
 
     pub(crate) ventilation_strategy: PhotovoltaicVentilationStrategy,
@@ -4471,11 +4763,11 @@ pub(crate) struct PhotovoltaicSystemWithPanels {
     pub(crate) inverter_is_inside: bool,
 
     /// Peak power; represents the peak electrical AC power output from the inverter (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) inverter_peak_power_ac: f64,
 
     /// Peak power; represents the peak electrical DC power input to the inverter (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) inverter_peak_power_dc: f64,
 
     pub(crate) inverter_type: InverterType,
@@ -4492,7 +4784,7 @@ pub(crate) struct PhotovoltaicSystem {
     _type: MustBe!("PhotovoltaicSystem"),
 
     /// Peak power; represents the electrical power of a photovoltaic system with a given area for a solar irradiance of 1 kW/m² on this surface (at 25 degrees) (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) peak_power: f64,
 
     pub(crate) ventilation_strategy: PhotovoltaicVentilationStrategy,
@@ -4516,7 +4808,7 @@ pub(crate) struct PhotovoltaicSystem {
     pub(crate) base_height: f64,
 
     /// Height of the PV array (unit: m)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) height: f64,
 
     /// Width of the PV panel (unit: m)
@@ -4529,11 +4821,11 @@ pub(crate) struct PhotovoltaicSystem {
     pub(crate) shading: Vec<WindowShadingObject>,
 
     /// Peak power; represents the peak electrical AC power output from the inverter (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) inverter_peak_power_ac: f64,
 
     /// Peak power; represents the peak electrical DC power input to the inverter (unit: kW)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) inverter_peak_power_dc: f64,
 
     /// Whether the inverter is considered inside the building
@@ -4653,7 +4945,6 @@ pub struct InfiltrationVentilation {
     pub(crate) terrain_class: TerrainClass,
 
     /// Base height of the ventilation zone relative to ground (m)
-    #[validate(minimum = 0.)]
     pub(crate) ventilation_zone_base_height: f64,
 
     /// Initial vent position, 0 = vents closed and 1 = vents fully open
@@ -4693,7 +4984,7 @@ pub struct Vent {
     pub(crate) area_cm2: f64,
 
     /// Reference pressure difference for an air terminal device (unit: Pa)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) pressure_difference_ref: f64,
 
     #[serde(
@@ -4720,15 +5011,15 @@ pub(crate) struct VentilationLeaks {
     pub(crate) ventilation_zone_height: f64,
 
     /// Reference pressure difference (unit: Pa)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) test_pressure: f64,
 
     /// Flow rate through (unit: m³/h.m²)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) test_result: f64,
 
     /// Reference area of the envelope airtightness index
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) env_area: f64,
 }
 
@@ -4746,6 +5037,7 @@ pub struct MechanicalVentilation {
     /// MVHR efficiency
     #[serde(rename = "mvhr_eff", skip_serializing_if = "Option::is_none")]
     #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
     pub(crate) mvhr_efficiency: Option<f64>,
 
     /// Location of the MVHR unit (inside or outside the thermal envelope)
@@ -4757,7 +5049,7 @@ pub struct MechanicalVentilation {
 
     /// Specific fan power, inclusive of any in use factors (unit: W/l/s)
     #[serde(rename = "SFP")]
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) sfp: f64,
 
     /// Adjustment factor to be applied to SFP to account for e.g. type of ducting. Typical range 1 - 2.5
@@ -4769,7 +5061,7 @@ pub struct MechanicalVentilation {
     pub(crate) energy_supply: String,
 
     /// (unit: m³/hour)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) design_outdoor_air_flow_rate: f64,
 
     /// List of ductworks installed in this ventilation system
@@ -6218,7 +6510,7 @@ mod tests {
                     min_temp_diff_flow_return_for_hp_to_operate: 1.,
                     modulating_control: true,
                     power_crankcase_heater: 0.01,
-                    power_heating_circ_pump: Some(0.015),
+                    power_heating_circ_pump: 0.015,
                     power_heating_warm_air_fan: Some(0.015),
                     power_max_backup: Some(3.0),
                     power_off: 0.015,
@@ -6765,6 +7057,8 @@ mod tests {
                 serde_json::to_value(WetEmitter::Radiator {
                     exponent: 1.2,
                     frac_convective: 0.9,
+                    thermal_mass: None,
+                    thermal_mass_per_m: None,
                     constant_data: RadiatorConstantData::Constant { constant: 1.2 },
                 })
                 .unwrap()
@@ -7498,10 +7792,12 @@ mod tests {
                         temp_flow_limit_upper: None,
                     },
                     bypass_fraction_recirculated: Some(0.0),
-                    design_flow_temp: 55,
+                    design_flow_temp: 55.0,
                     emitters: vec![WetEmitter::Radiator {
                         exponent: 1.2,
                         frac_convective: 0.4,
+                        thermal_mass: None,
+                        thermal_mass_per_m: None,
                         constant_data: RadiatorConstantData::Constant { constant: 0.08 },
                     }],
                     pipework: vec![],
@@ -7814,7 +8110,7 @@ mod tests {
                 _type: Default::default(),
                 cold_water_source: "header tank".into(),
                 flow_rates: vec![],
-                system_a_efficiencies: vec![],
+                system_a_efficiencies: Some(vec![]),
                 system_a_utilisation_factor: Some(1.),
                 system_b_efficiencies: None,
                 system_b_utilisation_factor: None,
@@ -7865,7 +8161,7 @@ mod tests {
                 _type: Default::default(),
                 cold_water_source,
                 flow_rates: vec![5., 7., 9., 11., 13.],
-                system_a_efficiencies: vec![50., 55., 60., 65., 70.],
+                system_a_efficiencies: Some(vec![50., 55., 60., 65., 70.]),
                 system_a_utilisation_factor: Some(0.9),
                 system_b_efficiencies: None,
                 system_b_utilisation_factor: None,
@@ -7890,7 +8186,7 @@ mod tests {
                 _type: Default::default(),
                 cold_water_source,
                 flow_rates: vec![5., 7., 9., 11., 13.],
-                system_a_efficiencies: vec![50., 55., 60., 65., 70.],
+                system_a_efficiencies: Some(vec![50., 55., 60., 65., 70.]),
                 system_a_utilisation_factor: Some(0.9),
                 system_b_efficiencies: Some(vec![40., 44., 48., 52., 56.]),
                 system_b_utilisation_factor: Some(0.85),
@@ -7917,60 +8213,6 @@ mod tests {
     mod building_element {
         use super::*;
 
-        mod geometric_base {
-            use super::*;
-
-            #[fixture]
-            fn valid_example() -> JsonValue {
-                serde_json::to_value(BuildingElement::AdjacentConditionedSpace {
-                    area: None,
-                    pitch: 90.,
-                    u_value_input: UValueInput::UValue { u_value: 0.0 },
-                    areal_heat_capacity: 0.0,
-                    mass_distribution_class: MassDistributionClass::D,
-                })
-                .unwrap()
-            }
-
-            #[rstest(inputs,
-                case::area_greater_than_zero(json!({"area": 0})),
-                case::pitch_at_least_zero(json!({"pitch": -1})),
-                case::pitch_at_most_zero(json!({"pitch": 181})),
-            )]
-            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
-                assert_range_constraints::<BuildingElement>(valid_example, inputs);
-            }
-        }
-
-        mod thermal_properties_base {
-            use super::*;
-
-            #[fixture]
-            fn valid_example() -> JsonValue {
-                serde_json::to_value(BuildingElement::AdjacentConditionedSpace {
-                    area: None,
-                    pitch: 80.,
-                    u_value_input: UValueInput::UValue { u_value: 0.3 },
-                    areal_heat_capacity: 0.0,
-                    mass_distribution_class: MassDistributionClass::D,
-                })
-                .unwrap()
-            }
-
-            #[rstest(inputs,
-                case::height_greater_than_zero(json!({"height": 0})),
-                case::width_greater_than_zero(json!({"width": 0})),
-                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})
-                ),
-                case::u_value_greater_than_zero(json!({"u_value": 0})),
-                case::must_specify_thermal_resistance_construction_or_u_value(json!({"thermal_resistance_construction": null, "u_value": null})
-                ),
-            )]
-            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
-                assert_range_constraints::<BuildingElement>(valid_example, inputs);
-            }
-        }
-
         mod spatial_properties_base {
             use super::*;
 
@@ -7985,7 +8227,6 @@ mod tests {
                     areal_heat_capacity: 0.0,
                     mass_distribution_class: MassDistributionClass::D,
                     solar_absorption_coeff: 0.0,
-                    is_external_door: None,
                     area_input: BuildingElementAreaOrHeightWidthInput {
                         area: None,
                         height_and_width: None,
@@ -8074,7 +8315,7 @@ mod tests {
                     window_part_list: vec![],
                     shading: vec![],
                     areal_heat_capacity: default_areal_heat_capacity_for_windows(),
-                    window_openable_control: None,
+                    control_window_openable: None,
                     treatment: vec![],
                 })
                 .unwrap()
@@ -8118,7 +8359,6 @@ mod tests {
                     },
                     areal_heat_capacity: default_areal_heat_capacity_for_windows(),
                     mass_distribution_class: MassDistributionClass::I,
-                    is_external_door: None,
                 })
                 .unwrap()
             }
@@ -8141,7 +8381,7 @@ mod tests {
             #[fixture]
             fn valid_example() -> JsonValue {
                 serde_json::to_value(BuildingElement::AdjacentConditionedSpace {
-                    area: None,
+                    area: 20.0,
                     u_value_input: UValueInput::UValue { u_value: 1.2 },
                     pitch: 1.2,
                     areal_heat_capacity: default_areal_heat_capacity_for_windows(),
@@ -8165,7 +8405,7 @@ mod tests {
             #[fixture]
             fn valid_example() -> JsonValue {
                 serde_json::to_value(BuildingElement::AdjacentUnconditionedSpace {
-                    area: None,
+                    area: 20.0,
                     u_value_input: UValueInput::UValue { u_value: 0.7 },
                     pitch: 1.2,
                     areal_heat_capacity: default_areal_heat_capacity_for_windows(),
@@ -8206,11 +8446,12 @@ mod tests {
                         psi_wall_floor_junc: 0.4,
                         thickness_walls: 20.,
                         floor_data: FloorData::SuspendedFloor {
-                            height_upper_surface: 2.3, // missing from upstream Python definition, but giving a valid input here
-                            thermal_transmission_walls: 0.8,
-                            area_per_perimeter_vent: 4.2,
-                            shield_fact_location: WindShieldLocation::Sheltered,
-                            thermal_resistance_of_insulation: 0.7,
+                            height_upper_surface: 0.5,
+                            thermal_transmission_walls: 1.5,
+                            area_per_perimeter_vent: 0.0015,
+                            shield_fact_location: WindShieldLocation::Average,
+                            thermal_resistance_of_insulation: 0.5,
+                            edge_insulation: Default::default(),
                         },
                     })
                     .unwrap()
@@ -8250,6 +8491,7 @@ mod tests {
                         floor_data: FloorData::HeatedBasement {
                             depth_basement_floor: 10.,
                             thermal_resistance_of_basement_walls: 0.15,
+                            edge_insulation: Default::default(),
                         },
                     })
                     .unwrap()
@@ -8294,6 +8536,7 @@ mod tests {
                             depth_basement_floor: 10.,
                             height_basement_walls: 10.,
                             thermal_resistance_of_basement_walls: 0.15,
+                            edge_insulation: Default::default(),
                         },
                     })
                     .unwrap()
@@ -8638,8 +8881,6 @@ mod tests {
 
         #[rstest(inputs,
             case::ach_max_static_calcs_at_least_zero(json!({"ach_max_static_calcs": -1})),
-            case::ventilation_zone_base_height_at_least_zero(json!({"ventilation_zone_base_height": -1})
-            ),
             case::ach_min_static_calcs_at_least_zero(json!({"ach_min_static_calcs": -1})),
             case::vent_opening_ratio_init_at_least_zero(json!({"vent_opening_ratio_init": -1})),
             case::vent_opening_ratio_init_at_most_zero(json!({"vent_opening_ratio_init": 2})),
@@ -8691,9 +8932,9 @@ mod tests {
                 controls: WindowTreatmentControl::AutoMotorised,
                 delta_r: 10.,
                 trans_red: 0.3,
-                closing_irradiance_control: None,
-                opening_irradiance_control: None,
-                open_control: None,
+                control_closing_irrad: None,
+                control_opening_irrad: None,
+                control_open: None,
                 is_open: None,
                 opening_delay_hrs: 0.0, // valid value for field we are marking as required
             })

@@ -75,7 +75,7 @@ pub(crate) struct ShadingObject {
 pub enum WindowShadingObject {
     Obstacle {
         /// (unit: m)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         height: f64,
 
         /// (unit: m)
@@ -88,7 +88,7 @@ pub enum WindowShadingObject {
     },
     Overhang {
         /// (unit: m)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         depth: f64,
 
         /// (unit: m)
@@ -97,7 +97,7 @@ pub enum WindowShadingObject {
     },
     SideFinRight {
         /// (unit: m)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         depth: f64,
 
         /// (unit: m)
@@ -106,7 +106,7 @@ pub enum WindowShadingObject {
     },
     SideFinLeft {
         /// (unit: m)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         depth: f64,
 
         /// (unit: m)
@@ -115,7 +115,7 @@ pub enum WindowShadingObject {
     },
     Reveal {
         /// (unit: m)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         depth: f64,
 
         /// (unit: m)

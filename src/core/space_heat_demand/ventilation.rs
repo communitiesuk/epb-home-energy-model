@@ -2476,7 +2476,7 @@ impl InfiltrationVentilation {
             .map(|building_element| {
                 anyhow::Ok(
                     if let BuildingElement::Transparent {
-                        window_openable_control,
+                        control_window_openable: window_openable_control,
                         free_area_height,
                         mid_height,
                         max_window_open_area,
