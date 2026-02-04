@@ -1,3 +1,5 @@
+use crate::bail;
+use crate::core::units::HOURS_PER_DAY;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
 
@@ -88,6 +90,25 @@ impl SimulationTimeIterator {
 
     pub fn total_steps(&self) -> usize {
         self.simulation_time.total_steps()
+    }
+
+    fn end_time(&self) -> f64 {
+        self.simulation_time.end_time
+    }
+
+    /// Return the total number of timesteps in simulation based on custom step
+    pub(crate) fn total_steps_based_on_step(
+        &self,
+        start_day: u32,
+        step: Option<f64>,
+    ) -> anyhow::Result<usize> {
+        if start_day > self.current_day() {
+            bail!("Time series cannot start after the simulation.");
+        }
+
+        let step = step.unwrap_or(self.step_in_hours());
+        let total_steps = (self.end_time() - start_day as f64 * HOURS_PER_DAY as f64) / step;
+        Ok(total_steps.ceil() as usize)
     }
 
     pub fn step_in_hours(&self) -> f64 {
