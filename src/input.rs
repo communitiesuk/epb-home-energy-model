@@ -5361,7 +5361,7 @@ pub struct AirTerminalDevice {
     area_cm2: f64,
 
     /// Reference pressure difference for an air terminal device (unit: Pa)
-    #[validate(minimum = 0.)]
+    #[validate(exclusive_minimum = 0.)]
     pressure_difference_ref: f64,
 }
 
@@ -6812,11 +6812,12 @@ mod tests {
             }
 
             #[rstest(inputs,
-                case::init_temp_at_least_absolute_zero(json!({"init_temp": -274})),
-                case::daily_losses_at_least_zero(json!({"daily_losses": -1})),
-                case::heat_exchanger_surface_area_at_least_zero(json!({"heat_exchanger_surface_area": -1})
+                case::init_temp_at_least_zero(json!({"init_temp": -2})),
+                case::init_temp_at_most_a_hundred(json!({"init_temp": 101})),
+                case::daily_losses_greater_than_zero(json!({"daily_losses": 0})),
+                case::heat_exchanger_surface_area_greater_than_zero(json!({"heat_exchanger_surface_area": 0})
                 ),
-                case::volume_at_least_zero(json!({"volume": -1})),
+                case::volume_greater_than_zero(json!({"volume": 0})),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<HotWaterSourceDetails>(valid_example, inputs);
@@ -9141,10 +9142,10 @@ mod tests {
         }
 
         #[rstest(inputs,
-            case::daily_losses_at_least_zero(json!({"daily_losses": -1})),
-            case::pump_fixed_flow_rate_at_least_zero(json!({"pump_fixed_flow_rate": -1})),
-            case::pump_power_at_flow_rate_at_least_zero(json!({"pump_power_at_flow_rate": -1})),
-            case::volume_at_least_zero(json!({"volume": -1})),
+            case::daily_losses_greater_than_zero(json!({"daily_losses": 0})),
+            case::pump_fixed_flow_rate_greater_than_zero(json!({"pump_fixed_flow_rate": 0})),
+            case::pump_power_at_flow_rate_greater_than_zero(json!({"pump_power_at_flow_rate": 0})),
+            case::volume_greater_than_zero(json!({"volume": 0})),
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<HeatPumpBufferTank>(valid_example, inputs);
@@ -9167,12 +9168,12 @@ mod tests {
         }
 
         #[rstest(inputs,
-            case::cop_dhw_at_least_zero(json!({"cop_dhw": -1})),
-            case::energy_input_measured_at_least_zero(json!({"energy_input_measured": -1})),
-            case::hw_tapping_prof_daily_total_at_least_zero(json!({"hw_tapping_prof_daily_total": -1})
+            case::cop_dhw_greater_than_zero(json!({"cop_dhw": 0})),
+            case::energy_input_measured_greater_than_zero(json!({"energy_input_measured": 0})),
+            case::hw_tapping_prof_daily_total_greater_than_zero(json!({"hw_tapping_prof_daily_total": 0})
             ),
-            case::hw_vessel_loss_daily_at_least_zero(json!({"hw_vessel_loss_daily": -1})),
-            case::power_standby_at_least_zero(json!({"power_standby": -1})),
+            case::hw_vessel_loss_daily_greater_than_zero(json!({"hw_vessel_loss_daily": 0})),
+            case::power_standby_greater_than_zero(json!({"power_standby": 0})),
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<HeatPumpHotWaterOnlyTestDatum>(valid_example, inputs);
@@ -9293,7 +9294,7 @@ mod tests {
 
         #[rstest(inputs,
             case::area_cm2_greater_than_zero(json!({"area_cm2": 0})),
-            case::pressure_difference_ref_at_least_zero(json!({"pressure_difference_ref": -1})),
+            case::pressure_difference_ref_greater_than_zero(json!({"pressure_difference_ref": 0})),
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<AirTerminalDevice>(valid_example, inputs);
@@ -9318,7 +9319,7 @@ mod tests {
             #[rstest(inputs,
                 case::edge_thermal_resistance_greater_than_zero(json!({"edge_thermal_resistance": 0})
                 ),
-                case::width_at_least_zero(json!({"width": -1})),
+                case::width_greater_than_zero(json!({"width": 0})),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<EdgeInsulation>(valid_example, inputs);
@@ -9340,7 +9341,7 @@ mod tests {
             #[rstest(inputs,
                 case::edge_thermal_resistance_greater_than_zero(json!({"edge_thermal_resistance": 0})
                 ),
-                case::depth_at_least_zero(json!({"depth": -1})),
+                case::depth_greater_than_zero(json!({"depth": 0})),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<EdgeInsulation>(valid_example, inputs);
@@ -9388,9 +9389,9 @@ mod tests {
         }
 
         #[rstest(inputs,
-            case::air_flow_rate_at_least_zero(json!({"air_flow_rate": -1})),
-            case::capacity_at_least_zero(json!({"capacity": -1})),
-            case::cop_at_least_zero(json!({"cop": -1})),
+            case::air_flow_rate_greater_than_zero(json!({"air_flow_rate": 0})),
+            case::capacity_greater_than_zero(json!({"capacity": 0})),
+            case::cop_greater_than_zero(json!({"cop": 0})),
             case::eahp_mixed_ext_air_ratio_at_least_zero(json!({"eahp_mixed_ext_air_ratio": -1})),
             case::eahp_mixed_ext_air_ratio_at_most_one(json!({"eahp_mixed_ext_air_ratio": 2})),
         )]
@@ -9474,4 +9475,6 @@ mod tests {
             assert!(internal_gains.total_internal_gains.is_some());
         }
     }
+
+    // no need to cover TestUniqueStringList as this is covered by unique_items constraint in serde_valid
 }
