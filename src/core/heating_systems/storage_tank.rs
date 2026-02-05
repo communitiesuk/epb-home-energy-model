@@ -1270,7 +1270,7 @@ impl StorageTank {
         if simtime.index == 0 {
             fn header_dup(header: &str, n: usize) -> Vec<StringOrNumber> {
                 (0..n)
-                    .map(|i| format!("{header} {}", (i + 1).to_string()).into())
+                    .map(|i| format!("{header} {}", (i + 1)).into())
                     .collect()
             }
 
@@ -1286,23 +1286,22 @@ impl StorageTank {
             .into_iter()
             .map(Into::into)
             .collect();
-            header_row.extend(header_dup("initial temp.", temp_ini_n.len()).into_iter());
+            header_row.extend(header_dup("initial temp.", temp_ini_n.len()));
             header_row.extend(["energy withdrawn", "energy unmet"].map(Into::into));
-            header_row
-                .extend(header_dup("temp. after volume withdrawn", temp_s3_n.len()).into_iter());
-            header_row.extend(header_dup("potential energy input", q_x_in_n.len()).into_iter());
+            header_row.extend(header_dup("temp. after volume withdrawn", temp_s3_n.len()));
+            header_row.extend(header_dup("potential energy input", q_x_in_n.len()));
             header_row.push("theoretical energy stored after energy input".into());
-            header_row.extend(
-                header_dup("theoretical temp. after energy input", temp_s6_n.len()).into_iter(),
-            );
-            header_row.extend(header_dup("temp. after volume mixing", temp_s7_n.len()).into_iter());
+            header_row.extend(header_dup(
+                "theoretical temp. after energy input",
+                temp_s6_n.len(),
+            ));
+            header_row.extend(header_dup("temp. after volume mixing", temp_s7_n.len()));
             header_row.extend(
                 ["energy input (adjusted)", "thermal losses"]
                     .into_iter()
                     .map(Into::into),
             );
-            header_row
-                .extend(header_dup("temp. after thermal losses", temp_s8_n.len()).into_iter());
+            header_row.extend(header_dup("temp. after thermal losses", temp_s8_n.len()));
             header_row.push("temp_average_drawoff".into());
 
             detailed_output.push(header_row);
