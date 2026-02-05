@@ -1,5 +1,8 @@
 use crate::compare_floats::min_of_2;
 use fsum::FSum;
+use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
+use std::fmt::Display;
 use thiserror::Error;
 
 pub const JOULES_PER_KILOWATT_HOUR: u32 = 3_600_000;
@@ -106,6 +109,76 @@ impl BelowAbsoluteZeroError {
     }
 }
 
+// Orientation360
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, PartialOrd, Serialize, Validate)]
+pub(crate) struct Orientation360(
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 360.)]
+    f64,
+);
+
+impl Orientation360 {
+    pub(crate) fn new(angle: f64) -> Result<Self, Orientation360Error> {
+        if angle > 360. || angle < 0. {
+            return Err(Orientation360Error::InvalidAngle);
+        }
+
+        Ok(Self(angle))
+    }
+
+    pub(crate) fn angle(&self) -> f64 {
+        self.0
+    }
+
+    pub(crate) fn transform_to_180(&self) -> f64 {
+        180. - self.0
+    }
+
+    pub(crate) fn create_from_180(angle180: f64) -> Result<Self, Orientation360Error> {
+        if angle180 > 180. || angle180 < -180. {
+            return Err(Orientation360Error::InvalidAngleFrom180);
+        }
+        Ok(Self(180. - angle180))
+    }
+
+    // Python __str__ method is covered equivalently by Display trait impl
+
+    pub(crate) fn orientation_difference(
+        orientation360: Orientation360,
+        orientation2: Orientation360,
+    ) -> f64 {
+        (orientation360.angle() - orientation2.angle()).abs()
+    }
+
+    pub(crate) fn orientation_difference_from_180(
+        orientation1: Orientation360,
+        orientation2: Orientation360,
+    ) -> f64 {
+        let op_rel_orientation =
+            (orientation1.transform_to_180() - orientation2.transform_to_180()).abs();
+
+        if op_rel_orientation > 180. {
+            360. - op_rel_orientation
+        } else {
+            op_rel_orientation
+        }
+    }
+}
+
+impl Display for Orientation360 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Error)]
+pub(crate) enum Orientation360Error {
+    #[error("Angle must be between 0 and 360 degrees inclusive")]
+    InvalidAngle,
+    #[error("Angle for create_from_180 must be between -180 and 180 degrees inclusive")]
+    InvalidAngleFrom180,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,5 +227,53 @@ mod tests {
             vec![48.0, 564.0],
             "incorrect conversion of per-timestep profile to daily profile"
         );
+    }
+
+    mod orientation360 {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[rstest]
+        fn test_orientation360_angle() {
+            assert_eq!(Orientation360::new(180.).unwrap().angle(), 180.);
+        }
+
+        #[rstest]
+        fn test_orientation360_invalid_angle() {
+            assert!(Orientation360::new(-10.).is_err());
+            assert!(Orientation360::new(380.).is_err());
+        }
+
+        #[rstest]
+        fn test_orientation360_str() {
+            assert_eq!(format!("{}", Orientation360(180.)), "180");
+        }
+
+        #[rstest]
+        #[case(0., 180.)]
+        #[case(90., 90.)]
+        #[case(180., 0.)]
+        #[case(270., -90.)]
+        #[case(360., -180.)]
+        fn test_orientation360_transform_to_180(#[case] value: f64, #[case] expected_result: f64) {
+            assert_eq!(Orientation360(value).transform_to_180(), expected_result);
+        }
+
+        #[rstest]
+        #[case(-90., 270.)]
+        #[case(90., 90.)]
+        #[case(-180., 360.)]
+        #[case(0., 180.)]
+        #[case(180., 0.)]
+        fn test_orientation360_create_from_180(#[case] value: f64, #[case] expected_result: f64) {
+            let orientation360 = Orientation360::create_from_180(value).unwrap();
+            assert_eq!(orientation360.angle(), expected_result);
+        }
+
+        #[rstest]
+        fn test_orientation360_create_from_180_invalid_angle() {
+            assert!(Orientation360::create_from_180(190.).is_err());
+            assert!(Orientation360::create_from_180(-190.).is_err());
+        }
     }
 }
