@@ -3305,6 +3305,7 @@ pub struct BuildingElementAreaOrHeightWidthInput {
     area: Option<f64>,
 
     #[serde(flatten)]
+    #[validate]
     pub(crate) height_and_width: Option<BuildingElementHeightWidthInput>,
 }
 
@@ -5725,7 +5726,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "this is more of an acceptance test and takes ~50s at present - find ways to speed this up or run in a different suite"]
+    // #[ignore = "this is more of an acceptance test and takes ~50s at present - find ways to speed this up or run in a different suite"]
     fn should_successfully_deserialise_all_core_demo_files(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Result<Input, _> =
@@ -8290,14 +8291,14 @@ mod tests {
     mod building_element {
         use super::*;
 
-        mod spatial_properties_base {
+        mod common {
             use super::*;
 
             #[fixture]
             fn valid_example() -> JsonValue {
                 serde_json::to_value(BuildingElement::Opaque {
                     is_unheated_pitched_roof: None,
-                    pitch: 80.,
+                    pitch: 90.,
                     orientation: None,
                     base_height: 0.0,
                     u_value_input: UValueInput::UValue { u_value: 0.3 },
@@ -8313,52 +8314,128 @@ mod tests {
             }
 
             #[rstest(inputs,
-                case::areal_heat_capacity_greater_than_zero(json!({"areal_heat_capacity": 0})),
-                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})
-                ),
-                case::orientation_at_most_180(json!({"orientation360": -1})),
-                case::orientation_at_least_minus_180(json!({"orientation360": 361})),
+                case::pitch_at_least_zero(json!({"pitch": -1})),
+                case::pitch_at_most_zero(json!({"pitch": 181})),
+                case::u_value_greater_than_zero(json!({"u_value": 0})),
+                case::u_value_greater_than_zero(json!({"u_value": -0.5})),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<BuildingElement>(valid_example, inputs);
             }
+
+            // skipping test_u_value_optional as testing something a bit redundant
+            // esp as cannot instantiate CommonBase object in Rust
         }
 
-        mod ground_base {
+        mod not_ground {
             use super::*;
 
             #[fixture]
-            fn valid_example() -> JsonValue {
-                serde_json::to_value(BuildingElement::Ground {
-                    area: 20.,
-                    total_area: 15.,
-                    pitch: 90.,
-                    u_value: 1.4,
-                    thermal_resistance_floor_construction: 0.2,
-                    areal_heat_capacity: 19200.,
-                    mass_distribution_class: MassDistributionClass::I,
-                    perimeter: 16.,
-                    psi_wall_floor_junc: 0.5,
-                    thickness_walls: 0.2,
-                    floor_data: FloorData::SlabNoEdgeInsulation,
+            fn valid_example_with_thermal_resistance() -> JsonValue {
+                serde_json::to_value(BuildingElement::Opaque {
+                    is_unheated_pitched_roof: None,
+                    pitch: 60.,
+                    orientation: None,
+                    base_height: 0.0,
+                    u_value_input: UValueInput::ThermalResistanceConstruction {
+                        thermal_resistance_construction: 4.0,
+                    },
+                    areal_heat_capacity: 0.0,
+                    mass_distribution_class: MassDistributionClass::D,
+                    solar_absorption_coeff: 0.0,
+                    area_input: BuildingElementAreaOrHeightWidthInput {
+                        area: None,
+                        height_and_width: None,
+                    },
                 })
                 .unwrap()
             }
 
             #[rstest(inputs,
-                case::calculated_r_vi_greater_than_zero(json!({"u_value": 1, "thermal_resistance_floor_construction": 1})
-                ),
+                case::u_value_or_thermal_resistance_construction_required(json!({"u_value": null, "thermal_resistance_construction": null})),
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})),
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": -1.0})),
+            )]
+            fn test_validate(valid_example_with_thermal_resistance: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<BuildingElement>(
+                    valid_example_with_thermal_resistance,
+                    inputs,
+                );
+            }
+        }
+
+        mod not_transparent {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::Opaque {
+                    is_unheated_pitched_roof: None,
+                    pitch: 60.,
+                    orientation: None,
+                    base_height: 0.0,
+                    u_value_input: UValueInput::ThermalResistanceConstruction {
+                        thermal_resistance_construction: 4.0,
+                    },
+                    areal_heat_capacity: 15000.0,
+                    mass_distribution_class: MassDistributionClass::I,
+                    solar_absorption_coeff: 0.0,
+                    area_input: BuildingElementAreaOrHeightWidthInput {
+                        area: Some(25.0),
+                        height_and_width: None,
+                    },
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
                 case::area_greater_than_zero(json!({"area": 0})),
-                case::thickness_walls_greater_than_zero(json!({"thickness_walls": 0})),
-                case::total_area_greater_than_zero(json!({"total_area": 0})),
-                case::perimeter_greater_than_zero(json!({"perimeter": 0})),
+                case::area_greater_than_zero(json!({"area": -5})),
                 case::areal_heat_capacity_greater_than_zero(json!({"areal_heat_capacity": 0})),
-                case::thermal_resistance_floor_construction_greater_than_zero(json!({"thermal_resistance_floor_construction": 0})
-                ),
-                case::u_value_greater_than_zero(json!({"u_value": 0})),
-                // height_upper_surface only present in suspended floor, so moved that test there
-                case::pitch_at_least_zero(json!({"pitch": -1})),
-                case::pitch_at_most_zero(json!({"pitch": 181})),
+                case::areal_heat_capacity_greater_than_zero(json!({"areal_heat_capacity": -1000})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            }
+
+            // skipping other python tests here as redundant
+        }
+
+        mod exposed_to_solar_radiation {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::Opaque {
+                    is_unheated_pitched_roof: None,
+                    pitch: 60.,
+                    orientation: Some(0.),
+                    base_height: 0.5,
+                    u_value_input: UValueInput::ThermalResistanceConstruction {
+                        thermal_resistance_construction: 4.0,
+                    },
+                    areal_heat_capacity: 15000.0,
+                    mass_distribution_class: MassDistributionClass::I,
+                    solar_absorption_coeff: 0.0,
+                    area_input: BuildingElementAreaOrHeightWidthInput {
+                        area: None,
+                        height_and_width: Some(BuildingElementHeightWidthInput {
+                            height: 3.0,
+                            width: 8.0,
+                        }),
+                    },
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::orientation360_at_least_zero(json!({"orientation360": -1})),
+                case::orientation360_at_most_360(json!({"orientation360": 361})),
+                case::base_height_at_least_zero(json!({"base_height": -0.5})),
+                case::height_greater_than_zero(json!({"height": 0})),
+                case::height_greater_than_zero(json!({"height": -1.0})),
+                case::width_greater_than_zero(json!({"width": 0})),
+                case::width_greater_than_zero(json!({"width": -2.0})),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<BuildingElement>(valid_example, inputs);
@@ -8401,10 +8478,6 @@ mod tests {
             #[rstest(inputs,
                 case::max_window_open_area_at_most_area(json!({"max_window_open_area": 9999, "width": 5, "height": 10})
                 ),
-                case::area_or_height_and_width_provided(json!({"area": null, "height": null, "width": 12})
-                ),
-                case::area_or_height_and_width_provided(json!({"area": null, "height": 12, "width": null})
-                ),
                 case::base_height_at_least_zero(json!({"base_height": -1})),
                 case::free_area_height_at_least_zero(json!({"free_area_height": -1})),
                 case::g_value_at_least_zero(json!({"g_value": -1})),
@@ -8428,11 +8501,15 @@ mod tests {
                     solar_absorption_coeff: 0.8,
                     u_value_input: UValueInput::UValue { u_value: 1.2 },
                     pitch: 1.2,
-                    orientation: None,
+                    orientation: Some(0.),
                     base_height: 10.,
                     area_input: BuildingElementAreaOrHeightWidthInput {
-                        area: None,
-                        height_and_width: None,
+                        area: Some(24.0),
+                        height_and_width: BuildingElementHeightWidthInput {
+                            height: 3.0,
+                            width: 8.0,
+                        }
+                        .into(),
                     },
                     areal_heat_capacity: default_areal_heat_capacity_for_windows(),
                     mass_distribution_class: MassDistributionClass::I,
@@ -8444,7 +8521,7 @@ mod tests {
                 case::base_height_at_least_zero(json!({"base_height": -1})),
                 case::solar_absorption_coeff_at_least_zero(json!({"solar_absorption_coeff": -1})),
                 case::solar_absorption_coeff_at_most_one(json!({"solar_absorption_coeff": 2})),
-                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0, "u_value": null})
                 ),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
@@ -8461,7 +8538,7 @@ mod tests {
                     area: 20.0,
                     u_value_input: UValueInput::UValue { u_value: 1.2 },
                     pitch: 1.2,
-                    areal_heat_capacity: default_areal_heat_capacity_for_windows(),
+                    areal_heat_capacity: 15000.,
                     mass_distribution_class: MassDistributionClass::I,
                 })
                 .unwrap()
@@ -8485,7 +8562,7 @@ mod tests {
                     area: 20.0,
                     u_value_input: UValueInput::UValue { u_value: 0.7 },
                     pitch: 1.2,
-                    areal_heat_capacity: default_areal_heat_capacity_for_windows(),
+                    areal_heat_capacity: 15000.,
                     mass_distribution_class: MassDistributionClass::I,
                     thermal_resistance_unconditioned_space: 1.3,
                 })
@@ -8503,8 +8580,81 @@ mod tests {
             }
         }
 
+        mod party_wall {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(BuildingElement::PartyWall {
+                    area: 15.0,
+                    u_value_input: UValueInput::UValue { u_value: 0.3 },
+                    pitch: 90.,
+                    areal_heat_capacity: 120000.,
+                    mass_distribution_class: MassDistributionClass::I,
+                    party_wall_cavity_data: PartyWallCavityData::UnfilledSealed {
+                        party_wall_lining_type: PartyWallLiningType::DryLined,
+                    },
+                })
+                .unwrap()
+            }
+
+            // test_invalid_party_wall_lining_type_raises_error is expressed in type system
+
+            #[rstest]
+            fn test_party_wall_lining_type_provided(mut valid_example: JsonValue) {
+                valid_example["party_wall_cavity_type"] = "unfilled_unsealed".into();
+                valid_example["party_wall_lining_type"] = ().into();
+
+                assert!(serde_json::from_value::<BuildingElement>(valid_example).is_err());
+            }
+
+            // test_defined_resistance_without_thermal_resistance_raises_error error is expressed in type system
+        }
+
         mod ground {
             use super::*;
+
+            // for deletion during 1.0.0a6
+            // mod base {
+            //     use super::*;
+            //
+            //     #[fixture]
+            //     fn valid_example() -> JsonValue {
+            //         serde_json::to_value(BuildingElement::Ground {
+            //             area: 20.,
+            //             total_area: 15.,
+            //             pitch: 90.,
+            //             u_value: 1.4,
+            //             thermal_resistance_floor_construction: 0.2,
+            //             areal_heat_capacity: 19200.,
+            //             mass_distribution_class: MassDistributionClass::I,
+            //             perimeter: 16.,
+            //             psi_wall_floor_junc: 0.5,
+            //             thickness_walls: 0.2,
+            //             floor_data: FloorData::SlabNoEdgeInsulation,
+            //         })
+            //         .unwrap()
+            //     }
+            //
+            //     #[rstest(inputs,
+            //         case::calculated_r_vi_greater_than_zero(json!({"u_value": 1, "thermal_resistance_floor_construction": 1})
+            //         ),
+            //         case::area_greater_than_zero(json!({"area": 0})),
+            //         case::thickness_walls_greater_than_zero(json!({"thickness_walls": 0})),
+            //         case::total_area_greater_than_zero(json!({"total_area": 0})),
+            //         case::perimeter_greater_than_zero(json!({"perimeter": 0})),
+            //         case::areal_heat_capacity_greater_than_zero(json!({"areal_heat_capacity": 0})),
+            //         case::thermal_resistance_floor_construction_greater_than_zero(json!({"thermal_resistance_floor_construction": 0})
+            //         ),
+            //         case::u_value_greater_than_zero(json!({"u_value": 0})),
+            //         // height_upper_surface only present in suspended floor, so moved that test there
+            //         case::pitch_at_least_zero(json!({"pitch": -1})),
+            //         case::pitch_at_most_zero(json!({"pitch": 181})),
+            //     )]
+            //     fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+            //         assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            //     }
+            // }
 
             mod suspended_floor {
                 use super::*;
@@ -8541,8 +8691,16 @@ mod tests {
                     ),
                     case::thermal_resist_insul_greater_than_zero(json!({"thermal_resist_insul": 0})
                     ),
-                    case::height_upper_surface_greater_than_zero(json!({"height_upper_surface": 0})
+                    case::area_greater_than_zero(json!({"area": 0})),
+                    case::thickness_walls_greater_than_zero(json!({"thickness_walls": 0})),
+                    case::total_area_greater_than_zero(json!({"total_area": 0})),
+                    case::perimeter_greater_than_zero(json!({"perimeter": 0})),
+                    case::areal_heat_capacity_greater_than_zero(json!({"areal_heat_capacity": 0})),
+                    case::thermal_resistance_floor_construction_greater_than_zero(json!({"thermal_resistance_floor_construction": 0})
                     ),
+                    case::u_value_greater_than_zero(json!({"u_value": 0})),
+                    case::pitch_at_least_zero(json!({"pitch": -1})),
+                    case::pitch_at_most_zero(json!({"pitch": 181})),
                 )]
                 fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                     assert_range_constraints::<BuildingElement>(valid_example, inputs);
@@ -8575,15 +8733,9 @@ mod tests {
                 }
 
                 #[rstest(inputs,
-                    case::height_basement_walls_greater_than_zero(json!({"height_basement_walls": 0, "u_value": null})
-                    ),
                     case::thermal_resist_walls_base_greater_than_zero(json!({"thermal_resist_walls_base": 0, "u_value": null})
                     ),
-                    case::thermal_transm_envi_base_greater_than_zero(json!({"thermal_transm_envi_base": 0, "u_value": null})
-                    ),
-                    case::thermal_transm_walls_greater_than_zero(json!({"thermal_transm_walls": 0, "u_value": null})
-                    ),
-                    case::depth_basement_floor_at_least_zero(json!({"depth_basement_floor": -1, "u_value": null})
+                    case::depth_basement_floor_greater_than_zero(json!({"depth_basement_floor": 0, "u_value": null})
                     ),
                 )]
                 fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
@@ -8626,7 +8778,7 @@ mod tests {
                     ),
                     case::thermal_transm_walls_greater_than_zero(json!({"thermal_transm_walls": 0, "u_value": null})
                     ),
-                    case::depth_basement_floor_at_least_zero(json!({"depth_basement_floor": -1, "u_value": null})
+                    case::depth_basement_floor_greater_than_zero(json!({"depth_basement_floor": 0, "u_value": null})
                     ),
                     case::height_basement_walls_greater_than_zero(json!({"height_basement_walls": 0, "u_value": null})
                     ),
