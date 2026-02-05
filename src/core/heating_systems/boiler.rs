@@ -324,11 +324,11 @@ impl BoilerServiceWaterCombi {
             BoilerHotWaterTest::ML | BoilerHotWaterTest::MS => {
                 // combi loss calculation with tapping cycle M and S, or M and L
                 (rejected_energy * delta_t * flowrate) + self.storage_loss_factor_2_adj.unwrap()
-            },
+            }
             BoilerHotWaterTest::MOnly | BoilerHotWaterTest::NoAdditionalTests => {
                 // combi loss calculation with tapping cycle M only test results
                 (rejected_energy * delta_t * flowrate) + self.storage_loss_factor_1_adj.unwrap()
-            },
+            }
         };
 
         self.combi_loss.read().store(combi_loss, Ordering::SeqCst);
@@ -821,8 +821,10 @@ impl Boiler {
 
         max_of_2(
             standing_loss / self.temp_rise_standby_loss.powf(self.standby_loss_index)
-                * ((temperature_return_feed - temperature_boiler_loc).powf(self.standby_loss_index)
-                    - (temperature_return_feed - self.room_temperature).powf(self.standby_loss_index)),
+                * ((temperature_return_feed - temperature_boiler_loc)
+                    .powf(self.standby_loss_index)
+                    - (temperature_return_feed - self.room_temperature)
+                        .powf(self.standby_loss_index)),
             0.,
         )
     }
@@ -1022,15 +1024,16 @@ impl Boiler {
         // Combi services don't use circulation pumps
         match service_type {
             ServiceType::WaterRegular | ServiceType::Space => {
-                self.pump_running_time_current_timestep.fetch_add(time_running_current_service, Ordering::SeqCst);
-            },
+                self.pump_running_time_current_timestep
+                    .fetch_add(time_running_current_service, Ordering::SeqCst);
+            }
             ServiceType::WaterCombi => {
                 // do nothing
-            },
+            }
             ServiceType::DomesticHotWaterDirect => {
                 // TODO Python errors here - check this is correct
                 bail!("Unexpected service type - ServiceType::DomesticHotWaterDirect");
-            },
+            }
         }
 
         if update_heat_source_state {
@@ -1058,17 +1061,23 @@ impl Boiler {
     }
 
     fn sum_space_heating_service_results_energy_output_required(&self) -> f64 {
-        FSum::with_all(self.service_results
-            .read()
-            .iter()
-            .map(|r| r.energy_output_required)).value()
+        FSum::with_all(
+            self.service_results
+                .read()
+                .iter()
+                .map(|r| r.energy_output_required),
+        )
+        .value()
     }
 
     fn sum_space_heating_service_results_energy_output_provided(&self) -> f64 {
-        FSum::with_all(self.service_results
-            .read()
-            .iter()
-            .map(|r| r.energy_output_provided)).value()
+        FSum::with_all(
+            self.service_results
+                .read()
+                .iter()
+                .map(|r| r.energy_output_provided),
+        )
+        .value()
     }
 
     /// Calculate boiler fuel demand for all services (excl. auxiliary),
