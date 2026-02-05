@@ -1,6 +1,6 @@
 use crate::compare_floats::min_of_2;
 /// This module provides object(s) to model the behaviour of heat batteries.
-use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
+use crate::core::common::WaterSupplyBehaviour;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
@@ -38,17 +38,17 @@ pub(crate) enum HeatBatteryPcmOperationMode {
 ///
 /// This object contains the parts of the heat battery calculation that are
 /// specific to providing hot water.
-#[derive(Clone, Debug)]
-pub struct HeatBatteryPcmServiceWaterRegular {
+#[derive(Debug)]
+pub(crate) struct HeatBatteryPcmServiceWaterRegular<T: WaterSupplyBehaviour> {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
-    cold_feed: WaterSupply,
+    cold_feed: T,
     control: Arc<Control>,
     control_min: Arc<Control>,
     control_max: Arc<Control>,
 }
 
-impl HeatBatteryPcmServiceWaterRegular {
+impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
     /// Arguments:
     /// * `heat_battery` - reference to the Heat Battery object providing the service
     /// * `service_name` - name of the service demanding energy
@@ -58,7 +58,7 @@ impl HeatBatteryPcmServiceWaterRegular {
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
-        cold_feed: WaterSupply,
+        cold_feed: T,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
     ) -> Self {
@@ -132,7 +132,7 @@ impl HeatBatteryPcmServiceWaterRegular {
 /// An object to represent a direct water heating service provided by a heat battery.
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct HeatBatteryPcmServiceWaterDirect<T: WaterSupplyBehaviour> {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
@@ -672,13 +672,13 @@ impl HeatBatteryPcm {
     /// * `cold_feed` - reference to ColdWaterSource object
     /// * `control_min` - reference to a control object which must select current the minimum timestep temperature
     /// * `control_max` - reference to a control object which must select current the maximum timestep temperature
-    pub(crate) fn create_service_hot_water_regular(
+    pub(crate) fn create_service_hot_water_regular<T: WaterSupplyBehaviour>(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
-        cold_feed: WaterSupply,
+        cold_feed: T,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
-    ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular> {
+    ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular<T>> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterRegular::new(
             heat_battery,
@@ -2264,7 +2264,7 @@ mod tests {
     fn create_service_water_regular_with_controls(
         battery_control: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
-    ) -> HeatBatteryPcmServiceWaterRegular {
+    ) -> HeatBatteryPcmServiceWaterRegular<MockWaterSupply> {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control, None);
         let control_min = create_setpoint_time_control(vec![
             Some(52.),
@@ -2286,13 +2286,12 @@ mod tests {
             Some(55.),
             Some(55.),
         ]);
-        let cold_water_source =
-            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+        let mock_cold_feed = MockWaterSupply::new(10.);
 
         HeatBatteryPcmServiceWaterRegular::new(
             heat_battery,
             SERVICE_NAME.into(),
-            cold_water_source,
+            mock_cold_feed,
             Arc::new(control_min),
             Arc::new(control_max),
         )
@@ -2358,12 +2357,12 @@ mod tests {
         let service_control_off = Arc::new(create_setpoint_time_control(vec![None]));
 
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
-        let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
-        let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
+        let mock_cold_feed = MockWaterSupply::new(10.);
+        let heat_battery_service: HeatBatteryPcmServiceWaterRegular<MockWaterSupply> =
             HeatBatteryPcmServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
-                WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                mock_cold_feed,
                 service_control_off.clone(),
                 service_control_off,
             );
