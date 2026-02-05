@@ -1460,7 +1460,7 @@ mod tests {
         }
 
         #[rstest]
-        fn test_init_separate_DHW_tests_ms(boiler: Boiler, simulation_time: SimulationTime) {
+        fn test_init_separate_dhw_tests_ms(boiler: Boiler, simulation_time: SimulationTime) {
             let boiler_service_data = HotWaterSourceDetails::CombiBoiler {
                 separate_dhw_tests: BoilerHotWaterTest::MS,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test data
