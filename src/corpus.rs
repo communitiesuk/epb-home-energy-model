@@ -298,6 +298,7 @@ fn single_control_from_details(
             ..
         } => Control::OnOffMinimisingTime(OnOffCostMinimisingTimeControl::new(
             reject_nulls(expand_numeric_schedule(schedule))?,
+            simulation_time_iterator,
             *start_day,
             *time_series_step,
             *time_on_daily,

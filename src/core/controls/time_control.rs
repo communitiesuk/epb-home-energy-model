@@ -608,10 +608,17 @@ impl OnOffCostMinimisingTimeControl {
     /// * `time_on_daily` - number of "on" hours to be set per day
     pub(crate) fn new(
         schedule: Vec<f64>,
+        simulation_time_iterator: &SimulationTimeIterator,
         start_day: u32,
         time_series_step: f64,
         time_on_daily: f64,
     ) -> anyhow::Result<Self> {
+        validate_schedule_length(
+            &schedule,
+            simulation_time_iterator
+                .total_steps_based_on_step(start_day, Some(time_series_step))?,
+        )?;
+
         let timesteps_per_day = (HOURS_IN_DAY as f64 / time_series_step) as usize;
         let timesteps_on_daily = (time_on_daily / time_series_step) as usize;
         let time_series_len_days =
@@ -628,9 +635,6 @@ impl OnOffCostMinimisingTimeControl {
             // just below. This ensures that we handle the case when the end of the range is greater
             // than the length of the schedule (otherwise we'd get a panic in Rust). Python is more
             // lenient and will assume access elements up to the last one and will not error.
-            if schedule.len() < schedule_day_end {
-                bail!("There is a mismatch between the schedule length and the timesteps per day (hours_per_day / time_series_step)")
-            }
             let schedule_day = schedule[schedule_day_start..schedule_day_end].to_vec();
 
             // Find required number of timesteps with lowest costs
@@ -1714,25 +1718,25 @@ mod tests {
 
     mod test_on_off_cost_minimising_time_control {
         use super::*;
-        use pretty_assertions::assert_eq;
 
-        #[test]
-        fn test_init_invalid_schedule_length() {
+        #[fixture]
+        fn simulation_time() -> SimulationTimeIterator {
+            SimulationTime::new(0.0, 48.0, 1.0).iter()
+        }
+
+        #[rstest]
+        fn test_init_invalid_schedule_length(simulation_time: SimulationTimeIterator) {
             let cost_schedule = [vec![5.0; 7], vec![10.0; 2], vec![7.5; 8], vec![15.0; 6]]
                 .to_vec()
                 .concat();
             let cost_schedule = [&cost_schedule[..], &cost_schedule[..]].concat();
-            let control = OnOffCostMinimisingTimeControl::new(cost_schedule, 0, 1.0, 12.0);
+            let control =
+                OnOffCostMinimisingTimeControl::new(cost_schedule, &simulation_time, 0, 1.0, 12.0);
             assert!(control.is_err());
-            let error = control.unwrap_err().to_string();
-            assert_eq!(
-                error,
-                "There is a mismatch between the schedule length and the timesteps per day (hours_per_day / time_series_step)"
-            );
         }
 
         #[rstest]
-        fn test_is_on() {
+        fn test_is_on(simulation_time: SimulationTimeIterator) {
             let schedule = [
                 vec![5.0; 7],
                 vec![10.0; 2],
@@ -1744,7 +1748,8 @@ mod tests {
             .concat();
             let schedule = [&schedule[..], &schedule[..]].concat();
             let cost_minimising_ctrl =
-                OnOffCostMinimisingTimeControl::new(schedule, 0, 1.0, 12.0).unwrap();
+                OnOffCostMinimisingTimeControl::new(schedule, &simulation_time, 0, 1.0, 12.0)
+                    .unwrap();
 
             let resulting_schedule = [
                 vec![true; 7],
@@ -3833,7 +3838,9 @@ mod tests {
     }
 
     #[fixture]
-    fn controls_for_combination() -> IndexMap<String, Arc<Control>> {
+    fn controls_for_combination(
+        simulation_time_for_charge_control: SimulationTime,
+    ) -> IndexMap<String, Arc<Control>> {
         let cost_schedule = vec![
             5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0,
             10.0, 10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
@@ -3841,6 +3848,7 @@ mod tests {
         let cost_minimising_control = Control::OnOffMinimisingTime(
             OnOffCostMinimisingTimeControl::new(
                 cost_schedule,
+                &simulation_time_for_charge_control.iter(),
                 0,
                 1.,
                 5.0, // Need 12 "on" hours
