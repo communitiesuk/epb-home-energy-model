@@ -5726,7 +5726,6 @@ mod tests {
     }
 
     #[rstest]
-    // #[ignore = "this is more of an acceptance test and takes ~50s at present - find ways to speed this up or run in a different suite"]
     fn should_successfully_deserialise_all_core_demo_files(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Result<Input, _> =
@@ -5741,6 +5740,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "this is more of an acceptance test and takes ~50s at present - find ways to speed this up or run in a different suite"]
     fn test_all_demo_files_deserialize_and_serialize(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Input =
