@@ -1305,19 +1305,12 @@ impl CombinationTimeControl {
                             // XOR is true if exactly one result is true
                             results.process_results(|iter| iter.filter(|x| *x).count() == 1)?
                         }
-                        ControlCombinationOperation::Max => results.process_results(|iter| {
-                            iter.max().expect("At least one result was expected")
-                        })?,
-                        ControlCombinationOperation::Min => results.process_results(|iter| {
-                            iter.min().expect("At least one result was expected")
-                        })?,
-                        ControlCombinationOperation::Mean => {
-                            // Mean evaluates to True if average > 0.5
-                            let results = results.collect::<anyhow::Result<Vec<_>>>()?;
-                            results.iter().cloned().map(f64::from).sum::<f64>()
-                                / results.len() as f64
-                                > 0.5
-                        }
+                        ControlCombinationOperation::Max | ControlCombinationOperation::Min | ControlCombinationOperation::Mean => {
+                            // MAX/MIN/MEAN are numeric operations for setpoints.
+                            // In boolean context (in_required_period), use OR logic:
+                            // "is any of the combined controls in its required period?"
+                            results.process_results(|mut iter| iter.any(|x| x))?
+                        },
                         _ => {
                             bail!("Unsupported combination operation encountered ('{operation:?}')")
                         }
@@ -3327,7 +3320,7 @@ mod tests {
                     control
                         .evaluate_combination_in_req_period("main", t_it)
                         .unwrap(),
-                    [true, false, true, true, true, false, true, true][t_idx]
+                    [true, true, true, true, true, true, true, true][t_idx]
                 );
             }
 
@@ -3343,7 +3336,7 @@ mod tests {
                     control
                         .evaluate_combination_in_req_period("main", t_it)
                         .unwrap(),
-                    [true, false, true, true, true, false, true, true][t_idx]
+                    [true, true, true, true, true, true, true, true][t_idx]
                 );
             }
 
