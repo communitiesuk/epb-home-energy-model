@@ -364,7 +364,10 @@ impl ChargeControl {
                 let temp_charge_cut = self.temp_charge_cut_corr(simtime);
 
                 if temp_charge_cut.is_some_and(|temp_charge_cut| {
-                    temp_air.is_some_and(|temp_air| temp_air >= temp_charge_cut)
+                    temp_air.is_some_and(|temp_air| {
+                        temp_air > temp_charge_cut
+                            || is_close!(temp_air, temp_charge_cut, abs_tol = 1e-10)
+                    })
                 }) {
                     // Control logic cut when temp_air is over temp_charge cut
                     target_charge_nominal = 0.;
@@ -532,9 +535,21 @@ impl ChargeControl {
         let last_correlation = correlation
             .last()
             .expect("External sensor correlation was not expected to be empty.");
-        if external_temperature <= first_correlation.temperature {
+        if external_temperature < first_correlation.temperature
+            || is_close!(
+                external_temperature,
+                first_correlation.temperature,
+                abs_tol = 1e-10
+            )
+        {
             return Ok(first_correlation.max_charge);
-        } else if external_temperature >= last_correlation.temperature {
+        } else if external_temperature > last_correlation.temperature
+            || is_close!(
+                external_temperature,
+                last_correlation.temperature,
+                abs_tol = 1e-10
+            )
+        {
             return Ok(last_correlation.max_charge);
         }
 
@@ -549,7 +564,11 @@ impl ChargeControl {
                 max_charge: max_charge_2,
             } = correlation[i];
 
-            if temp_1 <= external_temperature && external_temperature <= temp_2 && temp_1 != temp_2
+            if !is_close!(temp_1, temp_2)
+                && (temp_1 < external_temperature
+                    || is_close!(temp_1, external_temperature, abs_tol = 1e-10))
+                && (external_temperature < temp_2
+                    || is_close!(temp_2, external_temperature, abs_tol = 1e-10))
             {
                 // perform linear interpolation
                 let slope = (max_charge_2 - max_charge_1) / (temp_2 - temp_1);
