@@ -12,6 +12,7 @@ use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HO
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use bounded_vec_deque::BoundedVecDeque;
+use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -473,7 +474,7 @@ impl ChargeControl {
                 // Can't calculate tomorrow's demand if no past_hdh, so assume zero to store
                 (_, Some(0.)) => 0.,
                 (Some(future_hdh), Some(past_hdh)) => {
-                    future_hdh / past_hdh * demand.read().iter().flatten().sum::<f64>()
+                    future_hdh / past_hdh * FSum::with_all(demand.read().iter().flatten()).value()
                 }
             }
         };
@@ -1053,14 +1054,16 @@ impl SmartApplianceControl {
             // (users for whom demand is negative)
             // to make it more or less preferable to use it immediately or export/charge battery
             self.non_appliance_demand_24hr[name][idx_24hr].store(
-                supply
-                    .read()
-                    .results_by_end_user_single_step(t_idx)
-                    .iter()
-                    .filter_map(|(name, user)| {
-                        (!self.appliance_names.contains(name)).then_some(user)
-                    })
-                    .sum::<f64>(),
+                FSum::with_all(
+                    supply
+                        .read()
+                        .results_by_end_user_single_step(t_idx)
+                        .iter()
+                        .filter_map(|(name, user)| {
+                            (!self.appliance_names.contains(name)).then_some(user)
+                        }),
+                )
+                .value(),
                 Ordering::SeqCst,
             );
 
@@ -1440,7 +1443,7 @@ impl CombinationTimeControl {
                             })?.expect("Results not expected to be empty")
                         }
                         ControlCombinationOperation::Mean => {
-                            let results_sum = results
+                            let results_sum = FSum::with_all(results
                                 .iter()
                                 .filter_map(|x| {
                                     if let SetpointOrBoolean::Setpoint(Some(t)) = x {
@@ -1448,8 +1451,7 @@ impl CombinationTimeControl {
                                     } else {
                                         None
                                     }
-                                })
-                                .sum::<f64>();
+                                })).value();
                             SetpointOrBoolean::Boolean(results_sum / results.len() as f64 > 0.5)
                         }
                         _ => {
