@@ -2203,7 +2203,7 @@ mod tests {
     #[fixture]
     fn default_control_max(simulation_time: SimulationTime) -> Arc<Control> {
         Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(65.), Some(66.)],
+            vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
             0,
             0.0,
             None,
@@ -2230,7 +2230,7 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         let control_min = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(45.), Some(46.)],
+            vec![Some(45.), Some(46.), Some(46.), Some(46.), Some(46.)],
             0,
             1.,
             None,
@@ -2238,7 +2238,7 @@ mod tests {
             simulation_time.step,
         )));
         let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(65.), Some(66.)],
+            vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
             0,
             1.,
             None,
@@ -2443,14 +2443,14 @@ mod tests {
                 temperature_warm: 40.0,
                 volume_warm: 50.0,
                 volume_hot: 8.0,
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other,
                 temperature_warm: 35.0,
                 volume_warm: 0.0,
                 volume_hot: 0.0,
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                event_duration: 0.,
             },
         ];
 
@@ -2777,7 +2777,7 @@ mod tests {
                 temperature_warm: 40.0,
                 volume_warm: 30.0,
                 volume_hot: 20.0,
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                event_duration: 0.,
             }];
             let _dhw_energy = dhw_service
                 .demand_hot_water(usage_events.into(), t_it)
@@ -3408,22 +3408,22 @@ mod tests {
                 event_result_type: WaterEventResultType::Other, // the Python uses a nonexistent "HandWash" type here - this is the best equivalent
                 temperature_warm: 35.0,
                 volume_warm: 5.0,
-                volume_hot: 5.0,     // Small - should get 15°C
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                volume_hot: 5.0, // Small - should get 15°C
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Shower,
                 temperature_warm: 38.0,
                 volume_warm: 40.0,
-                volume_hot: 25.0,    // Medium - should get mix (15°C and 8°C)
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                volume_hot: 25.0, // Medium - should get mix (15°C and 8°C)
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Bath,
                 temperature_warm: 40.0,
                 volume_warm: 80.0,
-                volume_hot: 50.0,    // Large - should get mix of all three temps
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                volume_hot: 50.0, // Large - should get mix of all three temps
+                event_duration: 0.,
             },
         ];
 
@@ -3452,7 +3452,7 @@ mod tests {
             temperature_warm: 40.0,
             volume_warm: 80.0,
             volume_hot: 40.0,
-            event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+            event_duration: 0.,
         }];
 
         let energy_large = service
@@ -3471,35 +3471,35 @@ mod tests {
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
-                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
+                event_duration: 0.,
             },
         ];
 
