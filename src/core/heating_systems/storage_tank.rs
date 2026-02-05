@@ -4,7 +4,7 @@ use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
-use crate::core::units::{MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
+use crate::core::units::{Orientation360, MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{summarise_events, WaterEventResult};
 use crate::corpus::{HeatSource, HotWaterSourceBehaviour, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
@@ -2991,7 +2991,7 @@ pub struct SolarThermalSystem {
     power_pump_control: f64,
     energy_supply_connection: EnergySupplyConnection,
     tilt: f64,
-    orientation: f64,
+    orientation: Orientation360,
     solar_loop_piping_hlc: f64,
     external_conditions: Arc<ExternalConditions>,
     simulation_timestep: f64,
@@ -3049,7 +3049,7 @@ impl SolarThermalSystem {
         power_pump_control: f64,
         energy_supply_connection: EnergySupplyConnection,
         tilt: f64,
-        orientation: f64,
+        orientation: Orientation360,
         solar_loop_piping_hlc: f64,
         external_conditions: Arc<ExternalConditions>,
         temp_internal_air_fn: TempInternalAirFn,
@@ -3285,29 +3285,29 @@ mod tests {
     ) -> Arc<ExternalConditions> {
         let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
         let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
-        let wind_directions = vec![0.0; 8];
+        let wind_directions = vec![0.0; 8].into_iter().map(Into::into).collect();
         let diffuse_horizontal_radiations = vec![333., 610., 572., 420., 0., 10., 90., 275.];
         let direct_beam_radiations = vec![420., 750., 425., 500., 0., 40., 0., 388.];
         let solar_reflectivity_of_ground = vec![0.2; 8760];
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 135.,
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 135.,
-                end: 90.,
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 90.,
-                end: 45.,
+                start360: Orientation360::create_from_180(90.).unwrap(),
+                end360: Orientation360::create_from_180(45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 45.,
-                end: 0.,
+                start360: Orientation360::create_from_180(45.).unwrap(),
+                end360: Orientation360::create_from_180(0.).unwrap(),
                 shading_objects: vec![ShadingObject {
                     object_type: ShadingObjectType::Obstacle,
                     height: 10.5,
@@ -3315,23 +3315,23 @@ mod tests {
                 }],
             },
             ShadingSegment {
-                start: 0.,
-                end: -45.,
+                start360: Orientation360::create_from_180(0.).unwrap(),
+                end360: Orientation360::create_from_180(-45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -45.,
-                end: -90.,
+                start360: Orientation360::create_from_180(-45.).unwrap(),
+                end360: Orientation360::create_from_180(-90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -90.,
-                end: -135.,
+                start360: Orientation360::create_from_180(-90.).unwrap(),
+                end360: Orientation360::create_from_180(-135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -135.,
-                end: -180.,
+                start360: Orientation360::create_from_180(-135.).unwrap(),
+                end360: Orientation360::create_from_180(-180.).unwrap(),
                 ..Default::default()
             },
         ]
@@ -3568,7 +3568,7 @@ mod tests {
     ) -> Arc<ExternalConditions> {
         let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
         let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
-        let wind_directions = vec![0.0; 8];
+        let wind_directions = vec![0.0; 8].into_iter().map(Into::into).collect();
         let diffuse_horizontal_radiations = vec![333., 610., 572., 420., 0., 10., 90., 275.];
         let direct_beam_radiations = vec![420., 750., 425., 500., 0., 40., 0., 388.];
         let solar_reflectivity_of_ground = vec![0.2; 8760];
@@ -3584,43 +3584,43 @@ mod tests {
 
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 135.,
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 135.,
-                end: 90.,
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 90.,
-                end: 45.,
+                start360: Orientation360::create_from_180(90.).unwrap(),
+                end360: Orientation360::create_from_180(45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 45.,
-                end: 0.,
+                start360: Orientation360::create_from_180(45.).unwrap(),
+                end360: Orientation360::create_from_180(0.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 0.,
-                end: -45.,
+                start360: Orientation360::create_from_180(0.).unwrap(),
+                end360: Orientation360::create_from_180(-45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -45.,
-                end: -90.,
+                start360: Orientation360::create_from_180(-45.).unwrap(),
+                end360: Orientation360::create_from_180(-90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -90.,
-                end: -135.,
+                start360: Orientation360::create_from_180(-90.).unwrap(),
+                end360: Orientation360::create_from_180(-135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -135.,
-                end: -180.,
+                start360: Orientation360::create_from_180(-135.).unwrap(),
+                end360: Orientation360::create_from_180(-180.).unwrap(),
                 ..Default::default()
             },
         ]
@@ -3729,7 +3729,10 @@ mod tests {
         let wind_directions = vec![
             300.0, 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
             190., 200., 320., 330., 340., 350., 355., 315., 5.,
-        ];
+        ]
+        .into_iter()
+        .map(Into::into)
+        .collect();
         let diffuse_horizontal_radiations = vec![
             0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225., 198.,
             121., 68., 19., 0., 0., 0., 0., 0.,
@@ -3744,23 +3747,23 @@ mod tests {
         ];
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 135.,
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 135.,
-                end: 90.,
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 90.,
-                end: 45.,
+                start360: Orientation360::create_from_180(90.).unwrap(),
+                end360: Orientation360::create_from_180(45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 45.,
-                end: 0.,
+                start360: Orientation360::create_from_180(45.).unwrap(),
+                end360: Orientation360::create_from_180(0.).unwrap(),
                 shading_objects: vec![ShadingObject {
                     object_type: ShadingObjectType::Obstacle,
                     height: 10.5,
@@ -3768,23 +3771,23 @@ mod tests {
                 }],
             },
             ShadingSegment {
-                start: 0.,
-                end: -45.,
+                start360: Orientation360::create_from_180(0.).unwrap(),
+                end360: Orientation360::create_from_180(-45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -45.,
-                end: -90.,
+                start360: Orientation360::create_from_180(-45.).unwrap(),
+                end360: Orientation360::create_from_180(-90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -90.,
-                end: -135.,
+                start360: Orientation360::create_from_180(-90.).unwrap(),
+                end360: Orientation360::create_from_180(-135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -135.,
-                end: -180.,
+                start360: Orientation360::create_from_180(-135.).unwrap(),
+                end360: Orientation360::create_from_180(-180.).unwrap(),
                 ..Default::default()
             },
         ]
@@ -3888,7 +3891,7 @@ mod tests {
             10.,
             energy_supply_conn,
             30.,
-            0.,
+            Orientation360::create_from_180(0.).unwrap(),
             0.5,
             external_conditions_for_solar_thermal.clone(),
             temp_internal_air_fn.clone(),

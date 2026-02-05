@@ -1,7 +1,7 @@
 use crate::core::energy_supply::inverter::Inverter;
 use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
 use crate::core::space_heat_demand::building_element::projected_height;
-use crate::core::units::WATTS_PER_KILOWATT;
+use crate::core::units::{Orientation360, WATTS_PER_KILOWATT};
 use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
@@ -36,7 +36,7 @@ pub(crate) struct PhotovoltaicPanel {
     peak_power: f64,
     f_perf: f64,
     pitch: f64,
-    orientation: f64,
+    orientation: Orientation360,
     base_height: f64,
     width: f64,
     projected_height: f64,
@@ -75,7 +75,7 @@ impl PhotovoltaicPanel {
         peak_power: f64,
         ventilation_strategy: PhotovoltaicVentilationStrategy,
         pitch: f64,
-        orientation: f64,
+        orientation: Orientation360,
         base_height: f64,
         height: f64,
         width: f64,
@@ -399,7 +399,10 @@ mod tests {
             &simulation_time_iterator,
             vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
             vec![3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1],
-            vec![220., 230., 240., 250., 260., 270., 270., 280.],
+            vec![220., 230., 240., 250., 260., 270., 270., 280.]
+                .into_iter()
+                .map(Into::into)
+                .collect(),
             vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
@@ -415,13 +418,13 @@ mod tests {
             false,
             vec![
                 ShadingSegment {
-                    start: 180.,
-                    end: 135.,
+                    start360: Orientation360::create_from_180(180.).unwrap(),
+                    end360: Orientation360::create_from_180(135.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: 135.,
-                    end: 90.,
+                    start360: Orientation360::create_from_180(135.).unwrap(),
+                    end360: Orientation360::create_from_180(90.).unwrap(),
                     shading_objects: vec![ShadingObject {
                         object_type: ShadingObjectType::Overhang,
                         height: 2.2,
@@ -429,13 +432,13 @@ mod tests {
                     }],
                 },
                 ShadingSegment {
-                    start: 90.,
-                    end: 45.,
+                    start360: Orientation360::create_from_180(90.).unwrap(),
+                    end360: Orientation360::create_from_180(45.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: 45.,
-                    end: 0.,
+                    start360: Orientation360::create_from_180(45.).unwrap(),
+                    end360: Orientation360::create_from_180(0.).unwrap(),
                     shading_objects: vec![
                         ShadingObject {
                             object_type: ShadingObjectType::Obstacle,
@@ -450,8 +453,8 @@ mod tests {
                     ],
                 },
                 ShadingSegment {
-                    start: 0.,
-                    end: -45.,
+                    start360: Orientation360::create_from_180(0.).unwrap(),
+                    end360: Orientation360::create_from_180(-45.).unwrap(),
                     shading_objects: vec![ShadingObject {
                         object_type: ShadingObjectType::Obstacle,
                         height: 3.,
@@ -459,18 +462,18 @@ mod tests {
                     }],
                 },
                 ShadingSegment {
-                    start: -45.,
-                    end: -90.,
+                    start360: Orientation360::create_from_180(-45.).unwrap(),
+                    end360: Orientation360::create_from_180(-90.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: -90.,
-                    end: -135.,
+                    start360: Orientation360::create_from_180(-90.).unwrap(),
+                    end360: Orientation360::create_from_180(-135.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: -135.,
-                    end: -180.,
+                    start360: Orientation360::create_from_180(-135.).unwrap(),
+                    end360: Orientation360::create_from_180(-180.).unwrap(),
                     ..Default::default()
                 },
             ]
@@ -515,7 +518,7 @@ mod tests {
             2.5,
             PhotovoltaicVentilationStrategy::ModeratelyVentilated,
             30.,
-            0.,
+            Orientation360::create_from_180(0.).unwrap(),
             10.,
             2.,
             3.,
@@ -540,7 +543,7 @@ mod tests {
             2.5,
             PhotovoltaicVentilationStrategy::ModeratelyVentilated,
             30.,
-            0.,
+            Orientation360::create_from_180(0.).unwrap(),
             10.,
             2.,
             3.,
@@ -634,7 +637,7 @@ mod tests {
                 2.5,
                 PhotovoltaicVentilationStrategy::ModeratelyVentilated,
                 30.,
-                0.,
+                Orientation360::create_from_180(0.).unwrap(),
                 10.,
                 2.,
                 3.,
@@ -645,7 +648,7 @@ mod tests {
                 3.5,
                 PhotovoltaicVentilationStrategy::ModeratelyVentilated,
                 32.,
-                0.,
+                Orientation360::create_from_180(0.).unwrap(),
                 12.,
                 2.,
                 3.,
@@ -797,7 +800,7 @@ mod tests {
             0.,
             PhotovoltaicVentilationStrategy::ModeratelyVentilated,
             30.,
-            0.,
+            Orientation360::create_from_180(0.).unwrap(),
             10.,
             2.,
             3.,

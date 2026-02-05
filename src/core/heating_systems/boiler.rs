@@ -1260,10 +1260,10 @@ struct ServiceResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::units::Orientation360;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::simulation_time::SimulationTime;
     use rstest::*;
-
     // In Python there are tests covering the abstract base class BoilerService which we have not
     // implemented in Rust. Instead we have directly implemented the `is_on` method on the concrete
     // BoilerService structs. Subsequently, the tests are in the relevant sections below that cover
@@ -1282,7 +1282,10 @@ mod tests {
             &simulation_time.iter(),
             vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
             vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4],
-            vec![200., 220., 230., 240., 250., 260., 260., 270.],
+            vec![200., 220., 230., 240., 250., 260., 260., 270.]
+                .into_iter()
+                .map(Into::into)
+                .collect(),
             vec![333., 610., 572., 420., 0., 10., 90., 275.],
             vec![420., 750., 425., 500., 0., 40., 0., 388.],
             vec![0.2; 8760],
@@ -1298,43 +1301,43 @@ mod tests {
             false,
             vec![
                 ShadingSegment {
-                    start: 180.,
-                    end: 135.,
+                    start360: Orientation360::create_from_180(180.).unwrap(),
+                    end360: Orientation360::create_from_180(135.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: 135.,
-                    end: 90.,
+                    start360: Orientation360::create_from_180(135.).unwrap(),
+                    end360: Orientation360::create_from_180(90.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: 90.,
-                    end: 90.,
+                    start360: Orientation360::create_from_180(90.).unwrap(),
+                    end360: Orientation360::create_from_180(90.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: 45.,
-                    end: 0.,
+                    start360: Orientation360::create_from_180(45.).unwrap(),
+                    end360: Orientation360::create_from_180(0.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: 0.,
-                    end: -45.,
+                    start360: Orientation360::create_from_180(0.).unwrap(),
+                    end360: Orientation360::create_from_180(-45.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: -45.,
-                    end: -90.,
+                    start360: Orientation360::create_from_180(-45.).unwrap(),
+                    end360: Orientation360::create_from_180(-90.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: -90.,
-                    end: -135.,
+                    start360: Orientation360::create_from_180(-90.).unwrap(),
+                    end360: Orientation360::create_from_180(-135.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: -135.,
-                    end: -180.,
+                    start360: Orientation360::create_from_180(-135.).unwrap(),
+                    end360: Orientation360::create_from_180(-180.).unwrap(),
                     ..Default::default()
                 },
             ]

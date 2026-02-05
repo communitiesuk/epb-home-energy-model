@@ -4692,6 +4692,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+    use crate::core::units::Orientation360;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{BoilerHotWaterTest, FuelType, HeatPumpBufferTank, HeatSourceLocation};
@@ -6380,19 +6381,19 @@ mod tests {
     fn external_conditions(simulation_time_for_heat_pump: SimulationTime) -> ExternalConditions {
         let simulation_time_iterator = simulation_time_for_heat_pump.iter();
         let wind_speeds = vec![3.7, 3.8];
-        let wind_directions = vec![200., 220.];
+        let wind_directions = vec![200., 220.].into_iter().map(Into::into).collect();
         let air_temps = vec![0.0, 2.5];
         let diffuse_horizontal_radiations = vec![333., 610.];
         let direct_beam_radiations = vec![420., 750.];
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 135.,
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 135.,
-                end: 90.,
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(90.).unwrap(),
                 ..Default::default()
             },
         ]

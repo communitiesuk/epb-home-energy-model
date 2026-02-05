@@ -1,4 +1,4 @@
-use crate::core::units::KNOTS_PER_METRES_PER_SECOND;
+use crate::core::units::{Orientation360, KNOTS_PER_METRES_PER_SECOND};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use std::io::Read;
 
@@ -16,7 +16,7 @@ const SOLAR_REFLECTIVITY_OF_GROUND: f64 = 0.2;
 pub struct ExternalConditions {
     pub air_temperatures: Vec<f64>,
     pub wind_speeds: Vec<f64>,
-    pub wind_directions: Vec<f64>,
+    pub wind_directions: Vec<Orientation360>,
     pub diffuse_horizontal_radiation: Vec<f64>,
     pub direct_beam_radiation: Vec<f64>,
     pub solar_reflectivity_of_ground: Vec<f64>,
@@ -158,15 +158,15 @@ mod tests {
         let external_conditions =
             cibse_weather_data_to_external_conditions(cibse_weather_file).unwrap();
         assert!([
-            external_conditions.air_temperatures,
-            external_conditions.wind_speeds,
-            external_conditions.wind_directions,
-            external_conditions.diffuse_horizontal_radiation,
-            external_conditions.direct_beam_radiation,
-            external_conditions.solar_reflectivity_of_ground
+            external_conditions.air_temperatures.len(),
+            external_conditions.wind_speeds.len(),
+            external_conditions.wind_directions.len(),
+            external_conditions.diffuse_horizontal_radiation.len(),
+            external_conditions.direct_beam_radiation.len(),
+            external_conditions.solar_reflectivity_of_ground.len()
         ]
         .iter()
-        .all(|v| v.len() == 8760));
+        .all(|&v| v == 8760));
     }
 
     #[rstest]
@@ -174,15 +174,15 @@ mod tests {
         let external_conditions =
             epw_weather_data_to_external_conditions(epw_weather_file).unwrap();
         assert!([
-            external_conditions.air_temperatures,
-            external_conditions.wind_speeds,
-            external_conditions.wind_directions,
-            external_conditions.diffuse_horizontal_radiation,
-            external_conditions.direct_beam_radiation,
-            external_conditions.solar_reflectivity_of_ground
+            external_conditions.air_temperatures.len(),
+            external_conditions.wind_speeds.len(),
+            external_conditions.wind_directions.len(),
+            external_conditions.diffuse_horizontal_radiation.len(),
+            external_conditions.direct_beam_radiation.len(),
+            external_conditions.solar_reflectivity_of_ground.len()
         ]
         .iter()
-        .all(|v| v.len() == 8760));
+        .all(|&v| v == 8760));
     }
 }
 

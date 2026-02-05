@@ -61,7 +61,7 @@ use crate::core::space_heat_demand::zone::{
     calc_vent_heat_transfer_coeff, AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName,
     Zone, ZoneTempInternalAir,
 };
-use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
+use crate::core::units::{kelvin_to_celsius, Orientation360, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::ELECTRIC_SHOWERS_HWS_NAME;
 use crate::core::water_heat_demand::dhw_demand::{DomesticHotWaterDemand, WaterHeatingCalculation};
@@ -1322,7 +1322,7 @@ impl Corpus {
     fn calc_air_changes_per_hour(
         &self,
         wind_speed: f64,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         temp_int_air: f64,
         temp_ext_air: f64,
         r_v_arg: f64,
@@ -3805,7 +3805,7 @@ fn building_element_from_input(
             u_value_input,
             areal_heat_capacity,
             mass_distribution_class,
-            orientation,
+            orientation360: orientation,
             base_height,
             ..
         } => {
@@ -3840,7 +3840,7 @@ fn building_element_from_input(
             area_input,
             u_value_input,
             pitch,
-            orientation,
+            orientation360: orientation,
             g_value,
             frame_area_fraction,
             base_height,
@@ -4711,7 +4711,7 @@ fn heat_source_from_input(
             power_pump,
             power_pump_control,
             tilt,
-            orientation,
+            orientation360: orientation,
             solar_loop_piping_hlc,
             energy_supply,
             control_max,
@@ -5794,7 +5794,7 @@ fn on_site_generation_from_input(
                         peak_power,
                         ventilation_strategy,
                         pitch,
-                        orientation,
+                                                            orientation360: orientation,
                         base_height,
                         height,
                         width,
@@ -5824,7 +5824,7 @@ fn on_site_generation_from_input(
                                     panel.peak_power,
                                     panel.ventilation_strategy,
                                     panel.pitch,
-                                    panel.orientation,
+                                    panel.orientation360,
                                     panel.base_height,
                                     panel.height,
                                     panel.width,

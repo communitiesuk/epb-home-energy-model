@@ -2032,7 +2032,7 @@ mod tests {
             &simulation_time.iter(),
             vec![0.0, 2.5],
             vec![3.7, 3.8],
-            vec![200., 220.],
+            vec![200., 220.].into_iter().map(Into::into).collect(),
             vec![333., 610.],
             vec![420., 750.],
             vec![0.2; 8760],

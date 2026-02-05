@@ -8,15 +8,14 @@ use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnec
 use crate::core::material_properties::AIR;
 use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 use crate::core::units::{
-    celsius_to_kelvin, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
-    WATTS_PER_KILOWATT,
+    celsius_to_kelvin, Orientation360, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE,
+    SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
 use crate::corpus::{CompletedVentilationLeaks, Controls, ReportingFlag};
 use crate::input::{
-    init_orientation, BuildingElement, CombustionAirSupplySituation, CombustionApplianceType,
-    CombustionFuelType, DuctShape, FlueGasExhaustSituation,
-    InfiltrationVentilation as InfiltrationVentilationInput, MechVentData,
-    SupplyAirFlowRateControlType, SupplyAirTemperatureControlType, TerrainClass,
+    BuildingElement, CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
+    DuctShape, FlueGasExhaustSituation, InfiltrationVentilation as InfiltrationVentilationInput,
+    MechVentData, SupplyAirFlowRateControlType, SupplyAirTemperatureControlType, TerrainClass,
     VentilationShieldClass, WindowPart as WindowPartInput, ZoneDictionary,
 };
 use crate::simulation_time::SimulationTimeIteration;
@@ -283,9 +282,9 @@ enum FacadeDirection {
 /// these replace Windward and Leeward from EN 16798-7
 fn get_facade_direction(
     f_cross: bool,
-    orientation: Option<f64>,
+    orientation: Option<Orientation360>,
     pitch: f64,
-    wind_direction: f64,
+    wind_direction: Orientation360,
 ) -> anyhow::Result<FacadeDirection> {
     Ok(if f_cross {
         if pitch < 10. {
@@ -295,7 +294,7 @@ fn get_facade_direction(
         } else if pitch < 60. {
             FacadeDirection::Roof30
         } else {
-            let orientation_diff = orientation_difference(
+            let orientation_diff = Orientation360::orientation_difference(
                 orientation
                     .ok_or_else(|| anyhow!("Orientation for a facade was expected to be set"))?,
                 wind_direction,
@@ -315,7 +314,7 @@ fn get_facade_direction(
     } else if pitch < 60. {
         FacadeDirection::Roof
     } else {
-        let orientation_diff = orientation_difference(
+        let orientation_diff = Orientation360::orientation_difference(
             orientation
                 .ok_or_else(|| anyhow!("Orientation for a facade was expected to be set"))?,
             wind_direction,
@@ -339,8 +338,8 @@ fn get_pressure_coefficient_from_pitch_and_orientation(
     f_cross: bool,
     shield_class: VentilationShieldClass,
     z: f64,
-    wind_direction: f64,
-    orientation: Option<f64>,
+    wind_direction: Orientation360,
+    orientation: Option<Orientation360>,
     pitch: f64,
 ) -> anyhow::Result<f64> {
     let facade_direction = get_facade_direction(f_cross, orientation, pitch, wind_direction)?;
@@ -586,7 +585,7 @@ pub(crate) struct Window {
     a_w_max: f64,
     c_d_w: f64,
     n_w: f64,
-    orientation: Option<f64>,
+    orientation: Option<Orientation360>,
     pitch: f64,
     on_off_ctrl_obj: Option<Arc<Control>>,
     _altitude: f64,
@@ -613,7 +612,7 @@ impl Window {
         midheight: f64,
         max_opening_area: f64,
         window_part_list: Vec<WindowPartInput>,
-        orientation: Option<f64>,
+        orientation: Option<Orientation360>,
         pitch: f64,
         altitude: f64,
         on_off_ctrl_obj: Option<Arc<Control>>,
@@ -704,7 +703,7 @@ impl Window {
     /// * `simulation_time`
     fn calculate_flow_from_internal_p(
         &self,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         u_site: f64,
         t_e: f64,
         t_z: f64,
@@ -854,7 +853,7 @@ pub(crate) struct Vent {
     h_path: f64,
     a_vent: f64,
     delta_p_vent_ref: f64,
-    orientation: f64,
+    orientation: Orientation360,
     pitch: f64,
     _altitude: f64,
     n_vent: f64,
@@ -881,7 +880,7 @@ impl Vent {
         midheight: f64,
         area: f64,
         delta_p_vent_ref: f64,
-        orientation: f64,
+        orientation: Orientation360,
         pitch: f64,
         altitude: f64,
         ventilation_zone_base_height: f64, // TODO: added as part of the 0.32 migration, still WIP
@@ -966,7 +965,7 @@ impl Vent {
     /// * `r_v_arg`
     fn calculate_flow_from_internal_p(
         &self,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         u_site: f64,
         t_e: f64,
         t_z: f64,
@@ -1338,13 +1337,13 @@ pub(crate) struct MechanicalVentilation {
     sfp: f64,
     energy_supply_conn: EnergySupplyConnection,
     _altitude: f64,
-    orientation_exhaust: f64,
+    orientation_exhaust: Orientation360,
     pitch_exhaust: f64,
     h_path_exhaust: f64,
     z_exhaust: f64,
     pub(crate) design_outdoor_air_flow_rate_m3_h: f64,
     mvhr_eff: f64,
-    orientation_intake: Option<f64>,
+    orientation_intake: Option<Orientation360>,
     pitch_intake: Option<f64>,
     h_path_intake: Option<f64>,
     z_intake: Option<f64>,
@@ -1389,14 +1388,14 @@ impl MechanicalVentilation {
         energy_supply_conn: EnergySupplyConnection,
         total_volume: f64,
         altitude: f64,
-        orientation_exhaust: f64, // For MVHR exhaust / MEV extract
+        orientation_exhaust: Orientation360, // For MVHR exhaust / MEV extract
         pitch_exhaust: f64,
         midheight_exhaust: f64,
         ventilation_zone_base_height: f64,
         ctrl_intermittent_mev: Option<Arc<dyn ControlBehaviour>>,
         mvhr_eff: Option<f64>,
         theta_ctrl_sys: Option<f64>, // Only required if sup_air_temp_ctrl = LOAD_COM
-        orientation_intake: Option<f64>,
+        orientation_intake: Option<Orientation360>,
         pitch_intake: Option<f64>,
         h_path_intake: Option<f64>,
         sfp_in_use_factor: f64,
@@ -1500,7 +1499,7 @@ impl MechanicalVentilation {
     fn calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
         &self,
         u_site: f64,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         f_cross: bool,
         shield_class: VentilationShieldClass,
         t_z: f64,
@@ -1688,7 +1687,7 @@ pub(crate) struct InfiltrationVentilation {
 type CalcAirChangesFn = fn(
     &InfiltrationVentilation,
     f64,
-    f64,
+    Orientation360,
     f64,
     f64,
     f64,
@@ -1912,7 +1911,7 @@ impl InfiltrationVentilation {
         &self,
         initial_p_z_ref_guess: f64,
         wind_speed: f64,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         temp_interior_air: f64,
         temp_exterior_air: f64,
         r_v_arg: f64,
@@ -1955,7 +1954,7 @@ impl InfiltrationVentilation {
         &self,
         p_z_ref: f64,
         wind_speed: f64,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         temp_interior_air: f64,
         temp_exterior_air: f64,
         r_v_arg: f64,
@@ -1983,7 +1982,7 @@ impl InfiltrationVentilation {
         &self,
         p_z_ref: f64,
         wind_speed: f64,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         temp_interior_air: f64,
         temp_exterior_air: f64,
         r_v_arg: f64,
@@ -2044,7 +2043,7 @@ impl InfiltrationVentilation {
         &self,
         p_z_ref: f64,
         wind_speed: f64,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         temp_interior_air: f64,
         temp_exterior_air: f64,
         r_v_arg: f64,
@@ -2221,7 +2220,7 @@ impl InfiltrationVentilation {
     pub(crate) fn calc_air_changes_per_hour(
         &self,
         wind_speed: f64,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         temp_interior_air: f64,
         temp_exterior_air: f64,
         r_v_arg: f64,
@@ -2297,7 +2296,7 @@ impl InfiltrationVentilation {
         &self,
         r_v_arg: f64,
         wind_speed: f64,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         temp_interior_air: f64,
         temp_exterior_air: f64,
         ach_target: f64,
@@ -2350,7 +2349,7 @@ impl InfiltrationVentilation {
         ach_max: Option<f64>,
         initial_r_v_arg: f64,
         wind_speed: f64,
-        wind_direction: f64,
+        wind_direction: Orientation360,
         temp_interior_air: f64,
         temp_exterior_air: f64,
         r_w_arg: Option<f64>,
@@ -2481,7 +2480,7 @@ impl InfiltrationVentilation {
                         mid_height,
                         max_window_open_area,
                         window_part_list,
-                        orientation,
+                        orientation360,
                         pitch,
                         ..
                     } = building_element
@@ -2498,7 +2497,7 @@ impl InfiltrationVentilation {
                                 *mid_height,
                                 *max_window_open_area,
                                 window_part_list.clone(),
-                                orientation.map(init_orientation),
+                                *orientation360,
                                 *pitch,
                                 input.altitude,
                                 on_off_ctrl,
@@ -2581,8 +2580,7 @@ impl InfiltrationVentilation {
                     vent.mid_height_air_flow_path,
                     vent.area_cm2,
                     vent.pressure_difference_ref,
-                    // Python uses "orientation360" value here
-                    init_orientation(vent.orientation),
+                    vent.orientation360,
                     vent.pitch,
                     input.altitude,
                     ventilation_zone_base_height,
@@ -2716,7 +2714,7 @@ impl InfiltrationVentilation {
 struct FindRVArgProblem<'a> {
     infiltration_ventilation: &'a InfiltrationVentilation,
     wind_speed: f64,
-    wind_direction: f64,
+    wind_direction: Orientation360,
     temp_interior_air: f64,
     temp_exterior_air: f64,
     ach_target: f64,
@@ -2749,7 +2747,7 @@ impl CostFunction for FindRVArgProblem<'_> {
 
 struct ImplicitMassBalanceProblem<'a> {
     wind_speed: f64,
-    wind_direction: f64,
+    wind_direction: Orientation360,
     temp_interior_air: f64,
     temp_exterior_air: f64,
     r_v_arg: f64,
@@ -2783,7 +2781,7 @@ impl CostFunction for ImplicitMassBalanceProblem<'_> {
 fn root_scalar_for_implicit_mass_balance(
     infiltration_ventilation: &InfiltrationVentilation,
     wind_speed: f64,
-    wind_direction: f64,
+    wind_direction: Orientation360,
     temp_interior_air: f64,
     temp_exterior_air: f64,
     r_v_arg: f64,
@@ -3141,59 +3139,59 @@ mod tests {
     #[test]
     fn test_get_facade_direction() {
         assert_eq!(
-            get_facade_direction(true, Some(0.), 5., 0.).unwrap(),
+            get_facade_direction(true, Some(0.0.into()), 5., 0.0.into()).unwrap(),
             FacadeDirection::Roof10
         );
         assert_eq!(
-            get_facade_direction(true, Some(0.), 20., 0.).unwrap(),
+            get_facade_direction(true, Some(0.0.into()), 20., 0.0.into()).unwrap(),
             FacadeDirection::Roof10_30
         );
         assert_eq!(
-            get_facade_direction(true, Some(0.), 45., 0.).unwrap(),
+            get_facade_direction(true, Some(0.0.into()), 45., 0.0.into()).unwrap(),
             FacadeDirection::Roof30
         );
         assert_eq!(
-            get_facade_direction(true, Some(0.), 70., 0.).unwrap(),
+            get_facade_direction(true, Some(0.0.into()), 70., 0.0.into()).unwrap(),
             FacadeDirection::WindSeg1
         );
         assert_eq!(
-            get_facade_direction(true, Some(60.), 70., 0.).unwrap(),
+            get_facade_direction(true, Some(60.0.into()), 70., 0.0.into()).unwrap(),
             FacadeDirection::WindSeg2
         );
         assert_eq!(
-            get_facade_direction(true, Some(90.), 70., 0.).unwrap(),
+            get_facade_direction(true, Some(90.0.into()), 70., 0.0.into()).unwrap(),
             FacadeDirection::WindSeg3
         );
         assert_eq!(
-            get_facade_direction(true, Some(140.), 70., 0.).unwrap(),
+            get_facade_direction(true, Some(140.0.into()), 70., 0.0.into()).unwrap(),
             FacadeDirection::WindSeg4
         );
         assert_eq!(
-            get_facade_direction(true, Some(160.), 70., 0.).unwrap(),
+            get_facade_direction(true, Some(160.0.into()), 70., 0.0.into()).unwrap(),
             FacadeDirection::WindSeg5
         );
         assert_eq!(
-            get_facade_direction(false, Some(0.), 45., 0.).unwrap(),
+            get_facade_direction(false, Some(0.0.into()), 45., 0.0.into()).unwrap(),
             FacadeDirection::Roof
         );
         assert_eq!(
-            get_facade_direction(false, Some(0.), 70., 0.).unwrap(),
+            get_facade_direction(false, Some(0.0.into()), 70., 0.0.into()).unwrap(),
             FacadeDirection::WindSeg1
         );
         assert_eq!(
-            get_facade_direction(false, Some(60.), 70., 0.).unwrap(),
+            get_facade_direction(false, Some(60.0.into()), 70., 0.0.into()).unwrap(),
             FacadeDirection::WindSeg2
         );
         assert_eq!(
-            get_facade_direction(false, Some(90.), 70., 0.).unwrap(),
+            get_facade_direction(false, Some(90.0.into()), 70., 0.0.into()).unwrap(),
             FacadeDirection::WindSeg3
         );
         assert_eq!(
-            get_facade_direction(false, Some(140.), 70., 0.).unwrap(),
+            get_facade_direction(false, Some(140.0.into()), 70., 0.0.into()).unwrap(),
             FacadeDirection::WindSeg4
         );
         assert_eq!(
-            get_facade_direction(false, Some(160.), 70., 0.).unwrap(),
+            get_facade_direction(false, Some(160.0.into()), 70., 0.0.into()).unwrap(),
             FacadeDirection::WindSeg5
         );
     }
@@ -3205,8 +3203,8 @@ mod tests {
                 true,
                 VentilationShieldClass::Open,
                 10.,
-                0.,
-                Some(0.),
+                0.0.into(),
+                Some(0.0.into()),
                 70.
             )
             .unwrap(),
@@ -3217,8 +3215,8 @@ mod tests {
                 true,
                 VentilationShieldClass::Normal,
                 10.,
-                0.,
-                Some(45.),
+                0.0.into(),
+                Some(45.0.into()),
                 70.
             )
             .unwrap(),
@@ -3229,8 +3227,8 @@ mod tests {
                 true,
                 VentilationShieldClass::Shielded,
                 10.,
-                0.,
-                Some(90.),
+                0.0.into(),
+                Some(90.0.into()),
                 70.
             )
             .unwrap(),
@@ -3241,8 +3239,8 @@ mod tests {
                 true,
                 VentilationShieldClass::Open,
                 30.,
-                0.,
-                Some(135.),
+                0.0.into(),
+                Some(135.0.into()),
                 70.
             )
             .unwrap(),
@@ -3253,8 +3251,8 @@ mod tests {
                 true,
                 VentilationShieldClass::Normal,
                 30.,
-                0.,
-                Some(180.),
+                0.0.into(),
+                Some(180.0.into()),
                 70.
             )
             .unwrap(),
@@ -3265,8 +3263,8 @@ mod tests {
                 true,
                 VentilationShieldClass::Shielded,
                 30.,
-                0.,
-                Some(0.),
+                0.0.into(),
+                Some(0.0.into()),
                 70.
             )
             .unwrap(),
@@ -3277,8 +3275,8 @@ mod tests {
                 true,
                 VentilationShieldClass::Open,
                 60.,
-                0.,
-                Some(0.),
+                0.0.into(),
+                Some(0.0.into()),
                 70.
             )
             .unwrap(),
@@ -3289,8 +3287,8 @@ mod tests {
                 true,
                 VentilationShieldClass::Normal,
                 30.,
-                90.,
-                Some(0.),
+                90.0.into(),
+                Some(0.0.into()),
                 70.
             )
             .unwrap(),
@@ -3301,8 +3299,8 @@ mod tests {
                 false,
                 VentilationShieldClass::Normal,
                 10.,
-                0.,
-                Some(0.),
+                0.0.into(),
+                Some(0.0.into()),
                 70.
             )
             .unwrap(),
@@ -3313,8 +3311,8 @@ mod tests {
                 false,
                 VentilationShieldClass::Normal,
                 10.,
-                0.,
-                Some(0.),
+                0.0.into(),
+                Some(0.0.into()),
                 45.
             )
             .unwrap(),
@@ -3325,8 +3323,8 @@ mod tests {
                 false,
                 VentilationShieldClass::Normal,
                 15.,
-                270.,
-                Some(10.),
+                270.0.into(),
+                Some(10.0.into()),
                 90.
             )
             .unwrap(),
@@ -3693,49 +3691,52 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) -> Arc<ExternalConditions> {
         let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
-        let wind_directions = vec![200., 220., 230., 240., 250., 260., 260., 270.];
+        let wind_directions = vec![200., 220., 230., 240., 250., 260., 260., 270.]
+            .into_iter()
+            .map(Into::into)
+            .collect();
         let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
         let diffuse_horizontal_radiations = vec![333., 610., 572., 420., 0., 10., 90., 275.];
         let direct_beam_radiations = vec![420., 750., 425., 500., 0., 40., 0., 388.];
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 135.,
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 135.,
-                end: 90.,
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 90.,
-                end: 45.,
+                start360: Orientation360::create_from_180(90.).unwrap(),
+                end360: Orientation360::create_from_180(45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 45.,
-                end: 0.,
+                start360: Orientation360::create_from_180(45.).unwrap(),
+                end360: Orientation360::create_from_180(0.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 0.,
-                end: -45.,
+                start360: Orientation360::create_from_180(0.).unwrap(),
+                end360: Orientation360::create_from_180(-45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -45.,
-                end: -90.,
+                start360: Orientation360::create_from_180(-45.).unwrap(),
+                end360: Orientation360::create_from_180(-90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -90.,
-                end: -135.,
+                start360: Orientation360::create_from_180(-90.).unwrap(),
+                end360: Orientation360::create_from_180(-135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -135.,
-                end: -180.,
+                start360: Orientation360::create_from_180(-135.).unwrap(),
+                end360: Orientation360::create_from_180(-180.).unwrap(),
                 ..Default::default()
             },
         ]
@@ -3770,7 +3771,7 @@ mod tests {
             vec![WindowPartInput {
                 mid_height_air_flow_path: 1.5,
             }],
-            Some(0.),
+            Some(0.0.into()),
             90.,
             altitude,
             ctrl.map(Arc::new),
@@ -3896,7 +3897,7 @@ mod tests {
 
         let (qm_in, qm_out) = window
             .calculate_flow_from_internal_p(
-                wind_directions[0],
+                wind_directions[0].into(),
                 u_site,
                 celsius_to_kelvin(air_temps[0]).unwrap(),
                 t_z,
@@ -3920,7 +3921,7 @@ mod tests {
     fn test_calculate_flow_from_internal_p_no_ctrl(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let wind_direction = 10.;
+        let wind_direction = 10.0.into();
         let u_site = 10.;
         let t_e = 290.;
         let t_z = 300.;
@@ -3952,7 +3953,7 @@ mod tests {
     fn test_calculate_flow_from_internal_p_ctrl_off(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let wind_direction = 10.;
+        let wind_direction = 10.0.into();
         let u_site = 10.;
         let t_e = 290.;
         let t_z = 300.;
@@ -4016,7 +4017,7 @@ mod tests {
 
     #[fixture]
     fn vent() -> Vent {
-        Vent::new(1., 100., 20., 0., 90., 0., 0.)
+        Vent::new(1., 100., 20., 0.0.into(), 90., 0., 0.)
     }
 
     #[rstest]
@@ -4080,7 +4081,7 @@ mod tests {
 
         let (qm_in_through_vent, qm_out_through_vent) = vent
             .calculate_flow_from_internal_p(
-                wind_directions[0],
+                wind_directions[0].into(),
                 u_site,
                 celsius_to_kelvin(air_temps[0]).unwrap(),
                 t_z,
@@ -4219,14 +4220,14 @@ mod tests {
             energy_supply_connection,
             250.,
             0.,
-            0.,
+            0.0.into(),
             90.,
             2.,
             3.,
             None,
             Some(0.),
             None,
-            Some(180.),
+            Some(180.0.into()),
             Some(90.),
             Some(3.),
             1.,
@@ -4235,12 +4236,15 @@ mod tests {
 
     #[rstest]
     fn test_mvhr_positions(mechanical_ventilation: MechanicalVentilation) {
-        assert_eq!(mechanical_ventilation.orientation_intake.unwrap(), 180.);
+        assert_eq!(
+            mechanical_ventilation.orientation_intake.unwrap(),
+            180.0.into()
+        );
         assert_eq!(mechanical_ventilation.pitch_intake.unwrap(), 90.);
         assert_eq!(mechanical_ventilation.h_path_intake.unwrap(), 3.);
         assert_eq!(mechanical_ventilation.z_intake.unwrap(), 6.); // 3 + 3
 
-        assert_eq!(mechanical_ventilation.orientation_exhaust, 0.);
+        assert_eq!(mechanical_ventilation.orientation_exhaust, 0.0.into());
         assert_eq!(mechanical_ventilation.pitch_exhaust, 90.);
         assert_eq!(mechanical_ventilation.h_path_exhaust, 2.);
         assert_eq!(mechanical_ventilation.z_exhaust, 5.); // 2 + 3
@@ -4290,7 +4294,7 @@ mod tests {
             mechanical_ventilation
                 .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
                     4.135012577787589,
-                    140.,
+                    140.0.into(),
                     true,
                     VentilationShieldClass::Normal,
                     293.15,
@@ -4361,14 +4365,14 @@ mod tests {
             energy_supply_connection,
             250.,
             0.,
-            180.,
+            180.0.into(),
             90.,
             2.,
             3.,
             Some(mock_control_with_setpnt(None)),
             Some(0.),
             Some(1.1),
-            Some(180.),
+            Some(180.0.into()),
             Some(90.),
             Some(2.),
             1.,
@@ -4412,7 +4416,7 @@ mod tests {
             energy_supply_connection,
             250.,
             0.,
-            180.,
+            180.0.into(),
             90.,
             2.,
             3.,
@@ -4430,7 +4434,7 @@ mod tests {
             mechanical_ventilation
                 .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
                     4.135012577787589,
-                    140.,
+                    140.0.into(),
                     true,
                     VentilationShieldClass::Normal,
                     293.15,
@@ -4455,7 +4459,7 @@ mod tests {
     ) -> InfiltrationVentilation {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
         let windows = vec![create_window(Some(ctrl), 30.)];
-        let vents = vec![Vent::new(1.5, 100., 20., 0., 90., 30., 2.5)];
+        let vents = vec![Vent::new(1.5, 100., 20., 0.0.into(), 90., 30., 2.5)];
         let leaks = CompletedVentilationLeaks {
             ventilation_zone_height: 6.,
             test_pressure: 50.,
@@ -4481,14 +4485,14 @@ mod tests {
             energy_supply_connection,
             250.,
             0.,
-            180.,
+            180.0.into(),
             90.,
             2.,
             3.,
             None,
             Some(0.),
             None,
-            Some(180.),
+            Some(180.0.into()),
             Some(90.),
             Some(2.),
             1.,
@@ -4591,7 +4595,7 @@ mod tests {
                 .calculate_internal_reference_pressure(
                     initial_p_z_ref_guess,
                     wind_speeds[0],
-                    wind_directions[0],
+                    wind_directions[0].into(),
                     temp_int_air,
                     air_temps[0],
                     r_v_arg,
@@ -4616,7 +4620,7 @@ mod tests {
             .implicit_mass_balance_for_internal_reference_pressure_components(
                 5.,
                 10.,
-                10.,
+                10.0.into(),
                 10.,
                 20.,
                 0.1,
@@ -4635,7 +4639,7 @@ mod tests {
             .implicit_mass_balance_for_internal_reference_pressure_components(
                 5.,
                 10.,
-                10.,
+                10.0.into(),
                 10.,
                 30.,
                 0.1,
@@ -4726,7 +4730,7 @@ mod tests {
                 .implicit_mass_balance_for_internal_reference_pressure(
                     p_z_ref,
                     wind_speeds[0],
-                    wind_directions[0],
+                    wind_directions[0].into(),
                     temp_int_air,
                     air_temps[0],
                     r_v_arg,
@@ -4757,7 +4761,7 @@ mod tests {
                 .incoming_air_flow(
                     p_z_ref,
                     wind_speeds[0],
-                    wind_directions[0],
+                    wind_directions[0].into(),
                     temp_int_air,
                     air_temps[0],
                     r_v_arg,
@@ -4790,7 +4794,7 @@ mod tests {
                 Some(ach_max),
                 initial_r_v_arg,
                 20.,
-                wind_directions[0],
+                wind_directions[0].into(),
                 temp_int_air,
                 air_temps[0],
                 Some(0.),
@@ -4816,7 +4820,7 @@ mod tests {
                 Some(ach_max),
                 initial_r_v_arg,
                 20.,
-                wind_directions[0],
+                wind_directions[0].into(),
                 temp_int_air,
                 air_temps[0],
                 Some(0.),
@@ -4846,7 +4850,7 @@ mod tests {
                 Some(1.),
                 0.4,
                 20.,
-                wind_directions[0],
+                wind_directions[0].into(),
                 20.,
                 air_temps[0],
                 Some(0.),
@@ -4871,7 +4875,7 @@ mod tests {
                     Some(20.),
                     0.6,
                     20.,
-                    wind_directions[0],
+                    wind_directions[0].into(),
                     20.,
                     air_temps[0],
                     Some(0.),
@@ -4899,7 +4903,7 @@ mod tests {
                     Some(20.),
                     0.6,
                     20.,
-                    wind_directions[0],
+                    wind_directions[0].into(),
                     20.,
                     air_temps[0],
                     Some(0.),
@@ -4926,7 +4930,7 @@ mod tests {
                     Some(0.2),
                     0.4,
                     20.,
-                    wind_directions[0],
+                    wind_directions[0].into(),
                     20.,
                     air_temps[0],
                     Some(0.),
@@ -4958,7 +4962,7 @@ mod tests {
                 Some(2.5),
                 0.5,
                 5.0,
-                90.0,
+                90.0.into(),
                 20.0,
                 10.0,
                 Some(1.0),
@@ -4981,7 +4985,7 @@ mod tests {
                 None,
                 0.5,
                 5.0,
-                90.0,
+                90.0.into(),
                 20.0,
                 10.0,
                 Some(1.0),

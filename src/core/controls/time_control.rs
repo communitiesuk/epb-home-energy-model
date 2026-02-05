@@ -2149,7 +2149,7 @@ mod tests {
                 &simulation_time_iterator,
                 vec![0.0; 24],
                 vec![3.7; 24],
-                vec![200.; 24],
+                vec![200.; 24].into_iter().map(|x| x.into()).collect(),
                 vec![333.; 24],
                 vec![0.; 24],
                 vec![0.2; 8760],
@@ -2325,6 +2325,7 @@ mod tests {
 
     mod test_charge_control {
         use super::*;
+        use crate::core::units::Orientation360;
         use pretty_assertions::assert_eq;
 
         fn simulation_time() -> SimulationTime {
@@ -2360,11 +2361,14 @@ mod tests {
             ]
         }
 
-        fn wind_directions() -> Vec<f64> {
+        fn wind_directions() -> Vec<Orientation360> {
             vec![
                 300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
                 190., 200., 320., 330., 340., 350., 355., 315., 5.,
             ]
+            .into_iter()
+            .map(|x| x.into())
+            .collect()
         }
 
         fn diffuse_horizontal_radiation() -> Vec<f64> {
@@ -2966,7 +2970,10 @@ mod tests {
                 vec![
                     300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100.,
                     140., 190., 200., 320., 330., 340., 350., 355., 315., 5.,
-                ],
+                ]
+                .into_iter()
+                .map(Into::into)
+                .collect(),
                 vec![
                     0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225.,
                     198., 121., 68., 19., 0., 0., 0., 0., 0.,
@@ -3764,7 +3771,10 @@ mod tests {
             vec![
                 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300.,
                 300., 300., 300., 300., 300., 300., 300., 300., 300., 300.,
-            ],
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect(),
             vec![
                 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
                 0., 0., 0.,

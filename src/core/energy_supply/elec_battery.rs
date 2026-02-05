@@ -350,6 +350,7 @@ impl ElectricBattery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::units::Orientation360;
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
@@ -368,7 +369,10 @@ mod tests {
             &simulation_time.iter(),
             vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
             vec![3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1],
-            vec![0., 20., 40., 60., 0., 20., 40., 60.],
+            vec![0., 20., 40., 60., 0., 20., 40., 60.]
+                .into_iter()
+                .map(Into::into)
+                .collect(),
             vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![0.2; 8],
@@ -384,13 +388,13 @@ mod tests {
             false,
             vec![
                 ShadingSegment {
-                    start: 180.,
-                    end: 135.,
+                    start360: Orientation360::create_from_180(180.).unwrap(),
+                    end360: Orientation360::create_from_180(135.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: 135.,
-                    end: 90.,
+                    start360: Orientation360::create_from_180(135.).unwrap(),
+                    end360: Orientation360::create_from_180(90.).unwrap(),
                     shading_objects: vec![ShadingObject {
                         object_type: ShadingObjectType::Overhang,
                         height: 2.2,
@@ -398,13 +402,13 @@ mod tests {
                     }],
                 },
                 ShadingSegment {
-                    start: 90.,
-                    end: 45.,
+                    start360: Orientation360::create_from_180(90.).unwrap(),
+                    end360: Orientation360::create_from_180(45.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: 45.,
-                    end: 0.,
+                    start360: Orientation360::create_from_180(45.).unwrap(),
+                    end360: Orientation360::create_from_180(0.).unwrap(),
                     shading_objects: vec![
                         ShadingObject {
                             object_type: ShadingObjectType::Obstacle,
@@ -419,8 +423,8 @@ mod tests {
                     ],
                 },
                 ShadingSegment {
-                    start: 0.,
-                    end: -45.,
+                    start360: Orientation360::create_from_180(0.).unwrap(),
+                    end360: Orientation360::create_from_180(-45.).unwrap(),
                     shading_objects: vec![ShadingObject {
                         object_type: ShadingObjectType::Obstacle,
                         height: 3.,
@@ -428,18 +432,18 @@ mod tests {
                     }],
                 },
                 ShadingSegment {
-                    start: -45.,
-                    end: -90.,
+                    start360: Orientation360::create_from_180(-45.).unwrap(),
+                    end360: Orientation360::create_from_180(-90.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: -90.,
-                    end: -135.,
+                    start360: Orientation360::create_from_180(-90.).unwrap(),
+                    end360: Orientation360::create_from_180(-135.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: -135.,
-                    end: -180.,
+                    start360: Orientation360::create_from_180(-135.).unwrap(),
+                    end360: Orientation360::create_from_180(-180.).unwrap(),
                     ..Default::default()
                 },
             ]

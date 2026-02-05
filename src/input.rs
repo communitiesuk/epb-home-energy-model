@@ -2,7 +2,7 @@
 
 use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::core::schedule::{BooleanSchedule, NumericSchedule};
-use crate::core::units::calculate_thermal_resistance_of_virtual_layer;
+use crate::core::units::{calculate_thermal_resistance_of_virtual_layer, Orientation360};
 use crate::external_conditions::{ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
 use crate::HEM_VERSION;
@@ -298,9 +298,8 @@ pub struct ExternalConditionsInput {
 
     /// List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: ˚)
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(custom = validate_all_items_in_option_non_negative)]
-    #[validate(custom = |v| validate_all_items_in_option_at_most_n(v, 360.))]
-    pub(crate) wind_directions: Option<Vec<f64>>,
+    #[validate(custom = validate_all_items_in_option)]
+    pub(crate) wind_directions: Option<Vec<Orientation360>>,
 
     /// List of wind speeds, one entry per hour (unit: m/s)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -336,15 +335,15 @@ impl ExternalConditionsInput {
             } = self
             {
                 [
-                    air_temperatures,
-                    diffuse_horizontal_radiation,
-                    direct_beam_radiation,
-                    solar_reflectivity_of_ground,
-                    wind_directions,
-                    wind_speeds,
+                    air_temperatures.len(),
+                    diffuse_horizontal_radiation.len(),
+                    direct_beam_radiation.len(),
+                    solar_reflectivity_of_ground.len(),
+                    wind_directions.len(),
+                    wind_speeds.len(),
                 ]
                 .iter()
-                .all(|items| items.len() >= HOURS_IN_YEAR)
+                .all(|&items| items >= HOURS_IN_YEAR)
             } else {
                 false
             }
@@ -1801,14 +1800,8 @@ pub enum HeatSource {
         #[validate(maximum = 90.)]
         tilt: f64,
 
-        #[serde(
-            rename = "orientation360",
-            deserialize_with = "deserialize_orientation",
-            serialize_with = "serialize_orientation"
-        )]
-        #[validate(minimum = -180.)]
-        #[validate(maximum = 180.)]
-        orientation: f64,
+        #[validate]
+        orientation360: Orientation360,
 
         /// Heat loss coefficient of the collector loop piping (unit: W/K)
         #[validate(exclusive_minimum = 0.)]
@@ -2782,6 +2775,16 @@ fn validate_all_items_in_option_at_most_n(
     }
 }
 
+fn validate_all_items_in_option<T: Validate>(
+    items: &Option<Vec<T>>,
+) -> Result<(), serde_valid::validation::Error> {
+    if items.iter().flatten().all(|item| item.validate().is_ok()) {
+        Ok(())
+    } else {
+        custom_validation_error("All items must be valid".to_string())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -3051,15 +3054,8 @@ pub enum BuildingElement {
         #[validate(maximum = 180.)]
         pitch: f64,
 
-        #[serde(
-            rename = "orientation360",
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_orientation_option",
-            serialize_with = "serialize_orientation_option"
-        )]
-        #[validate(minimum = -180.)]
-        #[validate(maximum = 180.)]
-        orientation: Option<f64>,
+        #[validate]
+        orientation360: Option<Orientation360>,
 
         /// The distance between the ground and the lowest edge of the element (unit: m)
         #[validate(minimum = 0.)]
@@ -3092,15 +3088,8 @@ pub enum BuildingElement {
         #[validate(maximum = 180.)]
         pitch: f64,
 
-        #[serde(
-            rename = "orientation360",
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_orientation_option",
-            serialize_with = "serialize_orientation_option"
-        )]
-        #[validate(minimum = -180.)]
-        #[validate(maximum = 180.)]
-        orientation: Option<f64>,
+        #[validate]
+        orientation360: Option<Orientation360>,
 
         /// Total solar energy transmittance of the transparent part of the window
         #[validate(minimum = 0.)]
@@ -3477,10 +3466,16 @@ impl BuildingElement {
         }
     }
 
-    pub fn orientation(&self) -> Option<f64> {
+    pub fn orientation(&self) -> Option<Orientation360> {
         match self {
-            BuildingElement::Opaque { orientation, .. } => *orientation,
-            BuildingElement::Transparent { orientation, .. } => *orientation,
+            BuildingElement::Opaque {
+                orientation360: orientation,
+                ..
+            } => *orientation,
+            BuildingElement::Transparent {
+                orientation360: orientation,
+                ..
+            } => *orientation,
             _ => None,
         }
     }
@@ -4727,14 +4722,8 @@ pub(crate) struct PhotovoltaicPanel {
     #[validate(maximum = 90.)]
     pub(crate) pitch: f64,
 
-    #[serde(
-        rename = "orientation360",
-        deserialize_with = "deserialize_orientation",
-        serialize_with = "serialize_orientation"
-    )]
-    #[validate(minimum = -180.)]
-    #[validate(maximum = 180.)]
-    pub(crate) orientation: f64,
+    #[validate]
+    pub(crate) orientation360: Orientation360,
 
     /// The distance between the ground and the lowest edge of the PV array (unit: m)
     #[validate(minimum = 0.)]
@@ -4795,14 +4784,8 @@ pub(crate) struct PhotovoltaicSystem {
     #[validate(maximum = 90.)]
     pub(crate) pitch: f64,
 
-    #[serde(
-        rename = "orientation360",
-        deserialize_with = "deserialize_orientation",
-        serialize_with = "serialize_orientation"
-    )]
-    #[validate(minimum = -180.)]
-    #[validate(maximum = 180.)]
-    pub(crate) orientation: f64,
+    #[validate]
+    pub(crate) orientation360: Orientation360,
 
     /// The distance between the ground and the lowest edge of the PV array (unit: m)
     #[validate(minimum = 0.)]
@@ -4988,14 +4971,8 @@ pub struct Vent {
     #[validate(exclusive_minimum = 0.)]
     pub(crate) pressure_difference_ref: f64,
 
-    #[serde(
-        rename = "orientation360",
-        deserialize_with = "deserialize_orientation",
-        serialize_with = "serialize_orientation"
-    )]
-    #[validate(minimum = -180.)]
-    #[validate(maximum = 180.)]
-    pub(crate) orientation: f64,
+    #[validate]
+    pub(crate) orientation360: Orientation360,
 
     /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
     #[validate(minimum = 0.)]
@@ -5172,7 +5149,7 @@ impl MechVentData {
         }
     }
 
-    pub(crate) fn position_exhaust(&self) -> (f64, f64, f64) {
+    pub(crate) fn position_exhaust(&self) -> (Orientation360, f64, f64) {
         match self {
             Self::Mvhr {
                 position_exhaust, ..
@@ -5190,7 +5167,7 @@ impl MechVentData {
                 position_exhaust, ..
             } => {
                 let MechanicalVentilationPosition {
-                    orientation,
+                    orientation360: orientation,
                     pitch,
                     mid_height_air_flow_path,
                 } = *position_exhaust;
@@ -5200,12 +5177,12 @@ impl MechVentData {
         }
     }
 
-    pub(crate) fn position_intake(&self) -> (Option<f64>, Option<f64>, Option<f64>) {
+    pub(crate) fn position_intake(&self) -> (Option<Orientation360>, Option<f64>, Option<f64>) {
         match self {
             Self::Mvhr {
                 position_intake, ..
             } => (
-                Some(position_intake.orientation),
+                Some(position_intake.orientation360),
                 Some(position_intake.pitch),
                 Some(position_intake.mid_height_air_flow_path),
             ),
@@ -5217,14 +5194,8 @@ impl MechVentData {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MechanicalVentilationPosition {
-    #[serde(
-        rename = "orientation360",
-        deserialize_with = "deserialize_orientation",
-        serialize_with = "serialize_orientation"
-    )]
-    #[validate(minimum = -180.)]
-    #[validate(maximum = 180.)]
-    pub(crate) orientation: f64,
+    #[validate]
+    pub(crate) orientation360: Orientation360,
 
     /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
     #[validate(minimum = 0.)]
@@ -7077,7 +7048,7 @@ mod tests {
                 mid_height_air_flow_path: 1.3,
                 area_cm2: 120.,
                 pressure_difference_ref: 3.4,
-                orientation: 180. - 123.,
+                orientation360: 123.0.into(),
                 pitch: 45.,
             })
             .unwrap()
@@ -7471,7 +7442,7 @@ mod tests {
                     power_pump_control: 10.,
                     energy_supply: "mains elec".into(),
                     tilt: 56.,
-                    orientation: -54.,
+                    orientation360: 234.0.into(),
                     solar_loop_piping_hlc: 0.5,
                     heater_position: 0.8,
                     thermostat_position: None,
@@ -7645,12 +7616,12 @@ mod tests {
                 ductwork: vec![],
                 vent_data: MechVentData::Mvhr {
                     position_intake: MechanicalVentilationPosition {
-                        orientation: 0.,
+                        orientation360: 180.0.into(),
                         pitch: 90.,
                         mid_height_air_flow_path: 3.0,
                     },
                     position_exhaust: MechanicalVentilationPosition {
-                        orientation: 180.,
+                        orientation360: 0.0.into(),
                         pitch: 90.,
                         mid_height_air_flow_path: 2.0,
                     },
@@ -7750,7 +7721,7 @@ mod tests {
                 peak_power: 10.,
                 ventilation_strategy: PhotovoltaicVentilationStrategy::Unventilated,
                 pitch: 90.,
-                orientation: 150.,
+                orientation360: 30.0.into(),
                 base_height: 10.,
                 height: 10.,
                 width: 10.,
@@ -7796,7 +7767,7 @@ mod tests {
                     peak_power: 2.5,
                     ventilation_strategy: PhotovoltaicVentilationStrategy::ModeratelyVentilated,
                     pitch: 30.,
-                    orientation: 0.,
+                    orientation360: 180.0.into(),
                     base_height: 10.,
                     height: 1.,
                     width: 1.,
@@ -7826,7 +7797,7 @@ mod tests {
                 peak_power: 1.3,
                 ventilation_strategy: PhotovoltaicVentilationStrategy::Unventilated,
                 pitch: 34.,
-                orientation: -65.,
+                orientation360: Orientation360::from(245.),
                 base_height: 1.2,
                 height: 2.3,
                 width: 4.3,
@@ -7878,8 +7849,8 @@ mod tests {
         #[fixture]
         fn valid_example() -> JsonValue {
             serde_json::to_value(ShadingSegment {
-                start: 180.,
-                end: -180.,
+                start360: 0.0.into(),
+                end360: 360.0.into(),
                 shading_objects: vec![],
             })
             .unwrap()
@@ -8408,7 +8379,7 @@ mod tests {
                 serde_json::to_value(BuildingElement::Opaque {
                     is_unheated_pitched_roof: None,
                     pitch: 90.,
-                    orientation: None,
+                    orientation360: None,
                     base_height: 0.0,
                     u_value_input: UValueInput::UValue { u_value: 0.3 },
                     areal_heat_capacity: 0.0,
@@ -8444,7 +8415,7 @@ mod tests {
                 serde_json::to_value(BuildingElement::Opaque {
                     is_unheated_pitched_roof: None,
                     pitch: 60.,
-                    orientation: None,
+                    orientation360: None,
                     base_height: 0.0,
                     u_value_input: UValueInput::ThermalResistanceConstruction {
                         thermal_resistance_construction: 4.0,
@@ -8481,7 +8452,7 @@ mod tests {
                 serde_json::to_value(BuildingElement::Opaque {
                     is_unheated_pitched_roof: None,
                     pitch: 60.,
-                    orientation: None,
+                    orientation360: None,
                     base_height: 0.0,
                     u_value_input: UValueInput::ThermalResistanceConstruction {
                         thermal_resistance_construction: 4.0,
@@ -8518,7 +8489,7 @@ mod tests {
                 serde_json::to_value(BuildingElement::Opaque {
                     is_unheated_pitched_roof: None,
                     pitch: 60.,
-                    orientation: Some(0.),
+                    orientation360: Some(0.0.into()),
                     base_height: 0.5,
                     u_value_input: UValueInput::ThermalResistanceConstruction {
                         thermal_resistance_construction: 4.0,
@@ -8561,7 +8532,7 @@ mod tests {
                         thermal_resistance_construction: 0.74,
                     },
                     pitch: 45.,
-                    orientation: None,
+                    orientation360: None,
                     g_value: 10.,
                     frame_area_fraction: 0.25,
                     base_height: 10.,
@@ -8610,7 +8581,7 @@ mod tests {
                     solar_absorption_coeff: 0.8,
                     u_value_input: UValueInput::UValue { u_value: 1.2 },
                     pitch: 1.2,
-                    orientation: Some(0.),
+                    orientation360: Some(0.0.into()),
                     base_height: 10.,
                     area_input: BuildingElementAreaOrHeightWidthInput {
                         area: Some(24.0),
@@ -9077,7 +9048,7 @@ mod tests {
                 longitude: Some(34.2),
                 shading_segments: Some(vec![]),
                 solar_reflectivity_of_ground: Some(vec![0.; 8760]),
-                wind_directions: Some(vec![0.; 8760]),
+                wind_directions: Some(vec![0.0.into(); 8760]),
                 wind_speeds: Some(vec![0.; 8760]),
             };
             assert!(valid_example.are_all_fields_set());
@@ -9107,7 +9078,7 @@ mod tests {
                 longitude: Some(34.2),
                 shading_segments: Some(vec![]),
                 solar_reflectivity_of_ground: Some(vec![0.; 8760]),
-                wind_directions: Some(vec![0.; 8760]),
+                wind_directions: Some(vec![0.0.into(); 8760]),
                 wind_speeds: Some(vec![0.; 8760]),
             };
 

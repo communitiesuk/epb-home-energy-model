@@ -1730,7 +1730,7 @@ mod tests {
     };
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridge;
     use crate::core::space_heat_demand::ventilation::{Vent, Window};
-    use crate::core::units::DAYS_IN_MONTH;
+    use crate::core::units::{Orientation360, DAYS_IN_MONTH};
     use crate::corpus::CompletedVentilationLeaks;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::hem_core::external_conditions::ShadingSegment;
@@ -1882,43 +1882,43 @@ mod tests {
 
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 135.,
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 135.,
-                end: 90.,
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 90.,
-                end: 45.,
+                start360: Orientation360::create_from_180(90.).unwrap(),
+                end360: Orientation360::create_from_180(45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 45.,
-                end: 0.,
+                start360: Orientation360::create_from_180(45.).unwrap(),
+                end360: Orientation360::create_from_180(0.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 0.,
-                end: -45.,
+                start360: Orientation360::create_from_180(0.).unwrap(),
+                end360: Orientation360::create_from_180(-45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -45.,
-                end: -90.,
+                start360: Orientation360::create_from_180(-45.).unwrap(),
+                end360: Orientation360::create_from_180(-90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -90.,
-                end: -135.,
+                start360: Orientation360::create_from_180(-90.).unwrap(),
+                end360: Orientation360::create_from_180(-135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -135.,
-                end: -180.,
+                start360: Orientation360::create_from_180(-135.).unwrap(),
+                end360: Orientation360::create_from_180(-180.).unwrap(),
                 ..Default::default()
             },
         ];
@@ -1927,7 +1927,7 @@ mod tests {
             &simulation_time.iter(),
             air_temps,
             wind_speeds,
-            wind_directions,
+            wind_directions.into_iter().map(Into::into).collect(),
             vec![333.0, 610.0, 572.0, 420.0, 0.0, 10.0, 90.0, 275.0],
             vec![420.0, 750.0, 425.0, 500.0, 0.0, 40.0, 0.0, 388.0],
             vec![0.2; 8760],
@@ -1960,7 +1960,7 @@ mod tests {
             0.25,
             19000.0,
             MassDistributionClass::I,
-            Some(0.),
+            Orientation360::create_from_180(0.)?.into(),
             0.,
             2.,
             10.,
@@ -1974,7 +1974,7 @@ mod tests {
             0.33,
             16000.0,
             MassDistributionClass::D,
-            Some(0.),
+            Orientation360::create_from_180(0.)?.into(),
             0.,
             2.,
             10.,
@@ -2018,7 +2018,7 @@ mod tests {
         let be_transparent = BuildingElement::Transparent(BuildingElementTransparent::new(
             90.,
             0.4,
-            Some(180.),
+            Orientation360::create_from_180(180.)?.into(),
             0.75,
             0.25,
             1.,
@@ -2096,10 +2096,20 @@ mod tests {
         let window_part_list = vec![WindowPart {
             mid_height_air_flow_path: 1.5,
         }];
-        let window = Window::new(1.6, 1., 3., window_part_list, Some(0.), 0., 30., None, 2.5);
+        let window = Window::new(
+            1.6,
+            1.,
+            3.,
+            window_part_list,
+            Some(0.0.into()),
+            0.,
+            30.,
+            None,
+            2.5,
+        );
         let windows = HashMap::from([("window 0".to_string(), window)]);
 
-        let vent = Vent::new(1.5, 100.0, 20.0, 180.0, 60.0, 30.0, 2.5);
+        let vent = Vent::new(1.5, 100.0, 20.0, 180.0.into(), 60.0, 30.0, 2.5);
         let vents = HashMap::from([("vent 1".to_string(), vent)]);
 
         let leaks = CompletedVentilationLeaks {

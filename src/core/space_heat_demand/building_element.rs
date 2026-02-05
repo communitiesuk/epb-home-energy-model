@@ -1,6 +1,7 @@
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::units::{
-    average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, JOULES_PER_KILOJOULE,
+    average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, Orientation360,
+    JOULES_PER_KILOJOULE,
 };
 use crate::corpus::Controls;
 use crate::external_conditions::{
@@ -1083,7 +1084,7 @@ pub(crate) trait SolarRadiationInteraction {
     fn init_solar_radiation_interaction(
         &mut self,
         pitch: f64,
-        orientation: Option<f64>,
+        orientation: Option<Orientation360>,
         shading: Option<Vec<WindowShadingObject>>,
         base_height: f64,
         projected_height: f64,
@@ -1103,8 +1104,8 @@ pub(crate) trait SolarRadiationInteraction {
 
     fn set_external_pitch(&mut self, pitch: f64);
     fn external_pitch(&self) -> f64;
-    fn set_orientation(&mut self, orientation: f64);
-    fn orientation(&self) -> Option<f64>;
+    fn set_orientation(&mut self, orientation: Orientation360);
+    fn orientation(&self) -> Option<Orientation360>;
     fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>);
     fn shading(&self) -> &[WindowShadingObject];
     fn set_base_height(&mut self, base_height: f64);
@@ -1136,7 +1137,7 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
     fn init_solar_radiation_interaction_absorbed(
         &mut self,
         pitch: f64,
-        orientation: Option<f64>,
+        orientation: Option<Orientation360>,
         shading: Option<Vec<WindowShadingObject>>,
         base_height: f64,
         projected_height: f64,
@@ -1277,7 +1278,7 @@ pub(crate) struct BuildingElementOpaque {
     base_height: f64,
     projected_height: f64,
     width: f64,
-    orientation: Option<f64>,
+    orientation: Option<Orientation360>,
     k_m: f64,
     k_pli: [f64; 5],
     h_pli: [f64; 4],
@@ -1317,7 +1318,7 @@ impl BuildingElementOpaque {
         thermal_resistance_construction: f64,
         areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
-        orientation: Option<f64>,
+        orientation: Option<Orientation360>,
         base_height: f64,
         height: f64,
         width: f64,
@@ -1475,11 +1476,11 @@ impl SolarRadiationInteraction for BuildingElementOpaque {
         self.external_pitch
     }
 
-    fn set_orientation(&mut self, orientation: f64) {
+    fn set_orientation(&mut self, orientation: Orientation360) {
         self.orientation = orientation.into();
     }
 
-    fn orientation(&self) -> Option<f64> {
+    fn orientation(&self) -> Option<Orientation360> {
         self.orientation
     }
 
@@ -1545,7 +1546,7 @@ pub(crate) struct BuildingElementAdjacentConditionedSpace {
     f_sky: f64,
     therm_rad_to_sky: f64,
     external_pitch: f64,
-    orientation: f64,
+    orientation: Orientation360,
 }
 
 /// A type to represent building elements adjacent to a thermally conditioned zone (ZTC)
@@ -1712,11 +1713,11 @@ impl SolarRadiationInteraction for BuildingElementAdjacentConditionedSpace {
         self.external_pitch
     }
 
-    fn set_orientation(&mut self, orientation: f64) {
+    fn set_orientation(&mut self, orientation: Orientation360) {
         self.orientation = orientation;
     }
 
-    fn orientation(&self) -> Option<f64> {
+    fn orientation(&self) -> Option<Orientation360> {
         self.orientation.into()
     }
 
@@ -1951,12 +1952,12 @@ impl SolarRadiationInteraction for BuildingElementAdjacentUnconditionedSpaceSimp
         self.external_pitch
     }
 
-    fn set_orientation(&mut self, _orientation: f64) {
+    fn set_orientation(&mut self, _orientation: Orientation360) {
         // do nothing
     }
 
-    fn orientation(&self) -> Option<f64> {
-        0.0.into()
+    fn orientation(&self) -> Option<Orientation360> {
+        Some(0.0.into())
     }
 
     fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
@@ -2387,12 +2388,12 @@ impl SolarRadiationInteraction for BuildingElementGround {
         self.external_pitch
     }
 
-    fn set_orientation(&mut self, _orientation: f64) {
+    fn set_orientation(&mut self, _orientation: Orientation360) {
         // do nothing
     }
 
-    fn orientation(&self) -> Option<f64> {
-        0.0.into()
+    fn orientation(&self) -> Option<Orientation360> {
+        Default::default()
     }
 
     fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
@@ -2524,7 +2525,7 @@ pub(crate) struct BuildingElementTransparent {
     frame_area_fraction: f64,
     pitch: f64,
     external_pitch: f64,
-    orientation: Option<f64>,
+    orientation: Option<Orientation360>,
     base_height: f64,
     projected_height: f64,
     width: f64,
@@ -2559,7 +2560,7 @@ impl BuildingElementTransparent {
     pub(crate) fn new(
         pitch: f64,
         thermal_resistance_construction: f64,
-        orientation: Option<f64>,
+        orientation: Option<Orientation360>,
         g_value: f64,
         frame_area_fraction: f64,
         base_height: f64,
@@ -2843,11 +2844,11 @@ impl SolarRadiationInteraction for BuildingElementTransparent {
         self.external_pitch
     }
 
-    fn set_orientation(&mut self, orientation: f64) {
-        self.orientation = orientation.into();
+    fn set_orientation(&mut self, orientation: Orientation360) {
+        self.orientation.replace(orientation);
     }
 
-    fn orientation(&self) -> Option<f64> {
+    fn orientation(&self) -> Option<Orientation360> {
         self.orientation
     }
 
@@ -3171,7 +3172,7 @@ mod tests {
             0.25,
             19000.0,
             MassDistributionClass::I,
-            Some(0.),
+            Orientation360::create_from_180(0.).unwrap().into(),
             0.,
             2.,
             10.,
@@ -3189,7 +3190,7 @@ mod tests {
             0.50,
             18000.0,
             MassDistributionClass::E,
-            Some(180.),
+            Orientation360::create_from_180(180.0).unwrap().into(),
             0.,
             2.25,
             10.,
@@ -3207,7 +3208,7 @@ mod tests {
             0.75,
             17000.0,
             MassDistributionClass::IE,
-            Some(90.),
+            Orientation360::create_from_180(90.).unwrap().into(),
             0.,
             2.5,
             10.,
@@ -3225,7 +3226,7 @@ mod tests {
             0.80,
             16000.0,
             MassDistributionClass::D,
-            Some(-90.),
+            Orientation360::create_from_180(-90.0).unwrap().into(),
             0.,
             2.75,
             10.,
@@ -3243,7 +3244,7 @@ mod tests {
             0.40,
             15000.0,
             MassDistributionClass::M,
-            Some(0.),
+            Orientation360::create_from_180(0.).unwrap().into(),
             0.,
             3.,
             10.,
@@ -3880,7 +3881,7 @@ mod tests {
             &simulation_time_for_ground.iter(),
             airtemp,
             vec![2.; 8760],
-            vec![180.; 8760],
+            vec![180.; 8760].into_iter().map(Into::into).collect(),
             vec![0.0; 8760],
             vec![0.0; 8760],
             vec![0.0; 8760],
@@ -4224,7 +4225,7 @@ mod tests {
         fn external_pitch(&self) -> f64 {
             unreachable!()
         }
-        fn orientation(&self) -> Option<f64> {
+        fn orientation(&self) -> Option<Orientation360> {
             unreachable!()
         }
         fn projected_height(&self) -> f64 {
@@ -4236,7 +4237,7 @@ mod tests {
         fn set_external_pitch(&mut self, _: f64) {
             unreachable!()
         }
-        fn set_orientation(&mut self, _: f64) {
+        fn set_orientation(&mut self, _: Orientation360) {
             unreachable!()
         }
         fn set_projected_height(&mut self, _: f64) {
@@ -4375,7 +4376,7 @@ mod tests {
         BuildingElementTransparent::new(
             90.,
             0.4,
-            Some(180.),
+            Orientation360::create_from_180(180.).unwrap().into(),
             0.75,
             0.25,
             1.,
@@ -4553,43 +4554,43 @@ mod tests {
     ) -> Arc<ExternalConditions> {
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 135.,
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 135.,
-                end: 90.,
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 90.,
-                end: 45.,
+                start360: Orientation360::create_from_180(90.).unwrap(),
+                end360: Orientation360::create_from_180(45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 45.,
-                end: 0.,
+                start360: Orientation360::create_from_180(45.).unwrap(),
+                end360: Orientation360::create_from_180(0.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 0.,
-                end: -45.,
+                start360: Orientation360::create_from_180(0.).unwrap(),
+                end360: Orientation360::create_from_180(-45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -45.,
-                end: -90.,
+                start360: Orientation360::create_from_180(-45.).unwrap(),
+                end360: Orientation360::create_from_180(-90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -90.,
-                end: -135.,
+                start360: Orientation360::create_from_180(-90.).unwrap(),
+                end360: Orientation360::create_from_180(-135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -135.,
-                end: -180.,
+                start360: Orientation360::create_from_180(-135.).unwrap(),
+                end360: Orientation360::create_from_180(-180.).unwrap(),
                 ..Default::default()
             },
         ]
@@ -4599,7 +4600,7 @@ mod tests {
             &simulation_time,
             vec![0.0, 5.0, 10.0, 15.0],
             vec![0.0; 4],
-            vec![0.0; 4],
+            vec![0.0; 4].into_iter().map(Into::into).collect(),
             diffuse_horizontal_radiations,
             vec![0.0, 0., 0., 0.],
             vec![0.0; 4],
@@ -4954,8 +4955,11 @@ mod tests {
     #[rstest]
     fn test_orientation(transparent_building_element: BuildingElementTransparent) {
         assert_eq!(
-            transparent_building_element.orientation(),
-            Some(180.),
+            transparent_building_element
+                .orientation()
+                .unwrap()
+                .transform_to_180(),
+            180.,
             "incorrect orientation returned"
         );
     }
