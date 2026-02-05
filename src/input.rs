@@ -34,9 +34,9 @@ const HOURS_IN_YEAR: usize = 8760;
 #[validate(custom = validate_time_series)]
 pub struct Input {
     /// Metadata for the input file
-    #[serde(rename = "metadata")]
+    #[serde(rename = "metadata", skip_serializing_if = "Option::is_none")]
     #[validate]
-    metadata: InputMetadata,
+    metadata: Option<InputMetadata>,
 
     #[serde(default)]
     #[validate]
@@ -4400,7 +4400,7 @@ pub enum HeatBattery {
         rated_charge_power: f64,
 
         /// Maximum rated heat losses (unit: kW)
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         max_rated_losses: f64,
 
         /// Number of heat battery units
@@ -5711,7 +5711,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn should_successfully_parse_all_core_demo_files(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let parsed: Result<Input, _> =
@@ -5726,7 +5725,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test to be updated during migration to 1.0.0a6"]
+    #[ignore = "this is more of an acceptance test and takes ~50s at present - find ways to speed this up or run in a different suite"]
     fn should_successfully_deserialise_all_core_demo_files(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Result<Input, _> =
@@ -5741,7 +5740,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_all_demo_files_deserialize_and_serialize(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Input =
@@ -5777,7 +5775,6 @@ mod tests {
 
     /// Test WWHRS validation with empty configuration.
     #[rstest]
-    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_validate_shower_waste_water_heat_recovery_systems_empty(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -5794,7 +5791,6 @@ mod tests {
 
     /// Test WWHRS validation with valid mixer shower configuration.
     #[rstest]
-    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_validate_shower_waste_water_heat_recovery_systems_valid_mixer_shower(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -6007,7 +6003,6 @@ mod tests {
 
     /// Test that compatible exhaust air heat pump and ventilation combinations pass validation.
     #[rstest]
-    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_valid_combinations(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -6050,7 +6045,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_invalid_combinations(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -6097,7 +6091,6 @@ mod tests {
 
     /// Test edge cases where validation should pass regardless of configuration.
     #[rstest]
-    #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_edge_cases(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -6469,7 +6462,6 @@ mod tests {
                 case::phase_transition_temperature_lower_at_least_absolute_zero(json!({"phase_transition_temperature_lower": -9999})
                 ),
             )]
-            #[ignore = "test to be updated during migration to 1.0.0a6"]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<HeatBattery>(valid_example, inputs);
             }
