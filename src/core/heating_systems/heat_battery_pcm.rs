@@ -213,7 +213,6 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
         Ok(vec![(temp_hot_water_req, volume_req)])
     }
 
-    /// Process hot water demand directly from dry core heat battery
     pub(crate) fn demand_hot_water(
         &self,
         usage_events: Option<Vec<WaterEventResult>>,
@@ -4090,6 +4089,200 @@ mod tests {
         assert_relative_eq!(result, 0., epsilon = 1e-7);
     }
 
-    // skipping python's test_demand_hot_water_with_varying_cold_temperatures and
-    // test_demand_hot_water_zero_volume_continue due to mocking
+    /// Test DHW service with cold water temperature that varies with volume demanded
+    #[rstest]
+    fn test_demand_hot_water_with_varying_cold_temperatures(
+        battery_control_off: Control,
+        simulation_time: SimulationTime,
+    ) {
+        let simtime = simulation_time.iter().current_iteration();
+        let heat_battery =
+            create_heat_battery(Arc::new(simulation_time.iter()), battery_control_off, None);
+
+        // Set up cold feed to return different temperatures based on volume
+        // Simulates drawing from a stratified tank or mixed sources
+        fn varying_temp_by_volume(volume_needed: f64) -> Vec<(f64, f64)> {
+            let volume = volume_needed;
+
+            if volume <= 10. {
+                // Small volume - warm water from top of tank
+                vec![(15.0, volume)]
+            } else if volume <= 30. {
+                // Medium volume - mix of warm and cold
+                let warm_portion = 10.;
+                let cold_portion = volume - 10.;
+                vec![(15.0, warm_portion), (8.0, cold_portion)]
+            } else {
+                // Large volume - mostly cold water
+                vec![(15.0, 10.), (8.0, 20.), (5.0, volume - 30.)]
+            }
+        }
+
+        #[derive(Default)]
+        struct VaryingTempWaterSupply {
+            volumes_passed_to_draw_off_hot_water: Arc<RwLock<Vec<f64>>>,
+        }
+
+        impl VaryingTempWaterSupply {
+            fn new(volumes_container: Arc<RwLock<Vec<f64>>>) -> Self {
+                Self {
+                    volumes_passed_to_draw_off_hot_water: volumes_container,
+                }
+            }
+
+            fn register_call_to_draw_off_water(&self, volume: f64) {
+                self.volumes_passed_to_draw_off_hot_water
+                    .write()
+                    .push(volume);
+            }
+
+            fn volumes_passed_to_draw_off_water(&self) -> Vec<f64> {
+                self.volumes_passed_to_draw_off_hot_water.read().clone()
+            }
+        }
+
+        impl WaterSupplyBehaviour for VaryingTempWaterSupply {
+            fn get_temp_cold_water(
+                &self,
+                volume_needed: f64,
+                _simtime: SimulationTimeIteration,
+            ) -> anyhow::Result<Vec<(f64, f64)>> {
+                Ok(varying_temp_by_volume(volume_needed))
+            }
+
+            fn draw_off_water(
+                &self,
+                volume_needed: f64,
+                _simtime: SimulationTimeIteration,
+            ) -> anyhow::Result<Vec<(f64, f64)>> {
+                self.register_call_to_draw_off_water(volume_needed);
+                Ok(varying_temp_by_volume(volume_needed))
+            }
+        }
+
+        let volumes_container: Arc<RwLock<Vec<f64>>> = Default::default();
+
+        let mock_cold_feed = VaryingTempWaterSupply::new(volumes_container.clone());
+
+        let service = HeatBatteryPcm::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "dhw_varying_temp",
+            65.0,
+            mock_cold_feed,
+        )
+        .unwrap();
+
+        // Test with different volume events
+        let usage_events = vec![
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // the Python uses a nonexistent "HandWash" type here - this is the best equivalent
+                temperature_warm: 35.0,
+                volume_warm: 5.0,
+                volume_hot: 5.0, // Small - should get 15°C
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Shower,
+                temperature_warm: 38.0,
+                volume_warm: 40.0,
+                volume_hot: 25.0, // Medium - should get mix (15°C and 8°C)
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Bath,
+                temperature_warm: 40.0,
+                volume_warm: 80.0,
+                volume_hot: 50.0, // Large - should get mix of all three temps
+                event_duration: 0.,
+            },
+        ];
+
+        // Execute
+        let energy = service
+            .demand_hot_water(usage_events.into(), simtime)
+            .unwrap();
+
+        // Varify draw_off_water was called with correct volumes
+        let draw_volumes = volumes_container.read().clone();
+        assert_eq!(draw_volumes.len(), 3);
+
+        assert_eq!(draw_volumes[0], 5.0); // First event volume
+        assert_eq!(draw_volumes[1], 25.0); // Second event volume
+        assert_eq!(draw_volumes[2], 50.0); // Third event volume
+
+        // Energy should be calculated based on varying temperatures
+        assert_relative_eq!(energy, 5.16607777777131, epsilon = 1e-7);
+
+        // Test that different volumes give different inlet temperatures
+        // Reset and test with single large volume
+        volumes_container.write().clear();
+
+        let single_large_event = vec![WaterEventResult {
+            event_result_type: WaterEventResultType::Bath,
+            temperature_warm: 40.0,
+            volume_warm: 80.0,
+            volume_hot: 40.0,
+            event_duration: 0.,
+        }];
+
+        let energy_large = service
+            .demand_hot_water(single_large_event.into(), simtime)
+            .unwrap();
+
+        // For 40L: 10L@15°C + 20L@8°C + 10L@5°C
+        // Average = (150 + 160 + 50) / 40 = 9°C
+
+        // Now test with equivalent volume but as small draws
+        volumes_container.write().clear();
+
+        let multiple_small_events = vec![
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
+                temperature_warm: 40.0,
+                volume_warm: 10.0,
+                volume_hot: 8.0,
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
+                temperature_warm: 40.0,
+                volume_warm: 10.0,
+                volume_hot: 8.0,
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
+                temperature_warm: 40.0,
+                volume_warm: 10.0,
+                volume_hot: 8.0,
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
+                temperature_warm: 40.0,
+                volume_warm: 10.0,
+                volume_hot: 8.0,
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
+                temperature_warm: 40.0,
+                volume_warm: 10.0,
+                volume_hot: 8.0,
+                event_duration: 0.,
+            },
+        ];
+
+        let energy_small_batches = service
+            .demand_hot_water(multiple_small_events.into(), simtime)
+            .unwrap();
+
+        // Small batches all get 15°C water, so should need less energy than large draw
+        // (less heating required when inlet is 15°C vs 9°C average)
+        assert!(energy_small_batches < energy_large);
+        assert_relative_eq!(energy_small_batches, 1.9830605562135022, epsilon = 1e-7);
+        assert_relative_eq!(energy_large, 2.3443371833916435, epsilon = 1e-7);
+    }
+
+    // skipping python's test_demand_hot_water_zero_volume_continue due to mocking
 }
