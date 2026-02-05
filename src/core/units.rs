@@ -1,4 +1,5 @@
 use crate::compare_floats::min_of_2;
+use fsum::FSum;
 use thiserror::Error;
 
 pub const JOULES_PER_KILOWATT_HOUR: u32 = 3_600_000;
@@ -17,11 +18,13 @@ pub(crate) const KNOTS_PER_METRES_PER_SECOND: f64 = 1. / (1852. / 3600.);
 pub const MILLIMETRES_IN_METRE: u32 = 1_000;
 
 pub(crate) fn average_monthly_to_annual(list_monthly_averages: [f64; 12]) -> f64 {
-    list_monthly_averages
-        .iter()
-        .enumerate()
-        .map(|(month_idx, month_ave)| month_ave * DAYS_IN_MONTH[month_idx] as f64)
-        .sum::<f64>()
+    FSum::with_all(
+        list_monthly_averages
+            .iter()
+            .enumerate()
+            .map(|(month_idx, month_ave)| month_ave * DAYS_IN_MONTH[month_idx] as f64),
+    )
+    .value()
         / DAYS_IN_MONTH.iter().sum::<u32>() as f64
 }
 
@@ -49,9 +52,10 @@ pub(crate) fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -
     (0..total_steps)
         .step_by(steps_per_day)
         .map(|y| {
-            timestep_totals[y..min_of_2(y + steps_per_day, timestep_totals.len())]
-                .iter()
-                .sum::<f64>()
+            FSum::with_all(
+                timestep_totals[y..min_of_2(y + steps_per_day, timestep_totals.len())].iter(),
+            )
+            .value()
         })
         .collect()
 }
