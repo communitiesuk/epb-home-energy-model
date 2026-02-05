@@ -133,14 +133,14 @@ impl HeatBatteryPcmServiceWaterRegular {
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
 #[derive(Debug, Clone)]
-pub(crate) struct HeatBatteryPcmServiceWaterDirect {
+pub(crate) struct HeatBatteryPcmServiceWaterDirect<T: WaterSupplyBehaviour> {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
     setpoint_temp: f64,
-    cold_feed: WaterSupply,
+    cold_feed: T,
 }
 
-impl HeatBatteryPcmServiceWaterDirect {
+impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
     /// Arguments:
     /// * `heat_battery` - reference to the HeatBatteryPCM object providing the service
     /// * `service_name` - name of the service demanding energy from the heat battery
@@ -150,7 +150,7 @@ impl HeatBatteryPcmServiceWaterDirect {
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
         setpoint_temp: f64,
-        cold_feed: WaterSupply,
+        cold_feed: T,
     ) -> Self {
         Self {
             heat_battery,
@@ -160,7 +160,7 @@ impl HeatBatteryPcmServiceWaterDirect {
         }
     }
 
-    pub(crate) fn get_cold_water_source(&self) -> &WaterSupply {
+    pub(crate) fn get_cold_water_source(&self) -> &T {
         &self.cold_feed
     }
 
@@ -696,12 +696,12 @@ impl HeatBatteryPcm {
     /// * `service_name` - name of the service demanding energy from the heat battery
     /// * `setpoint_temp` - temperature of hot water to be provided, in deg C
     /// * `cold_feed` - reference to ColdWaterSource object
-    pub(crate) fn create_service_hot_water_direct(
+    pub(crate) fn create_service_hot_water_direct<T: WaterSupplyBehaviour>(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         setpoint_temp: f64,
-        cold_feed: WaterSupply,
-    ) -> anyhow::Result<HeatBatteryPcmServiceWaterDirect> {
+        cold_feed: T,
+    ) -> anyhow::Result<HeatBatteryPcmServiceWaterDirect<T>> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterDirect::new(
             heat_battery,
@@ -1980,6 +1980,7 @@ mod tests {
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+    use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
         ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,
@@ -2223,37 +2224,31 @@ mod tests {
     fn heat_battery_service_water_direct(
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
-    ) -> HeatBatteryPcmServiceWaterDirect {
+    ) -> HeatBatteryPcmServiceWaterDirect<MockWaterSupply> {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
-        let cold_feed =
-            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+        let mock_cold_feed = MockWaterSupply::new(10.);
         let service_name = "WaterHeating".into();
 
-        HeatBatteryPcmServiceWaterDirect::new(heat_battery, service_name, 60., cold_feed.clone())
+        HeatBatteryPcmServiceWaterDirect::new(heat_battery, service_name, 60., mock_cold_feed)
     }
 
     #[rstest]
     fn test_get_cold_water_source_for_water_direct(
-        heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
+        heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect<MockWaterSupply>,
     ) {
-        let expected =
-            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+        let expected = &MockWaterSupply::new(10.);
+
         let actual = heat_battery_service_water_direct.get_cold_water_source();
 
-        match (actual, expected) {
-            (WaterSupply::ColdWaterSource(actual), WaterSupply::ColdWaterSource(expected)) => {
-                assert_eq!(actual, &expected);
-            }
-            _ => panic!("Expected ColdWaterSource variant"),
-        }
+        assert_eq!(actual, expected);
     }
 
     #[rstest]
     fn test_get_temp_hot_water_for_water_direct(
-        mut heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
+        mut heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect<MockWaterSupply>,
         simulation_time_iteration: SimulationTimeIteration,
     ) {
-        heat_battery_service_water_direct.cold_feed = WaterSupply::Mock(MockWaterSupply::new(25.));
+        heat_battery_service_water_direct.cold_feed = MockWaterSupply::new(25.);
 
         let expected = vec![(60., 20.)];
         let actual = heat_battery_service_water_direct
@@ -2879,25 +2874,40 @@ mod tests {
         simulation_time_iteration: SimulationTimeIteration,
     ) {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
-        let cold_feed =
-            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+        let mock_cold_feed = MockWaterSupply::new(10.);
         let service = HeatBatteryPcm::create_service_hot_water_direct(
             heat_battery,
             "dhw_complex",
             65., // High setpoint
-            cold_feed.clone(),
+            mock_cold_feed,
         )
         .unwrap();
 
         let actual = service.get_cold_water_source();
 
-        match (actual, cold_feed) {
-            (WaterSupply::ColdWaterSource(actual), WaterSupply::ColdWaterSource(cold_feed)) => {
-                assert_eq!(actual, &cold_feed);
-            }
-            _ => panic!("Expected ColdWaterSource variant"),
-        }
-        // Python tests with usage events here using mocking that is not easy to replicate
+        assert_eq!(actual, &mock_cold_feed);
+
+        // Test with usage events
+        let usage_events = vec![
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                temperature_warm: 40.0,
+                volume_warm: 50.0,
+                volume_hot: 8.0,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                temperature_warm: 35.0,
+                volume_warm: 0.0,
+                volume_hot: 0.0,
+            },
+        ];
+
+        let energy = service
+            .demand_hot_water(Some(usage_events), simulation_time_iteration)
+            .unwrap();
+
+        assert_eq!(energy, 0.5113777776161836);
 
         // Test with no usage events
         let energy_no_usage = service
@@ -3655,7 +3665,7 @@ mod tests {
                 ("hb_zone_temperatures5".into(), Some("degC".into())) => vec![40.000001662652714.into(), 38.82080342718701.into()],
                 ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![40.000035634835044.into(), 38.82066151993296.into()],
                 ("hb_zone_temperatures7".into(), Some("degC".into())) => vec![40.000735381503034.into(), 38.82126609103635.into()],
-                ("current_hb_power".into(), Some("kW".into())) => vec![10.509408477594043.into(), (0.0).into()],
+                ("current_hb_power".into(), Some("kW".into())) => vec![10.509408477594043.into(), 0.0.into()],
             },
         };
 

@@ -5020,7 +5020,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
 
 #[derive(Clone, Debug)]
 pub(crate) enum HeatBatteryHotWaterSource {
-    Pcm(Arc<HeatBatteryPcmServiceWaterDirect>),
+    Pcm(Arc<HeatBatteryPcmServiceWaterDirect<WaterSupply>>),
     DryCore(Arc<HeatBatteryDryCoreServiceWaterDirect<WaterSupply>>),
 }
 

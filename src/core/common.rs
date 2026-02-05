@@ -79,7 +79,7 @@ impl WaterSupplyBehaviour for WaterSupply {
 }
 
 #[cfg(test)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct MockWaterSupply {
     temperature: f64,
 }
