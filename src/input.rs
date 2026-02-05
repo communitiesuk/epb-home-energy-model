@@ -4035,7 +4035,7 @@ pub enum HeatSourceWetDetails {
 
         /// Maximum backup power (unit: kW)
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[validate(minimum = 0.)]
+        #[validate(exclusive_minimum = 0.)]
         power_max_backup: Option<f64>,
 
         /// Power consumption when heat pump is off (unit: kW)
@@ -6501,7 +6501,7 @@ mod tests {
             use super::*;
 
             #[fixture]
-            fn valid_example() -> JsonValue {
+            fn valid_heat_pump() -> JsonValue {
                 serde_json::to_value(HeatSourceWetDetails::HeatPump {
                     buffer_tank: None,
                     energy_supply: "mains elec".into(),
@@ -6530,10 +6530,28 @@ mod tests {
                     temp_return_feed_max: Some(70.),
                     test_data_en14825: vec![],
                     time_constant_onoff_operation: 140.,
-                    time_delay_backup: None,
+                    time_delay_backup: Some(0.5),
                     var_flow_temp_ctrl_during_test: true,
                 })
                 .unwrap()
+            }
+
+            #[fixture]
+            fn valid_boiler() -> HeatPumpBoiler {
+                HeatPumpBoiler {
+                    energy_supply: "mains_gas".into(),
+                    energy_supply_aux: "mains_elec".into(),
+                    rated_power: 6.0,
+                    efficiency_full_load: 0.9,
+                    efficiency_part_load: 0.7,
+                    boiler_location: HeatSourceLocation::Internal,
+                    modulation_load: 0.0,
+                    electricity_circ_pump: 0.0,
+                    electricity_part_load: 0.1,
+                    electricity_full_load: 0.2,
+                    electricity_standby: 0.01,
+                    cost_schedule_hybrid: None,
+                }
             }
 
             #[rstest(inputs,
@@ -6541,11 +6559,11 @@ mod tests {
                 ),
                 case::eahp_mixed_min_temp_at_least_absolute_zero(json!({"eahp_mixed_min_temp": -274})
                 ),
-                case::temp_distribution_heat_network_at_least_absolute_zero(json!({"temp_distribution_heat_network": -274})
+                case::temp_distribution_heat_network_greater_than_zero(json!({"temp_distribution_heat_network": 0})
                 ),
                 case::temp_lower_operating_limit_at_least_absolute_zero(json!({"temp_lower_operating_limit": -274})
                 ),
-                case::temp_return_feed_max_at_least_absolute_zero(json!({"temp_return_feed_max": -274})
+                case::temp_return_feed_max_greater_than_zero(json!({"temp_return_feed_max": 0})
                 ),
                 case::min_modulation_rate_20_at_least_zero(json!({"min_modulation_rate_20": -1})),
                 case::min_modulation_rate_20_at_most_one(json!({"min_modulation_rate_20": 2})),
@@ -6557,16 +6575,104 @@ mod tests {
                 case::power_heating_circ_pump_at_least_zero(json!({"power_heating_circ_pump": -1})),
                 case::power_heating_warm_air_fan_at_least_zero(json!({"power_heating_warm_air_fan": -1})
                 ),
-                case::power_max_backup_at_least_zero(json!({"power_max_backup": -1})),
+                case::power_max_backup_greater_than_zero(json!({"power_max_backup": 0})),
                 case::power_off_at_least_zero(json!({"power_off": -1})),
                 case::power_source_circ_pump_at_least_zero(json!({"power_source_circ_pump": -1})),
-                case::power_standby_at_least_zero(json!({"power_standby": -1})),
-                case::time_constant_onoff_operation_at_least_zero(json!({"time_constant_onoff_operation": -1})
+                case::power_standby_at_least_zero(json!({"power_standby": -0.1})),
+                case::time_constant_onoff_operation_greater_than_zero(json!({"time_constant_onoff_operation": 0})
                 ),
                 case::time_delay_backup_at_least_zero(json!({"time_delay_backup": -1})),
             )]
-            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
-                assert_range_constraints::<HeatSourceWetDetails>(valid_example, inputs);
+            fn test_validate_range_constraints(valid_heat_pump: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<HeatSourceWetDetails>(valid_heat_pump, inputs);
+            }
+
+            #[rstest]
+            #[case(json!({
+                "boiler": null,
+                "backup_ctrl_type": "TopUp",
+                "power_max_backup": 3.0,
+                "time_delay_backup": 0.5,
+            }), true, None)]
+            #[case(json!({
+                "boiler": null,
+                "backup_ctrl_type": "Substitute",
+                "power_max_backup": 3.0,
+                "time_delay_backup": 0.5,
+            }), true, None)]
+            #[case(json!({
+                "boiler": true,
+                "backup_ctrl_type": "TopUp",
+                "power_max_backup": null,
+                "time_delay_backup": 0.5,
+            }), true, None)]
+            #[case(json!({
+                "boiler": true,
+                "backup_ctrl_type": "Substitute",
+                "power_max_backup": null,
+                "time_delay_backup": 0.5,
+            }), true, None)]
+            #[case(json!({
+                "boiler": null,
+                "backup_ctrl_type": "None",
+                "power_max_backup": 3.0,
+                "time_delay_backup": 0.5,
+            }), false, "power_max_backup can not be set if backup_ctrl_type is 'None'.".into())]
+            #[case(json!({
+                "boiler": true,
+                "backup_ctrl_type": "None",
+                "power_max_backup": null,
+                "time_delay_backup": 0.5,
+            }), false, "boiler can not be set if backup_ctrl_type is 'None'.".into())]
+            #[case(json!({
+                "boiler": null,
+                "backup_ctrl_type": "TopUp",
+                "power_max_backup": 3.0,
+                "time_delay_backup": null,
+            }), false, "time_delay_backup is required if backup_ctrl_type is set.".into())]
+            #[case(json!({
+                "boiler": true,
+                "backup_ctrl_type": "None",
+                "power_max_backup": 3.0,
+                "time_delay_backup": 0.5,
+            }), false, "power_max_backup and boiler can not both be set.".into())]
+            #[case(json!({
+                "boiler": null,
+                "backup_ctrl_type": "TopUp",
+                "power_max_backup": null,
+                "time_delay_backup": 0.5,
+            }), false, "Either power_max_backup or boiler is required if backup_ctrl_type is set.".into())]
+            fn test_validate_backup_configuration(
+                #[case] mut inputs: JsonValue,
+                #[case] valid: bool,
+                #[case] exception_match: Option<&str>,
+                mut valid_heat_pump: JsonValue,
+                valid_boiler: HeatPumpBoiler,
+            ) {
+                if let JsonValue::Bool(true) = inputs["boiler"] {
+                    inputs["boiler"] = serde_json::to_value(valid_boiler).unwrap();
+                }
+                valid_heat_pump
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(inputs.as_object().unwrap().to_owned());
+                if valid {
+                    let heat_pump = serde_json::from_value::<HeatSourceWetDetails>(valid_heat_pump);
+                    assert!(heat_pump.is_ok());
+                    assert!(heat_pump.unwrap().validate().is_ok());
+                } else {
+                    assert!(
+                        serde_json::from_value::<HeatSourceWetDetails>(valid_heat_pump).is_ok_and(
+                            |heat_pump| {
+                                if let Err(e) = heat_pump.validate() {
+                                    e.to_string().contains(exception_match.unwrap())
+                                } else {
+                                    panic!("Validation of heat pump was expected to fail.")
+                                }
+                            }
+                        )
+                    );
+                }
             }
         }
     }
@@ -7978,7 +8084,7 @@ mod tests {
                 case::dry_core_min_output_item_at_least_zero(json!({"dry_core_min_output": [[-1], [-1]]})
                 ),
                 case::fan_pwr_at_least_zero(json!({"fan_pwr": -1})),
-                case::pwr_in_at_least_zero(json!({"pwr_in": -1})),
+                case::pwr_in_greate_than_zero(json!({"pwr_in": 0})),
                 case::rated_power_instant_at_least_zero(json!({"rated_power_instant": -1})),
                 case::frac_convective_at_least_zero(json!({"frac_convective": -1})),
                 case::frac_convective_at_most_one(json!({"frac_convective": 2})),
@@ -8849,7 +8955,7 @@ mod tests {
                     ],
                     "fan_power_W": [15, 19, 25, 33, 43, 56],
                 })),
-            case::fan_power_at_least_zero(json!({"fan_power_W": [-1]})),
+            case::fan_power_greater_than_zero(json!({"fan_power_W": [0]})),
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<FancoilTestData>(valid_example, inputs);
@@ -8988,41 +9094,33 @@ mod tests {
             assert!(!invalid_example.are_all_fields_set());
         }
 
-        #[fixture]
-        fn base_for_length_test() -> JsonValue {
-            json!({
-                "air_temperatures": vec![0.0; 8760],
-                "wind_speeds": vec![0.0; 8760],
-                "wind_directions": vec![0.0; 8760],
-                "diffuse_horizontal_radiation": vec![0.0; 8760],
-                "direct_beam_conversion_needed": false,
-                "direct_beam_radiation": vec![0.0; 8760],
-                "latitude": 13.9,
-                "longitude": 34.2,
-                "shading_segments": [],
-                "solar_reflectivity_of_ground": vec![0.0; 8760],
-            })
-        }
+        fn test_are_all_fields_set_invalid_lengths1() {
+            let valid_example = ExternalConditionsInput {
+                air_temperatures: Some(vec![0.; 8760]),
+                diffuse_horizontal_radiation: Some(vec![0.; 8760]),
+                direct_beam_conversion_needed: false.into(),
+                direct_beam_radiation: Some(vec![0.; 8760]),
+                latitude: Some(13.9),
+                longitude: Some(34.2),
+                shading_segments: Some(vec![]),
+                solar_reflectivity_of_ground: Some(vec![0.; 8760]),
+                wind_directions: Some(vec![0.; 8760]),
+                wind_speeds: Some(vec![0.; 8760]),
+            };
 
-        #[rstest(inputs,
-            case::fail_when_air_temperatures_wrong_length(json!({"air_temperatures": [0]})),
-            case::fail_when_wind_speeds_wrong_length(json!({"wind_speeds": [0]})),
-            case::fail_when_wind_directions_wrong_length(json!({"wind_directions": [0]})),
-            case::fail_when_diffuse_horizontal_radiation_wrong_length(json!({"diffuse_horizontal_radiation": [0]})
-            ),
-            case::fail_when_direct_beam_radiation_wrong_length(json!({"direct_beam_radiation": [0]})
-            ),
-            case::fail_when_solar_reflectivity_of_ground_wrong_length(json!({"solar_reflectivity_of_ground": [0]})
-            ),
-        )]
-        fn test_are_all_fields_set_invalid_lengths(
-            base_for_length_test: JsonValue,
-            inputs: JsonValue,
-        ) {
-            let modified_input = merge_json_onto_base(base_for_length_test, inputs);
-            let external_conditions: ExternalConditionsInput =
-                serde_json::from_value(modified_input).unwrap();
-            assert!(!external_conditions.are_all_fields_set());
+            for field in [
+                "air_temperatures",
+                "wind_speeds",
+                "wind_directions",
+                "diffuse_horizontal_radiation",
+                "direct_beam_radiation",
+                "solar_reflectivity_of_ground",
+            ] {
+                let mut input = serde_json::to_value(valid_example.clone()).unwrap();
+                input[field] = [0.0].into();
+                let new_input = serde_json::from_value::<ExternalConditionsInput>(input).unwrap();
+                assert!(!new_input.are_all_fields_set());
+            }
         }
     }
 
