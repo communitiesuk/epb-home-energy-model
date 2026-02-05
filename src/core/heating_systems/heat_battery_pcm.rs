@@ -1973,13 +1973,12 @@ type ResultPerTimestep = IndexMap<(Arc<str>, Option<Arc<str>>), Vec<ResultParamV
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::common::{MockWaterSupply, WaterSupply};
+    use crate::core::common::MockWaterSupply;
     use crate::core::controls::time_control::{ChargeControl, Control};
     use crate::core::controls::time_control::{MockControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
-    use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
@@ -2535,24 +2534,18 @@ mod tests {
         battery_control_on: Control,
     ) {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on, None);
-        let cold_feed =
-            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+        let mock_cold_feed = MockWaterSupply::new(10.);
         let service = HeatBatteryPcm::create_service_hot_water_direct(
             heat_battery.clone(),
             "new_service",
             60.,
-            cold_feed.clone(),
+            mock_cold_feed,
         )
         .unwrap();
 
         let actual = service.get_cold_water_source();
 
-        match (actual, cold_feed) {
-            (WaterSupply::ColdWaterSource(actual), WaterSupply::ColdWaterSource(cold_feed)) => {
-                assert_eq!(actual, &cold_feed);
-            }
-            _ => panic!("Expected ColdWaterSource variant"),
-        }
+        assert_eq!(actual, &mock_cold_feed);
 
         assert!(heat_battery
             .read()
@@ -2948,14 +2941,13 @@ mod tests {
     ) {
         let heat_battery =
             create_heat_battery(simulation_time_iterator.clone(), battery_control_on, None);
-        let cold_feed =
-            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+        let mock_cold_feed = MockWaterSupply::new(10.);
         // Create only a direct hot water service
         HeatBatteryPcm::create_service_hot_water_direct(
             heat_battery.clone(),
             "dhw_direct",
             60.,
-            cold_feed,
+            mock_cold_feed,
         )
         .unwrap();
 
@@ -3398,14 +3390,13 @@ mod tests {
         heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
     ) {
         let heat_battery = heat_battery_no_service_connection;
-        let cold_feed =
-            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+        let mock_cold_feed = MockWaterSupply::new(10.);
         let service_name = "new_service";
 
         HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
             service_name,
-            cold_feed.clone(),
+            mock_cold_feed,
             Arc::new(Control::Mock(MockControl::default())),
             Arc::new(Control::Mock(MockControl::default())),
         )
@@ -4012,13 +4003,12 @@ mod tests {
     ) {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off, None);
         let service_name = "test_service";
-        let cold_feed =
-            WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.)));
+        let mock_cold_feed = MockWaterSupply::new(10.);
 
         let result = HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
             service_name,
-            cold_feed.clone(),
+            mock_cold_feed,
             Arc::new(Control::Mock(MockControl::default())),
             Arc::new(Control::Mock(MockControl::default())),
         );
@@ -4028,7 +4018,7 @@ mod tests {
         let result = HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery,
             service_name,
-            cold_feed,
+            mock_cold_feed,
             Arc::new(Control::Mock(MockControl::default())),
             Arc::new(Control::Mock(MockControl::default())),
         );
