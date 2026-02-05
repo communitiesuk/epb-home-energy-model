@@ -5700,6 +5700,9 @@ mod tests {
             .filter(|e| {
                 !e.file_type().is_dir()
                     && e.file_name().to_str().unwrap().ends_with("json")
+                    // exclude FHS input files from unit test runs as they are very long
+                    // and rest of files give a good spread
+                    && !e.file_name().to_str().unwrap().contains("FHS")
                     && !e
                         .path()
                         .parent()
@@ -5740,7 +5743,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "this is more of an acceptance test and takes ~50s at present - find ways to speed this up or run in a different suite"]
     fn test_all_demo_files_deserialize_and_serialize(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Input =
