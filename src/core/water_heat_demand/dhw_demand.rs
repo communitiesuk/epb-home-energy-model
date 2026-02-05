@@ -591,6 +591,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                     temperature_warm: event.temperature,
                     volume_warm: hw_demand_target_i,
                     volume_hot: hw_demand_i.unwrap(),
+                    event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
                 };
 
                 // Add pipework flushes after every event (except for IES)
@@ -622,6 +623,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                                 temperature_warm: temperature_pipe_flush,
                                 volume_warm: volume_required,
                                 volume_hot: volume_required,
+                                event_duration: 0.0, // temporary - to be updated in 1.0.06a migration
                             });
 
                         *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() +=
@@ -1505,12 +1507,14 @@ mod tests {
                                 temperature_warm: 41.,
                                 volume_warm: 20.378383818053738,
                                 volume_hot: 0.,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::Shower,
                                 temperature_warm: 41.,
                                 volume_warm: 20.378383818053738,
                                 volume_hot: 0.,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                         ],
                     ),
@@ -1549,6 +1553,7 @@ mod tests {
                             temperature_warm: 41.,
                             volume_warm: 19.85586115605236,
                             volume_hot: 0.,
+                            event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                         }],
                     ),
                     (
@@ -1559,12 +1564,14 @@ mod tests {
                                 temperature_warm: 41.,
                                 volume_warm: 100.,
                                 volume_hot: 73.58490566037736,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 55.,
                                 volume_warm: 7.556577529434648,
                                 volume_hot: 7.556577529434648,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                         ],
                     ),
@@ -1594,24 +1601,28 @@ mod tests {
                                 temperature_warm: 41.,
                                 volume_warm: 48.,
                                 volume_hot: 32.63058513558019,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 55.,
                                 volume_warm: 7.556577529434648,
                                 volume_hot: 7.556577529434648,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 41.,
                                 volume_warm: 8.,
                                 volume_hot: 5.846153846153845,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 55.,
                                 volume_warm: 7.556577529434648,
                                 volume_hot: 7.556577529434648,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                         ],
                     ),
@@ -1641,24 +1652,28 @@ mod tests {
                                 temperature_warm: 41.,
                                 volume_warm: 48.,
                                 volume_hot: 32.365493807269814,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 55.,
                                 volume_warm: 7.556577529434648,
                                 volume_hot: 7.556577529434648,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::Bath,
                                 temperature_warm: 55.,
                                 volume_warm: 24.,
                                 volume_hot: 17.41176470588235,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 54.99999999999999,
                                 volume_warm: 7.556577529434648,
                                 volume_hot: 7.556577529434648,
+                                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                             },
                         ],
                     ),

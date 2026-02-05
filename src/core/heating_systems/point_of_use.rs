@@ -146,12 +146,14 @@ mod tests {
                 volume_hot: 60.,
                 volume_warm: 60.,
                 temperature_warm: 55.,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other,
                 volume_hot: 0.,
                 volume_warm: 0.,
                 temperature_warm: 55.,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
         ];
 

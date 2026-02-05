@@ -2886,12 +2886,14 @@ mod tests {
                 temperature_warm: 40.0,
                 volume_warm: 50.0,
                 volume_hot: 8.0,
+                event_duration: 0.0,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other,
                 temperature_warm: 35.0,
                 volume_warm: 0.0,
                 volume_hot: 0.0,
+                event_duration: 0.0,
             },
         ];
 

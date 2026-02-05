@@ -2443,12 +2443,14 @@ mod tests {
                 temperature_warm: 40.0,
                 volume_warm: 50.0,
                 volume_hot: 8.0,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other,
                 temperature_warm: 35.0,
                 volume_warm: 0.0,
                 volume_hot: 0.0,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
         ];
 
@@ -2775,6 +2777,7 @@ mod tests {
                 temperature_warm: 40.0,
                 volume_warm: 30.0,
                 volume_hot: 20.0,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             }];
             let _dhw_energy = dhw_service
                 .demand_hot_water(usage_events.into(), t_it)
@@ -3405,19 +3408,22 @@ mod tests {
                 event_result_type: WaterEventResultType::Other, // the Python uses a nonexistent "HandWash" type here - this is the best equivalent
                 temperature_warm: 35.0,
                 volume_warm: 5.0,
-                volume_hot: 5.0, // Small - should get 15°C
+                volume_hot: 5.0,     // Small - should get 15°C
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Shower,
                 temperature_warm: 38.0,
                 volume_warm: 40.0,
-                volume_hot: 25.0, // Medium - should get mix (15°C and 8°C)
+                volume_hot: 25.0,    // Medium - should get mix (15°C and 8°C)
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Bath,
                 temperature_warm: 40.0,
                 volume_warm: 80.0,
-                volume_hot: 50.0, // Large - should get mix of all three temps
+                volume_hot: 50.0,    // Large - should get mix of all three temps
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
         ];
 
@@ -3446,6 +3452,7 @@ mod tests {
             temperature_warm: 40.0,
             volume_warm: 80.0,
             volume_hot: 40.0,
+            event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
         }];
 
         let energy_large = service
@@ -3464,30 +3471,35 @@ mod tests {
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             },
         ];
 

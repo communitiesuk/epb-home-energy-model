@@ -4081,6 +4081,7 @@ mod tests {
                         temperature_warm: event.temperature_warm,
                         volume_warm: event.volume_warm,
                         volume_hot,
+                        event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                     });
                 }
             }
@@ -4454,6 +4455,7 @@ mod tests {
             temperature_warm: 41.0,
             volume_warm: 8.0,
             volume_hot: 5.511111111111113,
+            event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
         };
 
         assert_eq!(
@@ -5295,18 +5297,21 @@ mod tests {
                     temperature_warm: 41.0,
                     volume_warm: 48.0,
                     volume_hot: 33.0666666666667,
+                    event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                 },
                 WaterEventResult {
                     event_result_type: WaterEventResultType::Bath,
                     temperature_warm: 43.0,
                     volume_warm: 100.0,
                     volume_hot: 73.3333333333333,
+                    event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                 },
                 WaterEventResult {
                     event_result_type: WaterEventResultType::Other,
                     temperature_warm: 40.0,
                     volume_warm: 8.0,
                     volume_hot: 5.3333333333333,
+                    event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                 },
             ]),
             Some(vec![WaterEventResult {
@@ -5314,6 +5319,7 @@ mod tests {
                 temperature_warm: 41.0,
                 volume_warm: 48.0,
                 volume_hot: 33.0334075723831,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             Some(vec![WaterEventResult {
@@ -5321,6 +5327,7 @@ mod tests {
                 temperature_warm: 45.0,
                 volume_warm: 48.0,
                 volume_hot: 37.8988082756996,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             Some(vec![WaterEventResult {
@@ -5328,6 +5335,7 @@ mod tests {
                 temperature_warm: 41.0,
                 volume_warm: 52.0,
                 volume_hot: 35.4545454545455,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             None,
@@ -5346,6 +5354,7 @@ mod tests {
                 temperature_warm: 41.0,
                 volume_warm: 48.0,
                 volume_hot: 30.5956261482843,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             Some(vec![WaterEventResult {
@@ -5353,6 +5362,7 @@ mod tests {
                 temperature_warm: 45.0,
                 volume_warm: 48.0,
                 volume_hot: 36.4281898110265,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             Some(vec![WaterEventResult {
@@ -5360,6 +5370,7 @@ mod tests {
                 temperature_warm: 41.0,
                 volume_warm: 52.0,
                 volume_hot: 34.4038433055010,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             None,
@@ -5369,6 +5380,7 @@ mod tests {
                 temperature_warm: 41.0,
                 volume_warm: 48.0,
                 volume_hot: 33.3416695316938,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             Some(vec![]),
@@ -5378,6 +5390,7 @@ mod tests {
                 temperature_warm: 41.0,
                 volume_warm: 52.0,
                 volume_hot: 40.521971319747124,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             None,
@@ -5387,6 +5400,7 @@ mod tests {
                 temperature_warm: 41.0,
                 volume_warm: 48.0,
                 volume_hot: 30.5956261482843,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             Some(vec![WaterEventResult {
@@ -5394,6 +5408,7 @@ mod tests {
                 temperature_warm: 45.0,
                 volume_warm: 48.0,
                 volume_hot: 36.42818981102645,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             Some(vec![WaterEventResult {
@@ -5401,6 +5416,7 @@ mod tests {
                 temperature_warm: 41.0,
                 volume_warm: 52.0,
                 volume_hot: 34.40384330550096,
+                event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
             }]),
             None,
             None,
@@ -5676,6 +5692,7 @@ mod tests {
                         temperature_warm: event.temperature_warm,
                         volume_warm: event.volume_warm,
                         volume_hot,
+                        event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                     });
                 }
             }
@@ -5720,6 +5737,7 @@ mod tests {
                         temperature_warm: event.temperature_warm,
                         volume_warm: event.volume_warm,
                         volume_hot,
+                        event_duration: 5.0, // TODO temporary - to be updated in 1.0.06a migration
                     });
                 }
             }

@@ -608,6 +608,7 @@ mod tests {
                     volume_warm: 34.93868988826640,
                     #[allow(clippy::excessive_precision)]
                     volume_hot: 34.93868988826640,
+                    event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
                 },
                 WaterEventResult {
                     event_result_type: WaterEventResultType::Other,
@@ -616,12 +617,14 @@ mod tests {
                     volume_warm: 75.65325966014560,
                     #[allow(clippy::excessive_precision)]
                     volume_hot: 75.65325966014560,
+                    event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
                 },
                 WaterEventResult {
                     event_result_type: WaterEventResultType::Other,
                     temperature_warm: 60.,
                     volume_warm: 0.,
                     volume_hot: 0.,
+                    event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
                 },
             ],
             vec![WaterEventResult {
@@ -629,6 +632,7 @@ mod tests {
                 temperature_warm: 60.,
                 volume_warm: 32.60190808710678,
                 volume_hot: 32.60190808710678,
+                event_duration: 5.0, // temporary - to be updated in 1.0.06a migration
             }],
         ];
 
