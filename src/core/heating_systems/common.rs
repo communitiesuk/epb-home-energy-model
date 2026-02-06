@@ -129,8 +129,12 @@ impl HeatSourceWet {
                     simtime,
                 )
                 .map(|x| x.0),
-            HeatSourceWet::HeatNetworkWaterStorage(water_storage) => Ok(water_storage
-                .demand_energy(energy_demand, Default::default(), temperature, &simtime)),
+            HeatSourceWet::HeatNetworkWaterStorage(water_storage) => water_storage.demand_energy(
+                energy_demand,
+                Default::default(),
+                temperature,
+                &simtime,
+            ),
             HeatSourceWet::HeatBatteryHotWater(battery) => {
                 battery.demand_energy(energy_demand, temp_flow, temperature, None, simtime)
             }
@@ -467,7 +471,7 @@ impl SpaceHeatingService {
                     time_start,
                     update_heat_source_state,
                     &simulation_time_iteration,
-                ),
+                )?,
                 None,
             )),
             SpaceHeatingService::HeatBattery(ref mut heat_battery_service_space) => {
