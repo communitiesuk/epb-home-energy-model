@@ -108,6 +108,8 @@ impl WwhrsInstantaneous {
         })
     }
 
+    pub(crate) fn register_preheated_volume(&self, _temperature: f64, _volume: f64) {} // TODO 1.0.0a6 migration
+
     /// Calculate WWHRS performance based on system type.
     ///
     /// Args:

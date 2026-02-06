@@ -7,6 +7,7 @@ use crate::core::water_heat_demand::misc::volume_hot_water_required;
 use crate::input::WaterHeatingEvent;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
+use fsum::FSum;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -132,27 +133,54 @@ impl MixerShower {
                 anyhow!("Flowrate hot water not available from WWHRS calculation")
             })? * total_shower_duration;
 
-            // Set the actual return temperature given the temperature and flowrate of the waste water.
+            // Register pre-heated water availability for the hot water system.
+
+            // How WWHRS pre-heating works:
+            // - Waste water (volume_warm_water) flows down the drain through the WWHRS
+            // - Cold mains water flows through the other side of the heat exchanger
+            // - The volume of water that can be pre-heated is limited by the waste water flow
+
+            // For System A: Pre-heated water feeds BOTH the shower's cold inlet AND the
+            //   cylinder. The WWHRS calculation above already accounts for the shower
+            //   receiving pre-heated water (reflected in the reduced volume_hot_water).
+            //   We register the TOTAL volume of waste water as available for pre-heating,
+            //   because all of it passes through the heat exchanger. The shower's cold
+            //   water draw will consume part of this, leaving the remainder for the
+            //   cylinder's draw.
+
+            // For System B: Pre-heated water feeds ONLY the shower's cold inlet, not the
+            //   cylinder. No registration needed as cylinder gets mains temperature.
+
+            // For System C: Pre-heated water feeds ONLY the cylinder, not the shower.
+            //   The shower draws mains-temperature cold water, so we register the full
+            //   waste water volume as available for the cylinder.
             if !matches!(self.wwhrs_configuration, WwhrsConfiguration::BShower) {
                 if let Some(wwhrs) = self.wwhrs.as_ref() {
                     wwhrs
                         .lock()
-                        .set_temperature_for_return(wwhrs_cyl_feed_temperature);
+                        .register_preheated_volume(wwhrs_cyl_feed_temperature, volume_warm_water);
                 }
             }
         }
 
         let volume_cold_water = volume_warm_water - volume_hot_water;
 
+        // Draw cold water for the shower.
+        // For System A: draw from WWHRS (consumes pre-heated volume, remainder for cylinder)
+        // For System B: draw from WWHRS (shower gets pre-heated water, but we didn't
+        //               register any volume since cylinder doesn't benefit)
+        // For System C: draw from cold_water_source (shower gets mains, cylinder gets
+        //               pre-heated via the registered volume)
         match (self.wwhrs.as_ref(), self.wwhrs_configuration) {
             (
                 Some(wwhrs),
-                WwhrsConfiguration::AShowerAndWaterHeatingSystem
-                | WwhrsConfiguration::CWaterHeatingSystem,
+                WwhrsConfiguration::AShowerAndWaterHeatingSystem | WwhrsConfiguration::BShower,
             ) => {
+                // Systems A and B: shower's cold feed comes through WWHRS
                 wwhrs.lock().draw_off_water(volume_cold_water);
             }
             _ => {
+                // System C or no WWHRS: shower's cold feed comes from mains
                 self.cold_water_source
                     .draw_off_water(volume_cold_water, simtime)?;
             }
@@ -211,11 +239,9 @@ impl InstantElectricShower {
             let list_temperature_volume = self
                 .cold_water_source
                 .get_temp_cold_water(volume_warm_water, simtime)?;
-            let temperature_cold = list_temperature_volume
-                .iter()
-                .map(|(t, v)| t * v)
-                .sum::<f64>()
-                / list_temperature_volume.iter().map(|(_, v)| v).sum::<f64>();
+            let temperature_cold =
+                FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value()
+                    / FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
             volume_warm_water_prev = volume_warm_water;
             volume_warm_water = electricity_demand
                 / WATER
