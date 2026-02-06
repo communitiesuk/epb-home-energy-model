@@ -111,6 +111,8 @@ impl BelowAbsoluteZeroError {
 
 // Orientation360
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, PartialOrd, Serialize, Validate)]
+#[serde(transparent)]
+#[repr(transparent)]
 pub(crate) struct Orientation360(
     #[validate(minimum = 0.)]
     #[validate(maximum = 360.)]
