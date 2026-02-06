@@ -37,6 +37,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
+
 const N_EXER: f64 = 3.0;
 
 impl HeatPumpSourceType {
@@ -6286,7 +6287,7 @@ mod tests {
         mut heat_pump_service_space: HeatPumpServiceSpace,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
-        let control = create_setpoint_time_control(vec![None]);
+        let control = create_setpoint_time_control(vec![None, None]);
         heat_pump_service_space.control = Arc::new(control);
 
         assert_eq!(
@@ -12138,7 +12139,7 @@ mod tests {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
         let mut heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
         heat_pump.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
-            vec![Some(false)],
+            vec![Some(false), Some(false)],
             0,
             1.,
         )));
@@ -12160,7 +12161,7 @@ mod tests {
         let mut heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
 
         heat_pump.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
-            vec![Some(false)],
+            vec![Some(false), Some(false)],
             0,
             1.,
         )));
