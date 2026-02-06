@@ -29,12 +29,12 @@ impl Shower {
         event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, f64)> {
+    ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         match self {
             Shower::MixerShower(s) => s.hot_water_demand(event, func_temp_hot_water, simtime),
             Shower::InstantElectricShower(s) => s
                 .hot_water_demand(event, simtime)
-                .map(|(first, second)| (Some(first), second)),
+                .map(|(first, second, third)| (Some(first), second, third)),
         }
     }
 }
@@ -90,7 +90,7 @@ impl MixerShower {
         event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, f64)> {
+    ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         let total_shower_duration = event
             .duration
             .ok_or(anyhow!("Expected an event duration for Mixer Shower event"))?;
@@ -109,7 +109,7 @@ impl MixerShower {
         // first calculate the volume of hot water needed if heating from cold water source
 
         let mut volume_hot_water = match volume_hot_water {
-            None => return Ok((None, volume_warm_water)),
+            None => return Ok((None, volume_warm_water, total_shower_duration)),
             Some(v) => v,
         };
 
@@ -158,7 +158,11 @@ impl MixerShower {
             }
         }
 
-        Ok((volume_hot_water.into(), volume_warm_water))
+        Ok((
+            volume_hot_water.into(),
+            volume_warm_water,
+            total_shower_duration,
+        ))
     }
 }
 
@@ -192,7 +196,7 @@ impl InstantElectricShower {
         &self,
         event: WaterHeatingEvent,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    ) -> anyhow::Result<(f64, f64, f64)> {
         let total_shower_duration = event
             .duration
             .ok_or(anyhow!("Expected an event duration for shower"))?;
@@ -223,7 +227,7 @@ impl InstantElectricShower {
 
         // Instantaneous electric shower heats its own water, so no demand on
         // the water heating system.
-        Ok((0.0, volume_warm_water))
+        Ok((0.0, volume_warm_water, total_shower_duration))
         // TODO (from Python) Should this return hot water demand or send message to HW system?
         //      The latter would allow for different showers to be connected to
         //      different HW systems, but complicates the implementation of the

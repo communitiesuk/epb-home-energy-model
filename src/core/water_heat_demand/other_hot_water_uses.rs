@@ -2,6 +2,7 @@ use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::volume_hot_water_required;
 use crate::input::WaterHeatingEvent;
 use crate::simulation_time::SimulationTimeIteration;
+use anyhow::anyhow;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -29,12 +30,14 @@ impl OtherHotWater {
         event: &WaterHeatingEvent,
         func_temp_hot_water: T,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, f64)> {
-        let total_demand_duration = event.duration;
+    ) -> anyhow::Result<(Option<f64>, f64, f64)> {
+        let total_demand_duration = event.duration.ok_or(anyhow!(
+            "Expected an event duration for Other Hot Water event"
+        ))?;
         let temperature_target = event.temperature;
 
         // TODO (from Python) Account for behavioural variation factor fbeh (sic)
-        let volume_warm_water = self.flowrate * total_demand_duration.unwrap_or(0.0);
+        let volume_warm_water = self.flowrate * total_demand_duration;
 
         let volume_hot_water = volume_hot_water_required(
             volume_warm_water,
@@ -50,7 +53,7 @@ impl OtherHotWater {
                 .draw_off_water(volume_cold_water, simtime)?;
         }
 
-        Ok((volume_hot_water, volume_warm_water))
+        Ok((volume_hot_water, volume_warm_water, total_demand_duration))
     }
 }
 

@@ -75,7 +75,7 @@ impl TappingPoint<'_> {
         event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, f64)> {
+    ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         match self {
             TappingPoint::Shower(shower) => {
                 shower.hot_water_demand(event, func_temp_hot_water, simtime)
@@ -492,59 +492,58 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                     Option<f64>,
                     f64,
                     Option<&EnergySupplyConnection>,
-                ) =
-                    match tapping_point {
-                        TappingPoint::Shower(Shower::InstantElectricShower(shower)) => {
-                            let hot_water_source_name = ELECTRIC_SHOWERS_HWS_NAME;
+                ) = match tapping_point {
+                    TappingPoint::Shower(Shower::InstantElectricShower(shower)) => {
+                        let hot_water_source_name = ELECTRIC_SHOWERS_HWS_NAME;
 
-                            let (hw_demand_i, hw_demand_target_i) =
-                                shower.hot_water_demand(event.into(), simtime)?;
-                            (
-                                hot_water_source_name.into(),
-                                None,
-                                Some(hw_demand_i),
-                                hw_demand_target_i,
-                                None,
+                        let (hw_demand_i, hw_demand_target_i, _event_duration_i) =
+                            shower.hot_water_demand(event.into(), simtime)?;
+                        (
+                            hot_water_source_name.into(),
+                            None,
+                            Some(hw_demand_i),
+                            hw_demand_target_i,
+                            None,
+                        )
+                    }
+                    _ => {
+                        let hot_water_source_name = self
+                            .source_supplying_outlet
+                            .get(&(tapping_point_type, tapping_point_name))
+                            .unwrap();
+
+                        let hot_water_source =
+                            self.hot_water_sources.get(hot_water_source_name).unwrap();
+
+                        let energy_supply_conn_unmet_demand = self
+                            .energy_supply_conn_unmet_demand
+                            .get(hot_water_source_name);
+
+                        let volume_required_already = hw_demand_volume[hot_water_source_name];
+
+                        let func = move |volume_required: f64| -> anyhow::Result<f64> {
+                            self.temp_hot_water(
+                                hot_water_source.clone(),
+                                volume_required_already,
+                                volume_required,
+                                simtime,
                             )
-                        }
-                        _ => {
-                            let hot_water_source_name = self
-                                .source_supplying_outlet
-                                .get(&(tapping_point_type, tapping_point_name))
-                                .unwrap();
+                        };
 
-                            let hot_water_source =
-                                self.hot_water_sources.get(hot_water_source_name).unwrap();
+                        let func_temp_hot_water: Box<dyn Fn(f64) -> anyhow::Result<f64> + 'a> =
+                            Box::new(func);
+                        let (hw_demand_i, hw_demand_target_i, _event_duration_i) = tapping_point
+                            .hot_water_demand(event.into(), &func_temp_hot_water, simtime)?;
 
-                            let energy_supply_conn_unmet_demand = self
-                                .energy_supply_conn_unmet_demand
-                                .get(hot_water_source_name);
-
-                            let volume_required_already = hw_demand_volume[hot_water_source_name];
-
-                            let func = move |volume_required: f64| -> anyhow::Result<f64> {
-                                self.temp_hot_water(
-                                    hot_water_source.clone(),
-                                    volume_required_already,
-                                    volume_required,
-                                    simtime,
-                                )
-                            };
-
-                            let func_temp_hot_water: Box<dyn Fn(f64) -> anyhow::Result<f64> + 'a> =
-                                Box::new(func);
-                            let (hw_demand_i, hw_demand_target_i) = tapping_point
-                                .hot_water_demand(event.into(), &func_temp_hot_water, simtime)?;
-
-                            (
-                                hot_water_source_name.clone(),
-                                Some(hot_water_source),
-                                hw_demand_i,
-                                hw_demand_target_i,
-                                energy_supply_conn_unmet_demand,
-                            )
-                        }
-                    };
+                        (
+                            hot_water_source_name.clone(),
+                            Some(hot_water_source),
+                            hw_demand_i,
+                            hw_demand_target_i,
+                            energy_supply_conn_unmet_demand,
+                        )
+                    }
+                };
 
                 let cold_water_source = tapping_point.get_cold_water_source();
 
