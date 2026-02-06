@@ -5616,7 +5616,7 @@ fn space_heat_systems_from_input(
                                         emitter_type,
                                         temp_flow_limit_upper.expect("Expected a temp_flow_limit_upper to be present for a heat pump"),
                                         *temp_diff_emit_dsgn,
-                                        *design_flow_temp as f64,
+                                        *design_flow_temp,
                                         control,
                                         volume_heated);
 
@@ -5680,7 +5680,7 @@ fn space_heat_systems_from_input(
                             // zone area
                             external_conditions.clone(),
                             *ecodesign_controller,
-                            *design_flow_temp as f64,
+                            *design_flow_temp,
                             initial_temp,
                             simulation_time.total_steps(),
                             energy_supply_fc_conn,

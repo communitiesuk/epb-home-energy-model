@@ -211,7 +211,7 @@ pub fn expand_events(
 
 /// Validate a schedule length to avoid running out of values during the simulation
 pub(crate) fn validate_schedule_length(
-    schedule: &Vec<f64>,
+    schedule: &[f64],
     expected_length: usize,
 ) -> anyhow::Result<()> {
     let schedule_length = schedule.len();
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_validate_schedule_length() {
-        let result = validate_schedule_length(&vec![0.0, 0.1], 3);
+        let result = validate_schedule_length(&[0.0, 0.1], 3);
         assert!(result.is_err());
     }
 
