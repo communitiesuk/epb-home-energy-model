@@ -240,17 +240,12 @@ pub(crate) enum SpaceHeatSystem {
 }
 
 impl SpaceHeatSystem {
-    pub fn temp_setpnt(
-        &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<Option<f64>> {
+    pub fn temp_setpnt(&self, simulation_time_iteration: SimulationTimeIteration) -> Option<f64> {
         match self {
             SpaceHeatSystem::ElecStorage(elec_storage) => {
-                Ok(elec_storage.temp_setpnt(&simulation_time_iteration))
+                elec_storage.temp_setpnt(&simulation_time_iteration)
             }
-            SpaceHeatSystem::Instant(instant) => {
-                Ok(instant.temp_setpnt(&simulation_time_iteration))
-            }
+            SpaceHeatSystem::Instant(instant) => instant.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
                 wet_distribution.temp_setpnt(&simulation_time_iteration)

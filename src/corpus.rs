@@ -1267,7 +1267,7 @@ impl Corpus {
                     temp_setpnt_heat.insert(
                         h_name.clone(),
                         space_heat_system
-                            .temp_setpnt(simtime)?
+                            .temp_setpnt(simtime)
                             .unwrap_or_else(temp_setpnt_heat_none),
                     );
                 }
@@ -5624,7 +5624,7 @@ fn space_heat_systems_from_input(
                                         // Record heating system as potentially requiring overventilation
                                         heat_system_names_requiring_overvent.push((system_name).clone());
                                     }
-                                    SpaceHeatingService::HeatPump(heat_source_service)
+                                    SpaceHeatingService::HeatPump(heat_source_service?)
                                 }
                                 WetHeatSource::Boiler(boiler) => {
                                     let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), &energy_supply_conn_name, control);
