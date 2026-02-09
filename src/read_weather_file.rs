@@ -30,7 +30,7 @@ const LIKELY_STEP_COUNT: usize = 8760; // hours in non-leap year
 
 pub fn epw_weather_data_to_external_conditions(
     file: impl Read,
-) -> Result<ExternalConditions, &'static str> {
+) -> ReadWeatherFileResult<ExternalConditions> {
     let mut reader = CsvReaderBuilder::new()
         .flexible(true)
         .has_headers(false)
@@ -92,7 +92,7 @@ const CIBSE_COLUMN_DIF_RAD: usize = 13; // diffuse irradiation (horizontal plane
 
 pub fn cibse_weather_data_to_external_conditions(
     file: impl Read,
-) -> Result<ExternalConditions, &'static str> {
+) -> ReadWeatherFileResult<ExternalConditions> {
     let mut reader = CsvReaderBuilder::new()
         .flexible(true)
         .has_headers(false)
@@ -145,9 +145,7 @@ pub fn cibse_weather_data_to_external_conditions(
     Ok(external_conditions)
 }
 
-fn validate_weather_data(
-    external_conditions: &ExternalConditions,
-) -> Result<(), ReadWeatherFileError> {
+fn validate_weather_data(external_conditions: &ExternalConditions) -> ReadWeatherFileResult<()> {
     if [
         external_conditions.air_temperatures.len(),
         external_conditions.wind_speeds.len(),
@@ -166,10 +164,12 @@ fn validate_weather_data(
 }
 
 #[derive(Debug, Error, PartialEq)]
-pub(crate) enum ReadWeatherFileError {
+pub enum ReadWeatherFileError {
     #[error("Weather data should contain at least 8760 entries")]
     InvalidLength,
 }
+
+pub type ReadWeatherFileResult<T> = Result<T, ReadWeatherFileError>;
 
 #[cfg(test)]
 mod tests {
