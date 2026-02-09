@@ -281,7 +281,7 @@ impl Pipework {
         let dop = self.external_diameter_in_m * MILLIMETRES_IN_METRE as f64;
         let c_watts = self.length() * C_N_CALCULATION_FACTOR * dop.pow(C_N_EXPONENT);
         let c = c_watts / WATTS_PER_KILOWATT as f64;
-        let n = N_CALCULATION_FACTOR * dop.ln() + N_OFFSET as f64;
+        let n = N_CALCULATION_FACTOR * dop.ln() + N_OFFSET;
 
         let thermal_mass =
             self.volume() * WATER.specific_heat_capacity() / JOULES_PER_KILOWATT_HOUR as f64;
