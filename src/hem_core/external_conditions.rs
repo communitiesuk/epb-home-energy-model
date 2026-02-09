@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::units::{Orientation360, HOURS_PER_DAY};
+use crate::core::units::{Orientation360, DAYS_PER_YEAR, HOURS_PER_DAY};
 use crate::input::ExternalConditionsInput;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
@@ -419,14 +419,16 @@ impl ExternalConditions {
         self.wind_speeds[timestep_idx]
     }
 
-    pub fn wind_speed_annual(&self) -> Option<f64> {
-        if self.wind_speeds.len() != (8760.0 / self.time_series_step) as usize {
-            return None;
+    pub fn wind_speed_annual(&self) -> anyhow::Result<f64> {
+        let expected_length =
+            ((HOURS_PER_DAY * DAYS_PER_YEAR) as f64 / self.time_series_step) as usize;
+        if self.wind_speeds.len() != expected_length {
+            bail!("Expected external conditions to contain wind_speeds for entire year")
         }
         let sum: f64 = self.wind_speeds.iter().sum();
         // TODO: investigate why using FSum here breaks zone tests
         // let sum: f64 = FSum::with_all(self.wind_speeds.iter()).value();
-        Some(sum / self.wind_speeds.len() as f64)
+        Ok(sum / self.wind_speeds.len() as f64)
     }
 
     pub fn wind_direction(&self, simulation_time: SimulationTimeIteration) -> Orientation360 {
@@ -434,10 +436,11 @@ impl ExternalConditions {
     }
 
     /// Return the average wind direction for the whole year
-    pub fn wind_direction_annual(&self) -> Orientation360 {
+    pub fn wind_direction_annual(&self) -> anyhow::Result<Orientation360> {
         // only works if data for whole year has been provided
-        debug_assert!(self.wind_speeds.len() == 8760);
-        debug_assert!(self.wind_directions.len() == 8760);
+        if self.wind_directions.len() != 8760 || self.wind_speeds.len() != 8760 {
+            bail!("Expected external conditions to contain wind_directions and wind_speeds for entire year")
+        }
         let (x_total, y_total) = self
             .wind_speeds
             .iter()
@@ -458,7 +461,9 @@ impl ExternalConditions {
         // but this could potentially change in the future - the precision is marked as "unspecified".
         let wind_direction_average = y_average.atan2(x_average).to_degrees();
 
-        Orientation360::from(wind_direction_average.rem_euclid(360.)) // cannot use % operator here as we need lowest non-negative remainder, which % does not give us
+        Ok(Orientation360::from(
+            wind_direction_average.rem_euclid(360.),
+        )) // cannot use % operator here as we need lowest non-negative remainder, which % does not give us
     }
 
     pub fn diffuse_horizontal_radiation(&self, timestep_idx: usize) -> f64 {
@@ -813,11 +818,11 @@ impl ExternalConditions {
     /// Arguments:
     /// * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
     ///            upwards facing, 0 to 180, in degrees;
-    /// orientation - is the orientation angle of the inclined surface, expressed as the
-    ///               geographical azimuth angle of the horizontal projection of the
-    ///               inclined surface normal, 0 to 360, in degrees;
-    ///               It will be converted to the -180 to 180 range;
-    ///               Assumed N 180 or -180, E 90, S 0, W -90
+    /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
+    ///                   geographical azimuth angle of the horizontal projection of the
+    ///                   inclined surface normal, 0 to 360, in degrees;
+    ///                   It will be converted to the -180 to 180 range;
+    ///                   Assumed N 180 or -180, E 90, S 0, W -90
     fn outside_solar_beam(
         &self,
         tilt: f64,
@@ -2935,8 +2940,8 @@ mod tests {
     ) {
         for t_it in simulation_time.iter() {
             assert_eq!(
-                external_conditions.wind_direction(t_it),
-                [80., 60., 40., 20., 10., 50., 100., 140.][t_it.index].into()
+                external_conditions.wind_direction(t_it).angle(),
+                [80., 60., 40., 20., 10., 50., 100., 140.][t_it.index]
             );
         }
     }
@@ -2944,10 +2949,27 @@ mod tests {
     #[rstest]
     fn test_wind_direction_annual(external_conditions: ExternalConditions) {
         assert_relative_eq!(
-            external_conditions.wind_direction_annual().angle(),
+            external_conditions.wind_direction_annual().unwrap().angle(),
             39.11296611406138,
             max_relative = 0.01
         )
+    }
+
+    #[rstest]
+    fn test_wind_direction_annual_partial_wind_speeds(mut external_conditions: ExternalConditions) {
+        external_conditions.wind_speeds = vec![10., 10., 10.];
+
+        assert!(external_conditions.wind_direction_annual().is_err())
+    }
+
+    #[rstest]
+    fn test_wind_direction_annual_partial_wind_directions(
+        mut external_conditions: ExternalConditions,
+    ) {
+        external_conditions.wind_directions =
+            vec![10., 10., 10.].into_iter().map(Into::into).collect();
+
+        assert!(external_conditions.wind_direction_annual().is_err())
     }
 
     #[rstest]

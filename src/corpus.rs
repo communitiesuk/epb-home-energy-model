@@ -575,10 +575,8 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
     }
 
     let calc_htc = |zone: &ZoneInput| -> anyhow::Result<(f64, f64, f64)> {
-        let wind_speed = external_conditions.wind_speed_annual().ok_or_else(|| {
-            anyhow!("Expected external conditions to contain data for entire year")
-        })?;
-        let wind_direction = external_conditions.wind_direction_annual();
+        let wind_speed = external_conditions.wind_speed_annual()?;
+        let wind_direction = external_conditions.wind_direction_annual()?;
         let temp_int_air = input.temp_internal_air_static_calcs();
         let temp_ext_air = external_conditions.air_temp_annual_daily_average_min();
         let ach_min = input.infiltration_ventilation().ach_min_static_calcs;

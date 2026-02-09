@@ -957,7 +957,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
     fn temp_int_annual(&self) -> f64;
 
     fn wind_speed(&self) -> anyhow::Result<f64> {
-        self.external_conditions().wind_speed_annual().ok_or_else(|| anyhow!("The external conditions provided do not contain data for an entire year, therefore an annual wind speed cannot be calculated."))
+        self.external_conditions().wind_speed_annual()
     }
 
     fn set_total_area(&mut self, total_area: f64);
