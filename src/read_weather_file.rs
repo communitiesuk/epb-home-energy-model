@@ -1,6 +1,7 @@
 use crate::core::units::{Orientation360, KNOTS_PER_METRES_PER_SECOND};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use std::io::Read;
+use thiserror::Error;
 
 const EPW_COLUMN_LONGITUDE: usize = 7;
 const EPW_COLUMN_LATITUDE: usize = 6;
@@ -65,7 +66,7 @@ pub fn epw_weather_data_to_external_conditions(
         }
     }
 
-    Ok(ExternalConditions {
+    let external_conditions = ExternalConditions {
         air_temperatures,
         wind_speeds,
         wind_directions,
@@ -75,7 +76,10 @@ pub fn epw_weather_data_to_external_conditions(
         latitude: latitude.unwrap(),
         longitude: longitude.unwrap(),
         direct_beam_conversion_needed: false,
-    })
+    };
+
+    validate_weather_data(&external_conditions)?;
+    Ok(external_conditions)
 }
 
 const CIBSE_COLUMN_LONGITUDE: usize = 3;
@@ -124,7 +128,7 @@ pub fn cibse_weather_data_to_external_conditions(
         }
     }
 
-    Ok(ExternalConditions {
+    let external_conditions = ExternalConditions {
         air_temperatures,
         wind_speeds,
         wind_directions,
@@ -135,7 +139,36 @@ pub fn cibse_weather_data_to_external_conditions(
         longitude: longitude.unwrap(),
         // Conversion is not needed as direct irradiation will be normal plane from this file
         direct_beam_conversion_needed: false,
-    })
+    };
+
+    validate_weather_data(&external_conditions)?;
+    Ok(external_conditions)
+}
+
+fn validate_weather_data(
+    external_conditions: &ExternalConditions,
+) -> Result<(), ReadWeatherFileError> {
+    if [
+        external_conditions.air_temperatures.len(),
+        external_conditions.wind_speeds.len(),
+        external_conditions.wind_directions.len(),
+        external_conditions.diffuse_horizontal_radiation.len(),
+        external_conditions.direct_beam_radiation.len(),
+        external_conditions.solar_reflectivity_of_ground.len(),
+    ]
+    .iter()
+    .any(|&i| i != 8760)
+    {
+        Err(ReadWeatherFileError::InvalidLength)
+    } else {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub(crate) enum ReadWeatherFileError {
+    #[error("Weather data should contain at least 8760 entries")]
+    InvalidLength,
 }
 
 #[cfg(test)]
