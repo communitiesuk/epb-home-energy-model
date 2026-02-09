@@ -4,7 +4,7 @@ version = "0.34.0-alpha"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.100"
+anyhow = "1.0.101"
 home-energy-model = { path = ".." }
 lambda_http = "1.0.2"
 parking_lot = "0.12.5"

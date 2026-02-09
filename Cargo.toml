@@ -6,14 +6,14 @@ rust-version = "1.83.0"
 description = "An engine written in Rust implementing the Home Energy Model (HEM), an energy performance of buildings model"
 
 [dependencies]
-anyhow = "1.0.100"
+anyhow = "1.0.101"
 arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
 arc-swap = "1.8.0"
 argmin = "0.11.0"
 atomic_float = "1.1.0"
 bounded-vec-deque = "0.1.1"
 chrono = "0.4.43"
-clap = { version = "4.5.56", features = ["derive"], optional = true }
+clap = { version = "4.5.57", features = ["derive"], optional = true }
 convert_case = "0.11.0"
 csv = "1.4.0"
 derivative = "2.2.0"
@@ -27,7 +27,7 @@ indicatif = { version = "0.18.3", optional = true }
 interp = "2.1.1"
 is_close = "0.1.3"
 itertools = "0.14.0"
-jsonschema = "0.37.1"
+jsonschema = "0.41.0"
 monostate = "1.0.2"
 nalgebra = "0.33.2"
 ode_solvers = { version = "0.5.0", git = "https://github.com/russ-madetech/ode-solvers", branch = "events" }
@@ -46,7 +46,6 @@ statrs = "0.18.0"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
-zerocopy = "0.8.33"
 
 [dev-dependencies]
 approx = "0.5.1"
