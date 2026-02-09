@@ -1579,14 +1579,8 @@ impl HeatPumpServiceSpace {
     pub fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> anyhow::Result<Option<bool>> {
-        // TODO review - this check may be able to be removed in future if we validate control earlier
-        match self.control.as_ref() {
-            Control::CombinationTime { .. } | Control::SetpointTime { .. } => {
-                Ok(self.control.in_required_period(simulation_time_iteration))
-            }
-            _ => bail!("Expected control to be combination or setpoint time control"),
-        }
+    ) -> Option<bool> {
+        self.control.in_required_period(simulation_time_iteration)
     }
 
     /// Calculate the maximum energy output of the HP, accounting for time
@@ -1755,26 +1749,19 @@ impl HeatPumpServiceSpace {
     }
 }
 
-/// An object to represent a warm air space heating service provided by a heat pump.
+/// An object to represent a warm air space heating system provided by a heat pump.
 ///
 ///    This object contains the parts of the heat pump calculation that are
 ///    specific to providing space heating via warm air.
 #[derive(Clone, Debug)]
-pub struct HeatPumpServiceSpaceWarmAir {
-    heat_pump: Arc<Mutex<HeatPump>>,
-    service_name: String,
-    control: Arc<Control>,
-    emitter_type: HeatPumpEmitterType,
-    temp_limit_upper_in_k: f64,
-    temp_diff_emit_design: f64,
-    design_flow_temp_op_cond: f64,
+pub struct HeatPumpWarmAir {
+    heat_pump_service_space: HeatPumpServiceSpace,
     frac_convective: f64,
     temp_flow: f64,
     temp_return: f64,
-    volume_heated: f64,
 }
 
-impl HeatPumpServiceSpaceWarmAir {
+impl HeatPumpWarmAir {
     pub(crate) fn new(
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: &str,
@@ -1784,45 +1771,43 @@ impl HeatPumpServiceSpaceWarmAir {
         temp_flow: f64,
         frac_convective: f64,
         volume_heated: f64,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let temp_limit_upper_in_c = temp_flow;
-
-        Self {
+        let heat_pump_service_space = HeatPumpServiceSpace::new(
             heat_pump,
-            service_name: service_name.into(),
-            emitter_type: HeatPumpEmitterType::WarmAir,
-            control,
-            temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c).expect(
-                "Upper limit given for heat pump never expected to be below absolute zero.",
-            ),
+            service_name.into(),
+            HeatPumpEmitterType::WarmAir,
+            temp_limit_upper_in_c,
             temp_diff_emit_design,
             design_flow_temp_op_cond,
+            control,
+            volume_heated,
+            None,
+        )?;
+
+        Ok(Self {
+            heat_pump_service_space,
             frac_convective,
             temp_flow,
             temp_return: temp_flow,
-            volume_heated,
-        }
+        })
     }
 
-    pub fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control.is_on(&simtime)
+    pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+        self.heat_pump_service_space
+            .temp_setpnt(simulation_time_iteration)
     }
 
     pub fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> anyhow::Result<Option<bool>> {
-        // TODO review - this check may be able to be removed in future if we validate control earlier
-        match self.control.as_ref() {
-            Control::CombinationTime { .. } | Control::SetpointTime { .. } => {
-                Ok(self.control.in_required_period(simulation_time_iteration))
-            }
-            _ => bail!("Expected control to be combination or setpoint time control"),
-        }
+    ) -> Option<bool> {
+        self.heat_pump_service_space
+            .in_required_period(simulation_time_iteration)
     }
 
-    pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        self.control.setpnt(simulation_time_iteration)
+    pub fn frac_convective(&self) -> f64 {
+        self.frac_convective
     }
 
     pub(crate) fn energy_output_min(&self) -> f64 {
@@ -1834,128 +1819,15 @@ impl HeatPumpServiceSpaceWarmAir {
         energy_demand: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let temp_flow = self.temp_flow;
-        let temp_return = self.temp_return;
-
-        let service_on = self.is_on(simulation_time_iteration);
-        let energy_demand = if !service_on { 0.0 } else { energy_demand };
-
-        let mut pump = self.heat_pump.lock();
-        let time_constant_for_service = match self.emitter_type {
-            HeatPumpEmitterType::RadiatorsUfh => TIME_CONSTANT_SPACE_UFH,
-            HeatPumpEmitterType::FanCoils => TIME_CONSTANT_SPACE_FAN_COILS,
-            HeatPumpEmitterType::WarmAir => TIME_CONSTANT_SPACE_WARM_AIR,
-        };
-
-        let source_type = pump.source_type;
-
-        pump.demand_energy(
-            &self.service_name,
-            &HeatingServiceType::Space,
+        self.heat_pump_service_space.demand_energy(
             energy_demand,
-            Some(celsius_to_kelvin(temp_flow)?),
-            celsius_to_kelvin(temp_return)?,
-            self.temp_limit_upper_in_k,
-            self.design_flow_temp_op_cond,
-            time_constant_for_service,
-            service_on,
+            self.temp_flow,
+            self.temp_return,
+            None,
+            None,
+            None,
             simulation_time_iteration,
-            Some(TempSpreadCorrectionArg::Callable(
-                self.temp_spread_correction_fn(source_type),
-            )),
-            None,
-            None,
-            None,
-            None,
-            None,
         )
-    }
-
-    // TODO: will this ever be called if only relevant for exhaust air heat pump and
-    // given that create_service_space_heating_warm_air bails if heat pump sink_type is not air?
-    /// Return the cumulative running time and throughput factor (exhaust air HPs only)
-    /// Arguments:
-    /// energy_demand -- in kWh
-    /// space_heat_running_time_cumulative
-    /// -- running time spent on higher-priority space heating services
-    pub fn running_time_throughput_factor(
-        &self,
-        energy_demand: f64,
-        space_heat_running_time_cumulative: f64,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
-        let temp_flow = self.temp_flow;
-        let temp_return = self.temp_return;
-
-        let service_on = self.is_on(simulation_time_iteration);
-        let energy_demand = if !service_on { 0.0 } else { energy_demand };
-
-        let time_constant_for_service = match self.emitter_type {
-            HeatPumpEmitterType::RadiatorsUfh => TIME_CONSTANT_SPACE_UFH,
-            HeatPumpEmitterType::FanCoils => TIME_CONSTANT_SPACE_FAN_COILS,
-            HeatPumpEmitterType::WarmAir => TIME_CONSTANT_SPACE_WARM_AIR,
-        };
-        let mut pump = self.heat_pump.lock();
-        let source_type = pump.source_type;
-
-        pump.running_time_throughput_factor(
-            space_heat_running_time_cumulative,
-            &self.service_name,
-            &HeatingServiceType::Space,
-            energy_demand,
-            celsius_to_kelvin(temp_flow)?,
-            celsius_to_kelvin(temp_return)?,
-            self.temp_limit_upper_in_k,
-            self.design_flow_temp_op_cond,
-            time_constant_for_service,
-            service_on,
-            self.volume_heated,
-            simulation_time_iteration,
-            Some(TempSpreadCorrectionArg::Callable(
-                self.temp_spread_correction_fn(source_type),
-            )),
-            None,
-        )
-    }
-
-    /// yes this is copy-pasted from the SpaceService
-    fn temp_spread_correction_fn(
-        &self,
-        source_type: HeatPumpSourceType,
-    ) -> Box<dyn Fn(f64, f64, f64, HeatPumpTestData) -> f64> {
-        // Average temperature difference between heat transfer medium and
-        // refrigerant in condenser
-        let temp_diff_condenser = 5.0;
-
-        // Average temperature difference between heat transfer medium and
-        // refrigerant in evaporator
-        let temp_diff_evaporator = match source_type {
-            t if t.source_fluid_is_air() => 15.0,
-            t if t.source_fluid_is_water() => 10.0,
-            _ => panic!("impossible heat pump source type encountered"),
-        };
-
-        let temp_diff_emit_design = self.temp_diff_emit_design;
-
-        Box::new(
-            move |temp_output,
-                  temp_source,
-                  design_flow_temp_op_cond,
-                  test_data: HeatPumpTestData| {
-                test_data.temp_spread_correction(
-                    temp_source,
-                    temp_output,
-                    temp_diff_evaporator,
-                    temp_diff_condenser,
-                    temp_diff_emit_design,
-                    design_flow_temp_op_cond,
-                ).expect("Temp spread correction never expects to encounter temperature below absolute zero")
-            },
-        )
-    }
-
-    pub fn frac_convective(&self) -> f64 {
-        self.frac_convective
     }
 }
 
@@ -2522,7 +2394,7 @@ impl HeatPump {
         control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust as there will always be a control)
         frac_convective: f64,
         volume_heated: f64,
-    ) -> anyhow::Result<HeatPumpServiceSpaceWarmAir> {
+    ) -> anyhow::Result<HeatPumpWarmAir> {
         {
             let mut heat_pump = heat_pump.lock();
             if heat_pump.sink_type != HeatPumpSinkType::Air {
@@ -2556,7 +2428,7 @@ impl HeatPump {
         );
 
         Self::create_service_connection(heat_pump.clone(), service_name)?;
-        Ok(HeatPumpServiceSpaceWarmAir::new(
+        HeatPumpWarmAir::new(
             heat_pump,
             service_name,
             temp_diff_emit_design,
@@ -2565,7 +2437,7 @@ impl HeatPump {
             temp_flow,
             frac_convective,
             volume_heated,
-        ))
+        )
     }
 
     /// Get source temp according to rules in CALCM-01 - DAHPSE - V2.0_DRAFT13, 3.1.1
@@ -6124,18 +5996,6 @@ mod tests {
         )
     }
 
-    #[rstest]
-    fn test_is_on_for_service_space_warm_air(
-        mut heat_pump_service_space_warm_air: HeatPumpServiceSpaceWarmAir,
-        simulation_time_for_heat_pump: SimulationTime,
-    ) {
-        heat_pump_service_space_warm_air.control =
-            Arc::new(create_setpoint_time_control(vec![Some(10.)]));
-
-        assert!(heat_pump_service_space_warm_air
-            .is_on(simulation_time_for_heat_pump.iter().current_iteration()))
-    }
-
     // TestHeatPumpServiceWater
     #[fixture]
     fn heat_pump_service_water(
@@ -6260,7 +6120,7 @@ mod tests {
     ) {
         for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
             assert_eq!(
-                heat_pump_service_space.in_required_period(&t_it).unwrap(),
+                heat_pump_service_space.in_required_period(&t_it),
                 [Some(true), Some(false)][t_idx]
             );
         }
@@ -6332,21 +6192,21 @@ mod tests {
 
     // skipping Python's test_temp_spread_correction_invalid as it's not possible to have an invalid source type in the Rust
 
-    // TestHeatPumpServiceSpaceWarmAir
+    // TestHeatPumpWarmAir
     #[fixture]
-    fn heat_pump_service_space_warm_air(
+    fn heat_pump_warm_air(
         external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
-    ) -> HeatPumpServiceSpaceWarmAir {
+    ) -> HeatPumpWarmAir {
         let heat_pump = create_default_heat_pump(
             None,
             external_conditions,
             simulation_time_for_heat_pump,
             None,
         );
-        let control = create_setpoint_time_control(vec![]);
+        let control = create_setpoint_time_control(vec![None]);
 
-        HeatPumpServiceSpaceWarmAir::new(
+        HeatPumpWarmAir::new(
             Arc::new(Mutex::new(heat_pump)),
             "new_service",
             10.,
@@ -6356,20 +6216,66 @@ mod tests {
             0.7,
             12.,
         )
+        .unwrap()
     }
 
     #[rstest]
-    fn test_energy_output_min(heat_pump_service_space_warm_air: HeatPumpServiceSpaceWarmAir) {
-        assert_eq!(heat_pump_service_space_warm_air.energy_output_min(), 0.);
-    }
+    fn test_temp_setpnt(
+        heat_pump_warm_air: HeatPumpWarmAir,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let simtime = &simulation_time_for_heat_pump.iter().current_iteration();
+        let service_temp_setpnt = heat_pump_warm_air
+            .heat_pump_service_space
+            .temp_setpnt(simtime);
 
-    // skipping Python's test_demand_energy due to mocking
-    // skipping Python's test_running_time_throughput_factor due to mocking
+        assert_eq!(heat_pump_warm_air.temp_setpnt(simtime), service_temp_setpnt);
+    }
 
     #[rstest]
-    fn test_frac_convective(heat_pump_service_space_warm_air: HeatPumpServiceSpaceWarmAir) {
-        assert_eq!(heat_pump_service_space_warm_air.frac_convective(), 0.7);
+    fn test_in_required_period_for_warm_air(
+        heat_pump_warm_air: HeatPumpWarmAir,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let simtime = &simulation_time_for_heat_pump.iter().current_iteration();
+        let service_in_required_period = heat_pump_warm_air
+            .heat_pump_service_space
+            .in_required_period(simtime);
+
+        assert_eq!(
+            heat_pump_warm_air.in_required_period(simtime),
+            service_in_required_period
+        );
     }
+
+    #[rstest]
+    fn test_frac_convective(heat_pump_warm_air: HeatPumpWarmAir) {
+        assert_eq!(heat_pump_warm_air.frac_convective(), 0.7);
+    }
+
+    #[rstest]
+    fn test_energy_output_min(heat_pump_warm_air: HeatPumpWarmAir) {
+        assert_eq!(heat_pump_warm_air.energy_output_min(), 0.);
+    }
+
+    #[rstest]
+    fn test_demand_energy_warm_air(
+        mut heat_pump_warm_air: HeatPumpWarmAir,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let simtime = simulation_time_for_heat_pump.iter().current_iteration();
+        let service_demand_energy_result = heat_pump_warm_air
+            .heat_pump_service_space
+            .demand_energy(100., 10., 10., None, None, None, simtime)
+            .unwrap();
+
+        assert_eq!(
+            heat_pump_warm_air.demand_energy(100., simtime).unwrap(),
+            service_demand_energy_result
+        );
+    }
+
+    // Skipping Python's test_control_is_none as control is not optional for HeatPumpServiceSpace in Rust
 
     #[rstest]
     // In Python this test is called `test_from_string` (inside the `TestSinkType` class)
@@ -7697,7 +7603,7 @@ mod tests {
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
         let service_name = "service_space_warmair";
-        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![], 0, 0.)));
+        let control = Arc::from(create_setpoint_time_control(vec![]));
         let volume_heated = 250.;
         let frac_convective = 0.9;
 
@@ -7854,7 +7760,7 @@ mod tests {
         heat_pump.sink_type = HeatPumpSinkType::Air;
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
-        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![], 0, 0.)));
+        let control = Arc::from(create_setpoint_time_control(vec![]));
         // in Python None is passed in for the control but this is not optional in Rust
         HeatPump::create_service_space_heating_warm_air(
             heat_pump.clone(),
@@ -10805,7 +10711,7 @@ mod tests {
 
     /// this test was added to guard against a deadlock issue with demo_hp_warm_air.json (use of temp_spread_correction_fn)
     #[rstest]
-    fn test_demand_energy_on_heat_pump_service_space_warm_air(
+    fn test_demand_energy_on_heat_pump_warm_air(
         external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
@@ -10818,16 +10724,12 @@ mod tests {
         let heat_pummp_sink_air = Arc::from(Mutex::from(heat_pummp_sink_air));
 
         let service_name = "service_space_warmair";
-        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(
-            vec![Some(true)],
-            0,
-            1.,
-        )));
+        let control = Arc::from(create_setpoint_time_control(vec![Some(20.)]));
         let volume_heated = 250.;
         let frac_convective = 0.9;
 
         // create_service_space_heating_warm_air expects a heat pump with sink air
-        let mut heat_pump_service_space_warm_air = HeatPump::create_service_space_heating_warm_air(
+        let mut heat_pump_warm_air = HeatPump::create_service_space_heating_warm_air(
             heat_pummp_sink_air.clone(),
             service_name,
             control,
@@ -10838,7 +10740,7 @@ mod tests {
 
         let energy_demanded = 0.;
 
-        let result = heat_pump_service_space_warm_air.demand_energy(
+        let result = heat_pump_warm_air.demand_energy(
             energy_demanded,
             simulation_time_for_heat_pump.iter().current_iteration(),
         );
@@ -10899,7 +10801,6 @@ mod tests {
     // TODO: add more tests for other call sites of temp_spread_correction_fn:
     // HeatPumpServiceSpace: energy_output_max
     // HeatPumpServiceSpace: demand_energy
-    // HeatPumpServiceSpaceWarmAir: running_time_throughput_factor (will this ever be reached though?)
 
     #[rstest]
     fn test_calc_throughput_factor(
@@ -11249,16 +11150,6 @@ mod tests {
         assert_eq!(actual_service_results, test_service_results);
 
         // upstream uses mock to now check demand_energy is delegated to - was not considered that this is useful enough test to migrate
-
-        // Test error when energy_delivered_hp < energy_input_hp
-        if let Some(ServiceResult::Full(result)) =
-            heat_pump_with_nw.service_results.write().get_mut(0)
-        {
-            result.energy_delivered_hp = 30.;
-            result.energy_input_hp = 100.;
-        }
-
-        assert!(heat_pump_with_nw.extract_energy_from_source(0).is_err());
     }
 
     #[rstest]

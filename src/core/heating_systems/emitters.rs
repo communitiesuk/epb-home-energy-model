@@ -577,22 +577,22 @@ impl Emitters {
     pub(crate) fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> anyhow::Result<Option<bool>> {
+    ) -> Option<bool> {
         match self.heat_source.read().deref() {
             SpaceHeatingService::HeatPump(heat_pump) => {
                 heat_pump.in_required_period(simulation_time_iteration)
             }
             SpaceHeatingService::Boiler(boiler) => {
-                Ok(boiler.in_required_period(*simulation_time_iteration))
+                boiler.in_required_period(*simulation_time_iteration)
             }
             SpaceHeatingService::HeatNetwork(heat_network) => {
-                Ok(heat_network.in_required_period(simulation_time_iteration))
+                heat_network.in_required_period(simulation_time_iteration)
             }
             SpaceHeatingService::HeatBattery(heat_battery) => {
-                Ok(heat_battery.in_required_period(*simulation_time_iteration))
+                heat_battery.in_required_period(*simulation_time_iteration)
             }
             #[cfg(test)]
-            SpaceHeatingService::Mock => Ok(Some(true)),
+            SpaceHeatingService::Mock => Some(true),
         }
     }
 
@@ -2533,7 +2533,7 @@ mod tests {
         fancoil: Emitters,
     ) {
         for step in simulation_time_iterator {
-            assert!(fancoil.in_required_period(&step).unwrap().unwrap());
+            assert!(fancoil.in_required_period(&step).unwrap());
         }
     }
 

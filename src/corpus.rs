@@ -2023,7 +2023,7 @@ impl Corpus {
         for hc_name in hc_name_list_sorted {
             if !hc_name.is_empty()
                 && space_heat_cool_systems
-                    .in_required_period_for_name(hc_name, simtime)?
+                    .in_required_period_for_name(hc_name, simtime)
                     .unwrap_or(false)
             {
                 hc_name_highest_req = Some(hc_name.clone());
@@ -3064,12 +3064,12 @@ impl SpaceHeatCoolSystems<'_> {
         &self,
         system_name: &str,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<Option<bool>> {
+    ) -> Option<bool> {
         match self {
             SpaceHeatCoolSystems::Heat(heat) => {
                 heat[system_name].lock().in_required_period(simtime)
             }
-            SpaceHeatCoolSystems::Cool(cool) => Ok(cool[system_name].in_required_period(&simtime)),
+            SpaceHeatCoolSystems::Cool(cool) => cool[system_name].in_required_period(&simtime),
         }
     }
 }
