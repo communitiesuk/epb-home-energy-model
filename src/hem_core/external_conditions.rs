@@ -471,38 +471,33 @@ impl ExternalConditions {
         self.direct_beam_radiations[timestep_idx]
     }
 
-    /// Return clockwise 0/360 orientation angle from anti-clockwise -180/+180 basis
-    fn orientation360(&self, orientation: f64) -> f64 {
-        180. - orientation
-    }
-
     pub fn solar_reflectivity_of_ground(&self, simulation_time: &SimulationTimeIteration) -> f64 {
         self.solar_reflectivity_of_ground
             [simulation_time.time_series_idx(self.start_day, self.time_series_step)]
     }
 
+    /// calculates the solar angle of incidence, which is the angle of incidence of the
+    /// solar beam on an inclined surface and is determined as function of the solar hour angle
+    /// and solar declination
+    //
+    /// Arguments:
+    /// * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
+    ///            upwards facing, 0 to 180, in degrees;
+    /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
+    ///                   geographical azimuth angle of the horizontal projection of the inclined
+    ///                   surface normal, 0 to 360, in degrees;
+    ///                   It will be converted to the -180 to 180 range;
+    ///                   Assumed N 180 or -180, E 90, S 0, W -90
+    /// * `simulation_time` - an iteration of the current simulation time
     fn solar_angle_of_incidence(
         &self,
         tilt: f64,
         orientation: Orientation360,
         simulation_time: &SimulationTimeIteration,
     ) -> f64 {
-        // """  calculates the solar angle of incidence, which is the angle of incidence of the
-        // solar beam on an inclined surface and is determined as function of the solar hour angle
-        // and solar declination
-        //
-        // Arguments:
-        // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
-        //                   upwards facing, 0 to 180, in degrees;
-        // orientation    -- is the orientation angle of the inclined surface, expressed as the
-        //                   geographical azimuth angle of the horizontal projection of the inclined
-        //                   surface normal, -180 to 180, in degrees;
-        // simulation_time - an iteration of the current simulation time
-        // """
-
         //set up/ shadow some vars as radians for trig stuff
         let tilt = tilt.to_radians();
-        let orientation = orientation.transform_to_180().to_radians();
+        let orientation_180 = orientation.transform_to_180().to_radians();
         let latitude = self.latitude.to_radians();
         let solar_declination: f64 =
             self.solar_declinations[simulation_time.current_day() as usize].to_radians();
@@ -510,14 +505,14 @@ impl ExternalConditions {
             self.solar_hour_angles[simulation_time.current_hour() as usize].to_radians();
 
         (solar_declination.sin() * latitude.sin() * tilt.cos()
-            - solar_declination.sin() * latitude.cos() * tilt.sin() * orientation.cos()
+            - solar_declination.sin() * latitude.cos() * tilt.sin() * orientation_180.cos()
             + solar_declination.cos() * latitude.cos() * tilt.cos() * solar_hour_angle.cos()
             + solar_declination.cos()
                 * latitude.sin()
                 * tilt.sin()
-                * orientation.cos()
+                * orientation_180.cos()
                 * solar_hour_angle.cos()
-            + solar_declination.cos() * tilt.sin() * orientation.sin() * solar_hour_angle.sin())
+            + solar_declination.cos() * tilt.sin() * orientation_180.sin() * solar_hour_angle.sin())
         .acos()
         .to_degrees()
     }
@@ -529,11 +524,18 @@ impl ExternalConditions {
     ///
     /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
     ///                   geographical azimuth angle of the horizontal projection of the inclined
-    ///                   surface normal, -180 to 180, in degrees;
+    ///                   surface normal, 0 to 360, in degrees;
+    ///                   It will be converted to the -180 to 180 range;
+    ///                   Assumed N 180 or -180, E 90, S 0, W -90
     #[cfg(test)]
-    fn sun_surface_azimuth(&self, orientation: f64, simtime: SimulationTimeIteration) -> f64 {
+    fn sun_surface_azimuth(
+        &self,
+        orientation: Orientation360,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
+        let orientation_180 = orientation.transform_to_180();
         let current_hour = simtime.current_hour();
-        let test_angle = self.solar_hour_angles[current_hour as usize] - orientation;
+        let test_angle = self.solar_hour_angles[current_hour as usize] - orientation_180;
 
         if test_angle > 180. {
             -360. + test_angle
@@ -571,7 +573,7 @@ impl ExternalConditions {
         orientation: Orientation360,
         simulation_time: &SimulationTimeIteration,
     ) -> f64 {
-        // """  calculates the direct irradiance on the inclined surface, determined as function
+        // calculates the direct irradiance on the inclined surface, determined as function
         // of cosine of the solar angle of incidence and the direct normal (beam) solar irradiance
         // NOTE The solar beam irradiance is defined as falling on an surface normal to the solar beam.
         // This is not the same as direct horizontal radiation.
@@ -581,9 +583,7 @@ impl ExternalConditions {
         //                   upwards facing, 0 to 180, in degrees;
         // orientation    -- is the orientation angle of the inclined surface, expressed as the
         //                   geographical azimuth angle of the horizontal projection of the inclined
-        //                   surface normal, -180 to 180, in degrees;
-        //
-        // """
+        //                   surface normal, 0 to 360, in degrees;
         let direct_irradiance = self.direct_beam_radiation(simulation_time.index)
             * self
                 .solar_angle_of_incidence(tilt, orientation, simulation_time)
@@ -602,15 +602,14 @@ impl ExternalConditions {
         orientation: Orientation360,
         simulation_time: &SimulationTimeIteration,
     ) -> f64 {
-        // """  calculates the ratio of the parameters a and b
+        // calculates the ratio of the parameters a and b
         //
         // Arguments:
         // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
         //                   upwards facing, 0 to 180, in degrees;
         // orientation    -- is the orientation angle of the inclined surface, expressed as the
         //                   geographical azimuth angle of the horizontal projection of the inclined
-        //                   surface normal, -180 to 180, in degrees;
-        // """
+        //                   surface normal, 0 to 360, in degrees;
 
         // #dimensionless parameters a & b
         // #describing the incidence-weighted solid angle sustained by the circumsolar region as seen
@@ -637,15 +636,14 @@ impl ExternalConditions {
         orientation: Orientation360,
         simulation_time: &SimulationTimeIteration,
     ) -> DiffuseIrradiance {
-        // """  calculates the diffuse part of the irradiance on the surface (without ground reflection)
+        // calculates the diffuse part of the irradiance on the surface (without ground reflection)
         //
         // Arguments:
         // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
         //                   upwards facing, 0 to 180, in degrees;
         // orientation    -- is the orientation angle of the inclined surface, expressed as the
         //                   geographical azimuth angle of the horizontal projection of the inclined
-        //                   surface normal, -180 to 180, in degrees;
-        // """
+        //                   surface normal, 0 to 360, in degrees;
 
         // #first set up parameters needed for the calculation
         let diffuse_horizontal_radiation = self.diffuse_horizontal_radiation(simulation_time.index);
@@ -690,64 +688,58 @@ impl ExternalConditions {
             * ((1.0 - tilt.to_radians().cos()) / 2.0)
     }
 
+    /// calculates the circumsolar_irradiance
+    ///
+    /// Arguments:
+    /// * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
+    ///            upwards facing, 0 to 180, in degrees;
+    /// * `orientation`- is the orientation angle of the inclined surface, expressed as the
+    ///                  geographical azimuth angle of the horizontal projection of the inclined
+    ///                  surface normal, 0 to 360, in degrees;
     fn circumsolar_irradiance(
         &self,
         tilt: f64,
         orientation: Orientation360,
         simulation_time: &SimulationTimeIteration,
     ) -> f64 {
-        // """  calculates the circumsolar_irradiance
-        //
-        // Arguments:
-        // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
-        //                   upwards facing, 0 to 180, in degrees;
-        // orientation    -- is the orientation angle of the inclined surface, expressed as the
-        //                   geographical azimuth angle of the horizontal projection of the inclined
-        //                   surface normal, -180 to 180, in degrees;
-        // """
-
         self.diffuse_horizontal_radiation(simulation_time.index)
             * self.f1_circumsolar_brightness_coefficients[simulation_time.index]
             * self.a_over_b(tilt, orientation, simulation_time)
     }
 
+    /// calculates the total direct irradiance on an inclined surface including circumsolar
+    //
+    /// Arguments:
+    /// * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
+    ///            upwards facing, 0 to 180, in degrees;
+    /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
+    ///                   geographical azimuth angle of the horizontal projection of the inclined
+    ///                   surface normal, 0 to 360, in degrees;
     fn calculated_direct_irradiance(
         &self,
         tilt: f64,
         orientation: Orientation360,
         simulation_time: &SimulationTimeIteration,
     ) -> f64 {
-        // """  calculates the total direct irradiance on an inclined surface including circumsolar
-        //
-        // Arguments:
-        // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
-        //                   upwards facing, 0 to 180, in degrees;
-        // orientation    -- is the orientation angle of the inclined surface, expressed as the
-        //                   geographical azimuth angle of the horizontal projection of the inclined
-        //                   surface normal, -180 to 180, in degrees;
-        // """
-
         self.direct_irradiance(tilt, orientation, simulation_time)
             + self.circumsolar_irradiance(tilt, orientation, simulation_time)
     }
 
+    /// calculates the total diffuse irradiance on an inclined surface excluding circumsolar
+    /// and including ground reflected irradiance
+    ///
+    /// Arguments:
+    /// * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
+    ///        upwards facing, 0 to 180, in degrees;
+    /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
+    ///               geographical azimuth angle of the horizontal projection of the inclined
+    ///               surface normal, 0 to 360, in degrees;
     fn calculated_diffuse_irradiance(
         &self,
         tilt: f64,
         orientation: Orientation360,
         simulation_time: &SimulationTimeIteration,
     ) -> f64 {
-        // """  calculates the total diffuse irradiance on an inclined surface excluding circumsolar
-        // and including ground reflected irradiance
-        //
-        // Arguments:
-        // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
-        //                   upwards facing, 0 to 180, in degrees;
-        // orientation    -- is the orientation angle of the inclined surface, expressed as the
-        //                   geographical azimuth angle of the horizontal projection of the inclined
-        //                   surface normal, -180 to 180, in degrees;
-        // """
-
         let DiffuseIrradiance(diffuse_irr_total, _, diffuse_irr_circumsolar, _) =
             self.diffuse_irradiance(tilt, orientation, simulation_time);
 
@@ -755,24 +747,21 @@ impl ExternalConditions {
             + self.ground_reflection_irradiance(tilt, simulation_time)
     }
 
+    // calculates the hemispherical or total solar irradiance on the inclined surface
+    // without the effect of shading
+    //
+    // Arguments:
+    // * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
+    //            upwards facing, 0 to 180, in degrees;
+    // * `orientation` - is the orientation angle of the inclined surface, expressed as the
+    //                   geographical azimuth angle of the horizontal projection of the inclined
+    //                   surface normal, 0 to 360, in degrees;
     pub fn calculated_total_solar_irradiance(
         &self,
         tilt: f64,
         orientation: Orientation360,
         simulation_time: &SimulationTimeIteration,
     ) -> f64 {
-        // """  calculates the hemispherical or total solar irradiance on the inclined surface
-        // without the effect of shading
-        //
-        // Arguments:
-        // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
-        //                   upwards facing, 0 to 180, in degrees;
-        // orientation    -- is the orientation angle of the inclined surface, expressed as the
-        //                   geographical azimuth angle of the horizontal projection of the inclined
-        //                   surface normal, -180 to 180, in degrees;
-        //
-        // """
-
         self.calculated_direct_irradiance(tilt, orientation, simulation_time)
             + self.calculated_diffuse_irradiance(tilt, orientation, simulation_time)
     }
@@ -816,26 +805,25 @@ impl ExternalConditions {
         )
     }
 
+    /// checks if the shaded surface is in the view of the solar beam.
+    /// if not, then shading is complete, total direct rad = 0 and no further
+    /// shading calculation needed for this object for this time step. returns
+    /// a flag for whether the surface is outside solar beam
+    ///
+    /// Arguments:
+    /// * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
+    ///            upwards facing, 0 to 180, in degrees;
+    /// orientation - is the orientation angle of the inclined surface, expressed as the
+    ///               geographical azimuth angle of the horizontal projection of the
+    ///               inclined surface normal, 0 to 360, in degrees;
+    ///               It will be converted to the -180 to 180 range;
+    ///               Assumed N 180 or -180, E 90, S 0, W -90
     fn outside_solar_beam(
         &self,
         tilt: f64,
         orientation: Orientation360,
         simulation_time: &SimulationTimeIteration,
     ) -> bool {
-        // """ checks if the shaded surface is in the view of the solar beam.
-        // if not, then shading is complete, total direct rad = 0 and no further
-        // shading calculation needed for this object for this time step. returns
-        // a flag for whether the surface is outside solar beam
-        //
-        // Arguments:
-        // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
-        //                   upwards facing, 0 to 180, in degrees;
-        // orientation    -- is the orientation angle of the inclined surface, expressed as the
-        //                   geographical azimuth angle of the horizontal projection of the
-        //                   inclined surface normal, -180 to 180, in degrees;
-        //
-        // """
-
         let orientation180 = orientation.transform_to_180();
         let current_hour_idx = simulation_time.current_hour() as usize;
 
@@ -852,15 +840,12 @@ impl ExternalConditions {
         !(-90.0..=90.0).contains(&test1) || !(-90.0..=90.0).contains(&test2)
     }
 
+    /// for complex (environment) shading objects, we need to know which
+    /// segment the azimuth of the sun occupies at each timestep
     fn get_segment(
         &self,
         simulation_time: &SimulationTimeIteration,
     ) -> anyhow::Result<ShadingSegment> {
-        // """ for complex (environment) shading objects, we need to know which
-        // segment the azimuth of the sun occupies at each timestep
-        //
-        // """
-
         let current_hour_idx = simulation_time.current_hour() as usize;
         let azimuth = self.solar_azimuth_angles[current_hour_idx];
 
@@ -870,7 +855,7 @@ impl ExternalConditions {
             for segment in shading_segments {
                 if let Some(previous_segment_end) = previous_segment_end {
                     if previous_segment_end.angle() != segment.start360.angle() {
-                        return Err(anyhow!("Gaps between segments not allowed."));
+                        return Err(anyhow!("Gaps or overlaps between segments not allowed."));
                     }
                 }
                 previous_segment_end = Some(segment.end360);
@@ -957,7 +942,9 @@ impl ExternalConditions {
     /// * `width` - is the width of the shaded surface, in m
     /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
     ///                   geographical azimuth angle of the horizontal projection of the
-    ///                   inclined surface normal, -180 to 180, in degrees;
+    ///                   inclined surface normal, 0 to 360, in degrees;
+    ///                   It will be converted to the -180 to 180 range;
+    ///                   Assumed N 180 or -180, E 90, S 0, W -90
     /// * `window_shading` - data on overhangs and side fins associated to this building element
     ///                   includes the shading object type, depth, anf distance from element
     pub fn direct_shading_reduction_factor(
@@ -1116,7 +1103,7 @@ impl ExternalConditions {
     /// * `width` - is the width of the shaded surface, in m
     /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
     ///                   geographical azimuth angle of the horizontal projection of the
-    ///                   inclined surface normal, -180 to 180, in degrees;
+    ///                   inclined surface normal, 0 to 360, in degrees;
     /// * `window_shading` - data on overhangs and side fins associated to this building element
     ///                      includes the shading object type, depth, and distance from element
     fn diffuse_shading_reduction_factor(
@@ -1695,6 +1682,21 @@ impl ExternalConditions {
         Ok(diffuse_factor.min(remote_obstacles_diffuse_factor))
     }
 
+    /// calculates the direct and diffuse shading factors due to external
+    /// shading objects
+    ///
+    /// Arguments:
+    /// * `base_height` - is the base height of the shaded surface k, in m
+    /// * `height` - is the height of the shaded surface (if surface is tilted then
+    ///              this must be the vertical projection of the height), in m
+    /// * `width`- is the width of the shaded surface, in m
+    /// * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
+    ///            upwards facing, 0 to 180, in degrees;
+    /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
+    ///                   geographical azimuth angle of the horizontal projection of the
+    ///                   inclined surface normal, 0 to 360, in degrees;
+    /// * `window_shading` - data on overhangs and side fins associated to this building element
+    ///                      includes the shading object type, depth, anf distance from element
     pub(crate) fn shading_reduction_factor_direct_diffuse(
         &self,
         base_height: f64,
@@ -1705,23 +1707,6 @@ impl ExternalConditions {
         window_shading: &[WindowShadingObject],
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
-        // """ calculates the direct and diffuse shading factors due to external
-        // shading objects
-        //
-        // Arguments:
-        // base_height    -- is the base height of the shaded surface k, in m
-        // height         -- is the height of the shaded surface (if surface is tilted then
-        //                   this must be the vertical projection of the height), in m
-        // width          -- is the width of the shaded surface, in m
-        // orientation    -- is the orientation angle of the inclined surface, expressed as the
-        //                   geographical azimuth angle of the horizontal projection of the
-        //                   inclined surface normal, -180 to 180, in degrees;
-        // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
-        //                   upwards facing, 0 to 180, in degrees;
-        // window_shading -- data on overhangs and side fins associated to this building element
-        //                   includes the shading object type, depth, anf distance from element
-        // """
-
         // # first check if there is any radiation. This is needed to prevent a potential
         // # divide by zero error in the final step, but also, if there is no radiation
         // # then shading is irrelevant and we can skip the whole calculation
@@ -3321,7 +3306,8 @@ mod tests {
     ) {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                external_conditions.sun_surface_azimuth(180., t_it),
+                external_conditions
+                    .sun_surface_azimuth(Orientation360::create_from_180(180.).unwrap(), t_it),
                 [
                     -110.99000000000001,
                     -125.99,
@@ -3338,7 +3324,8 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                external_conditions.sun_surface_azimuth(0., t_it),
+                external_conditions
+                    .sun_surface_azimuth(Orientation360::create_from_180(0.).unwrap(), t_it),
                 [
                     69.00999999999999,
                     54.010000000000005,
@@ -3355,7 +3342,8 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                external_conditions.sun_surface_azimuth(-180., t_it),
+                external_conditions
+                    .sun_surface_azimuth(Orientation360::create_from_180(-180.).unwrap(), t_it),
                 [
                     -110.99000000000001,
                     -125.99000000000001,
