@@ -13,7 +13,7 @@ argmin = "0.11.0"
 atomic_float = "1.1.0"
 bounded-vec-deque = "0.1.1"
 chrono = "0.4.43"
-clap = { version = "4.5.56", features = ["derive"], optional = true }
+clap = { version = "4.5.57", features = ["derive"], optional = true }
 convert_case = "0.11.0"
 csv = "1.4.0"
 derivative = "2.2.0"
