@@ -7,6 +7,7 @@ use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HO
 use anyhow::{anyhow, bail};
 #[cfg(test)]
 use approx::{AbsDiffEq, RelativeEq};
+use fsum::FSum;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
@@ -368,22 +369,27 @@ impl ExternalConditions {
         self.air_temps[timestep_idx]
     }
 
+    /// Return the average air temperature for the year
     pub(crate) fn air_temp_annual(&self) -> Option<f64> {
         if self.air_temps.len() != 8760 {
             return None;
         }
-        let sum: f64 = self.air_temps.iter().sum();
+        let sum: f64 = FSum::with_all(self.air_temps.iter()).value();
         Some(sum / self.air_temps.len() as f64)
     }
 
+    /// Return the average air temperature for the current month
     pub(crate) fn air_temp_monthly(&self, current_month_start_end_hours: (u32, u32)) -> f64 {
+        // Get start and end hours for current month
         let (idx_start, idx_end) = current_month_start_end_hours;
         let (idx_start, idx_end) = (idx_start as usize, idx_end as usize);
+        // Get air temperatures for the current month
         let air_temps_month = &self.air_temps[idx_start..idx_end];
-        let sum: f64 = air_temps_month.iter().sum();
+        let sum: f64 = FSum::with_all(air_temps_month.iter()).value();
         sum / air_temps_month.len() as f64
     }
 
+    /// Return the minimum daily average air temperature for the whole year
     pub(crate) fn air_temp_annual_daily_average_min(&self) -> f64 {
         // only works if data for a whole year has been provided
         debug_assert!(self.air_temps.len() == 8760);
@@ -418,6 +424,8 @@ impl ExternalConditions {
             return None;
         }
         let sum: f64 = self.wind_speeds.iter().sum();
+        // TODO: investigate why using FSum here breaks zone tests
+        // let sum: f64 = FSum::with_all(self.wind_speeds.iter()).value();
         Some(sum / self.wind_speeds.len() as f64)
     }
 
