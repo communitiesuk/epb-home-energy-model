@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use jsonschema::Validator;
 use monostate::MustBe;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Map, Value as JsonValue};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -3592,52 +3592,6 @@ impl From<PartyWallCavityData> for PartyWallCavityType {
 pub enum PartyWallLiningType {
     WetPlaster,
     DryLined,
-}
-
-// special deserialization logic so that orientations are normalized correctly on the way in
-pub(crate) fn deserialize_orientation<'de, D>(deserializer: D) -> Result<f64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let orientation360_value: f64 = Deserialize::deserialize(deserializer)?;
-    Ok(init_orientation(orientation360_value))
-}
-
-// special serialization logic so that orientations are un-normalized correctly on way out!
-pub(crate) fn serialize_orientation<S>(normalized: &f64, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let orientation360_value = init_orientation(*normalized);
-    orientation360_value.serialize(serializer)
-}
-
-// special deserialization logic so that orientations are normalized correctly on the way in
-pub(crate) fn deserialize_orientation_option<'de, D>(
-    deserializer: D,
-) -> Result<Option<f64>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let orientation360_value: Option<f64> = Deserialize::deserialize(deserializer)?;
-    Ok(orientation360_value.map(init_orientation))
-}
-
-// special serialization logic so that orientations are un-normalized correctly on way out!
-pub(crate) fn serialize_orientation_option<S>(
-    normalized: &Option<f64>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let orientation360_value = normalized.map(init_orientation);
-    orientation360_value.serialize(serializer)
-}
-
-pub(crate) fn init_orientation(value: f64) -> f64 {
-    // Convert orientation from 0-360 (clockwise) to -180 to +180 (anticlockwise)
-    180. - value
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]

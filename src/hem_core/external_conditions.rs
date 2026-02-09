@@ -2446,7 +2446,6 @@ mod tests {
     use super::*;
     use crate::core::units::DAYS_IN_MONTH;
     use crate::external_conditions::DaylightSavingsConfig::NotApplicable;
-    use crate::input::init_orientation;
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
@@ -5227,15 +5226,6 @@ mod tests {
                 [false, true, true, true, true, true, true, true][t_idx]
             )
         }
-    }
-
-    #[rstest]
-    fn test_init_orientation() {
-        assert_eq!(init_orientation(0.), 180.);
-        assert_eq!(init_orientation(90.), 90.);
-        assert_eq!(init_orientation(180.), 0.);
-        assert_eq!(init_orientation(270.), -90.);
-        assert_eq!(init_orientation(360.), -180.);
     }
 
     // Python test test_diffuse_shading_reduction_factor_invalid_shading_type not required
