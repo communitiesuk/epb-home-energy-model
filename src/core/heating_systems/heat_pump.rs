@@ -2678,7 +2678,7 @@ impl HeatPump {
         };
 
         Ok((
-            energy_max - heat_loss_buffer_kwh,
+            max_of_2(energy_max - heat_loss_buffer_kwh, 0.),
             if let (Some(_), emitters_data) =
                 (self.buffer_tank.as_ref(), emitters_data_for_buffer_tank)
             {
@@ -2761,11 +2761,16 @@ impl HeatPump {
         ) {
             if temp_output == temp_used_for_scaling {
                 energy_output_required
-            } else if (temp_limit_upper - temp_used_for_scaling) >= self.temp_diff_flow_return_min {
-                energy_output_required * (temp_limit_upper - temp_used_for_scaling)
-                    / (temp_output - temp_used_for_scaling)
             } else {
-                0.
+                let flow_temp = temp_limit_upper - temp_used_for_scaling;
+
+                if flow_temp > self.temp_diff_flow_return_min
+                    || is_close!(flow_temp, self.temp_diff_flow_return_min, rel_tol = 1e-09)
+                {
+                    energy_output_required * flow_temp / (temp_output - temp_used_for_scaling)
+                } else {
+                    0.
+                }
             }
         } else {
             energy_output_required
@@ -2799,7 +2804,13 @@ impl HeatPump {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> bool {
         let temp_source = self.get_temp_source(simulation_time_iteration);
-        let below_min_ext_temp = temp_source <= self.temp_lower_op_limit;
+        let below_min_ext_temp = temp_source < self.temp_lower_op_limit
+            || is_close!(
+                temp_source,
+                self.temp_lower_op_limit,
+                rel_tol = 1e-09,
+                abs_tol = 1e-10
+            );
 
         let above_temp_return_feed_max = match self.sink_type {
             HeatPumpSinkType::Water | HeatPumpSinkType::Glycol25 => {
@@ -2872,7 +2883,16 @@ impl HeatPump {
         let cost_hp = schedule_metadata.hp[schedule_index];
         let cost_boiler = schedule_metadata.boiler[schedule_index];
 
-        (cost_hp / cop_op_cond) <= (cost_boiler / boiler_eff)
+        let cost_hp_cop_op_cond = cost_hp / cop_op_cond;
+        let cost_boiler_eff = cost_boiler / boiler_eff;
+
+        cost_hp_cop_op_cond < cost_boiler_eff
+            || is_close!(
+                cost_hp_cop_op_cond,
+                cost_boiler_eff,
+                rel_tol = 1e-09,
+                abs_tol = 1e-10
+            )
     }
 
     /// Evaluate boolean conditions that may trigger backup heater
@@ -3206,7 +3226,14 @@ impl HeatPump {
         let mut energy_delivered_total = energy_delivered_hp + energy_delivered_backup;
 
         if let Some(buffer_tank) = self.buffer_tank.as_mut() {
-            if energy_delivered_total >= heat_loss_buffer_kwh {
+            if energy_delivered_total > heat_loss_buffer_kwh
+                || is_close!(
+                    energy_delivered_total,
+                    heat_loss_buffer_kwh,
+                    rel_tol = 1e-09,
+                    abs_tol = 1e-10
+                )
+            {
                 energy_delivered_total -= heat_loss_buffer_kwh;
                 buffer_tank.update_buffer_loss(0.0);
             } else {
@@ -3762,7 +3789,7 @@ impl HeatPump {
         ))
     }
 
-    /// If HP uses heat network as source, calculate energy extracted from heat network
+    /// Calculate energy extracted from heat source (heat network or environment such as ground)
     fn extract_energy_from_source(&self, timestep_idx: usize) -> anyhow::Result<()> {
         for service_data in self.service_results.read().iter() {
             if let ServiceResult::Full(service_data) = service_data {
@@ -3772,13 +3799,13 @@ impl HeatPump {
                     energy_input_hp,
                     ..
                 } = service_data.as_ref();
-                let energy_extracted_hp = energy_delivered_hp - energy_input_hp;
+                // When heat pump is operating at very low load ratio, the energy consumption due to
+                // inertia effects may cause the energy input to exceed the energy output. The extra
+                // energy would most likely be lost through the casing, but such losses are not part of
+                // the energy extracted from the heat source so the energy extracted must not be allowed
+                // to become negative.
+                let energy_extracted_hp = max_of_2(0., energy_delivered_hp - energy_input_hp);
 
-                if energy_extracted_hp < 0.
-                    && !is_close!(energy_extracted_hp, 0., rel_tol = 1e-09, abs_tol = 1e-10)
-                {
-                    bail!("Energy extracted from source ({energy_extracted_hp}) by heat pump should not be negative for service: {service_name}")
-                }
                 self.energy_supply_heat_source_connections[service_name.as_str()]
                     .demand_energy(energy_extracted_hp, timestep_idx)?;
             }
@@ -3804,7 +3831,12 @@ impl HeatPump {
             .value();
         let time_remaining_current_timestep_part_load = timestep - part_load_sum;
 
-        if time_remaining_current_timestep_full_load == 0.0 {
+        if is_close!(
+            time_remaining_current_timestep_full_load,
+            0.,
+            rel_tol = 1e-09,
+            abs_tol = 1e-10
+        ) {
             self.time_running_continuous += self.total_time_running_current_timestep_full_load;
         } else {
             self.time_running_continuous = 0.;
