@@ -11926,6 +11926,7 @@ mod tests {
     fn create_heat_pump_hw_only(
         vol_daily_average: Option<f64>,
         test_data: Option<HeatPumpHotWaterTestData>,
+        heat_exchanger_surface_area_declared: Option<Option<f64>>,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPumpHotWaterOnly {
         let mut energy_supply = energy_supply(simulation_time_for_heat_pump);
@@ -11953,7 +11954,8 @@ mod tests {
         let heat_exchanger_surface_area = 1.2;
         let in_use_factor_mismatch = 0.6;
         let tank_volume_declared = 180.0;
-        let heat_exchanger_surface_area_declared = Some(1.0);
+        let heat_exchanger_surface_area_declared =
+            heat_exchanger_surface_area_declared.unwrap_or(Some(1.));
         let daily_losses_declared = 1.2;
 
         energy_supply.register_end_user_name("end_user_name".into());
@@ -12005,15 +12007,17 @@ mod tests {
             },
         };
         let heat_pump =
-            create_heat_pump_hw_only(None, Some(test_data), simulation_time_for_heat_pump);
+            create_heat_pump_hw_only(None, Some(test_data), None, simulation_time_for_heat_pump);
 
         assert_eq!(heat_pump.initial_efficiency, 3.0478653375963884);
 
-        let heat_pump = create_heat_pump_hw_only(Some(90.), None, simulation_time_for_heat_pump);
+        let heat_pump =
+            create_heat_pump_hw_only(Some(90.), None, None, simulation_time_for_heat_pump);
 
         assert_eq!(heat_pump.initial_efficiency, 3.0478653375963884);
 
-        let heat_pump = create_heat_pump_hw_only(Some(200.), None, simulation_time_for_heat_pump);
+        let heat_pump =
+            create_heat_pump_hw_only(Some(200.), None, None, simulation_time_for_heat_pump);
 
         assert_eq!(heat_pump.initial_efficiency, 2.7473226825842696);
     }
@@ -12022,7 +12026,7 @@ mod tests {
 
     #[rstest]
     fn test_calc_efficiency(simulation_time_for_heat_pump: SimulationTime) {
-        let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
+        let heat_pump = create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
 
         assert_relative_eq!(
             heat_pump.calc_efficiency(),
@@ -12033,7 +12037,8 @@ mod tests {
 
     #[rstest]
     fn test_calc_efficiency_criteria(simulation_time_for_heat_pump: SimulationTime) {
-        let mut heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
+        let mut heat_pump =
+            create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
         heat_pump.daily_losses = 1.1;
 
         assert_relative_eq!(heat_pump.calc_efficiency(), 2.8975940100903292);
@@ -12042,7 +12047,7 @@ mod tests {
     #[rstest]
     fn test_setpnt(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
+        let heat_pump = create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
 
         let (minsetpnt, maxsetpnt) = heat_pump.setpnt(simtime).unwrap();
 
@@ -12053,7 +12058,7 @@ mod tests {
     #[rstest]
     fn test_setpnt_errors(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
+        let heat_pump = create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
 
         let mut hp1 = heat_pump.clone();
         hp1.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
@@ -12077,7 +12082,7 @@ mod tests {
     #[rstest]
     fn test_demand_energy_for_hw_only(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
+        let heat_pump = create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
 
         assert_relative_eq!(heat_pump.demand_energy(10., 50., 40., simtime), 3.);
     }
@@ -12085,7 +12090,8 @@ mod tests {
     #[rstest]
     fn test_demand_energy_off_for_hw_only(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let mut heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
+        let mut heat_pump =
+            create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
         heat_pump.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
             vec![Some(false), Some(false)],
             0,
@@ -12098,7 +12104,7 @@ mod tests {
     #[rstest]
     fn test_energy_output_max_for_hw_only(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
+        let heat_pump = create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
 
         assert_relative_eq!(heat_pump.energy_output_max(50., simtime), 3.);
     }
@@ -12106,7 +12112,8 @@ mod tests {
     #[rstest]
     fn test_energy_output_max_off(simulation_time_for_heat_pump: SimulationTime) {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
-        let mut heat_pump = create_heat_pump_hw_only(None, None, simulation_time_for_heat_pump);
+        let mut heat_pump =
+            create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
 
         heat_pump.control_min = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
             vec![Some(false), Some(false)],
@@ -12115,5 +12122,20 @@ mod tests {
         )));
 
         assert_relative_eq!(heat_pump.energy_output_max(50., simtime), 0.);
+    }
+
+    /// Test that heat_exchanger_surface_area_declared defaults to 0.0 when None
+    #[rstest]
+    fn test_init_with_null_heat_exchanger_surface_area_declared(
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let heat_pump =
+            create_heat_pump_hw_only(None, None, Some(None), simulation_time_for_heat_pump);
+
+        assert_relative_eq!(
+            heat_pump.calc_efficiency(),
+            1.738556406,
+            max_relative = 1e-7
+        );
     }
 }
