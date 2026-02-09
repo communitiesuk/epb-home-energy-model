@@ -121,7 +121,7 @@ pub(crate) struct Orientation360(
 
 impl Orientation360 {
     pub(crate) fn new(angle: f64) -> Result<Self, Orientation360Error> {
-        if angle > 360. || angle < 0. {
+        if !(0. ..=360.).contains(&angle) {
             return Err(Orientation360Error::InvalidAngle);
         }
 
@@ -137,7 +137,7 @@ impl Orientation360 {
     }
 
     pub(crate) fn create_from_180(angle180: f64) -> Result<Self, Orientation360Error> {
-        if angle180 > 180. || angle180 < -180. {
+        if !(-180. ..=180.).contains(&angle180) {
             return Err(Orientation360Error::InvalidAngleFrom180);
         }
         Ok(Self(180. - angle180))

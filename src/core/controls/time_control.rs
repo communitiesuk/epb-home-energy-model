@@ -2834,7 +2834,7 @@ mod tests {
                 vec![Some(1.0), Some(0.8)],
                 Some(15.5),
                 Some(vec![0., 0.]),
-                Some(external_conditions()).map(Arc::new),
+                Some(Arc::new(external_conditions())),
                 Some(external_sensor()),
                 None,
             );

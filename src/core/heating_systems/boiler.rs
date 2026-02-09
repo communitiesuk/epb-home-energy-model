@@ -285,9 +285,7 @@ impl BoilerServiceWaterCombi {
         let hw_litres_m_profile = 100.2;
         let hw_litres_l_profile = 199.8;
 
-        let daily_vol_factor = if *separate_dhw_tests == BoilerHotWaterTest::MS
-            && daily_hw_usage < hw_litres_s_profile
-        {
+        if *separate_dhw_tests == BoilerHotWaterTest::MS && daily_hw_usage < hw_litres_s_profile {
             64.2
         } else if (*separate_dhw_tests == BoilerHotWaterTest::ML
             && daily_hw_usage < hw_litres_m_profile)
@@ -301,9 +299,7 @@ impl BoilerServiceWaterCombi {
             -99.6
         } else {
             hw_litres_m_profile - daily_hw_usage
-        };
-
-        daily_vol_factor
+        }
     }
 
     fn boiler_combi_loss(
@@ -1563,7 +1559,7 @@ mod tests {
             // assert_eq!(boiler_service.storage_loss_factor_2, Some(0.91574));
 
             // NOTE in Python this is None
-            assert_eq!(boiler_service.rejected_factor_3, Some(0.)); 
+            assert_eq!(boiler_service.rejected_factor_3, Some(0.));
         }
 
         #[rstest]
