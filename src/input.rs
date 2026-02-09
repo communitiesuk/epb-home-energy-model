@@ -1869,8 +1869,9 @@ pub enum HeatSource {
         tank_volume_declared: f64,
 
         /// Surface area of heat exchanger stored in the database (unit: m2)
+        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(exclusive_minimum = 0.)]
-        heat_exchanger_surface_area_declared: f64,
+        heat_exchanger_surface_area_declared: Option<f64>,
 
         /// Standing heat loss (unit: kWh/day)
         #[validate(exclusive_minimum = 0.)]
@@ -7522,7 +7523,7 @@ mod tests {
                     power_max: 10.,
                     vol_hw_daily_average: 10.,
                     tank_volume_declared: 10.,
-                    heat_exchanger_surface_area_declared: 1.3,
+                    heat_exchanger_surface_area_declared: Some(1.3),
                     daily_losses_declared: 2.3,
                     in_use_factor_mismatch: 0.4,
                     test_data: HeatPumpHotWaterTestData {

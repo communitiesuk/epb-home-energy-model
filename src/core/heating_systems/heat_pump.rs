@@ -4369,7 +4369,7 @@ pub struct HeatPumpHotWaterOnly {
     heat_exchanger_surface_area: f64,
     in_use_factor_mismatch: f64,
     tank_volume_declared: f64,
-    heat_exchanger_surface_area_declared: f64,
+    heat_exchanger_surface_area_declared: Option<f64>,
     daily_losses_declared: f64,
 }
 
@@ -4384,7 +4384,7 @@ impl HeatPumpHotWaterOnly {
         heat_exchanger_surface_area: f64,
         in_use_factor_mismatch: f64,
         tank_volume_declared: f64,
-        heat_exchanger_surface_area_declared: f64,
+        heat_exchanger_surface_area_declared: Option<f64>,
         daily_losses_declared: f64,
         simulation_timestep: f64,
         control_min: Arc<Control>, // in Python this is TimeControl
@@ -4488,7 +4488,9 @@ impl HeatPumpHotWaterOnly {
     /// do not meet criteria of data in database.
     fn calc_efficiency(&self) -> f64 {
         let in_use_factor_mismatch = if self.tank_volume < self.tank_volume_declared
-            || self.heat_exchanger_surface_area < self.heat_exchanger_surface_area_declared
+            || self
+                .heat_exchanger_surface_area_declared
+                .is_none_or(|declared| self.heat_exchanger_surface_area < declared)
             || self.daily_losses > self.daily_losses_declared
         {
             self.in_use_factor_mismatch
@@ -11916,7 +11918,7 @@ mod tests {
         let heat_exchanger_surface_area = 1.2;
         let in_use_factor_mismatch = 0.6;
         let tank_volume_declared = 180.0;
-        let heat_exchanger_surface_area_declared = 1.0;
+        let heat_exchanger_surface_area_declared = Some(1.0);
         let daily_losses_declared = 1.2;
 
         energy_supply.register_end_user_name("end_user_name".into());
