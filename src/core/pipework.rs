@@ -1,7 +1,6 @@
 use crate::core::material_properties::{MaterialProperties, GLYCOL25, WATER};
 use crate::core::units::{
-    JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
-    WATTS_PER_KILOWATT,
+    JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE,
 };
 use crate::input::{PipeworkContents, WaterPipework, WaterPipeworkLocation};
 use ordered_float::Pow;
@@ -306,53 +305,6 @@ impl Pipework {
     ) -> f64 {
         (inside_temp - outside_temp) / (self.total_resistance) * self.length()
     }
-
-    ///Calculate temperature drop of water in pipe over one timestep.
-    ///
-    ///    Args:
-    ///        inside_temp: Temperature of water inside the pipe, in degrees C
-    ///        outside_temp: Temperature outside the pipe, in degrees C
-    ///
-    ///    Returns:
-    ///        Temperature drop in degrees C (cannot exceed inside_temp - outside_temp)
-    fn calculate_temperature_drop(&self, inside_temp: f64, outside_temp: f64) -> f64 {
-        let heat_loss_kwh = self.convert_heat_loss_to_kwh(inside_temp, outside_temp);
-        let temp_drop = self.calculate_temperature_drop_from_heat_loss(heat_loss_kwh);
-        let max_possible_drop = inside_temp - outside_temp;
-
-        temp_drop.min(max_possible_drop)
-    }
-
-    //Convert steady state heat loss from watts to kilowatt-hours for one timestep.
-    //
-    //    Args:
-    //        inside_temp: Temperature of water inside the pipe, in degrees C
-    //        outside_temp: Temperature outside the pipe, in degrees C
-    //
-    //    Returns:
-    //        Heat loss in kWh for one hour timestep
-    fn convert_heat_loss_to_kwh(&self, inside_temp: f64, outside_temp: f64) -> f64 {
-        let heat_loss_watts = self.calculate_steady_state_heat_loss(inside_temp, outside_temp);
-        (SECONDS_PER_HOUR as f64 * heat_loss_watts) / WATTS_PER_KILOWATT as f64
-    }
-
-    /// Calculate temperature drop from heat loss using Q = C * m * ΔT.
-    ///
-    ///    Args:
-    ///        heat_loss_kwh: Heat loss in kWh
-    ///
-    ///    Returns:
-    ///        Temperature drop in degrees C
-    fn calculate_temperature_drop_from_heat_loss(&self, heat_loss_kwh: f64) -> f64 {
-        let volumetric_heat_capacity = self
-            .simple_pipework
-            .contents_properties
-            .volumetric_heat_capacity();
-
-        // ΔT = Q / (C * m)
-        (heat_loss_kwh * JOULES_PER_KILOWATT_HOUR as f64)
-            / (volumetric_heat_capacity * self.volume())
-    }
 }
 
 impl Pipeworkesque for Pipework {
@@ -417,25 +369,6 @@ mod tests {
         #[case] expected: f64,
     ) {
         let result = pipework.calculate_steady_state_heat_loss(t_i, t_o);
-        assert_relative_eq!(result, expected, epsilon = 1e-5);
-    }
-
-    #[rstest]
-    #[case(50.0, 15.0, 35.0)]
-    #[case(51.0, 16.0, 35.0)]
-    #[case(52.0, 17.0, 35.0)]
-    #[case(52.0, 18.0, 34.0)]
-    #[case(51.0, 19.0, 32.0)]
-    #[case(50.0, 20.0, 30.0)]
-    #[case(51.0, 21.0, 30.0)]
-    #[case(52.0, 21.0, 31.0)]
-    fn test_temp_drop(
-        pipework: Pipework,
-        #[case] t_i: f64,
-        #[case] t_o: f64,
-        #[case] expected: f64,
-    ) {
-        let result = pipework.calculate_temperature_drop(t_i, t_o);
         assert_relative_eq!(result, expected, epsilon = 1e-5);
     }
 
