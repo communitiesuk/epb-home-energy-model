@@ -4469,11 +4469,14 @@ impl HeatPumpHotWaterOnly {
             Some(eff_l) => {
                 let vol_daily_limit_lower = 100.2;
                 let vol_daily_limit_upper = 199.8;
-                if vol_daily_average <= vol_daily_limit_lower {
+
+                if vol_daily_average < vol_daily_limit_lower
+                    || is_close!(vol_daily_average, vol_daily_limit_lower, rel_tol = 1e-09)
+                {
                     eff_m
-                } else if vol_daily_average >= vol_daily_limit_upper {
-                    // TODO report bug in Python in the conditional for this clause where
-                    // self.__vol_daily_average is referenced without it having been init'd first
+                } else if vol_daily_average > vol_daily_limit_upper
+                    || is_close!(vol_daily_average, vol_daily_limit_upper, rel_tol = 1e-09)
+                {
                     eff_l
                 } else {
                     eff_m
