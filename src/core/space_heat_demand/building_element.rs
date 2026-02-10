@@ -80,11 +80,11 @@ fn calculate_area(height: f64, width: f64) -> f64 {
 /// Returns:
 /// * `r_cavity` - effective thermal resistance of the cavity, in m2.K / W
 fn calculate_cavity_resistance(
-    party_wall_cavity_type: PartyWallCavityType,
-    party_wall_lining_type: Option<PartyWallLiningType>,
+    party_wall_cavity_type: &PartyWallCavityType,
+    party_wall_lining_type: &Option<PartyWallLiningType>,
     thermal_resistance_cavity: Option<f64>,
 ) -> anyhow::Result<f64> {
-    if party_wall_cavity_type == PartyWallCavityType::DefinedResistance {
+    if *party_wall_cavity_type == PartyWallCavityType::DefinedResistance {
         return thermal_resistance_cavity.ok_or_else(|| {
             anyhow!(
                 "thermal_resistance_cavity is validated by schema to be \
@@ -1664,8 +1664,39 @@ impl BuildingElementPartyWall {
     /// * `h_ce` - external convective heat transfer coefficient, in W / (m2.K)
     /// * `h_re` - external radiative heat transfer coefficient, in W / (m2.K)
     /// * `solar_absorption_coeff` - solar absorption coefficient at the external surface (dimensionless)
-    fn new() -> Self {
-        todo!()
+    fn new(
+        area: f64,
+        pitch: f64,
+        thermal_resistance_construction: f64,
+        party_wall_cavity_type: PartyWallCavityType,
+        party_wall_lining_type: Option<PartyWallLiningType>,
+        thermal_resistance_cavity: Option<f64>,
+        areal_heat_capacity: f64,
+        mass_distribution_class: MassDistributionClass,
+        external_conditions: Arc<ExternalConditions>,
+    ) -> Self {
+        // Calculate the effective thermal resistance of the unconditioned space (cavity)
+        // based on the party wall cavity type and party wall lining type
+
+        let _r_unconditioned = calculate_cavity_resistance(
+            &party_wall_cavity_type,
+            &party_wall_lining_type,
+            thermal_resistance_cavity,
+        );
+
+        let party_wall = Self {
+            area,
+            pitch,
+            thermal_resistance_construction,
+            party_wall_cavity_type,
+            party_wall_lining_type,
+            thermal_resistance_cavity,
+            areal_heat_capacity,
+            mass_distribution_class,
+            external_conditions,
+        };
+
+        party_wall
     }
 }
 
