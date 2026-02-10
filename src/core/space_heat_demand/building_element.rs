@@ -1,3 +1,4 @@
+use crate::bail;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::units::{
     average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, Orientation360,
@@ -36,8 +37,83 @@ pub(crate) fn projected_height(tilt: f64, height: f64) -> f64 {
     ph
 }
 
+#[derive(PartialEq)]
+enum PartyWallCavityType {
+    Solid,             // Solid wall or structurally insulated panel
+    UnfilledUnsealed,  // Unfilled cavity with no effective edge sealing
+    UnfilledSealed,    // Unfilled cavity with effective sealing
+    FilledSealed,      // Fully filled cavity with effective sealing
+    FilledUnsealed,    // Fully filled cavity with no effective edge sealing
+    DefinedResistance, // User-defined thermal resistance
+}
+
+#[derive(PartialEq)]
+enum PartyWallLiningType {
+    WetPlaster,
+    DryLined,
+}
+
 fn calculate_area(height: f64, width: f64) -> f64 {
     height * width
+}
+
+/// Calculate the effective thermal resistance of the party wall cavity
+///
+/// For defined_resistance type, uses the provided value directly.
+/// For other types, derives the cavity resistance from equivalent U-values
+/// which are based on research into heat loss via air movement in party wall cavities.
+///
+/// The derivation assumes typical party wall constructions and calculates
+/// what cavity resistance (R_cavity) is needed to achieve the equivalent
+/// U-values (initially based on SAP guidance):
+/// - Unsealed cavity, dry lined: U = 0.6 W/m².K → R_cavity ≈ 1.2 m².K/W
+/// - Unsealed cavity, wet plaster: U = 0.2 W/m².K → R_cavity ≈ 4.5 m².K/W
+/// - Edge-sealed cavity: U = 0.2 W/m².K → R_cavity ≈ 4.5 m².K/W
+/// - Unsealed filled cavity: U = 0.2 W/m².K → R_cavity ≈ 4.5 m².K/W
+/// - Solid or filled and edge-sealed: U = 0.0 W/m².K → R_cavity = 999999 m².K/W (effectively adiabatic)
+///
+/// Arguments:
+/// * `party_wall_cavity_type` - type of party wall cavity construction
+/// * `party_wall_lining_type` - type of party wall lining material
+/// * `thermal_resistance_cavity` - user-defined cavity resistance (only for 'defined_resistance' type)
+///
+/// Returns:
+/// * `r_cavity` - effective thermal resistance of the cavity, in m2.K / W
+fn calculate_cavity_resistance(
+    party_wall_cavity_type: PartyWallCavityType,
+    party_wall_lining_type: Option<PartyWallLiningType>,
+    thermal_resistance_cavity: Option<f64>,
+) -> anyhow::Result<f64> {
+    if party_wall_cavity_type == PartyWallCavityType::DefinedResistance {
+        return thermal_resistance_cavity.ok_or_else(|| {
+            anyhow!(
+                "thermal_resistance_cavity is validated by schema to be \
+                not None for DEFINED_RESISTANCE type"
+            )
+        });
+    }
+
+    // Thermal resistance equivalents for deriving cavity resistance
+    let thermal_resistance = match (party_wall_lining_type, party_wall_cavity_type) {
+        (None, PartyWallCavityType::Solid) => 999999.,
+        (None, PartyWallCavityType::FilledSealed) => 999999.,
+        (None, _) => {
+            bail!("invalid combination of party wall cavity type and party wall lining type")
+        }
+        (Some(PartyWallLiningType::DryLined), PartyWallCavityType::UnfilledUnsealed) => 1.2,
+        (Some(PartyWallLiningType::DryLined), PartyWallCavityType::FilledUnsealed) => 4.5,
+        (Some(PartyWallLiningType::DryLined), PartyWallCavityType::UnfilledSealed) => 4.5,
+        (Some(PartyWallLiningType::DryLined), _) => {
+            bail!("invalid combination of party wall cavity type and party wall lining type")
+        }
+        (Some(PartyWallLiningType::WetPlaster), PartyWallCavityType::UnfilledUnsealed) => 4.5,
+        (Some(PartyWallLiningType::WetPlaster), PartyWallCavityType::FilledUnsealed) => 4.5,
+        (Some(PartyWallLiningType::WetPlaster), PartyWallCavityType::UnfilledSealed) => 4.5,
+        (Some(PartyWallLiningType::WetPlaster), _) => {
+            bail!("invalid combination of party wall cavity type and party wall lining type")
+        }
+    };
+    Ok(thermal_resistance)
 }
 
 #[derive(Debug, PartialEq)]
