@@ -10,13 +10,14 @@ use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::boiler::{BoilerServiceSpace, BoilerServiceWaterRegular};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::{MaterialProperties, WATER};
-use crate::core::schedule::{expand_numeric_schedule, reject_nulls};
+use crate::core::schedule::{expand_numeric_schedule, reject_nulls, validate_schedule_length};
 use crate::core::units::{
     celsius_to_kelvin, kelvin_to_celsius, BelowAbsoluteZeroError, HOURS_PER_DAY,
     KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
+use crate::hem_core::simulation_time::SimulationTimeIterator;
 use crate::input::{
     BoilerCostScheduleHybrid, HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum,
     HeatPumpHotWaterTestData, HeatPumpSinkType, HeatPumpSourceType,
@@ -1937,6 +1938,7 @@ impl HeatPump {
         boiler: Option<Arc<RwLock<Boiler>>>,
         cost_schedule_hybrid_hp: Option<BoilerCostScheduleHybrid>,
         temp_internal_air_fn: TempInternalAirFn,
+        simulation_time_iterator: &SimulationTimeIterator,
     ) -> anyhow::Result<Self> {
         let energy_supply_connections = Default::default();
         let energy_supply_connection_aux = Arc::new(EnergySupply::connection(
@@ -2046,7 +2048,19 @@ impl HeatPump {
 
         let cost_schedule_metadata = cost_schedule_hybrid_hp
             .as_ref()
-            .map(|cost_schedule| anyhow::Ok(cost_schedule.try_into()?))
+            .map(|cost_schedule| {
+                let cost_schedule_boiler =
+                    expand_numeric_schedule(&cost_schedule.cost_schedule_boiler);
+                let cost_schedule_hp = expand_numeric_schedule(&cost_schedule.cost_schedule_hp);
+                let expected_length = simulation_time_iterator.total_steps_based_on_step(
+                    cost_schedule.cost_schedule_start_day,
+                    Some(cost_schedule.cost_schedule_time_series_step),
+                )?;
+                validate_schedule_length(cost_schedule_boiler.as_slice(), expected_length)?;
+                validate_schedule_length(cost_schedule_hp.as_slice(), expected_length)?;
+
+                anyhow::Ok(cost_schedule.try_into()?)
+            })
             .transpose()?;
 
         let temp_return_feed_max = match sink_type {
@@ -6821,6 +6835,7 @@ mod tests {
             boiler,
             cost_schedule_hybrid_hp,
             temp_internal_air_fn,
+            &simulation_time_for_heat_pump.iter(),
         )
         .unwrap()
     }
@@ -11302,6 +11317,7 @@ mod tests {
                 None,
                 None,
                 create_temp_internal_air_fn(20.),
+                &simulation_time_for_heat_pump.iter(),
             )
             .unwrap(),
         ));
@@ -11574,6 +11590,7 @@ mod tests {
                 None,
                 None,
                 create_temp_internal_air_fn(20.),
+                &simulation_time_for_heat_pump.iter(),
             )
             .unwrap(),
         ));
@@ -11762,6 +11779,7 @@ mod tests {
                 None,
                 None,
                 create_temp_internal_air_fn(20.),
+                &simulation_time_for_heat_pump.iter(),
             )
             .unwrap(),
         ));

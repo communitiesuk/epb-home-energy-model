@@ -4502,6 +4502,7 @@ fn heat_source_wet_from_input(
                     boiler.map(|boiler: Boiler| Arc::new(RwLock::new(boiler))),
                     cost_schedule_hybrid_hp,
                     temp_internal_air_fn,
+                    simulation_time.as_ref(),
                 )?,
             ))))
         }

@@ -210,8 +210,8 @@ pub fn expand_events(
 }
 
 /// Validate a schedule length to avoid running out of values during the simulation
-pub(crate) fn validate_schedule_length(
-    schedule: &[f64],
+pub(crate) fn validate_schedule_length<T>(
+    schedule: &[T],
     expected_length: usize,
 ) -> anyhow::Result<()> {
     let schedule_length = schedule.len();
