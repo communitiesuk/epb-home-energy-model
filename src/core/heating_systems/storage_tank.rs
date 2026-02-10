@@ -16,6 +16,7 @@ use anyhow::{anyhow, bail};
 use arc_swap::ArcSwapOption;
 use atomic_float::AtomicF64;
 use derivative::Derivative;
+use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -1338,8 +1339,8 @@ impl StorageTank {
             let list_temp_vol = self
                 .cold_feed
                 .get_temp_cold_water(volume_extracted, simtime)?;
-            (list_temp_vol.iter().map(|(t, v)| t * v).sum::<f64>()
-                / list_temp_vol.iter().map(|(_, v)| v).sum::<f64>())
+            (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
+                / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
             .into()
         };
 
@@ -2308,7 +2309,7 @@ impl SmartHotWaterTank {
                 let volume_to_pump = fraction_to_pump * self.storage_tank.vol_n[0];
                 let mut remaining_vols = self.storage_tank.vol_n.clone();
                 temp_layers =
-                    self.temps_after_pumping(volume_to_pump, &mut remaining_vols, &temp_layers);
+                    self.temps_after_pumping(volume_to_pump, &mut remaining_vols, &temp_layers)?;
             } else {
                 // Pump one layer to the top
                 let temp_pumped_layer = temp_layers.remove(0);
@@ -2447,7 +2448,7 @@ impl SmartHotWaterTank {
             simtime,
         )?;
 
-        Ok(self.temps_after_pumping(volume_pumped, &mut remaining_vols, &tank_layer_temperatures))
+        self.temps_after_pumping(volume_pumped, &mut remaining_vols, &tank_layer_temperatures)
     }
 
     /// Calculate the temperatures of the tank after volume is pumped
@@ -2456,7 +2457,7 @@ impl SmartHotWaterTank {
         volume_pumped: f64,
         remaining_vols: &mut [f64],
         tank_layer_temperatures: &[f64],
-    ) -> Vec<f64> {
+    ) -> anyhow::Result<Vec<f64>> {
         let mut tank_layer_temperatures = tank_layer_temperatures.to_vec();
         let mut remaining_vols = remaining_vols.to_vec();
         if volume_pumped > 0. {
@@ -2522,10 +2523,9 @@ impl SmartHotWaterTank {
                     }
                 }
 
-                debug_assert!(
-                    remaining_vols[i] == self.storage_tank.vol_n[i],
-                    "Volume mismatch in layer {i}"
-                );
+                if remaining_vols[i] != self.storage_tank.vol_n[i] {
+                    bail!("Volume mismatch in layer {i}");
+                }
 
                 // Temperatures after moving
                 // ----------------
@@ -2535,7 +2535,7 @@ impl SmartHotWaterTank {
             }
         }
 
-        tank_layer_temperatures
+        Ok(tank_layer_temperatures)
     }
 
     /// Calculate the volume of water pumped from bottom to top of the tank
@@ -2595,7 +2595,11 @@ impl SmartHotWaterTank {
         // Target temperature is increased to account for thermal losses.
         let temp_target = setpnt + temp_diff_losses;
 
-        if top_layer_temp <= temp_target || qin <= 0. {
+        if top_layer_temp < temp_target
+            || is_close!(top_layer_temp, temp_target, rel_tol = 1e-09)
+            || qin < 0.
+            || is_close!(qin, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+        {
             // No pumping needed if top layer is below setpoint or no energy available
             return Ok(0.);
         }
@@ -2616,14 +2620,18 @@ impl SmartHotWaterTank {
             // exclude the current layer, but as the initial value of the temperature
             // factor is zero, this makes no difference in practice
 
-            let numerator = temp_s7_n
-                .iter()
-                .zip(temp_factors.iter())
-                .map(|(&t, &f)| t * f)
-                .sum::<f64>()
-                - temp_target * temp_factors.iter().copied().sum::<f64>();
+            let numerator = FSum::with_all(
+                temp_s7_n
+                    .iter()
+                    .zip(temp_factors.iter())
+                    .map(|(&t, &f)| t * f),
+            )
+            .value()
+                - temp_target * FSum::with_all(temp_factors.iter().copied()).value();
             let denominator = temp_target - temp_s7_n[current_layer];
-            temp_factors[current_layer] = if denominator <= 0. {
+            temp_factors[current_layer] = if denominator < 0.
+                || is_close!(denominator, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+            {
                 // If the current layer is at or above target temperature, pump all of it
                 1.0
             } else {
@@ -2642,14 +2650,18 @@ impl SmartHotWaterTank {
         }
 
         // Calculate volume to be pumped (only from layers below heater_layer)
-        let volume_pumped = bottom_volumes
-            .iter()
-            .zip(temp_factors[..heater_layer].iter())
-            .map(|(&v, &f)| v * f)
-            .sum::<f64>();
+        let volume_pumped = FSum::with_all(
+            bottom_volumes
+                .iter()
+                .zip(temp_factors[..heater_layer].iter())
+                .map(|(&v, &f)| v * f),
+        )
+        .value();
 
         // Check that the volume pumped doesn't exceed the volume of water up to the heater layer
-        debug_assert!(volume_pumped <= bottom_volumes.iter().sum::<f64>());
+        if volume_pumped > FSum::with_all(bottom_volumes).value() {
+            bail!("Volume pumped is higher than total bottom volumes");
+        }
 
         // Cap volume pumped based on pump max flow rate in timestep
         let max_volume_pumped = self.max_flow_rate_pump_l_per_min
@@ -3024,12 +3036,9 @@ impl SolarThermalSystem {
     ///                   measured upwards facing, 0 to 90, in degrees.
     ///                   0=horizontal surface, 90=vertical surface.
     ///                   Needed to calculate solar irradiation at the panel surface.
-    /// * orientation     -- is the orientation angle of the inclined surface, expressed as the
-    ///                   geographical azimuth angle of the horizontal projection of the inclined
-    ///                   surface normal, -180 to 180, in degrees;
-    ///                   Assumed N 180 or -180, E 90, S 0, W -90
-    ///                   TODO - PV standard refers to angle as between 0 to 360?
-    ///                   Needed to calculate solar irradiation at the panel surface.
+    /// * orientation     -- The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the
+    ///                 horizontal projection of the inclined surface normal, 0 to 360, in degrees;
+    ///                 Needed to calculate solar irradiation at the panel surface.
     /// * solar_loop_piping_hlc -- Heat loss coefficient of the collector loop piping
     /// * ext_cond        -- reference to ExternalConditions object
     /// * simulation_time -- reference to SimulationTime object
@@ -5900,8 +5909,9 @@ mod tests {
         let tank_layer_temperatures = guard.as_slice();
 
         let expected = vec![50.0, 50.0, 50.0, 50.0];
-        let actual =
-            smart_hot_water_tank.temps_after_pumping(10., &mut volumes, tank_layer_temperatures);
+        let actual = smart_hot_water_tank
+            .temps_after_pumping(10., &mut volumes, tank_layer_temperatures)
+            .unwrap();
 
         assert_eq!(actual, expected);
     }
