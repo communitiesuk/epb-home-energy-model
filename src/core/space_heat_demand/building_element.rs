@@ -1691,22 +1691,21 @@ impl BuildingElementAdjacentConditionedSpace {
     /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
     ///          where 0 means the external surface is facing up, 90 means the external
     ///          surface is vertical and 180 means the external surface is facing down
-    /// * `thermal_resistance_construction`      - thermal resistance, in m2.K / W
-    /// * `areal_heat_capacity`      - areal heat capacity, in J / (m2.K)
-    /// * `mass_distribution_class`
-    ///          - distribution of mass in building element, one of:
-    ///             - 'I':  mass concentrated on internal side
-    ///             - 'E':  mass concentrated on external side
-    ///             - 'IE': mass divided over internal and external side
-    ///             - 'D':  mass equally distributed
-    ///             - 'M':  mass concentrated inside
+    /// * `thermal_resistance_construction` - thermal resistance, in m2.K / W
+    /// * `areal_heat_capacity` - areal heat capacity, in J / (m2.K)
+    /// * `mass_distribution_class` - distribution of mass in building element, one of:
+    ///    - 'I':  mass concentrated on internal side
+    ///    - 'E':  mass concentrated on external side
+    ///    - 'IE': mass divided over internal and external side
+    ///    - 'D':  mass equally distributed
+    ///    - 'M':  mass concentrated inside
     /// * `external_conditions` - reference to ExternalConditions object
     ///
     /// Other variables:
-    /// * `f_sky` -- view factor to the sky (see BS EN ISO 52016-1:2017, section 6.5.13.3)
-    /// * `h_ce`     -- external convective heat transfer coefficient, in W / (m2.K)
-    /// * `h_re`     -- external radiative heat transfer coefficient, in W / (m2.K)
-    /// * `solar_absorption_coeff`    -- solar absorption coefficient at the external surface (dimensionless)
+    /// * `f_sky` - view factor to the sky (see BS EN ISO 52016-1:2017, section 6.5.13.3)
+    /// * `h_ce` - external convective heat transfer coefficient, in W / (m2.K)
+    /// * `h_re` - external radiative heat transfer coefficient, in W / (m2.K)
+    /// * `solar_absorption_coeff` - solar absorption coefficient at the external surface (dimensionless)
     pub(crate) fn new(
         area: f64,
         pitch: f64,
