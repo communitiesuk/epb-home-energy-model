@@ -145,6 +145,7 @@ pub enum HeatFlowDirection {
 // - BuildingElementTransparent: Common, 2 nodes, Outside, Transmitted
 // - BuildingElementAdjacentConditionedSpace: Common, 5 nodes, Conditioned space, Not exposed
 // - BuildingElementAdjacentUnconditionedSpaceSimple: Common, 5 nodes, Unconditioned space, Not exposed
+// - BuildingElementPartyWall: Common, 5 nodes, Unconditioned space, Not exposed
 // - BuildingElementGround: Common, 3+2 nodes, Ground, Not exposed
 //
 // BuildingElementTransparent also has the functions projected_height, mid_height and orientation, which I think are now
@@ -1376,7 +1377,7 @@ impl BuildingElementOpaque {
     ///             - 'M':  mass concentrated inside
     /// * `orientation` -- is the orientation angle of the inclined surface, expressed as the
     ///                geographical azimuth angle of the horizontal projection of the inclined
-    ///                surface normal, -180 to 180, in degrees
+    ///                surface normal, 0 to 360, in degrees
     /// * `base_height` - is the distance between the ground and the lowest edge of the element, in m
     /// * `height`      - is the height of the building element, in m
     /// * `width`       - is the width of the building element, in m
