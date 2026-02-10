@@ -37,7 +37,7 @@ pub(crate) fn projected_height(tilt: f64, height: f64) -> f64 {
     ph
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Debug)]
 enum PartyWallCavityType {
     Solid,             // Solid wall or structurally insulated panel
     UnfilledUnsealed,  // Unfilled cavity with no effective edge sealing
@@ -47,7 +47,7 @@ enum PartyWallCavityType {
     DefinedResistance, // User-defined thermal resistance
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Debug)]
 enum PartyWallLiningType {
     WetPlaster,
     DryLined,
@@ -1603,6 +1603,69 @@ impl SolarRadiationInteraction for BuildingElementOpaque {
 impl SolarRadiationInteractionAbsorbed for BuildingElementOpaque {
     fn external_conditions(&self) -> &ExternalConditions {
         self.external_conditions.as_ref()
+    }
+}
+
+/// A class to represent all party wall building elements
+///
+/// This class handles all party wall types, with specific provisions for cavity walls
+/// where heat loss via air movement occurs. Research has shown this heat loss to be
+/// significant in cavity party walls, contrary to historical assumptions of negligible
+/// heat transfer.
+///
+/// For cavity party walls, heat loss is modelled by treating the cavity as an
+/// unconditioned space with an effective thermal resistance that depends on the
+/// cavity type. The thermal resistance values (R_cavity) are derived from equivalent
+/// U-values which are based on research into air movement patterns within party wall cavities:
+/// - Solid walls and filled-sealed cavities: R_cavity = 0 (no heat loss via cavity)
+/// - Unfilled unsealed cavities: R_cavity ≈ 1.5 m².K/W
+/// - Unfilled sealed cavities: R_cavity ≈ 4.5 m².K/W
+///
+/// Note: This approach does not explicitly model losses via air movement in party
+/// ceilings/floors, though these may be implicitly included in the cavity resistance
+/// values derived from the original research.
+#[derive(Clone, Debug)]
+pub(crate) struct BuildingElementPartyWall {
+    area: f64,
+    pitch: f64,
+    thermal_resistance_construction: f64,
+    party_wall_cavity_type: PartyWallCavityType,
+    party_wall_lining_type: Option<PartyWallLiningType>,
+    thermal_resistance_cavity: Option<f64>,
+    areal_heat_capacity: f64,
+    mass_distribution_class: MassDistributionClass,
+    external_conditions: Arc<ExternalConditions>,
+}
+
+impl BuildingElementPartyWall {
+    /// Construct a BuildingElementPartyWall object
+    /// Arguments (names based on those in BS EN ISO 52016-1:2017):
+    /// * `area` - area (in m2) of this building element
+    /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
+    ///             where` 0 means the external surface is facing up, 90 means the external
+    ///             surface` is vertical and 180 means the external surface is facing down
+    /// * `thermal_resistance_construction` - thermal resistance of wall layers before the cavity, in m2.K / W
+    /// * `party_wall_cavity_type` - type of party wall cavity (solid, unfilled_unsealed,
+    ///                              unfilled_sealed, filled_sealed, or defined_resistance)
+    /// * `party_wall_lining_type` - type of party wall lining (wet_plaster, or dry_lined)
+    /// * `thermal_resistance_cavity` - effective thermal resistance of the cavity, in m2.K / W;
+    ///                                 required only for 'defined_resistance' type, otherwise calculated automatically
+    /// * `areal_heat_capacity` - areal heat capacity, in J / (m2.K)
+    /// * `mass_distribution_class` - distribution of mass in building element, one of:
+    ///     - 'I':  mass concentrated on internal side
+    ///     - 'E':  mass concentrated on external side
+    ///     - 'IE': mass divided over internal and external side
+    ///     - 'D':  mass equally distributed
+    ///     - 'M':  mass concentrated inside
+    /// * `ext_cond` -- reference to ExternalConditions object
+    ///
+    /// Other variables:
+    /// * `f_sky` - view factor to the sky (see BS EN ISO 52016-1:2017, section 6.5.13.3)
+    /// * `h_ce` - external convective heat transfer coefficient, in W / (m2.K)
+    /// * `h_re` - external radiative heat transfer coefficient, in W / (m2.K)
+    /// * `solar_absorption_coeff` - solar absorption coefficient at the external surface (dimensionless)
+    fn new() -> Self {
+        todo!()
     }
 }
 
