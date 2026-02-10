@@ -39,7 +39,6 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
-
 const N_EXER: f64 = 3.0;
 
 impl HeatPumpSourceType {
@@ -6517,50 +6516,51 @@ mod tests {
                     "temp_source": 0,
                     "temp_test": -7
                 },
-                {"test_letter": "A",
-                                                    "capacity": 8.8,
-                                                    "cop": 3.2,
-                                                    "design_flow_temp": 55,
-                                                    "temp_outlet": 52,
-                                                    "temp_source": 0,
-                                                    "temp_test": -7
-                                                   },
-                                                   {
-                                                    "test_letter": "B",
-                                                    "capacity": 8.6,
-                                                    "cop": 3.6,
-                                                    "design_flow_temp": 55,
-                                                    "temp_outlet": 42,
-                                                    "temp_source": 0,
-                                                    "temp_test": 2
-                                                   },
-                                                   {
-                                                    "test_letter": "C",
-                                                    "capacity": 8.5,
-                                                    "cop": 3.9,
-                                                    "design_flow_temp": 55,
-                                                    "temp_outlet": 36,
-                                                    "temp_source": 0,
-                                                    "temp_test": 7
-                                                   },
-                                                   {
-                                                    "test_letter": "D",
-                                                    "capacity": 8.5,
-                                                    "cop": 4.3,
-                                                    "design_flow_temp": 55,
-                                                    "temp_outlet": 30,
-                                                    "temp_source": 0,
-                                                    "temp_test": 12
-                                                   },
-                                                   {
-                                                    "test_letter": "F",
-                                                    "capacity": 8.8,
-                                                    "cop": 3.2,
-                                                    "design_flow_temp": 55,
-                                                    "temp_outlet": 52,
-                                                    "temp_source": 0,
-                                                    "temp_test": -7
-                                                   }
+                {
+                    "test_letter": "A",
+                    "capacity": 8.8,
+                    "cop": 3.2,
+                    "design_flow_temp": 55,
+                    "temp_outlet": 52,
+                    "temp_source": 0,
+                    "temp_test": -7
+               },
+               {
+                    "test_letter": "B",
+                    "capacity": 8.6,
+                    "cop": 3.6,
+                    "design_flow_temp": 55,
+                    "temp_outlet": 42,
+                    "temp_source": 0,
+                    "temp_test": 2
+               },
+               {
+                    "test_letter": "C",
+                    "capacity": 8.5,
+                    "cop": 3.9,
+                    "design_flow_temp": 55,
+                    "temp_outlet": 36,
+                    "temp_source": 0,
+                    "temp_test": 7
+               },
+               {
+                    "test_letter": "D",
+                    "capacity": 8.5,
+                    "cop": 4.3,
+                    "design_flow_temp": 55,
+                    "temp_outlet": 30,
+                    "temp_source": 0,
+                    "temp_test": 12
+               },
+               {
+                    "test_letter": "F",
+                    "capacity": 8.8,
+                    "cop": 3.2,
+                    "design_flow_temp": 55,
+                    "temp_outlet": 52,
+                    "temp_source": 0,
+                    "temp_test": -7
+               }
             ]
         });
 
