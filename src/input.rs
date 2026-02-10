@@ -3090,7 +3090,7 @@ pub enum BuildingElement {
         pitch: f64,
 
         #[validate]
-        orientation360: Option<Orientation360>,
+        orientation360: Orientation360,
 
         /// Total solar energy transmittance of the transparent part of the window
         #[validate(minimum = 0.)]
@@ -3476,7 +3476,7 @@ impl BuildingElement {
             BuildingElement::Transparent {
                 orientation360: orientation,
                 ..
-            } => *orientation,
+            } => Some(*orientation),
             _ => None,
         }
     }
@@ -5132,16 +5132,16 @@ impl MechVentData {
         }
     }
 
-    pub(crate) fn position_intake(&self) -> (Option<Orientation360>, Option<f64>, Option<f64>) {
+    pub(crate) fn position_intake(&self) -> Option<(Orientation360, f64, f64)> {
         match self {
             Self::Mvhr {
                 position_intake, ..
-            } => (
-                Some(position_intake.orientation360),
-                Some(position_intake.pitch),
-                Some(position_intake.mid_height_air_flow_path),
-            ),
-            _ => (None, None, None),
+            } => Some((
+                position_intake.orientation360,
+                position_intake.pitch,
+                position_intake.mid_height_air_flow_path,
+            )),
+            _ => None,
         }
     }
 }
@@ -8487,7 +8487,7 @@ mod tests {
                         thermal_resistance_construction: 0.74,
                     },
                     pitch: 45.,
-                    orientation360: None,
+                    orientation360: 180.0.into(),
                     g_value: 10.,
                     frame_area_fraction: 0.25,
                     base_height: 10.,

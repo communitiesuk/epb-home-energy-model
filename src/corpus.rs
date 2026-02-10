@@ -609,6 +609,7 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
             Some(0.),
             0.,
             Some(ReportingFlag::Min),
+            true.into(),
             simtime.iter().current_iteration(),
         )?;
         let total_vent_heat_loss = calc_vent_heat_transfer_coeff(zone.volume, air_changes_per_hour);
@@ -3854,7 +3855,7 @@ fn building_element_from_input(
             BuildingElement::Transparent(BuildingElementTransparent::new(
                 *pitch,
                 init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
-                *orientation,
+                Some(*orientation),
                 *g_value,
                 *frame_area_fraction,
                 *base_height,

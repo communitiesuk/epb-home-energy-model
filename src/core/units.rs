@@ -146,18 +146,10 @@ impl Orientation360 {
     // Python __str__ method is covered equivalently by Display trait impl
 
     pub(crate) fn orientation_difference(
-        orientation360: Orientation360,
-        orientation2: Orientation360,
-    ) -> f64 {
-        (orientation360.angle() - orientation2.angle()).abs()
-    }
-
-    pub(crate) fn orientation_difference_from_180(
         orientation1: Orientation360,
         orientation2: Orientation360,
     ) -> f64 {
-        let op_rel_orientation =
-            (orientation1.transform_to_180() - orientation2.transform_to_180()).abs();
+        let op_rel_orientation = (orientation1.angle() - orientation2.angle()).abs();
 
         if op_rel_orientation > 180. {
             360. - op_rel_orientation
