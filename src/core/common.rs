@@ -43,10 +43,10 @@ impl WaterSupplyBehaviour for WaterSupply {
             WaterSupply::Wwhrs(wwhrs) => Ok(vec![wwhrs.lock().get_temp_cold_water(volume_needed)]),
             WaterSupply::Preheated(storage_tank) => match storage_tank {
                 HotWaterStorageTank::StorageTank(rw_lock) => {
-                    Ok(rw_lock.read().get_temp_cold_water(volume_needed))
+                    rw_lock.read().get_temp_cold_water(volume_needed, simtime)
                 }
                 HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
-                    Ok(rw_lock.read().get_temp_cold_water(volume_needed))
+                    rw_lock.read().get_temp_cold_water(volume_needed, simtime)
                 }
             },
             #[cfg(test)]
