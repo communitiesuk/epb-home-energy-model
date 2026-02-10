@@ -2153,8 +2153,8 @@ impl SmartHotWaterTank {
             .storage_tank
             .cold_feed
             .get_temp_cold_water(self.storage_tank.volume_total_in_litres, simtime)?;
-        let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| t * v).sum();
-        let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| v).sum();
+        let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
+        let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
         let t_c = sum_t_by_v / sum_v;
         // TODO (from Python) Maybe use underlying cold feed?
 
@@ -2167,7 +2167,7 @@ impl SmartHotWaterTank {
         // Calculate state of charge
         let mut soc_numerator_total = 0.0;
         for &t_h_i in t_h {
-            if t_h_i >= t_u {
+            if t_h_i > t_u || is_close!(t_h_i, t_u, rel_tol = 1e-09) {
                 soc_numerator_total += (1. + (t_h_i - t_u) / (t_u - t_c)) * height_of_layer;
             }
         }
@@ -2244,7 +2244,10 @@ impl SmartHotWaterTank {
         let mut q_ls_n_already_considered = q_ls_n_prev_heat_source.to_vec();
 
         for _ in 0..self.storage_tank.vol_n.len() {
-            if energy_available.iter().sum::<f64>() <= 0. {
+            let sum_energy_available = FSum::with_all(&energy_available).value();
+            if sum_energy_available < 0.
+                || is_close!(sum_energy_available, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+            {
                 break;
             }
 
@@ -2275,7 +2278,8 @@ impl SmartHotWaterTank {
 
             let soc_temp_max = self.calc_state_of_charge(&temp_simulation_max, simtime)?;
             if let Some(soc_max) = soc_max {
-                if soc_temp_usable >= soc_max {
+                if soc_temp_usable > soc_max || is_close!(soc_temp_usable, soc_max, rel_tol = 1e-09)
+                {
                     q_in_h_w[heater_layer] += energy_req_usable;
                     break;
                 } else if soc_temp_max > soc_max {
@@ -2292,7 +2296,7 @@ impl SmartHotWaterTank {
             q_ls_n_already_considered = q_ls_n_max
                 .iter()
                 .zip(q_ls_n_already_considered.iter())
-                .map(|(x1, x2)| x1 + x2)
+                .map(|(x1, x2)| FSum::with_all([x1 + x2]).value())
                 .collect();
             q_in_h_w[heater_layer] += energy_req_max;
             energy_available[heater_layer] -= energy_req_max;
@@ -2302,10 +2306,16 @@ impl SmartHotWaterTank {
                 * self.storage_tank.cp
                 * self.storage_tank.vol_n[0]
                 * temp_layers[0];
-            if energy_available.iter().sum::<f64>() <= energy_req_bottom_layer_to_setpnt {
+            let sum_energy_available = FSum::with_all(&energy_available).value();
+            if sum_energy_available < energy_req_bottom_layer_to_setpnt
+                || is_close!(
+                    sum_energy_available,
+                    energy_req_bottom_layer_to_setpnt,
+                    rel_tol = 1e-09
+                )
+            {
                 // Pump partial layer to the top
-                let fraction_to_pump =
-                    energy_available.iter().sum::<f64>() / energy_req_bottom_layer_to_setpnt;
+                let fraction_to_pump = sum_energy_available / energy_req_bottom_layer_to_setpnt;
                 let volume_to_pump = fraction_to_pump * self.storage_tank.vol_n[0];
                 let mut remaining_vols = self.storage_tank.vol_n.clone();
                 temp_layers =
@@ -2320,7 +2330,7 @@ impl SmartHotWaterTank {
         }
 
         // Calculate total energy required to meet max state of charge
-        let energy_req_for_soc = q_in_h_w.iter().sum::<f64>();
+        let energy_req_for_soc = FSum::with_all(&q_in_h_w).value();
 
         Ok((energy_req_for_soc, q_in_h_w))
     }
@@ -2468,7 +2478,9 @@ impl SmartHotWaterTank {
             // is no more water to be removed.
             let mut volume_pumped_remaining = volume_pumped;
             for remaining_vol in remaining_vols.iter_mut() {
-                if volume_pumped_remaining <= 0. {
+                if volume_pumped_remaining < 0.
+                    || is_close!(volume_pumped_remaining, 0., abs_tol = 1e-10)
+                {
                     break;
                 }
                 let volume_removed = volume_pumped_remaining.min(*remaining_vol);
@@ -2485,7 +2497,7 @@ impl SmartHotWaterTank {
                 let mut needed_volume = self.storage_tank.vol_n[i] - remaining_vols[i];
 
                 // If this layer is already full, continue to the next
-                if needed_volume <= 0. {
+                if needed_volume < 0. || is_close!(needed_volume, 0., abs_tol = 1e-10) {
                     continue;
                 }
 
@@ -2517,7 +2529,9 @@ impl SmartHotWaterTank {
 
                         // Decrease the amount of volume needed for the current layer
                         needed_volume -= move_volume;
-                        if needed_volume <= 0. {
+                        if needed_volume < 0.
+                            || is_close!(needed_volume, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+                        {
                             break;
                         }
                     }
