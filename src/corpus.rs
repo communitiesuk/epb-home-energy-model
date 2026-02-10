@@ -47,8 +47,8 @@ use crate::core::schedule::{
 use crate::core::space_heat_demand::building_element::{
     convert_uvalue_to_resistance, BuildingElement, BuildingElementAdjacentConditionedSpace,
     BuildingElementAdjacentUnconditionedSpaceSimple, BuildingElementGround, BuildingElementOpaque,
-    BuildingElementTransparent, WindowTreatment, H_CE, H_RE, PITCH_LIMIT_HORIZ_CEILING,
-    PITCH_LIMIT_HORIZ_FLOOR, R_SI_DOWNWARDS, R_SI_HORIZONTAL, R_SI_UPWARDS,
+    BuildingElementTransparent, WindowTreatment, H_CE, H_RE, R_SI_DOWNWARDS, R_SI_HORIZONTAL,
+    R_SI_UPWARDS,
 };
 use crate::core::space_heat_demand::internal_gains::{
     ApplianceGains, EventApplianceGains, Gains, InternalGains,
@@ -85,7 +85,7 @@ use crate::input::{
     ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput, VentilationLeaks,
     WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
     WaterPipework, WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
-    MAIN_REFERENCE,
+    MAIN_REFERENCE, PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
 };
 use crate::output::{
     Output, OutputCop, OutputCore, OutputHeatingCoolingSystem, OutputHotWaterSystems, OutputStatic,

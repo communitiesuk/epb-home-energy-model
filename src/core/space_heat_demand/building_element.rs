@@ -11,7 +11,7 @@ use crate::external_conditions::{
 use crate::input::{
     EdgeInsulation, FloorData, MassDistributionClass, WindShieldLocation,
     WindowTreatment as WindowTreatmentInput, WindowTreatmentControl as WindowTreatmentControlInput,
-    WindowTreatmentType,
+    WindowTreatmentType, PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
@@ -193,11 +193,6 @@ pub(crate) const R_SI_HORIZONTAL: f64 = 1.0 / (H_RI + H_CI_HORIZONTAL);
 pub(crate) const R_SI_UPWARDS: f64 = 1.0 / (H_RI + H_CI_UPWARDS);
 pub(crate) const R_SI_DOWNWARDS: f64 = 1.0 / (H_RI + H_CI_DOWNWARDS);
 const R_SE: f64 = 1.0 / (H_CE + H_RE);
-
-// From BR 443: The values under "horizontal" apply to heat flow
-// directions +/- 30 degrees from horizontal plane.
-pub(crate) const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
-pub(crate) const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 
 #[derive(Debug)]
 pub(crate) enum BuildingElement {

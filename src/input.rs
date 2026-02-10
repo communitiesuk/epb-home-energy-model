@@ -3019,8 +3019,8 @@ pub enum ZoneTemperatureControlBasis {
 
 // From BR 443: The values under "horizontal" apply to heat flow
 // directions +/- 30 degrees from horizontal plane.
-const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
-const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
+pub(crate) const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
+pub(crate) const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
