@@ -112,7 +112,7 @@ pub struct StorageTank {
     primary_pipework: Option<Vec<Pipework>>,
     primary_pipework_losses_kwh: AtomicF64,
     storage_losses_kwh: AtomicF64,
-    temp_surrounding_prev_heating_event: Option<Vec<f64>>,
+    temp_surrounding_prev_heating_event: Vec<AtomicF64>,
     flag_first_water_heating_event: AtomicBool,
     heat_source_data: IndexMap<String, PositionedHeatSource>, // heat sources, sorted by heater position
     heating_active: HashMap<String, AtomicBool>,
@@ -218,15 +218,12 @@ impl StorageTank {
                     );
 
                     primary_pipework.push(new_pipework);
-                    temp_surrounding_prev_heating_event.push(surrounding_temp);
+                    temp_surrounding_prev_heating_event.push(AtomicF64::from(surrounding_temp));
                 }
 
-                (
-                    Some(primary_pipework),
-                    Some(temp_surrounding_prev_heating_event),
-                )
+                (Some(primary_pipework), temp_surrounding_prev_heating_event)
             } else {
-                (None, None)
+                (None, Default::default())
             };
 
         // With pre-heatd storage tanks, there could be the situation of tanks without heat sources
@@ -1685,7 +1682,7 @@ impl StorageTank {
             if input_energy_adj > 0.
                 && self.input_energy_adj_prev_timestep.load(Ordering::SeqCst) == 0.
             {
-                for pipework_data in primary_pipework {
+                for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
                     let outside_temperature = StorageTank::temperature_surrounding_primary_pipework(
                         &self.external_conditions,
                         self.temp_internal_air_fn.clone(),
@@ -1696,6 +1693,22 @@ impl StorageTank {
                         pipework_data.calculate_cool_down_loss(temp_flow, outside_temperature);
 
                     primary_pipework_losses_kwh += cool_down_loss;
+
+                    // Add losses between events as temperature surrounding pipework changes.
+                    if !self.flag_first_water_heating_event.load(Ordering::SeqCst) {
+                        let between_events_loss = pipework_data.calculate_cool_down_loss(
+                            self.temp_surrounding_prev_heating_event[pipe_idx]
+                                .load(Ordering::SeqCst),
+                            outside_temperature,
+                        );
+                        primary_pipework_losses_kwh += between_events_loss;
+                        // Check if pipework location is internal
+                        let location = pipework_data.location();
+                        if matches!(location, PipeworkLocation::Internal) {
+                            primary_gains_w += between_events_loss * WATTS_PER_KILOWATT as f64
+                                / simulation_time_iteration.timestep;
+                        }
+                    }
                 }
             }
 
@@ -1729,22 +1742,21 @@ impl StorageTank {
             if input_energy_adj == 0.
                 && self.input_energy_adj_prev_timestep.load(Ordering::SeqCst) > 0.
             {
-                for pipework_data in primary_pipework {
+                for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
                     let location = pipework_data.location();
-                    match location {
-                        PipeworkLocation::External => {}
-                        PipeworkLocation::Internal => {
-                            primary_gains_w += pipework_data.calculate_cool_down_loss(
-                                temp_flow,
-                                StorageTank::temperature_surrounding_primary_pipework(
-                                    &self.external_conditions,
-                                    self.temp_internal_air_fn.clone(),
-                                    pipework_data,
-                                    &simulation_time_iteration,
-                                ),
-                            ) * WATTS_PER_KILOWATT as f64
-                                / self.simulation_timestep
-                        }
+                    let outside_temperature = StorageTank::temperature_surrounding_primary_pipework(
+                        &self.external_conditions,
+                        self.temp_internal_air_fn.clone(),
+                        pipework_data,
+                        &simulation_time_iteration,
+                    );
+                    self.temp_surrounding_prev_heating_event[pipe_idx]
+                        .store(outside_temperature, Ordering::SeqCst);
+                    if matches!(location, PipeworkLocation::Internal) {
+                        primary_gains_w += pipework_data
+                            .calculate_cool_down_loss(temp_flow, outside_temperature)
+                            * WATTS_PER_KILOWATT as f64
+                            / self.simulation_timestep
                     }
                 }
 
