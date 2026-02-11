@@ -5840,7 +5840,7 @@ fn on_site_generation_from_input(
                 let energy_supply_conn = EnergySupply::connection(energy_supply, name).unwrap();
                 let inverter = Inverter::new(
                     energy_supply_conn,
-                    simulation_time_iterator.clone(),
+                    simulation_time_iterator.step_in_hours(),
                     inverter_peak_power_dc,
                     inverter_peak_power_ac,
                     inverter_is_inside,
