@@ -475,6 +475,12 @@ impl StorageTank {
         let mut remaining_demanded_volume = hot_volume;
         let mut energy_withdrawn = 0.;
 
+        // Find the ultimate cold water source temperature (ignoring pre-heat tanks)
+        // This ensures consistent energy accounting throughout the method
+        // Note: Using Any type to allow duck-typing check for get_cold_water_source,
+        // which is more robust and future-proof than checking for specific types
+        // TODO 1.0.0a6
+
         let mut temp_average_drawoff_volweighted: f64 =
             self.temp_average_drawoff_volweighted.load(Ordering::SeqCst);
         let mut total_volume_drawoff: f64 = self.total_volume_drawoff.load(Ordering::SeqCst);
@@ -483,18 +489,34 @@ impl StorageTank {
         for (layer_index, &layer_temp) in self.temp_n.read().iter().enumerate().rev() {
             let layer_vol = remaining_vols[layer_index];
 
-            if remaining_demanded_volume <= 0. {
+            if remaining_demanded_volume < 0.
+                || is_close!(
+                    remaining_demanded_volume,
+                    0.,
+                    rel_tol = 1e-09,
+                    abs_tol = 1e-10
+                )
+            {
                 break;
             }
 
             // Skip this layer if its remaining volume is already zero
-            if remaining_vols[layer_index] <= 0. {
+            if remaining_vols[layer_index] < 0.
+                || is_close!(
+                    remaining_vols[layer_index],
+                    0.,
+                    rel_tol = 1e-09,
+                    abs_tol = 1e-10
+                )
+            {
                 continue;
             }
 
             let required_vol: f64;
             // Volume of hot water required at this layer
-            if layer_vol <= remaining_demanded_volume {
+            if layer_vol < remaining_demanded_volume
+                || is_close!(layer_vol, remaining_demanded_volume, rel_tol = 1e-09)
+            {
                 // This is the case where layer cannot meet all remaining demand for this event
                 required_vol = layer_vol;
                 // Deduct the required volume from the remaining demand and update the layer's volume
@@ -513,12 +535,12 @@ impl StorageTank {
 
             // Record the met volume demand for the current temperature target
             // vol_removed is the volume of warm water that has been satisfied from hot water in this layer
-
+            // Use ultimate cold water source temperature for consistent energy accounting
             let list_temp_vol = self
-                .cold_feed
+                .cold_feed // TODO 1.0.0a6
                 .get_temp_cold_water(hot_volume, simulation_time)?;
-            let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| t * v).sum();
-            let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| v).sum();
+            let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
+            let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
             let temp_cold = sum_t_by_v / sum_v;
 
             energy_withdrawn +=
@@ -536,8 +558,34 @@ impl StorageTank {
         self.total_volume_drawoff
             .store(total_volume_drawoff, Ordering::SeqCst);
 
+        // Handle case where demand exceeds tank capacity
+        // Draw remaining volume from cold feed (which may be a pre-heat tank)
+        if remaining_demanded_volume > 0. {
+            //  Get water from cold feed for the remaining demand
+            //  This triggers draw-off from pre-heat tank if cold_feed is a StorageTank
+            let _list_temp_vol_drawn = self
+                .cold_feed
+                .draw_off_water(remaining_demanded_volume, simulation_time)?;
+        }
+
+        // Get ultimate cold water temperature for energy calculation
+        // TODO 1.0.0a6
+        // let list_temp_vol = cold_water_source.get_temp_cold_water(
+        //     volume_needed=remaining_demanded_volume
+        // );
+        // temp_cold = sum(t * v for t, v in list_temp_vol) / sum(v for _, v in list_temp_vol)
+        //
+        // # Calculate volume-weighted temperature contribution from cold feed
+        // for temp_feed, vol_feed in list_temp_vol_drawn:
+        //     self._temp_average_drawoff_volweighted += vol_feed * temp_feed
+        // self._total_volume_drawoff += vol_feed
+        //
+        // # Energy content is the difference between the drawn water temperature
+        // # and the ultimate cold water temperature reference
+        // energy_withdrawn += self._rho * self._Cp * vol_feed * (temp_feed - temp_cold)
+
         //  Calculate the remaining total volume
-        let remaining_total_volume: f64 = remaining_vols.iter().sum();
+        let remaining_total_volume: f64 = FSum::with_all(&remaining_vols).value();
 
         //  Calculate the total volume used
         let volume_used = self.volume_total_in_litres - remaining_total_volume;
@@ -565,7 +613,8 @@ impl StorageTank {
             // Determine how much volume needs to be added to this layer
             let mut needed_volume = self.vol_n[i] - remaining_vols[i];
             // If this layer is already full, continue to the next
-            if needed_volume <= 0. {
+            if needed_volume < 0. || is_close!(needed_volume, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+            {
                 break;
             }
 
@@ -599,7 +648,9 @@ impl StorageTank {
 
                     // Decrease the amount of volume needed for the current layer
                     needed_volume -= move_volume;
-                    if needed_volume <= 0. {
+                    if needed_volume < 0.
+                        || is_close!(needed_volume, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+                    {
                         break;
                     }
                 }
@@ -618,8 +669,8 @@ impl StorageTank {
                 let list_temp_vol = self
                     .cold_feed
                     .draw_off_water(needed_volume, simulation_time)?;
-                let sum_t_by_v: f64 = list_temp_vol.iter().map(|(t, v)| t * v).sum();
-                let sum_v: f64 = list_temp_vol.iter().map(|(_t, v)| v).sum();
+                let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
+                let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
 
                 let temp_cold_feed = sum_t_by_v / sum_v;
                 volume_weighted_temperature += needed_volume * temp_cold_feed;
@@ -642,24 +693,28 @@ impl StorageTank {
             // Flag for which layers need mixing
             let mut mix_layer_n: Vec<u8> = vec![0; self.number_of_volumes];
 
-            // #for loop :-1 is important here!
-            // #loop through layers from bottom to top, without including top layer.
-            // #this is because the top layer has no upper layer to compare too
-            // loop through layers from bottom to top, without including top layer;
+            // for loop :-1 is important here!
+            // loop through layers from bottom to top, without including top layer.
+            // this is because the top layer has no upper layer to compare to
             for i in 0..self.vol_n.len() - 1 {
-                if temp_s7_n[i] >= temp_s7_n[i + 1] {
+                if temp_s7_n[i] > temp_s7_n[i + 1]
+                    || is_close!(temp_s7_n[i], temp_s7_n[i + 1], rel_tol = 1e-09)
+                {
                     // set layers to mix
                     mix_layer_n[i] = 1;
                     mix_layer_n[i + 1] = 1;
                     // mix temperatures of all applicable layers
                     // note error in formula 12 in standard as adding temperature to volume
                     // this is what I think they intended from the description (comment sic from Python code)
-                    let temp_mix = (0..self.vol_n.len())
-                        .map(|k| self.vol_n[k] * temp_s7_n[k] * mix_layer_n[k] as f64)
-                        .sum::<f64>()
-                        / (0..self.vol_n.len())
-                            .map(|l| self.vol_n[l] * mix_layer_n[l] as f64)
-                            .sum::<f64>();
+                    let temp_mix = FSum::with_all(
+                        (0..self.vol_n.len())
+                            .map(|k| self.vol_n[k] * temp_s7_n[k] * mix_layer_n[k] as f64),
+                    )
+                    .value()
+                        / FSum::with_all(
+                            (0..self.vol_n.len()).map(|l| self.vol_n[l] * mix_layer_n[l] as f64),
+                        )
+                        .value();
                     // set same temperature for all applicable layers
                     for j in 0..i + 2 {
                         if mix_layer_n[j] == 1 {
@@ -883,9 +938,7 @@ impl StorageTank {
 
         let q_s6 = self.rho
             * self.cp
-            * (0..self.vol_n.len())
-                .map(|i| self.vol_n[i] * temp_s6_n[i])
-                .sum::<f64>();
+            * FSum::with_all((0..self.vol_n.len()).map(|i| self.vol_n[i] * temp_s6_n[i])).value();
 
         (q_s6, temp_s6_n)
     }
@@ -900,7 +953,7 @@ impl StorageTank {
         q_ls_n_prev_heat_source: &[f64],
         temp_setpntmax: Option<f64>,
     ) -> (f64, f64, Vec<f64>, Vec<f64>) {
-        let q_x_in_adj: f64 = q_x_in_n.iter().sum();
+        let q_x_in_adj: f64 = FSum::with_all(q_x_in_n).value();
 
         // standby losses coefficient - W/K
         let h_sto_ls = self.stand_by_losses_coefficient();
@@ -936,7 +989,7 @@ impl StorageTank {
         }
 
         // total thermal losses kWh
-        let q_ls = q_ls_n.iter().sum();
+        let q_ls = FSum::with_all(&q_ls_n).value();
 
         self.storage_losses_kwh.store(q_ls, Ordering::SeqCst);
 
@@ -1093,7 +1146,10 @@ impl StorageTank {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
         let (setpntmin, _) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
-        if setpntmin.is_some() && temp_s3_n[thermostat_layer] <= setpntmin.unwrap() {
+        if setpntmin.is_some_and(|setpntmin| {
+            temp_s3_n[thermostat_layer] < setpntmin
+                || is_close!(temp_s3_n[thermostat_layer], setpntmin, rel_tol = 1e-09)
+        }) {
             self.heating_active[heat_source_name].store(true, Ordering::SeqCst);
         };
         Ok(())
@@ -1112,7 +1168,10 @@ impl StorageTank {
         let (_, setpntmax) =
             self.retrieve_setpnt(&(heat_source.lock()), simulation_time_iteration)?;
 
-        if setpntmax.is_none() || temp_s8_n[thermostat_layer] >= setpntmax.unwrap() {
+        if setpntmax.is_none_or(|setpntmax| {
+            temp_s8_n[thermostat_layer] > setpntmax
+                || is_close!(temp_s8_n[thermostat_layer], setpntmax, rel_tol = 1e-09)
+        }) {
             self.heating_active[heat_source_name].store(false, Ordering::SeqCst);
         };
 
