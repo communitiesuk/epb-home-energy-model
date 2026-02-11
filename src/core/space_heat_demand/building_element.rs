@@ -1778,7 +1778,19 @@ impl BuildingElementPartyWall {
         // For solid and filled_sealed types, there is no heat loss
         match self.party_wall_cavity_type {
             PartyWallCavityType::Solid | PartyWallCavityType::FilledSealed => 0.,
-            _ => todo!(),
+            _ => {
+                // For cavity party walls, calculate U-value including cavity resistance
+                // The parent class h_ce() already incorporates the cavity resistance,
+                // so we need to calculate the effective R_se from h_ce and h_re
+                let h_ce = self.h_ce();
+                let h_re = self.h_re();
+                let h_se_effective = h_ce + h_re;
+
+                let r_se_effective = 1.0 / h_se_effective;
+
+                let u_value = 1.0 / (self.r_c + r_se_effective + HeatTransferInternal::r_si(self));
+                self.area * u_value
+            }
         }
     }
 
@@ -5631,6 +5643,37 @@ mod tests {
             assert_eq!(party_wall.h_ce(), 0.);
             // Fabric heat loss should be zero (no heat loss through party wall)
             assert_relative_eq!(party_wall.fabric_heat_loss(), 0.);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_unfilled_unsealed_dry_lined(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Check h_ce value for unsealed cavity (R_cavity = 1.2)
+            // h_ce = 1 / (R_se + R_cavity) = 1 / (0.0414 + 1.2) ≈ 0.805542
+            assert_relative_eq!(party_wall.h_ce(), 0.8055258942872398);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 5.340492100175494;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
         }
     }
 }
