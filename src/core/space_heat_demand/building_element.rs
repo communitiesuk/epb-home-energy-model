@@ -1765,6 +1765,23 @@ impl BuildingElementPartyWall {
         }
     }
 
+    /// Return the fabric heat loss for the building element
+    ///
+    /// For party walls with solid or filled_sealed cavity types, return zero
+    /// as these represent adiabatic boundaries with no heat loss to account for
+    /// in the building's heat loss calculation.
+    ///
+    /// For cavity party walls, the fabric heat loss calculation must include
+    /// the effective thermal resistance of the cavity (R_cavity) in addition to
+    /// the construction resistance.
+    fn fabric_heat_loss(&self) -> f64 {
+        // For solid and filled_sealed types, there is no heat loss
+        match self.party_wall_cavity_type {
+            PartyWallCavityType::Solid | PartyWallCavityType::FilledSealed => 0.,
+            _ => todo!(),
+        }
+    }
+
     pub(crate) fn h_re(&self) -> f64 {
         HeatTransferOtherSideUnconditionedSpace::h_re(self)
     }
@@ -5613,7 +5630,7 @@ mod tests {
             // For solid type, cavity resistance should be 999999, making h_ce effectively zero
             assert_eq!(party_wall.h_ce(), 0.);
             // Fabric heat loss should be zero (no heat loss through party wall)
-            // assert_relative_eq!(party_wall.fabric_heat_loss(), 0.);
+            assert_relative_eq!(party_wall.fabric_heat_loss(), 0.);
         }
     }
 }
