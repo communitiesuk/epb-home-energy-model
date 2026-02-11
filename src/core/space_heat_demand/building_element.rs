@@ -202,6 +202,7 @@ pub(crate) enum BuildingElement {
     AdjacentUnconditionedSpaceSimple(BuildingElementAdjacentUnconditionedSpaceSimple),
     Ground(BuildingElementGround),
     Transparent(BuildingElementTransparent),
+    PartyWall(BuildingElementPartyWall),
 }
 
 impl BuildingElement {
@@ -212,6 +213,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.area(),
             BuildingElement::Ground(el) => el.area(),
             BuildingElement::Transparent(el) => el.area(),
+            BuildingElement::PartyWall(el) => el.area(),
         }
     }
 
@@ -222,6 +224,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el,
             BuildingElement::Ground(el) => el,
             BuildingElement::Transparent(el) => el,
+            BuildingElement::PartyWall(el) => el,
         }
     }
 
@@ -241,6 +244,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => Ok(el.solar_gains()),
             BuildingElement::Ground(el) => Ok(el.solar_gains()),
             BuildingElement::Transparent(el) => el.solar_gains(simtime),
+            BuildingElement::PartyWall(el) => Ok(el.solar_gains()),
         }
     }
 
@@ -251,6 +255,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_ce(),
             BuildingElement::Ground(el) => el.h_ce(),
             BuildingElement::Transparent(el) => el.h_ce(),
+            BuildingElement::PartyWall(el) => el.h_ce(),
         }
     }
 
@@ -261,6 +266,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_re(),
             BuildingElement::Ground(el) => el.h_re(),
             BuildingElement::Transparent(el) => el.h_re(),
+            BuildingElement::PartyWall(el) => el.h_re(),
         }
     }
 
@@ -271,6 +277,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_ri(),
             BuildingElement::Ground(el) => el.h_ri(),
             BuildingElement::Transparent(el) => el.h_ri(),
+            BuildingElement::PartyWall(el) => el.h_ri(),
         }
     }
 
@@ -281,6 +288,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.solar_absorption_coeff(),
             BuildingElement::Ground(el) => el.solar_absorption_coeff(),
             BuildingElement::Transparent(el) => el.solar_absorption_coeff(),
+            BuildingElement::PartyWall(el) => el.solar_absorption_coeff(),
         }
     }
 
@@ -291,6 +299,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.therm_rad_to_sky(),
             BuildingElement::Ground(el) => el.therm_rad_to_sky(),
             BuildingElement::Transparent(el) => el.therm_rad_to_sky(),
+            BuildingElement::PartyWall(el) => el.therm_rad_to_sky(),
         }
     }
 
@@ -305,6 +314,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => Ok(el.h_pli()[idx]),
             BuildingElement::Ground(el) => Ok(el.h_pli()[idx]),
             BuildingElement::Transparent(el) => el.h_pli_by_index(idx, simulation_time_iteration),
+            BuildingElement::PartyWall(el) => Ok(el.h_pli()[idx]),
         }
     }
 
@@ -318,6 +328,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::Ground(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::Transparent(el) => el.i_sol_dir_dif(simtime),
+            BuildingElement::PartyWall(el) => el.i_sol_dir_dif(simtime),
         })
     }
 
@@ -335,6 +346,7 @@ impl BuildingElement {
             }
             BuildingElement::Ground(el) => Ok(el.shading_factors_direct_diffuse(simtime)),
             BuildingElement::Transparent(el) => el.shading_factors_direct_diffuse(simtime),
+            BuildingElement::PartyWall(el) => Ok(el.shading_factors_direct_diffuse(simtime)),
         }
     }
 
@@ -345,6 +357,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.temp_ext(simtime),
             BuildingElement::Ground(el) => el.temp_ext(simtime),
             BuildingElement::Transparent(el) => el.temp_ext(simtime),
+            BuildingElement::PartyWall(el) => el.temp_ext(simtime),
         }
     }
 
@@ -364,6 +377,7 @@ impl BuildingElement {
             }
             BuildingElement::Ground(el) => el.h_ci(temp_int_air, temp_int_surface),
             BuildingElement::Transparent(el) => el.h_ci(temp_int_air, temp_int_surface),
+            BuildingElement::PartyWall(el) => el.h_ci(temp_int_air, temp_int_surface),
         }
     }
 
@@ -374,6 +388,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.fabric_heat_loss(),
             BuildingElement::Ground(el) => el.fabric_heat_loss(),
             BuildingElement::Transparent(el) => el.fabric_heat_loss(),
+            BuildingElement::PartyWall(el) => el.fabric_heat_loss(),
         }
     }
 
@@ -384,6 +399,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.heat_capacity(),
             BuildingElement::Ground(el) => el.heat_capacity(),
             BuildingElement::Transparent(el) => el.heat_capacity(),
+            BuildingElement::PartyWall(el) => el.heat_capacity(),
         }
     }
 }
@@ -1736,6 +1752,14 @@ impl BuildingElementPartyWall {
         party_wall.init_solar_radiation_interaction(pitch, None, None, 0., 0., 0., 0.);
 
         Ok(party_wall)
+    }
+
+    pub(crate) fn h_ce(&self) -> f64 {
+        HeatTransferOtherSideUnconditionedSpace::h_ce(self)
+    }
+
+    pub(crate) fn h_re(&self) -> f64 {
+        HeatTransferOtherSideUnconditionedSpace::h_re(self)
     }
 }
 

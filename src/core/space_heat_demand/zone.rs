@@ -595,6 +595,9 @@ impl Zone {
                     BuildingElement::AdjacentUnconditionedSpaceSimple(_) => {
                         hb_fabric_ext_ztu += hb_fabric_ext;
                     }
+                    BuildingElement::PartyWall(_) => {
+                        hb_fabric_ext_ztu += hb_fabric_ext
+                    }
                 };
             }
             let external_boundary = HeatBalanceExternalBoundary {
