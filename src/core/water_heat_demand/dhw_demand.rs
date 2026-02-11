@@ -1296,7 +1296,7 @@ mod tests {
         let wwhrsb = Arc::new(Mutex::new(
             WwhrsInstantaneous::new(
                 flow_rates,
-                system_a_efficiencies,
+                system_a_efficiencies.into(),
                 cold_water_source.clone(),
                 system_a_utilisation_factor.into(),
                 None,
@@ -1305,7 +1305,6 @@ mod tests {
                 None,
                 Some(0.81),
                 None,
-                simulation_time.iter().current_iteration(),
             )
             .unwrap(),
         ));

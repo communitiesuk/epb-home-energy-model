@@ -738,7 +738,6 @@ impl Corpus {
         let wwhrs = wwhrs_from_input(
             input.waste_water_heat_recovery.as_ref(),
             &cold_water_sources,
-            simulation_time_iterator.current_iteration(),
         )?;
 
         let mut energy_supplies = energy_supplies_from_input(
@@ -3338,7 +3337,6 @@ impl Controls {
 fn wwhrs_from_input(
     wwhrs: Option<&WasteWaterHeatRecovery>,
     cold_water_sources: &ColdWaterSources,
-    initial_simtime: SimulationTimeIteration,
 ) -> anyhow::Result<IndexMap<String, Arc<Mutex<WwhrsInstantaneous>>>> {
     let mut wwhr_systems: IndexMap<String, Arc<Mutex<WwhrsInstantaneous>>> = IndexMap::from([]);
     if let Some(systems) = wwhrs {
@@ -3348,7 +3346,6 @@ fn wwhrs_from_input(
                 .or_insert(Arc::new(Mutex::new(wwhr_system_from_details(
                     system.clone(),
                     cold_water_sources,
-                    initial_simtime,
                 )?)));
         }
     }
@@ -3359,7 +3356,6 @@ fn wwhrs_from_input(
 fn wwhr_system_from_details(
     system: WasteWaterHeatRecoveryDetails,
     cold_water_sources: &ColdWaterSources,
-    initial_simtime: SimulationTimeIteration,
 ) -> anyhow::Result<WwhrsInstantaneous> {
     let cold_water_source = cold_water_sources.get(&system.cold_water_source).ok_or_else(|| anyhow!("Cold water source '{}' referenced by WWHRS input not found in cold water sources list.", system.cold_water_source))?;
 
@@ -3389,7 +3385,6 @@ fn wwhr_system_from_details(
         system_c_utilisation_factor,
         system_b_efficiency_factor.into(),
         system_c_efficiency_factor.into(),
-        initial_simtime,
     )
 }
 

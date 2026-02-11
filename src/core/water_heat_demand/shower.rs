@@ -158,7 +158,7 @@ impl MixerShower {
                 if let Some(wwhrs) = self.wwhrs.as_ref() {
                     wwhrs
                         .lock()
-                        .register_preheated_volume(wwhrs_cyl_feed_temperature, volume_warm_water);
+                        .register_preheated_volume(wwhrs_cyl_feed_temperature, volume_warm_water)?;
                 }
             }
         }
@@ -177,7 +177,7 @@ impl MixerShower {
                 WwhrsConfiguration::AShowerAndWaterHeatingSystem | WwhrsConfiguration::BShower,
             ) => {
                 // Systems A and B: shower's cold feed comes through WWHRS
-                wwhrs.lock().draw_off_water(volume_cold_water);
+                wwhrs.lock().draw_off_water(volume_cold_water, simtime)?;
             }
             _ => {
                 // System C or no WWHRS: shower's cold feed comes from mains
@@ -369,7 +369,7 @@ mod tests {
             let wwhrs = Arc::new(Mutex::new(
                 WwhrsInstantaneous::new(
                     flow_rates,
-                    system_a_efficiencies,
+                    system_a_efficiencies.into(),
                     cold_water_source.clone(),
                     Some(0.7),
                     None,
@@ -378,7 +378,6 @@ mod tests {
                     None,
                     Some(0.81),
                     None,
-                    simulation_time.iter().current_iteration(),
                 )
                 .unwrap(),
             ));
@@ -449,7 +448,7 @@ mod tests {
             let wwhrs = Arc::new(Mutex::new(
                 WwhrsInstantaneous::new(
                     flow_rates,
-                    system_a_efficiencies,
+                    system_a_efficiencies.into(),
                     mixer_shower.cold_water_source.clone(),
                     Some(0.7),
                     None,
@@ -458,7 +457,6 @@ mod tests {
                     Some(0.7),
                     None,
                     Some(0.88),
-                    simulation_time.iter().current_iteration(),
                 )
                 .unwrap(),
             ));
@@ -500,7 +498,7 @@ mod tests {
             let wwhrs = Arc::new(Mutex::new(
                 WwhrsInstantaneous::new(
                     flow_rates,
-                    system_a_efficiencies,
+                    system_a_efficiencies.into(),
                     mixer_shower.cold_water_source.clone(),
                     Some(0.7),
                     None,
@@ -509,7 +507,6 @@ mod tests {
                     None,
                     None,
                     None,
-                    simulation_time.iter().current_iteration(),
                 )
                 .unwrap(),
             ));
