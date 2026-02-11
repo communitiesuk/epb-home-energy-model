@@ -5675,5 +5675,155 @@ mod tests {
             let expected_heat_loss = 5.340492100175494;
             assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
         }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_unfilled_sealed_dry_lined(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledSealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Check h_ce value for sealed cavity (R_cavity = 4.5)
+            assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 1.933306112766621;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_filled_unsealed_dry_lined(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::FilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+                .unwrap();
+
+            // Check h_ce value for sealed cavity (R_cavity = 4.5)
+            assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 1.933306112766621;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_unfilled_unsealed_wet_plaster(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::WetPlaster),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+                .unwrap();
+
+            // Check h_ce value for unsealed cavity (R_cavity = 4.5)
+            assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 1.933306112766621;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_unfilled_sealed_wet_plaster(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledSealed,
+                Some(PartyWallLiningType::WetPlaster),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+                .unwrap();
+
+            // Check h_ce value for sealed cavity (R_cavity = 4.5)
+            assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 1.933306112766621;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_filled_unsealed_wet_plaster(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::FilledUnsealed,
+                Some(PartyWallLiningType::WetPlaster),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+                .unwrap();
+
+            // Check h_ce value for sealed cavity (R_cavity = 4.5)
+            assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 1.933306112766621;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
     }
 }
