@@ -5488,4 +5488,66 @@ mod tests {
             assert_eq!(be.heat_capacity(), results[i]);
         }
     }
+    mod test_building_element_party_wall {
+        use super::*;
+
+        #[fixture]
+        fn simtime() -> SimulationTime {
+            SimulationTime::new(0., 4., 1.)
+        }
+
+        #[fixture]
+        fn area() -> f64 {
+            10.
+        }
+
+        #[fixture]
+        fn pitch() -> f64 {
+            90.
+        }
+
+        #[fixture]
+        fn thermal_resistance_construction() -> f64 {
+            0.5
+        }
+
+        #[fixture]
+        fn areal_heat_capacity() -> f64 {
+            10_000.
+        }
+
+        #[fixture]
+        fn mass_distribution_class() -> MassDistributionClass {
+            MassDistributionClass::D
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_defined_resistance_with_value(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let thermal_resistance_cavity = 3.0;
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::DefinedResistance,
+                None,
+                Some(thermal_resistance_cavity),
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Check that h_ce reflects the custom resistance value
+            // h_ce = 1 / (R_se + R_cavity) where R_se = 1/(H_CE + H_RE) = 1/24.14 ≈ 0.0414
+            // h_ce = 1 / (0.0414 + 3.0) = 1 / 3.0414 ≈ 0.3287932443475892
+            assert_relative_eq!(party_wall.h_ce(), 0.3287932443475892);
+        }
+    }
 }
