@@ -5490,6 +5490,7 @@ mod tests {
     }
     mod test_building_element_party_wall {
         use super::*;
+        use std::assert_eq;
 
         #[fixture]
         fn simtime() -> SimulationTime {
@@ -5548,6 +5549,36 @@ mod tests {
             // h_ce = 1 / (R_se + R_cavity) where R_se = 1/(H_CE + H_RE) = 1/24.14 ≈ 0.0414
             // h_ce = 1 / (0.0414 + 3.0) = 1 / 3.0414 ≈ 0.3287932443475892
             assert_relative_eq!(party_wall.h_ce(), 0.3287932443475892);
+        }
+
+        // skipped test_calculate_cavity_resistance_invalid_type_raises_error as Rust typing takes of this
+        // skipped test_calculate_cavity_resistance_invalid_lining_type_raises_error as Rust typing takes of this
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_incompatible_lining_type_raises_error(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::Solid,
+                Some(PartyWallLiningType::WetPlaster),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            );
+            assert!(party_wall.is_err());
+            assert_eq!(
+                party_wall.unwrap_err().to_string(),
+                "invalid combination of party wall cavity type and party wall lining type"
+            )
         }
     }
 }
