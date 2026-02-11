@@ -1635,6 +1635,20 @@ pub(crate) struct BuildingElementPartyWall {
     areal_heat_capacity: f64,
     mass_distribution_class: MassDistributionClass,
     external_conditions: Arc<ExternalConditions>,
+    h_pli: [f64; 4],
+    k_pli: [f64; 5],
+    r_c: f64,
+    k_m: f64,
+    f_sky: f64,
+    therm_rad_to_sky: f64,
+    r_u: f64,
+    external_pitch: f64,
+    orientation: Option<Orientation360>,
+    shading: Option<Vec<WindowShadingObject>>,
+    base_height: f64,
+    projected_height: f64,
+    width: f64,
+    solar_absorption_coeff: f64,
 }
 
 impl BuildingElementPartyWall {
@@ -1674,17 +1688,17 @@ impl BuildingElementPartyWall {
         areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
         external_conditions: Arc<ExternalConditions>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         // Calculate the effective thermal resistance of the unconditioned space (cavity)
         // based on the party wall cavity type and party wall lining type
 
-        let _r_unconditioned = calculate_cavity_resistance(
+        let r_unconditioned = calculate_cavity_resistance(
             &party_wall_cavity_type,
             &party_wall_lining_type,
             thermal_resistance_cavity,
-        );
+        )?;
 
-        let party_wall = Self {
+        let mut party_wall = Self {
             area,
             pitch,
             thermal_resistance_construction,
@@ -1694,11 +1708,187 @@ impl BuildingElementPartyWall {
             areal_heat_capacity,
             mass_distribution_class,
             external_conditions,
+            h_pli: Default::default(),
+            k_pli: Default::default(),
+            r_c: Default::default(),
+            k_m: Default::default(),
+            f_sky: Default::default(),
+            therm_rad_to_sky: Default::default(),
+            r_u: r_unconditioned,
+            external_pitch: Default::default(),
+            orientation: Default::default(),
+            shading: None,
+            base_height: Default::default(),
+            projected_height: Default::default(),
+            width: Default::default(),
+            solar_absorption_coeff: Default::default(),
         };
 
-        party_wall
+        party_wall.init_heat_transfer_through_5_nodes(
+            thermal_resistance_construction,
+            mass_distribution_class,
+            areal_heat_capacity,
+        );
+        party_wall.init_heat_transfer_other_side_unconditioned_space(r_unconditioned);
+
+        // Solar absorption coefficient at the external surface is zero
+        // (party walls are not exposed to solar radiation)
+        party_wall.init_solar_radiation_interaction(pitch, None, None, 0., 0., 0., 0.);
+
+        Ok(party_wall)
     }
 }
+
+impl HeatTransferThrough for BuildingElementPartyWall {
+    fn set_r_c(&mut self, thermal_resistance_construction: f64) {
+        self.r_c = thermal_resistance_construction;
+    }
+
+    fn r_c(&self) -> f64 {
+        self.r_c
+    }
+
+    fn k_m(&self) -> f64 {
+        self.k_m
+    }
+
+    fn set_k_m(&mut self, areal_heat_capacity: f64) {
+        self.k_m = areal_heat_capacity;
+    }
+
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn r_se(&self) -> f64 {
+        // upstream Python uses duck typing/ lookups to find which method this is, but Rust needs to be explicit
+        <dyn HeatTransferOtherSide>::r_se(self)
+    }
+
+    fn r_si(&self) -> f64 {
+        <dyn HeatTransferInternal>::r_si(self)
+    }
+
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
+    }
+}
+
+impl HeatTransferOtherSide for BuildingElementPartyWall {
+    fn set_f_sky(&mut self, f_sky: f64) {
+        self.f_sky = f_sky;
+    }
+
+    fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
+        self.therm_rad_to_sky = therm_rad_to_sky;
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
+    }
+
+    fn f_sky(&self) -> f64 {
+        self.f_sky
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
+    }
+}
+
+impl HeatTransferOtherSideUnconditionedSpace for BuildingElementPartyWall {
+    fn set_r_u(&mut self, thermal_resistance_unconditioned_space: f64) {
+        self.r_u = thermal_resistance_unconditioned_space;
+    }
+
+    fn r_u(&self) -> f64 {
+        self.r_u
+    }
+}
+
+impl HeatTransferThrough5Nodes for BuildingElementPartyWall {
+    fn set_h_pli(&mut self, h_pli: [f64; 4]) {
+        self.h_pli = h_pli;
+    }
+
+    fn set_k_pli(&mut self, k_pli: [f64; 5]) {
+        self.k_pli = k_pli;
+    }
+}
+
+impl HeatTransferInternal for BuildingElementPartyWall {
+    fn pitch(&self) -> f64 {
+        self.external_pitch()
+    }
+}
+impl HeatTransferInternalCommon for BuildingElementPartyWall {}
+
+impl SolarRadiationInteraction for BuildingElementPartyWall {
+    fn set_external_pitch(&mut self, pitch: f64) {
+        self.external_pitch = pitch;
+    }
+
+    fn external_pitch(&self) -> f64 {
+        self.external_pitch
+    }
+
+    fn set_orientation(&mut self, orientation: Orientation360) {
+        self.orientation = Some(orientation);
+    }
+
+    fn orientation(&self) -> Option<Orientation360> {
+        self.orientation
+    }
+
+    fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>) {
+        self.shading = shading;
+    }
+
+    fn shading(&self) -> &[WindowShadingObject] {
+        match self.shading {
+            Some(ref shading) => &shading[..],
+            None => &[],
+        }
+    }
+
+    fn set_base_height(&mut self, base_height: f64) {
+        self.base_height = base_height;
+    }
+
+    fn base_height(&self) -> f64 {
+        self.base_height
+    }
+
+    fn set_projected_height(&mut self, projected_height: f64) {
+        self.projected_height = projected_height;
+    }
+
+    fn projected_height(&self) -> f64 {
+        self.projected_height
+    }
+
+    fn set_width(&mut self, width: f64) {
+        self.width = width;
+    }
+
+    fn width(&self) -> f64 {
+        self.width
+    }
+
+    fn set_solar_absorption_coeff(&mut self, solar_absorption_coeff: f64) {
+        self.solar_absorption_coeff = solar_absorption_coeff;
+    }
+
+    fn solar_absorption_coeff(&self) -> f64 {
+        self.solar_absorption_coeff
+    }
+}
+
+impl SolarRadiationInteractionNotExposed for BuildingElementPartyWall {}
 
 #[derive(Debug)]
 pub(crate) struct BuildingElementAdjacentConditionedSpace {
