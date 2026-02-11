@@ -1754,8 +1754,15 @@ impl BuildingElementPartyWall {
         Ok(party_wall)
     }
 
+    /// Return external convective heat transfer coefficient, in W / (m2.K)
     pub(crate) fn h_ce(&self) -> f64 {
-        HeatTransferOtherSideUnconditionedSpace::h_ce(self)
+        // For party walls with solid or filled_sealed cavity types, return zero
+        // to represent adiabatic boundary condition (no heat loss)
+
+        match self.party_wall_cavity_type {
+            PartyWallCavityType::Solid | PartyWallCavityType::FilledSealed => 0.,
+            _ => HeatTransferOtherSideUnconditionedSpace::h_ce(self),
+        }
     }
 
     pub(crate) fn h_re(&self) -> f64 {
@@ -5579,6 +5586,34 @@ mod tests {
                 party_wall.unwrap_err().to_string(),
                 "invalid combination of party wall cavity type and party wall lining type"
             )
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_solid_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::Solid,
+                None,
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // For solid type, cavity resistance should be 999999, making h_ce effectively zero
+            assert_eq!(party_wall.h_ce(), 0.);
+            // Fabric heat loss should be zero (no heat loss through party wall)
+            // assert_relative_eq!(party_wall.fabric_heat_loss(), 0.);
         }
     }
 }
