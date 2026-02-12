@@ -1788,6 +1788,8 @@ impl BuildingElementPartyWall {
 
                 let r_se_effective = 1.0 / h_se_effective;
 
+                // Calculate U-value with effective external surface resistance
+                // skipping check on r_c as always set from thermal_resistance_construction as part of init_heat_transfer_through_5_nodes
                 let u_value = 1.0 / (self.r_c + r_se_effective + HeatTransferInternal::r_si(self));
                 self.area * u_value
             }
