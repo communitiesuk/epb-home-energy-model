@@ -6154,5 +6154,32 @@ mod tests {
             let expected_r_si = 1.0 / (5.13 + 2.5);
             assert_eq!(party_wall.r_si(), expected_r_si);
         }
+
+        #[rstest]
+        fn test_no_of_nodes(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // 5-node model has 5 nodes total, 3 inside nodes
+            assert_eq!(party_wall.number_of_nodes(), 5);
+            assert_eq!(party_wall.number_of_inside_nodes(), 3);
+        }
     }
 }
