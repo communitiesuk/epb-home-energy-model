@@ -5726,7 +5726,7 @@ mod tests {
                 mass_distribution_class,
                 external_conditions,
             )
-                .unwrap();
+            .unwrap();
 
             // Check h_ce value for sealed cavity (R_cavity = 4.5)
             assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
@@ -5756,7 +5756,7 @@ mod tests {
                 mass_distribution_class,
                 external_conditions,
             )
-                .unwrap();
+            .unwrap();
 
             // Check h_ce value for unsealed cavity (R_cavity = 4.5)
             assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
@@ -5786,7 +5786,7 @@ mod tests {
                 mass_distribution_class,
                 external_conditions,
             )
-                .unwrap();
+            .unwrap();
 
             // Check h_ce value for sealed cavity (R_cavity = 4.5)
             assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
@@ -5816,7 +5816,7 @@ mod tests {
                 mass_distribution_class,
                 external_conditions,
             )
-                .unwrap();
+            .unwrap();
 
             // Check h_ce value for sealed cavity (R_cavity = 4.5)
             assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
@@ -5824,6 +5824,274 @@ mod tests {
             // Check fabric heat loss calculation
             let expected_heat_loss = 1.933306112766621;
             assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_filled_sealed(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::FilledSealed,
+                None,
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // For filled_sealed type, cavity resistance should be 999999, making h_ce zero
+            assert_eq!(party_wall.h_ce(), 0.);
+
+            // Fabric heat loss should be zero (no heat loss through party wall)
+            assert_relative_eq!(party_wall.fabric_heat_loss(), 0.);
+        }
+
+        #[rstest]
+        fn test_all_party_wall_cavity_types_valid(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            const VALID_TYPES: [PartyWallCavityType; 6] = [
+                PartyWallCavityType::Solid,
+                PartyWallCavityType::UnfilledUnsealed,
+                PartyWallCavityType::UnfilledSealed,
+                PartyWallCavityType::FilledSealed,
+                PartyWallCavityType::FilledUnsealed,
+                PartyWallCavityType::DefinedResistance,
+            ];
+
+            for cavity_type in VALID_TYPES {
+                let thermal_resistance = match cavity_type {
+                    PartyWallCavityType::DefinedResistance => Some(2.5),
+                    _ => None,
+                };
+                let lining_type = match cavity_type {
+                    PartyWallCavityType::UnfilledUnsealed
+                    | PartyWallCavityType::FilledUnsealed
+                    | PartyWallCavityType::UnfilledSealed => Some(PartyWallLiningType::DryLined),
+                    _ => None,
+                };
+
+                let party_wall = BuildingElementPartyWall::new(
+                    area,
+                    pitch,
+                    thermal_resistance_construction,
+                    cavity_type,
+                    lining_type,
+                    thermal_resistance,
+                    areal_heat_capacity,
+                    mass_distribution_class,
+                    external_conditions.clone(),
+                )
+                .unwrap();
+                assert_relative_eq!(party_wall.area, area);
+                assert_relative_eq!(party_wall.pitch, pitch);
+            }
+        }
+
+        #[rstest]
+        fn test_h_ce_returns_zero_for_solid_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::Solid,
+                None,
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            assert_eq!(party_wall.h_ce(), 0.);
+            // Also verify h_re is zero (no radiative transfer)
+            assert_relative_eq!(party_wall.h_re(), 0.);
+        }
+
+        #[rstest]
+        fn test_h_ce_returns_zero_for_filled_sealed_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::FilledSealed,
+                None,
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            assert_eq!(party_wall.h_ce(), 0.);
+            // Also verify h_re is zero (no radiative transfer)
+            assert_relative_eq!(party_wall.h_re(), 0.);
+        }
+
+        #[rstest]
+        fn test_h_ce_returns_parent_value_for_unfilled_unsealed_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            assert_eq!(party_wall.h_ce(), 0.8055258942872398);
+            // skipping second assertion as duplicated
+        }
+
+        #[rstest]
+        fn test_h_ce_returns_parent_value_for_unfilled_sealed_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledSealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            assert_eq!(party_wall.h_ce(), 0.22019520204323634);
+            // skipping second assertion as duplicated
+        }
+
+        #[rstest]
+        fn test_h_ce_returns_parent_value_for_defined_resistance_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let thermal_resistance_cavity = 2.;
+
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::DefinedResistance,
+                None,
+                Some(thermal_resistance_cavity),
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            assert_eq!(party_wall.h_ce(), 0.4898538961038961);
+            // skipping second assertion as duplicated
+        }
+
+        #[rstest]
+        fn test_fabric_heat_loss_comparison_across_types(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall_unsealed = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions.clone(),
+            )
+            .unwrap();
+
+            let party_wall_sealed = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledSealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions.clone(),
+            )
+            .unwrap();
+
+            let party_wall_solid = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::Solid,
+                None,
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            let heat_loss_unsealed = party_wall_unsealed.fabric_heat_loss();
+            let heat_loss_sealed = party_wall_sealed.fabric_heat_loss();
+            let heat_loss_solid = party_wall_solid.fabric_heat_loss();
+
+            // Verify heat loss decreases as cavity resistance increases
+            assert!(heat_loss_unsealed > heat_loss_sealed);
+            assert!(heat_loss_sealed > heat_loss_solid);
+            assert_relative_eq!(heat_loss_solid, 0.);
         }
     }
 }
