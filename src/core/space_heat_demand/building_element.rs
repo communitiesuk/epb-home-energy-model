@@ -1679,7 +1679,7 @@ impl BuildingElementPartyWall {
     /// * `h_ce` - external convective heat transfer coefficient, in W / (m2.K)
     /// * `h_re` - external radiative heat transfer coefficient, in W / (m2.K)
     /// * `solar_absorption_coeff` - solar absorption coefficient at the external surface (dimensionless)
-    fn new(
+    pub(crate) fn new(
         area: f64,
         pitch: f64,
         thermal_resistance_construction: f64,

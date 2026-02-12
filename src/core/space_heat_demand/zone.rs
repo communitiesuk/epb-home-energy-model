@@ -1722,7 +1722,8 @@ mod tests {
     use crate::core::controls::time_control::{Control, MockControl};
     use crate::core::space_heat_demand::building_element::{
         BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple,
-        BuildingElementGround, BuildingElementOpaque, BuildingElementTransparent,
+        BuildingElementGround, BuildingElementOpaque, BuildingElementPartyWall,
+        BuildingElementTransparent,
     };
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridge;
     use crate::core::space_heat_demand::ventilation::{Vent, Window};
@@ -1731,8 +1732,8 @@ mod tests {
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::hem_core::external_conditions::ShadingSegment;
     use crate::input::{
-        FloorData, MassDistributionClass, TerrainClass, VentilationShieldClass, WindShieldLocation,
-        WindowPart,
+        FloorData, MassDistributionClass, PartyWallCavityType, PartyWallLiningType, TerrainClass,
+        VentilationShieldClass, WindShieldLocation, WindowPart,
     };
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
@@ -1941,14 +1942,8 @@ mod tests {
         ))
     }
 
-    fn zone(
-        thermal_bridging: ThermalBridging,
-        control: Option<Arc<dyn ControlBehaviour>>,
-    ) -> anyhow::Result<Zone> {
-        let simulation_time = simulation_time();
-        let external_conditions = external_conditions(simulation_time);
-        // Create objects for the different building elements in the zone
-        let be_opaque_i = BuildingElement::Opaque(BuildingElementOpaque::new(
+    fn be_opaque_i(external_conditions: Arc<ExternalConditions>) -> BuildingElement {
+        BuildingElement::Opaque(BuildingElementOpaque::new(
             20.,
             false,
             180.,
@@ -1956,13 +1951,16 @@ mod tests {
             0.25,
             19000.0,
             MassDistributionClass::I,
-            Orientation360::create_from_180(0.)?.into(),
+            Orientation360::create_from_180(0.).unwrap().into(),
             0.,
             2.,
             10.,
-            external_conditions.clone(),
-        ));
-        let be_opaque_d = BuildingElement::Opaque(BuildingElementOpaque::new(
+            external_conditions,
+        ))
+    }
+
+    fn be_opaque_d(external_conditions: Arc<ExternalConditions>) -> BuildingElement {
+        BuildingElement::Opaque(BuildingElementOpaque::new(
             26.,
             true,
             45.,
@@ -1970,22 +1968,35 @@ mod tests {
             0.33,
             16000.0,
             MassDistributionClass::D,
-            Orientation360::create_from_180(0.)?.into(),
+            Orientation360::create_from_180(0.).unwrap().into(),
             0.,
             2.,
             10.,
+            external_conditions,
+        ))
+    }
+
+    fn be_ztc(external_conditions: Arc<ExternalConditions>) -> BuildingElement {
+        BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
+            22.5,
+            135.,
+            0.50,
+            18000.0,
+            MassDistributionClass::E,
             external_conditions.clone(),
-        ));
-        let be_ztc = BuildingElement::AdjacentConditionedSpace(
-            BuildingElementAdjacentConditionedSpace::new(
-                22.5,
-                135.,
-                0.50,
-                18000.0,
-                MassDistributionClass::E,
-                external_conditions.clone(),
-            ),
-        );
+        ))
+    }
+
+    fn zone(
+        thermal_bridging: ThermalBridging,
+        control: Option<Arc<dyn ControlBehaviour>>,
+    ) -> anyhow::Result<Zone> {
+        let simulation_time = simulation_time();
+        let external_conditions = external_conditions(simulation_time);
+        // Create objects for the different building elements in the zone
+        let be_opaque_i = be_opaque_i(external_conditions.clone());
+        let be_opaque_d = be_opaque_d(external_conditions.clone());
+        let be_ztc = be_ztc(external_conditions.clone());
         let be_ground_floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,
             thermal_transmission_walls: 0.5,
@@ -2874,6 +2885,146 @@ mod tests {
     #[ignore]
     pub fn test_space_heat_cool_demand_fast_solver() {
         todo!("we have skipped this for now as Python uses a difficult to replicate Mock");
+    }
+
+    #[test]
+    fn test_zone_with_party_wall() {
+        let simulation_time = simulation_time();
+        let external_conditions = external_conditions(simulation_time);
+
+        // Create a party wall building element
+        let be_party_wall = BuildingElement::PartyWall(
+            BuildingElementPartyWall::new(
+                15.,
+                90.,
+                0.45,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                12000.,
+                MassDistributionClass::D,
+                external_conditions.clone(),
+            )
+            .unwrap(),
+        );
+
+        let mut be_objs = IndexMap::from([
+            (
+                "be_opaque_i".into(),
+                be_opaque_i(external_conditions.clone()).into(),
+            ),
+            (
+                "be_opaque_d".into(),
+                be_opaque_d(external_conditions.clone()).into(),
+            ),
+            ("be_ztc".into(), be_ztc(external_conditions.clone()).into()),
+        ]);
+
+        // Create a zone WITHOUT the party wall first to get baseline values
+        let zone_without_party_wall = Zone::new(
+            80.,
+            250.,
+            be_objs.clone(),
+            ThermalBridging::Number(4.),
+            Arc::new(infiltration_ventilation()),
+            2.2,
+            21.,
+            ZoneTemperatureControlBasis::Air,
+            None,
+            true,
+            &simulation_time.iter(),
+        )
+        .unwrap();
+
+        be_objs.insert("be_party_wall".into(), be_party_wall.into());
+        let zone_with_party_wall = Zone::new(
+            80.,
+            250.,
+            be_objs,
+            ThermalBridging::Number(4.),
+            Arc::new(infiltration_ventilation()),
+            2.2,
+            21.,
+            ZoneTemperatureControlBasis::Air,
+            None,
+            true,
+            &simulation_time.iter(),
+        )
+        .unwrap();
+
+        // Run update_temperatures for both zones with the same conditions
+        let delta_t = 1800.;
+        let temp_ext_air = 10.;
+        let gains_internal = 200.;
+        let gains_solar = 220.;
+        let gains_heat_cool = 0.;
+        let frac_convective = 1.;
+        let ach = 0.4;
+        let avg_supply_temp = 10.;
+        let iteration = simulation_time.iter().next().unwrap();
+
+        let heat_balance_without = zone_without_party_wall.update_temperatures(
+            delta_t,
+            temp_ext_air,
+            gains_internal,
+            gains_solar,
+            gains_heat_cool,
+            frac_convective,
+            ach,
+            avg_supply_temp,
+            iteration,
+        );
+
+        let heat_balance_with = zone_with_party_wall.update_temperatures(
+            delta_t,
+            temp_ext_air,
+            gains_internal,
+            gains_solar,
+            gains_heat_cool,
+            frac_convective,
+            ach,
+            avg_supply_temp,
+            iteration,
+        );
+
+        // skipping some assertions here as they are tested implicitly below
+
+        // The critical test: verify that the party wall actually contributes to the ZTU fabric heat loss
+        // The zone with the party wall should have a higher (more positive) ZTU_fabric_ext value
+        // because the party wall adds heat loss to the unconditioned space
+        let ztu_with_party_wall = heat_balance_with
+            .unwrap()
+            .unwrap()
+            .external_boundary
+            .ztu_fabric_ext;
+        let ztu_without_party_wall = heat_balance_without
+            .unwrap()
+            .unwrap()
+            .external_boundary
+            .ztu_fabric_ext;
+
+        // The party wall should cause ZTU_fabric_ext to be non-zero and negative (heat loss)
+        // Without party wall, ZTU_fabric_ext should be 0.0 (no unconditioned space elements)
+        assert_eq!(
+            ztu_without_party_wall, 0.0,
+            "ZTU_fabric_ext should be 0.0 when no party wall present"
+        );
+
+        // With party wall, ZTU_fabric_ext should be negative (heat loss to unconditioned space)
+        assert!(
+            ztu_with_party_wall < 0.0,
+            "ZTU_fabric_ext should be negative (heat loss) when party wall present",
+        );
+
+        // The difference should equal the party wall's contribution
+        // (more negative value means more heat loss)
+        assert!(
+            ztu_with_party_wall < ztu_without_party_wall,
+            "Party wall should increase heat loss to unconditioned spaces",
+        );
+
+        // Verify the actual calculated value is reasonable
+        assert_relative_eq!(ztu_with_party_wall, -164.2832446432019, max_relative = 1e-7)
     }
 
     #[test]
