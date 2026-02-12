@@ -101,6 +101,7 @@ use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use chrono::{prelude::*, TimeDelta};
 use erased_serde::__private::serde::Serializer;
+use fsum::FSum;
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
@@ -615,13 +616,13 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
         let total_vent_heat_loss = calc_vent_heat_transfer_coeff(zone.volume, air_changes_per_hour);
 
         // Calculate fabric heat loss and total floor area
-        let total_fabric_heat_loss = zone
-            .building_elements
-            .values()
-            .map(calc_heat_loss)
-            .try_collect::<f64, Vec<f64>, anyhow::Error>()?
-            .iter()
-            .sum::<f64>();
+        let total_fabric_heat_loss = FSum::with_all(
+            zone.building_elements
+                .values()
+                .map(calc_heat_loss)
+                .try_collect::<f64, Vec<f64>, anyhow::Error>()?,
+        )
+        .value();
 
         // Read in thermal bridging data
         let tb_heat_trans_coeff = calc_heat_transfer_coeff(&zone.thermal_bridging);
@@ -651,8 +652,8 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
         zone_area.insert(z_name.into(), zone.area);
     }
 
-    let total_htc = htc_map.values().sum::<f64>();
-    let total_floor_area = zone_area.values().sum::<f64>();
+    let total_htc = FSum::with_all(htc_map.values()).value();
+    let total_floor_area = FSum::with_all(zone_area.values()).value();
     let total_hlp = total_htc / total_floor_area;
 
     Ok(HtcHlpCalculation {
@@ -758,7 +759,7 @@ impl Corpus {
             simulation_time_iterator.as_ref(),
         )?;
 
-        let total_volume = input.zone.values().map(|zone| zone.volume).sum::<f64>();
+        let total_volume = FSum::with_all(input.zone.values().map(|zone| zone.volume)).value();
 
         let mut heat_system_name_for_zone: IndexMap<Arc<str>, Vec<Arc<str>>> = Default::default();
         let mut cool_system_name_for_zone: IndexMap<Arc<str>, Vec<Arc<str>>> = Default::default();
@@ -810,8 +811,7 @@ impl Corpus {
             energy_supplies[UNMET_DEMAND_SUPPLY_NAME].clone(),
             &input.zone,
         );
-
-        let total_floor_area = zones.values().fold(0., |acc, zone| zone.area() + acc);
+        let total_floor_area = FSum::with_all(zones.values().map(|zone| zone.area())).value();
 
         // Internal gains is an ordered IndexMap. This is because load shifting behaviours
         // of appliance gains depend on other energy demand in the dwelling at any given time,
@@ -1306,10 +1306,12 @@ impl Corpus {
         hc_output_convective: &IndexMap<Arc<str>, f64>,
         hc_output_radiative: &IndexMap<Arc<str>, f64>,
     ) -> (f64, f64) {
-        let gains_heat_cool_convective =
-            hc_output_convective.values().sum::<f64>() * WATTS_PER_KILOWATT as f64 / delta_t_h;
-        let gains_heat_cool_radiative =
-            hc_output_radiative.values().sum::<f64>() * WATTS_PER_KILOWATT as f64 / delta_t_h;
+        let gains_heat_cool_convective = FSum::with_all(hc_output_convective.values()).value()
+            * WATTS_PER_KILOWATT as f64
+            / delta_t_h;
+        let gains_heat_cool_radiative = FSum::with_all(hc_output_radiative.values()).value()
+            * WATTS_PER_KILOWATT as f64
+            / delta_t_h;
 
         (gains_heat_cool_convective, gains_heat_cool_radiative)
     }
@@ -1946,8 +1948,8 @@ impl Corpus {
             )?;
 
             // Sum heating gains (+ve) and cooling gains (-ve) and convert from kWh to W
-            let hc_output_convective_total = hc_output_convective.values().sum::<f64>();
-            let hc_output_radiative_total = hc_output_radiative.values().sum::<f64>();
+            let hc_output_convective_total = FSum::with_all(hc_output_convective.values()).value();
+            let hc_output_radiative_total = FSum::with_all(hc_output_radiative.values()).value();
 
             let gains_heat_cool = (hc_output_convective_total + hc_output_radiative_total)
                 * WATTS_PER_KILOWATT as f64
@@ -2084,18 +2086,14 @@ impl Corpus {
             simtime,
         )?;
 
-        let gains_heat = h_name_list_sorted
-            .iter()
-            .map(|h_name| {
-                hc_output_convective[h_name.as_ref()] + hc_output_radiative[h_name.as_ref()]
-            })
-            .sum::<f64>();
-        let gains_cool = c_name_list_sorted
-            .iter()
-            .map(|c_name| {
-                hc_output_convective[c_name.as_ref()] + hc_output_radiative[c_name.as_ref()]
-            })
-            .sum::<f64>();
+        let gains_heat = FSum::with_all(h_name_list_sorted.iter().map(|h_name| {
+            hc_output_convective[h_name.as_ref()] + hc_output_radiative[h_name.as_ref()]
+        }))
+        .value();
+        let gains_cool = FSum::with_all(c_name_list_sorted.iter().map(|c_name| {
+            hc_output_convective[c_name.as_ref()] + hc_output_radiative[c_name.as_ref()]
+        }))
+        .value();
         let energy_shortfall_heat = 0.0f64.max(space_heat_demand - gains_heat);
         let energy_shortfall_cool = 0.0f64.max(-(space_cool_demand - gains_cool));
 
@@ -2318,7 +2316,8 @@ impl Corpus {
                 self.external_conditions.air_temp(&t_it),
             )?;
 
-            let mut gains_internal_dhw_on_site_generation: f64 = gains_internal_dhw.values().sum();
+            let mut gains_internal_dhw_on_site_generation =
+                FSum::with_all(gains_internal_dhw.values()).value();
 
             let mut gains_internal_hb = 0.;
             // Adding heat battery losses to internal gains
@@ -2721,7 +2720,7 @@ impl Corpus {
                 Some(hc_name) if !hc_name.is_empty() => hc_name,
                 _ => continue,
             };
-            hc_output_overall.insert(hc_name.clone(), hc_output.iter().sum::<f64>().abs());
+            hc_output_overall.insert(hc_name.clone(), FSum::with_all(hc_output).value().abs());
             hc_input_overall.insert(hc_name.clone(), 0.);
             let energy_supply_conn_names =
                 energy_supply_conn_name_for_space_hc_system[hc_name].clone();
@@ -2734,7 +2733,7 @@ impl Corpus {
                 for (conn_name, energy_cons) in fuel_summary {
                     if energy_supply_conn_names.contains(conn_name) {
                         *hc_input_overall.get_mut(hc_name).unwrap() +=
-                            energy_cons.iter().sum::<f64>();
+                            FSum::with_all(energy_cons).value();
                     }
                 }
             }
@@ -2781,7 +2780,7 @@ impl Corpus {
             let mut elec_generated = 0.;
             let mut elec_consumed = 0.;
             for result_value in result.values() {
-                let sum_arr: f64 = result_value.iter().sum();
+                let sum_arr = FSum::with_all(result_value).value();
                 if sum_arr < 0. {
                     elec_generated += sum_arr.abs();
                 } else {
@@ -2789,24 +2788,23 @@ impl Corpus {
                 }
             }
 
-            let grid_to_consumption: f64 = output_core.grid_to_consumption[key].iter().sum();
-            let generation_to_grid: f64 = output_core.generation_to_grid[key]
-                .iter()
-                .sum::<f64>()
+            let grid_to_consumption = FSum::with_all(&output_core.grid_to_consumption[key]).value();
+            let generation_to_grid = FSum::with_all(&output_core.generation_to_grid[key])
+                .value()
                 .abs();
-            let gen_to_storage: f64 = output_core.energy_to_storage[key].iter().sum();
-            let storage_to_consumption: f64 = output_core.energy_from_storage[key]
-                .iter()
-                .sum::<f64>()
+            let gen_to_storage = FSum::with_all(&output_core.energy_to_storage[key]).value();
+            let storage_to_consumption = FSum::with_all(&output_core.energy_from_storage[key])
+                .value()
                 .abs();
-            let gen_to_diverter: f64 = output_core.energy_diverted[key].iter().sum();
-            let total_gross_import: f64 = output_core.energy_import[key].iter().sum();
-            let total_gross_export: f64 = output_core.energy_export[key].iter().sum();
+            let gen_to_diverter = FSum::with_all(&output_core.energy_diverted[key]).value();
+            let total_gross_import = FSum::with_all(&output_core.energy_import[key]).value();
+            let total_gross_export = FSum::with_all(&output_core.energy_export[key]).value();
 
             let storage_eff = if gen_to_storage > 0. {
                 {
                     storage_to_consumption
-                        / (gen_to_storage + output_core.storage_from_grid[key].iter().sum::<f64>())
+                        / (gen_to_storage
+                            + FSum::with_all(&output_core.storage_from_grid[key]).value())
                 }
             } else {
                 f64::NAN
@@ -2825,7 +2823,9 @@ impl Corpus {
                     net_import: total_gross_import + total_gross_export,
                     generation_to_storage: gen_to_storage,
                     storage_to_consumption,
-                    grid_to_storage: output_core.storage_from_grid[key].iter().sum::<f64>().abs(),
+                    grid_to_storage: FSum::with_all(&output_core.storage_from_grid[key])
+                        .value()
+                        .abs(),
                     generation_to_diverter: gen_to_diverter,
                     storage_efficiency: storage_eff,
                     total_gross_import,
@@ -2847,7 +2847,7 @@ impl Corpus {
                 delivered_energy_dict.insert(fuel.clone(), IndexMap::from([("total".into(), 0.)]));
 
                 for (end_use, delivered_energy) in end_uses {
-                    let sum_delivered_energy = delivered_energy.iter().sum::<f64>();
+                    let sum_delivered_energy = FSum::with_all(delivered_energy).value();
                     if sum_delivered_energy >= 0. {
                         delivered_energy_dict[fuel].insert(end_use.clone(), sum_delivered_energy);
                         delivered_energy_dict[fuel]["total"] += sum_delivered_energy;
@@ -2875,19 +2875,11 @@ impl Corpus {
                 .insert(hws_name.clone(), percentile(&daily_hw_demand, 75));
         }
 
-        let space_heat_demand_total = output_core
-            .zone_data
-            .space_heat_demand
-            .values()
-            .flatten()
-            .sum::<f64>();
+        let space_heat_demand_total =
+            FSum::with_all(output_core.zone_data.space_heat_demand.values().flatten()).value();
 
-        let space_cool_demand_total = output_core
-            .zone_data
-            .space_cool_demand
-            .values()
-            .flatten()
-            .sum::<f64>();
+        let space_cool_demand_total =
+            FSum::with_all(output_core.zone_data.space_cool_demand.values().flatten()).value();
 
         OutputSummary {
             total_floor_area: self.total_floor_area,
@@ -2940,12 +2932,10 @@ impl Corpus {
         // Add because export figures already negative.
         let net_import_per_timestep = (0..output_core.timestep_array.len())
             .map(|i| {
-                electricity_keys
-                    .iter()
-                    .map(|key| {
-                        output_core.energy_import[key][i] + output_core.energy_export[key][i]
-                    })
-                    .sum::<f64>()
+                FSum::with_all(electricity_keys.iter().map(|key| {
+                    output_core.energy_import[key][i] + output_core.energy_export[key][i]
+                }))
+                .value()
             })
             .collect_vec();
 
@@ -5861,19 +5851,17 @@ fn total_volume_heated_by_system(
     heat_system_name_for_zone: &IndexMap<Arc<str>, Vec<Arc<str>>>,
     heat_system_name: &str,
 ) -> f64 {
-    zones
-        .iter()
-        .filter_map(|(z_name, zone)| {
-            if let Some(system_names) = heat_system_name_for_zone.get(z_name) {
-                (system_names
-                    .iter()
-                    .any(|name| heat_system_name == name.as_ref()))
-                .then(|| zone.volume())
-            } else {
-                None
-            }
-        })
-        .sum::<f64>()
+    FSum::with_all(zones.iter().filter_map(|(z_name, zone)| {
+        if let Some(system_names) = heat_system_name_for_zone.get(z_name) {
+            (system_names
+                .iter()
+                .any(|name| heat_system_name == name.as_ref()))
+            .then(|| zone.volume())
+        } else {
+            None
+        }
+    }))
+    .value()
 }
 
 fn required_vent_data_from_input(input: &ControlInput) -> anyhow::Result<Option<RequiredVentData>> {
