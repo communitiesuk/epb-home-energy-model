@@ -495,7 +495,6 @@ impl StorageTank {
         let mut remaining_demanded_volume = hot_volume;
         let mut energy_withdrawn = 0.;
 
-        // TODO review 1.0.0a6
         let cold_water_source = &self.cold_feed;
 
         let mut temp_average_drawoff_volweighted: f64 =
