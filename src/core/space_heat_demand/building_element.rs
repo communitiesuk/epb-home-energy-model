@@ -9,9 +9,10 @@ use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
 use crate::input::{
-    EdgeInsulation, FloorData, MassDistributionClass, WindShieldLocation,
-    WindowTreatment as WindowTreatmentInput, WindowTreatmentControl as WindowTreatmentControlInput,
-    WindowTreatmentType, PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
+    EdgeInsulation, FloorData, MassDistributionClass, PartyWallCavityType, PartyWallLiningType,
+    WindShieldLocation, WindowTreatment as WindowTreatmentInput,
+    WindowTreatmentControl as WindowTreatmentControlInput, WindowTreatmentType,
+    PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
@@ -35,22 +36,6 @@ pub(crate) fn projected_height(tilt: f64, height: f64) -> f64 {
     }
 
     ph
-}
-
-#[derive(PartialEq, Clone, Debug)]
-enum PartyWallCavityType {
-    Solid,             // Solid wall or structurally insulated panel
-    UnfilledUnsealed,  // Unfilled cavity with no effective edge sealing
-    UnfilledSealed,    // Unfilled cavity with effective sealing
-    FilledSealed,      // Fully filled cavity with effective sealing
-    FilledUnsealed,    // Fully filled cavity with no effective edge sealing
-    DefinedResistance, // User-defined thermal resistance
-}
-
-#[derive(PartialEq, Clone, Debug)]
-enum PartyWallLiningType {
-    WetPlaster,
-    DryLined,
 }
 
 fn calculate_area(height: f64, width: f64) -> f64 {
