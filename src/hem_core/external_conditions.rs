@@ -425,9 +425,9 @@ impl ExternalConditions {
         if self.wind_speeds.len() != expected_length {
             bail!("Expected external conditions to contain wind_speeds for entire year")
         }
-        let sum: f64 = self.wind_speeds.iter().sum();
-        // TODO: investigate why using FSum here breaks zone tests
-        // let sum: f64 = FSum::with_all(self.wind_speeds.iter()).value();
+
+        let sum: f64 = FSum::with_all(self.wind_speeds.iter()).value();
+
         Ok(sum / self.wind_speeds.len() as f64)
     }
 

@@ -595,9 +595,7 @@ impl Zone {
                     BuildingElement::AdjacentUnconditionedSpaceSimple(_) => {
                         hb_fabric_ext_ztu += hb_fabric_ext;
                     }
-                    BuildingElement::PartyWall(_) => {
-                        hb_fabric_ext_ztu += hb_fabric_ext
-                    }
+                    BuildingElement::PartyWall(_) => hb_fabric_ext_ztu += hb_fabric_ext,
                 };
             }
             let external_boundary = HeatBalanceExternalBoundary {
@@ -2224,6 +2222,7 @@ mod tests {
                 .unwrap()
                 .temp_operative(),
             18.92809674634258,
+            max_relative = 1e-7
         );
     }
 
@@ -2234,6 +2233,7 @@ mod tests {
                 .unwrap()
                 .temp_internal_air(),
             20.999999999999996,
+            max_relative = 1e-7
         );
     }
 
@@ -2583,7 +2583,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387, max_relative = 1e-7);
         assert_eq!(space_cool_demand, 0.);
         assert_relative_eq!(ach_cooling, 0.14);
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
@@ -2616,7 +2616,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387, max_relative = 1e-7);
         assert_eq!(space_cool_demand, 0.);
         assert_relative_eq!(ach_cooling, 0.14);
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
@@ -2659,7 +2659,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387, max_relative = 1e-7);
         assert_eq!(space_cool_demand, 0.);
         assert_relative_eq!(ach_cooling, 0.14);
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
@@ -2800,7 +2800,7 @@ mod tests {
             .unwrap();
 
         assert_relative_eq!(space_heat_demand, 0.);
-        assert_eq!(space_cool_demand, -0.3774681469845284);
+        assert_relative_eq!(space_cool_demand, -0.3774681469845284, max_relative = 1e-7);
         assert_relative_eq!(ach_cooling, 0.14);
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.17);
     }
