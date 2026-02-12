@@ -5189,7 +5189,7 @@ mod tests {
         assert!(energy_withdrawn > 0.);
     }
 
-    // TODO 1.0.0a6 test_primary_pipework_losses_between_events
+    // Skipping Python's test_primary_pipework_losses_between_events due to mocking of calculate_cool_down_loss return value
 
     #[fixture]
     fn simulation_time_for_immersion_heater() -> SimulationTime {
