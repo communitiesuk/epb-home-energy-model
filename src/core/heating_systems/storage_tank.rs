@@ -5023,7 +5023,57 @@ mod tests {
         // Other cases skipped - difficult to replicate
     }
 
-    // TODO 1.0.0a6 test_extract_hot_water_demand_exceeds_tank_capacity
+    /// Test that when hot water demand exceeds tank capacity, remaining volume is drawn from cold feed (e.g. pre-heat tank).
+    #[rstest]
+    fn test_extract_hot_water_demand_exceeds_tank_capacity(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+        // Reset draw-off tracking variables
+        storage_tank1
+            .temp_average_drawoff_volweighted
+            .store(0., Ordering::SeqCst);
+        storage_tank1
+            .total_volume_drawoff
+            .store(0., Ordering::SeqCst);
+
+        // Create an event that demands more hot water than the tank can provide
+        // Tank volume is 150 litres (4 layers of 37.5 litres each at 55°C)
+        // Request 200 litres of hot water - this exceeds tank capacity
+        let event = WaterEventResult {
+            event_result_type: WaterEventResultType::Bath,
+            temperature_warm: 41.,
+            volume_warm: 200.,
+            volume_hot: 200., // Demand exceeds tank capacity of 150 litres
+            event_duration: 0.,
+        };
+
+        let (volume_used, energy_withdrawn, remaining_vols) = storage_tank1
+            .extract_hot_water(
+                event,
+                simulation_time_for_storage_tank.iter().current_iteration(),
+            )
+            .unwrap();
+
+        // Volume used from tank should be entire tank capacity
+        assert_relative_eq!(volume_used, 150.);
+
+        // All tank layers should be depleted
+        for vol in remaining_vols.iter() {
+            assert_relative_eq!(*vol, 0.);
+        }
+
+        // Total draw-off should include both tank water and cold feed water
+        // 150 litres from tank + 50 litres from cold feed = 200 litres total
+        assert_relative_eq!(
+            storage_tank1.total_volume_drawoff.load(Ordering::SeqCst),
+            200.
+        );
+
+        // Energy withdrawn should be positive (hot water from tank + any pre-heated water)
+        assert_relative_eq!(energy_withdrawn, 7.845);
+    }
 
     #[fixture]
     fn storage_tank3(
