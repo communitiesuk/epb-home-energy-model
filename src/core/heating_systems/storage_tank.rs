@@ -495,11 +495,8 @@ impl StorageTank {
         let mut remaining_demanded_volume = hot_volume;
         let mut energy_withdrawn = 0.;
 
-        // Find the ultimate cold water source temperature (ignoring pre-heat tanks)
-        // This ensures consistent energy accounting throughout the method
-        // Note: Using Any type to allow duck-typing check for get_cold_water_source,
-        // which is more robust and future-proof than checking for specific types
-        // TODO 1.0.0a6
+        // TODO review 1.0.0a6
+        let cold_water_source = &self.cold_feed;
 
         let mut temp_average_drawoff_volweighted: f64 =
             self.temp_average_drawoff_volweighted.load(Ordering::SeqCst);
@@ -556,9 +553,8 @@ impl StorageTank {
             // Record the met volume demand for the current temperature target
             // vol_removed is the volume of warm water that has been satisfied from hot water in this layer
             // Use ultimate cold water source temperature for consistent energy accounting
-            let list_temp_vol = self
-                .cold_feed // TODO 1.0.0a6
-                .get_temp_cold_water(hot_volume, simulation_time)?;
+            let list_temp_vol =
+                cold_water_source.get_temp_cold_water(hot_volume, simulation_time)?;
             let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
             let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
             let temp_cold = sum_t_by_v / sum_v;
@@ -583,26 +579,29 @@ impl StorageTank {
         if remaining_demanded_volume > 0. {
             //  Get water from cold feed for the remaining demand
             //  This triggers draw-off from pre-heat tank if cold_feed is a StorageTank
-            let _list_temp_vol_drawn = self
+            let list_temp_vol_drawn = self
                 .cold_feed
                 .draw_off_water(remaining_demanded_volume, simulation_time)?;
-        }
 
-        // Get ultimate cold water temperature for energy calculation
-        // TODO 1.0.0a6
-        // let list_temp_vol = cold_water_source.get_temp_cold_water(
-        //     volume_needed=remaining_demanded_volume
-        // );
-        // temp_cold = sum(t * v for t, v in list_temp_vol) / sum(v for _, v in list_temp_vol)
-        //
-        // # Calculate volume-weighted temperature contribution from cold feed
-        // for temp_feed, vol_feed in list_temp_vol_drawn:
-        //     self._temp_average_drawoff_volweighted += vol_feed * temp_feed
-        // self._total_volume_drawoff += vol_feed
-        //
-        // # Energy content is the difference between the drawn water temperature
-        // # and the ultimate cold water temperature reference
-        // energy_withdrawn += self._rho * self._Cp * vol_feed * (temp_feed - temp_cold)
+            // Get ultimate cold water temperature for energy calculation
+            let list_temp_vol = cold_water_source
+                .get_temp_cold_water(remaining_demanded_volume, simulation_time)?;
+            let sum_t_by_v = list_temp_vol.iter().map(|(t, v)| t * v).sum::<f64>();
+            let sum_v = list_temp_vol.iter().map(|(_t, v)| v).sum::<f64>();
+            let temp_cold = sum_t_by_v / sum_v;
+
+            // Calculate volume-weighted temperature contribution from cold feed
+            for (temp_feed, vol_feed) in list_temp_vol_drawn {
+                self.temp_average_drawoff_volweighted
+                    .fetch_add(vol_feed * temp_feed, Ordering::SeqCst);
+                self.total_volume_drawoff
+                    .fetch_add(vol_feed, Ordering::SeqCst);
+
+                // Energy content is the difference between the drawn water temperature
+                // and the ultimate cold water temperature reference
+                energy_withdrawn += self.rho * self.cp * vol_feed * (temp_feed - temp_cold);
+            }
+        }
 
         //  Calculate the remaining total volume
         let remaining_total_volume: f64 = FSum::with_all(&remaining_vols).value();
@@ -5023,6 +5022,124 @@ mod tests {
 
         // Other cases skipped - difficult to replicate
     }
+
+    // TODO 1.0.0a6 test_extract_hot_water_demand_exceeds_tank_capacity
+
+    #[fixture]
+    fn storage_tank3(
+        cold_water_source: Arc<ColdWaterSource>,
+        simulation_time_for_storage_tank: SimulationTime,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions: Arc<ExternalConditions>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+    ) -> StorageTank {
+        let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
+        let simtime = simulation_time_for_storage_tank.iter().current_iteration();
+
+        let control_min_schedule = vec![
+            Some(52.),
+            None,
+            None,
+            None,
+            Some(52.),
+            Some(52.),
+            Some(52.),
+            Some(52.),
+        ];
+        let control_max_schedule = vec![
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+        ];
+
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "immersion3").unwrap();
+
+        let imheater3 = heat_source(
+            simulation_time_for_storage_tank,
+            energy_supply_connection.clone(),
+            50.0,
+            0.1,
+            0.33,
+            control_min_schedule,
+            control_max_schedule,
+        );
+
+        let heat_sources = IndexMap::from([("imheater3".into(), imheater3)]);
+        StorageTank::new(
+            210.0,
+            1.61,
+            52.0,
+            cold_feed,
+            &simtime,
+            heat_sources,
+            temp_internal_air_fn.clone(),
+            external_conditions.clone(),
+            false,
+            None,
+            None,
+            *WATER,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
+    /// Test that when demand exceeds tank capacity, water is properly drawn from a pre-heat tank configured as the cold feed.
+    #[rstest]
+    fn test_extract_hot_water_demand_exceeds_capacity_with_preheat_tank(
+        storage_tank3: StorageTank,
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        // Use storagetank3 which has a pre-heated storage tank as its cold feed
+        // storagetank3: 210 litres, init_temp=52°C
+        // preheatfeed: 80 litres, init_temp=30°C
+        storage_tank3
+            .temp_average_drawoff_volweighted
+            .store(0., Ordering::SeqCst);
+        storage_tank3
+            .total_volume_drawoff
+            .store(0., Ordering::SeqCst);
+
+        // Create an event that demands more than storagetank3 capacity (210 litres)
+        // but less than storagetank3 + preheatfeed combined (290 litres)
+        let event = WaterEventResult {
+            event_result_type: WaterEventResultType::Bath,
+            temperature_warm: 41.,
+            volume_warm: 250.,
+            volume_hot: 250., // Exceeds 210 litre tank, needs 40 litres from pre-heat
+            event_duration: 0.,
+        };
+
+        let (volume_used, energy_withdrawn, _) = storage_tank3
+            .extract_hot_water(
+                event,
+                simulation_time_for_storage_tank.iter().current_iteration(),
+            )
+            .unwrap();
+
+        // Volume used from main tank should be entire tank capacity
+        assert_relative_eq!(volume_used, 210.);
+
+        // Total draw-off should include water from pre-heat tank
+        // 210 litres from main tank + 40 litres from pre-heat tank = 250 litres
+        assert_relative_eq!(
+            storage_tank3.total_volume_drawoff.load(Ordering::SeqCst),
+            250.
+        );
+
+        // Verify energy calculation accounts for pre-heated water
+        // Energy should be greater than zero since we're drawing hot/warm water
+        assert!(energy_withdrawn > 0.);
+    }
+
+    // TODO 1.0.0a6 test_primary_pipework_losses_between_events
 
     #[fixture]
     fn simulation_time_for_immersion_heater() -> SimulationTime {
