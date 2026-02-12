@@ -6181,5 +6181,95 @@ mod tests {
             assert_eq!(party_wall.number_of_nodes(), 5);
             assert_eq!(party_wall.number_of_inside_nodes(), 3);
         }
+
+        #[rstest]
+        fn test_node_conductances_h_pli(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // For 5-node model:
+            // h_pli[0] = 6 / R_c (outer)
+            // h_pli[1] = 3 / R_c (inner)
+            // h_pli[2] = 3 / R_c (inner)
+            // h_pli[3] = 6 / R_c (outer)
+            let h_outer = 6.0 / thermal_resistance_construction;
+            let h_inner = 3.0 / thermal_resistance_construction;
+
+            assert_relative_eq!(party_wall.h_pli()[0], h_outer);
+            assert_relative_eq!(party_wall.h_pli()[1], h_inner);
+            assert_relative_eq!(party_wall.h_pli()[2], h_inner);
+            assert_relative_eq!(party_wall.h_pli()[3], h_outer);
+        }
+
+        #[rstest]
+        fn test_equivalent_u_values_match_sap_guidance(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            // Create party walls with standard construction assumptions
+            // Assume R_c represents typical party wall construction
+
+            // Test unsealed cavity: should give equivalent U ≈ 0.5 W/m²K
+            let party_wall_unsealed = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions.clone(),
+            )
+            .unwrap();
+
+            let u_unsealed = 0.5340492100175493;
+            let heat_loss_unsealed = party_wall_unsealed.fabric_heat_loss();
+            let calculated_u_unsealed = heat_loss_unsealed / area;
+
+            // Check U-value is in reasonable range for unsealed cavity
+            assert_relative_eq!(calculated_u_unsealed, u_unsealed);
+
+            let party_wall_sealed = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledSealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            let u_sealed = 0.1933306112766621;
+            let heat_loss_sealed = party_wall_sealed.fabric_heat_loss();
+            let calculated_u_sealed = heat_loss_sealed / area;
+
+            // Check U-value is in reasonable range for sealed cavity
+            assert_relative_eq!(calculated_u_sealed, u_sealed);
+        }
     }
 }
