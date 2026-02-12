@@ -6093,5 +6093,33 @@ mod tests {
             assert!(heat_loss_sealed > heat_loss_solid);
             assert_relative_eq!(heat_loss_solid, 0.);
         }
+
+        #[rstest]
+        fn test_heat_capacity_calculation(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Heat capacity = area * (areal_heat_capacity / 1000)
+            // Heat capacity = 10.0 * (10000 / 1000) = 100.0 kJ/K
+            let expected_heat_capacity = area * (areal_heat_capacity / 1000.);
+            assert_eq!(party_wall.heat_capacity(), expected_heat_capacity);
+        }
     }
 }
