@@ -1797,6 +1797,11 @@ impl BuildingElementPartyWall {
     pub(crate) fn h_re(&self) -> f64 {
         HeatTransferOtherSideUnconditionedSpace::h_re(self)
     }
+
+    #[cfg(test)]
+    pub(crate) fn r_si(&self) -> f64 {
+        HeatTransferInternal::r_si(self)
+    }
 }
 
 impl HeatTransferThrough for BuildingElementPartyWall {
@@ -6120,6 +6125,34 @@ mod tests {
             // Heat capacity = 10.0 * (10000 / 1000) = 100.0 kJ/K
             let expected_heat_capacity = area * (areal_heat_capacity / 1000.);
             assert_eq!(party_wall.heat_capacity(), expected_heat_capacity);
+        }
+
+        #[rstest]
+        fn test_r_si_calculation(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // For vertical walls (60 < pitch < 120), R_si = R_SI_HORIZONTAL
+            // R_SI_HORIZONTAL = 1 / (H_RI + H_CI_HORIZONTAL) = 1 / (5.13 + 2.5) ≈ 0.131
+            let expected_r_si = 1.0 / (5.13 + 2.5);
+            assert_eq!(party_wall.r_si(), expected_r_si);
         }
     }
 }
