@@ -2580,9 +2580,17 @@ pub(crate) enum WetEmitter {
         #[validate(exclusive_minimum = 0.)]
         thermal_mass_per_m: Option<f64>,
 
-        #[serde(flatten)]
-        #[validate]
-        constant_data: RadiatorConstantData,
+        #[serde(rename = "c")]
+        #[validate(exclusive_minimum = 0.)]
+        constant: Option<f64>,
+
+        #[serde(rename = "c_per_m")]
+        #[validate(exclusive_minimum = 0.)]
+        constant_per_m: Option<f64>,
+
+        /// The length of the emitter (unit: m)
+        #[validate(exclusive_minimum = 0.)]
+        length: Option<f64>,
     },
     Ufh {
         /// Equivalent thermal mass per m² of floor area for under-floor heating systems (unit: kJ/m²K)
@@ -2619,67 +2627,39 @@ pub(crate) enum WetEmitter {
     },
 }
 
-/// Enum encapsulating rule for radiators that either the `c` field should be provided, or `c_per_m` and `length` should be
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
-#[serde(untagged)]
-pub(crate) enum RadiatorConstantData {
-    Constant {
-        /// Constant from characteristic equation of emitters (e.g. derived from BS EN 442 tests)
-        #[serde(rename = "c")]
-        #[validate(exclusive_minimum = 0.)]
-        constant: f64,
-    },
-    ConstantUsingLength {
-        /// Constant from characteristic equation of emitters (e.g. derived from BS EN 442 tests) per the length of the emitter
-        #[serde(rename = "c_per_m")]
-        #[validate(exclusive_minimum = 0.)]
-        constant_per_m: f64,
-
-        /// The length of the emitter (unit: m)
-        #[validate(exclusive_minimum = 0.)]
-        length: f64,
-    },
-}
-
-impl RadiatorConstantData {
-    pub(crate) fn constant(&self) -> f64 {
-        match self {
-            Self::Constant { constant } => *constant,
-            Self::ConstantUsingLength {
-                constant_per_m,
-                length,
-            } => *constant_per_m * *length,
-        }
-    }
-}
-
 fn validate_radiator_required_fields(
     data: &WetEmitter,
 ) -> Result<(), serde_valid::validation::Error> {
-    // we don't need to check c versus c_per_m and length here because this invariant is
-    // already expressed in the RadiatorConstantData type
+    match data {
+        WetEmitter::Radiator {
+            exponent,
+            frac_convective,
+            thermal_mass,
+            thermal_mass_per_m,
+            constant,
+            constant_per_m,
+            length,
+        } => {
+            if constant.is_none() && constant_per_m.is_none() {
+                return custom_validation_error("Must provide 'c' or 'c_per_m'".to_string());
+            }
 
-    let (thermal_mass_per_m, radiator_constant_data) = if let WetEmitter::Radiator {
-        thermal_mass_per_m,
-        constant_data,
-        ..
-    } = data
-    {
-        (thermal_mass_per_m, constant_data)
-    } else {
-        return Ok(());
-    };
+            if constant_per_m.is_some() && length.is_none() {
+                return custom_validation_error(
+                    "Must specify 'length' when 'constant_per_m'  is provided".to_string(),
+                );
+            }
 
-    // If thermal_mass_per_m is specified, length must be too
-    if let (Some(_), RadiatorConstantData::Constant { .. }) =
-        (thermal_mass_per_m, radiator_constant_data)
-    {
-        return custom_validation_error(
-            "Must specify 'length' when 'thermal_mass_per_m' is provided".to_string(),
-        );
+            if thermal_mass_per_m.is_some() && length.is_none() {
+                return custom_validation_error(
+                    "Must specify 'length' when 'thermal_mass_per_m'  is provided".to_string(),
+                );
+            }
+
+            Ok(())
+        }
+        _ => Ok(()),
     }
-
-    Ok(())
 }
 
 const fn default_n_units() -> usize {
@@ -7146,7 +7126,9 @@ mod tests {
                     frac_convective: 0.9,
                     thermal_mass: None,
                     thermal_mass_per_m: None,
-                    constant_data: RadiatorConstantData::Constant { constant: 1.2 },
+                    constant_per_m: None,
+                    length: None,
+                    constant: Some(1.2),
                 })
                 .unwrap()
             }
@@ -7892,7 +7874,9 @@ mod tests {
                         frac_convective: 0.4,
                         thermal_mass: None,
                         thermal_mass_per_m: None,
-                        constant_data: RadiatorConstantData::Constant { constant: 0.08 },
+                        constant_per_m: None,
+                        length: None,
+                        constant: Some(0.08),
                     }],
                     pipework: vec![],
                     ecodesign_controller: EcoDesignController {

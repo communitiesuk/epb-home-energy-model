@@ -1,5 +1,7 @@
 use crate::core::material_properties::{MaterialProperties, GLYCOL25, WATER};
-use crate::core::units::{JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, WATTS_PER_KILOWATT};
+use crate::core::units::{
+    JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, WATTS_PER_KILOWATT,
+};
 use crate::input::{PipeworkContents, WaterPipework, WaterPipeworkLocation};
 use ordered_float::Pow;
 use std::f64::consts::PI;
