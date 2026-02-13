@@ -713,7 +713,7 @@ pub struct Corpus {
     energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>>,
     energy_supply_conn_names_for_heat_systems: IndexMap<Arc<str>, Arc<str>>,
     hotwatersource_name_for_heatsourcewet_service: IndexMap<Arc<str>, Arc<str>>,
-    timestep_end_calcs: Arc<RwLock<Vec<WetHeatSource>>>,
+    timestep_end_calcs: Arc<RwLock<Vec<HeatSystem>>>,
     initial_loop: AtomicBool,
     detailed_output_heating_cooling: bool,
     vent_adjust_min_control: Option<Arc<Control>>,
@@ -871,14 +871,14 @@ impl Corpus {
             simulation_time_iterator.as_ref(),
         )?;
 
-        let timestep_end_calcs: Arc<RwLock<Vec<WetHeatSource>>> = Default::default();
+        let timestep_end_calcs: Arc<RwLock<Vec<HeatSystem>>> = Default::default();
 
         // Register WWHRS objects for timestep_end calls
-        // if let Some(waste_water_heat_recovery) = input.waste_water_heat_recovery {
-        //     for wwhrs in waste_water_heat_recovery.values() {
-        //         timestep_end_calcs.write().push(wwhrs);
-        //     }
-        // } TODO 1.0.0a6
+        for wwhrs in wwhrs.values() {
+            timestep_end_calcs
+                .write()
+                .push(HeatSystem::WwhrsSystem(wwhrs.clone()));
+        } // TODO review 1.0.0a6
 
         let mut heat_sources_wet_with_buffer_tank: Vec<String> = vec![];
         let mechanical_ventilations = infiltration_ventilation.mech_vents();
@@ -905,7 +905,9 @@ impl Corpus {
                     &mut energy_supplies,
                     output_options.detailed_output_heating_cooling,
                 )?;
-                timestep_end_calcs.write().push(heat_source.clone());
+                timestep_end_calcs
+                    .write()
+                    .push(HeatSystem::WetSystem(heat_source.clone()));
                 if let HeatSourceWetDetails::HeatPump {
                     buffer_tank: Some(_),
                     ..
@@ -3378,7 +3380,7 @@ fn wwhr_system_from_details(
     // Get efficiency data for all systems if provided
     let WasteWaterHeatRecoveryDetails {
         flow_rates,
-        system_a_efficiencies: _system_a_efficiencies,
+        system_a_efficiencies,
         system_a_utilisation_factor,
         system_b_efficiencies,
         system_b_utilisation_factor,
@@ -3390,9 +3392,8 @@ fn wwhr_system_from_details(
     } = system;
 
     WwhrsInstantaneous::new(
-        // TODO update/correct parameters during migration to 1.0.0a6
         flow_rates,
-        Default::default(),
+        system_a_efficiencies,
         cold_water_source.clone(),
         system_a_utilisation_factor,
         system_b_efficiencies,
@@ -4259,6 +4260,24 @@ impl WetHeatSource {
                 hot_water_source_name_for_heat_battery_service,
             ),
             _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum HeatSystem {
+    WetSystem(WetHeatSource),
+    WwhrsSystem(Arc<Mutex<WwhrsInstantaneous>>),
+}
+
+impl HeatSystem {
+    pub(crate) fn timestep_end(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+        match self {
+            HeatSystem::WetSystem(wet_heat_source) => wet_heat_source.timestep_end(simtime),
+            HeatSystem::WwhrsSystem(wwhrs) => {
+                wwhrs.lock().timestep_end();
+                Ok(())
+            }
         }
     }
 }
