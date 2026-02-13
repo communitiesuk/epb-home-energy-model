@@ -2,7 +2,7 @@
 
 ## Deployment
 
-Deployment is performed by a front end application maintained in a [separate repository](https://github.com/communitiesuk/epb-ecaas-frontend).
+Deployment is performed by a front-end application maintained in a [separate repository](https://github.com/communitiesuk/epb-ecaas-frontend).
 
 ## As-Is Architectural Map
 
