@@ -3060,34 +3060,51 @@ mod tests {
 
     /// Test emitter output at given emitter and room temp
     #[rstest]
-    #[ignore = "test date issues - work in progress"]
     fn test_power_output_emitter(
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
         zone: Arc<dyn SimpleZone>,
         simulation_time: SimulationTime,
     ) {
-        let ecodesign_controller = EcoDesignController {
+        let wet_emitters: Vec<WetEmitterInput> = serde_json::from_value(json!([
+            {
+                "wet_emitter_type": "radiator",
+                "c": 0.08,
+                "n": 1.2,
+                "frac_convective": 0.4,
+            },
+        ]))
+        .unwrap();
+
+    let ecodesign_controller = EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassII,
             min_outdoor_temp: Some(-4.),
             max_outdoor_temp: Some(20.),
             min_flow_temp: Some(30.),
         };
 
-        // TODO test data is different in Python
-        let emitters = emitters_fixture(
-            heat_source,
-            external_conditions,
+        let emitters = Emitters::new(
+            Some(0.14),
+            &wet_emitters,
+            &[],
+            10.0,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.),
+            Arc::new(RwLock::new(heat_source)),
             zone,
+            external_conditions.into(),
             ecodesign_controller,
-            simulation_time,
+            55.,
+            20.,
+            simulation_time.total_steps(),
             None,
+            false.into(),
             None,
-            None,
-            None,
-            None,
-            None,
-        );
+        )
+        .unwrap();
 
         let temp_emitter = 15.;
         let temp_rm = 10.;
