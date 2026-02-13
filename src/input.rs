@@ -3565,6 +3565,32 @@ impl From<PartyWallCavityData> for PartyWallCavityType {
     }
 }
 
+impl PartyWallCavityData {
+    pub(crate) fn party_wall_lining_type(&self) -> Option<PartyWallLiningType> {
+        match self {
+            Self::UnfilledUnsealed {
+                party_wall_lining_type,
+            }
+            | Self::UnfilledSealed {
+                party_wall_lining_type,
+            }
+            | Self::FilledSealed {
+                party_wall_lining_type,
+            } => Some(*party_wall_lining_type),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn thermal_resistance_cavity(&self) -> Option<f64> {
+        match self {
+            Self::DefinedResistance {
+                thermal_resistance_cavity,
+            } => *thermal_resistance_cavity,
+            _ => None,
+        }
+    }
+}
+
 /// Types of party wall lining
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

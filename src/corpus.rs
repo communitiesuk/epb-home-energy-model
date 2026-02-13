@@ -47,8 +47,8 @@ use crate::core::schedule::{
 use crate::core::space_heat_demand::building_element::{
     convert_uvalue_to_resistance, BuildingElement, BuildingElementAdjacentConditionedSpace,
     BuildingElementAdjacentUnconditionedSpaceSimple, BuildingElementGround, BuildingElementOpaque,
-    BuildingElementTransparent, WindowTreatment, H_CE, H_RE, R_SI_DOWNWARDS, R_SI_HORIZONTAL,
-    R_SI_UPWARDS,
+    BuildingElementPartyWall, BuildingElementTransparent, WindowTreatment, H_CE, H_RE,
+    R_SI_DOWNWARDS, R_SI_HORIZONTAL, R_SI_UPWARDS,
 };
 use crate::core::space_heat_demand::internal_gains::{
     ApplianceGains, EventApplianceGains, Gains, InternalGains,
@@ -77,7 +77,7 @@ use crate::input::{
     HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
     InternalGains as InternalGainsInput, InternalGainsDetails,
-    OnSiteGeneration as OnSiteGenerationInput, PhotovoltaicInputs,
+    OnSiteGeneration as OnSiteGenerationInput, PartyWallCavityType, PhotovoltaicInputs,
     PhotovoltaicSystem as PhotovoltaicSystemInput,
     PhotovoltaicSystemWithPanels as PhotovoltaicSystemWithPanelsInput,
     SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
@@ -858,6 +858,14 @@ impl Corpus {
         )?;
 
         let timestep_end_calcs: Arc<RwLock<Vec<WetHeatSource>>> = Default::default();
+
+        // Register WWHRS objects for timestep_end calls
+        // if let Some(waste_water_heat_recovery) = input.waste_water_heat_recovery {
+        //     for wwhrs in waste_water_heat_recovery.values() {
+        //         timestep_end_calcs.write().push(wwhrs);
+        //     }
+        // } TODO 1.0.0a6
+
         let mut heat_sources_wet_with_buffer_tank: Vec<String> = vec![];
         let mechanical_ventilations = infiltration_ventilation.mech_vents();
 
@@ -1160,25 +1168,30 @@ impl Corpus {
             .sum::<f64>()
     }
 
-    /// Calculate the losses/gains in the MVHR ductwork
-    fn calc_internal_gains_ductwork(&self, _simulation_time: SimulationTimeIteration) -> f64 {
-        // TODO 1.0.0a6 migration
-        0.
+    /// Calculate the losses/gains in the MVHR ductwork, in Watts
+    fn calc_internal_gains_ductwork(&self, simulation_time: SimulationTimeIteration) -> f64 {
+        let temp_outdoor_air = self.external_conditions.air_temp(&simulation_time);
+        let temp_indoor_air = self.temp_internal_air_prev_timestep();
+
+        self.ventilation
+            .calc_internal_gains_ductwork(temp_outdoor_air, temp_indoor_air)
     }
 
     fn space_heat_internal_gains_for_zone(
         &self,
         zone: &Zone,
-        gains_internal_dhw: f64,
+        gains_internal_dhw_on_site_generation: f64,
         gains_internal_hb: f64,
         internal_gains_ductwork_per_m3: f64,
         gains_internal_buffer_tank: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         // Initialise to dhw internal gains split proportionally to zone floor area
-        let mut gains_internal_zone =
-            (gains_internal_buffer_tank + gains_internal_dhw + gains_internal_hb) * zone.area()
-                / self.total_floor_area;
+        let mut gains_internal_zone = (gains_internal_buffer_tank
+            + gains_internal_dhw_on_site_generation
+            + gains_internal_hb)
+            * zone.area()
+            / self.total_floor_area;
 
         for internal_gains in self.internal_gains.values() {
             gains_internal_zone += internal_gains.total_internal_gain_in_w(zone.area(), simtime)?;
@@ -1451,12 +1464,12 @@ impl Corpus {
     ///
     /// Arguments:
     /// * `delta_t_h` - calculation timestep, in hours
-    /// * `gains_internal_dhw` - internal gains from hot water system for this timestep, in W
+    /// * `gains_internal_dhw_on_site_generation` - internal gains from hot water system and on site generation for this timestep, in W
     /// * `gains_internal_hb` - internal gains from central heat battery systems for this timestep, in W
     fn calc_space_heating(
         &self,
         delta_t_h: f64,
-        gains_internal_dhw: f64,
+        gains_internal_dhw_on_site_generation: f64,
         gains_internal_hb: f64,
         internal_pressure_window: &mut HashMap<ReportingFlag, f64>,
         simtime: SimulationTimeIteration,
@@ -1573,7 +1586,7 @@ impl Corpus {
                 z_name.into(),
                 self.space_heat_internal_gains_for_zone(
                     zone,
-                    gains_internal_dhw,
+                    gains_internal_dhw_on_site_generation,
                     gains_internal_hb,
                     internal_gains_ductwork_per_m3,
                     internal_gains_buffer_tank,
@@ -2460,12 +2473,11 @@ impl Corpus {
             ductwork_gains_list.push(ductwork_gains);
 
             for supply in self.energy_supplies.values() {
-                anyhow::Ok(supply.read().calc_energy_import_export_betafactor(t_it)?)?;
-                anyhow::Ok(
-                    supply
-                        .read()
-                        .calc_energy_import_from_grid_to_battery(t_it)?,
-                )?;
+                supply.read().calc_energy_import_export_betafactor(t_it)?;
+                supply
+                    .read()
+                    .calc_energy_import_from_grid_to_battery(t_it)?;
+                supply.read().timestep_end();
             }
 
             for diverter in &self.diverters {
@@ -2777,14 +2789,14 @@ impl Corpus {
         let mut energy_supply_stats: IndexMap<Arc<str>, OutputSummaryEnergySupply> =
             Default::default();
         for (key, result) in &output_core.results_end_user {
-            let mut elec_generated = 0.;
-            let mut elec_consumed = 0.;
+            let mut total_generated = 0.;
+            let mut total_consumed = 0.;
             for result_value in result.values() {
                 let sum_arr = FSum::with_all(result_value).value();
                 if sum_arr < 0. {
-                    elec_generated += sum_arr.abs();
+                    total_generated += sum_arr.abs();
                 } else {
-                    elec_consumed += sum_arr;
+                    total_consumed += sum_arr;
                 }
             }
 
@@ -2800,12 +2812,10 @@ impl Corpus {
             let total_gross_import = FSum::with_all(&output_core.energy_import[key]).value();
             let total_gross_export = FSum::with_all(&output_core.energy_export[key]).value();
 
-            let storage_eff = if gen_to_storage > 0. {
-                {
-                    storage_to_consumption
-                        / (gen_to_storage
-                            + FSum::with_all(&output_core.storage_from_grid[key]).value())
-                }
+            let total_energy_into_battery =
+                gen_to_storage + FSum::with_all(&output_core.storage_from_grid[key]).value();
+            let storage_eff = if total_energy_into_battery > 0. {
+                storage_to_consumption / total_energy_into_battery
             } else {
                 f64::NAN
             };
@@ -2813,8 +2823,8 @@ impl Corpus {
             energy_supply_stats.insert(
                 key.clone(),
                 OutputSummaryEnergySupply {
-                    electricity_generated: elec_generated,
-                    electricity_consumed: elec_consumed,
+                    electricity_generated: total_generated,
+                    electricity_consumed: total_consumed,
                     generation_to_consumption: output_core.energy_generated_consumed[key]
                         .iter()
                         .sum(),
@@ -2848,7 +2858,9 @@ impl Corpus {
 
                 for (end_use, delivered_energy) in end_uses {
                     let sum_delivered_energy = FSum::with_all(delivered_energy).value();
-                    if sum_delivered_energy >= 0. {
+                    if sum_delivered_energy > 0.
+                        || is_close!(sum_delivered_energy, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+                    {
                         delivered_energy_dict[fuel].insert(end_use.clone(), sum_delivered_energy);
                         delivered_energy_dict[fuel]["total"] += sum_delivered_energy;
                         delivered_energy_dict["total"]
@@ -2960,7 +2972,7 @@ impl Corpus {
             index: index_peak_elec_consumption,
             month: peak_datetime.month() as u8,
             day: peak_datetime.day() as u8,
-            hour: ((peak_step % (24. / stepping)) * stepping + 1.) as u8,
+            hour: ((peak_step % (24. / stepping)) * stepping) as u8,
         }
     }
 }
@@ -3922,7 +3934,24 @@ fn building_element_from_input(
                 external_conditions,
             ),
         ),
-        BuildingElementInput::PartyWall { .. } => unimplemented!(), // TODO complete as part of migration to 1.0.0a6
+        BuildingElementInput::PartyWall {
+            area,
+            pitch,
+            u_value_input,
+            party_wall_cavity_data,
+            areal_heat_capacity,
+            mass_distribution_class,
+        } => BuildingElement::PartyWall(BuildingElementPartyWall::new(
+            *area,
+            *pitch,
+            init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+            PartyWallCavityType::from(*party_wall_cavity_data),
+            party_wall_cavity_data.party_wall_lining_type(),
+            party_wall_cavity_data.thermal_resistance_cavity(),
+            *areal_heat_capacity,
+            *mass_distribution_class,
+            external_conditions,
+        )?),
     }))
 }
 
@@ -4858,8 +4887,8 @@ fn heat_source_from_input(
                         *vol_hw_daily_average,
                         volume,
                         daily_losses,
-                        heat_exchanger_surface_area.ok_or(anyhow!("A heat exchanger surface_area is expected for a HeatPumpHotWaterOnly heat source")) ?,
-                        * in_use_factor_mismatch,
+                        heat_exchanger_surface_area.ok_or(anyhow!("A heat exchanger surface_area is expected for a HeatPumpHotWaterOnly heat source"))?,
+                        *in_use_factor_mismatch,
                         *tank_volume_declared,
                         *heat_exchanger_surface_area_declared,
                         *daily_losses_declared,
