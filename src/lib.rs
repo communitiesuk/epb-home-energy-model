@@ -728,7 +728,7 @@ fn write_core_output_file_summary(
 
     let peak_consumption = &output.summary.electricity_peak_consumption;
     writer.write_record([
-        "Peak half-hour consumption (electricity)".to_string(), // TODO (from Python) technically per-step, not half-hour
+        "Peak consumption (electricity)".to_string(),
         peak_consumption.peak.to_string(),
         peak_consumption.index.to_string(),
         peak_consumption.index.to_string(),
@@ -743,16 +743,8 @@ fn write_core_output_file_summary(
     writer.write_record(&header_row)?;
     let fields = [
         // Label, unit, OutputSummaryEnergySupply field
-        (
-            "Consumption",
-            "kWh",
-            EnergySupplyStatKey::ElectricityConsumed,
-        ),
-        (
-            "Generation",
-            "kWh",
-            EnergySupplyStatKey::ElectricityGenerated,
-        ),
+        ("Consumption", "kWh", EnergySupplyStatKey::Consumption),
+        ("Generation", "kWh", EnergySupplyStatKey::Generation),
         (
             "Generation to consumption (immediate excl. diverter)",
             "kWh",
@@ -896,8 +888,8 @@ fn write_output_json_file(
 
 #[derive(Clone, Copy)]
 struct EnergySupplyStat {
-    elec_generated: f64,
-    elec_consumed: f64,
+    generation: f64,
+    consumption: f64,
     gen_to_consumption: f64,
     grid_to_consumption: f64,
     generation_to_grid: f64,
@@ -912,8 +904,8 @@ struct EnergySupplyStat {
 impl EnergySupplyStat {
     fn display_for_key(&self, key: &EnergySupplyStatKey) -> String {
         match key {
-            EnergySupplyStatKey::ElectricityGenerated => self.elec_generated.to_string().into(),
-            EnergySupplyStatKey::ElectricityConsumed => self.elec_consumed.to_string().into(),
+            EnergySupplyStatKey::Generation => self.generation.to_string().into(),
+            EnergySupplyStatKey::Consumption => self.consumption.to_string().into(),
             EnergySupplyStatKey::GenerationToConsumption => {
                 self.gen_to_consumption.to_string().into()
             }
@@ -933,8 +925,8 @@ impl EnergySupplyStat {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum EnergySupplyStatKey {
-    ElectricityGenerated,
-    ElectricityConsumed,
+    Generation,
+    Consumption,
     GenerationToConsumption,
     GridToConsumption,
     GenerationToGrid,

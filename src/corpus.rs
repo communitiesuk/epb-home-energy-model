@@ -2837,8 +2837,8 @@ impl Corpus {
             energy_supply_stats.insert(
                 key.clone(),
                 OutputSummaryEnergySupply {
-                    electricity_generated: total_generated,
-                    electricity_consumed: total_consumed,
+                    generation: total_generated,
+                    consumption: total_consumed,
                     generation_to_consumption: output_core.energy_generated_consumed[key]
                         .iter()
                         .sum(),
