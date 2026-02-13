@@ -64,7 +64,7 @@ fn calculate_area(height: f64, width: f64) -> f64 {
 ///
 /// Returns:
 /// * `r_cavity` - effective thermal resistance of the cavity, in m2.K / W
-fn calculate_cavity_resistance(
+pub(crate) fn calculate_cavity_resistance(
     party_wall_cavity_type: &PartyWallCavityType,
     party_wall_lining_type: &Option<PartyWallLiningType>,
     thermal_resistance_cavity: Option<f64>,

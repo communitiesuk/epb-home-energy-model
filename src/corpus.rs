@@ -45,10 +45,11 @@ use crate::core::schedule::{
     ScheduleEvent, TypedScheduleEvent, WaterScheduleEventType,
 };
 use crate::core::space_heat_demand::building_element::{
-    convert_uvalue_to_resistance, BuildingElement, BuildingElementAdjacentConditionedSpace,
-    BuildingElementAdjacentUnconditionedSpaceSimple, BuildingElementGround, BuildingElementOpaque,
-    BuildingElementPartyWall, BuildingElementTransparent, WindowTreatment, H_CE, H_RE,
-    R_SI_DOWNWARDS, R_SI_HORIZONTAL, R_SI_UPWARDS,
+    calculate_cavity_resistance, convert_uvalue_to_resistance, BuildingElement,
+    BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple,
+    BuildingElementGround, BuildingElementOpaque, BuildingElementPartyWall,
+    BuildingElementTransparent, WindowTreatment, H_CE, H_RE, R_SI_DOWNWARDS, R_SI_HORIZONTAL,
+    R_SI_UPWARDS,
 };
 use crate::core::space_heat_demand::internal_gains::{
     ApplianceGains, EventApplianceGains, Gains, InternalGains,
@@ -549,7 +550,20 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
                 let u_value = 1.0 / (thermal_resistance_construction + r_se + r_si);
                 area * u_value
             }
-            BuildingElementInput::PartyWall { .. } => unimplemented!(), // TODO complete as part of 1.0.0a6 migration
+            BuildingElementInput::PartyWall {
+                area,
+                party_wall_cavity_data,
+                ..
+            } => {
+                //Party wall calculations follow same approach as adjacent unconditioned space
+                let r_se = calculate_cavity_resistance(
+                    &PartyWallCavityType::from(*party_wall_cavity_data),
+                    &party_wall_cavity_data.party_wall_lining_type(),
+                    party_wall_cavity_data.thermal_resistance_cavity(), // TODO review 1.0.0a6 should this be cavity or construction?
+                )?;
+                let u_value = 1.0 / (thermal_resistance_construction + r_se + r_si);
+                area * u_value
+            }
         })
     }
 
@@ -3941,17 +3955,21 @@ fn building_element_from_input(
             party_wall_cavity_data,
             areal_heat_capacity,
             mass_distribution_class,
-        } => BuildingElement::PartyWall(BuildingElementPartyWall::new(
-            *area,
-            *pitch,
-            init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
-            PartyWallCavityType::from(*party_wall_cavity_data),
-            party_wall_cavity_data.party_wall_lining_type(),
-            party_wall_cavity_data.thermal_resistance_cavity(),
-            *areal_heat_capacity,
-            *mass_distribution_class,
-            external_conditions,
-        )?),
+        } =>
+        // Handle party wall with automatic or manual cavity resistance
+        {
+            BuildingElement::PartyWall(BuildingElementPartyWall::new(
+                *area,
+                *pitch,
+                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+                PartyWallCavityType::from(*party_wall_cavity_data),
+                party_wall_cavity_data.party_wall_lining_type(),
+                party_wall_cavity_data.thermal_resistance_cavity(),
+                *areal_heat_capacity,
+                *mass_distribution_class,
+                external_conditions,
+            )?)
+        }
     }))
 }
 
