@@ -88,6 +88,9 @@ use crate::input::{
     WaterPipework, WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
     MAIN_REFERENCE, PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
 };
+use crate::input_dependency_resolvers::{
+    build_preheated_water_source_dependency_graph, topological_sort_preheated_water_sources,
+};
 use crate::output::{
     Output, OutputCop, OutputCore, OutputHeatingCoolingSystem, OutputHotWaterSystems, OutputStatic,
     OutputSummary, OutputSummaryEnergySupply, OutputSummaryPeakElectricityConsumption,
@@ -938,7 +941,13 @@ impl Corpus {
         let mut pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> =
             Default::default();
 
-        for (source_name, source_details) in &input.pre_heated_water_source {
+        let init_order = {
+            let preheated_water_source_dependency_graph =
+                build_preheated_water_source_dependency_graph(&input.pre_heated_water_source);
+            topological_sort_preheated_water_sources(&preheated_water_source_dependency_graph)?
+        };
+        for source_name in init_order.iter() {
+            let source_details = &input.pre_heated_water_source[source_name];
             let (heat_source, energy_conn_names, preheated_source_names_for_service) =
                 hot_water_source_from_input(
                     source_name,
