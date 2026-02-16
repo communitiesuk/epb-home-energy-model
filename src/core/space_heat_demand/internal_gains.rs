@@ -269,7 +269,7 @@ impl EventApplianceGains {
         // adds demand from events  to the total annual demand. If there is loadshifting the demand
         // of the event may occur in the future rather than at the time specified
         for event in self.usage_events.read().iter() {
-            let (start_idx, power_timesteps) = self.process_event(&event)?;
+            let (start_idx, power_timesteps) = self.process_event(event)?;
             // Prevent this from including events that start after the end of the simulation.
             if start_idx > self.simulation_timestep_count {
                 continue;
@@ -795,11 +795,11 @@ mod tests {
 
             // initially create an EventApplianceGains struct to replicate behaviour in Python test
             let _event_appliance_gains = event_appliance_gains(
-                simtime.clone(),
+                simtime,
                 appliance_data.clone(),
-                &smart_control,
+                smart_control,
                 total_floor_area,
-                &energy_supply_connection,
+                energy_supply_connection,
             );
 
             appliance_data.events.replace(vec![]);

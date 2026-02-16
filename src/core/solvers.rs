@@ -34,7 +34,7 @@ pub(crate) fn bisect(
     find_root_brent::<f64, _>(
         a.max(0.), // ensure first bracket is at least zero
         b,
-        |f| func_modified(f),
+        func_modified,
         &mut convergency,
     )
     .map_err(|e| anyhow::anyhow!(e))

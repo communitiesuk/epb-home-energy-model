@@ -1698,7 +1698,7 @@ impl MechanicalVentilation {
 
                 // Account for effect of losses from extract duct on temperature in supply duct
                 let temp_gain_extract_duct = gains_internal_extract_duct
-                    / (vol_flow_rate_litres_per_s as f64 * AIR.volumetric_heat_capacity());
+                    / (vol_flow_rate_litres_per_s * AIR.volumetric_heat_capacity());
 
                 // The duct heat loss calculation assumes a uniform temperature in the duct equal to the
                 // temperature before any heat gains/losses. If the volume flow rate is low enough, this

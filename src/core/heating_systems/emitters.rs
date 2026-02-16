@@ -652,12 +652,10 @@ impl Emitters {
         // weighted average for each emitter
         let power_total_weight = self.power_output_emitter_weight(simtime);
 
-        let frac_convective_weighted = FSum::with_all(
+        FSum::with_all(
             (0..frac_convective.len()).map(|i| power_total_weight[i] * frac_convective[i]),
         )
-        .value();
-
-        frac_convective_weighted
+        .value()
     }
 
     /// Weighted average of emitter power output
@@ -976,7 +974,7 @@ impl Emitters {
             let previous_step_x = *stepper.x_out().get(stepper.x_out().len() - 2).unwrap();
             let current_step_x = *stepper.x_out().last().unwrap();
 
-            let eps = (2.0 as f64).powf(-52.0 as f64);
+            let eps = (2.0_f64).powf(-52.0_f64);
             dbg!(eps);
             let tol = 4.0 * eps; // From scipy source - 4 * EPS
 
@@ -3076,7 +3074,7 @@ mod tests {
         ]))
         .unwrap();
 
-    let ecodesign_controller = EcoDesignController {
+        let ecodesign_controller = EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassII,
             min_outdoor_temp: Some(-4.),
             max_outdoor_temp: Some(20.),
@@ -3358,7 +3356,7 @@ mod tests {
         ecodesign_controller: EcoDesignController,
         simulation_time: SimulationTime,
     ) -> Emitters {
-        let emitters = emitters_fixture(
+        emitters_fixture(
             heat_source,
             external_conditions,
             zone,
@@ -3370,9 +3368,7 @@ mod tests {
             None,
             None,
             None,
-        );
-
-        emitters
+        )
     }
 
     #[rstest]
