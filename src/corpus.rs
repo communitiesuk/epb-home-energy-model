@@ -831,8 +831,11 @@ impl Corpus {
         // of appliance gains depend on other energy demand in the dwelling at any given time,
         // so depend on the order in which gains are considered by the engine.
         // See check_priority() in apply_appliance_gains_from_input()
-        let mut internal_gains =
-            internal_gains_from_input(&input.internal_gains, total_floor_area)?;
+        let mut internal_gains = internal_gains_from_input(
+            &input.internal_gains,
+            total_floor_area,
+            simulation_time_iterator.as_ref(),
+        )?;
 
         // setup smart control for loadshifting
         let mut smart_appliance_controls: IndexMap<String, Arc<SmartApplianceControl>> =
@@ -3251,6 +3254,7 @@ pub(crate) type InternalGainsCollection = IndexMap<Arc<str>, Gains>;
 fn internal_gains_from_input(
     input: &InternalGainsInput,
     total_floor_area: f64,
+    simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<InternalGainsCollection> {
     let mut gains_collection = InternalGainsCollection::from([]);
     if let Some(internal_gains) = input.total_internal_gains.as_ref() {
@@ -3259,6 +3263,7 @@ fn internal_gains_from_input(
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
+                simulation_time_iterator,
             )?),
         );
     }
@@ -3268,6 +3273,7 @@ fn internal_gains_from_input(
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
+                simulation_time_iterator,
             )?),
         );
     }
@@ -3277,6 +3283,7 @@ fn internal_gains_from_input(
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
+                simulation_time_iterator,
             )?),
         );
     }
@@ -3286,6 +3293,7 @@ fn internal_gains_from_input(
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
+                simulation_time_iterator,
             )?),
         );
     }
@@ -3295,6 +3303,7 @@ fn internal_gains_from_input(
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
+                simulation_time_iterator,
             )?),
         );
     }
@@ -3305,12 +3314,14 @@ fn internal_gains_from_input(
 fn internal_gains_from_details(
     details: &InternalGainsDetails,
     total_floor_area: f64,
+    simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<InternalGains> {
-    Ok(InternalGains::new(
+    InternalGains::new(
         convert_energy_to_wm2(details, total_floor_area)?,
         details.start_day,
         details.time_series_step,
-    ))
+        simulation_time_iterator,
+    )
 }
 
 fn convert_energy_to_wm2(
@@ -4069,6 +4080,7 @@ fn apply_appliance_gains_from_input(
                 &gains_details,
                 energy_supply_conn,
                 total_floor_area,
+                simulation_time,
             )?)
         };
 
@@ -4082,6 +4094,7 @@ fn appliance_gains_from_single_input(
     input: &ApplianceGainsDetails,
     energy_supply_connection: EnergySupplyConnection,
     total_floor_area: f64,
+    simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<ApplianceGains> {
     let total_energy_supply = reject_nulls(expand_numeric_schedule(
         input
@@ -4093,13 +4106,14 @@ fn appliance_gains_from_single_input(
     .map(|energy_data| energy_data / total_floor_area)
     .collect();
 
-    Ok(ApplianceGains::new(
+    ApplianceGains::new(
         total_energy_supply,
         input.gains_fraction,
         input.start_day,
         input.time_series_step,
+        simulation_time_iterator,
         energy_supply_connection,
-    ))
+    )
 }
 
 #[derive(Debug)]
