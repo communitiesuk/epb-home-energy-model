@@ -46,6 +46,7 @@ statrs = "0.18.0"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
+petgraph = "0.8.3"
 
 [dev-dependencies]
 approx = "0.5.1"

@@ -1448,6 +1448,29 @@ impl HotWaterSourceDetails {
             None
         }
     }
+
+    pub(crate) fn cold_water_source(&self) -> String {
+        match self {
+            HotWaterSourceDetails::StorageTank {
+                cold_water_source, ..
+            }
+            | HotWaterSourceDetails::CombiBoiler {
+                cold_water_source, ..
+            }
+            | HotWaterSourceDetails::Hiu {
+                cold_water_source, ..
+            }
+            | HotWaterSourceDetails::PointOfUse {
+                cold_water_source, ..
+            }
+            | HotWaterSourceDetails::SmartHotWaterTank {
+                cold_water_source, ..
+            }
+            | HotWaterSourceDetails::HeatBattery {
+                cold_water_source, ..
+            } => cold_water_source.clone(),
+        }
+    }
 }
 
 pub trait HotWaterSourceDetailsForProcessing {
