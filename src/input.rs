@@ -1449,7 +1449,7 @@ impl HotWaterSourceDetails {
         }
     }
 
-    pub(crate) fn cold_water_source(&self) -> String {
+    pub(crate) fn cold_water_source(&self) -> &str {
         match self {
             HotWaterSourceDetails::StorageTank {
                 cold_water_source, ..
@@ -1468,7 +1468,7 @@ impl HotWaterSourceDetails {
             }
             | HotWaterSourceDetails::HeatBattery {
                 cold_water_source, ..
-            } => cold_water_source.clone(),
+            } => cold_water_source,
         }
     }
 }
