@@ -562,7 +562,7 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
                 let r_se = calculate_cavity_resistance(
                     &PartyWallCavityType::from(*party_wall_cavity_data),
                     &party_wall_cavity_data.party_wall_lining_type(),
-                    party_wall_cavity_data.thermal_resistance_cavity(), // TODO review 1.0.0a6 should this be cavity or construction?
+                    Some(thermal_resistance_construction), // Reported to DESNZ as suspect thermal_resistance_cavity should be passed in here instead
                 )?;
                 let u_value = 1.0 / (thermal_resistance_construction + r_se + r_si);
                 area * u_value
@@ -884,7 +884,7 @@ impl Corpus {
             timestep_end_calcs
                 .write()
                 .push(HeatSystem::WwhrsSystem(wwhrs.clone()));
-        } // TODO review 1.0.0a6
+        } // TODO review along with HeatSystem enum
 
         let mut heat_sources_wet_with_buffer_tank: Vec<String> = vec![];
         let mechanical_ventilations = infiltration_ventilation.mech_vents();
@@ -4287,6 +4287,7 @@ impl WetHeatSource {
     }
 }
 
+// TODO - this enum is a placeholder, to review later and potentially implement a trait instead
 #[derive(Debug)]
 pub(crate) enum HeatSystem {
     WetSystem(WetHeatSource),
