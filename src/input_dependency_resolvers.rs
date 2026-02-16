@@ -10,7 +10,8 @@ pub(crate) fn build_preheated_water_source_dependency_graph<T>(
     preheated_sources_input: IndexMap<T, HotWaterSourceDetails>,
 ) -> Graph<T, T>
 where
-    T: Hash + Eq + Borrow<str> + AsRef<str> + Clone + Default,
+    T: Hash + Eq + AsRef<str> + Borrow<str> + Clone + Default,
+    for<'a> &'a T: Borrow<str>,
 {
     let mut graph = Graph::<T, T>::new();
     let mut nodes = IndexMap::new();
@@ -25,7 +26,7 @@ where
     for (source_name, source_details) in &preheated_sources_input {
         let cold_source_name = source_details.cold_water_source();
         if preheated_sources_input.contains_key(cold_source_name) {
-            edges.push((nodes[source_name], nodes[source_name]));
+            edges.push((nodes[cold_source_name], nodes[source_name]));
         }
     }
     graph.extend_with_edges(&edges);
