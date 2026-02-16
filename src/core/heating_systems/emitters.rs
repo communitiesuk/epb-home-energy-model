@@ -37,6 +37,7 @@ use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+
 type State = Vector1<f64>;
 type Time = f64;
 
@@ -975,7 +976,6 @@ impl Emitters {
             let current_step_x = *stepper.x_out().last().unwrap();
 
             let eps = (2.0_f64).powf(-52.0_f64);
-            dbg!(eps);
             let tol = 4.0 * eps; // From scipy source - 4 * EPS
 
             // Some time (x) between the previous step and the current step we passed the max temp
