@@ -189,8 +189,10 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             .filter(|key| !hot_water_sources.keys().contains(key))
             .collect();
         if !pws_without_hws.is_empty() {
-            // TODO include names in error message
-            bail!("Distribution pipework defined for non-existent HotWaterSource(s)");
+            bail!(
+                "Distribution pipework defined for non-existent HotWaterSource(s): {:?}",
+                pws_without_hws
+            );
         }
 
         // hot water sources (not including point of use) without any pipework
@@ -205,8 +207,10 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                 // point of use doesn't need pipework - just add an empty vec
                 hw_pipework_inputs.insert(hws_name.clone(), vec![]);
             } else {
-                // TODO include name in error message
-                bail!("Distribution pipework not specified for HotWaterSource");
+                bail!(
+                    "Distribution pipework not specified for HotWaterSource: {:?}",
+                    hws_name
+                );
             };
         }
 
