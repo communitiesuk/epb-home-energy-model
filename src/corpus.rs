@@ -5974,3 +5974,229 @@ struct RequiredVentData {
     start_day: u32,
     time_series_step: f64,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::corpus::Corpus;
+    use crate::input::{HotWaterSourceDetails, Input};
+    use rstest::{fixture, rstest};
+    use serde_json::json;
+    use std::sync::Arc;
+
+    #[fixture]
+    fn minimal_input() -> Input {
+        const NUM_TIMESTEPS: usize = 8;
+        let air_temperatures = [10.; NUM_TIMESTEPS];
+        let wind_speeds = [4.; NUM_TIMESTEPS];
+        let wind_directions = [180.; NUM_TIMESTEPS];
+        let diffuse_horizontal_radiation = [100.; NUM_TIMESTEPS];
+        let direct_beam_radiation = [200.; NUM_TIMESTEPS];
+        let solar_reflectivity_of_ground = [0.2; NUM_TIMESTEPS];
+        let schedule_main = [0.; NUM_TIMESTEPS];
+        let temperatures = [10.; NUM_TIMESTEPS];
+
+        serde_json::from_value(json!({
+            "temp_internal_air_static_calcs": 20.0,
+            "SimulationTime": {
+                "start": 0,
+                "end": NUM_TIMESTEPS,
+                "step": 1,
+            },
+            "ExternalConditions": {
+                "air_temperatures": air_temperatures,
+                "wind_speeds": wind_speeds,
+                "wind_directions": wind_directions,
+                "diffuse_horizontal_radiation": diffuse_horizontal_radiation,
+                "direct_beam_radiation": direct_beam_radiation,
+                "solar_reflectivity_of_ground": solar_reflectivity_of_ground,
+                "latitude": 51.5,
+                "longitude": -0.1,
+                "direct_beam_conversion_needed": false,
+                "shading_segments": [
+                    {"start360": 0, "end360": 360},
+                ],
+            },
+            "InternalGains": {
+                "total_internal_gains": {
+                    "start_day": 0,
+                    "time_series_step": 1,
+                    "schedule": {
+                        "main": schedule_main,
+                    },
+                }
+            },
+            "ApplianceGains": {},
+            "Zone": {
+                "zone1": {
+                    "area": 50.0,
+                    "volume": 100.0,
+                    "temp_setpnt_init": 21.0,
+                    "BuildingElement": {
+                        "wall1": {
+                            "type": "BuildingElementOpaque",
+                            "width": 5.0,
+                            "height": 2.5,
+                            "area": 12.5,
+                            "base_height": 0,
+                            "orientation360": 0,
+                            "pitch": 90,
+                            "solar_absorption_coeff": 0.6,
+                            "u_value": 0.18,
+                            "areal_heat_capacity": 110000,
+                            "mass_distribution_class": "IE",
+                        }
+                    },
+                    "ThermalBridging": {},
+                }
+            },
+            "ColdWaterSource": {
+                "mains water": {
+                    "start_day": 0,
+                    "time_series_step": 1,
+                    "temperatures": temperatures,
+                }
+            },
+            "EnergySupply": {
+                "mains elec": {
+                    "fuel": "electricity",
+                    "is_export_capable": false,
+                }
+            },
+            "Control": {
+                "min_temp": {
+                    "type": "SetpointTimeControl",
+                    "start_day": 0,
+                    "time_series_step": 1,
+                    "schedule": {
+                        "main": [
+                            {
+                                "value": 50.0,
+                                "repeat": NUM_TIMESTEPS,
+                            }
+                        ]
+                    },
+                },
+                "setpoint_temp_max": {
+                    "type": "SetpointTimeControl",
+                    "start_day": 0,
+                    "time_series_step": 1,
+                    "schedule": {
+                        "main": [
+                            {
+                                "value": 60.0,
+                                "repeat": NUM_TIMESTEPS,
+                            }
+                        ]
+                    },
+                },
+            },
+            "Events": {
+                "Shower": {},
+                "Bath": {},
+                "Other": {},
+            },
+            "InfiltrationVentilation": {
+                "cross_vent_possible": false,
+                "shield_class": "Normal",
+                "terrain_class": "OpenField",
+                "ventilation_zone_base_height": 2.5,
+                "altitude": 30,
+                "Vents": {},
+                "Leaks": {
+                    "ventilation_zone_height": 6,
+                    "test_pressure": 50,
+                    "test_result": 1.2,
+                    "env_area": 220,
+                },
+            },
+            "HotWaterDemand": {
+                "Shower": {},
+                "Bath": {},
+                "Other": {},
+                "Distribution": {},
+            },
+            "HotWaterSource": {},
+            "WWHRS": {},
+        }))
+        .unwrap()
+    }
+
+    fn create_preheated_water_source_storage_tank(
+        name: &str,
+        cold_water_source_name: &str,
+    ) -> HotWaterSourceDetails {
+        serde_json::from_value(json!(
+        {"type": "StorageTank",
+        "volume": 24.0,
+        "daily_losses": 1.55,
+        "init_temp": 48.0,
+        "ColdWaterSource": cold_water_source_name,
+        "HeatSource": {
+            format!("{name}_immersion"): {
+                "type": "ImmersionHeater",
+                "power": 3.0,
+                "EnergySupply": "mains elec",
+                "Controlmin": "min_temp",
+                "Controlmax": "setpoint_temp_max",
+                "heater_position": 0.3,
+                "thermostat_position": 0.33}}
+            }))
+        .unwrap()
+    }
+
+    /// Test that PreHeatedWaterSource objects can be initialized in any order
+    #[rstest]
+    fn test_preheated_water_source_initialization_order_independent(mut minimal_input: Input) {
+        let tank1 = create_preheated_water_source_storage_tank("tank1", "tank2");
+        let tank2 = create_preheated_water_source_storage_tank("tank2", "mains water");
+
+        minimal_input.pre_heated_water_source =
+            serde_json::from_value(json!({"tank1": tank1, "tank2": tank2})).unwrap();
+
+        let corpus =
+            Corpus::from_inputs(Arc::new(minimal_input), None, None, &Default::default()).unwrap();
+
+        let pre_heated_sources = corpus.pre_heated_water_sources;
+
+        assert!(pre_heated_sources.contains_key("tank1"));
+        assert!(pre_heated_sources.contains_key("tank2"));
+    }
+
+    ///  Test that circular references between PreHeatedWaterSource objects are detected and raise an appropriate error.
+    #[rstest]
+    fn test_preheated_water_source_circular_reference_detection(mut minimal_input: Input) {
+        let tank1 = create_preheated_water_source_storage_tank("tank1", "tank2");
+        let tank2 = create_preheated_water_source_storage_tank("tank2", "tank1");
+
+        minimal_input.pre_heated_water_source =
+            serde_json::from_value(json!({"tank1": tank1, "tank2": tank2})).unwrap();
+
+        let result = Corpus::from_inputs(Arc::new(minimal_input), None, None, &Default::default());
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "A circular dependency was found between defined preheated water sources."
+        )
+    }
+
+    /// Test that chains of dependencies work regardless of initialization order
+    #[rstest]
+    fn test_preheated_water_source_chain_of_dependencies(mut minimal_input: Input) {
+        let tank1 = create_preheated_water_source_storage_tank("tank1", "tank2");
+        let tank2 = create_preheated_water_source_storage_tank("tank2", "tank3");
+        let tank3 = create_preheated_water_source_storage_tank("tank3", "mains water");
+
+        minimal_input.pre_heated_water_source =
+            serde_json::from_value(json!({"tank1": tank1, "tank2": tank2, "tank3": tank3}))
+                .unwrap();
+
+        let corpus =
+            Corpus::from_inputs(Arc::new(minimal_input), None, None, &Default::default()).unwrap();
+
+        let pre_heated_sources = corpus.pre_heated_water_sources;
+
+        assert!(pre_heated_sources.contains_key("tank1"));
+        assert!(pre_heated_sources.contains_key("tank2"));
+        assert!(pre_heated_sources.contains_key("tank3"));
+    }
+}
