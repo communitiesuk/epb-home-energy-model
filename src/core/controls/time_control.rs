@@ -1,5 +1,6 @@
 // This module provides structs to model time controls
 
+use crate::core::schedule::validate_schedule_length;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
@@ -11,6 +12,7 @@ use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HO
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use bounded_vec_deque::BoundedVecDeque;
+use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -203,7 +205,7 @@ impl ChargeControl {
     pub(crate) fn new(
         logic_type: ControlLogicType,
         schedule: Vec<bool>,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iterator: &SimulationTimeIterator,
         start_day: u32,
         time_series_step: f64,
         charge_level: Vec<Option<f64>>,
@@ -213,7 +215,14 @@ impl ChargeControl {
         external_sensor: Option<ExternalSensor>,
         charge_calc_time: Option<f64>,
     ) -> anyhow::Result<Self> {
-        let simulation_timestep = simulation_time_iteration.timestep;
+        if let Some(ref temp_charge_cut_delta) = temp_charge_cut_delta {
+            validate_schedule_length(
+                temp_charge_cut_delta,
+                simulation_time_iterator
+                    .total_steps_based_on_step(start_day, Some(time_series_step))?,
+            )?;
+        };
+        let simulation_timestep = simulation_time_iterator.step_in_hours();
         let charge_calc_time = charge_calc_time.unwrap_or(21.);
 
         let heat_retention_data: Option<ChargeControlHeatRetentionFields> = match logic_type {
@@ -259,7 +268,8 @@ impl ChargeControl {
                 )));
                 for i in 0..steps_day {
                     future_ext_temp.write().push_back(Some(
-                        external_conditions.air_temp_with_offset(simulation_time_iteration, i),
+                        external_conditions
+                            .air_temp_with_offset(&simulation_time_iterator.current_iteration(), i),
                     ));
                 }
                 let energy_to_store = AtomicF64::new(0.0);
@@ -296,7 +306,8 @@ impl ChargeControl {
                 )));
                 for i in 0..steps_day {
                     future_ext_temp.write().push_back(Some(
-                        external_conditions.air_temp_with_offset(simulation_time_iteration, i),
+                        external_conditions
+                            .air_temp_with_offset(&simulation_time_iterator.current_iteration(), i),
                     ));
                 }
                 let energy_to_store = AtomicF64::new(0.0);
@@ -353,7 +364,10 @@ impl ChargeControl {
                 let temp_charge_cut = self.temp_charge_cut_corr(simtime);
 
                 if temp_charge_cut.is_some_and(|temp_charge_cut| {
-                    temp_air.is_some_and(|temp_air| temp_air >= temp_charge_cut)
+                    temp_air.is_some_and(|temp_air| {
+                        temp_air > temp_charge_cut
+                            || is_close!(temp_air, temp_charge_cut, abs_tol = 1e-10)
+                    })
                 }) {
                     // Control logic cut when temp_air is over temp_charge cut
                     target_charge_nominal = 0.;
@@ -463,7 +477,7 @@ impl ChargeControl {
                 // Can't calculate tomorrow's demand if no past_hdh, so assume zero to store
                 (_, Some(0.)) => 0.,
                 (Some(future_hdh), Some(past_hdh)) => {
-                    future_hdh / past_hdh * demand.read().iter().flatten().sum::<f64>()
+                    future_hdh / past_hdh * FSum::with_all(demand.read().iter().flatten()).value()
                 }
             }
         };
@@ -521,9 +535,21 @@ impl ChargeControl {
         let last_correlation = correlation
             .last()
             .expect("External sensor correlation was not expected to be empty.");
-        if external_temperature <= first_correlation.temperature {
+        if external_temperature < first_correlation.temperature
+            || is_close!(
+                external_temperature,
+                first_correlation.temperature,
+                abs_tol = 1e-10
+            )
+        {
             return Ok(first_correlation.max_charge);
-        } else if external_temperature >= last_correlation.temperature {
+        } else if external_temperature > last_correlation.temperature
+            || is_close!(
+                external_temperature,
+                last_correlation.temperature,
+                abs_tol = 1e-10
+            )
+        {
             return Ok(last_correlation.max_charge);
         }
 
@@ -538,7 +564,11 @@ impl ChargeControl {
                 max_charge: max_charge_2,
             } = correlation[i];
 
-            if temp_1 <= external_temperature && external_temperature <= temp_2 && temp_1 != temp_2
+            if !is_close!(temp_1, temp_2)
+                && (temp_1 < external_temperature
+                    || is_close!(temp_1, external_temperature, abs_tol = 1e-10))
+                && (external_temperature < temp_2
+                    || is_close!(temp_2, external_temperature, abs_tol = 1e-10))
             {
                 // perform linear interpolation
                 let slope = (max_charge_2 - max_charge_1) / (temp_2 - temp_1);
@@ -578,10 +608,17 @@ impl OnOffCostMinimisingTimeControl {
     /// * `time_on_daily` - number of "on" hours to be set per day
     pub(crate) fn new(
         schedule: Vec<f64>,
+        simulation_time_iterator: &SimulationTimeIterator,
         start_day: u32,
         time_series_step: f64,
         time_on_daily: f64,
     ) -> anyhow::Result<Self> {
+        validate_schedule_length(
+            &schedule,
+            simulation_time_iterator
+                .total_steps_based_on_step(start_day, Some(time_series_step))?,
+        )?;
+
         let timesteps_per_day = (HOURS_IN_DAY as f64 / time_series_step) as usize;
         let timesteps_on_daily = (time_on_daily / time_series_step) as usize;
         let time_series_len_days =
@@ -598,9 +635,6 @@ impl OnOffCostMinimisingTimeControl {
             // just below. This ensures that we handle the case when the end of the range is greater
             // than the length of the schedule (otherwise we'd get a panic in Rust). Python is more
             // lenient and will assume access elements up to the last one and will not error.
-            if schedule.len() < schedule_day_end {
-                bail!("There is a mismatch between the schedule length and the timesteps per day (hours_per_day / time_series_step)")
-            }
             let schedule_day = schedule[schedule_day_start..schedule_day_end].to_vec();
 
             // Find required number of timesteps with lowest costs
@@ -1043,14 +1077,16 @@ impl SmartApplianceControl {
             // (users for whom demand is negative)
             // to make it more or less preferable to use it immediately or export/charge battery
             self.non_appliance_demand_24hr[name][idx_24hr].store(
-                supply
-                    .read()
-                    .results_by_end_user_single_step(t_idx)
-                    .iter()
-                    .filter_map(|(name, user)| {
-                        (!self.appliance_names.contains(name)).then_some(user)
-                    })
-                    .sum::<f64>(),
+                FSum::with_all(
+                    supply
+                        .read()
+                        .results_by_end_user_single_step(t_idx)
+                        .iter()
+                        .filter_map(|(name, user)| {
+                            (!self.appliance_names.contains(name)).then_some(user)
+                        }),
+                )
+                .value(),
                 Ordering::SeqCst,
             );
 
@@ -1269,19 +1305,12 @@ impl CombinationTimeControl {
                             // XOR is true if exactly one result is true
                             results.process_results(|iter| iter.filter(|x| *x).count() == 1)?
                         }
-                        ControlCombinationOperation::Max => results.process_results(|iter| {
-                            iter.max().expect("At least one result was expected")
-                        })?,
-                        ControlCombinationOperation::Min => results.process_results(|iter| {
-                            iter.min().expect("At least one result was expected")
-                        })?,
-                        ControlCombinationOperation::Mean => {
-                            // Mean evaluates to True if average > 0.5
-                            let results = results.collect::<anyhow::Result<Vec<_>>>()?;
-                            results.iter().cloned().map(f64::from).sum::<f64>()
-                                / results.len() as f64
-                                > 0.5
-                        }
+                        ControlCombinationOperation::Max | ControlCombinationOperation::Min | ControlCombinationOperation::Mean => {
+                            // MAX/MIN/MEAN are numeric operations for setpoints.
+                            // In boolean context (in_required_period), use OR logic:
+                            // "is any of the combined controls in its required period?"
+                            results.process_results(|mut iter| iter.any(|x| x))?
+                        },
                         _ => {
                             bail!("Unsupported combination operation encountered ('{operation:?}')")
                         }
@@ -1430,7 +1459,7 @@ impl CombinationTimeControl {
                             })?.expect("Results not expected to be empty")
                         }
                         ControlCombinationOperation::Mean => {
-                            let results_sum = results
+                            let results_sum = FSum::with_all(results
                                 .iter()
                                 .filter_map(|x| {
                                     if let SetpointOrBoolean::Setpoint(Some(t)) = x {
@@ -1438,8 +1467,7 @@ impl CombinationTimeControl {
                                     } else {
                                         None
                                     }
-                                })
-                                .sum::<f64>();
+                                })).value();
                             SetpointOrBoolean::Boolean(results_sum / results.len() as f64 > 0.5)
                         }
                         _ => {
@@ -1683,25 +1711,25 @@ mod tests {
 
     mod test_on_off_cost_minimising_time_control {
         use super::*;
-        use pretty_assertions::assert_eq;
 
-        #[test]
-        fn test_init_invalid_schedule_length() {
+        #[fixture]
+        fn simulation_time() -> SimulationTimeIterator {
+            SimulationTime::new(0.0, 48.0, 1.0).iter()
+        }
+
+        #[rstest]
+        fn test_init_invalid_schedule_length(simulation_time: SimulationTimeIterator) {
             let cost_schedule = [vec![5.0; 7], vec![10.0; 2], vec![7.5; 8], vec![15.0; 6]]
                 .to_vec()
                 .concat();
             let cost_schedule = [&cost_schedule[..], &cost_schedule[..]].concat();
-            let control = OnOffCostMinimisingTimeControl::new(cost_schedule, 0, 1.0, 12.0);
+            let control =
+                OnOffCostMinimisingTimeControl::new(cost_schedule, &simulation_time, 0, 1.0, 12.0);
             assert!(control.is_err());
-            let error = control.unwrap_err().to_string();
-            assert_eq!(
-                error,
-                "There is a mismatch between the schedule length and the timesteps per day (hours_per_day / time_series_step)"
-            );
         }
 
         #[rstest]
-        fn test_is_on() {
+        fn test_is_on(simulation_time: SimulationTimeIterator) {
             let schedule = [
                 vec![5.0; 7],
                 vec![10.0; 2],
@@ -1713,7 +1741,8 @@ mod tests {
             .concat();
             let schedule = [&schedule[..], &schedule[..]].concat();
             let cost_minimising_ctrl =
-                OnOffCostMinimisingTimeControl::new(schedule, 0, 1.0, 12.0).unwrap();
+                OnOffCostMinimisingTimeControl::new(schedule, &simulation_time, 0, 1.0, 12.0)
+                    .unwrap();
 
             let resulting_schedule = [
                 vec![true; 7],
@@ -2120,7 +2149,7 @@ mod tests {
                 &simulation_time_iterator,
                 vec![0.0; 24],
                 vec![3.7; 24],
-                vec![200.; 24],
+                vec![200.; 24].into_iter().map(|x| x.into()).collect(),
                 vec![333.; 24],
                 vec![0.; 24],
                 vec![0.2; 8760],
@@ -2296,6 +2325,7 @@ mod tests {
 
     mod test_charge_control {
         use super::*;
+        use crate::core::units::Orientation360;
         use pretty_assertions::assert_eq;
 
         fn simulation_time() -> SimulationTime {
@@ -2331,11 +2361,14 @@ mod tests {
             ]
         }
 
-        fn wind_directions() -> Vec<f64> {
+        fn wind_directions() -> Vec<Orientation360> {
             vec![
                 300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
                 190., 200., 320., 330., 340., 350., 355., 315., 5.,
             ]
+            .into_iter()
+            .map(|x| x.into())
+            .collect()
         }
 
         fn diffuse_horizontal_radiation() -> Vec<f64> {
@@ -2465,7 +2498,7 @@ mod tests {
             ChargeControl::new(
                 logic_type,
                 schedule,
-                &simulation_time().iter().current_iteration(),
+                &simulation_time().iter(),
                 0,
                 1.,
                 vec![Some(1.0), Some(0.8)],
@@ -2794,6 +2827,25 @@ mod tests {
             }
         }
 
+        #[rstest]
+        fn test_temp_charge_cut_delta_length() {
+            let charge_control = ChargeControl::new(
+                ControlLogicType::Automatic,
+                schedule(),
+                &simulation_time().iter(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
+                Some(15.5),
+                Some(vec![0., 0.]),
+                Some(Arc::new(external_conditions())),
+                Some(external_sensor()),
+                None,
+            );
+
+            assert!(charge_control.is_err());
+        }
+
         #[test]
         fn test_energy_to_store() {
             let simulation_time = simulation_time_48_hours();
@@ -2809,7 +2861,7 @@ mod tests {
             let charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
                 schedule_48_hours(),
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 vec![Some(1.0), Some(0.8)],
@@ -2846,7 +2898,7 @@ mod tests {
             let mut charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
                 schedule_48_hours(),
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 vec![Some(1.0), Some(0.8)],
@@ -2918,7 +2970,10 @@ mod tests {
                 vec![
                     300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100.,
                     140., 190., 200., 320., 330., 340., 350., 355., 315., 5.,
-                ],
+                ]
+                .into_iter()
+                .map(Into::into)
+                .collect(),
                 vec![
                     0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225.,
                     198., 121., 68., 19., 0., 0., 0., 0., 0.,
@@ -2983,7 +3038,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Automatic,
                 schedule,
-                &simulation_time_1.iter().current_iteration(),
+                &simulation_time_1.iter(),
                 0,
                 1.,
                 vec![Some(1.0), Some(0.8)],
@@ -3272,7 +3327,7 @@ mod tests {
                     control
                         .evaluate_combination_in_req_period("main", t_it)
                         .unwrap(),
-                    [true, false, true, true, true, false, true, true][t_idx]
+                    [true, true, true, true, true, true, true, true][t_idx]
                 );
             }
 
@@ -3288,7 +3343,7 @@ mod tests {
                     control
                         .evaluate_combination_in_req_period("main", t_it)
                         .unwrap(),
-                    [true, false, true, true, true, false, true, true][t_idx]
+                    [true, true, true, true, true, true, true, true][t_idx]
                 );
             }
 
@@ -3716,7 +3771,10 @@ mod tests {
             vec![
                 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300.,
                 300., 300., 300., 300., 300., 300., 300., 300., 300., 300.,
-            ],
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect(),
             vec![
                 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
                 0., 0., 0.,
@@ -3769,9 +3827,7 @@ mod tests {
         ChargeControl::new(
             ControlLogicType::Automatic,
             schedule_for_charge_control,
-            &simulation_time_for_charge_control
-                .iter()
-                .current_iteration(),
+            &simulation_time_for_charge_control.iter(),
             0,
             1.,
             [1.0, 0.8].into_iter().map(Some).collect(),
@@ -3785,7 +3841,9 @@ mod tests {
     }
 
     #[fixture]
-    fn controls_for_combination() -> IndexMap<String, Arc<Control>> {
+    fn controls_for_combination(
+        simulation_time_for_charge_control: SimulationTime,
+    ) -> IndexMap<String, Arc<Control>> {
         let cost_schedule = vec![
             5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0,
             10.0, 10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
@@ -3793,6 +3851,7 @@ mod tests {
         let cost_minimising_control = Control::OnOffMinimisingTime(
             OnOffCostMinimisingTimeControl::new(
                 cost_schedule,
+                &simulation_time_for_charge_control.iter(),
                 0,
                 1.,
                 5.0, // Need 12 "on" hours

@@ -1,14 +1,13 @@
 use crate::compare_floats::min_of_2;
 use crate::compare_floats::min_of_3;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
-use crate::hem_core::simulation_time::SimulationTimeIterator;
 use crate::input::InverterType;
 
 /// An object to represent an inverter.  Although primarily for PV systems this may have other uses e.g. wind turbine
 #[derive(Debug, Clone)]
 pub(crate) struct Inverter {
     energy_supply_connection: EnergySupplyConnection,
-    simulation_time: SimulationTimeIterator,
+    simulation_timestep: f64,
     inverter_peak_power_dc: f64,
     inverter_peak_power_ac: f64,
     inverter_is_inside: bool,
@@ -26,7 +25,7 @@ impl Inverter {
     /// * `inverter_type`          -- type of inverter to help with calculation of efficiency of inverter when overshading
     pub(crate) fn new(
         energy_supply_connection: EnergySupplyConnection,
-        simulation_time: SimulationTimeIterator,
+        simulation_timestep: f64,
         inverter_peak_power_dc: f64,
         inverter_peak_power_ac: f64,
         inverter_is_inside: bool,
@@ -34,7 +33,7 @@ impl Inverter {
     ) -> Self {
         Self {
             energy_supply_connection,
-            simulation_time,
+            simulation_timestep,
             inverter_peak_power_dc,
             inverter_peak_power_ac,
             inverter_is_inside,
@@ -95,7 +94,7 @@ impl Inverter {
 
         // Convert power to energy
 
-        power * self.simulation_time.step_in_hours()
+        power * self.simulation_timestep
     }
 
     /// Calculate energy from input power, apply efficiency, and supply to energy supply connection

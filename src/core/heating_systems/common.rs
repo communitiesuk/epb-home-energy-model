@@ -17,7 +17,7 @@ use crate::core::heating_systems::heat_network::{
     HeatNetworkServiceSpace, HeatNetworkServiceWaterStorage,
 };
 use crate::core::heating_systems::heat_pump::{
-    HeatPumpHotWaterOnly, HeatPumpServiceSpace, HeatPumpServiceSpaceWarmAir, HeatPumpServiceWater,
+    HeatPumpHotWaterOnly, HeatPumpServiceSpace, HeatPumpServiceWater, HeatPumpWarmAir,
 };
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::output::OutputEmitters;
@@ -129,8 +129,12 @@ impl HeatSourceWet {
                     simtime,
                 )
                 .map(|x| x.0),
-            HeatSourceWet::HeatNetworkWaterStorage(water_storage) => Ok(water_storage
-                .demand_energy(energy_demand, Default::default(), temperature, &simtime)),
+            HeatSourceWet::HeatNetworkWaterStorage(water_storage) => water_storage.demand_energy(
+                energy_demand,
+                Default::default(),
+                temperature,
+                &simtime,
+            ),
             HeatSourceWet::HeatBatteryHotWater(battery) => {
                 battery.demand_energy(energy_demand, temp_flow, temperature, None, simtime)
             }
@@ -173,7 +177,7 @@ impl HeatSourceWet {
 
 #[derive(Debug)]
 pub(crate) enum HeatBatteryWaterService {
-    Pcm(HeatBatteryPcmServiceWaterRegular),
+    Pcm(HeatBatteryPcmServiceWaterRegular<WaterSupply>),
     DryCore(HeatBatteryDryCoreServiceWaterRegular<WaterSupply>),
 }
 
@@ -231,22 +235,17 @@ impl HeatBatteryWaterService {
 pub(crate) enum SpaceHeatSystem {
     ElecStorage(Arc<ElecStorageHeater>),
     Instant(InstantElecHeater),
-    WarmAir(HeatPumpServiceSpaceWarmAir),
+    WarmAir(HeatPumpWarmAir),
     WetDistribution(Emitters),
 }
 
 impl SpaceHeatSystem {
-    pub fn temp_setpnt(
-        &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<Option<f64>> {
+    pub fn temp_setpnt(&self, simulation_time_iteration: SimulationTimeIteration) -> Option<f64> {
         match self {
             SpaceHeatSystem::ElecStorage(elec_storage) => {
-                Ok(elec_storage.temp_setpnt(&simulation_time_iteration))
+                elec_storage.temp_setpnt(&simulation_time_iteration)
             }
-            SpaceHeatSystem::Instant(instant) => {
-                Ok(instant.temp_setpnt(&simulation_time_iteration))
-            }
+            SpaceHeatSystem::Instant(instant) => instant.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
                 wet_distribution.temp_setpnt(&simulation_time_iteration)
@@ -262,24 +261,6 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
                 wet_distribution.frac_convective(simtime)
             }
-        }
-    }
-
-    pub fn _running_time_throughput_factor(
-        &self,
-        energy_demand: f64,
-        space_heat_running_time_cumulative: f64,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
-        match self {
-            SpaceHeatSystem::ElecStorage(..) => unreachable!(), // it isn't expected that this will be called on electric storage heaters
-            SpaceHeatSystem::Instant(_instant) => unreachable!(), // it isn't expected that this will be called on instant heaters
-            SpaceHeatSystem::WarmAir(warm_air) => warm_air.running_time_throughput_factor(
-                energy_demand,
-                space_heat_running_time_cumulative,
-                simulation_time_iteration,
-            ),
-            SpaceHeatSystem::WetDistribution(_wet_distribution) => unreachable!(),
         }
     }
 
@@ -307,13 +288,13 @@ impl SpaceHeatSystem {
     pub fn in_required_period(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<Option<bool>> {
+    ) -> Option<bool> {
         match self {
             SpaceHeatSystem::ElecStorage(elec_storage) => {
-                Ok(elec_storage.in_required_period(&simulation_time_iteration))
+                elec_storage.in_required_period(&simulation_time_iteration)
             }
             SpaceHeatSystem::Instant(instant) => {
-                Ok(instant.in_required_period(&simulation_time_iteration))
+                instant.in_required_period(&simulation_time_iteration)
             }
             SpaceHeatSystem::WarmAir(warm_air) => {
                 warm_air.in_required_period(&simulation_time_iteration)
@@ -467,7 +448,7 @@ impl SpaceHeatingService {
                     time_start,
                     update_heat_source_state,
                     &simulation_time_iteration,
-                ),
+                )?,
                 None,
             )),
             SpaceHeatingService::HeatBattery(ref mut heat_battery_service_space) => {

@@ -2,6 +2,7 @@ use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::simulation_time::SimulationTimeIteration;
+use fsum::FSum;
 
 #[derive(Debug, Clone)]
 pub(crate) struct PointOfUse {
@@ -53,8 +54,8 @@ impl PointOfUse {
             let list_temp_volume = self
                 .cold_feed
                 .draw_off_water(event.volume_hot, *simulation_time_iteration)?;
-            let sum_t_by_v: f64 = list_temp_volume.iter().map(|(t, v)| t * v).sum();
-            let sum_v: f64 = list_temp_volume.iter().map(|(_, v)| v).sum();
+            let sum_t_by_v = FSum::with_all(list_temp_volume.iter().map(|(t, v)| t * v)).value();
+            let sum_v = FSum::with_all(list_temp_volume.iter().map(|(_, v)| v)).value();
 
             let temp_cold_water = sum_t_by_v / sum_v;
 
@@ -146,12 +147,14 @@ mod tests {
                 volume_hot: 60.,
                 volume_warm: 60.,
                 temperature_warm: 55.,
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other,
                 volume_hot: 0.,
                 volume_warm: 0.,
                 temperature_warm: 55.,
+                event_duration: 0.,
             },
         ];
 

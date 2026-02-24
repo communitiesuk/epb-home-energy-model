@@ -1,7 +1,7 @@
 use crate::core::energy_supply::inverter::Inverter;
 use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
 use crate::core::space_heat_demand::building_element::projected_height;
-use crate::core::units::WATTS_PER_KILOWATT;
+use crate::core::units::{Orientation360, WATTS_PER_KILOWATT};
 use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
@@ -36,7 +36,7 @@ pub(crate) struct PhotovoltaicPanel {
     peak_power: f64,
     f_perf: f64,
     pitch: f64,
-    orientation: f64,
+    orientation: Orientation360,
     base_height: f64,
     width: f64,
     projected_height: f64,
@@ -63,9 +63,7 @@ impl PhotovoltaicPanel {
     ///             Needed to calculate solar irradiation at the panel surface.
     /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
     ///                   geographical azimuth angle of the horizontal projection of the inclined
-    ///                   surface normal, -180 to 180, in degrees;
-    ///                   Assumed N 180 or -180, E 90, S 0, W -90
-    ///                   TODO (from Python) - PV standard refers to angle as between 0 to 360?
+    ///                   surface normal, 0 to 360, in degrees;
     ///                   Needed to calculate solar irradiation at the panel surface.
     /// * `base_height` - is the distance between the ground and the lowest edge of the PV panel, in m
     /// * `height` - is the height of the PV panel, in m
@@ -75,7 +73,7 @@ impl PhotovoltaicPanel {
         peak_power: f64,
         ventilation_strategy: PhotovoltaicVentilationStrategy,
         pitch: f64,
-        orientation: f64,
+        orientation: Orientation360,
         base_height: f64,
         height: f64,
         width: f64,
@@ -327,7 +325,9 @@ impl OnSiteGeneration for PhotovoltaicSystem {
                 * energy_produced;
         }
 
-        if total_unshaded_energy_produced <= 0. {
+        if total_unshaded_energy_produced < 0.
+            || is_close!(total_unshaded_energy_produced, 0., abs_tol = 1e-10)
+        {
             weighted_f_sh_dir = 1.;
         } else {
             weighted_f_sh_dir /= total_unshaded_energy_produced;
@@ -336,8 +336,6 @@ impl OnSiteGeneration for PhotovoltaicSystem {
         let mut total_energy_produced = 0.;
 
         for panel in &self.panels {
-            weighted_f_sh_dir = panel
-                .shading_factors_direct(&self.external_conditions, simulation_time_iteration)?;
             let energy_produced = panel.produce_energy(
                 self.clone(),
                 &self.external_conditions,
@@ -399,7 +397,10 @@ mod tests {
             &simulation_time_iterator,
             vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
             vec![3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1],
-            vec![220., 230., 240., 250., 260., 270., 270., 280.],
+            vec![220., 230., 240., 250., 260., 270., 270., 280.]
+                .into_iter()
+                .map(Into::into)
+                .collect(),
             vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
@@ -415,13 +416,13 @@ mod tests {
             false,
             vec![
                 ShadingSegment {
-                    start: 180.,
-                    end: 135.,
+                    start360: Orientation360::create_from_180(180.).unwrap(),
+                    end360: Orientation360::create_from_180(135.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: 135.,
-                    end: 90.,
+                    start360: Orientation360::create_from_180(135.).unwrap(),
+                    end360: Orientation360::create_from_180(90.).unwrap(),
                     shading_objects: vec![ShadingObject {
                         object_type: ShadingObjectType::Overhang,
                         height: 2.2,
@@ -429,13 +430,13 @@ mod tests {
                     }],
                 },
                 ShadingSegment {
-                    start: 90.,
-                    end: 45.,
+                    start360: Orientation360::create_from_180(90.).unwrap(),
+                    end360: Orientation360::create_from_180(45.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: 45.,
-                    end: 0.,
+                    start360: Orientation360::create_from_180(45.).unwrap(),
+                    end360: Orientation360::create_from_180(0.).unwrap(),
                     shading_objects: vec![
                         ShadingObject {
                             object_type: ShadingObjectType::Obstacle,
@@ -450,8 +451,8 @@ mod tests {
                     ],
                 },
                 ShadingSegment {
-                    start: 0.,
-                    end: -45.,
+                    start360: Orientation360::create_from_180(0.).unwrap(),
+                    end360: Orientation360::create_from_180(-45.).unwrap(),
                     shading_objects: vec![ShadingObject {
                         object_type: ShadingObjectType::Obstacle,
                         height: 3.,
@@ -459,18 +460,18 @@ mod tests {
                     }],
                 },
                 ShadingSegment {
-                    start: -45.,
-                    end: -90.,
+                    start360: Orientation360::create_from_180(-45.).unwrap(),
+                    end360: Orientation360::create_from_180(-90.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: -90.,
-                    end: -135.,
+                    start360: Orientation360::create_from_180(-90.).unwrap(),
+                    end360: Orientation360::create_from_180(-135.).unwrap(),
                     ..Default::default()
                 },
                 ShadingSegment {
-                    start: -135.,
-                    end: -180.,
+                    start360: Orientation360::create_from_180(-135.).unwrap(),
+                    end360: Orientation360::create_from_180(-180.).unwrap(),
                     ..Default::default()
                 },
             ]
@@ -498,7 +499,7 @@ mod tests {
     ) -> Inverter {
         Inverter::new(
             energy_supply_connection,
-            simulation_time.iter(),
+            simulation_time.step,
             2.5,
             inverter_peak_power_ac.unwrap_or(0.05),
             inverter_is_inside,
@@ -515,7 +516,7 @@ mod tests {
             2.5,
             PhotovoltaicVentilationStrategy::ModeratelyVentilated,
             30.,
-            0.,
+            Orientation360::create_from_180(0.).unwrap(),
             10.,
             2.,
             3.,
@@ -540,7 +541,7 @@ mod tests {
             2.5,
             PhotovoltaicVentilationStrategy::ModeratelyVentilated,
             30.,
-            0.,
+            Orientation360::create_from_180(0.).unwrap(),
             10.,
             2.,
             3.,
@@ -634,7 +635,7 @@ mod tests {
                 2.5,
                 PhotovoltaicVentilationStrategy::ModeratelyVentilated,
                 30.,
-                0.,
+                Orientation360::create_from_180(0.).unwrap(),
                 10.,
                 2.,
                 3.,
@@ -645,7 +646,7 @@ mod tests {
                 3.5,
                 PhotovoltaicVentilationStrategy::ModeratelyVentilated,
                 32.,
-                0.,
+                Orientation360::create_from_180(0.).unwrap(),
                 12.,
                 2.,
                 3.,
@@ -797,7 +798,7 @@ mod tests {
             0.,
             PhotovoltaicVentilationStrategy::ModeratelyVentilated,
             30.,
-            0.,
+            Orientation360::create_from_180(0.).unwrap(),
             10.,
             2.,
             3.,
@@ -810,5 +811,88 @@ mod tests {
             pv_system.produce_energy(simulation_time_iteration).unwrap(),
             (0., 0.)
         );
+    }
+
+    /// Test that PhotovoltaicSystem with multiple panels uses weighted average shading factor
+    /// rather than individual panel shading factors.
+    ///
+    /// This test uses two panels with different shading to verify that the weighted average
+    /// shading factor is calculated and applied correctly to both panels.
+    #[rstest]
+    fn test_produce_energy_weighted_shading_multiple_panels(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time: SimulationTime,
+    ) {
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "pv generation with weighted shading")
+                .unwrap();
+        let pv_inverter = Inverter::new(
+            energy_supply_connection,
+            simulation_time.step,
+            5.0,
+            0.05,
+            false,
+            InverterType::OptimisedInverter,
+        );
+
+        // Create system with two panels: one with heavy shading, one with no shading
+        let pv_system = PhotovoltaicSystem::new(
+            external_conditions,
+            vec![
+                PhotovoltaicPanel::new(
+                    2.5,
+                    PhotovoltaicVentilationStrategy::ModeratelyVentilated,
+                    30.,
+                    Orientation360::create_from_180(0.).unwrap(),
+                    10.,
+                    2.,
+                    3.,
+                    simulation_time.step,
+                    vec![WindowShadingObject::Overhang {
+                        depth: 1.5,
+                        distance: 0.5,
+                    }],
+                ),
+                PhotovoltaicPanel::new(
+                    2.5,
+                    PhotovoltaicVentilationStrategy::ModeratelyVentilated,
+                    30.,
+                    Orientation360::create_from_180(0.).unwrap(),
+                    10.,
+                    2.,
+                    3.,
+                    simulation_time.step,
+                    vec![],
+                ),
+            ],
+            pv_inverter,
+        );
+
+        // These expected results reflect the weighted average shading being applied
+        // If the bug were present, results would differ because each panel would use
+        // its own shading factor instead of the weighted average
+        let expected_results = [
+            -0.005487138157454144,
+            -0.030091653956970398,
+            -0.05,
+            -0.05,
+            -0.05,
+            -0.05,
+            -0.03798231211493309,
+            -0.02867743809548659,
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            pv_system.produce_energy(t_it).unwrap();
+            assert_relative_eq!(
+                energy_supply.read().results_by_end_user()["pv generation with weighted shading"]
+                    [t_idx],
+                expected_results[t_idx],
+                max_relative = 1e-6
+            );
+        }
     }
 }

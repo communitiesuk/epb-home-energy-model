@@ -304,9 +304,9 @@ pub struct OutputSummaryPeakElectricityConsumption {
 #[derive(Debug, Serialize)]
 pub struct OutputSummaryEnergySupply {
     /// All energy generated on site (unit: kWh)
-    pub(crate) electricity_generated: f64,
+    pub(crate) generation: f64,
     /// All energy consumed for space and water heating, appliances and cooking (unit: kWh)
-    pub(crate) electricity_consumed: f64,
+    pub(crate) consumption: f64,
     /// Total energy generated and consumed immediately, excluding PV diverter (unit: kWh)
     pub(crate) generation_to_consumption: f64,
     /// Total energy exported to grid immediately from generation (unit: kWh)
@@ -336,8 +336,8 @@ pub struct OutputSummaryEnergySupply {
 impl OutputSummaryEnergySupply {
     pub(crate) fn field(&self, key: &EnergySupplyStatKey) -> f64 {
         match key {
-            EnergySupplyStatKey::ElectricityGenerated => self.electricity_generated,
-            EnergySupplyStatKey::ElectricityConsumed => self.electricity_consumed,
+            EnergySupplyStatKey::Generation => self.generation,
+            EnergySupplyStatKey::Consumption => self.consumption,
             EnergySupplyStatKey::GenerationToConsumption => self.generation_to_consumption,
             EnergySupplyStatKey::GridToConsumption => self.grid_to_consumption,
             EnergySupplyStatKey::GenerationToGrid => self.generation_to_grid,

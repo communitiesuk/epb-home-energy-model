@@ -1,15 +1,18 @@
+use crate::bail;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::units::{
-    average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, JOULES_PER_KILOJOULE,
+    average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, Orientation360,
+    JOULES_PER_KILOJOULE,
 };
 use crate::corpus::Controls;
 use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
 use crate::input::{
-    EdgeInsulation, FloorData, MassDistributionClass, WindShieldLocation,
-    WindowTreatment as WindowTreatmentInput, WindowTreatmentControl as WindowTreatmentControlInput,
-    WindowTreatmentType,
+    EdgeInsulation, FloorData, MassDistributionClass, PartyWallCavityType, PartyWallLiningType,
+    WindShieldLocation, WindowTreatment as WindowTreatmentInput,
+    WindowTreatmentControl as WindowTreatmentControlInput, WindowTreatmentType,
+    PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
@@ -37,6 +40,65 @@ pub(crate) fn projected_height(tilt: f64, height: f64) -> f64 {
 
 fn calculate_area(height: f64, width: f64) -> f64 {
     height * width
+}
+
+/// Calculate the effective thermal resistance of the party wall cavity
+///
+/// For defined_resistance type, uses the provided value directly.
+/// For other types, derives the cavity resistance from equivalent U-values
+/// which are based on research into heat loss via air movement in party wall cavities.
+///
+/// The derivation assumes typical party wall constructions and calculates
+/// what cavity resistance (R_cavity) is needed to achieve the equivalent
+/// U-values (initially based on SAP guidance):
+/// - Unsealed cavity, dry lined: U = 0.6 W/m².K → R_cavity ≈ 1.2 m².K/W
+/// - Unsealed cavity, wet plaster: U = 0.2 W/m².K → R_cavity ≈ 4.5 m².K/W
+/// - Edge-sealed cavity: U = 0.2 W/m².K → R_cavity ≈ 4.5 m².K/W
+/// - Unsealed filled cavity: U = 0.2 W/m².K → R_cavity ≈ 4.5 m².K/W
+/// - Solid or filled and edge-sealed: U = 0.0 W/m².K → R_cavity = 999999 m².K/W (effectively adiabatic)
+///
+/// Arguments:
+/// * `party_wall_cavity_type` - type of party wall cavity construction
+/// * `party_wall_lining_type` - type of party wall lining material
+/// * `thermal_resistance_cavity` - user-defined cavity resistance (only for 'defined_resistance' type)
+///
+/// Returns:
+/// * `r_cavity` - effective thermal resistance of the cavity, in m2.K / W
+pub(crate) fn calculate_cavity_resistance(
+    party_wall_cavity_type: &PartyWallCavityType,
+    party_wall_lining_type: &Option<PartyWallLiningType>,
+    thermal_resistance_cavity: Option<f64>,
+) -> anyhow::Result<f64> {
+    if *party_wall_cavity_type == PartyWallCavityType::DefinedResistance {
+        return thermal_resistance_cavity.ok_or_else(|| {
+            anyhow!(
+                "thermal_resistance_cavity is validated by schema to be \
+                not None for DEFINED_RESISTANCE type"
+            )
+        });
+    }
+
+    // Thermal resistance equivalents for deriving cavity resistance
+    let thermal_resistance = match (party_wall_lining_type, party_wall_cavity_type) {
+        (None, PartyWallCavityType::Solid) => 999999.,
+        (None, PartyWallCavityType::FilledSealed) => 999999.,
+        (None, _) => {
+            bail!("invalid combination of party wall cavity type and party wall lining type")
+        }
+        (Some(PartyWallLiningType::DryLined), PartyWallCavityType::UnfilledUnsealed) => 1.2,
+        (Some(PartyWallLiningType::DryLined), PartyWallCavityType::FilledUnsealed) => 4.5,
+        (Some(PartyWallLiningType::DryLined), PartyWallCavityType::UnfilledSealed) => 4.5,
+        (Some(PartyWallLiningType::DryLined), _) => {
+            bail!("invalid combination of party wall cavity type and party wall lining type")
+        }
+        (Some(PartyWallLiningType::WetPlaster), PartyWallCavityType::UnfilledUnsealed) => 4.5,
+        (Some(PartyWallLiningType::WetPlaster), PartyWallCavityType::FilledUnsealed) => 4.5,
+        (Some(PartyWallLiningType::WetPlaster), PartyWallCavityType::UnfilledSealed) => 4.5,
+        (Some(PartyWallLiningType::WetPlaster), _) => {
+            bail!("invalid combination of party wall cavity type and party wall lining type")
+        }
+    };
+    Ok(thermal_resistance)
 }
 
 #[derive(Debug, PartialEq)]
@@ -68,6 +130,7 @@ pub enum HeatFlowDirection {
 // - BuildingElementTransparent: Common, 2 nodes, Outside, Transmitted
 // - BuildingElementAdjacentConditionedSpace: Common, 5 nodes, Conditioned space, Not exposed
 // - BuildingElementAdjacentUnconditionedSpaceSimple: Common, 5 nodes, Unconditioned space, Not exposed
+// - BuildingElementPartyWall: Common, 5 nodes, Unconditioned space, Not exposed
 // - BuildingElementGround: Common, 3+2 nodes, Ground, Not exposed
 //
 // BuildingElementTransparent also has the functions projected_height, mid_height and orientation, which I think are now
@@ -117,11 +180,6 @@ pub(crate) const R_SI_UPWARDS: f64 = 1.0 / (H_RI + H_CI_UPWARDS);
 pub(crate) const R_SI_DOWNWARDS: f64 = 1.0 / (H_RI + H_CI_DOWNWARDS);
 const R_SE: f64 = 1.0 / (H_CE + H_RE);
 
-// From BR 443: The values under "horizontal" apply to heat flow
-// directions +/- 30 degrees from horizontal plane.
-pub(crate) const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
-pub(crate) const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
-
 #[derive(Debug)]
 pub(crate) enum BuildingElement {
     Opaque(BuildingElementOpaque),
@@ -129,6 +187,7 @@ pub(crate) enum BuildingElement {
     AdjacentUnconditionedSpaceSimple(BuildingElementAdjacentUnconditionedSpaceSimple),
     Ground(BuildingElementGround),
     Transparent(BuildingElementTransparent),
+    PartyWall(BuildingElementPartyWall),
 }
 
 impl BuildingElement {
@@ -139,6 +198,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.area(),
             BuildingElement::Ground(el) => el.area(),
             BuildingElement::Transparent(el) => el.area(),
+            BuildingElement::PartyWall(el) => el.area(),
         }
     }
 
@@ -149,6 +209,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el,
             BuildingElement::Ground(el) => el,
             BuildingElement::Transparent(el) => el,
+            BuildingElement::PartyWall(el) => el,
         }
     }
 
@@ -168,6 +229,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => Ok(el.solar_gains()),
             BuildingElement::Ground(el) => Ok(el.solar_gains()),
             BuildingElement::Transparent(el) => el.solar_gains(simtime),
+            BuildingElement::PartyWall(el) => Ok(el.solar_gains()),
         }
     }
 
@@ -178,6 +240,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_ce(),
             BuildingElement::Ground(el) => el.h_ce(),
             BuildingElement::Transparent(el) => el.h_ce(),
+            BuildingElement::PartyWall(el) => el.h_ce(),
         }
     }
 
@@ -188,6 +251,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_re(),
             BuildingElement::Ground(el) => el.h_re(),
             BuildingElement::Transparent(el) => el.h_re(),
+            BuildingElement::PartyWall(el) => el.h_re(),
         }
     }
 
@@ -198,6 +262,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_ri(),
             BuildingElement::Ground(el) => el.h_ri(),
             BuildingElement::Transparent(el) => el.h_ri(),
+            BuildingElement::PartyWall(el) => el.h_ri(),
         }
     }
 
@@ -208,6 +273,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.solar_absorption_coeff(),
             BuildingElement::Ground(el) => el.solar_absorption_coeff(),
             BuildingElement::Transparent(el) => el.solar_absorption_coeff(),
+            BuildingElement::PartyWall(el) => el.solar_absorption_coeff(),
         }
     }
 
@@ -218,6 +284,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.therm_rad_to_sky(),
             BuildingElement::Ground(el) => el.therm_rad_to_sky(),
             BuildingElement::Transparent(el) => el.therm_rad_to_sky(),
+            BuildingElement::PartyWall(el) => el.therm_rad_to_sky(),
         }
     }
 
@@ -232,6 +299,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => Ok(el.h_pli()[idx]),
             BuildingElement::Ground(el) => Ok(el.h_pli()[idx]),
             BuildingElement::Transparent(el) => el.h_pli_by_index(idx, simulation_time_iteration),
+            BuildingElement::PartyWall(el) => Ok(el.h_pli()[idx]),
         }
     }
 
@@ -245,6 +313,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::Ground(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::Transparent(el) => el.i_sol_dir_dif(simtime),
+            BuildingElement::PartyWall(el) => el.i_sol_dir_dif(simtime),
         })
     }
 
@@ -262,6 +331,7 @@ impl BuildingElement {
             }
             BuildingElement::Ground(el) => Ok(el.shading_factors_direct_diffuse(simtime)),
             BuildingElement::Transparent(el) => el.shading_factors_direct_diffuse(simtime),
+            BuildingElement::PartyWall(el) => Ok(el.shading_factors_direct_diffuse(simtime)),
         }
     }
 
@@ -272,6 +342,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.temp_ext(simtime),
             BuildingElement::Ground(el) => el.temp_ext(simtime),
             BuildingElement::Transparent(el) => el.temp_ext(simtime),
+            BuildingElement::PartyWall(el) => el.temp_ext(simtime),
         }
     }
 
@@ -291,6 +362,7 @@ impl BuildingElement {
             }
             BuildingElement::Ground(el) => el.h_ci(temp_int_air, temp_int_surface),
             BuildingElement::Transparent(el) => el.h_ci(temp_int_air, temp_int_surface),
+            BuildingElement::PartyWall(el) => el.h_ci(temp_int_air, temp_int_surface),
         }
     }
 
@@ -301,6 +373,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.fabric_heat_loss(),
             BuildingElement::Ground(el) => el.fabric_heat_loss(),
             BuildingElement::Transparent(el) => el.fabric_heat_loss(),
+            BuildingElement::PartyWall(el) => el.fabric_heat_loss(),
         }
     }
 
@@ -311,6 +384,7 @@ impl BuildingElement {
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.heat_capacity(),
             BuildingElement::Ground(el) => el.heat_capacity(),
             BuildingElement::Transparent(el) => el.heat_capacity(),
+            BuildingElement::PartyWall(el) => el.heat_capacity(),
         }
     }
 }
@@ -900,6 +974,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                         thermal_resistance_of_insulation,
                         height_upper_surface,
                         shield_fact_location,
+                        ..
                     } => init_suspended_floor(
                         *height_upper_surface,
                         *thermal_transmission_walls,
@@ -955,7 +1030,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
     fn temp_int_annual(&self) -> f64;
 
     fn wind_speed(&self) -> anyhow::Result<f64> {
-        self.external_conditions().wind_speed_annual().ok_or_else(|| anyhow!("The external conditions provided do not contain data for an entire year, therefore an annual wind speed cannot be calculated."))
+        self.external_conditions().wind_speed_annual()
     }
 
     fn set_total_area(&mut self, total_area: f64);
@@ -1082,7 +1157,7 @@ pub(crate) trait SolarRadiationInteraction {
     fn init_solar_radiation_interaction(
         &mut self,
         pitch: f64,
-        orientation: Option<f64>,
+        orientation: Option<Orientation360>,
         shading: Option<Vec<WindowShadingObject>>,
         base_height: f64,
         projected_height: f64,
@@ -1102,8 +1177,8 @@ pub(crate) trait SolarRadiationInteraction {
 
     fn set_external_pitch(&mut self, pitch: f64);
     fn external_pitch(&self) -> f64;
-    fn set_orientation(&mut self, orientation: f64);
-    fn orientation(&self) -> Option<f64>;
+    fn set_orientation(&mut self, orientation: Orientation360);
+    fn orientation(&self) -> Option<Orientation360>;
     fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>);
     fn shading(&self) -> &[WindowShadingObject];
     fn set_base_height(&mut self, base_height: f64);
@@ -1135,7 +1210,7 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
     fn init_solar_radiation_interaction_absorbed(
         &mut self,
         pitch: f64,
-        orientation: Option<f64>,
+        orientation: Option<Orientation360>,
         shading: Option<Vec<WindowShadingObject>>,
         base_height: f64,
         projected_height: f64,
@@ -1276,7 +1351,7 @@ pub(crate) struct BuildingElementOpaque {
     base_height: f64,
     projected_height: f64,
     width: f64,
-    orientation: Option<f64>,
+    orientation: Option<Orientation360>,
     k_m: f64,
     k_pli: [f64; 5],
     h_pli: [f64; 4],
@@ -1303,7 +1378,7 @@ impl BuildingElementOpaque {
     ///             - 'M':  mass concentrated inside
     /// * `orientation` -- is the orientation angle of the inclined surface, expressed as the
     ///                geographical azimuth angle of the horizontal projection of the inclined
-    ///                surface normal, -180 to 180, in degrees
+    ///                surface normal, 0 to 360, in degrees
     /// * `base_height` - is the distance between the ground and the lowest edge of the element, in m
     /// * `height`      - is the height of the building element, in m
     /// * `width`       - is the width of the building element, in m
@@ -1316,7 +1391,7 @@ impl BuildingElementOpaque {
         thermal_resistance_construction: f64,
         areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
-        orientation: Option<f64>,
+        orientation: Option<Orientation360>,
         base_height: f64,
         height: f64,
         width: f64,
@@ -1474,11 +1549,11 @@ impl SolarRadiationInteraction for BuildingElementOpaque {
         self.external_pitch
     }
 
-    fn set_orientation(&mut self, orientation: f64) {
+    fn set_orientation(&mut self, orientation: Orientation360) {
         self.orientation = orientation.into();
     }
 
-    fn orientation(&self) -> Option<f64> {
+    fn orientation(&self) -> Option<Orientation360> {
         self.orientation
     }
 
@@ -1532,6 +1607,341 @@ impl SolarRadiationInteractionAbsorbed for BuildingElementOpaque {
     }
 }
 
+/// A class to represent all party wall building elements
+///
+/// This class handles all party wall types, with specific provisions for cavity walls
+/// where heat loss via air movement occurs. Research has shown this heat loss to be
+/// significant in cavity party walls, contrary to historical assumptions of negligible
+/// heat transfer.
+///
+/// For cavity party walls, heat loss is modelled by treating the cavity as an
+/// unconditioned space with an effective thermal resistance that depends on the
+/// cavity type. The thermal resistance values (R_cavity) are derived from equivalent
+/// U-values which are based on research into air movement patterns within party wall cavities:
+/// - Solid walls and filled-sealed cavities: R_cavity = 0 (no heat loss via cavity)
+/// - Unfilled unsealed cavities: R_cavity ≈ 1.5 m².K/W
+/// - Unfilled sealed cavities: R_cavity ≈ 4.5 m².K/W
+///
+/// Note: This approach does not explicitly model losses via air movement in party
+/// ceilings/floors, though these may be implicitly included in the cavity resistance
+/// values derived from the original research.
+#[derive(Clone, Debug)]
+pub(crate) struct BuildingElementPartyWall {
+    area: f64,
+    pitch: f64,
+    thermal_resistance_construction: f64,
+    party_wall_cavity_type: PartyWallCavityType,
+    party_wall_lining_type: Option<PartyWallLiningType>,
+    thermal_resistance_cavity: Option<f64>,
+    areal_heat_capacity: f64,
+    mass_distribution_class: MassDistributionClass,
+    external_conditions: Arc<ExternalConditions>,
+    h_pli: [f64; 4],
+    k_pli: [f64; 5],
+    r_c: f64,
+    k_m: f64,
+    f_sky: f64,
+    therm_rad_to_sky: f64,
+    r_u: f64,
+    external_pitch: f64,
+    orientation: Option<Orientation360>,
+    shading: Option<Vec<WindowShadingObject>>,
+    base_height: f64,
+    projected_height: f64,
+    width: f64,
+    solar_absorption_coeff: f64,
+}
+
+impl BuildingElementPartyWall {
+    /// Construct a BuildingElementPartyWall object
+    /// Arguments (names based on those in BS EN ISO 52016-1:2017):
+    /// * `area` - area (in m2) of this building element
+    /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
+    ///             where` 0 means the external surface is facing up, 90 means the external
+    ///             surface` is vertical and 180 means the external surface is facing down
+    /// * `thermal_resistance_construction` - thermal resistance of wall layers before the cavity, in m2.K / W
+    /// * `party_wall_cavity_type` - type of party wall cavity (solid, unfilled_unsealed,
+    ///                              unfilled_sealed, filled_sealed, or defined_resistance)
+    /// * `party_wall_lining_type` - type of party wall lining (wet_plaster, or dry_lined)
+    /// * `thermal_resistance_cavity` - effective thermal resistance of the cavity, in m2.K / W;
+    ///                                 required only for 'defined_resistance' type, otherwise calculated automatically
+    /// * `areal_heat_capacity` - areal heat capacity, in J / (m2.K)
+    /// * `mass_distribution_class` - distribution of mass in building element, one of:
+    ///     - 'I':  mass concentrated on internal side
+    ///     - 'E':  mass concentrated on external side
+    ///     - 'IE': mass divided over internal and external side
+    ///     - 'D':  mass equally distributed
+    ///     - 'M':  mass concentrated inside
+    /// * `ext_cond` -- reference to ExternalConditions object
+    ///
+    /// Other variables:
+    /// * `f_sky` - view factor to the sky (see BS EN ISO 52016-1:2017, section 6.5.13.3)
+    /// * `h_ce` - external convective heat transfer coefficient, in W / (m2.K)
+    /// * `h_re` - external radiative heat transfer coefficient, in W / (m2.K)
+    /// * `solar_absorption_coeff` - solar absorption coefficient at the external surface (dimensionless)
+    pub(crate) fn new(
+        area: f64,
+        pitch: f64,
+        thermal_resistance_construction: f64,
+        party_wall_cavity_type: PartyWallCavityType,
+        party_wall_lining_type: Option<PartyWallLiningType>,
+        thermal_resistance_cavity: Option<f64>,
+        areal_heat_capacity: f64,
+        mass_distribution_class: MassDistributionClass,
+        external_conditions: Arc<ExternalConditions>,
+    ) -> anyhow::Result<Self> {
+        // Calculate the effective thermal resistance of the unconditioned space (cavity)
+        // based on the party wall cavity type and party wall lining type
+
+        let r_unconditioned = calculate_cavity_resistance(
+            &party_wall_cavity_type,
+            &party_wall_lining_type,
+            thermal_resistance_cavity,
+        )?;
+
+        let mut party_wall = Self {
+            area,
+            pitch,
+            thermal_resistance_construction,
+            party_wall_cavity_type,
+            party_wall_lining_type,
+            thermal_resistance_cavity,
+            areal_heat_capacity,
+            mass_distribution_class,
+            external_conditions,
+            h_pli: Default::default(),
+            k_pli: Default::default(),
+            r_c: Default::default(),
+            k_m: Default::default(),
+            f_sky: Default::default(),
+            therm_rad_to_sky: Default::default(),
+            r_u: r_unconditioned,
+            external_pitch: Default::default(),
+            orientation: Default::default(),
+            shading: None,
+            base_height: Default::default(),
+            projected_height: Default::default(),
+            width: Default::default(),
+            solar_absorption_coeff: Default::default(),
+        };
+
+        party_wall.init_heat_transfer_through_5_nodes(
+            thermal_resistance_construction,
+            mass_distribution_class,
+            areal_heat_capacity,
+        );
+        party_wall.init_heat_transfer_other_side_unconditioned_space(r_unconditioned);
+
+        // Solar absorption coefficient at the external surface is zero
+        // (party walls are not exposed to solar radiation)
+        party_wall.init_solar_radiation_interaction(pitch, None, None, 0., 0., 0., 0.);
+
+        Ok(party_wall)
+    }
+
+    /// Return external convective heat transfer coefficient, in W / (m2.K)
+    pub(crate) fn h_ce(&self) -> f64 {
+        // For party walls with solid or filled_sealed cavity types, return zero
+        // to represent adiabatic boundary condition (no heat loss)
+
+        match self.party_wall_cavity_type {
+            PartyWallCavityType::Solid | PartyWallCavityType::FilledSealed => 0.,
+            _ => HeatTransferOtherSideUnconditionedSpace::h_ce(self),
+        }
+    }
+
+    /// Return the fabric heat loss for the building element
+    ///
+    /// For party walls with solid or filled_sealed cavity types, return zero
+    /// as these represent adiabatic boundaries with no heat loss to account for
+    /// in the building's heat loss calculation.
+    ///
+    /// For cavity party walls, the fabric heat loss calculation must include
+    /// the effective thermal resistance of the cavity (R_cavity) in addition to
+    /// the construction resistance.
+    fn fabric_heat_loss(&self) -> f64 {
+        // For solid and filled_sealed types, there is no heat loss
+        match self.party_wall_cavity_type {
+            PartyWallCavityType::Solid | PartyWallCavityType::FilledSealed => 0.,
+            _ => {
+                // For cavity party walls, calculate U-value including cavity resistance
+                // The parent class h_ce() already incorporates the cavity resistance,
+                // so we need to calculate the effective R_se from h_ce and h_re
+                let h_ce = self.h_ce();
+                let h_re = self.h_re();
+                let h_se_effective = h_ce + h_re;
+
+                let r_se_effective = 1.0 / h_se_effective;
+
+                // Calculate U-value with effective external surface resistance
+                // skipping check on r_c as always set from thermal_resistance_construction as part of init_heat_transfer_through_5_nodes
+                let u_value = 1.0 / (self.r_c + r_se_effective + HeatTransferInternal::r_si(self));
+                self.area * u_value
+            }
+        }
+    }
+
+    pub(crate) fn h_re(&self) -> f64 {
+        HeatTransferOtherSideUnconditionedSpace::h_re(self)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn r_si(&self) -> f64 {
+        HeatTransferInternal::r_si(self)
+    }
+}
+
+impl HeatTransferThrough for BuildingElementPartyWall {
+    fn set_r_c(&mut self, thermal_resistance_construction: f64) {
+        self.r_c = thermal_resistance_construction;
+    }
+
+    fn r_c(&self) -> f64 {
+        self.r_c
+    }
+
+    fn k_m(&self) -> f64 {
+        self.k_m
+    }
+
+    fn set_k_m(&mut self, areal_heat_capacity: f64) {
+        self.k_m = areal_heat_capacity;
+    }
+
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn r_se(&self) -> f64 {
+        // upstream Python uses duck typing/ lookups to find which method this is, but Rust needs to be explicit
+        <dyn HeatTransferOtherSide>::r_se(self)
+    }
+
+    fn r_si(&self) -> f64 {
+        <dyn HeatTransferInternal>::r_si(self)
+    }
+
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
+    }
+}
+
+impl HeatTransferOtherSide for BuildingElementPartyWall {
+    fn set_f_sky(&mut self, f_sky: f64) {
+        self.f_sky = f_sky;
+    }
+
+    fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
+        self.therm_rad_to_sky = therm_rad_to_sky;
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
+    }
+
+    fn f_sky(&self) -> f64 {
+        self.f_sky
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
+    }
+}
+
+impl HeatTransferOtherSideUnconditionedSpace for BuildingElementPartyWall {
+    fn set_r_u(&mut self, thermal_resistance_unconditioned_space: f64) {
+        self.r_u = thermal_resistance_unconditioned_space;
+    }
+
+    fn r_u(&self) -> f64 {
+        self.r_u
+    }
+}
+
+impl HeatTransferThrough5Nodes for BuildingElementPartyWall {
+    fn set_h_pli(&mut self, h_pli: [f64; 4]) {
+        self.h_pli = h_pli;
+    }
+
+    fn set_k_pli(&mut self, k_pli: [f64; 5]) {
+        self.k_pli = k_pli;
+    }
+}
+
+impl HeatTransferInternal for BuildingElementPartyWall {
+    fn pitch(&self) -> f64 {
+        self.external_pitch()
+    }
+}
+impl HeatTransferInternalCommon for BuildingElementPartyWall {}
+
+impl SolarRadiationInteraction for BuildingElementPartyWall {
+    fn set_external_pitch(&mut self, pitch: f64) {
+        self.external_pitch = pitch;
+    }
+
+    fn external_pitch(&self) -> f64 {
+        self.external_pitch
+    }
+
+    fn set_orientation(&mut self, orientation: Orientation360) {
+        self.orientation = Some(orientation);
+    }
+
+    fn orientation(&self) -> Option<Orientation360> {
+        self.orientation
+    }
+
+    fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>) {
+        self.shading = shading;
+    }
+
+    fn shading(&self) -> &[WindowShadingObject] {
+        match self.shading {
+            Some(ref shading) => &shading[..],
+            None => &[],
+        }
+    }
+
+    fn set_base_height(&mut self, base_height: f64) {
+        self.base_height = base_height;
+    }
+
+    fn base_height(&self) -> f64 {
+        self.base_height
+    }
+
+    fn set_projected_height(&mut self, projected_height: f64) {
+        self.projected_height = projected_height;
+    }
+
+    fn projected_height(&self) -> f64 {
+        self.projected_height
+    }
+
+    fn set_width(&mut self, width: f64) {
+        self.width = width;
+    }
+
+    fn width(&self) -> f64 {
+        self.width
+    }
+
+    fn set_solar_absorption_coeff(&mut self, solar_absorption_coeff: f64) {
+        self.solar_absorption_coeff = solar_absorption_coeff;
+    }
+
+    fn solar_absorption_coeff(&self) -> f64 {
+        self.solar_absorption_coeff
+    }
+}
+
+impl SolarRadiationInteractionNotExposed for BuildingElementPartyWall {}
+
 #[derive(Debug)]
 pub(crate) struct BuildingElementAdjacentConditionedSpace {
     area: f64,
@@ -1544,7 +1954,7 @@ pub(crate) struct BuildingElementAdjacentConditionedSpace {
     f_sky: f64,
     therm_rad_to_sky: f64,
     external_pitch: f64,
-    orientation: f64,
+    orientation: Orientation360,
 }
 
 /// A type to represent building elements adjacent to a thermally conditioned zone (ZTC)
@@ -1554,22 +1964,21 @@ impl BuildingElementAdjacentConditionedSpace {
     /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
     ///          where 0 means the external surface is facing up, 90 means the external
     ///          surface is vertical and 180 means the external surface is facing down
-    /// * `thermal_resistance_construction`      - thermal resistance, in m2.K / W
-    /// * `areal_heat_capacity`      - areal heat capacity, in J / (m2.K)
-    /// * `mass_distribution_class`
-    ///          - distribution of mass in building element, one of:
-    ///             - 'I':  mass concentrated on internal side
-    ///             - 'E':  mass concentrated on external side
-    ///             - 'IE': mass divided over internal and external side
-    ///             - 'D':  mass equally distributed
-    ///             - 'M':  mass concentrated inside
+    /// * `thermal_resistance_construction` - thermal resistance, in m2.K / W
+    /// * `areal_heat_capacity` - areal heat capacity, in J / (m2.K)
+    /// * `mass_distribution_class` - distribution of mass in building element, one of:
+    ///    - 'I':  mass concentrated on internal side
+    ///    - 'E':  mass concentrated on external side
+    ///    - 'IE': mass divided over internal and external side
+    ///    - 'D':  mass equally distributed
+    ///    - 'M':  mass concentrated inside
     /// * `external_conditions` - reference to ExternalConditions object
     ///
     /// Other variables:
-    /// * `f_sky` -- view factor to the sky (see BS EN ISO 52016-1:2017, section 6.5.13.3)
-    /// * `h_ce`     -- external convective heat transfer coefficient, in W / (m2.K)
-    /// * `h_re`     -- external radiative heat transfer coefficient, in W / (m2.K)
-    /// * `solar_absorption_coeff`    -- solar absorption coefficient at the external surface (dimensionless)
+    /// * `f_sky` - view factor to the sky (see BS EN ISO 52016-1:2017, section 6.5.13.3)
+    /// * `h_ce` - external convective heat transfer coefficient, in W / (m2.K)
+    /// * `h_re` - external radiative heat transfer coefficient, in W / (m2.K)
+    /// * `solar_absorption_coeff` - solar absorption coefficient at the external surface (dimensionless)
     pub(crate) fn new(
         area: f64,
         pitch: f64,
@@ -1711,11 +2120,11 @@ impl SolarRadiationInteraction for BuildingElementAdjacentConditionedSpace {
         self.external_pitch
     }
 
-    fn set_orientation(&mut self, orientation: f64) {
+    fn set_orientation(&mut self, orientation: Orientation360) {
         self.orientation = orientation;
     }
 
-    fn orientation(&self) -> Option<f64> {
+    fn orientation(&self) -> Option<Orientation360> {
         self.orientation.into()
     }
 
@@ -1950,12 +2359,12 @@ impl SolarRadiationInteraction for BuildingElementAdjacentUnconditionedSpaceSimp
         self.external_pitch
     }
 
-    fn set_orientation(&mut self, _orientation: f64) {
+    fn set_orientation(&mut self, _orientation: Orientation360) {
         // do nothing
     }
 
-    fn orientation(&self) -> Option<f64> {
-        0.0.into()
+    fn orientation(&self) -> Option<Orientation360> {
+        Some(0.0.into())
     }
 
     fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
@@ -2386,12 +2795,12 @@ impl SolarRadiationInteraction for BuildingElementGround {
         self.external_pitch
     }
 
-    fn set_orientation(&mut self, _orientation: f64) {
+    fn set_orientation(&mut self, _orientation: Orientation360) {
         // do nothing
     }
 
-    fn orientation(&self) -> Option<f64> {
-        0.0.into()
+    fn orientation(&self) -> Option<Orientation360> {
+        Default::default()
     }
 
     fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
@@ -2495,15 +2904,15 @@ impl WindowTreatment {
             delta_r: input.delta_r,
             trans_red: input.trans_red,
             closing_irradiance_control: input
-                .closing_irradiance_control
+                .control_closing_irrad
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)),
             opening_irradiance_control: input
-                .opening_irradiance_control
+                .control_opening_irrad
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)),
             open_control: input
-                .open_control
+                .control_open
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)),
             is_open: input.is_open.unwrap_or_default().into(),
@@ -2523,7 +2932,7 @@ pub(crate) struct BuildingElementTransparent {
     frame_area_fraction: f64,
     pitch: f64,
     external_pitch: f64,
-    orientation: Option<f64>,
+    orientation: Option<Orientation360>,
     base_height: f64,
     projected_height: f64,
     width: f64,
@@ -2558,7 +2967,7 @@ impl BuildingElementTransparent {
     pub(crate) fn new(
         pitch: f64,
         thermal_resistance_construction: f64,
-        orientation: Option<f64>,
+        orientation: Option<Orientation360>,
         g_value: f64,
         frame_area_fraction: f64,
         base_height: f64,
@@ -2842,11 +3251,11 @@ impl SolarRadiationInteraction for BuildingElementTransparent {
         self.external_pitch
     }
 
-    fn set_orientation(&mut self, orientation: f64) {
-        self.orientation = orientation.into();
+    fn set_orientation(&mut self, orientation: Orientation360) {
+        self.orientation.replace(orientation);
     }
 
-    fn orientation(&self) -> Option<f64> {
+    fn orientation(&self) -> Option<Orientation360> {
         self.orientation
     }
 
@@ -3170,7 +3579,7 @@ mod tests {
             0.25,
             19000.0,
             MassDistributionClass::I,
-            Some(0.),
+            Orientation360::create_from_180(0.).unwrap().into(),
             0.,
             2.,
             10.,
@@ -3188,7 +3597,7 @@ mod tests {
             0.50,
             18000.0,
             MassDistributionClass::E,
-            Some(180.),
+            Orientation360::create_from_180(180.0).unwrap().into(),
             0.,
             2.25,
             10.,
@@ -3206,7 +3615,7 @@ mod tests {
             0.75,
             17000.0,
             MassDistributionClass::IE,
-            Some(90.),
+            Orientation360::create_from_180(90.).unwrap().into(),
             0.,
             2.5,
             10.,
@@ -3224,7 +3633,7 @@ mod tests {
             0.80,
             16000.0,
             MassDistributionClass::D,
-            Some(-90.),
+            Orientation360::create_from_180(-90.0).unwrap().into(),
             0.,
             2.75,
             10.,
@@ -3242,7 +3651,7 @@ mod tests {
             0.40,
             15000.0,
             MassDistributionClass::M,
-            Some(0.),
+            Orientation360::create_from_180(0.).unwrap().into(),
             0.,
             3.,
             10.,
@@ -3705,6 +4114,7 @@ mod tests {
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered,
             thermal_resistance_of_insulation: 7.,
+            edge_insulation: Default::default(),
         };
         let be_i = BuildingElementGround::new(
             20.0,
@@ -3768,6 +4178,7 @@ mod tests {
         let be_d_floor_data = FloorData::HeatedBasement {
             depth_basement_floor: 2.3,
             thermal_resistance_of_basement_walls: 6.,
+            edge_insulation: Default::default(),
         };
         let be_d = BuildingElementGround::new(
             27.5,
@@ -3790,6 +4201,7 @@ mod tests {
             depth_basement_floor: 2.3,
             height_basement_walls: 2.3,
             thermal_resistance_of_basement_walls: 0.5,
+            edge_insulation: Default::default(),
         };
         let be_m = BuildingElementGround::new(
             30.0,
@@ -3876,7 +4288,7 @@ mod tests {
             &simulation_time_for_ground.iter(),
             airtemp,
             vec![2.; 8760],
-            vec![180.; 8760],
+            vec![180.; 8760].into_iter().map(Into::into).collect(),
             vec![0.0; 8760],
             vec![0.0; 8760],
             vec![0.0; 8760],
@@ -3903,6 +4315,7 @@ mod tests {
             area_per_perimeter_vent: 1.,
             shield_fact_location: wind_shield_location,
             thermal_resistance_of_insulation: 1.,
+            edge_insulation: Default::default(),
         }
     }
 
@@ -4219,7 +4632,7 @@ mod tests {
         fn external_pitch(&self) -> f64 {
             unreachable!()
         }
-        fn orientation(&self) -> Option<f64> {
+        fn orientation(&self) -> Option<Orientation360> {
             unreachable!()
         }
         fn projected_height(&self) -> f64 {
@@ -4231,7 +4644,7 @@ mod tests {
         fn set_external_pitch(&mut self, _: f64) {
             unreachable!()
         }
-        fn set_orientation(&mut self, _: f64) {
+        fn set_orientation(&mut self, _: Orientation360) {
             unreachable!()
         }
         fn set_projected_height(&mut self, _: f64) {
@@ -4370,7 +4783,7 @@ mod tests {
         BuildingElementTransparent::new(
             90.,
             0.4,
-            Some(180.),
+            Orientation360::create_from_180(180.).unwrap().into(),
             0.75,
             0.25,
             1.,
@@ -4548,43 +4961,43 @@ mod tests {
     ) -> Arc<ExternalConditions> {
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 135.,
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 135.,
-                end: 90.,
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 90.,
-                end: 45.,
+                start360: Orientation360::create_from_180(90.).unwrap(),
+                end360: Orientation360::create_from_180(45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 45.,
-                end: 0.,
+                start360: Orientation360::create_from_180(45.).unwrap(),
+                end360: Orientation360::create_from_180(0.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 0.,
-                end: -45.,
+                start360: Orientation360::create_from_180(0.).unwrap(),
+                end360: Orientation360::create_from_180(-45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -45.,
-                end: -90.,
+                start360: Orientation360::create_from_180(-45.).unwrap(),
+                end360: Orientation360::create_from_180(-90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -90.,
-                end: -135.,
+                start360: Orientation360::create_from_180(-90.).unwrap(),
+                end360: Orientation360::create_from_180(-135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -135.,
-                end: -180.,
+                start360: Orientation360::create_from_180(-135.).unwrap(),
+                end360: Orientation360::create_from_180(-180.).unwrap(),
                 ..Default::default()
             },
         ]
@@ -4594,7 +5007,7 @@ mod tests {
             &simulation_time,
             vec![0.0, 5.0, 10.0, 15.0],
             vec![0.0; 4],
-            vec![0.0; 4],
+            vec![0.0; 4].into_iter().map(Into::into).collect(),
             diffuse_horizontal_radiations,
             vec![0.0, 0., 0., 0.],
             vec![0.0; 4],
@@ -4949,8 +5362,11 @@ mod tests {
     #[rstest]
     fn test_orientation(transparent_building_element: BuildingElementTransparent) {
         assert_eq!(
-            transparent_building_element.orientation(),
-            Some(180.),
+            transparent_building_element
+                .orientation()
+                .unwrap()
+                .transform_to_180(),
+            180.,
             "incorrect orientation returned"
         );
     }
@@ -5098,6 +5514,749 @@ mod tests {
             .enumerate()
         {
             assert_eq!(be.heat_capacity(), results[i]);
+        }
+    }
+    mod test_building_element_party_wall {
+        use super::*;
+        use std::assert_eq;
+
+        #[fixture]
+        fn simtime() -> SimulationTime {
+            SimulationTime::new(0., 4., 1.)
+        }
+
+        #[fixture]
+        fn area() -> f64 {
+            10.
+        }
+
+        #[fixture]
+        fn pitch() -> f64 {
+            90.
+        }
+
+        #[fixture]
+        fn thermal_resistance_construction() -> f64 {
+            0.5
+        }
+
+        #[fixture]
+        fn areal_heat_capacity() -> f64 {
+            10_000.
+        }
+
+        #[fixture]
+        fn mass_distribution_class() -> MassDistributionClass {
+            MassDistributionClass::D
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_defined_resistance_with_value(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let thermal_resistance_cavity = 3.0;
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::DefinedResistance,
+                None,
+                Some(thermal_resistance_cavity),
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Check that h_ce reflects the custom resistance value
+            // h_ce = 1 / (R_se + R_cavity) where R_se = 1/(H_CE + H_RE) = 1/24.14 ≈ 0.0414
+            // h_ce = 1 / (0.0414 + 3.0) = 1 / 3.0414 ≈ 0.3287932443475892
+            assert_relative_eq!(party_wall.h_ce(), 0.3287932443475892);
+        }
+
+        // skipped test_calculate_cavity_resistance_invalid_type_raises_error as Rust typing takes of this
+        // skipped test_calculate_cavity_resistance_invalid_lining_type_raises_error as Rust typing takes of this
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_incompatible_lining_type_raises_error(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::Solid,
+                Some(PartyWallLiningType::WetPlaster),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            );
+            assert!(party_wall.is_err());
+            assert_eq!(
+                party_wall.unwrap_err().to_string(),
+                "invalid combination of party wall cavity type and party wall lining type"
+            )
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_solid_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::Solid,
+                None,
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // For solid type, cavity resistance should be 999999, making h_ce effectively zero
+            assert_eq!(party_wall.h_ce(), 0.);
+            // Fabric heat loss should be zero (no heat loss through party wall)
+            assert_relative_eq!(party_wall.fabric_heat_loss(), 0.);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_unfilled_unsealed_dry_lined(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Check h_ce value for unsealed cavity (R_cavity = 1.2)
+            // h_ce = 1 / (R_se + R_cavity) = 1 / (0.0414 + 1.2) ≈ 0.805542
+            assert_relative_eq!(party_wall.h_ce(), 0.8055258942872398);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 5.340492100175494;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_unfilled_sealed_dry_lined(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledSealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Check h_ce value for sealed cavity (R_cavity = 4.5)
+            assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 1.933306112766621;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_filled_unsealed_dry_lined(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::FilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Check h_ce value for sealed cavity (R_cavity = 4.5)
+            assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 1.933306112766621;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_unfilled_unsealed_wet_plaster(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::WetPlaster),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Check h_ce value for unsealed cavity (R_cavity = 4.5)
+            assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 1.933306112766621;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_unfilled_sealed_wet_plaster(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledSealed,
+                Some(PartyWallLiningType::WetPlaster),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Check h_ce value for sealed cavity (R_cavity = 4.5)
+            assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 1.933306112766621;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_filled_unsealed_wet_plaster(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::FilledUnsealed,
+                Some(PartyWallLiningType::WetPlaster),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Check h_ce value for sealed cavity (R_cavity = 4.5)
+            assert_relative_eq!(party_wall.h_ce(), 0.2201952, max_relative = 1e-7);
+
+            // Check fabric heat loss calculation
+            let expected_heat_loss = 1.933306112766621;
+            assert_relative_eq!(party_wall.fabric_heat_loss(), expected_heat_loss);
+        }
+
+        #[rstest]
+        fn test_calculate_cavity_resistance_filled_sealed(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::FilledSealed,
+                None,
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // For filled_sealed type, cavity resistance should be 999999, making h_ce zero
+            assert_eq!(party_wall.h_ce(), 0.);
+
+            // Fabric heat loss should be zero (no heat loss through party wall)
+            assert_relative_eq!(party_wall.fabric_heat_loss(), 0.);
+        }
+
+        #[rstest]
+        fn test_all_party_wall_cavity_types_valid(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            const VALID_TYPES: [PartyWallCavityType; 6] = [
+                PartyWallCavityType::Solid,
+                PartyWallCavityType::UnfilledUnsealed,
+                PartyWallCavityType::UnfilledSealed,
+                PartyWallCavityType::FilledSealed,
+                PartyWallCavityType::FilledUnsealed,
+                PartyWallCavityType::DefinedResistance,
+            ];
+
+            for cavity_type in VALID_TYPES {
+                let thermal_resistance = match cavity_type {
+                    PartyWallCavityType::DefinedResistance => Some(2.5),
+                    _ => None,
+                };
+                let lining_type = match cavity_type {
+                    PartyWallCavityType::UnfilledUnsealed
+                    | PartyWallCavityType::FilledUnsealed
+                    | PartyWallCavityType::UnfilledSealed => Some(PartyWallLiningType::DryLined),
+                    _ => None,
+                };
+
+                let party_wall = BuildingElementPartyWall::new(
+                    area,
+                    pitch,
+                    thermal_resistance_construction,
+                    cavity_type,
+                    lining_type,
+                    thermal_resistance,
+                    areal_heat_capacity,
+                    mass_distribution_class,
+                    external_conditions.clone(),
+                )
+                .unwrap();
+                assert_relative_eq!(party_wall.area, area);
+                assert_relative_eq!(party_wall.pitch, pitch);
+            }
+        }
+
+        #[rstest]
+        fn test_h_ce_returns_zero_for_solid_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::Solid,
+                None,
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            assert_eq!(party_wall.h_ce(), 0.);
+            // Also verify h_re is zero (no radiative transfer)
+            assert_relative_eq!(party_wall.h_re(), 0.);
+        }
+
+        #[rstest]
+        fn test_h_ce_returns_zero_for_filled_sealed_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::FilledSealed,
+                None,
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            assert_eq!(party_wall.h_ce(), 0.);
+            // Also verify h_re is zero (no radiative transfer)
+            assert_relative_eq!(party_wall.h_re(), 0.);
+        }
+
+        #[rstest]
+        fn test_h_ce_returns_parent_value_for_unfilled_unsealed_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            assert_eq!(party_wall.h_ce(), 0.8055258942872398);
+            // skipping second assertion as duplicated
+        }
+
+        #[rstest]
+        fn test_h_ce_returns_parent_value_for_unfilled_sealed_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledSealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            assert_eq!(party_wall.h_ce(), 0.22019520204323634);
+            // skipping second assertion as duplicated
+        }
+
+        #[rstest]
+        fn test_h_ce_returns_parent_value_for_defined_resistance_type(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let thermal_resistance_cavity = 2.;
+
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::DefinedResistance,
+                None,
+                Some(thermal_resistance_cavity),
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            assert_eq!(party_wall.h_ce(), 0.4898538961038961);
+            // skipping second assertion as duplicated
+        }
+
+        #[rstest]
+        fn test_fabric_heat_loss_comparison_across_types(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall_unsealed = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions.clone(),
+            )
+            .unwrap();
+
+            let party_wall_sealed = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledSealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions.clone(),
+            )
+            .unwrap();
+
+            let party_wall_solid = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::Solid,
+                None,
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            let heat_loss_unsealed = party_wall_unsealed.fabric_heat_loss();
+            let heat_loss_sealed = party_wall_sealed.fabric_heat_loss();
+            let heat_loss_solid = party_wall_solid.fabric_heat_loss();
+
+            // Verify heat loss decreases as cavity resistance increases
+            assert!(heat_loss_unsealed > heat_loss_sealed);
+            assert!(heat_loss_sealed > heat_loss_solid);
+            assert_relative_eq!(heat_loss_solid, 0.);
+        }
+
+        #[rstest]
+        fn test_heat_capacity_calculation(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // Heat capacity = area * (areal_heat_capacity / 1000)
+            // Heat capacity = 10.0 * (10000 / 1000) = 100.0 kJ/K
+            let expected_heat_capacity = area * (areal_heat_capacity / 1000.);
+            assert_eq!(party_wall.heat_capacity(), expected_heat_capacity);
+        }
+
+        #[rstest]
+        fn test_r_si_calculation(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // For vertical walls (60 < pitch < 120), R_si = R_SI_HORIZONTAL
+            // R_SI_HORIZONTAL = 1 / (H_RI + H_CI_HORIZONTAL) = 1 / (5.13 + 2.5) ≈ 0.131
+            let expected_r_si = 1.0 / (5.13 + 2.5);
+            assert_eq!(party_wall.r_si(), expected_r_si);
+        }
+
+        #[rstest]
+        fn test_no_of_nodes(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // 5-node model has 5 nodes total, 3 inside nodes
+            assert_eq!(party_wall.number_of_nodes(), 5);
+            assert_eq!(party_wall.number_of_inside_nodes(), 3);
+        }
+
+        #[rstest]
+        fn test_node_conductances_h_pli(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            let party_wall = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            // For 5-node model:
+            // h_pli[0] = 6 / R_c (outer)
+            // h_pli[1] = 3 / R_c (inner)
+            // h_pli[2] = 3 / R_c (inner)
+            // h_pli[3] = 6 / R_c (outer)
+            let h_outer = 6.0 / thermal_resistance_construction;
+            let h_inner = 3.0 / thermal_resistance_construction;
+
+            assert_relative_eq!(party_wall.h_pli()[0], h_outer);
+            assert_relative_eq!(party_wall.h_pli()[1], h_inner);
+            assert_relative_eq!(party_wall.h_pli()[2], h_inner);
+            assert_relative_eq!(party_wall.h_pli()[3], h_outer);
+        }
+
+        #[rstest]
+        fn test_equivalent_u_values_match_sap_guidance(
+            area: f64,
+            pitch: f64,
+            thermal_resistance_construction: f64,
+            areal_heat_capacity: f64,
+            mass_distribution_class: MassDistributionClass,
+            external_conditions: Arc<ExternalConditions>,
+        ) {
+            // Create party walls with standard construction assumptions
+            // Assume R_c represents typical party wall construction
+
+            // Test unsealed cavity: should give equivalent U ≈ 0.5 W/m²K
+            let party_wall_unsealed = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions.clone(),
+            )
+            .unwrap();
+
+            let u_unsealed = 0.5340492100175493;
+            let heat_loss_unsealed = party_wall_unsealed.fabric_heat_loss();
+            let calculated_u_unsealed = heat_loss_unsealed / area;
+
+            // Check U-value is in reasonable range for unsealed cavity
+            assert_relative_eq!(calculated_u_unsealed, u_unsealed);
+
+            let party_wall_sealed = BuildingElementPartyWall::new(
+                area,
+                pitch,
+                thermal_resistance_construction,
+                PartyWallCavityType::UnfilledSealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                areal_heat_capacity,
+                mass_distribution_class,
+                external_conditions,
+            )
+            .unwrap();
+
+            let u_sealed = 0.1933306112766621;
+            let heat_loss_sealed = party_wall_sealed.fabric_heat_loss();
+            let calculated_u_sealed = heat_loss_sealed / area;
+
+            // Check U-value is in reasonable range for sealed cavity
+            assert_relative_eq!(calculated_u_sealed, u_sealed);
         }
     }
 }

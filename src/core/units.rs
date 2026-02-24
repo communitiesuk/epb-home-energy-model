@@ -1,4 +1,9 @@
 use crate::compare_floats::min_of_2;
+use fsum::FSum;
+use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
+use std::fmt::Display;
+use std::str::FromStr;
 use thiserror::Error;
 
 pub const JOULES_PER_KILOWATT_HOUR: u32 = 3_600_000;
@@ -17,11 +22,13 @@ pub(crate) const KNOTS_PER_METRES_PER_SECOND: f64 = 1. / (1852. / 3600.);
 pub const MILLIMETRES_IN_METRE: u32 = 1_000;
 
 pub(crate) fn average_monthly_to_annual(list_monthly_averages: [f64; 12]) -> f64 {
-    list_monthly_averages
-        .iter()
-        .enumerate()
-        .map(|(month_idx, month_ave)| month_ave * DAYS_IN_MONTH[month_idx] as f64)
-        .sum::<f64>()
+    FSum::with_all(
+        list_monthly_averages
+            .iter()
+            .enumerate()
+            .map(|(month_idx, month_ave)| month_ave * DAYS_IN_MONTH[month_idx] as f64),
+    )
+    .value()
         / DAYS_IN_MONTH.iter().sum::<u32>() as f64
 }
 
@@ -49,9 +56,10 @@ pub(crate) fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -
     (0..total_steps)
         .step_by(steps_per_day)
         .map(|y| {
-            timestep_totals[y..min_of_2(y + steps_per_day, timestep_totals.len())]
-                .iter()
-                .sum::<f64>()
+            FSum::with_all(
+                timestep_totals[y..min_of_2(y + steps_per_day, timestep_totals.len())].iter(),
+            )
+            .value()
         })
         .collect()
 }
@@ -102,6 +110,86 @@ impl BelowAbsoluteZeroError {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, PartialOrd, Serialize, Validate)]
+#[serde(transparent)]
+#[repr(transparent)]
+pub struct Orientation360(
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 360.)]
+    f64,
+);
+
+impl Orientation360 {
+    pub(crate) fn new(angle: f64) -> Result<Self, Orientation360Error> {
+        if !(0. ..=360.).contains(&angle) {
+            return Err(Orientation360Error::InvalidAngle);
+        }
+
+        Ok(Self(angle))
+    }
+
+    pub(crate) fn angle(&self) -> f64 {
+        self.0
+    }
+
+    pub(crate) fn transform_to_180(&self) -> f64 {
+        180. - self.0
+    }
+
+    pub(crate) fn create_from_180(angle180: f64) -> Result<Self, Orientation360Error> {
+        if !(-180. ..=180.).contains(&angle180) {
+            return Err(Orientation360Error::InvalidAngleFrom180);
+        }
+        Ok(Self(180. - angle180))
+    }
+
+    // Python __str__ method is covered equivalently by Display trait impl
+
+    pub(crate) fn orientation_difference(
+        orientation1: Orientation360,
+        orientation2: Orientation360,
+    ) -> f64 {
+        let op_rel_orientation = (orientation1.angle() - orientation2.angle()).abs();
+
+        if op_rel_orientation > 180. {
+            360. - op_rel_orientation
+        } else {
+            op_rel_orientation
+        }
+    }
+}
+
+impl Display for Orientation360 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<f64> for Orientation360 {
+    fn from(angle: f64) -> Self {
+        Self::new(angle).expect("Angle must be between 0 and 360 degrees inclusive")
+    }
+}
+
+impl FromStr for Orientation360 {
+    type Err = Orientation360Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let angle = s
+            .parse::<f64>()
+            .map_err(|_| Orientation360Error::InvalidAngle)?;
+        Self::new(angle).map_err(|_| Orientation360Error::InvalidAngle)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Error)]
+pub enum Orientation360Error {
+    #[error("Angle must be between 0 and 360 degrees inclusive")]
+    InvalidAngle,
+    #[error("Angle for create_from_180 must be between -180 and 180 degrees inclusive")]
+    InvalidAngleFrom180,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,7 +197,7 @@ mod tests {
     use rstest::*;
 
     #[rstest]
-    pub fn should_do_correct_temperature_conversions() {
+    fn should_do_correct_temperature_conversions() {
         assert_eq!(
             celsius_to_kelvin(20.0).unwrap(),
             293.15,
@@ -130,7 +218,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_convert_average_monthly_to_annual() {
+    fn should_convert_average_monthly_to_annual() {
         let list_monthly_averages = [
             4.3, 4.9, 6.5, 8.9, 11.7, 14.6, 16.6, 16.4, 14.1, 10.6, 7.1, 4.2,
         ];
@@ -142,7 +230,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_convert_profile_to_daily() {
+    fn should_convert_profile_to_daily() {
         let mut list_timestep_totals = vec![1.0; 48];
         list_timestep_totals.extend((0..48).map(|x| x as f64 / 2.0));
         assert_eq!(
@@ -150,5 +238,53 @@ mod tests {
             vec![48.0, 564.0],
             "incorrect conversion of per-timestep profile to daily profile"
         );
+    }
+
+    mod orientation360 {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[rstest]
+        fn test_orientation360_angle() {
+            assert_eq!(Orientation360::new(180.).unwrap().angle(), 180.);
+        }
+
+        #[rstest]
+        fn test_orientation360_invalid_angle() {
+            assert!(Orientation360::new(-10.).is_err());
+            assert!(Orientation360::new(380.).is_err());
+        }
+
+        #[rstest]
+        fn test_orientation360_str() {
+            assert_eq!(format!("{}", Orientation360(180.)), "180");
+        }
+
+        #[rstest]
+        #[case(0., 180.)]
+        #[case(90., 90.)]
+        #[case(180., 0.)]
+        #[case(270., -90.)]
+        #[case(360., -180.)]
+        fn test_orientation360_transform_to_180(#[case] value: f64, #[case] expected_result: f64) {
+            assert_eq!(Orientation360(value).transform_to_180(), expected_result);
+        }
+
+        #[rstest]
+        #[case(-90., 270.)]
+        #[case(90., 90.)]
+        #[case(-180., 360.)]
+        #[case(0., 180.)]
+        #[case(180., 0.)]
+        fn test_orientation360_create_from_180(#[case] value: f64, #[case] expected_result: f64) {
+            let orientation360 = Orientation360::create_from_180(value).unwrap();
+            assert_eq!(orientation360.angle(), expected_result);
+        }
+
+        #[rstest]
+        fn test_orientation360_create_from_180_invalid_angle() {
+            assert!(Orientation360::create_from_180(190.).is_err());
+            assert!(Orientation360::create_from_180(-190.).is_err());
+        }
     }
 }

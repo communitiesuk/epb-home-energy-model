@@ -13,6 +13,7 @@ use crate::input::ZoneTemperatureControlBasis;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
 use field_types::FieldName;
+use fsum::FSum;
 use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
 use parking_lot::RwLock;
@@ -118,7 +119,7 @@ impl Zone {
                 .sum::<f64>(),
         };
 
-        let area_el_total = building_elements.values().map(|el| el.area()).sum::<f64>();
+        let area_el_total = FSum::with_all(building_elements.values().map(|el| el.area())).value();
         let c_int = K_M_INT * area;
 
         // Calculate:
@@ -446,22 +447,21 @@ impl Zone {
         //      interface as other ventilation element classes, which could make
         //      future development more difficult. Ideally, we would find a
         //      cleaner way to implement this difference.
-        matrix_a[(self.zone_idx, self.zone_idx)] = (self.c_int / delta_t)
-            + self
-                .building_elements
-                .iter()
-                .enumerate()
-                .map(|(eli_idx, nel)| {
-                    let NamedBuildingElement { element: eli, .. } = nel;
-                    eli.area()
-                        * eli.h_ci(
-                            temp_prev[self.zone_idx],
-                            temp_prev[self.element_positions[eli_idx].1],
-                        )
-                })
-                .sum::<f64>()
-            + h_ve
-            + self.tb_heat_trans_coeff;
+        matrix_a[(self.zone_idx, self.zone_idx)] =
+            (self.c_int / delta_t)
+                + FSum::with_all(self.building_elements.iter().enumerate().map(
+                    |(eli_idx, nel)| {
+                        let NamedBuildingElement { element: eli, .. } = nel;
+                        eli.area()
+                            * eli.h_ci(
+                                temp_prev[self.zone_idx],
+                                temp_prev[self.element_positions[eli_idx].1],
+                            )
+                    },
+                ))
+                .value()
+                + h_ve
+                + self.tb_heat_trans_coeff;
 
         // Add final sum term for LHS of eqn 38 in loop below.
         // These are coeffs for temperatures of internal surface nodes of
@@ -595,6 +595,7 @@ impl Zone {
                     BuildingElement::AdjacentUnconditionedSpaceSimple(_) => {
                         hb_fabric_ext_ztu += hb_fabric_ext;
                     }
+                    BuildingElement::PartyWall(_) => hb_fabric_ext_ztu += hb_fabric_ext,
                 };
             }
             let external_boundary = HeatBalanceExternalBoundary {
@@ -851,15 +852,13 @@ impl Zone {
         let temp_int_air = temp_vector[self.zone_idx];
 
         // Mean radiant temperature is weighted average of internal surface temperatures
-        let temp_mean_radiant = self
-            .building_elements
-            .iter()
-            .enumerate()
-            .map(|(eli_idx, nel)| {
+        let temp_mean_radiant = FSum::with_all(self.building_elements.iter().enumerate().map(
+            |(eli_idx, nel)| {
                 let NamedBuildingElement { element: eli, .. } = nel;
                 eli.area() * temp_vector[self.element_positions[eli_idx].1]
-            })
-            .sum::<f64>()
+            },
+        ))
+        .value()
             / self.area_el_total;
         (temp_int_air + temp_mean_radiant) / 2.0
     }
@@ -1302,16 +1301,13 @@ impl Zone {
 
     /// Return the total heat loss area, in m2
     pub fn total_heat_loss_area(&self) -> f64 {
+        // building elements of type BuildingElementAdjacentConditionedSpace
+        // and BuildingElementPartyWall (of type solid or filled_sealed)
+        // will have zero heat loss and not be added to the total heat loss area.
         self.building_elements
             .iter()
             .filter_map(|el| {
-                if matches!(
-                    el.element.as_ref(),
-                    BuildingElement::Opaque { .. }
-                        | BuildingElement::Transparent { .. }
-                        | BuildingElement::Ground { .. }
-                        | BuildingElement::AdjacentUnconditionedSpaceSimple { .. }
-                ) {
+                if el.element.h_ce() > 0. || el.element.h_re() > 0. {
                     Some(el.element.area())
                 } else {
                     None
@@ -1726,17 +1722,18 @@ mod tests {
     use crate::core::controls::time_control::{Control, MockControl};
     use crate::core::space_heat_demand::building_element::{
         BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple,
-        BuildingElementGround, BuildingElementOpaque, BuildingElementTransparent,
+        BuildingElementGround, BuildingElementOpaque, BuildingElementPartyWall,
+        BuildingElementTransparent,
     };
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridge;
     use crate::core::space_heat_demand::ventilation::{Vent, Window};
-    use crate::core::units::DAYS_IN_MONTH;
+    use crate::core::units::{Orientation360, DAYS_IN_MONTH};
     use crate::corpus::CompletedVentilationLeaks;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::hem_core::external_conditions::ShadingSegment;
     use crate::input::{
-        FloorData, MassDistributionClass, TerrainClass, VentilationShieldClass, WindShieldLocation,
-        WindowPart,
+        FloorData, MassDistributionClass, PartyWallCavityType, PartyWallLiningType, TerrainClass,
+        VentilationShieldClass, WindShieldLocation, WindowPart,
     };
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
@@ -1882,43 +1879,43 @@ mod tests {
 
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 135.,
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 135.,
-                end: 90.,
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 90.,
-                end: 45.,
+                start360: Orientation360::create_from_180(90.).unwrap(),
+                end360: Orientation360::create_from_180(45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 45.,
-                end: 0.,
+                start360: Orientation360::create_from_180(45.).unwrap(),
+                end360: Orientation360::create_from_180(0.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 0.,
-                end: -45.,
+                start360: Orientation360::create_from_180(0.).unwrap(),
+                end360: Orientation360::create_from_180(-45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -45.,
-                end: -90.,
+                start360: Orientation360::create_from_180(-45.).unwrap(),
+                end360: Orientation360::create_from_180(-90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -90.,
-                end: -135.,
+                start360: Orientation360::create_from_180(-90.).unwrap(),
+                end360: Orientation360::create_from_180(-135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -135.,
-                end: -180.,
+                start360: Orientation360::create_from_180(-135.).unwrap(),
+                end360: Orientation360::create_from_180(-180.).unwrap(),
                 ..Default::default()
             },
         ];
@@ -1927,7 +1924,7 @@ mod tests {
             &simulation_time.iter(),
             air_temps,
             wind_speeds,
-            wind_directions,
+            wind_directions.into_iter().map(Into::into).collect(),
             vec![333.0, 610.0, 572.0, 420.0, 0.0, 10.0, 90.0, 275.0],
             vec![420.0, 750.0, 425.0, 500.0, 0.0, 40.0, 0.0, 388.0],
             vec![0.2; 8760],
@@ -1945,14 +1942,8 @@ mod tests {
         ))
     }
 
-    fn zone(
-        thermal_bridging: ThermalBridging,
-        control: Option<Arc<dyn ControlBehaviour>>,
-    ) -> anyhow::Result<Zone> {
-        let simulation_time = simulation_time();
-        let external_conditions = external_conditions(simulation_time);
-        // Create objects for the different building elements in the zone
-        let be_opaque_i = BuildingElement::Opaque(BuildingElementOpaque::new(
+    fn be_opaque_i(external_conditions: Arc<ExternalConditions>) -> BuildingElement {
+        BuildingElement::Opaque(BuildingElementOpaque::new(
             20.,
             false,
             180.,
@@ -1960,13 +1951,16 @@ mod tests {
             0.25,
             19000.0,
             MassDistributionClass::I,
-            Some(0.),
+            Orientation360::create_from_180(0.).unwrap().into(),
             0.,
             2.,
             10.,
-            external_conditions.clone(),
-        ));
-        let be_opaque_d = BuildingElement::Opaque(BuildingElementOpaque::new(
+            external_conditions,
+        ))
+    }
+
+    fn be_opaque_d(external_conditions: Arc<ExternalConditions>) -> BuildingElement {
+        BuildingElement::Opaque(BuildingElementOpaque::new(
             26.,
             true,
             45.,
@@ -1974,28 +1968,42 @@ mod tests {
             0.33,
             16000.0,
             MassDistributionClass::D,
-            Some(0.),
+            Orientation360::create_from_180(0.).unwrap().into(),
             0.,
             2.,
             10.,
+            external_conditions,
+        ))
+    }
+
+    fn be_ztc(external_conditions: Arc<ExternalConditions>) -> BuildingElement {
+        BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
+            22.5,
+            135.,
+            0.50,
+            18000.0,
+            MassDistributionClass::E,
             external_conditions.clone(),
-        ));
-        let be_ztc = BuildingElement::AdjacentConditionedSpace(
-            BuildingElementAdjacentConditionedSpace::new(
-                22.5,
-                135.,
-                0.50,
-                18000.0,
-                MassDistributionClass::E,
-                external_conditions.clone(),
-            ),
-        );
+        ))
+    }
+
+    fn zone(
+        thermal_bridging: ThermalBridging,
+        control: Option<Arc<dyn ControlBehaviour>>,
+    ) -> anyhow::Result<Zone> {
+        let simulation_time = simulation_time();
+        let external_conditions = external_conditions(simulation_time);
+        // Create objects for the different building elements in the zone
+        let be_opaque_i = be_opaque_i(external_conditions.clone());
+        let be_opaque_d = be_opaque_d(external_conditions.clone());
+        let be_ztc = be_ztc(external_conditions.clone());
         let be_ground_floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,
             thermal_transmission_walls: 0.5,
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered,
             thermal_resistance_of_insulation: 7.,
+            edge_insulation: Default::default(),
         };
         let be_ground = BuildingElement::Ground(
             BuildingElementGround::new(
@@ -2017,7 +2025,7 @@ mod tests {
         let be_transparent = BuildingElement::Transparent(BuildingElementTransparent::new(
             90.,
             0.4,
-            Some(180.),
+            Orientation360::create_from_180(180.)?.into(),
             0.75,
             0.25,
             1.,
@@ -2095,10 +2103,20 @@ mod tests {
         let window_part_list = vec![WindowPart {
             mid_height_air_flow_path: 1.5,
         }];
-        let window = Window::new(1.6, 1., 3., window_part_list, Some(0.), 0., 30., None, 2.5);
+        let window = Window::new(
+            1.6,
+            1.,
+            3.,
+            window_part_list,
+            0.0.into(),
+            0.,
+            30.,
+            None,
+            2.5,
+        );
         let windows = HashMap::from([("window 0".to_string(), window)]);
 
-        let vent = Vent::new(1.5, 100.0, 20.0, 180.0, 60.0, 30.0, 2.5);
+        let vent = Vent::new(1.5, 100.0, 20.0, 180.0.into(), 60.0, 30.0, 2.5);
         let vents = HashMap::from([("vent 1".to_string(), vent)]);
 
         let leaks = CompletedVentilationLeaks {
@@ -2122,7 +2140,6 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            Default::default(),
             false,
             30.0,
             250.0,
@@ -2216,6 +2233,7 @@ mod tests {
                 .unwrap()
                 .temp_operative(),
             18.92809674634258,
+            max_relative = 1e-7
         );
     }
 
@@ -2226,6 +2244,7 @@ mod tests {
                 .unwrap()
                 .temp_internal_air(),
             20.999999999999996,
+            max_relative = 1e-7
         );
     }
 
@@ -2575,7 +2594,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387, max_relative = 1e-7);
         assert_eq!(space_cool_demand, 0.);
         assert_relative_eq!(ach_cooling, 0.14);
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
@@ -2608,7 +2627,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387, max_relative = 1e-7);
         assert_eq!(space_cool_demand, 0.);
         assert_relative_eq!(ach_cooling, 0.14);
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
@@ -2651,7 +2670,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_relative_eq!(space_heat_demand, 2.1541345392835387);
+        assert_relative_eq!(space_heat_demand, 2.1541345392835387, max_relative = 1e-7);
         assert_eq!(space_cool_demand, 0.);
         assert_relative_eq!(ach_cooling, 0.14);
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
@@ -2792,7 +2811,7 @@ mod tests {
             .unwrap();
 
         assert_relative_eq!(space_heat_demand, 0.);
-        assert_eq!(space_cool_demand, -0.3774681469845284);
+        assert_relative_eq!(space_cool_demand, -0.3774681469845284, max_relative = 1e-7);
         assert_relative_eq!(ach_cooling, 0.14);
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.17);
     }
@@ -2866,6 +2885,146 @@ mod tests {
     #[ignore]
     pub fn test_space_heat_cool_demand_fast_solver() {
         todo!("we have skipped this for now as Python uses a difficult to replicate Mock");
+    }
+
+    #[test]
+    fn test_zone_with_party_wall() {
+        let simulation_time = simulation_time();
+        let external_conditions = external_conditions(simulation_time);
+
+        // Create a party wall building element
+        let be_party_wall = BuildingElement::PartyWall(
+            BuildingElementPartyWall::new(
+                15.,
+                90.,
+                0.45,
+                PartyWallCavityType::UnfilledUnsealed,
+                Some(PartyWallLiningType::DryLined),
+                None,
+                12000.,
+                MassDistributionClass::D,
+                external_conditions.clone(),
+            )
+            .unwrap(),
+        );
+
+        let mut be_objs = IndexMap::from([
+            (
+                "be_opaque_i".into(),
+                be_opaque_i(external_conditions.clone()).into(),
+            ),
+            (
+                "be_opaque_d".into(),
+                be_opaque_d(external_conditions.clone()).into(),
+            ),
+            ("be_ztc".into(), be_ztc(external_conditions.clone()).into()),
+        ]);
+
+        // Create a zone WITHOUT the party wall first to get baseline values
+        let zone_without_party_wall = Zone::new(
+            80.,
+            250.,
+            be_objs.clone(),
+            ThermalBridging::Number(4.),
+            Arc::new(infiltration_ventilation()),
+            2.2,
+            21.,
+            ZoneTemperatureControlBasis::Air,
+            None,
+            true,
+            &simulation_time.iter(),
+        )
+        .unwrap();
+
+        be_objs.insert("be_party_wall".into(), be_party_wall.into());
+        let zone_with_party_wall = Zone::new(
+            80.,
+            250.,
+            be_objs,
+            ThermalBridging::Number(4.),
+            Arc::new(infiltration_ventilation()),
+            2.2,
+            21.,
+            ZoneTemperatureControlBasis::Air,
+            None,
+            true,
+            &simulation_time.iter(),
+        )
+        .unwrap();
+
+        // Run update_temperatures for both zones with the same conditions
+        let delta_t = 1800.;
+        let temp_ext_air = 10.;
+        let gains_internal = 200.;
+        let gains_solar = 220.;
+        let gains_heat_cool = 0.;
+        let frac_convective = 1.;
+        let ach = 0.4;
+        let avg_supply_temp = 10.;
+        let iteration = simulation_time.iter().next().unwrap();
+
+        let heat_balance_without = zone_without_party_wall.update_temperatures(
+            delta_t,
+            temp_ext_air,
+            gains_internal,
+            gains_solar,
+            gains_heat_cool,
+            frac_convective,
+            ach,
+            avg_supply_temp,
+            iteration,
+        );
+
+        let heat_balance_with = zone_with_party_wall.update_temperatures(
+            delta_t,
+            temp_ext_air,
+            gains_internal,
+            gains_solar,
+            gains_heat_cool,
+            frac_convective,
+            ach,
+            avg_supply_temp,
+            iteration,
+        );
+
+        // skipping some assertions here as they are tested implicitly below
+
+        // The critical test: verify that the party wall actually contributes to the ZTU fabric heat loss
+        // The zone with the party wall should have a higher (more positive) ZTU_fabric_ext value
+        // because the party wall adds heat loss to the unconditioned space
+        let ztu_with_party_wall = heat_balance_with
+            .unwrap()
+            .unwrap()
+            .external_boundary
+            .ztu_fabric_ext;
+        let ztu_without_party_wall = heat_balance_without
+            .unwrap()
+            .unwrap()
+            .external_boundary
+            .ztu_fabric_ext;
+
+        // The party wall should cause ZTU_fabric_ext to be non-zero and negative (heat loss)
+        // Without party wall, ZTU_fabric_ext should be 0.0 (no unconditioned space elements)
+        assert_eq!(
+            ztu_without_party_wall, 0.0,
+            "ZTU_fabric_ext should be 0.0 when no party wall present"
+        );
+
+        // With party wall, ZTU_fabric_ext should be negative (heat loss to unconditioned space)
+        assert!(
+            ztu_with_party_wall < 0.0,
+            "ZTU_fabric_ext should be negative (heat loss) when party wall present",
+        );
+
+        // The difference should equal the party wall's contribution
+        // (more negative value means more heat loss)
+        assert!(
+            ztu_with_party_wall < ztu_without_party_wall,
+            "Party wall should increase heat loss to unconditioned spaces",
+        );
+
+        // Verify the actual calculated value is reasonable
+        assert_relative_eq!(ztu_with_party_wall, -164.2832446432019, max_relative = 1e-7)
     }
 
     #[test]

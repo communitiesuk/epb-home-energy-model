@@ -1,7 +1,6 @@
 use crate::core::material_properties::{MaterialProperties, GLYCOL25, WATER};
 use crate::core::units::{
-    JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
-    WATTS_PER_KILOWATT,
+    JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, WATTS_PER_KILOWATT,
 };
 use crate::input::{PipeworkContents, WaterPipework, WaterPipeworkLocation};
 use ordered_float::Pow;
@@ -20,7 +19,7 @@ const INTERNAL_HTC_GLYCOL25: f64 = INTERNAL_HTC_WATER;
 const EXTERNAL_REFLECTIVE_HTC: f64 = 5.7; // low emissivity reflective surface, CIBSE Guide C, Table 3.25
 const EXTERNAL_NONREFLECTIVE_HTC: f64 = 10.0; // high emissivity non-reflective surface, CIBSE Guide C, Table 3.25
 
-const C_N_CALCULATION_FACTOR: f64 = 0.02716; // CIBSE Guide C empirical factor
+const C_N_CALCULATION_FACTOR: f64 = 0.02761; // CIBSE Guide C empirical factor
 const C_N_EXPONENT: f64 = 0.8254; // CIBSE Guide C empirical exponent
 const N_CALCULATION_FACTOR: f64 = -0.001793; // CIBSE Guide C empirical factor
 const N_OFFSET: f64 = 1.245135; // CIBSE Guide C empirical offset
@@ -278,10 +277,13 @@ impl Pipework {
         // the data over the realistic working range of temperatures and pipework thicknesses used
         // in dwellings derived from the more detailed CIBSE equations,
         // outputting in the c and n format needed here.
+        // The derived equation expects pipework diameter in mm (so unit conversion is required)
+        // and outputs c and n coefficients which provide output in W (so conversion to kW required)
 
-        let c =
-            self.length() * C_N_CALCULATION_FACTOR * self.external_diameter_in_m.pow(C_N_EXPONENT);
-        let n = N_CALCULATION_FACTOR * self.external_diameter_in_m.ln() + N_OFFSET;
+        let dop = self.external_diameter_in_m * MILLIMETRES_IN_METRE as f64;
+        let c_watts = self.length() * C_N_CALCULATION_FACTOR * dop.pow(C_N_EXPONENT);
+        let c = c_watts / WATTS_PER_KILOWATT as f64;
+        let n = N_CALCULATION_FACTOR * dop.ln() + N_OFFSET;
 
         let thermal_mass =
             self.volume() * WATER.specific_heat_capacity() / JOULES_PER_KILOWATT_HOUR as f64;
@@ -305,53 +307,6 @@ impl Pipework {
         outside_temp: f64,
     ) -> f64 {
         (inside_temp - outside_temp) / (self.total_resistance) * self.length()
-    }
-
-    ///Calculate temperature drop of water in pipe over one timestep.
-    ///
-    ///    Args:
-    ///        inside_temp: Temperature of water inside the pipe, in degrees C
-    ///        outside_temp: Temperature outside the pipe, in degrees C
-    ///
-    ///    Returns:
-    ///        Temperature drop in degrees C (cannot exceed inside_temp - outside_temp)
-    fn calculate_temperature_drop(&self, inside_temp: f64, outside_temp: f64) -> f64 {
-        let heat_loss_kwh = self.convert_heat_loss_to_kwh(inside_temp, outside_temp);
-        let temp_drop = self.calculate_temperature_drop_from_heat_loss(heat_loss_kwh);
-        let max_possible_drop = inside_temp - outside_temp;
-
-        temp_drop.min(max_possible_drop)
-    }
-
-    //Convert steady state heat loss from watts to kilowatt-hours for one timestep.
-    //
-    //    Args:
-    //        inside_temp: Temperature of water inside the pipe, in degrees C
-    //        outside_temp: Temperature outside the pipe, in degrees C
-    //
-    //    Returns:
-    //        Heat loss in kWh for one hour timestep
-    fn convert_heat_loss_to_kwh(&self, inside_temp: f64, outside_temp: f64) -> f64 {
-        let heat_loss_watts = self.calculate_steady_state_heat_loss(inside_temp, outside_temp);
-        (SECONDS_PER_HOUR as f64 * heat_loss_watts) / WATTS_PER_KILOWATT as f64
-    }
-
-    /// Calculate temperature drop from heat loss using Q = C * m * ΔT.
-    ///
-    ///    Args:
-    ///        heat_loss_kwh: Heat loss in kWh
-    ///
-    ///    Returns:
-    ///        Temperature drop in degrees C
-    fn calculate_temperature_drop_from_heat_loss(&self, heat_loss_kwh: f64) -> f64 {
-        let volumetric_heat_capacity = self
-            .simple_pipework
-            .contents_properties
-            .volumetric_heat_capacity();
-
-        // ΔT = Q / (C * m)
-        (heat_loss_kwh * JOULES_PER_KILOWATT_HOUR as f64)
-            / (volumetric_heat_capacity * self.volume())
     }
 }
 
@@ -377,6 +332,7 @@ impl Pipeworkesque for Pipework {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::units::WATTS_PER_KILOWATT;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use rstest::*;
@@ -417,25 +373,6 @@ mod tests {
         #[case] expected: f64,
     ) {
         let result = pipework.calculate_steady_state_heat_loss(t_i, t_o);
-        assert_relative_eq!(result, expected, epsilon = 1e-5);
-    }
-
-    #[rstest]
-    #[case(50.0, 15.0, 35.0)]
-    #[case(51.0, 16.0, 35.0)]
-    #[case(52.0, 17.0, 35.0)]
-    #[case(52.0, 18.0, 34.0)]
-    #[case(51.0, 19.0, 32.0)]
-    #[case(50.0, 20.0, 30.0)]
-    #[case(51.0, 21.0, 30.0)]
-    #[case(52.0, 21.0, 31.0)]
-    fn test_temp_drop(
-        pipework: Pipework,
-        #[case] t_i: f64,
-        #[case] t_o: f64,
-        #[case] expected: f64,
-    ) {
-        let result = pipework.calculate_temperature_drop(t_i, t_o);
         assert_relative_eq!(result, expected, epsilon = 1e-5);
     }
 
@@ -489,8 +426,8 @@ mod tests {
     fn test_c_n_equivalence(pipework: Pipework) {
         let (c, n, thermal_mass) = pipework.c_n_equivalence();
 
-        let expected_c = 1.0 * 0.02716 * 0.027.pow(0.8254);
-        let expected_n = -0.001793 * 0.027f64.ln() + 1.245135;
+        let expected_c = 1.0 * 0.02761 * 27.0.pow(0.8254) / WATTS_PER_KILOWATT as f64;
+        let expected_n = -0.001793 * 27.0f64.ln() + 1.245135;
 
         let volume_litres = PI * (0.025 / 2.) * (0.025 / 2.) * 1.0 * LITRES_PER_CUBIC_METRE as f64;
         let expected_thermal_mass =
@@ -514,9 +451,8 @@ mod tests {
         .unwrap();
 
         let (c2, n2, thermal_mass2) = pipework2.c_n_equivalence();
-
-        let expected_c2 = 2.0 * 0.02716 * 0.055.pow(0.8254);
-        let expected_n2 = -0.001793 * 0.055f64.ln() + 1.245135;
+        let expected_c2 = 2.0 * 0.02761 * 55.0.pow(0.8254) / WATTS_PER_KILOWATT as f64;
+        let expected_n2 = -0.001793 * 55.0f64.ln() + 1.245135;
         let volume_litres2 = PI * (0.050 / 2.) * (0.050 / 2.) * 2.0 * LITRES_PER_CUBIC_METRE as f64;
         let expected_thermal_mass2 =
             volume_litres2 * WATER.specific_heat_capacity() / JOULES_PER_KILOWATT_HOUR as f64;

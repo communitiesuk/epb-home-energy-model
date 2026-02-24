@@ -1,3 +1,5 @@
+use crate::bail;
+use crate::core::units::HOURS_PER_DAY;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
 
@@ -43,6 +45,10 @@ impl SimulationTime {
         self.start_time
     }
 
+    pub(crate) fn end_time(&self) -> f64 {
+        self.end_time
+    }
+
     pub fn iter(&self) -> SimulationTimeIterator {
         SimulationTimeIterator::from(*self)
     }
@@ -69,8 +75,14 @@ impl SimulationTimeIterator {
     }
 
     #[allow(dead_code)]
-    pub fn time_series_idx(&self, start_day: u32, step: f64) -> usize {
-        ((self.current_time - (start_day * HOURS_IN_DAY) as f64) / step) as usize
+    pub fn time_series_idx(&self, start_day: u32, step: f64) -> anyhow::Result<usize> {
+        let idx = (self.current_time - (start_day * HOURS_IN_DAY) as f64) / step;
+
+        if idx < 0. {
+            bail!("Time series cannot start after the simulation.");
+        }
+
+        Ok(idx as usize)
     }
 
     pub fn current_hour(&self) -> u32 {
@@ -84,6 +96,25 @@ impl SimulationTimeIterator {
 
     pub fn total_steps(&self) -> usize {
         self.simulation_time.total_steps()
+    }
+
+    fn end_time(&self) -> f64 {
+        self.simulation_time.end_time
+    }
+
+    /// Return the total number of timesteps in simulation based on custom step
+    pub(crate) fn total_steps_based_on_step(
+        &self,
+        start_day: u32,
+        step: Option<f64>,
+    ) -> anyhow::Result<usize> {
+        if start_day > self.current_day() {
+            bail!("Time series cannot start after the simulation.");
+        }
+
+        let step = step.unwrap_or(self.step_in_hours());
+        let total_steps = (self.end_time() - start_day as f64 * HOURS_PER_DAY as f64) / step;
+        Ok(total_steps.ceil() as usize)
     }
 
     pub fn step_in_hours(&self) -> f64 {
@@ -226,13 +257,54 @@ mod tests {
         }
     }
 
+    #[fixture]
+    pub fn simtime_it(simtime: SimulationTime) -> SimulationTimeIterator {
+        simtime.iter()
+    }
+
     #[rstest]
-    fn should_have_correct_total_steps(simtime: SimulationTime) {
+    fn test_timestep(simtime: SimulationTime) {
+        assert_eq!(simtime.step, timestep());
+    }
+
+    #[rstest]
+    fn test_time_series_idx(simtime_it: SimulationTimeIterator) {
+        assert!(simtime_it.time_series_idx(750, 1.).is_err());
+    }
+
+    #[rstest]
+    fn test_total_steps(simtime: SimulationTime) {
         assert_eq!(simtime.total_steps(), 8)
     }
 
     #[rstest]
-    fn should_iterate_correctly(simtime: SimulationTime, timestep: f64) {
+    fn test_total_steps_based_on_step(timestep: f64) {
+        let simtime = SimulationTime {
+            start_time: 720.,
+            end_time: 724.,
+            step: timestep,
+        };
+
+        assert_eq!(
+            simtime
+                .iter()
+                .total_steps_based_on_step(30, Some(1.))
+                .unwrap(),
+            4
+        );
+        assert_eq!(
+            simtime.iter().total_steps_based_on_step(30, None).unwrap(),
+            8
+        );
+    }
+
+    #[rstest]
+    fn test_total_steps_based_on_step_invalid_start_day(simtime_it: SimulationTimeIterator) {
+        assert!(simtime_it.total_steps_based_on_step(31, Some(1.)).is_err());
+    }
+
+    #[rstest]
+    fn test_iteration(simtime: SimulationTime, timestep: f64) {
         let hours = [742, 742, 743, 743, 744, 744, 745, 745];
         let hours_of_day = [22, 22, 23, 23, 0, 0, 1, 1];
         let current_days = [30, 30, 30, 30, 31, 31, 31, 31];
@@ -261,7 +333,7 @@ mod tests {
             assert_eq!(item.hour_of_day(), hours_of_day[i]);
             assert_eq!(item.current_day(), current_days[i]);
             assert_eq!(
-                simulation_time_iter.time_series_idx(0, 1.0),
+                simulation_time_iter.time_series_idx(0, 1.0).unwrap(),
                 hours[i] as usize
             );
             assert_eq!(item.current_month().unwrap(), current_months[i]);
@@ -270,6 +342,23 @@ mod tests {
                 current_month_start_end_hours[i]
             );
             i += 1;
+        }
+    }
+
+    #[rstest]
+    fn test_time_series_idx_days(timestep: f64) {
+        let mut simtime = SimulationTime {
+            start_time: 24.,
+            end_time: 48.,
+            step: timestep,
+        }
+        .iter();
+
+        for i in 0..48 {
+            let it = simtime.next().unwrap();
+            let expected = if i < 42 { 1 } else { 2 };
+
+            assert_eq!(it.time_series_idx_days(0, None), expected);
         }
     }
 }

@@ -7,6 +7,7 @@ use crate::core::water_heat_demand::misc::volume_hot_water_required;
 use crate::input::WaterHeatingEvent;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
+use fsum::FSum;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -29,12 +30,12 @@ impl Shower {
         event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, f64)> {
+    ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         match self {
             Shower::MixerShower(s) => s.hot_water_demand(event, func_temp_hot_water, simtime),
             Shower::InstantElectricShower(s) => s
                 .hot_water_demand(event, simtime)
-                .map(|(first, second)| (Some(first), second)),
+                .map(|(first, second, third)| (Some(first), second, third)),
         }
     }
 }
@@ -90,7 +91,7 @@ impl MixerShower {
         event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, f64)> {
+    ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         let total_shower_duration = event
             .duration
             .ok_or(anyhow!("Expected an event duration for Mixer Shower event"))?;
@@ -109,7 +110,7 @@ impl MixerShower {
         // first calculate the volume of hot water needed if heating from cold water source
 
         let mut volume_hot_water = match volume_hot_water {
-            None => return Ok((None, volume_warm_water)),
+            None => return Ok((None, volume_warm_water, total_shower_duration)),
             Some(v) => v,
         };
 
@@ -132,33 +133,64 @@ impl MixerShower {
                 anyhow!("Flowrate hot water not available from WWHRS calculation")
             })? * total_shower_duration;
 
-            // Set the actual return temperature given the temperature and flowrate of the waste water.
+            // Register pre-heated water availability for the hot water system.
+
+            // How WWHRS pre-heating works:
+            // - Waste water (volume_warm_water) flows down the drain through the WWHRS
+            // - Cold mains water flows through the other side of the heat exchanger
+            // - The volume of water that can be pre-heated is limited by the waste water flow
+
+            // For System A: Pre-heated water feeds BOTH the shower's cold inlet AND the
+            //   cylinder. The WWHRS calculation above already accounts for the shower
+            //   receiving pre-heated water (reflected in the reduced volume_hot_water).
+            //   We register the TOTAL volume of waste water as available for pre-heating,
+            //   because all of it passes through the heat exchanger. The shower's cold
+            //   water draw will consume part of this, leaving the remainder for the
+            //   cylinder's draw.
+
+            // For System B: Pre-heated water feeds ONLY the shower's cold inlet, not the
+            //   cylinder. No registration needed as cylinder gets mains temperature.
+
+            // For System C: Pre-heated water feeds ONLY the cylinder, not the shower.
+            //   The shower draws mains-temperature cold water, so we register the full
+            //   waste water volume as available for the cylinder.
             if !matches!(self.wwhrs_configuration, WwhrsConfiguration::BShower) {
                 if let Some(wwhrs) = self.wwhrs.as_ref() {
                     wwhrs
                         .lock()
-                        .set_temperature_for_return(wwhrs_cyl_feed_temperature);
+                        .register_preheated_volume(wwhrs_cyl_feed_temperature, volume_warm_water)?;
                 }
             }
         }
 
         let volume_cold_water = volume_warm_water - volume_hot_water;
 
+        // Draw cold water for the shower.
+        // For System A: draw from WWHRS (consumes pre-heated volume, remainder for cylinder)
+        // For System B: draw from WWHRS (shower gets pre-heated water, but we didn't
+        //               register any volume since cylinder doesn't benefit)
+        // For System C: draw from cold_water_source (shower gets mains, cylinder gets
+        //               pre-heated via the registered volume)
         match (self.wwhrs.as_ref(), self.wwhrs_configuration) {
             (
                 Some(wwhrs),
-                WwhrsConfiguration::AShowerAndWaterHeatingSystem
-                | WwhrsConfiguration::CWaterHeatingSystem,
+                WwhrsConfiguration::AShowerAndWaterHeatingSystem | WwhrsConfiguration::BShower,
             ) => {
-                wwhrs.lock().draw_off_water(volume_cold_water);
+                // Systems A and B: shower's cold feed comes through WWHRS
+                wwhrs.lock().draw_off_water(volume_cold_water, simtime)?;
             }
             _ => {
+                // System C or no WWHRS: shower's cold feed comes from mains
                 self.cold_water_source
                     .draw_off_water(volume_cold_water, simtime)?;
             }
         }
 
-        Ok((volume_hot_water.into(), volume_warm_water))
+        Ok((
+            volume_hot_water.into(),
+            volume_warm_water,
+            total_shower_duration,
+        ))
     }
 }
 
@@ -192,7 +224,7 @@ impl InstantElectricShower {
         &self,
         event: WaterHeatingEvent,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    ) -> anyhow::Result<(f64, f64, f64)> {
         let total_shower_duration = event
             .duration
             .ok_or(anyhow!("Expected an event duration for shower"))?;
@@ -207,11 +239,9 @@ impl InstantElectricShower {
             let list_temperature_volume = self
                 .cold_water_source
                 .get_temp_cold_water(volume_warm_water, simtime)?;
-            let temperature_cold = list_temperature_volume
-                .iter()
-                .map(|(t, v)| t * v)
-                .sum::<f64>()
-                / list_temperature_volume.iter().map(|(_, v)| v).sum::<f64>();
+            let temperature_cold =
+                FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value()
+                    / FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
             volume_warm_water_prev = volume_warm_water;
             volume_warm_water = electricity_demand
                 / WATER
@@ -223,7 +253,7 @@ impl InstantElectricShower {
 
         // Instantaneous electric shower heats its own water, so no demand on
         // the water heating system.
-        Ok((0.0, volume_warm_water))
+        Ok((0.0, volume_warm_water, total_shower_duration))
         // TODO (from Python) Should this return hot water demand or send message to HW system?
         //      The latter would allow for different showers to be connected to
         //      different HW systems, but complicates the implementation of the
@@ -339,7 +369,7 @@ mod tests {
             let wwhrs = Arc::new(Mutex::new(
                 WwhrsInstantaneous::new(
                     flow_rates,
-                    system_a_efficiencies,
+                    system_a_efficiencies.into(),
                     cold_water_source.clone(),
                     Some(0.7),
                     None,
@@ -348,7 +378,6 @@ mod tests {
                     None,
                     Some(0.81),
                     None,
-                    simulation_time.iter().current_iteration(),
                 )
                 .unwrap(),
             ));
@@ -419,7 +448,7 @@ mod tests {
             let wwhrs = Arc::new(Mutex::new(
                 WwhrsInstantaneous::new(
                     flow_rates,
-                    system_a_efficiencies,
+                    system_a_efficiencies.into(),
                     mixer_shower.cold_water_source.clone(),
                     Some(0.7),
                     None,
@@ -428,7 +457,6 @@ mod tests {
                     Some(0.7),
                     None,
                     Some(0.88),
-                    simulation_time.iter().current_iteration(),
                 )
                 .unwrap(),
             ));
@@ -470,7 +498,7 @@ mod tests {
             let wwhrs = Arc::new(Mutex::new(
                 WwhrsInstantaneous::new(
                     flow_rates,
-                    system_a_efficiencies,
+                    system_a_efficiencies.into(),
                     mixer_shower.cold_water_source.clone(),
                     Some(0.7),
                     None,
@@ -479,7 +507,6 @@ mod tests {
                     None,
                     None,
                     None,
-                    simulation_time.iter().current_iteration(),
                 )
                 .unwrap(),
             ));

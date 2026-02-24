@@ -49,6 +49,7 @@ pub(crate) struct WaterEventResult {
     pub(crate) temperature_warm: f64, // Temperature of water at outlet (Celsius)
     pub(crate) volume_warm: f64,      // Volume of water at outlet (litres)
     pub(crate) volume_hot: f64,       // Hot water demand volume (litres)
+    pub(crate) event_duration: f64,   // Duration of hot water event (minutes)
 }
 
 impl WaterEventResult {
@@ -138,11 +139,9 @@ pub(crate) fn volume_hot_water_required<
     let mut temperature_hot_water = func_temperature_hot_water(volume_warm_water * 0.5)?;
     let mut list_temperature_volume =
         func_temperature_cold_water(volume_warm_water * 0.5, simtime)?;
-    let mut temperature_cold_water = list_temperature_volume
-        .iter()
-        .map(|(t, v)| t * v)
-        .sum::<f64>()
-        / list_temperature_volume.iter().map(|(_, v)| v).sum::<f64>();
+    let mut temperature_cold_water =
+        FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value()
+            / FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
     let mut temperature_warm_water = temperature_hot_water;
     let mut volume_hot_water: f64 = Default::default();
     let mut was_in_loop = false;
@@ -166,11 +165,9 @@ pub(crate) fn volume_hot_water_required<
             &mut list_temperature_volume,
             func_temperature_cold_water(volume_cold_water, simtime)?,
         );
-        temperature_cold_water = list_temperature_volume
-            .iter()
-            .map(|(t, v)| t * v)
-            .sum::<f64>()
-            / list_temperature_volume.iter().map(|(_, v)| v).sum::<f64>();
+        temperature_cold_water = FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v))
+            .value()
+            / FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
         temperature_warm_water = (volume_hot_water * temperature_hot_water
             + volume_cold_water * temperature_cold_water)
             / volume_warm_water;

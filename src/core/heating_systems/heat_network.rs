@@ -2,10 +2,12 @@ use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
+use fsum::FSum;
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
 use smartstring::alias::String;
@@ -70,8 +72,8 @@ impl HeatNetworkServiceWaterDirect {
                 continue;
             }
             let list_temp_volume = self.cold_feed.draw_off_water(event.volume_hot, simtime)?;
-            let sum_t_by_v: f64 = list_temp_volume.iter().map(|(t, v)| t * v).sum();
-            let sum_v: f64 = list_temp_volume.iter().map(|(_, v)| v).sum();
+            let sum_t_by_v = FSum::with_all(list_temp_volume.iter().map(|(t, v)| t * v)).value();
+            let sum_v = FSum::with_all(list_temp_volume.iter().map(|(_, v)| v)).value();
 
             let temp_cold_water = sum_t_by_v / sum_v;
 
@@ -82,13 +84,14 @@ impl HeatNetworkServiceWaterDirect {
             );
         }
 
-        Ok(self.heat_network.lock().demand_energy(
+        self.heat_network.lock().demand_energy(
             &self.service_name,
+            HeatingServiceType::DomesticHotWaterDirect,
             energy_demand,
             None,
             None,
             simtime.index,
-        ))
+        )
     }
 }
 
@@ -145,13 +148,14 @@ impl HeatNetworkServiceWaterStorage {
         _temp_flow: f64,
         _temp_return: f64,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         if !self.is_on(simulation_time_iteration) {
-            return 0.;
+            return Ok(0.);
         }
 
         self.heat_network.lock().demand_energy(
             &self.service_name,
+            HeatingServiceType::DomesticHotWaterRegular,
             energy_demand,
             None,
             None,
@@ -205,16 +209,17 @@ impl HeatNetworkServiceSpace {
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
         if !self.is_on(simulation_time_iteration) {
-            return 0.;
+            return Ok(0.);
         }
 
         self.heat_network.lock().demand_energy(
             &self.service_name,
+            HeatingServiceType::Space,
             energy_demand,
             Some(time_start),
             Some(update_heat_source_state),
@@ -269,6 +274,7 @@ pub(crate) struct HeatNetwork {
     energy_supply_connection_aux: EnergySupplyConnection,
     energy_supply_connection_building_level_distribution_losses: EnergySupplyConnection,
     total_time_running_current_timestep: f64,
+    pump_running_time_current_timestep: f64,
     simulation_timestep: f64,
 }
 
@@ -303,6 +309,7 @@ impl HeatNetwork {
             )
             .unwrap(),
             total_time_running_current_timestep: Default::default(),
+            pump_running_time_current_timestep: Default::default(),
             simulation_timestep,
         }
     }
@@ -394,34 +401,43 @@ impl HeatNetwork {
     pub fn demand_energy(
         &mut self,
         service_name: &str,
+        service_type: HeatingServiceType,
         energy_output_required: f64,
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
         timestep_idx: usize,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let energy_output_max = self.energy_output_max(None);
         if energy_output_max == 0. {
-            return energy_output_max;
+            return Ok(energy_output_max);
         }
         let energy_output_provided =
             max_of_2(0., min_of_2(energy_output_required, energy_output_max));
 
         if update_heat_source_state {
             self.energy_supply_connections[service_name]
-                .demand_energy(energy_output_provided, timestep_idx)
-                .unwrap();
+                .demand_energy(energy_output_provided, timestep_idx)?;
         }
 
         let time_available = self.time_available(time_start, self.simulation_timestep);
 
         if update_heat_source_state {
-            self.total_time_running_current_timestep +=
-                (energy_output_provided / energy_output_max) * time_available;
+            let time_running = (energy_output_provided / energy_output_max) * time_available;
+            self.total_time_running_current_timestep += time_running;
+            // Track pump running time (only for storage DHW and space heating)
+            // Direct DHW services don't use circulation pumps
+            match service_type {
+                HeatingServiceType::DomesticHotWaterRegular | HeatingServiceType::Space => {
+                    self.pump_running_time_current_timestep += time_running;
+                }
+                HeatingServiceType::DomesticHotWaterDirect => (), // Direct DHW doesn't use circulation pump
+                _ => bail!("Unexpected service type: {service_type}"),
+            }
         }
 
-        energy_output_provided
+        Ok(energy_output_provided)
     }
 
     /// Calculations to be done at the end of each timestep
@@ -439,6 +455,7 @@ impl HeatNetwork {
 
         // Variables below need to be reset at the end of each timestep
         self.total_time_running_current_timestep = Default::default();
+        self.pump_running_time_current_timestep = Default::default();
 
         Ok(())
     }
@@ -462,7 +479,7 @@ impl HeatNetwork {
         _time_remaining_current_timestep: f64,
         timestep_idx: usize,
     ) -> anyhow::Result<()> {
-        let mut energy_aux = self.total_time_running_current_timestep * self.power_circ_pump;
+        let mut energy_aux = self.pump_running_time_current_timestep * self.power_circ_pump;
         energy_aux += timestep * self.power_aux;
         self.energy_supply_connection_aux
             .demand_energy(energy_aux, timestep_idx)?;
@@ -608,6 +625,7 @@ mod tests {
                     volume_warm: 34.93868988826640,
                     #[allow(clippy::excessive_precision)]
                     volume_hot: 34.93868988826640,
+                    event_duration: 0.,
                 },
                 WaterEventResult {
                     event_result_type: WaterEventResultType::Other,
@@ -616,12 +634,14 @@ mod tests {
                     volume_warm: 75.65325966014560,
                     #[allow(clippy::excessive_precision)]
                     volume_hot: 75.65325966014560,
+                    event_duration: 0.,
                 },
                 WaterEventResult {
                     event_result_type: WaterEventResultType::Other,
                     temperature_warm: 60.,
                     volume_warm: 0.,
                     volume_hot: 0.,
+                    event_duration: 0.,
                 },
             ],
             vec![WaterEventResult {
@@ -629,6 +649,7 @@ mod tests {
                 temperature_warm: 60.,
                 volume_warm: 32.60190808710678,
                 volume_hot: 32.60190808710678,
+                event_duration: 0.,
             }],
         ];
 
@@ -753,12 +774,9 @@ mod tests {
         let energy_demanded = [10.0, 2.0];
         for (t_idx, t_it) in two_len_simulation_time.iter().enumerate() {
             assert_eq!(
-                heat_network_service_water_storage.demand_energy(
-                    energy_demanded[t_idx],
-                    60.,
-                    60.,
-                    &t_it
-                ),
+                heat_network_service_water_storage
+                    .demand_energy(energy_demanded[t_idx], 60., 60., &t_it)
+                    .unwrap(),
                 [7.0, 2.0][t_idx]
             );
             heat_network.lock().timestep_end(t_idx).unwrap();
@@ -813,12 +831,14 @@ mod tests {
         );
 
         assert_eq!(
-            heat_network_service_water_storage.demand_energy(
-                10.,
-                0., // Python passes None here but the parameter is unused
-                0., // Python passes None here but the parameter is unused
-                &two_len_simulation_time.iter().current_iteration()
-            ),
+            heat_network_service_water_storage
+                .demand_energy(
+                    10.,
+                    0., // Python passes None here but the parameter is unused
+                    0., // Python passes None here but the parameter is unused
+                    &two_len_simulation_time.iter().current_iteration()
+                )
+                .unwrap(),
             0.
         );
     }
@@ -922,14 +942,16 @@ mod tests {
         let temp_return = [50.0, 60.0, 60.0];
         for (t_idx, t_it) in three_len_simulation_time.iter().enumerate() {
             assert_eq!(
-                heat_network_service_space.demand_energy(
-                    energy_demanded[t_idx],
-                    temp_flow[t_idx],
-                    temp_return[t_idx],
-                    None,
-                    None,
-                    &t_it
-                ),
+                heat_network_service_space
+                    .demand_energy(
+                        energy_demanded[t_idx],
+                        temp_flow[t_idx],
+                        temp_return[t_idx],
+                        None,
+                        None,
+                        &t_it
+                    )
+                    .unwrap(),
                 [5.0, 0.0, 0.0][t_idx]
             );
         }
@@ -1033,13 +1055,17 @@ mod tests {
         let energy_output_required = [2.0, 10.0];
         for (t_idx, _) in two_len_simulation_time.iter().enumerate() {
             assert_eq!(
-                heat_network.lock().demand_energy(
-                    "heat_network_test",
-                    energy_output_required[t_idx],
-                    None,
-                    None,
-                    t_idx
-                ),
+                heat_network
+                    .lock()
+                    .demand_energy(
+                        "heat_network_test",
+                        HeatingServiceType::Space,
+                        energy_output_required[t_idx],
+                        None,
+                        None,
+                        t_idx
+                    )
+                    .unwrap(),
                 [2.0, 6.0][t_idx]
             );
             heat_network.lock().timestep_end(t_idx).unwrap();
@@ -1219,7 +1245,8 @@ mod tests {
         assert_eq!(
             heat_network
                 .lock()
-                .demand_energy("name", 10., None, None, 1),
+                .demand_energy("name", HeatingServiceType::Space, 10., None, None, 1)
+                .unwrap(),
             0.
         );
     }

@@ -486,7 +486,10 @@ mod tests {
             vec![
                 300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
                 190., 200., 320., 330., 340., 350., 355., 315., 5.,
-            ],
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect(),
             vec![
                 0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225.,
                 198., 121., 68., 19., 0., 0., 0., 0., 0.,
@@ -551,7 +554,7 @@ mod tests {
 
     #[fixture]
     fn charge_control(
-        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: SimulationTimeIterator,
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
         charge_control_schedule: Vec<bool>,
@@ -560,7 +563,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Automatic,
                 charge_control_schedule,
-                &simulation_time_iteration,
+                &simulation_time_iterator,
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
@@ -964,7 +967,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Manual,
                 charge_control_schedule,
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
@@ -1009,7 +1012,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Celect,
                 charge_control_schedule,
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
@@ -1054,7 +1057,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
                 charge_control_schedule,
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
@@ -1099,7 +1102,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
                 charge_control_schedule,
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
@@ -1148,7 +1151,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
                 charge_control_schedule,
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),
@@ -1208,7 +1211,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
                 charge_control_schedule,
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 [1.0, 0.8].into_iter().map(Into::into).collect(),

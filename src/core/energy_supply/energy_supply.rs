@@ -8,6 +8,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use derivative::Derivative;
+use fsum::FSum;
 use indexmap::{indexmap, IndexMap};
 use parking_lot::RwLock;
 use smartstring::alias::String;
@@ -196,6 +197,12 @@ impl EnergySupply {
             energy_diverted: init_demand_list(simulation_timesteps),
             energy_generated_consumed: init_demand_list(simulation_timesteps),
         })
+    }
+
+    pub(crate) fn timestep_end(&self) {
+        if let Some(electric_battery) = &self.electric_battery {
+            electric_battery.timestep_end()
+        }
     }
 
     pub(crate) fn fuel_type(&self) -> FuelType {
@@ -552,21 +559,13 @@ impl EnergySupply {
                         self.demand_not_met[t_idx].fetch_add(energy_accepted, Ordering::SeqCst);
                     }
                 };
-
-                // this function is called at the end of the timestep to reset time charging etc:
-                electric_battery.timestep_end();
-                self.battery_state_of_charge[t_idx]
-                    .store(electric_battery.get_state_of_charge(), Ordering::SeqCst);
-                Ok(())
-            } else {
-                electric_battery.timestep_end();
-                self.battery_state_of_charge[t_idx]
-                    .store(electric_battery.get_state_of_charge(), Ordering::SeqCst);
-                Ok(())
             }
-        } else {
-            Ok(())
+
+            self.battery_state_of_charge[t_idx]
+                .store(electric_battery.get_state_of_charge(), Ordering::SeqCst);
         }
+
+        Ok(())
     }
 
     /// Calculate how much of that supply can be offset against demand.
@@ -592,14 +591,9 @@ impl EnergySupply {
             }
         }
 
-        let supplies_sum = supplies
-            .iter()
-            .map(|d| d.load(Ordering::SeqCst))
-            .sum::<f64>();
-        let demands_sum = demands
-            .iter()
-            .map(|d| d.load(Ordering::SeqCst))
-            .sum::<f64>();
+        let supplies_sum =
+            FSum::with_all(supplies.iter().map(|d| d.load(Ordering::SeqCst))).value();
+        let demands_sum = FSum::with_all(demands.iter().map(|d| d.load(Ordering::SeqCst))).value();
 
         self.beta_factor.get(timestep_idx).unwrap().store(
             self.beta_factor_function(-supplies_sum, demands_sum, BetaFactorFunction::Pv)?,
@@ -1325,6 +1319,8 @@ mod tests {
             energy_supply
                 .calc_energy_import_from_grid_to_battery(t_it)
                 .unwrap();
+            energy_supply.timestep_end();
+
             energy_supply
                 .calc_energy_import_export_betafactor(t_it)
                 .unwrap();
@@ -1394,8 +1390,9 @@ mod tests {
 
         for t_idx in simulation_time.iter() {
             energy_supply
-                .calc_energy_import_export_betafactor(t_idx)
+                .calc_energy_import_from_grid_to_battery(t_idx)
                 .unwrap();
+            energy_supply.timestep_end();
         }
 
         assert_eq!(
@@ -1410,7 +1407,10 @@ mod tests {
             &simulation_time.iter(),
             vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
             vec![3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1],
-            vec![0., 20., 40., 60., 0., 20., 40., 60.],
+            vec![0., 20., 40., 60., 0., 20., 40., 60.]
+                .into_iter()
+                .map(Into::into)
+                .collect(),
             vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],

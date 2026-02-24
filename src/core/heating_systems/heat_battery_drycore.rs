@@ -19,6 +19,7 @@ use crate::input::{ControlLogicType, HeatBattery};
 use crate::statistics::{np_interp, np_interp_with_extrapolate};
 use anyhow::bail;
 use atomic_float::AtomicF64;
+use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use nalgebra::{Const, OVector, SVector, Vector1};
@@ -323,7 +324,9 @@ impl HeatStorageDryCore {
 
         let target_charge = self.target_electric_charge(*simulation_time_iteration)?;
 
-        let (charge_rate, soc_max) = if target_charge > 0. {
+        let (charge_rate, soc_max) = if target_charge > 0.
+            && !is_close!(target_charge, 0., rel_tol = 1e-9, abs_tol = 1e-10)
+        {
             (self.pwr_in, target_charge)
         } else {
             (0., 1.)
@@ -521,7 +524,11 @@ impl HeatStorageDryCore {
         self.state_of_charge.load(Ordering::SeqCst)
     }
 
-    pub(super) fn set_state_of_charge(&self, soc: f64) {
+    pub(super) fn set_state_of_charge(&self, mut soc: f64) {
+        if is_close!(soc, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
+            soc = 0.;
+        }
+
         self.state_of_charge
             .store(clip(soc, 0.0, 1.0), Ordering::SeqCst);
     }
@@ -676,8 +683,13 @@ impl System<Time, EnergyOutputStateWithoutLosses> for EnergyOutputSocOdeFunction
         dy: &mut EnergyOutputStateWithoutLosses,
     ) {
         // Ensure SOC stays within bounds
-        let soc = clip(y[0], 0., 1.);
-
+        let mut soc = clip(y[0], 0., 1.);
+        if is_close!(soc, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
+            soc = 0.;
+        }
+        if is_close!(soc, self.soc_max, rel_tol = 1e-09, abs_tol = 1e-10) {
+            soc = self.soc_max;
+        }
         // Discharging: calculate power used based on SOC
 
         // // Python does two interpolations, which we've copied here
@@ -699,8 +711,10 @@ impl System<Time, EnergyOutputStateWithoutLosses> for EnergyOutputSocOdeFunction
 
         let dcharged_dt = if soc < self.soc_max {
             self.charge_rate
-        } else if self.target_charge > 0. {
-            ddelivered_dt.min(self.pwr_in)
+        } else if self.target_charge > 0.
+            && !is_close!(self.target_charge, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+        {
+            ddelivered_dt.min(self.charge_rate)
         } else {
             0.0
         };
@@ -1140,6 +1154,7 @@ pub(crate) struct HeatBatteryDryCore {
     detailed_results: Option<Arc<RwLock<Vec<DetailedResult>>>>,
     service_results: Arc<RwLock<Vec<ServiceResult>>>,
     total_time_running_current_timestep: AtomicF64,
+    pump_running_time_current_timestep: AtomicF64,
     flag_first_call: AtomicBool,
     battery_losses: AtomicF64,
     simulation_timestep: f64,
@@ -1219,6 +1234,7 @@ impl HeatBatteryDryCore {
             detailed_results: output_detailed_results.then_some(Arc::new(RwLock::new(vec![]))),
             service_results: Arc::new(RwLock::new(Vec::new())),
             total_time_running_current_timestep: Default::default(),
+            pump_running_time_current_timestep: Default::default(),
             flag_first_call: AtomicBool::new(true),
             battery_losses: Default::default(),
             simulation_timestep,
@@ -1475,8 +1491,20 @@ impl HeatBatteryDryCore {
             // (from Python) Add energy for fan to internal gains or core or service... TBD
 
             if update_heat_source_state {
+                // Track time running
                 self.total_time_running_current_timestep
                     .fetch_add(time_running_current_service, Ordering::SeqCst);
+
+                // Track pump running time (only for regular DHW and space heating)
+                // Direct DHW services don't use circulation pumps
+                match service_type {
+                    HeatingServiceType::DomesticHotWaterRegular | HeatingServiceType::Space => {
+                        self.pump_running_time_current_timestep
+                            .fetch_add(time_running_current_service, Ordering::SeqCst);
+                    }
+                    HeatingServiceType::DomesticHotWaterDirect => (), // Direct DHW doesn't use circulation pump
+                    _ => bail!("Unexpected service type: {service_type}"),
+                }
             }
 
             (energy_delivered_hb, energy_lost, energy_charged)
@@ -1638,7 +1666,10 @@ impl HeatBatteryDryCore {
         let time_remaining = timestep - total_time_running_current_timestep;
 
         // Calculate auxiliary energy
-        let mut energy_aux = total_time_running_current_timestep * self.power_circ_pump;
+        let mut energy_aux = self
+            .pump_running_time_current_timestep
+            .load(Ordering::SeqCst)
+            * self.power_circ_pump;
         energy_aux += self.power_standby * time_remaining;
         self.energy_supply_connection
             .demand_energy(energy_aux, simtime.index)?;
@@ -1673,6 +1704,8 @@ impl HeatBatteryDryCore {
         }
 
         self.total_time_running_current_timestep
+            .store(0.0, Ordering::SeqCst);
+        self.pump_running_time_current_timestep
             .store(0.0, Ordering::SeqCst);
         self.service_results.write().clear();
         self.flag_first_call.store(true, Ordering::SeqCst);
@@ -1763,11 +1796,15 @@ impl HeatBatteryDryCore {
                 if incl_in_annual {
                     auxiliary_results_annual.insert(
                         (parameter.into(), param_unit.map(Into::into)),
-                        auxiliary_results_per_timestep
-                            [&(parameter.into(), param_unit.map(Into::into))]
-                            .iter()
-                            .cloned()
-                            .sum::<ResultParamValue>(),
+                        ResultParamValue::from(
+                            FSum::with_all(
+                                auxiliary_results_per_timestep
+                                    [&(parameter.into(), param_unit.map(Into::into))]
+                                    .iter()
+                                    .map(ResultParamValue::as_f64),
+                            )
+                            .value(),
+                        ),
                     );
                 }
             }
@@ -1778,11 +1815,16 @@ impl HeatBatteryDryCore {
             results_annual.insert(service_name.clone(), Default::default());
             for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
                 if incl_in_annual {
-                    let parameter_annual_total = results_per_timestep[&service_name]
-                        [&(parameter.into(), param_unit.map(Into::into))]
-                        .iter()
-                        .cloned()
-                        .sum::<ResultParamValue>();
+                    let parameter_annual_total = ResultParamValue::from(
+                        FSum::with_all(
+                            results_per_timestep[&service_name]
+                                [&(parameter.into(), param_unit.map(Into::into))]
+                                .iter()
+                                .map(ResultParamValue::as_f64),
+                        )
+                        .value(),
+                    );
+
                     results_annual[&service_name].insert(
                         (parameter.into(), param_unit.map(Into::into)),
                         parameter_annual_total.clone(),
@@ -1968,7 +2010,7 @@ mod tests {
             &simulation_time.iter(),
             vec![15.0; 24],
             vec![4.0; 24],
-            vec![180.; 24],
+            vec![180.; 24].into_iter().map(Into::into).collect(),
             vec![100.; 24],
             vec![200.; 24],
             vec![0.2; 24],
@@ -2018,7 +2060,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
                 schedule,
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 vec![Some(1.0), Some(1.8)],
@@ -2043,7 +2085,7 @@ mod tests {
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
                 schedule,
-                &simulation_time.iter().current_iteration(),
+                &simulation_time.iter(),
                 0,
                 1.,
                 vec![Some(0.0), Some(0.0)],
@@ -2203,7 +2245,7 @@ mod tests {
     #[fixture]
     fn default_control_max(simulation_time: SimulationTime) -> Arc<Control> {
         Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(65.), Some(66.)],
+            vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
             0,
             0.0,
             None,
@@ -2230,7 +2272,7 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         let control_min = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(45.), Some(46.)],
+            vec![Some(45.), Some(46.), Some(46.), Some(46.), Some(46.)],
             0,
             1.,
             None,
@@ -2238,7 +2280,7 @@ mod tests {
             simulation_time.step,
         )));
         let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(65.), Some(66.)],
+            vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
             0,
             1.,
             None,
@@ -2443,12 +2485,14 @@ mod tests {
                 temperature_warm: 40.0,
                 volume_warm: 50.0,
                 volume_hot: 8.0,
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other,
                 temperature_warm: 35.0,
                 volume_warm: 0.0,
                 volume_hot: 0.0,
+                event_duration: 0.,
             },
         ];
 
@@ -2775,6 +2819,7 @@ mod tests {
                 temperature_warm: 40.0,
                 volume_warm: 30.0,
                 volume_hot: 20.0,
+                event_duration: 0.,
             }];
             let _dhw_energy = dhw_service
                 .demand_hot_water(usage_events.into(), t_it)
@@ -3406,18 +3451,21 @@ mod tests {
                 temperature_warm: 35.0,
                 volume_warm: 5.0,
                 volume_hot: 5.0, // Small - should get 15°C
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Shower,
                 temperature_warm: 38.0,
                 volume_warm: 40.0,
                 volume_hot: 25.0, // Medium - should get mix (15°C and 8°C)
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Bath,
                 temperature_warm: 40.0,
                 volume_warm: 80.0,
                 volume_hot: 50.0, // Large - should get mix of all three temps
+                event_duration: 0.,
             },
         ];
 
@@ -3446,6 +3494,7 @@ mod tests {
             temperature_warm: 40.0,
             volume_warm: 80.0,
             volume_hot: 40.0,
+            event_duration: 0.,
         }];
 
         let energy_large = service
@@ -3464,30 +3513,35 @@ mod tests {
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
+                event_duration: 0.,
             },
             WaterEventResult {
                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
                 temperature_warm: 40.0,
                 volume_warm: 10.0,
                 volume_hot: 8.0,
+                event_duration: 0.,
             },
         ];
 

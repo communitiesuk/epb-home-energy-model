@@ -7,7 +7,7 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
-use crate::core::solvers::{fsolve, root};
+use crate::core::solvers::{bisect, fsolve, root};
 use crate::core::space_heat_demand::zone::SimpleZone;
 use crate::core::units::{
     JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE,
@@ -27,6 +27,7 @@ use argmin::core::{CostFunction, Executor};
 use argmin::solver::brent::BrentRoot;
 use atomic_float::AtomicF64;
 use derivative::Derivative;
+use fsum::FSum;
 use itertools::Itertools;
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
 use ordered_float::OrderedFloat;
@@ -35,6 +36,7 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+
 
 type State = Vector1<f64>;
 type Time = f64;
@@ -53,7 +55,7 @@ pub fn convert_flow_to_return_temp(flow_temp_celsius: f64) -> f64 {
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub(crate) struct Emitters {
-    pub thermal_mass: f64,
+    thermal_mass: Option<f64>,
     emitters: Vec<Arc<WetEmitter>>,
     pipework_list: Vec<Pipework>,
     temp_diff_emit_dsgn: f64,
@@ -348,33 +350,63 @@ impl Emitters {
 
         let mut model_emitters: Vec<Option<Arc<WetEmitter>>> = vec![None; emitters.len()];
 
+        let mut thermal_mass = thermal_mass;
+
         // 1. process radiators first
         for (i, emitter) in emitters.iter().enumerate() {
             if let WetEmitterInput::Radiator {
-                constant_data,
                 exponent: n,
                 frac_convective,
+                thermal_mass: emitter_thermal_mass,
+                thermal_mass_per_m: emitter_thermal_mass_per_m,
+                constant,
+                constant_per_m,
+                length,
             } = emitter
             {
+                // three cases here: either thermal_mass, thermal_mass_per_m with a length, or no thermal_mass at all
+                let emitter_thermal_mass = match emitter_thermal_mass_per_m {
+                    Some(emitter_thermal_mass_per_m) => Some(
+                        emitter_thermal_mass_per_m
+                            * length
+                                .expect("length must be specified when using thermal_mass_per_m"),
+                    ),
+                    None => *emitter_thermal_mass,
+                };
+
+                // we should have either constant or constant_per_m with a length
+                let constant = match constant_per_m {
+                    Some(consant_per_m) => consant_per_m * length.unwrap(),
+                    None => constant.unwrap(),
+                };
+
+                if let Some(emitter_thermal_mass) = emitter_thermal_mass {
+                    thermal_mass = Some(thermal_mass.unwrap_or(0.) + emitter_thermal_mass);
+                }
+
                 model_emitters[i].replace(Arc::new(WetEmitter::Radiator {
-                    c: constant_data.constant(),
+                    c: constant,
                     n: *n,
                     frac_convective: *frac_convective,
                 }));
-                if thermal_mass.is_none() {
-                    // Thermal_mass is a required input for radiators -
-                    // not underfloor. This is because the thermal mass of UFH is
-                    // included in the UFH-only 'equivalent_specific_thermal_mass' input.
-                    // The latter can only be calculated for UFH systems, by definition,
-                    // so could not mistakenly be entered for a radiator system.
-                    // But for a system containing mix of radiators and UFH, the thermal_mass
-                    // input is required - including only the thermal mass of the radiators.
-                    bail!("Thermal Mass is required for Radiator type emitters")
-                }
             }
         }
 
-        let mut thermal_mass = thermal_mass.unwrap_or(0.0);
+        // Validation check after radiator processing - only if radiators exist
+        let has_radiators = emitters
+            .iter()
+            .any(|e| matches!(e, WetEmitterInput::Radiator { .. }));
+
+        if has_radiators && thermal_mass.is_none() {
+            bail!("Thermal Mass is required for Radiator type emitters")
+            // Thermal_mass is a required input for radiators -
+            // not underfloor. This is because the thermal mass of UFH is
+            // included in the UFH-only 'equivalent_specific_thermal_mass' input.
+            // The latter can only be calculated for UFH systems, by definition,
+            // so could not mistakenly be entered for a radiator system.
+            // But for a system containing mix of radiators and UFH, the thermal_mass
+            // input is required - including only the thermal mass of the radiators.
+        }
 
         // 2. process UFH emitters next
         for (i, emitter) in emitters.iter().enumerate() {
@@ -392,7 +424,7 @@ impl Emitters {
                 // The thermal_mass input from assessor only includes radiators.
                 // The equivalent_specific_thermal_mass for UFH (once converted to
                 // the same units) needs to be added to this to get the total.
-                thermal_mass += equivalent_specific_thermal_mass * emitter_floor_area
+                let emitter_thermal_mass = equivalent_specific_thermal_mass * emitter_floor_area
                     / KILOJOULES_PER_KILOWATT_HOUR as f64;
                 model_emitters[i].replace(Arc::new(WetEmitter::Ufh {
                     c,
@@ -400,6 +432,10 @@ impl Emitters {
                     _system_performance_factor: *system_performance_factor,
                     frac_convective: *frac_convective,
                 }));
+
+                // Then add the thermal mass for this emitter to it
+
+                thermal_mass = Some(thermal_mass.unwrap_or(0.) + emitter_thermal_mass);
             }
         }
 
@@ -444,7 +480,7 @@ impl Emitters {
                     pipework_input.external_diameter_mm / MILLIMETRES_IN_METRE as f64,
                     pipework_input.length,
                     pipework_input.insulation_thermal_conductivity,
-                    pipework_input.insulation_thickness_mm,
+                    pipework_input.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64,
                     pipework_input.surface_reflectivity,
                     pipework_input.pipe_contents,
                 )?;
@@ -461,7 +497,12 @@ impl Emitters {
                             n: pw_n,
                             frac_convective: 0.7,
                         };
-                        thermal_mass += pw_thermal_mass;
+
+                        thermal_mass = Some(
+                            thermal_mass
+                                .expect("thermal_mass expected to be set for non fancoil emitters")
+                                + pw_thermal_mass,
+                        );
 
                         // add it to the emitters list
                         model_emitters.push(Some(Arc::new(new_radiator)));
@@ -555,47 +596,42 @@ impl Emitters {
         }
     }
 
-    pub fn temp_setpnt(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> anyhow::Result<Option<f64>> {
+    pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
         match self.heat_source.read().deref() {
             SpaceHeatingService::HeatPump(heat_pump) => {
                 heat_pump.temp_setpnt(simulation_time_iteration)
             }
-            SpaceHeatingService::Boiler(boiler) => {
-                Ok(boiler.temp_setpnt(*simulation_time_iteration))
-            }
+            SpaceHeatingService::Boiler(boiler) => boiler.temp_setpnt(*simulation_time_iteration),
             SpaceHeatingService::HeatNetwork(heat_network) => {
-                Ok(heat_network.temperature_setpnt(simulation_time_iteration))
+                heat_network.temperature_setpnt(simulation_time_iteration)
             }
             SpaceHeatingService::HeatBattery(heat_battery) => {
-                Ok(heat_battery.temp_setpnt(*simulation_time_iteration))
+                heat_battery.temp_setpnt(*simulation_time_iteration)
             }
             #[cfg(test)]
-            SpaceHeatingService::Mock => Ok(Some(20.)),
+            SpaceHeatingService::Mock => Some(20.),
         }
     }
 
     pub(crate) fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> anyhow::Result<Option<bool>> {
+    ) -> Option<bool> {
         match self.heat_source.read().deref() {
             SpaceHeatingService::HeatPump(heat_pump) => {
                 heat_pump.in_required_period(simulation_time_iteration)
             }
             SpaceHeatingService::Boiler(boiler) => {
-                Ok(boiler.in_required_period(*simulation_time_iteration))
+                boiler.in_required_period(*simulation_time_iteration)
             }
             SpaceHeatingService::HeatNetwork(heat_network) => {
-                Ok(heat_network.in_required_period(simulation_time_iteration))
+                heat_network.in_required_period(simulation_time_iteration)
             }
             SpaceHeatingService::HeatBattery(heat_battery) => {
-                Ok(heat_battery.in_required_period(*simulation_time_iteration))
+                heat_battery.in_required_period(*simulation_time_iteration)
             }
             #[cfg(test)]
-            SpaceHeatingService::Mock => Ok(Some(true)),
+            SpaceHeatingService::Mock => Some(true),
         }
     }
 
@@ -617,9 +653,10 @@ impl Emitters {
         // weighted average for each emitter
         let power_total_weight = self.power_output_emitter_weight(simtime);
 
-        (0..frac_convective.len())
-            .map(|i| power_total_weight[i] * frac_convective[i])
-            .sum::<f64>()
+        FSum::with_all(
+            (0..frac_convective.len()).map(|i| power_total_weight[i] * frac_convective[i]),
+        )
+        .value()
     }
 
     /// Weighted average of emitter power output
@@ -715,7 +752,8 @@ impl Emitters {
             _ => self.design_flow_temp,
         };
 
-        let return_temp = if flow_temp >= 70.0 {
+        // NOTE Python uses math.isclose here with a relative tolerance which will be slightly different
+        let return_temp = if flow_temp > 70.0 || (flow_temp - 70.0).abs() < 1e-10 {
             60.0
         } else {
             flow_temp * 6.0 / 7.0
@@ -762,10 +800,12 @@ impl Emitters {
 
         let func_temp_emitter_req = |temp_emitter: f64, _args| {
             Ok(power_emitter_req
-                - c_n_pairs
-                    .iter()
-                    .map(|&(c, n)| c * (temp_emitter - temp_rm).powf(n))
-                    .sum::<f64>())
+                - FSum::with_all(
+                    c_n_pairs
+                        .iter()
+                        .map(|&(c, n)| c * (temp_emitter - temp_rm).powf(n)),
+                )
+                .value())
         };
 
         fsolve(func_temp_emitter_req, temp_rm + 10., [])
@@ -833,7 +873,7 @@ impl Emitters {
                     .iter()
                     .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
                     .sum::<f64>())
-                / thermal_mass
+                / thermal_mass.expect("thermal_mass is expected to be set when func_temp_emitter_change_rate is called")
         }
     }
 
@@ -935,9 +975,11 @@ impl Emitters {
             let previous_step_x = *stepper.x_out().get(stepper.x_out().len() - 2).unwrap();
             let current_step_x = *stepper.x_out().last().unwrap();
 
-            let tol = 1e-3; // From scipy docs (rtol default)
-                            // Some time (x) between the previous step and the current step we passed the max temp
-                            // Use a root solver to find when that was - i.e. when temp - max = 0
+            let eps = (2.0_f64).powf(-52.0_f64);
+            let tol = 4.0 * eps; // From scipy source - 4 * EPS
+
+            // Some time (x) between the previous step and the current step we passed the max temp
+            // Use a root solver to find when that was - i.e. when temp - max = 0
             let solver = BrentRoot::new(previous_step_x, current_step_x, tol);
 
             let executor = Executor::new(root_problem, solver);
@@ -1084,7 +1126,7 @@ impl Emitters {
             1f64.min(actual_output / fancoil_min_output)
         };
 
-        let fan_power_value = if actual_output <= 0. {
+        let fan_power_value = if actual_output < 0. || actual_output.abs() < 1e-10 {
             actual_output = 0.;
             0.
         } else {
@@ -1133,6 +1175,7 @@ impl Emitters {
         temp_emitter_req: f64,
         temp_emitter_max: f64,
         temp_return: f64,
+        temp_flow_target: f64,
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, bool, Option<BufferTankEmittersDataWithResult>)> {
         // When there is some demand, calculate max. emitter temperature
@@ -1143,7 +1186,9 @@ impl Emitters {
         let energy_req_to_warm_emitters = if self.fancoil.as_ref().is_some() {
             0.0
         } else {
-            self.thermal_mass * (temp_emitter_req - temp_emitter_heating_start)
+            self.thermal_mass
+                .expect("thermal_mass expected for emitters that are not fancoils")
+                * (temp_emitter_req - temp_emitter_heating_start)
         };
 
         // Calculate energy input required to meet energy demand
@@ -1161,12 +1206,17 @@ impl Emitters {
         // falls to maximum
         // Otherwise:
         let (energy_provided_by_heat_source_max_min, emitters_data_for_buffer_tank_with_result) =
-            if self.fancoil.is_some() || self.temp_emitter_prev() <= temp_emitter_max {
+            if self.fancoil.is_some()
+                || temp_emitter_heating_start < temp_emitter_max
+                || (temp_emitter_heating_start - temp_emitter_max).abs() < 1e-10
+            {
                 // If emitters are below max. temp for this timestep, then max energy
                 // required from heat source will depend on maximum warm-up rate,
                 // which depends on the maximum energy output from the heat source
                 let emitters_data_for_buffer_tank = self.with_buffer_tank.then(|| {
-                    let power_req_from_buffer_tank = if (timestep - time_heating_start) <= 0.0 {
+                    let power_req_from_buffer_tank = if (timestep - time_heating_start) < 0.0
+                        || (timestep - time_heating_start).abs() < 1e-10
+                    {
                         // If there is no time remaining in the timestep, then there
                         // is no power requirement (and we need to avoid div-by-zero)
                         0.0
@@ -1178,7 +1228,7 @@ impl Emitters {
                         temp_emitter_req,
                         power_req_from_buffer_tank,
                         design_flow_temp: self.design_flow_temp,
-                        target_flow_temp: self.target_flow_temp.load(Ordering::SeqCst),
+                        target_flow_temp: temp_flow_target,
                         temp_rm_prev,
                         variable_flow: self.variable_flow_data.into(),
                         temp_diff_emit_design: self.temp_diff_emit_dsgn,
@@ -1188,7 +1238,7 @@ impl Emitters {
                 });
 
                 self.heat_source.read().energy_output_max(
-                    temp_emitter_max,
+                    temp_flow_target,
                     temp_return,
                     emitters_data_for_buffer_tank,
                     simulation_time,
@@ -1274,8 +1324,10 @@ impl Emitters {
             0.0, // no heat from heat source during initial cool-down
             None,
         )?;
-        let energy_released_from_emitters =
-            self.thermal_mass * (temp_emitter_prev - time_emitter_no_heat_input);
+        let energy_released_from_emitters = self
+            .thermal_mass
+            .expect("thermal_mass expected to be set when calling energy_surplus_during_cooldown")
+            * (temp_emitter_prev - time_emitter_no_heat_input);
         let energy_demand_cooldown = energy_demand * time_cooldown / timestep;
 
         let result = energy_released_from_emitters - energy_demand_cooldown;
@@ -1382,9 +1434,6 @@ impl Emitters {
             self.temp_emitter_req(power_emitter_req, temp_rm_prev)?
         };
 
-        self.target_flow_temp
-            .store(temp_flow_target, Ordering::SeqCst);
-
         let mut emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult> = None;
 
         let mut temp_emitter_output = "n/a".into();
@@ -1395,7 +1444,7 @@ impl Emitters {
             energy_req_from_heat_source,
             temp_emitter_max_is_final_temp,
             fan_energy_kwh,
-        ) = if energy_demand <= 0. {
+        ) = if energy_demand < 0. || energy_demand.abs() < 1e-10 {
             (0.0, self.temp_emitter_prev(), 0.0, false, 0.0)
         } else {
             let (time_heating_start, temp_emitter_heating_start, fan_energy_kwh) =
@@ -1491,6 +1540,7 @@ impl Emitters {
                 temp_emitter_req,
                 temp_emitter_max,
                 temp_return_target,
+                temp_flow_target,
                 simtime,
             )?;
 
@@ -1558,7 +1608,10 @@ impl Emitters {
             temp_emitter_output = StringOrNumber::Float(temp_emitter);
 
             let energy_released_from_emitters = energy_provided_by_heat_source
-                + self.thermal_mass * (self.temp_emitter_prev() - temp_emitter);
+                + self
+                    .thermal_mass
+                    .expect("thermal_mass expected to be set for non fancoil emitters")
+                    * (self.temp_emitter_prev() - temp_emitter);
 
             // Save emitter temperature for next timestep
             if update_temp_emitter_prev {
@@ -1669,7 +1722,10 @@ impl Emitters {
                         None,
                     )?;
 
-                if energy_released_from_emitters < 0. || energy_required_from_heat_source <= 0. {
+                if energy_released_from_emitters < 0.
+                    || energy_required_from_heat_source < 0.
+                    || energy_required_from_heat_source.abs() < 1e-10
+                {
                     return Ok((temp_flow_target, temp_flow_target, 0.0));
                 }
 
@@ -1794,7 +1850,7 @@ impl Emitters {
         &self,
         energy_demand: f64,
         temp_flow_target: f64,
-        temp_return_target: f64,
+        _temp_return_target: f64,
         specific_heat_capacity: f64,
         density: f64,
         flow_rate_m3s: f64,
@@ -1802,7 +1858,7 @@ impl Emitters {
         update_heat_source_state: bool,
         update_temp_emitter_prev: bool,
     ) -> anyhow::Result<f64> {
-        let energy_difference = |temp_return: f64, _: [f64; 0]| -> anyhow::Result<f64> {
+        let energy_difference = |temp_return: f64| -> anyhow::Result<f64> {
             let (energy_released_from_emitters, _) = self.demand_energy_flow_return(
                 energy_demand,
                 temp_flow_target,
@@ -1815,16 +1871,22 @@ impl Emitters {
             let power_released_from_emitters = energy_released_from_emitters / simtime.timestep;
             let calculated_power =
                 specific_heat_capacity * density * flow_rate_m3s * (temp_flow_target - temp_return);
-            Ok(power_released_from_emitters - calculated_power)
+
+            // Should be zero at the correct temp_return
+            let diff = power_released_from_emitters - calculated_power;
+
+            if diff.abs() < 1e-10 {
+                Ok(0.0)
+            } else {
+                Ok(diff)
+            }
         };
 
-        // Use fsolve to find the return temperature that makes energy_difference zero
-        let initial_guess = temp_return_target;
+        if energy_difference(temp_flow_target)? < 0. {
+            return Ok(temp_flow_target);
+        }
 
-        // TODO original Python call is:
-        // fsolve(energy_difference, initial_guess, xtol=1e-2, maxfev=100)[0]
-        // and the extra parameters are not reflected here. this may matter
-        let temp_return_target = fsolve(energy_difference, initial_guess, [])?;
+        let temp_return_target = bisect(energy_difference, 0., temp_flow_target, 1e-6)?;
 
         Ok(if temp_return_target > temp_flow_target {
             temp_flow_target
@@ -1908,14 +1970,10 @@ impl Emitters {
             let temp_emitter = temp_emitter.max(temp_rm_prev);
 
             // Calculate emitter output achieved at end of timestep
-            self.thermal_mass * (self.temp_emitter_prev() - temp_emitter)
+            self.thermal_mass
+                .expect("thermal_mass expected to be set for non fancoil emitters")
+                * (self.temp_emitter_prev() - temp_emitter)
         })
-    }
-
-    #[cfg(test)]
-    fn set_target_flow_temp(&self, target_flow_temp: f64) {
-        self.target_flow_temp
-            .store(target_flow_temp, Ordering::SeqCst);
     }
 }
 
@@ -1962,9 +2020,10 @@ mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+    use crate::core::units::Orientation360;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::external_conditions::ShadingSegment;
-    use crate::input::{FuelType, RadiatorConstantData};
+    use crate::input::FuelType;
     use crate::input::{PipeworkContents, WetEmitter as WetEmitterInput};
     use crate::simulation_time::SimulationTime;
     use crate::simulation_time::SimulationTimeIterator;
@@ -1990,49 +2049,52 @@ mod tests {
     #[fixture]
     fn external_conditions(simulation_time_iterator: SimulationTimeIterator) -> ExternalConditions {
         let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
-        let wind_directions = vec![200., 220., 230., 240., 250., 260., 260., 270.];
+        let wind_directions = vec![200., 220., 230., 240., 250., 260., 260., 270.]
+            .into_iter()
+            .map(Into::into)
+            .collect();
         let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
         let diffuse_horizontal_radiations = vec![333., 610., 572., 420., 0., 10., 90., 275.];
         let direct_beam_radiations = vec![420., 750., 425., 500., 0., 40., 0., 388.];
         let shading_segments = vec![
             ShadingSegment {
-                start: 180.,
-                end: 135.,
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 135.,
-                end: 90.,
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 90.,
-                end: 45.,
+                start360: Orientation360::create_from_180(90.).unwrap(),
+                end360: Orientation360::create_from_180(45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 45.,
-                end: 0.,
+                start360: Orientation360::create_from_180(45.).unwrap(),
+                end360: Orientation360::create_from_180(0.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: 0.,
-                end: -45.,
+                start360: Orientation360::create_from_180(0.).unwrap(),
+                end360: Orientation360::create_from_180(-45.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -45.,
-                end: -90.,
+                start360: Orientation360::create_from_180(-45.).unwrap(),
+                end360: Orientation360::create_from_180(-90.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -90.,
-                end: -135.,
+                start360: Orientation360::create_from_180(-90.).unwrap(),
+                end360: Orientation360::create_from_180(-135.).unwrap(),
                 ..Default::default()
             },
             ShadingSegment {
-                start: -135.,
-                end: -180.,
+                start360: Orientation360::create_from_180(-135.).unwrap(),
+                end360: Orientation360::create_from_180(-180.).unwrap(),
                 ..Default::default()
             },
         ]
@@ -2104,7 +2166,7 @@ mod tests {
         override_design_flow_rate: Option<f64>,
         override_bypass_fraction_recirculated: Option<f64>,
     ) -> Emitters {
-        let thermal_mass = 0.14;
+        let thermal_mass = 0.07;
         let temp_diff_emit_dsgn = 10.0;
         let ecodesign_controller = override_ecodesign_controller.unwrap_or(ecodesign_controller);
 
@@ -2122,17 +2184,29 @@ mod tests {
             {
                 "wet_emitter_type": "radiator",
                 "c_per_m": 0.08,
+                "thermal_mass_per_m": 0.14,
                 "length": 0.5,
                 "n": 1.2,
                 "frac_convective": 0.4
-            }
+            },
         ]))
         .unwrap();
+
+        let pipework = [WaterPipework {
+            location: WaterPipeworkLocation::Internal,
+            internal_diameter_mm: 10.0,
+            external_diameter_mm: 12.0,
+            length: 1.0,
+            insulation_thermal_conductivity: 0.035,
+            insulation_thickness_mm: 0.0,
+            surface_reflectivity: false,
+            pipe_contents: PipeworkContents::Water,
+        }];
 
         Emitters::new(
             Some(thermal_mass),
             &wet_emitters,
-            &[],
+            &pipework,
             temp_diff_emit_dsgn,
             override_variable_flow.unwrap_or(true),
             override_design_flow_rate,
@@ -2250,10 +2324,22 @@ mod tests {
             }
         ))
         .unwrap()];
+
+        let pipework = [WaterPipework {
+            location: WaterPipeworkLocation::Internal,
+            internal_diameter_mm: 10.0,
+            external_diameter_mm: 12.0,
+            length: 1.0,
+            insulation_thermal_conductivity: 0.035,
+            insulation_thickness_mm: 0.0,
+            surface_reflectivity: false,
+            pipe_contents: PipeworkContents::Water,
+        }];
+
         Emitters::new(
             None,
             &emitters,
-            &[],
+            &pipework,
             10.0,
             true,
             None,
@@ -2324,9 +2410,13 @@ mod tests {
     ) {
         // Test that the constructor errors if thermal mass is None for a radiator type
         let emitters = [WetEmitterInput::Radiator {
-            constant_data: RadiatorConstantData::Constant { constant: 0.08 },
+            constant: Some(0.08),
+            length: None,
+            constant_per_m: None,
             exponent: 1.2,
             frac_convective: 0.4,
+            thermal_mass: None,
+            thermal_mass_per_m: None,
         }];
         assert!(Emitters::new(
             None,
@@ -2515,16 +2605,45 @@ mod tests {
             None,
         )
         .is_ok());
+
+        // Test that radiator with thermal_mass_per_m works when system thermal_mass is None
+        let emitters = [WetEmitterInput::Radiator {
+            exponent: 1.2,
+            frac_convective: 0.4,
+            thermal_mass: None,
+            thermal_mass_per_m: Some(0.5),
+            constant_per_m: None,
+            length: Some(2.0),
+            constant: Some(0.08),
+        }];
+        assert!(Emitters::new(
+            None,
+            &emitters,
+            &[],
+            10.0,
+            true,
+            Some(3.),
+            Some(3.),
+            Some(6.),
+            None,
+            Arc::new(RwLock::new(heat_source.clone())),
+            zone.clone(),
+            Arc::new(external_conditions.clone()),
+            ecodesign_controller,
+            55.0,
+            20.,
+            simulation_time.total_steps(),
+            None,
+            Some(true),
+            None,
+        )
+        .is_ok());
     }
 
     #[rstest]
     fn test_temp_setpnt(simulation_time_iterator: SimulationTimeIterator, fancoil: Emitters) {
         for step in simulation_time_iterator {
-            assert_relative_eq!(
-                fancoil.temp_setpnt(&step).unwrap().unwrap(),
-                20.,
-                epsilon = 1e-5
-            );
+            assert_relative_eq!(fancoil.temp_setpnt(&step).unwrap(), 20., epsilon = 1e-5);
         }
     }
 
@@ -2534,7 +2653,7 @@ mod tests {
         fancoil: Emitters,
     ) {
         for step in simulation_time_iterator {
-            assert!(fancoil.in_required_period(&step).unwrap().unwrap());
+            assert!(fancoil.in_required_period(&step).unwrap());
         }
     }
 
@@ -2783,28 +2902,28 @@ mod tests {
             assert_relative_eq!(
                 energy_provided,
                 [
-                    0.26481930394248643,
-                    0.8203297684307538,
-                    0.9900258469156371,
-                    0.9900258469156371,
-                    0.8941786531029309,
-                    0.8715059403189445,
-                    0.8715059403189445,
-                    0.7471884447241743
+                    0.2653455026425582,
+                    0.8220668279394978,
+                    0.9930585230650698,
+                    0.9930585230650698,
+                    0.8968537869744039,
+                    0.8741640483161602,
+                    0.8741640483161602,
+                    0.7491924984261082,
                 ][t_idx]
             );
 
             assert_relative_eq!(
                 emitters.temp_emitter_prev(),
                 [
-                    35.96557640041081,
+                    35.951417432079616,
                     45.833333333333336,
                     45.833333333333336,
                     45.833333333333336,
                     43.22916666666667,
                     43.22916666666667,
                     43.22916666666667,
-                    37.89210634720828
+                    37.88127852847367
                 ][t_idx]
             )
         }
@@ -2883,14 +3002,14 @@ mod tests {
             assert_relative_eq!(
                 energy_provided,
                 [
-                    0.43450355962369697,
-                    0.43450355962369697,
-                    0.43450355962369697,
-                    0.43450355962369697,
-                    0.37944261695906434,
-                    0.37944261695906434,
-                    0.37944261695906434,
-                    0.37944261695906434
+                    0.44410447686163224,
+                    0.44410447686163224,
+                    0.44410447686163224,
+                    0.44410447686163224,
+                    0.38823264591676754,
+                    0.38823264591676754,
+                    0.38823264591676754,
+                    0.38823264591676754,
                 ][t_idx],
                 max_relative = EIGHT_DECIMAL_PLACES
             );
@@ -2945,6 +3064,16 @@ mod tests {
         zone: Arc<dyn SimpleZone>,
         simulation_time: SimulationTime,
     ) {
+        let wet_emitters: Vec<WetEmitterInput> = serde_json::from_value(json!([
+            {
+                "wet_emitter_type": "radiator",
+                "c": 0.08,
+                "n": 1.2,
+                "frac_convective": 0.4,
+            },
+        ]))
+        .unwrap();
+
         let ecodesign_controller = EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassII,
             min_outdoor_temp: Some(-4.),
@@ -2952,19 +3081,28 @@ mod tests {
             min_flow_temp: Some(30.),
         };
 
-        let emitters = emitters_fixture(
-            heat_source,
-            external_conditions,
+        let emitters = Emitters::new(
+            Some(0.14),
+            &wet_emitters,
+            &[],
+            10.0,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.),
+            Arc::new(RwLock::new(heat_source)),
             zone,
+            external_conditions.into(),
             ecodesign_controller,
-            simulation_time,
+            55.,
+            20.,
+            simulation_time.total_steps(),
             None,
+            false.into(),
             None,
-            None,
-            None,
-            None,
-            None,
-        );
+        )
+        .unwrap();
 
         let temp_emitter = 15.;
         let temp_rm = 10.;
@@ -3041,7 +3179,11 @@ mod tests {
             .temp_emitter_req(power_emitter_req, temp_rm)
             .unwrap();
 
-        assert_relative_eq!(result, 4.32332827, max_relative = EIGHT_DECIMAL_PLACES);
+        assert_relative_eq!(
+            result,
+            4.3179652462910205,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
     }
 
     // Python test_func_temp_emitter_change_rate is unnecessary
@@ -3055,7 +3197,7 @@ mod tests {
 
         assert_relative_eq!(
             temp_emitter,
-            7.85714285,
+            7.85528119911919,
             max_relative = EIGHT_DECIMAL_PLACES
         );
         assert!(time_temp_diff_max_reached.is_none());
@@ -3064,9 +3206,11 @@ mod tests {
             .temp_emitter(0., 2., 70., 10., 0.2, Some(25.))
             .unwrap();
         assert_eq!(temp_emitter, 25.);
+
+        // TODO decrease max_relative when possible
         assert_relative_eq!(
             time_temp_diff_max_reached.unwrap(),
-            1.29981138,
+            1.2964605622321956,
             max_relative = FOUR_DECIMAL_PLACES
         );
     }
@@ -3155,6 +3299,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
         emitters: Emitters,
     ) {
+        let temp_flow_target = 30.0;
         let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let mut energy_demand = 0.0;
         let timestep = 1.0;
@@ -3177,6 +3322,7 @@ mod tests {
                     temp_emitter_req,
                     25.,
                     30.,
+                    temp_flow_target,
                     t_it,
                 )
                 .unwrap();
@@ -3184,14 +3330,14 @@ mod tests {
             assert_relative_eq!(
                 energy_req,
                 [
-                    0.7487346289045738,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754
+                    0.7457780407382995,
+                    2.4627899136391274,
+                    2.4627899136391274,
+                    2.4627899136391274,
+                    2.4627899136391274,
+                    2.4627899136391274,
+                    2.4627899136391274,
+                    2.4627899136391274,
                 ][t_idx]
             );
 
@@ -3210,7 +3356,7 @@ mod tests {
         ecodesign_controller: EcoDesignController,
         simulation_time: SimulationTime,
     ) -> Emitters {
-        let emitters = emitters_fixture(
+        emitters_fixture(
             heat_source,
             external_conditions,
             zone,
@@ -3222,9 +3368,7 @@ mod tests {
             None,
             None,
             None,
-        );
-        emitters.set_target_flow_temp(30.);
-        emitters
+        )
     }
 
     #[rstest]
@@ -3234,6 +3378,8 @@ mod tests {
         emitters_with_buffer_tank: Emitters,
     ) {
         let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let temp_flow_target = 30.0;
+
         let mut energy_demand = 0.0;
         let timestep = 1.0;
         let temp_rm_prev = 10.0;
@@ -3257,6 +3403,7 @@ mod tests {
                         temp_emitter_req,
                         25.,
                         30.,
+                        temp_flow_target,
                         t_it,
                     )
                     .unwrap();
@@ -3264,14 +3411,14 @@ mod tests {
             assert_relative_eq!(
                 energy_req,
                 [
-                    0.7487346289045738,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
+                    0.7457780407382995,
+                    2.4627899136391274,
+                    2.4627899136391274,
+                    2.4627899136391274,
+                    2.4627899136391274,
+                    2.4627899136391274,
+                    2.4627899136391274,
+                    2.4627899136391274,
                 ][t_idx]
             );
 
@@ -3286,14 +3433,14 @@ mod tests {
                     .data
                     .power_req_from_buffer_tank,
                 [
-                    0.7487346289045738,
-                    2.6468124167490066,
-                    4.469596003237865,
-                    6.24700511671084,
-                    7.99232752382097,
-                    9.71303880173053,
-                    11.413906992016102,
-                    13.098224367057892,
+                    0.7457780407382995,
+                    2.642140030432491,
+                    4.463313771204879,
+                    6.239178323597834,
+                    7.983003024859063,
+                    9.702252941082214,
+                    11.401689338957867,
+                    13.084599772694327,
                 ][t_idx]
             )
         }
@@ -3305,6 +3452,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
         emitters_with_buffer_tank: Emitters,
     ) {
+        let temp_flow_target = 30.0;
         let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let mut energy_demand = 0.0;
         let timestep = 1.0;
@@ -3329,6 +3477,7 @@ mod tests {
                         temp_emitter_req,
                         25.,
                         30.,
+                        temp_flow_target,
                         t_it,
                     )
                     .unwrap();
@@ -3430,7 +3579,7 @@ mod tests {
                 )
                 .unwrap();
 
-        assert_relative_eq!(temp_return_target, 37.341333463552274);
+        assert_relative_eq!(temp_return_target, 37.316179275512695);
         assert_eq!(blended_temp_flow_target, 50.);
         assert_relative_eq!(flow_rate_m3s, 0.00002);
     }
@@ -3538,8 +3687,8 @@ mod tests {
                 )
                 .unwrap();
 
-        assert_relative_eq!(temp_return_target, 42.404800078131366);
-        assert_relative_eq!(blended_temp_flow_target, 47.46826669271046);
+        assert_relative_eq!(temp_return_target, 42.38971339502484);
+        assert_relative_eq!(blended_temp_flow_target, 47.46323823928833);
         assert_relative_eq!(flow_rate_m3s, 0.00005);
     }
 
@@ -3751,7 +3900,11 @@ mod tests {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
             frac_convective: 0.4,
-            constant_data: RadiatorConstantData::Constant { constant: 0.08 },
+            thermal_mass: None,
+            thermal_mass_per_m: None,
+            constant_per_m: None,
+            length: None,
+            constant: Some(0.08),
         }];
 
         let pipework = [WaterPipework {
@@ -3805,7 +3958,11 @@ mod tests {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
             frac_convective: 0.4,
-            constant_data: RadiatorConstantData::Constant { constant: 0.08 },
+            thermal_mass: None,
+            thermal_mass_per_m: None,
+            constant_per_m: None,
+            length: None,
+            constant: Some(0.08),
         }];
 
         let pipework = [WaterPipework {
@@ -3863,7 +4020,7 @@ mod tests {
         // checks in Python that there are c and n properties are redundant in Rust as type system ensures this
 
         // Check that thermal mass was increased
-        assert!(emitter.thermal_mass > initial_thermal_mass);
+        assert!(emitter.thermal_mass.unwrap() > initial_thermal_mass);
     }
 
     #[rstest]
@@ -3878,7 +4035,11 @@ mod tests {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
             frac_convective: 0.4,
-            constant_data: RadiatorConstantData::Constant { constant: 0.08 },
+            thermal_mass: None,
+            thermal_mass_per_m: None,
+            constant_per_m: None,
+            length: None,
+            constant: Some(0.08),
         }];
 
         let pipework = [WaterPipework {
@@ -3933,7 +4094,11 @@ mod tests {
         let emitters = [WetEmitterInput::Radiator {
             exponent: 1.2,
             frac_convective: 0.4,
-            constant_data: RadiatorConstantData::Constant { constant: 0.08 },
+            thermal_mass: None,
+            thermal_mass_per_m: None,
+            constant_per_m: None,
+            length: None,
+            constant: Some(0.08),
         }];
 
         let pipework = [

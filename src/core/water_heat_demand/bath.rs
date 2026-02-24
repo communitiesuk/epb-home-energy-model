@@ -37,15 +37,19 @@ impl Bath {
     /// (and volume of warm water draining to WWHRS, if applicable)
     pub(crate) fn hot_water_demand<'a>(
         &'a self,
-        event: WaterHeatingEvent,
+        mut event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, f64)> {
+    ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         let peak_flowrate = self.flowrate;
 
-        let vol_warm_water = match (event.volume, event.duration) {
-            (Some(volume), _) => volume,
-            (_, Some(duration)) => duration * peak_flowrate,
+        let (vol_warm_water, bath_duration) = match (event.volume, event.duration) {
+            (Some(volume), _) => {
+                let bath_duration = volume / peak_flowrate;
+                event.duration = Some(bath_duration);
+                (volume, volume / peak_flowrate)
+            }
+            (_, Some(duration)) => (duration * peak_flowrate, duration),
             _ => bail!("Invalid bath event {event:?} - must specify either volume or duration"),
         };
         let temp_target = event.temperature;
@@ -64,7 +68,7 @@ impl Bath {
                 .draw_off_water(vol_cold_water, simtime)?;
         }
 
-        Ok((vol_hot_water, vol_warm_water))
+        Ok((vol_hot_water, vol_warm_water, bath_duration))
     }
 }
 
@@ -116,7 +120,7 @@ mod tests {
                 simulation_time.iter().current_iteration()
             )
             .unwrap(),
-            (Some(57.0), 75.0),
+            (Some(57.0), 75.0, 16.666666666666668),
             "incorrect hot water demand returned"
         );
         assert_eq!(
@@ -131,7 +135,7 @@ mod tests {
                 simulation_time.iter().current_iteration()
             )
             .unwrap(),
-            (Some(76.0), 100.0),
+            (Some(76.0), 100.0, 44.44444444444444),
             "incorrect hot water demand returned for bath fill volume > bath tub volume"
         );
         assert_eq!(
@@ -146,7 +150,7 @@ mod tests {
                 simulation_time.iter().current_iteration()
             )
             .unwrap(),
-            (Some(57.0), 75.0),
+            (Some(57.0), 75.0, 16.666666666666668),
             "incorrect hot water demand returned"
         );
         assert!(bath

@@ -20,6 +20,7 @@ use crate::input::{
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
+use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -75,7 +76,7 @@ impl TappingPoint<'_> {
         event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(Option<f64>, f64)> {
+    ) -> anyhow::Result<(Option<f64>, f64, f64)> {
         match self {
             TappingPoint::Shower(shower) => {
                 shower.hot_water_demand(event, func_temp_hot_water, simtime)
@@ -188,8 +189,10 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             .filter(|key| !hot_water_sources.keys().contains(key))
             .collect();
         if !pws_without_hws.is_empty() {
-            // TODO include names in error message
-            bail!("Distribution pipework defined for non-existent HotWaterSource(s)");
+            bail!(
+                "Distribution pipework defined for non-existent HotWaterSource(s): {:?}",
+                pws_without_hws
+            );
         }
 
         // hot water sources (not including point of use) without any pipework
@@ -204,8 +207,10 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                 // point of use doesn't need pipework - just add an empty vec
                 hw_pipework_inputs.insert(hws_name.clone(), vec![]);
             } else {
-                // TODO include name in error message
-                bail!("Distribution pipework not specified for HotWaterSource");
+                bail!(
+                    "Distribution pipework not specified for HotWaterSource: {:?}",
+                    hws_name
+                );
             };
         }
 
@@ -356,14 +361,14 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             volume_required_already,
             simtime,
         )?;
-        let sum_t_by_v: f64 = list_temperature_for_required_volume
-            .iter()
-            .map(|(t, v)| t * v)
-            .sum();
-        let sum_v: f64 = list_temperature_for_required_volume
-            .iter()
-            .map(|(_, v)| v)
-            .sum();
+        let sum_t_by_v = FSum::with_all(
+            list_temperature_for_required_volume
+                .iter()
+                .map(|(t, v)| t * v),
+        )
+        .value();
+        let sum_v =
+            FSum::with_all(list_temperature_for_required_volume.iter().map(|(_, v)| v)).value();
 
         // Return average hot water temperature for the required volume
         Ok(sum_t_by_v / sum_v)
@@ -485,66 +490,62 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                     hot_water_source,
                     hw_demand_i,
                     hw_demand_target_i,
+                    event_duration_i,
                     energy_supply_conn_unmet_demand,
-                ): (
-                    Arc<str>,
-                    Option<&T>,
-                    Option<f64>,
-                    f64,
-                    Option<&EnergySupplyConnection>,
-                ) =
-                    match tapping_point {
-                        TappingPoint::Shower(Shower::InstantElectricShower(shower)) => {
-                            let hot_water_source_name = ELECTRIC_SHOWERS_HWS_NAME;
+                ) = match tapping_point {
+                    TappingPoint::Shower(Shower::InstantElectricShower(shower)) => {
+                        let hot_water_source_name = ELECTRIC_SHOWERS_HWS_NAME;
 
-                            let (hw_demand_i, hw_demand_target_i) =
-                                shower.hot_water_demand(event.into(), simtime)?;
-                            (
-                                hot_water_source_name.into(),
-                                None,
-                                Some(hw_demand_i),
-                                hw_demand_target_i,
-                                None,
+                        let (hw_demand_i, hw_demand_target_i, event_duration_i) =
+                            shower.hot_water_demand(event.into(), simtime)?;
+                        (
+                            hot_water_source_name.into(),
+                            None,
+                            Some(hw_demand_i),
+                            hw_demand_target_i,
+                            event_duration_i,
+                            None,
+                        )
+                    }
+                    _ => {
+                        let hot_water_source_name = self
+                            .source_supplying_outlet
+                            .get(&(tapping_point_type, tapping_point_name))
+                            .unwrap();
+
+                        let hot_water_source =
+                            self.hot_water_sources.get(hot_water_source_name).unwrap();
+
+                        let energy_supply_conn_unmet_demand = self
+                            .energy_supply_conn_unmet_demand
+                            .get(hot_water_source_name);
+
+                        let volume_required_already = hw_demand_volume[hot_water_source_name];
+
+                        let func = move |volume_required: f64| -> anyhow::Result<f64> {
+                            self.temp_hot_water(
+                                hot_water_source.clone(),
+                                volume_required_already,
+                                volume_required,
+                                simtime,
                             )
-                        }
-                        _ => {
-                            let hot_water_source_name = self
-                                .source_supplying_outlet
-                                .get(&(tapping_point_type, tapping_point_name))
-                                .unwrap();
+                        };
 
-                            let hot_water_source =
-                                self.hot_water_sources.get(hot_water_source_name).unwrap();
+                        let func_temp_hot_water: Box<dyn Fn(f64) -> anyhow::Result<f64> + 'a> =
+                            Box::new(func);
+                        let (hw_demand_i, hw_demand_target_i, event_duration_i) = tapping_point
+                            .hot_water_demand(event.into(), &func_temp_hot_water, simtime)?;
 
-                            let energy_supply_conn_unmet_demand = self
-                                .energy_supply_conn_unmet_demand
-                                .get(hot_water_source_name);
-
-                            let volume_required_already = hw_demand_volume[hot_water_source_name];
-
-                            let func = move |volume_required: f64| -> anyhow::Result<f64> {
-                                self.temp_hot_water(
-                                    hot_water_source.clone(),
-                                    volume_required_already,
-                                    volume_required,
-                                    simtime,
-                                )
-                            };
-
-                            let func_temp_hot_water: Box<dyn Fn(f64) -> anyhow::Result<f64> + 'a> =
-                                Box::new(func);
-                            let (hw_demand_i, hw_demand_target_i) = tapping_point
-                                .hot_water_demand(event.into(), &func_temp_hot_water, simtime)?;
-
-                            (
-                                hot_water_source_name.clone(),
-                                Some(hot_water_source),
-                                hw_demand_i,
-                                hw_demand_target_i,
-                                energy_supply_conn_unmet_demand,
-                            )
-                        }
-                    };
+                        (
+                            hot_water_source_name.clone(),
+                            Some(hot_water_source),
+                            hw_demand_i,
+                            hw_demand_target_i,
+                            event_duration_i,
+                            energy_supply_conn_unmet_demand,
+                        )
+                    }
+                };
 
                 let cold_water_source = tapping_point.get_cold_water_source();
 
@@ -552,14 +553,20 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                     *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() += hw_demand_i;
                     let list_temperature_volume = cold_water_source
                         .get_temp_cold_water(hw_demand_target_i - hw_demand_i, simtime)?;
-                    let sum_t_by_v: f64 = list_temperature_volume.iter().map(|(t, v)| t * v).sum();
-                    let sum_v: f64 = list_temperature_volume.iter().map(|(_, v)| v).sum();
+                    let sum_t_by_v =
+                        FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value();
+                    let sum_v =
+                        FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
+
                     sum_t_by_v / sum_v
                 } else {
                     let list_temperature_volume =
                         cold_water_source.get_temp_cold_water(hw_demand_target_i, simtime)?;
-                    let sum_t_by_v: f64 = list_temperature_volume.iter().map(|(t, v)| t * v).sum();
-                    let sum_v: f64 = list_temperature_volume.iter().map(|(_, v)| v).sum();
+                    let sum_t_by_v =
+                        FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value();
+                    let sum_v =
+                        FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
+
                     sum_t_by_v / sum_v
                 };
 
@@ -591,6 +598,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                     temperature_warm: event.temperature,
                     volume_warm: hw_demand_target_i,
                     volume_hot: hw_demand_i.unwrap(),
+                    event_duration: event_duration_i,
                 };
 
                 // Add pipework flushes after every event (except for IES)
@@ -622,6 +630,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                                 temperature_warm: temperature_pipe_flush,
                                 volume_warm: volume_required,
                                 volume_hot: volume_required,
+                                event_duration: 0.,
                             });
 
                         *hw_demand_volume.get_mut(&hot_water_source_name).unwrap() +=
@@ -738,8 +747,9 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             for event in &filtered_events {
                 let list_temperature_volume =
                     cold_water_source.get_temp_cold_water(event.volume_hot, simtime)?;
-                let sum_t_by_v: f64 = list_temperature_volume.iter().map(|(t, v)| t * v).sum();
-                let sum_v: f64 = list_temperature_volume.iter().map(|(_, v)| v).sum();
+                let sum_t_by_v =
+                    FSum::with_all(list_temperature_volume.iter().map(|(t, v)| t * v)).value();
+                let sum_v = FSum::with_all(list_temperature_volume.iter().map(|(_, v)| v)).value();
                 let cold_water_temperature = sum_t_by_v / sum_v;
 
                 *hw_energy_demand_at_hot_water_source
@@ -1012,6 +1022,7 @@ mod tests {
     };
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
+    use fsum::FSum;
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
@@ -1031,10 +1042,12 @@ mod tests {
             usage_events: Vec<WaterEventResult>,
             _: SimulationTimeIteration,
         ) -> anyhow::Result<f64> {
-            Ok(usage_events
-                .iter()
-                .map(|e| e.temperature_warm * e.volume_warm / 4200.0)
-                .sum())
+            Ok(FSum::with_all(
+                usage_events
+                    .iter()
+                    .map(|e| e.temperature_warm * e.volume_warm / 4200.0),
+            )
+            .value())
         }
 
         fn get_temp_hot_water(
@@ -1109,10 +1122,12 @@ mod tests {
             usage_events: Vec<WaterEventResult>,
             _: SimulationTimeIteration,
         ) -> anyhow::Result<f64> {
-            Ok(usage_events
-                .iter()
-                .map(|e| e.temperature_warm * e.volume_warm / 4200.0)
-                .sum())
+            Ok(FSum::with_all(
+                usage_events
+                    .iter()
+                    .map(|e| e.temperature_warm * e.volume_warm / 4200.0),
+            )
+            .value())
         }
 
         fn get_temp_hot_water(
@@ -1285,7 +1300,7 @@ mod tests {
         let wwhrsb = Arc::new(Mutex::new(
             WwhrsInstantaneous::new(
                 flow_rates,
-                system_a_efficiencies,
+                system_a_efficiencies.into(),
                 cold_water_source.clone(),
                 system_a_utilisation_factor.into(),
                 None,
@@ -1294,7 +1309,6 @@ mod tests {
                 None,
                 Some(0.81),
                 None,
-                simulation_time.iter().current_iteration(),
             )
             .unwrap(),
         ));
@@ -1505,12 +1519,14 @@ mod tests {
                                 temperature_warm: 41.,
                                 volume_warm: 20.378383818053738,
                                 volume_hot: 0.,
+                                event_duration: 6.0,
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::Shower,
                                 temperature_warm: 41.,
                                 volume_warm: 20.378383818053738,
                                 volume_hot: 0.,
+                                event_duration: 6.0,
                             },
                         ],
                     ),
@@ -1549,6 +1565,7 @@ mod tests {
                             temperature_warm: 41.,
                             volume_warm: 19.85586115605236,
                             volume_hot: 0.,
+                            event_duration: 6.,
                         }],
                     ),
                     (
@@ -1559,12 +1576,14 @@ mod tests {
                                 temperature_warm: 41.,
                                 volume_warm: 100.,
                                 volume_hot: 73.58490566037736,
+                                event_duration: 12.5,
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 55.,
                                 volume_warm: 7.556577529434648,
                                 volume_hot: 7.556577529434648,
+                                event_duration: 0.,
                             },
                         ],
                     ),
@@ -1594,24 +1613,28 @@ mod tests {
                                 temperature_warm: 41.,
                                 volume_warm: 48.,
                                 volume_hot: 32.63058513558019,
+                                event_duration: 0.,
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 55.,
                                 volume_warm: 7.556577529434648,
                                 volume_hot: 7.556577529434648,
+                                event_duration: 0.,
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 41.,
                                 volume_warm: 8.,
                                 volume_hot: 5.846153846153845,
+                                event_duration: 0.,
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 55.,
                                 volume_warm: 7.556577529434648,
                                 volume_hot: 7.556577529434648,
+                                event_duration: 0.,
                             },
                         ],
                     ),
@@ -1641,24 +1664,28 @@ mod tests {
                                 temperature_warm: 41.,
                                 volume_warm: 48.,
                                 volume_hot: 32.365493807269814,
+                                event_duration: 0.,
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 55.,
                                 volume_warm: 7.556577529434648,
                                 volume_hot: 7.556577529434648,
+                                event_duration: 0.,
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::Bath,
                                 temperature_warm: 55.,
                                 volume_warm: 24.,
                                 volume_hot: 17.41176470588235,
+                                event_duration: 0.,
                             },
                             WaterEventResult {
                                 event_result_type: WaterEventResultType::PipeFlush,
                                 temperature_warm: 54.99999999999999,
                                 volume_warm: 7.556577529434648,
                                 volume_hot: 7.556577529434648,
+                                event_duration: 0.,
                             },
                         ],
                     ),

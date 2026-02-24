@@ -350,7 +350,7 @@
         }
       ],
       "default": null,
-      "title": "Wwhrs"
+      "title": "WWHRS"
     },
     "Zone": {
       "additionalProperties": {
@@ -385,8 +385,8 @@
         },
         "time_series_step": {
           "description": "Duration in hours (must be within 24-hour period)",
+          "exclusiveMinimum": 0,
           "maximum": 24,
-          "minimum": 0,
           "title": "Time Series Step",
           "type": "number"
         },
@@ -485,13 +485,13 @@
       "properties": {
         "demand_W": {
           "description": "Electrical power consumption during the appliance event (unit: W)",
-          "minimum": 0,
-          "title": "Demand W",
+          "exclusiveMinimum": 0,
+          "title": "Demand",
           "type": "number"
         },
         "duration": {
           "description": "Duration of the appliance event (unit: hours)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Duration",
           "type": "number"
         },
@@ -602,7 +602,7 @@
         },
         "flowrate": {
           "description": "Tap/outlet flow rate (unit: litre/minute)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Flowrate",
           "type": "number"
         },
@@ -634,11 +634,11 @@
       "properties": {
         "cost_schedule_boiler": {
           "$ref": "#/$defs/ScheduleForDouble",
-          "description": "Cost data for the fuel used by the hybrid's heat pump (can be any units, typically p/kWh)"
+          "description": "Cost data for the fuel used by the hybrid system's boiler (can be any units, typically p/kWh, as long as they are consistent across input fields)"
         },
         "cost_schedule_hp": {
           "$ref": "#/$defs/ScheduleForDouble",
-          "description": "Cost data for the fuel used by the hybrid's boiler (can be any units, typically p/kWh)"
+          "description": "Cost data for the fuel used by the hybrid system's heat pump (can be any units, typically p/kWh, as long as they are consistent across input fields)"
         },
         "cost_schedule_start_day": {
           "description": "Day on which the cost data series begins",
@@ -674,20 +674,22 @@
     },
     "BuildingElementAdjacentConditionedSpace": {
       "additionalProperties": false,
+      "description": "Adjacent conditioned space building elements",
       "properties": {
         "area": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Area of the building element (m\u00b2), must be positive if provided",
-          "title": "Area"
+          "description": "Area of the building element (m\u00b2), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Area",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity (J/m\u00b2.K), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
           "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
@@ -695,34 +697,6 @@
           "minimum": 0,
           "title": "Pitch",
           "type": "number"
-        },
-        "areal_heat_capacity": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Areal heat capacity (J/m\u00b2.K), must be positive if provided",
-          "title": "Areal Heat Capacity"
-        },
-        "thermal_resistance_construction": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Thermal resistance (unit: m\u00b2.K/W)",
-          "title": "Thermal Resistance Construction"
         },
         "u_value": {
           "anyOf": [
@@ -736,41 +710,56 @@
           ],
           "default": null,
           "description": "U-value (W/m\u00b2\u00b7K), must be positive if provided",
-          "title": "U Value"
+          "title": "U-Value"
+        },
+        "thermal_resistance_construction": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal resistance (m\u00b2.K/W), must be positive if provided",
+          "title": "Thermal Resistance Construction"
         },
         "type": {
           "const": "BuildingElementAdjacentConditionedSpace",
           "title": "Type",
           "type": "string"
-        },
-        "mass_distribution_class": {
-          "$ref": "#/$defs/MassDistributionClass"
         }
       },
       "required": [
+        "area",
+        "areal_heat_capacity",
+        "mass_distribution_class",
         "pitch",
-        "type",
-        "mass_distribution_class"
+        "type"
       ],
       "title": "BuildingElementAdjacentConditionedSpace",
       "type": "object"
     },
     "BuildingElementAdjacentUnconditionedSpaceSimple": {
       "additionalProperties": false,
+      "description": "Adjacent unconditioned space building elements",
       "properties": {
         "area": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Area of the building element (m\u00b2), must be positive if provided",
-          "title": "Area"
+          "description": "Area of the building element (m\u00b2), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Area",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity (J/m\u00b2.K), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
           "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
@@ -778,34 +767,6 @@
           "minimum": 0,
           "title": "Pitch",
           "type": "number"
-        },
-        "areal_heat_capacity": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Areal heat capacity (J/m\u00b2.K), must be positive if provided",
-          "title": "Areal Heat Capacity"
-        },
-        "thermal_resistance_construction": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Thermal resistance (unit: m2.K/W)",
-          "title": "Thermal Resistance Construction"
         },
         "u_value": {
           "anyOf": [
@@ -819,7 +780,21 @@
           ],
           "default": null,
           "description": "U-value (W/m\u00b2\u00b7K), must be positive if provided",
-          "title": "U Value"
+          "title": "U-Value"
+        },
+        "thermal_resistance_construction": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal resistance (m\u00b2.K/W), must be positive if provided",
+          "title": "Thermal Resistance Construction"
         },
         "type": {
           "const": "BuildingElementAdjacentUnconditionedSpace_Simple",
@@ -831,16 +806,15 @@
           "exclusiveMinimum": 0,
           "title": "Thermal Resistance Unconditioned Space",
           "type": "number"
-        },
-        "mass_distribution_class": {
-          "$ref": "#/$defs/MassDistributionClass"
         }
       },
       "required": [
+        "area",
+        "areal_heat_capacity",
+        "mass_distribution_class",
         "pitch",
         "type",
-        "thermal_resistance_unconditioned_space",
-        "mass_distribution_class"
+        "thermal_resistance_unconditioned_space"
       ],
       "title": "BuildingElementAdjacentUnconditionedSpaceSimple",
       "type": "object"
@@ -849,50 +823,16 @@
       "additionalProperties": false,
       "description": "Heated basement - uses init_heated_basement()",
       "properties": {
-        "type": {
-          "const": "BuildingElementGround",
-          "title": "Type",
-          "type": "string"
-        },
         "area": {
-          "description": "Area of this building element within the zone (unit: m\u00b2)",
+          "description": "Area of the building element (m\u00b2), must be positive",
           "exclusiveMinimum": 0,
           "title": "Area",
           "type": "number"
         },
-        "total_area": {
-          "description": "Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m\u00b2)",
-          "exclusiveMinimum": 0,
-          "title": "Total Area",
-          "type": "number"
-        },
-        "perimeter": {
-          "description": "Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)",
-          "exclusiveMinimum": 0,
-          "title": "Perimeter",
-          "type": "number"
-        },
         "areal_heat_capacity": {
-          "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)",
+          "description": "Areal heat capacity (J/m\u00b2.K), must be positive",
           "exclusiveMinimum": 0,
           "title": "Areal Heat Capacity",
-          "type": "number"
-        },
-        "thermal_resistance_floor_construction": {
-          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
-          "exclusiveMinimum": 0,
-          "title": "Thermal Resistance Floor Construction",
-          "type": "number"
-        },
-        "u_value": {
-          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)",
-          "exclusiveMinimum": 0,
-          "title": "U Value",
-          "type": "number"
-        },
-        "psi_wall_floor_junc": {
-          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
-          "title": "Psi Wall Floor Junc",
           "type": "number"
         },
         "mass_distribution_class": {
@@ -905,37 +845,45 @@
           "title": "Pitch",
           "type": "number"
         },
+        "u_value": {
+          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (unit: W/m2.K)",
+          "exclusiveMinimum": 0,
+          "title": "U-Value",
+          "type": "number"
+        },
+        "type": {
+          "const": "BuildingElementGround",
+          "title": "Type",
+          "type": "string"
+        },
+        "thermal_resistance_floor_construction": {
+          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "exclusiveMinimum": 0,
+          "title": "Thermal Resistance Floor Construction",
+          "type": "number"
+        },
+        "total_area": {
+          "description": "Total area of the building element across entire dwelling (unit: m\u00b2)",
+          "exclusiveMinimum": 0,
+          "title": "Total Area",
+          "type": "number"
+        },
+        "perimeter": {
+          "description": "Perimeter of the floor (unit: m)",
+          "exclusiveMinimum": 0,
+          "title": "Perimeter",
+          "type": "number"
+        },
+        "psi_wall_floor_junc": {
+          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
+          "title": "Psi Wall Floor Junc",
+          "type": "number"
+        },
         "thickness_walls": {
           "description": "Thickness of the walls (unit: m)",
           "exclusiveMinimum": 0,
           "title": "Thickness Walls",
           "type": "number"
-        },
-        "height_upper_surface": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Height of the floor upper surface (unit: m) - average value is used if h varies",
-          "title": "Height Upper Surface"
-        },
-        "shield_fact_location": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WindShieldLocation"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Wind shielding factor"
         },
         "floor_type": {
           "const": "Heated_basement",
@@ -944,7 +892,7 @@
         },
         "depth_basement_floor": {
           "description": "Depth of basement floor below ground level (unit: m)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Depth Basement Floor",
           "type": "number"
         },
@@ -953,48 +901,6 @@
           "exclusiveMinimum": 0,
           "title": "Thermal Resist Walls Base",
           "type": "number"
-        },
-        "height_basement_walls": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Height of the basement walls above ground level (unit: m)",
-          "title": "Height Basement Walls"
-        },
-        "thermal_transm_envi_base": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Thermal transmittance of floor above basement (unit: W/m\u00b2.K)",
-          "title": "Thermal Transm Envi Base"
-        },
-        "thermal_transm_walls": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Thermal transmittance of walls above ground (unit: W/m\u00b2.K)",
-          "title": "Thermal Transm Walls"
         },
         "edge_insulation": {
           "anyOf": [
@@ -1027,16 +933,16 @@
         }
       },
       "required": [
-        "type",
         "area",
-        "total_area",
-        "perimeter",
         "areal_heat_capacity",
-        "thermal_resistance_floor_construction",
-        "u_value",
-        "psi_wall_floor_junc",
         "mass_distribution_class",
         "pitch",
+        "u_value",
+        "type",
+        "thermal_resistance_floor_construction",
+        "total_area",
+        "perimeter",
+        "psi_wall_floor_junc",
         "thickness_walls",
         "floor_type",
         "depth_basement_floor",
@@ -1049,50 +955,16 @@
       "additionalProperties": false,
       "description": "Slab floor with edge insulation - uses init_slab_on_ground_floor_edge_insulated()",
       "properties": {
-        "type": {
-          "const": "BuildingElementGround",
-          "title": "Type",
-          "type": "string"
-        },
         "area": {
-          "description": "Area of this building element within the zone (unit: m\u00b2)",
+          "description": "Area of the building element (m\u00b2), must be positive",
           "exclusiveMinimum": 0,
           "title": "Area",
           "type": "number"
         },
-        "total_area": {
-          "description": "Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m\u00b2)",
-          "exclusiveMinimum": 0,
-          "title": "Total Area",
-          "type": "number"
-        },
-        "perimeter": {
-          "description": "Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)",
-          "exclusiveMinimum": 0,
-          "title": "Perimeter",
-          "type": "number"
-        },
         "areal_heat_capacity": {
-          "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)",
+          "description": "Areal heat capacity (J/m\u00b2.K), must be positive",
           "exclusiveMinimum": 0,
           "title": "Areal Heat Capacity",
-          "type": "number"
-        },
-        "thermal_resistance_floor_construction": {
-          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
-          "exclusiveMinimum": 0,
-          "title": "Thermal Resistance Floor Construction",
-          "type": "number"
-        },
-        "u_value": {
-          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)",
-          "exclusiveMinimum": 0,
-          "title": "U Value",
-          "type": "number"
-        },
-        "psi_wall_floor_junc": {
-          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
-          "title": "Psi Wall Floor Junc",
           "type": "number"
         },
         "mass_distribution_class": {
@@ -1105,37 +977,45 @@
           "title": "Pitch",
           "type": "number"
         },
+        "u_value": {
+          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (unit: W/m2.K)",
+          "exclusiveMinimum": 0,
+          "title": "U-Value",
+          "type": "number"
+        },
+        "type": {
+          "const": "BuildingElementGround",
+          "title": "Type",
+          "type": "string"
+        },
+        "thermal_resistance_floor_construction": {
+          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "exclusiveMinimum": 0,
+          "title": "Thermal Resistance Floor Construction",
+          "type": "number"
+        },
+        "total_area": {
+          "description": "Total area of the building element across entire dwelling (unit: m\u00b2)",
+          "exclusiveMinimum": 0,
+          "title": "Total Area",
+          "type": "number"
+        },
+        "perimeter": {
+          "description": "Perimeter of the floor (unit: m)",
+          "exclusiveMinimum": 0,
+          "title": "Perimeter",
+          "type": "number"
+        },
+        "psi_wall_floor_junc": {
+          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
+          "title": "Psi Wall Floor Junc",
+          "type": "number"
+        },
         "thickness_walls": {
           "description": "Thickness of the walls (unit: m)",
           "exclusiveMinimum": 0,
           "title": "Thickness Walls",
           "type": "number"
-        },
-        "height_upper_surface": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Height of the floor upper surface (unit: m) - average value is used if h varies",
-          "title": "Height Upper Surface"
-        },
-        "shield_fact_location": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WindShieldLocation"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Wind shielding factor"
         },
         "floor_type": {
           "const": "Slab_edge_insulation",
@@ -1173,16 +1053,16 @@
         }
       },
       "required": [
-        "type",
         "area",
-        "total_area",
-        "perimeter",
         "areal_heat_capacity",
-        "thermal_resistance_floor_construction",
-        "u_value",
-        "psi_wall_floor_junc",
         "mass_distribution_class",
         "pitch",
+        "u_value",
+        "type",
+        "thermal_resistance_floor_construction",
+        "total_area",
+        "perimeter",
+        "psi_wall_floor_junc",
         "thickness_walls",
         "floor_type"
       ],
@@ -1193,50 +1073,16 @@
       "additionalProperties": false,
       "description": "Slab floor with no edge insulation - uses init_slab_on_ground_floor_uninsulated_or_all_insulation()",
       "properties": {
-        "type": {
-          "const": "BuildingElementGround",
-          "title": "Type",
-          "type": "string"
-        },
         "area": {
-          "description": "Area of this building element within the zone (unit: m\u00b2)",
+          "description": "Area of the building element (m\u00b2), must be positive",
           "exclusiveMinimum": 0,
           "title": "Area",
           "type": "number"
         },
-        "total_area": {
-          "description": "Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m\u00b2)",
-          "exclusiveMinimum": 0,
-          "title": "Total Area",
-          "type": "number"
-        },
-        "perimeter": {
-          "description": "Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)",
-          "exclusiveMinimum": 0,
-          "title": "Perimeter",
-          "type": "number"
-        },
         "areal_heat_capacity": {
-          "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)",
+          "description": "Areal heat capacity (J/m\u00b2.K), must be positive",
           "exclusiveMinimum": 0,
           "title": "Areal Heat Capacity",
-          "type": "number"
-        },
-        "thermal_resistance_floor_construction": {
-          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
-          "exclusiveMinimum": 0,
-          "title": "Thermal Resistance Floor Construction",
-          "type": "number"
-        },
-        "u_value": {
-          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)",
-          "exclusiveMinimum": 0,
-          "title": "U Value",
-          "type": "number"
-        },
-        "psi_wall_floor_junc": {
-          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
-          "title": "Psi Wall Floor Junc",
           "type": "number"
         },
         "mass_distribution_class": {
@@ -1249,84 +1095,63 @@
           "title": "Pitch",
           "type": "number"
         },
+        "u_value": {
+          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (unit: W/m2.K)",
+          "exclusiveMinimum": 0,
+          "title": "U-Value",
+          "type": "number"
+        },
+        "type": {
+          "const": "BuildingElementGround",
+          "title": "Type",
+          "type": "string"
+        },
+        "thermal_resistance_floor_construction": {
+          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "exclusiveMinimum": 0,
+          "title": "Thermal Resistance Floor Construction",
+          "type": "number"
+        },
+        "total_area": {
+          "description": "Total area of the building element across entire dwelling (unit: m\u00b2)",
+          "exclusiveMinimum": 0,
+          "title": "Total Area",
+          "type": "number"
+        },
+        "perimeter": {
+          "description": "Perimeter of the floor (unit: m)",
+          "exclusiveMinimum": 0,
+          "title": "Perimeter",
+          "type": "number"
+        },
+        "psi_wall_floor_junc": {
+          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
+          "title": "Psi Wall Floor Junc",
+          "type": "number"
+        },
         "thickness_walls": {
           "description": "Thickness of the walls (unit: m)",
           "exclusiveMinimum": 0,
           "title": "Thickness Walls",
           "type": "number"
         },
-        "height_upper_surface": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Height of the floor upper surface (unit: m) - average value is used if h varies",
-          "title": "Height Upper Surface"
-        },
-        "shield_fact_location": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WindShieldLocation"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Wind shielding factor"
-        },
         "floor_type": {
           "const": "Slab_no_edge_insulation",
           "title": "Floor Type",
           "type": "string"
-        },
-        "edge_insulation": {
-          "anyOf": [
-            {
-              "items": {
-                "discriminator": {
-                  "mapping": {
-                    "horizontal": "#/$defs/EdgeInsulationHorizontal",
-                    "vertical": "#/$defs/EdgeInsulationVertical"
-                  },
-                  "propertyName": "type"
-                },
-                "oneOf": [
-                  {
-                    "$ref": "#/$defs/EdgeInsulationHorizontal"
-                  },
-                  {
-                    "$ref": "#/$defs/EdgeInsulationVertical"
-                  }
-                ]
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Edge Insulation"
         }
       },
       "required": [
-        "type",
         "area",
-        "total_area",
-        "perimeter",
         "areal_heat_capacity",
-        "thermal_resistance_floor_construction",
-        "u_value",
-        "psi_wall_floor_junc",
         "mass_distribution_class",
         "pitch",
+        "u_value",
+        "type",
+        "thermal_resistance_floor_construction",
+        "total_area",
+        "perimeter",
+        "psi_wall_floor_junc",
         "thickness_walls",
         "floor_type"
       ],
@@ -1337,50 +1162,16 @@
       "additionalProperties": false,
       "description": "Suspended floor - uses init_suspended_floor()",
       "properties": {
-        "type": {
-          "const": "BuildingElementGround",
-          "title": "Type",
-          "type": "string"
-        },
         "area": {
-          "description": "Area of this building element within the zone (unit: m\u00b2)",
+          "description": "Area of the building element (m\u00b2), must be positive",
           "exclusiveMinimum": 0,
           "title": "Area",
           "type": "number"
         },
-        "total_area": {
-          "description": "Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m\u00b2)",
-          "exclusiveMinimum": 0,
-          "title": "Total Area",
-          "type": "number"
-        },
-        "perimeter": {
-          "description": "Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)",
-          "exclusiveMinimum": 0,
-          "title": "Perimeter",
-          "type": "number"
-        },
         "areal_heat_capacity": {
-          "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)",
+          "description": "Areal heat capacity (J/m\u00b2.K), must be positive",
           "exclusiveMinimum": 0,
           "title": "Areal Heat Capacity",
-          "type": "number"
-        },
-        "thermal_resistance_floor_construction": {
-          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
-          "exclusiveMinimum": 0,
-          "title": "Thermal Resistance Floor Construction",
-          "type": "number"
-        },
-        "u_value": {
-          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)",
-          "exclusiveMinimum": 0,
-          "title": "U Value",
-          "type": "number"
-        },
-        "psi_wall_floor_junc": {
-          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
-          "title": "Psi Wall Floor Junc",
           "type": "number"
         },
         "mass_distribution_class": {
@@ -1393,37 +1184,45 @@
           "title": "Pitch",
           "type": "number"
         },
+        "u_value": {
+          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (unit: W/m2.K)",
+          "exclusiveMinimum": 0,
+          "title": "U-Value",
+          "type": "number"
+        },
+        "type": {
+          "const": "BuildingElementGround",
+          "title": "Type",
+          "type": "string"
+        },
+        "thermal_resistance_floor_construction": {
+          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "exclusiveMinimum": 0,
+          "title": "Thermal Resistance Floor Construction",
+          "type": "number"
+        },
+        "total_area": {
+          "description": "Total area of the building element across entire dwelling (unit: m\u00b2)",
+          "exclusiveMinimum": 0,
+          "title": "Total Area",
+          "type": "number"
+        },
+        "perimeter": {
+          "description": "Perimeter of the floor (unit: m)",
+          "exclusiveMinimum": 0,
+          "title": "Perimeter",
+          "type": "number"
+        },
+        "psi_wall_floor_junc": {
+          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
+          "title": "Psi Wall Floor Junc",
+          "type": "number"
+        },
         "thickness_walls": {
           "description": "Thickness of the walls (unit: m)",
           "exclusiveMinimum": 0,
           "title": "Thickness Walls",
           "type": "number"
-        },
-        "height_upper_surface": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Height of the floor upper surface (unit: m) - average value is used if h varies",
-          "title": "Height Upper Surface"
-        },
-        "shield_fact_location": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WindShieldLocation"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Wind shielding factor"
         },
         "floor_type": {
           "const": "Suspended_floor",
@@ -1431,46 +1230,32 @@
           "type": "string"
         },
         "area_per_perimeter_vent": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
           "description": "Area of ventilation openings per perimeter (unit: m\u00b2/m)",
-          "title": "Area Per Perimeter Vent"
+          "exclusiveMinimum": 0,
+          "title": "Area Per Perimeter Vent",
+          "type": "number"
         },
         "thermal_resist_insul": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
           "description": "Thermal resistance of insulation on base of underfloor space (unit: m\u00b2.K/W)",
-          "title": "Thermal Resist Insul"
+          "exclusiveMinimum": 0,
+          "title": "Thermal Resist Insul",
+          "type": "number"
         },
         "thermal_transm_walls": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
           "description": "Thermal transmittance of walls above ground (unit: W/m\u00b2.K)",
-          "title": "Thermal Transm Walls"
+          "exclusiveMinimum": 0,
+          "title": "Thermal Transm Walls",
+          "type": "number"
+        },
+        "height_upper_surface": {
+          "description": "Height of the floor upper surface (unit: m) - average value is used if h varies",
+          "exclusiveMinimum": 0,
+          "title": "Height Upper Surface",
+          "type": "number"
+        },
+        "shield_fact_location": {
+          "$ref": "#/$defs/WindShieldLocation",
+          "description": "Wind shielding factor"
         },
         "edge_insulation": {
           "anyOf": [
@@ -1503,18 +1288,23 @@
         }
       },
       "required": [
-        "type",
         "area",
-        "total_area",
-        "perimeter",
         "areal_heat_capacity",
-        "thermal_resistance_floor_construction",
-        "u_value",
-        "psi_wall_floor_junc",
         "mass_distribution_class",
         "pitch",
+        "u_value",
+        "type",
+        "thermal_resistance_floor_construction",
+        "total_area",
+        "perimeter",
+        "psi_wall_floor_junc",
         "thickness_walls",
-        "floor_type"
+        "floor_type",
+        "area_per_perimeter_vent",
+        "thermal_resist_insul",
+        "thermal_transm_walls",
+        "height_upper_surface",
+        "shield_fact_location"
       ],
       "title": "BuildingElementGroundSuspendedFloor",
       "type": "object"
@@ -1523,50 +1313,16 @@
       "additionalProperties": false,
       "description": "Unheated basement - uses init_unheated_basement()",
       "properties": {
-        "type": {
-          "const": "BuildingElementGround",
-          "title": "Type",
-          "type": "string"
-        },
         "area": {
-          "description": "Area of this building element within the zone (unit: m\u00b2)",
+          "description": "Area of the building element (m\u00b2), must be positive",
           "exclusiveMinimum": 0,
           "title": "Area",
           "type": "number"
         },
-        "total_area": {
-          "description": "Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m\u00b2)",
-          "exclusiveMinimum": 0,
-          "title": "Total Area",
-          "type": "number"
-        },
-        "perimeter": {
-          "description": "Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)",
-          "exclusiveMinimum": 0,
-          "title": "Perimeter",
-          "type": "number"
-        },
         "areal_heat_capacity": {
-          "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)",
+          "description": "Areal heat capacity (J/m\u00b2.K), must be positive",
           "exclusiveMinimum": 0,
           "title": "Areal Heat Capacity",
-          "type": "number"
-        },
-        "thermal_resistance_floor_construction": {
-          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
-          "exclusiveMinimum": 0,
-          "title": "Thermal Resistance Floor Construction",
-          "type": "number"
-        },
-        "u_value": {
-          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)",
-          "exclusiveMinimum": 0,
-          "title": "U Value",
-          "type": "number"
-        },
-        "psi_wall_floor_junc": {
-          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
-          "title": "Psi Wall Floor Junc",
           "type": "number"
         },
         "mass_distribution_class": {
@@ -1579,37 +1335,45 @@
           "title": "Pitch",
           "type": "number"
         },
+        "u_value": {
+          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (unit: W/m2.K)",
+          "exclusiveMinimum": 0,
+          "title": "U-Value",
+          "type": "number"
+        },
+        "type": {
+          "const": "BuildingElementGround",
+          "title": "Type",
+          "type": "string"
+        },
+        "thermal_resistance_floor_construction": {
+          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "exclusiveMinimum": 0,
+          "title": "Thermal Resistance Floor Construction",
+          "type": "number"
+        },
+        "total_area": {
+          "description": "Total area of the building element across entire dwelling (unit: m\u00b2)",
+          "exclusiveMinimum": 0,
+          "title": "Total Area",
+          "type": "number"
+        },
+        "perimeter": {
+          "description": "Perimeter of the floor (unit: m)",
+          "exclusiveMinimum": 0,
+          "title": "Perimeter",
+          "type": "number"
+        },
+        "psi_wall_floor_junc": {
+          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
+          "title": "Psi Wall Floor Junc",
+          "type": "number"
+        },
         "thickness_walls": {
           "description": "Thickness of the walls (unit: m)",
           "exclusiveMinimum": 0,
           "title": "Thickness Walls",
           "type": "number"
-        },
-        "height_upper_surface": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Height of the floor upper surface (unit: m) - average value is used if h varies",
-          "title": "Height Upper Surface"
-        },
-        "shield_fact_location": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WindShieldLocation"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Wind shielding factor"
         },
         "floor_type": {
           "const": "Unheated_basement",
@@ -1618,7 +1382,7 @@
         },
         "depth_basement_floor": {
           "description": "Depth of basement floor below ground level (unit: m)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Depth Basement Floor",
           "type": "number"
         },
@@ -1677,16 +1441,16 @@
         }
       },
       "required": [
-        "type",
         "area",
-        "total_area",
-        "perimeter",
         "areal_heat_capacity",
-        "thermal_resistance_floor_construction",
-        "u_value",
-        "psi_wall_floor_junc",
         "mass_distribution_class",
         "pitch",
+        "u_value",
+        "type",
+        "thermal_resistance_floor_construction",
+        "total_area",
+        "perimeter",
+        "psi_wall_floor_junc",
         "thickness_walls",
         "floor_type",
         "depth_basement_floor",
@@ -1700,20 +1464,47 @@
     },
     "BuildingElementOpaque": {
       "additionalProperties": false,
+      "description": "Opaque building elements (walls, roofs, etc.)",
       "properties": {
+        "orientation360": {
+          "description": "Orientation of the building element (degrees from North)",
+          "maximum": 360,
+          "minimum": 0,
+          "title": "Orientation360",
+          "type": "number"
+        },
+        "base_height": {
+          "description": "The distance between the ground and the lowest edge of the element (unit: m)",
+          "minimum": 0,
+          "title": "Base Height",
+          "type": "number"
+        },
+        "height": {
+          "description": "Height of the building element (m), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "number"
+        },
+        "width": {
+          "description": "Width of the building element (m), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "number"
+        },
         "area": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Area of the building element (m\u00b2), must be positive if provided",
-          "title": "Area"
+          "description": "Area of the building element (m\u00b2), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Area",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity (J/m\u00b2.K), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
         },
         "pitch": {
           "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
@@ -1721,34 +1512,6 @@
           "minimum": 0,
           "title": "Pitch",
           "type": "number"
-        },
-        "areal_heat_capacity": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Areal heat capacity (J/m\u00b2.K), must be positive if provided",
-          "title": "Areal Heat Capacity"
-        },
-        "thermal_resistance_construction": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Thermal resistance (unit: m\u00b2.K/W)",
-          "title": "Thermal Resistance Construction"
         },
         "u_value": {
           "anyOf": [
@@ -1762,25 +1525,9 @@
           ],
           "default": null,
           "description": "U-value (W/m\u00b2\u00b7K), must be positive if provided",
-          "title": "U Value"
+          "title": "U-Value"
         },
-        "orientation360": {
-          "anyOf": [
-            {
-              "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
-              "maximum": 360,
-              "minimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Orientation of the building element (degrees from North)",
-          "title": "Orientation360"
-        },
-        "height": {
+        "thermal_resistance_construction": {
           "anyOf": [
             {
               "exclusiveMinimum": 0,
@@ -1791,33 +1538,13 @@
             }
           ],
           "default": null,
-          "description": "Height of the building element (m), must be positive if provided",
-          "title": "Height"
-        },
-        "width": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Width of the building element (m), must be positive if provided",
-          "title": "Width"
+          "description": "Thermal resistance (m\u00b2.K/W), must be positive if provided",
+          "title": "Thermal Resistance Construction"
         },
         "type": {
           "const": "BuildingElementOpaque",
           "title": "Type",
           "type": "string"
-        },
-        "base_height": {
-          "description": "The distance between the ground and the lowest edge of the element (unit: m)",
-          "minimum": 0,
-          "title": "Base Height",
-          "type": "number"
         },
         "is_unheated_pitched_roof": {
           "anyOf": [
@@ -1837,72 +1564,48 @@
           "minimum": 0,
           "title": "Solar Absorption Coeff",
           "type": "number"
-        },
-        "mass_distribution_class": {
-          "$ref": "#/$defs/MassDistributionClass"
         }
       },
       "required": [
+        "orientation360",
+        "base_height",
+        "height",
+        "width",
+        "area",
+        "areal_heat_capacity",
+        "mass_distribution_class",
         "pitch",
         "type",
-        "base_height",
-        "solar_absorption_coeff",
-        "mass_distribution_class"
+        "solar_absorption_coeff"
       ],
       "title": "BuildingElementOpaque",
       "type": "object"
     },
-    "BuildingElementTransparent": {
+    "BuildingElementPartyWall": {
       "additionalProperties": false,
+      "description": "Party wall element for all party wall types, with specific handling for cavity air movement heat loss.\n\nFor cavity party walls, this accounts for non-negligible heat loss due to air movement\nwithin the cavity, as identified by research. The thermal resistance of the\nunconditioned space (cavity) is derived from the party wall cavity type and lining type.\nFive cavity types are supported:\nsolid, unfilled_unsealed, unfilled_sealed, filled_sealed, and defined_resistance.\nTwo lining types are supported:\nwet_plaster, and dry_lined",
       "properties": {
         "area": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Area of the building element (m\u00b2), must be positive if provided",
-          "title": "Area"
-        },
-        "pitch": {
-          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
-          "maximum": 180,
-          "minimum": 0,
-          "title": "Pitch",
+          "description": "Area of the building element (m\u00b2), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Area",
           "type": "number"
         },
         "areal_heat_capacity": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Areal heat capacity (J/m\u00b2.K), must be positive if provided",
-          "title": "Areal Heat Capacity"
+          "description": "Areal heat capacity (J/m\u00b2.K), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Areal Heat Capacity",
+          "type": "number"
         },
-        "thermal_resistance_construction": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Thermal resistance (unit: m\u00b2.K/W)",
-          "title": "Thermal Resistance Construction"
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 60 and 120 degrees (wall range), where 90 means vertical (unit: \u00b0)",
+          "maximum": 120.0,
+          "minimum": 60.0,
+          "title": "Pitch",
+          "type": "number"
         },
         "u_value": {
           "anyOf": [
@@ -1916,14 +1619,12 @@
           ],
           "default": null,
           "description": "U-value (W/m\u00b2\u00b7K), must be positive if provided",
-          "title": "U Value"
+          "title": "U-Value"
         },
-        "orientation360": {
+        "thermal_resistance_construction": {
           "anyOf": [
             {
-              "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
-              "maximum": 360,
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -1931,24 +1632,93 @@
             }
           ],
           "default": null,
+          "description": "Thermal resistance of wall construction before the cavity (unit: m\u00b2.K/W)",
+          "title": "Thermal Resistance Construction"
+        },
+        "type": {
+          "const": "BuildingElementPartyWall",
+          "title": "Type",
+          "type": "string"
+        },
+        "party_wall_cavity_type": {
+          "$ref": "#/$defs/PartyWallCavityType",
+          "description": "Type of party wall cavity construction affecting heat loss through air movement"
+        },
+        "thermal_resistance_cavity": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Effective thermal resistance of the party wall cavity (unit: m\u00b2.K/W). Required only when party_wall_cavity_type is 'defined_resistance'. For other cavity types (solid, unfilled_unsealed, unfilled_sealed, filled_sealed), this is calculated automatically.",
+          "title": "Thermal Resistance Cavity"
+        },
+        "party_wall_lining_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PartyWallLiningType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Type of party wall lining. Required only when party_wall_cavity_type is unfilled_unsealed, unfilled_sealed, or filled_sealed"
+        }
+      },
+      "required": [
+        "area",
+        "areal_heat_capacity",
+        "mass_distribution_class",
+        "pitch",
+        "type",
+        "party_wall_cavity_type"
+      ],
+      "title": "BuildingElementPartyWall",
+      "type": "object"
+    },
+    "BuildingElementTransparent": {
+      "additionalProperties": false,
+      "description": "Transparent building elements (windows, glazing)",
+      "properties": {
+        "orientation360": {
           "description": "Orientation of the building element (degrees from North)",
-          "title": "Orientation360"
+          "maximum": 360,
+          "minimum": 0,
+          "title": "Orientation360",
+          "type": "number"
+        },
+        "base_height": {
+          "description": "The distance between the ground and the lowest edge of the element (unit: m)",
+          "minimum": 0,
+          "title": "Base Height",
+          "type": "number"
         },
         "height": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Height of the building element (m), must be positive if provided",
-          "title": "Height"
+          "description": "Height of the building element (m), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "number"
         },
         "width": {
+          "description": "Width of the building element (m), must be positive",
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "number"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "maximum": 180,
+          "minimum": 0,
+          "title": "Pitch",
+          "type": "number"
+        },
+        "u_value": {
           "anyOf": [
             {
               "exclusiveMinimum": 0,
@@ -1959,8 +1729,22 @@
             }
           ],
           "default": null,
-          "description": "Width of the building element (m), must be positive if provided",
-          "title": "Width"
+          "description": "U-value (W/m\u00b2\u00b7K), must be positive if provided",
+          "title": "U-Value"
+        },
+        "thermal_resistance_construction": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal resistance (m\u00b2.K/W), must be positive if provided",
+          "title": "Thermal Resistance Construction"
         },
         "type": {
           "const": "BuildingElementTransparent",
@@ -1984,14 +1768,10 @@
           "default": null,
           "title": "Control Windowopenable"
         },
-        "base_height": {
-          "description": "The distance between the ground and the lowest edge of the element (unit: m)",
-          "minimum": 0,
-          "title": "Base Height",
-          "type": "number"
-        },
         "frame_area_fraction": {
           "description": "The frame area fraction of window, ratio of the projected frame area to the overall projected area of the glazed element of the window",
+          "maximum": 1,
+          "minimum": 0,
           "title": "Frame Area Fraction",
           "type": "number"
         },
@@ -2003,18 +1783,19 @@
         },
         "g_value": {
           "description": "Total solar energy transmittance of the transparent part of the window",
+          "maximum": 1,
           "minimum": 0,
-          "title": "G Value",
+          "title": "G-Value",
           "type": "number"
         },
         "max_window_open_area": {
-          "description": "Openable area of the window ignoring the obstructing affect of the frame of the openable part",
+          "description": "Openable area of the window ignoring the obstructing effect of the frame of the openable part",
           "minimum": 0,
           "title": "Max Window Open Area",
           "type": "number"
         },
         "mid_height": {
-          "description": "Height of the mid-point of the window, relative to its base (unit: m)",
+          "description": "Height of the mid-point of the window, relative to the base of the ventilation zone (unit: m)",
           "exclusiveMinimum": 0,
           "title": "Mid Height",
           "type": "number"
@@ -2054,23 +1835,15 @@
           },
           "title": "Window Part List",
           "type": "array"
-        },
-        "mass_distribution_class": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MassDistributionClass"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         }
       },
       "required": [
+        "orientation360",
+        "base_height",
+        "height",
+        "width",
         "pitch",
         "type",
-        "base_height",
         "frame_area_fraction",
         "free_area_height",
         "g_value",
@@ -2111,8 +1884,8 @@
         },
         "time_series_step": {
           "description": "Duration in hours (must be within 24-hour period)",
+          "exclusiveMinimum": 0,
           "maximum": 24,
-          "minimum": 0,
           "title": "Time Series Step",
           "type": "number"
         },
@@ -2148,8 +1921,8 @@
         },
         "time_series_step": {
           "description": "Duration in hours (must be within 24-hour period)",
+          "exclusiveMinimum": 0,
           "maximum": 24,
-          "minimum": 0,
           "title": "Time Series Step",
           "type": "number"
         },
@@ -2326,8 +2099,8 @@
         },
         "time_series_step": {
           "description": "Duration in hours (must be within 24-hour period)",
+          "exclusiveMinimum": 0,
           "maximum": 24,
-          "minimum": 0,
           "title": "Time Series Step",
           "type": "number"
         },
@@ -2342,8 +2115,8 @@
         },
         "time_on_daily": {
           "description": "Duration in hours (must be within 24-hour period)",
+          "exclusiveMinimum": 0,
           "maximum": 24,
-          "minimum": 0,
           "title": "Time On Daily",
           "type": "number"
         }
@@ -2370,8 +2143,8 @@
         },
         "time_series_step": {
           "description": "Duration in hours (must be within 24-hour period)",
+          "exclusiveMinimum": 0,
           "maximum": 24,
-          "minimum": 0,
           "title": "Time Series Step",
           "type": "number"
         },
@@ -2418,8 +2191,8 @@
         },
         "time_series_step": {
           "description": "Duration in hours (must be within 24-hour period)",
+          "exclusiveMinimum": 0,
           "maximum": 24,
-          "minimum": 0,
           "title": "Time Series Step",
           "type": "number"
         },
@@ -2522,6 +2295,8 @@
         "max_outdoor_temp": {
           "anyOf": [
             {
+              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+              "minimum": -273.15,
               "type": "number"
             },
             {
@@ -2535,6 +2310,7 @@
         "min_flow_temp": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -2548,6 +2324,8 @@
         "min_outdoor_temp": {
           "anyOf": [
             {
+              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+              "minimum": -273.15,
               "type": "number"
             },
             {
@@ -2595,7 +2373,7 @@
         },
         "width": {
           "description": "(unit: m)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Width",
           "type": "number"
         }
@@ -2624,7 +2402,7 @@
         },
         "depth": {
           "description": "(unit: m)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Depth",
           "type": "number"
         }
@@ -2652,7 +2430,7 @@
         },
         "capacity": {
           "description": "The maximum capacity of the battery (unit: kWh)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Capacity",
           "type": "number"
         },
@@ -2670,13 +2448,13 @@
         },
         "maximum_charge_rate_one_way_trip": {
           "description": "The maximum charge rate one way trip the battery allows (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Maximum Charge Rate One Way Trip",
           "type": "number"
         },
         "maximum_discharge_rate_one_way_trip": {
           "description": "The maximum discharge rate one way trip the battery allows (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Maximum Discharge Rate One Way Trip",
           "type": "number"
         },
@@ -2754,7 +2532,7 @@
         },
         "fuel": {
           "$ref": "#/$defs/FuelType",
-          "description": "Type of combustion fuel"
+          "description": "Type of fuel"
         },
         "is_export_capable": {
           "description": "Denotes that this energy supply can export its surplus supply",
@@ -3071,7 +2849,7 @@
         },
         "temperature_diff": {
           "description": "Difference in temperature between the hot water supplied to the fan coil and the air in the room (unit: Kelvin)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Temperature Diff",
           "type": "number"
         }
@@ -3089,10 +2867,10 @@
         "fan_power_W": {
           "description": "A list of fan powers for which heat output data is provided (unit: W)",
           "items": {
-            "minimum": 0,
+            "exclusiveMinimum": 0,
             "type": "number"
           },
-          "title": "Fan Power W",
+          "title": "Fan Power",
           "type": "array"
         },
         "fan_speed_data": {
@@ -3154,16 +2932,16 @@
           "description": "Location of the boiler (internal or external to the building)"
         },
         "efficiency_full_load": {
-          "description": "Boiler efficiency at full load (dimensionless, 0-1)",
+          "description": "Boiler net efficiency at full load (dimensionless, 0-1)",
+          "exclusiveMinimum": 0,
           "maximum": 1,
-          "minimum": 0,
           "title": "Efficiency Full Load",
           "type": "number"
         },
         "efficiency_part_load": {
-          "description": "Boiler efficiency at part load (dimensionless, 0-1)",
-          "maximum": 1,
-          "minimum": 0,
+          "description": "Boiler net efficiency at part load (dimensionless, 0-1.12). Net efficiencies may exceed 1 in test data.",
+          "exclusiveMinimum": 0,
+          "maximum": 1.12,
           "title": "Efficiency Part Load",
           "type": "number"
         },
@@ -3175,13 +2953,13 @@
         },
         "electricity_full_load": {
           "description": "Electrical power consumption at full load (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Electricity Full Load",
           "type": "number"
         },
         "electricity_part_load": {
           "description": "Electrical power consumption at part load (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Electricity Part Load",
           "type": "number"
         },
@@ -3237,25 +3015,25 @@
       "properties": {
         "daily_losses": {
           "description": "Standing heat loss (unit: kWh/day)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Daily Losses",
           "type": "number"
         },
         "pump_fixed_flow_rate": {
           "description": "Flow rate of the buffer tank - emitters loop (unit: l/min)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Pump Fixed Flow Rate",
           "type": "number"
         },
         "pump_power_at_flow_rate": {
-          "description": "Pump power of the buffer tank - emitters loop (unit: W)",
-          "minimum": 0,
+          "description": "Pump power of the buffer tank - emitters loop (unit: kW)",
+          "exclusiveMinimum": 0,
           "title": "Pump Power At Flow Rate",
           "type": "number"
         },
         "volume": {
           "description": "Volume of the buffer tank (unit: litre)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Volume",
           "type": "number"
         }
@@ -3303,15 +3081,22 @@
         },
         "daily_losses_declared": {
           "description": "Standing heat loss (unit: kWh/day)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Daily Losses Declared",
           "type": "number"
         },
         "heat_exchanger_surface_area_declared": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Surface area of heat exchanger stored in the database (unit: m2)",
-          "minimum": 0,
-          "title": "Heat Exchanger Surface Area Declared",
-          "type": "number"
+          "title": "Heat Exchanger Surface Area Declared"
         },
         "heater_position": {
           "description": "Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.",
@@ -3322,13 +3107,13 @@
         },
         "in_use_factor_mismatch": {
           "description": "In use factor to be applied to heat pump efficiency",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "In Use Factor Mismatch",
           "type": "number"
         },
         "power_max": {
           "description": "(unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Power Max",
           "type": "number"
         },
@@ -3360,7 +3145,7 @@
         "vol_hw_daily_average": {
           "description": "Annual average hot water use for the dwelling (unit: litres/day)",
           "exclusiveMinimum": 0,
-          "title": "Vol Hw Daily Average",
+          "title": "Volume Hot Water Daily Average",
           "type": "number"
         }
       },
@@ -3386,31 +3171,31 @@
       "properties": {
         "cop_dhw": {
           "description": "CoP measured during EN 16147 test",
-          "minimum": 0,
-          "title": "Cop Dhw",
+          "exclusiveMinimum": 0,
+          "title": "CoP DHW",
           "type": "number"
         },
         "energy_input_measured": {
           "description": "Electrical input energy measured in EN 16147 test over 24 hrs (unit: kWh)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Energy Input Measured",
           "type": "number"
         },
         "hw_tapping_prof_daily_total": {
           "description": "Daily energy requirement for tapping profile used for test (unit: kWh/day)",
-          "minimum": 0,
-          "title": "Hw Tapping Prof Daily Total",
+          "exclusiveMinimum": 0,
+          "title": "Hot Water Tapping Profile Daily Total",
           "type": "number"
         },
         "hw_vessel_loss_daily": {
           "description": "Daily hot water vessel heat loss for a 45 K temperature difference between vessel and surroundings, tested in accordance with BS 1566 or EN 12897 or any equivalent standard. Vessel must be same as that used during EN 16147 test (unit: kWh/day)",
-          "minimum": 0,
-          "title": "Hw Vessel Loss Daily",
+          "exclusiveMinimum": 0,
+          "title": "Hot Water Vessel Loss Daily",
           "type": "number"
         },
         "power_standby": {
           "description": "Standby power measured in EN 16147 test (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Power Standby",
           "type": "number"
         }
@@ -3478,7 +3263,7 @@
         "air_flow_rate": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -3491,18 +3276,19 @@
         },
         "capacity": {
           "description": "Heat output capacity at this test condition (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Capacity",
           "type": "number"
         },
         "cop": {
           "description": "Coefficient of performance at this test condition (dimensionless)",
-          "minimum": 0,
-          "title": "Cop",
+          "exclusiveMinimum": 0,
+          "title": "CoP",
           "type": "number"
         },
         "design_flow_temp": {
           "description": "Design flow temperature for the heating system (unit: Celsius)",
+          "exclusiveMinimum": 0,
           "title": "Design Flow Temp",
           "type": "number"
         },
@@ -3519,20 +3305,23 @@
           ],
           "default": null,
           "description": "Ratio of external air to recirculated air for exhaust air heat pumps (dimensionless)",
-          "title": "Eahp Mixed Ext Air Ratio"
+          "title": "EAHP Mixed External Air Ratio"
         },
         "temp_outlet": {
           "description": "Heat pump outlet temperature for the test condition (unit: Celsius)",
+          "exclusiveMinimum": 0,
           "title": "Temp Outlet",
           "type": "number"
         },
         "temp_source": {
           "description": "Heat pump source temperature for the test condition (unit: Celsius)",
+          "minimum": -273.15,
           "title": "Temp Source",
           "type": "number"
         },
         "temp_test": {
           "description": "Ambient air temperature for the test condition (unit: Celsius)",
+          "minimum": -273.15,
           "title": "Temp Test",
           "type": "number"
         },
@@ -3581,16 +3370,16 @@
           "description": "Location of the boiler (internal or external to the building)"
         },
         "efficiency_full_load": {
-          "description": "Boiler efficiency at full load (dimensionless, 0-1)",
+          "description": "Boiler net efficiency at full load (dimensionless, 0-1)",
+          "exclusiveMinimum": 0,
           "maximum": 1,
-          "minimum": 0,
           "title": "Efficiency Full Load",
           "type": "number"
         },
         "efficiency_part_load": {
-          "description": "Boiler efficiency at part load (dimensionless, 0-1)",
-          "maximum": 1,
-          "minimum": 0,
+          "description": "Boiler net efficiency at part load (dimensionless, 0-1.12). Net efficiencies may exceed 1 in test data.",
+          "exclusiveMinimum": 0,
+          "maximum": 1.12,
           "title": "Efficiency Part Load",
           "type": "number"
         },
@@ -3602,13 +3391,13 @@
         },
         "electricity_full_load": {
           "description": "Electrical power consumption at full load (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Electricity Full Load",
           "type": "number"
         },
         "electricity_part_load": {
           "description": "Electrical power consumption at part load (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Electricity Part Load",
           "type": "number"
         },
@@ -3670,8 +3459,8 @@
         },
         "HIU_daily_loss": {
           "description": "Daily heat losses from the HIU (unit: kWh/day)",
-          "minimum": 0,
-          "title": "Hiu Daily Loss",
+          "exclusiveMinimum": 0,
+          "title": "HIU Daily Loss",
           "type": "number"
         },
         "building_level_distribution_losses": {
@@ -3703,7 +3492,7 @@
         "power_aux": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -3872,10 +3661,10 @@
           "title": "Energysupply",
           "type": "string"
         },
-        "capillary_diameter_m": {
-          "description": "Diameter of capillary tubes (unit: m)",
+        "inlet_diameter_mm": {
+          "description": "Inlet diameter of capillary tubes (unit: mm)",
           "exclusiveMinimum": 0,
-          "title": "Capillary Diameter M",
+          "title": "Inlet Diameter",
           "type": "number"
         },
         "electricity_circ_pump": {
@@ -3886,43 +3675,37 @@
         },
         "electricity_standby": {
           "description": "Electrical power consumption in standby mode (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Electricity Standby",
           "type": "number"
         },
         "flow_rate_l_per_min": {
           "description": "Flow rate through the heat battery (unit: litre/minute)",
           "exclusiveMinimum": 0,
-          "title": "Flow Rate L Per Min",
-          "type": "number"
-        },
-        "heat_exchanger_surface_area_m2": {
-          "description": "Surface area of heat exchanger (unit: m\u00b2)",
-          "exclusiveMinimum": 0,
-          "title": "Heat Exchanger Surface Area M2",
+          "title": "Flow Rate",
           "type": "number"
         },
         "heat_storage_kJ_per_K_above_Phase_transition": {
           "description": "Heat capacity of storage above phase transition (unit: kJ/K)",
           "exclusiveMinimum": 0,
-          "title": "Heat Storage Kj Per K Above Phase Transition",
+          "title": "Heat Storage kJ Per K Above Phase Transition",
           "type": "number"
         },
         "heat_storage_kJ_per_K_below_Phase_transition": {
           "description": "Heat capacity of storage below phase transition (unit: kJ/K)",
           "exclusiveMinimum": 0,
-          "title": "Heat Storage Kj Per K Below Phase Transition",
+          "title": "Heat Storage kJ Per K Below Phase Transition",
           "type": "number"
         },
         "heat_storage_kJ_per_K_during_Phase_transition": {
           "description": "Heat capacity of storage during phase transition (unit: kJ/K)",
           "exclusiveMinimum": 0,
-          "title": "Heat Storage Kj Per K During Phase Transition",
+          "title": "Heat Storage kJ Per K During Phase Transition",
           "type": "number"
         },
         "max_rated_losses": {
           "description": "Maximum rated heat losses (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Max Rated Losses",
           "type": "number"
         },
@@ -3934,7 +3717,7 @@
         },
         "number_of_units": {
           "description": "Number of heat battery units",
-          "minimum": 0,
+          "minimum": 1,
           "title": "Number Of Units",
           "type": "integer"
         },
@@ -3964,7 +3747,7 @@
         "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": {
           "description": "Velocity in heat exchanger tube at 1 litre/minute flow rate (unit: m/s)",
           "exclusiveMinimum": 0,
-          "title": "Velocity In Hex Tube At 1 L Per Min M Per S",
+          "title": "Velocity In Hex Tube At 1 Litre/Minute",
           "type": "number"
         },
         "temp_init": {
@@ -3981,11 +3764,10 @@
         "B",
         "ControlCharge",
         "EnergySupply",
-        "capillary_diameter_m",
+        "inlet_diameter_mm",
         "electricity_circ_pump",
         "electricity_standby",
         "flow_rate_l_per_min",
-        "heat_exchanger_surface_area_m2",
         "heat_storage_kJ_per_K_above_Phase_transition",
         "heat_storage_kJ_per_K_below_Phase_transition",
         "heat_storage_kJ_per_K_during_Phase_transition",
@@ -4086,7 +3868,7 @@
           ],
           "default": null,
           "description": "Maximum temperature for exhaust air heat pump mixed operation (unit: \u02daC)",
-          "title": "Eahp Mixed Max Temp"
+          "title": "EAHP Mixed Max Temperature"
         },
         "eahp_mixed_min_temp": {
           "anyOf": [
@@ -4101,7 +3883,7 @@
           ],
           "default": null,
           "description": "Minimum temperature for exhaust air heat pump mixed operation (unit: \u02daC)",
-          "title": "Eahp Mixed Min Temp"
+          "title": "EAHP Mixed Min Temperature"
         },
         "min_modulation_rate_20": {
           "anyOf": [
@@ -4150,7 +3932,8 @@
         },
         "min_temp_diff_flow_return_for_hp_to_operate": {
           "description": "Minimum temperature difference between flow and return for heat pump operation (unit: K)",
-          "title": "Min Temp Diff Flow Return For Hp To Operate",
+          "minimum": 0,
+          "title": "Minimum Temperature Difference Flow Return For Heat Pump To Operate",
           "type": "number"
         },
         "modulating_control": {
@@ -4165,18 +3948,11 @@
           "type": "number"
         },
         "power_heating_circ_pump": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
+          "default": 0.0,
           "description": "Power consumption of heating circuit pump (unit: kW)",
-          "title": "Power Heating Circ Pump"
+          "minimum": 0,
+          "title": "Power Heating Circ Pump",
+          "type": "number"
         },
         "power_heating_warm_air_fan": {
           "anyOf": [
@@ -4195,7 +3971,7 @@
         "power_max_backup": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -4203,7 +3979,7 @@
             }
           ],
           "default": null,
-          "description": "Maximum backup power (unit: kW)",
+          "description": "Backup resistive heater maximum power (unit: kW)",
           "title": "Power Max Backup"
         },
         "power_off": {
@@ -4235,8 +4011,7 @@
         "temp_distribution_heat_network": {
           "anyOf": [
             {
-              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
-              "minimum": -273.15,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -4256,8 +4031,7 @@
         "temp_return_feed_max": {
           "anyOf": [
             {
-              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
-              "minimum": -273.15,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -4277,8 +4051,8 @@
           "type": "array"
         },
         "time_constant_onoff_operation": {
-          "description": "Time constant for on/off operation (unit: hours)",
-          "minimum": 0,
+          "description": "Time constant for on/off operation (unit: seconds)",
+          "exclusiveMinimum": 0,
           "title": "Time Constant Onoff Operation",
           "type": "number"
         },
@@ -4369,8 +4143,7 @@
         "temp_flow_limit_upper": {
           "anyOf": [
             {
-              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
-              "minimum": -273.15,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -4524,8 +4297,8 @@
         },
         "daily_HW_usage": {
           "description": "Daily hot water usage for the combi boiler system (unit: litre/day)",
-          "minimum": 0,
-          "title": "Daily Hw Usage",
+          "exclusiveMinimum": 0,
+          "title": "Daily Hot Water Usage",
           "type": "number"
         },
         "rejected_energy_1": {
@@ -4545,7 +4318,6 @@
         "rejected_factor_3": {
           "anyOf": [
             {
-              "minimum": 0,
               "type": "number"
             },
             {
@@ -4562,7 +4334,8 @@
         },
         "setpoint_temp": {
           "description": "Temperature setpoint for the combi boiler hot water output (unit: \u02daC)",
-          "minimum": -273.15,
+          "maximum": 100,
+          "minimum": 0,
           "title": "Setpoint Temp",
           "type": "number"
         },
@@ -4577,8 +4350,22 @@
             }
           ],
           "default": null,
-          "description": "Storage loss factor 2 for combi boiler efficiency calculations (dimensionless)",
+          "description": "Storage loss factor 2 for combi boiler efficiency calculations (unit: kWh/day)",
           "title": "Storage Loss Factor 2"
+        },
+        "storage_loss_factor_1": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Storage loss factor 1 for combi boiler efficiency calculations (unit: kWh/day)",
+          "title": "Storage Loss Factor 1"
         }
       },
       "required": [
@@ -4619,8 +4406,9 @@
         "setpoint_temp": {
           "anyOf": [
             {
-              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
-              "minimum": -273.15,
+              "description": "Running water temperature 0-100 (unit: \u02daC)",
+              "maximum": 100,
+              "minimum": 0,
               "type": "number"
             },
             {
@@ -4666,7 +4454,8 @@
         },
         "setpoint_temp": {
           "description": "Temperature setpoint for the heat battery hot water output (unit: \u02daC)",
-          "minimum": -273.15,
+          "maximum": 100,
+          "minimum": 0,
           "title": "Setpoint Temp",
           "type": "number"
         }
@@ -4707,8 +4496,8 @@
         "efficiency": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "maximum": 1,
-              "minimum": 0,
               "type": "number"
             },
             {
@@ -4720,7 +4509,8 @@
         },
         "setpoint_temp": {
           "description": "Temperature setpoint for the point-of-use water heater output (unit: \u02daC)",
-          "minimum": -273.15,
+          "maximum": 100,
+          "minimum": 0,
           "title": "Setpoint Temp",
           "type": "number"
         }
@@ -4791,26 +4581,27 @@
         },
         "daily_losses": {
           "description": "Daily standby losses due to tank insulation at standardised conditions (unit: kWh/24h)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Daily Losses",
           "type": "number"
         },
         "init_temp": {
           "description": "Initial temperature of the smart hot water tank at the start of simulation (unit: \u02daC)",
-          "minimum": -273.15,
+          "maximum": 100,
+          "minimum": 0,
           "title": "Init Temp",
           "type": "number"
         },
         "max_flow_rate_pump_l_per_min": {
           "description": "Maximum flow rate of the pump (unit: litre/minute)",
-          "minimum": 0,
-          "title": "Max Flow Rate Pump L Per Min",
+          "exclusiveMinimum": 0,
+          "title": "Maximum Flow Rate Pump",
           "type": "number"
         },
         "power_pump_kW": {
           "description": "Electrical power consumption of the pump (unit: kW)",
-          "minimum": 0,
-          "title": "Power Pump Kw",
+          "exclusiveMinimum": 0,
+          "title": "Power Pump",
           "type": "number"
         },
         "primary_pipework": {
@@ -4836,13 +4627,14 @@
         },
         "temp_usable": {
           "description": "Temperature below which water is considered unusable (unit: \u02daC)",
-          "minimum": -273.15,
+          "maximum": 100,
+          "minimum": 0,
           "title": "Temp Usable",
           "type": "number"
         },
         "volume": {
           "description": "Total volume of tank (unit: litre)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Volume",
           "type": "number"
         }
@@ -4904,7 +4696,7 @@
         },
         "power": {
           "description": "(unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Power",
           "type": "number"
         },
@@ -5029,7 +4821,7 @@
           ],
           "default": null,
           "description": "Maximum ACH (Air Changes per Hour) limit",
-          "title": "Ach Max Static Calcs"
+          "title": "ACH Maximum Static Calcs"
         },
         "ach_min_static_calcs": {
           "anyOf": [
@@ -5043,7 +4835,7 @@
           ],
           "default": null,
           "description": "Minimum ACH (Air Changes per Hour) limit",
-          "title": "Ach Min Static Calcs"
+          "title": "ACH Minimum Static Calcs"
         },
         "altitude": {
           "description": "Altitude of dwelling above sea level (unit: m)",
@@ -5063,7 +4855,6 @@
         },
         "ventilation_zone_base_height": {
           "description": "Base height of the ventilation zone relative to ground (unit: m)",
-          "minimum": 0,
           "title": "Ventilation Zone Base Height",
           "type": "number"
         },
@@ -5115,8 +4906,8 @@
         },
         "time_series_step": {
           "description": "Duration in hours (must be within 24-hour period)",
+          "exclusiveMinimum": 0,
           "maximum": 24,
-          "minimum": 0,
           "title": "Time Series Step",
           "type": "number"
         },
@@ -5198,27 +4989,20 @@
         },
         "SFP": {
           "description": "Specific fan power, assumed inclusive of any in use factors unless SFP_in_use_factor also provided (unit: W/l/s)",
-          "minimum": 0,
-          "title": "Sfp",
+          "exclusiveMinimum": 0,
+          "title": "SFP",
           "type": "number"
         },
         "SFP_in_use_factor": {
-          "anyOf": [
-            {
-              "minimum": 1,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
           "default": 1,
           "description": "Adjustment factor to be applied to SFP to account for e.g. type of ducting. Typical range 1 - 2.5",
-          "title": "Sfp In Use Factor"
+          "minimum": 1,
+          "title": "SFP In Use Factor",
+          "type": "number"
         },
         "design_outdoor_air_flow_rate": {
           "description": "(unit: m\u00b3/hour)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Design Outdoor Air Flow Rate",
           "type": "number"
         },
@@ -5241,6 +5025,7 @@
         "mvhr_eff": {
           "anyOf": [
             {
+              "maximum": 1,
               "minimum": 0,
               "type": "number"
             },
@@ -5250,7 +5035,7 @@
           ],
           "default": null,
           "description": "MVHR efficiency",
-          "title": "Mvhr Eff"
+          "title": "MVHR Efficiency"
         },
         "mvhr_location": {
           "anyOf": [
@@ -5266,10 +5051,12 @@
         },
         "sup_air_flw_ctrl": {
           "$ref": "#/$defs/SupplyAirFlowRateControlType",
+          "default": "ODA",
           "description": "Supply air flow rate control"
         },
         "sup_air_temp_ctrl": {
           "$ref": "#/$defs/SupplyAirTemperatureControlType",
+          "default": "NO_CTRL",
           "description": "Supply air temperature control"
         },
         "vent_type": {
@@ -5351,8 +5138,6 @@
         "EnergySupply",
         "SFP",
         "design_outdoor_air_flow_rate",
-        "sup_air_flw_ctrl",
-        "sup_air_temp_ctrl",
         "vent_type"
       ],
       "title": "MechanicalVentilation",
@@ -5377,7 +5162,7 @@
           ],
           "default": null,
           "description": "Cross-sectional perimeter length of rectangular ductwork (unit: mm)",
-          "title": "Duct Perimeter Mm"
+          "title": "Duct Perimeter"
         },
         "duct_type": {
           "$ref": "#/$defs/DuctType"
@@ -5394,7 +5179,7 @@
           ],
           "default": null,
           "description": "(unit: mm)",
-          "title": "External Diameter Mm"
+          "title": "External Diameter"
         },
         "insulation_thermal_conductivity": {
           "description": "Thermal conductivity of the insulation (unit: W / m K)",
@@ -5405,7 +5190,7 @@
         "insulation_thickness_mm": {
           "description": "(unit: mm)",
           "minimum": 0,
-          "title": "Insulation Thickness Mm",
+          "title": "Insulation Thickness",
           "type": "number"
         },
         "internal_diameter_mm": {
@@ -5420,7 +5205,7 @@
           ],
           "default": null,
           "description": "(unit: mm)",
-          "title": "Internal Diameter Mm"
+          "title": "Internal Diameter"
         },
         "length": {
           "description": "(unit: m)",
@@ -5526,7 +5311,7 @@
         },
         "flowrate": {
           "description": "Tap/outlet flow rate (unit: litre/minute)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Flowrate",
           "type": "number"
         }
@@ -5538,12 +5323,34 @@
       "title": "OtherWaterUse",
       "type": "object"
     },
+    "PartyWallCavityType": {
+      "description": "Types of party wall cavity configurations",
+      "enum": [
+        "solid",
+        "unfilled_unsealed",
+        "unfilled_sealed",
+        "filled_sealed",
+        "filled_unsealed",
+        "defined_resistance"
+      ],
+      "title": "PartyWallCavityType",
+      "type": "string"
+    },
+    "PartyWallLiningType": {
+      "description": "Types of party wall lining",
+      "enum": [
+        "wet_plaster",
+        "dry_lined"
+      ],
+      "title": "PartyWallLiningType",
+      "type": "string"
+    },
     "PhotovoltaicPanel": {
       "additionalProperties": false,
       "properties": {
         "peak_power": {
           "description": "Peak power; represents the electrical power of a photovoltaic system with a given area for a solar irradiance of 1 kW/m\u00b2 on this surface (at 25 degrees) (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Peak Power",
           "type": "number"
         },
@@ -5619,7 +5426,7 @@
         },
         "peak_power": {
           "description": "Peak power; represents the electrical power of a photovoltaic system with a given area for a solar irradiance of 1 kW/m\u00b2 on this surface (at 25 degrees) (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Peak Power",
           "type": "number"
         },
@@ -5631,7 +5438,7 @@
         },
         "height": {
           "description": "Height of the PV array (unit: m)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Height",
           "type": "number"
         },
@@ -5662,14 +5469,14 @@
         },
         "inverter_peak_power_ac": {
           "description": "Peak power; represents the peak electrical AC power output from the inverter (unit: kW)",
-          "minimum": 0,
-          "title": "Inverter Peak Power Ac",
+          "exclusiveMinimum": 0,
+          "title": "Inverter Peak Power AC",
           "type": "number"
         },
         "inverter_peak_power_dc": {
           "description": "Peak power; represents the peak electrical DC power input to the inverter (unit: kW)",
-          "minimum": 0,
-          "title": "Inverter Peak Power Dc",
+          "exclusiveMinimum": 0,
+          "title": "Inverter Peak Power DC",
           "type": "number"
         },
         "inverter_type": {
@@ -5737,14 +5544,14 @@
         },
         "inverter_peak_power_ac": {
           "description": "Peak power; represents the peak electrical AC power output from the inverter (unit: kW)",
-          "minimum": 0,
-          "title": "Inverter Peak Power Ac",
+          "exclusiveMinimum": 0,
+          "title": "Inverter Peak Power AC",
           "type": "number"
         },
         "inverter_peak_power_dc": {
           "description": "Peak power; represents the peak electrical DC power input to the inverter (unit: kW)",
-          "minimum": 0,
-          "title": "Inverter Peak Power Dc",
+          "exclusiveMinimum": 0,
+          "title": "Inverter Peak Power DC",
           "type": "number"
         },
         "inverter_type": {
@@ -5918,7 +5725,7 @@
       "properties": {
         "repeat": {
           "description": "Number of times to repeat the value",
-          "minimum": 0,
+          "minimum": 1,
           "title": "Repeat",
           "type": "integer"
         },
@@ -5938,7 +5745,7 @@
       "additionalProperties": false,
       "properties": {
         "repeat": {
-          "minimum": 0,
+          "minimum": 1,
           "title": "Repeat",
           "type": "integer"
         },
@@ -5959,7 +5766,7 @@
       "properties": {
         "repeat": {
           "description": "Number of times to repeat the value",
-          "minimum": 0,
+          "minimum": 1,
           "title": "Repeat",
           "type": "integer"
         },
@@ -6111,7 +5918,7 @@
         },
         "rated_power": {
           "description": "Shower's rated electrical power (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Rated Power",
           "type": "number"
         }
@@ -6169,7 +5976,7 @@
           ],
           "default": null,
           "description": "Reference to a key in Input.WWHRS",
-          "title": "Wwhrs"
+          "title": "WWHRS"
         },
         "WWHRS_configuration": {
           "anyOf": [
@@ -6181,11 +5988,12 @@
             }
           ],
           "default": null,
-          "description": "WWHRS system configuration for this shower connection"
+          "description": "WWHRS system configuration for this shower connection",
+          "title": "WWHRS configuration"
         },
         "flowrate": {
           "description": "Shower flow rate (unit: litre/minute)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Flowrate",
           "type": "number"
         }
@@ -6409,20 +6217,20 @@
         },
         "area_module": {
           "description": "Collector module reference area (unit: m2)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Area Module",
           "type": "number"
         },
         "collector_mass_flow_rate": {
           "description": "Mass flow rate solar loop (unit: kg/s)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Collector Mass Flow Rate",
           "type": "number"
         },
         "first_order_hlc": {
           "description": "First order heat loss coefficient",
-          "minimum": 0,
-          "title": "First Order Hlc",
+          "exclusiveMinimum": 0,
+          "title": "First Order HLC",
           "type": "number"
         },
         "heater_position": {
@@ -6434,8 +6242,8 @@
         },
         "incidence_angle_modifier": {
           "description": "Hemispherical incidence angle modifier",
+          "exclusiveMinimum": 0,
           "maximum": 1,
-          "minimum": 0,
           "title": "Incidence Angle Modifier",
           "type": "number"
         },
@@ -6453,19 +6261,19 @@
           "type": "number"
         },
         "peak_collector_efficiency": {
+          "exclusiveMinimum": 0,
           "maximum": 1,
-          "minimum": 0,
           "title": "Peak Collector Efficiency",
           "type": "number"
         },
         "power_pump": {
-          "description": "Power of collector pump (unit: W)",
+          "description": "Power of collector pump (unit: kW)",
           "minimum": 0,
           "title": "Power Pump",
           "type": "number"
         },
         "power_pump_control": {
-          "description": "Power of collector pump controller (unit: W)",
+          "description": "Power of collector pump controller (unit: kW)",
           "minimum": 0,
           "title": "Power Pump Control",
           "type": "number"
@@ -6473,7 +6281,7 @@
         "second_order_hlc": {
           "description": "Second order heat loss coefficient",
           "minimum": 0,
-          "title": "Second Order Hlc",
+          "title": "Second Order HLC",
           "type": "number"
         },
         "sol_loc": {
@@ -6482,8 +6290,8 @@
         },
         "solar_loop_piping_hlc": {
           "description": "Heat loss coefficient of the collector loop piping (unit: W/K)",
-          "minimum": 0,
-          "title": "Solar Loop Piping Hlc",
+          "exclusiveMinimum": 0,
+          "title": "Solar Loop Piping HLC",
           "type": "number"
         },
         "thermostat_position": {
@@ -6502,7 +6310,7 @@
           "title": "Thermostat Position"
         },
         "tilt": {
-          "description": "Tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90, in degrees. 0=horizontal surface, 90=vertical surface. Needed to calculate solar irradiation at the panel surface.",
+          "description": "Tilt angle (inclination) of the solar thermal panel from horizontal, measured upwards facing, 0 to 90, in degrees. 0=horizontal surface, 90=vertical surface. Needed to calculate solar irradiation at the panel surface.",
           "maximum": 90,
           "minimum": 0,
           "title": "Tilt",
@@ -6556,13 +6364,13 @@
         },
         "cooling_capacity": {
           "description": "Maximum cooling capacity of the system (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Cooling Capacity",
           "type": "number"
         },
         "efficiency": {
           "description": "Efficiency of the air conditioning system. SEER (Seasonal energy efficiency ratio)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Efficiency",
           "type": "number"
         },
@@ -6669,14 +6477,14 @@
         },
         "pwr_in": {
           "description": "The rated power of the heating element which charges the storage medium with heat (unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Pwr In",
           "type": "number"
         },
         "state_of_charge_init": {
           "description": "State of charge at initialisation of dry core heat storage (ratio)",
-          "maximum": 1.0,
-          "minimum": 0.0,
+          "maximum": 1,
+          "minimum": 0,
           "title": "State Of Charge Init",
           "type": "number"
         },
@@ -6729,7 +6537,7 @@
         "temp_flow_limit_upper": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -6779,7 +6587,7 @@
         },
         "rated_power": {
           "description": "Rated power of the instant electric heater. (Unit: kW)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Rated Power",
           "type": "number"
         }
@@ -6845,7 +6653,7 @@
         "bypass_fraction_recirculated": {
           "anyOf": [
             {
-              "maximum": 1,
+              "exclusiveMaximum": 1,
               "minimum": 0,
               "type": "number"
             },
@@ -6860,7 +6668,7 @@
         "design_flow_rate": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -6875,7 +6683,7 @@
           "description": "Design flow temperature. (Unit: \u02daC)",
           "exclusiveMinimum": 0,
           "title": "Design Flow Temp",
-          "type": "integer"
+          "type": "number"
         },
         "emitters": {
           "description": "Wet emitter details of the heating system.",
@@ -6925,7 +6733,7 @@
         "max_flow_rate": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -6939,7 +6747,7 @@
         "min_flow_rate": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -6952,14 +6760,14 @@
         },
         "temp_diff_emit_dsgn": {
           "description": "Design temperature difference across the emitters. (Unit: deg C or K)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Temp Diff Emit Dsgn",
           "type": "number"
         },
         "thermal_mass": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -6967,7 +6775,7 @@
             }
           ],
           "default": null,
-          "description": "Thermal mass of the emitters. (Unit: kWh/K)",
+          "description": "Thermal mass of the emitters, excluding any thermal mass entered under individual radiator/UFH entries and always excluding thermal mass of pipework. (Unit: kWh/K)",
           "title": "Thermal Mass"
         },
         "variable_flow": {
@@ -7069,14 +6877,14 @@
         },
         "daily_losses": {
           "description": "Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Daily Losses",
           "type": "number"
         },
         "heat_exchanger_surface_area": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -7089,7 +6897,8 @@
         },
         "init_temp": {
           "description": "Initial temperature of the storage tank at the start of simulation (unit: \u02daC)",
-          "minimum": -273.15,
+          "maximum": 100,
+          "minimum": 0,
           "title": "Init Temp",
           "type": "number"
         },
@@ -7111,7 +6920,7 @@
         },
         "volume": {
           "description": "Total volume of tank (unit: litre)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Volume",
           "type": "number"
         }
@@ -7129,17 +6938,14 @@
     },
     "SupplyAirFlowRateControlType": {
       "enum": [
-        "ODA",
-        "LOAD"
+        "ODA"
       ],
       "title": "SupplyAirFlowRateControlType",
       "type": "string"
     },
     "SupplyAirTemperatureControlType": {
       "enum": [
-        "CONST",
-        "NO_CTRL",
-        "LOAD_COM"
+        "NO_CTRL"
       ],
       "title": "SupplyAirTemperatureControlType",
       "type": "string"
@@ -7220,7 +7026,7 @@
         "area_cm2": {
           "description": "Equivalent area of a vent (unit: cm2)",
           "exclusiveMinimum": 0,
-          "title": "Area Cm2",
+          "title": "Area",
           "type": "number"
         },
         "mid_height_air_flow_path": {
@@ -7244,8 +7050,8 @@
           "type": "number"
         },
         "pressure_difference_ref": {
-          "description": "Reference pressure difference for an air terminal device (unit: Pa)",
-          "minimum": 0,
+          "description": "Reference pressure difference for a vent (unit: Pa)",
+          "exclusiveMinimum": 0,
           "title": "Pressure Difference Ref",
           "type": "number"
         }
@@ -7265,25 +7071,25 @@
       "properties": {
         "env_area": {
           "description": "Reference area of the envelope airtightness index",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Env Area",
           "type": "number"
         },
         "test_pressure": {
           "description": "Reference pressure difference (unit: Pa)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Test Pressure",
           "type": "number"
         },
         "test_result": {
           "description": "Flow rate through (unit: m\u00b3/h.m\u00b2)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Test Result",
           "type": "number"
         },
         "ventilation_zone_height": {
           "description": "Height of ventilation zone (unit: m)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Ventilation Zone Height",
           "type": "number"
         }
@@ -7337,26 +7143,35 @@
         "flow_rates": {
           "description": "Test flow rates in litres per minute (e.g., [5, 7, 9, 11, 13])",
           "items": {
-            "minimum": 0,
+            "exclusiveMinimum": 0,
             "type": "number"
           },
           "title": "Flow Rates",
           "type": "array"
         },
         "system_a_efficiencies": {
+          "anyOf": [
+            {
+              "items": {
+                "exclusiveMinimum": 0,
+                "maximum": 100,
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
           "description": "Measured efficiencies for System A at the test flow rates",
-          "items": {
-            "minimum": 0,
-            "type": "number"
-          },
-          "title": "System A Efficiencies",
-          "type": "array"
+          "title": "System A Efficiencies"
         },
         "system_a_utilisation_factor": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "maximum": 1,
-              "minimum": 0,
               "type": "number"
             },
             {
@@ -7371,7 +7186,8 @@
           "anyOf": [
             {
               "items": {
-                "minimum": 0,
+                "exclusiveMinimum": 0,
+                "maximum": 100,
                 "type": "number"
               },
               "type": "array"
@@ -7387,8 +7203,8 @@
         "system_b_utilisation_factor": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "maximum": 1,
-              "minimum": 0,
               "type": "number"
             },
             {
@@ -7403,7 +7219,8 @@
           "anyOf": [
             {
               "items": {
-                "minimum": 0,
+                "exclusiveMinimum": 0,
+                "maximum": 100,
                 "type": "number"
               },
               "type": "array"
@@ -7419,8 +7236,8 @@
         "system_c_utilisation_factor": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "maximum": 1,
-              "minimum": 0,
               "type": "number"
             },
             {
@@ -7434,16 +7251,16 @@
         "system_b_efficiency_factor": {
           "default": 0.81,
           "description": "Reduction factor for converting System A efficiency data to System B (default 0.81). Only used when system_b_efficiencies is not provided.",
+          "exclusiveMinimum": 0,
           "maximum": 1,
-          "minimum": 0,
           "title": "System B Efficiency Factor",
           "type": "number"
         },
         "system_c_efficiency_factor": {
           "default": 0.88,
           "description": "Reduction factor for converting System A efficiency data to System C (default 0.88). Only used when system_c_efficiencies is not provided.",
+          "exclusiveMinimum": 0,
           "maximum": 1,
-          "minimum": 0,
           "title": "System C Efficiency Factor",
           "type": "number"
         }
@@ -7451,8 +7268,7 @@
       "required": [
         "type",
         "ColdWaterSource",
-        "flow_rates",
-        "system_a_efficiencies"
+        "flow_rates"
       ],
       "title": "WasteWaterHeatRecoverySystem",
       "type": "object"
@@ -7463,7 +7279,7 @@
         "duration": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -7482,14 +7298,15 @@
         },
         "temperature": {
           "description": "Target temperature for the water heating event (unit: \u02daC)",
-          "minimum": -273.15,
+          "maximum": 100,
+          "minimum": 0,
           "title": "Temperature",
           "type": "number"
         },
         "volume": {
           "anyOf": [
             {
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -7578,7 +7395,7 @@
         "external_diameter_mm": {
           "description": "(unit: mm)",
           "exclusiveMinimum": 0,
-          "title": "External Diameter Mm",
+          "title": "External Diameter",
           "type": "number"
         },
         "insulation_thermal_conductivity": {
@@ -7590,18 +7407,18 @@
         "insulation_thickness_mm": {
           "description": "(unit: mm)",
           "minimum": 0,
-          "title": "Insulation Thickness Mm",
+          "title": "Insulation Thickness",
           "type": "number"
         },
         "internal_diameter_mm": {
           "description": "(unit: mm)",
           "exclusiveMinimum": 0,
-          "title": "Internal Diameter Mm",
+          "title": "Internal Diameter",
           "type": "number"
         },
         "length": {
           "description": "(unit: m)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Length",
           "type": "number"
         },
@@ -7645,7 +7462,7 @@
         "internal_diameter_mm": {
           "description": "(unit: mm)",
           "exclusiveMinimum": 0,
-          "title": "Internal Diameter Mm",
+          "title": "Internal Diameter",
           "type": "number"
         },
         "length": {
@@ -7728,7 +7545,7 @@
           ],
           "default": null,
           "description": "Constant from characteristic equation of emitters (e.g. derived from BS EN 442 tests)",
-          "title": "C"
+          "title": "c"
         },
         "c_per_m": {
           "anyOf": [
@@ -7742,7 +7559,35 @@
           ],
           "default": null,
           "description": "Constant from characteristic equation of emitters (e.g. derived from BS EN 442 tests) per the length of the emitter",
-          "title": "C Per M"
+          "title": "c per m"
+        },
+        "thermal_mass": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal mass of the radiator (unit: kWh/K)",
+          "title": "Thermal Mass"
+        },
+        "thermal_mass_per_m": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal mass per meter length of the radiator (unit: kWh/K/m)",
+          "title": "Thermal Mass Per M"
         },
         "length": {
           "anyOf": [
@@ -7768,7 +7613,7 @@
         "n": {
           "description": "Exponent from characteristic equation of emitters (e.g. derived from BS EN 442 tests)",
           "exclusiveMinimum": 0,
-          "title": "N",
+          "title": "n",
           "type": "number"
         }
       },
@@ -7790,7 +7635,7 @@
         },
         "emitter_floor_area": {
           "description": "(unit: m\u00b2)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Emitter Floor Area",
           "type": "number"
         },
@@ -7857,7 +7702,7 @@
         },
         "depth": {
           "description": "(unit: m)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Depth",
           "type": "number"
         },
@@ -7886,7 +7731,7 @@
         },
         "height": {
           "description": "(unit: m)",
-          "minimum": 0,
+          "exclusiveMinimum": 0,
           "title": "Height",
           "type": "number"
         },
@@ -7984,7 +7829,8 @@
         },
         "delta_r": {
           "description": "Additional thermal resistance provided by a window treatment (unit: m\u00b2K/W)",
-          "title": "Delta R",
+          "exclusiveMinimum": 0,
+          "title": "Delta r",
           "type": "number"
         },
         "is_open": {
@@ -8090,6 +7936,7 @@
                   ]
                 },
                 "BuildingElementOpaque": "#/$defs/BuildingElementOpaque",
+                "BuildingElementPartyWall": "#/$defs/BuildingElementPartyWall",
                 "BuildingElementTransparent": "#/$defs/BuildingElementTransparent"
               },
               "propertyName": "type"
@@ -8135,6 +7982,9 @@
               },
               {
                 "$ref": "#/$defs/BuildingElementAdjacentUnconditionedSpaceSimple"
+              },
+              {
+                "$ref": "#/$defs/BuildingElementPartyWall"
               }
             ]
           },
