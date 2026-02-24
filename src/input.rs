@@ -4,6 +4,7 @@ use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::core::schedule::{BooleanSchedule, NumericSchedule};
 use crate::core::units::{calculate_thermal_resistance_of_virtual_layer, Orientation360};
 use crate::external_conditions::{ShadingSegment, WindowShadingObject};
+use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use crate::HEM_VERSION;
 use anyhow::{anyhow, bail};
@@ -357,6 +358,27 @@ impl ExternalConditionsInput {
             } else {
                 false
             }
+    }
+}
+
+impl From<ExternalConditionsFromFile> for ExternalConditionsInput {
+    fn from(weather_file_conditions: ExternalConditionsFromFile) -> Self {
+        ExternalConditionsInput {
+            air_temperatures: weather_file_conditions.air_temperatures.into(),
+            diffuse_horizontal_radiation: weather_file_conditions
+                .diffuse_horizontal_radiation
+                .into(),
+            direct_beam_conversion_needed: None,
+            direct_beam_radiation: weather_file_conditions.direct_beam_radiation.into(),
+            latitude: None,
+            longitude: None,
+            shading_segments: None,
+            solar_reflectivity_of_ground: weather_file_conditions
+                .solar_reflectivity_of_ground
+                .into(),
+            wind_directions: weather_file_conditions.wind_directions.into(),
+            wind_speeds: weather_file_conditions.wind_speeds.into(),
+        }
     }
 }
 
