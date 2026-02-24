@@ -29,7 +29,10 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{ExternalConditionsInput, HotWaterSourceDetails, Input};
 use crate::output::{Output, OutputEmitters, OutputStatic, OUTPUT_ZONE_DATA_FIELD_HEADINGS};
 use crate::output_writer::OutputWriter;
-use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
+use crate::read_weather_file::{
+    cibse_weather_data_to_external_conditions, epw_weather_data_to_external_conditions,
+    ExternalConditions as ExternalConditionsFromFile, ReadWeatherFileResult,
+};
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
 use convert_case::{Case, Casing};
@@ -1475,5 +1478,23 @@ impl From<&ExternalConditionsFromFile> for ExternalConditionsInput {
             direct_beam_conversion_needed: Some(value.direct_beam_conversion_needed),
             ..Default::default()
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WeatherFileType {
+    // the EPW weather file format
+    Epw,
+    // the weather file format used by CIBSE
+    Cibse,
+}
+
+pub fn load_weather_data(
+    input: impl Read,
+    weather_file_type: WeatherFileType,
+) -> ReadWeatherFileResult<ExternalConditionsFromFile> {
+    match weather_file_type {
+        WeatherFileType::Epw => epw_weather_data_to_external_conditions(input),
+        WeatherFileType::Cibse => cibse_weather_data_to_external_conditions(input),
     }
 }
