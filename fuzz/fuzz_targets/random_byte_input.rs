@@ -1,18 +1,20 @@
 #![no_main]
 
-use hem::output::Output;
-use hem::run_project;
-use hem::ProjectFlags;
+use home_energy_model::output_writer::OutputWriter;
+use home_energy_model::run_project_from_input_file;
 use libfuzzer_sys::fuzz_target;
 use std::io;
 use std::io::{BufReader, Cursor, Write};
 
 fuzz_target!(|data: &[u8]| {
-    let _run = run_project(
-        BufReader::new(Cursor::new(data)),
-        SinkOutput::default(),
+    let _run = run_project_from_input_file(
+        BufReader::new(Cursor::new(data)).into(),
+        &SinkOutput::default(),
         None,
-        &ProjectFlags::empty(),
+        None,
+        None,
+        false,
+        false,
     );
 });
 
@@ -20,7 +22,7 @@ fuzz_target!(|data: &[u8]| {
 #[derive(Debug, Default)]
 pub struct SinkOutput;
 
-impl Output for SinkOutput {
+impl OutputWriter for SinkOutput {
     fn writer_for_location_key(
         &self,
         _location_key: &str,

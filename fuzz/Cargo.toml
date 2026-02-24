@@ -11,7 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 anyhow = "1.0.89"
 
-[dependencies.hem]
+[dependencies.home-energy-model]
 path = ".."
 features = ["arbitrary"]
 

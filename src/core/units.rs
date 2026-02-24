@@ -111,6 +111,7 @@ impl BelowAbsoluteZeroError {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, PartialOrd, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(transparent)]
 #[repr(transparent)]
 pub struct Orientation360(

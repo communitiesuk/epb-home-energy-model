@@ -123,6 +123,7 @@ impl Input {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct InputMetadata {
     #[validate(custom = validate_hem_core_version)]
     hem_core_version: String,
@@ -2617,6 +2618,7 @@ fn validate_dry_core_output(
 pub enum FlowData {
     Variable {
         #[serde(rename = "variable_flow")]
+        #[cfg_attr(feature = "arbitrary", arbitrary(value = MustBe!(true)))]
         _variable_flow: MustBe!(true),
 
         /// Maximum flow rate allowed (unit: litres/min)
@@ -2629,6 +2631,7 @@ pub enum FlowData {
     },
     Design {
         #[serde(rename = "variable_flow")]
+        #[cfg_attr(feature = "arbitrary", arbitrary(value = MustBe!(false)))]
         _variable_flow: MustBe!(false),
 
         /// Constant flow rate if the heat source can't modulate flow rate (unit: l/s)
@@ -3410,6 +3413,7 @@ fn validate_area_height_width(
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "party_wall_cavity_type", rename_all = "snake_case")]
 pub enum PartyWallCavityData {
     /// Solid wall or structurally insulated panel
@@ -4605,6 +4609,7 @@ pub type WasteWaterHeatRecovery = IndexMap<std::string::String, WasteWaterHeatRe
 #[validate(custom = validate_flow_rates_and_efficiencies_length)]
 pub struct WasteWaterHeatRecoveryDetails {
     #[serde(rename = "type")]
+    #[cfg_attr(feature = "arbitrary", arbitrary(value = MustBe!("WWHRS_Instantaneous")))]
     _type: MustBe!("WWHRS_Instantaneous"),
 
     #[serde(rename = "ColdWaterSource")]
@@ -4787,6 +4792,7 @@ pub(crate) struct PhotovoltaicPanel {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct PhotovoltaicSystemWithPanels {
     #[serde(rename = "type")]
+    #[cfg_attr(feature = "arbitrary", arbitrary(value = MustBe!("PhotovoltaicSystem")))]
     _type: MustBe!("PhotovoltaicSystem"),
 
     #[serde(rename = "EnergySupply")]
@@ -4814,6 +4820,7 @@ pub(crate) struct PhotovoltaicSystemWithPanels {
 #[serde(deny_unknown_fields)]
 pub(crate) struct PhotovoltaicSystem {
     #[serde(rename = "type")]
+    #[cfg_attr(feature = "arbitrary", arbitrary(value = MustBe!("PhotovoltaicSystem")))]
     _type: MustBe!("PhotovoltaicSystem"),
 
     /// Peak power; represents the electrical power of a photovoltaic system with a given area for a solar irradiance of 1 kW/m² on this surface (at 25 degrees) (unit: kW)
