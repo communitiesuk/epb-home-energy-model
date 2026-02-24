@@ -115,6 +115,10 @@ impl Input {
     pub fn space_heat_system(&self) -> Option<&SpaceHeatSystem> {
         self.space_heat_system.as_ref()
     }
+
+    pub fn hot_water_source(&self) -> &HotWaterSource {
+        &self.hot_water_source
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
