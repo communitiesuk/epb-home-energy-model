@@ -79,7 +79,7 @@ pub(crate) fn summarise_events(events: &[WaterEventResult]) -> String {
 
 #[derive(Debug, thiserror::Error)]
 #[error("Cannot achieve temperature {temperature_target} by mixing water at {temperature_cold} and {temperature_hot}")]
-pub(crate) struct UnachievableTemperatureByMixingError {
+pub struct UnachievableTemperatureByMixingError {
     temperature_target: f64,
     temperature_hot: f64,
     temperature_cold: f64,
@@ -92,7 +92,7 @@ pub(crate) struct UnachievableTemperatureByMixingError {
 /// * `temp_target` -- temperature to be achieved, in any units
 /// * `temp_hot`    -- temperature of hot water to be mixed, in same units as temp_target
 /// * `temp_cold`   -- temperature of cold water to be mixed, in same units as temp_target
-pub(crate) fn calc_fraction_hot_water(
+pub fn calc_fraction_hot_water(
     temperature_target: f64,
     temperature_hot: f64,
     temperature_cold: f64,
