@@ -24,7 +24,7 @@ formatx = "0.2.3"
 fsum = "0.1.3"
 indexmap = { version = "2.13.0", features = ["serde", "arbitrary"] }
 indicatif = { version = "0.18.4", optional = true }
-interp = "2.1.1"
+interp = "2.1.2"
 is_close = "0.1.3"
 itertools = "0.14.0"
 jsonschema = "0.42.1"
