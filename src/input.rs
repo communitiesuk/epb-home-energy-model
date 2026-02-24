@@ -2373,12 +2373,12 @@ pub enum WaterHeatingEventType {
     Other,
 }
 
-pub(crate) type SpaceHeatSystem = IndexMap<std::string::String, SpaceHeatSystemDetails>;
+pub type SpaceHeatSystem = IndexMap<std::string::String, SpaceHeatSystemDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
-pub(crate) enum SpaceHeatSystemDetails {
+pub enum SpaceHeatSystemDetails {
     #[serde(rename = "InstantElecHeater")]
     InstantElectricHeater {
         //// Rated power of the instant electric heater. (Unit: kW)
@@ -2560,7 +2560,7 @@ fn validate_dry_core_output(
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(untagged)]
-pub(crate) enum FlowData {
+pub enum FlowData {
     Variable {
         #[serde(rename = "variable_flow")]
         _variable_flow: MustBe!(true),
@@ -2587,7 +2587,7 @@ pub(crate) enum FlowData {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "wet_emitter_type", rename_all = "lowercase")]
 #[validate(custom = validate_radiator_required_fields)]
-pub(crate) enum WetEmitter {
+pub enum WetEmitter {
     Radiator {
         /// Exponent from characteristic equation of emitters (e.g. derived from BS EN 442 tests)
         #[serde(rename = "n")]
@@ -2698,7 +2698,7 @@ const fn default_n_units() -> usize {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[validate(custom = validate_fancoil_test_data)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) struct FancoilTestData {
+pub struct FancoilTestData {
     #[validate]
     pub(crate) fan_speed_data: Vec<FanSpeedData>,
 
@@ -2798,7 +2798,7 @@ fn validate_all_items_in_option<T: Validate>(
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SpaceHeatSystemHeatSource {
+pub struct SpaceHeatSystemHeatSource {
     pub(crate) name: String,
 
     /// Upper operating limit for temperature (unit: deg C)
@@ -2812,7 +2812,7 @@ pub(crate) struct SpaceHeatSystemHeatSource {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(dead_code)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct EcoDesignController {
+pub struct EcoDesignController {
     pub(crate) ecodesign_control_class: EcoDesignControllerClass,
 
     /// Minimum outdoor temperature (unit: Celsius)
@@ -2871,7 +2871,7 @@ pub enum MVHRLocation {
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum ElectricStorageHeaterAirFlowType {
+pub enum ElectricStorageHeaterAirFlowType {
     FanAssisted,
     DamperOnly,
 }
