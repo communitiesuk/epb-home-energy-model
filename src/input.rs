@@ -111,6 +111,12 @@ pub struct Input {
     pub(crate) temp_internal_air_static_calcs: f64,
 }
 
+impl Input {
+    pub fn space_heat_system(&self) -> Option<&SpaceHeatSystem> {
+        self.space_heat_system.as_ref()
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 pub(crate) struct InputMetadata {
     #[validate(custom = validate_hem_core_version)]
@@ -4920,6 +4926,12 @@ pub struct InfiltrationVentilation {
     #[validate(minimum = 0.)]
     #[validate(maximum = 1.)]
     pub(crate) vent_opening_ratio_init: Option<f64>,
+}
+
+impl InfiltrationVentilation {
+    pub fn mechanical_ventilation(&self) -> &IndexMap<std::string::String, MechanicalVentilation> {
+        &self.mechanical_ventilation
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
