@@ -395,6 +395,10 @@ impl OutputSummary {
             })
             .collect()
     }
+
+    pub fn delivered_energy(&self) -> &IndexMap<Arc<str>, IndexMap<Arc<str>, f64>> {
+        &self.delivered_energy
+    }
 }
 
 #[derive(Debug, Serialize)]
