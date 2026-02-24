@@ -15,7 +15,7 @@ mod hem_core;
 
 pub mod input;
 mod input_dependency_resolvers;
-mod output;
+pub mod output;
 pub mod output_writer;
 pub mod read_weather_file;
 pub mod statistics;
