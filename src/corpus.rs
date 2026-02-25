@@ -112,7 +112,7 @@ use indicatif::ProgressIterator;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use smartstring::alias::String;
 use std::borrow::Cow;
@@ -2739,7 +2739,7 @@ impl Corpus {
             summary: self.calculate_output_summary(&output_core),
             core: output_core,
             metadata: OutputMetadata {
-                hem_core_version: HEM_VERSION,
+                hem_core_version: HEM_VERSION.into(),
             },
         })
     }
@@ -3040,7 +3040,7 @@ pub enum HotWaterResultMap {
     Int(IndexMap<Arc<str>, Vec<usize>>),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 pub enum NumberOrDivisionByZero {
     Number(f64),
     DivisionByZero,
@@ -4311,7 +4311,7 @@ pub type ResultsPerTimestep =
 pub type ResultsAnnual =
     IndexMap<Arc<str>, IndexMap<(Arc<str>, Option<Arc<str>>), ResultParamValue>>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub enum ResultParamValue {
     String(String),
     Number(f64),

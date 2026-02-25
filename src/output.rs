@@ -2,12 +2,13 @@ use crate::corpus::{NumberOrDivisionByZero, ResultsAnnual, ResultsPerTimestep};
 use crate::{EnergySupplyStatKey, StringOrNumber};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use smartstring::alias::String;
+use std::borrow::Cow;
 use std::sync::Arc;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OutputStatic {
     /// Heat transfer coefficient (unit: W/K)
     pub(crate) heat_transfer_coefficient: f64,
@@ -25,7 +26,7 @@ pub struct OutputStatic {
 
 /// Zone output data. Each field is keyed by zone name.
 /// These fields names are used in the core output file (substituting " " for "_")
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OutputZoneData {
     // NB: Field order is important as it affects the output files.
     /// Internal gains (unit: W)
@@ -65,7 +66,7 @@ pub(crate) const OUTPUT_ZONE_DATA_FIELD_HEADINGS: &[&str] = &[
 ];
 
 /// Contains the output timeseries for the heating and cooling systems, respectively.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OutputHeatingCoolingSystem {
     /// Heating system output, for each heating system (unit: kWh)
     pub(crate) heating_system_output: IndexMap<Option<Arc<str>>, Vec<f64>>,
@@ -74,7 +75,7 @@ pub struct OutputHeatingCoolingSystem {
 }
 
 /// Hot water systems data for every time step.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OutputHotWaterSystems {
     // NB: Field order is important as it affects the output files.
     // Each field's alias is the heading to use in the core output CSV.
@@ -176,7 +177,7 @@ impl OutputHotWaterSystems {
 
 /// Coefficients of performance for space heating & cooling, and hot water systems.
 /// Null-values are used when a divide-by-zero occurs in the results. These are output as "DIV/0" in the CSVs.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OutputCop {
     /// Overall coefficient of performance for each heating system (unitless)
     pub(crate) space_heating_system: IndexMap<Arc<str>, NumberOrDivisionByZero>,
@@ -187,7 +188,7 @@ pub struct OutputCop {
 }
 
 /// Emitters data for every time step.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct OutputEmitters {
     /// Current time step
     pub(crate) simulation_time_idx: usize,
@@ -225,7 +226,7 @@ pub struct OutputEmitters {
 ///       - water heating unmet demand, where the naming convention is _unmet_demand: [hot water source names from input]
 ///
 /// For all other energy supplies, end-use names refer to specific systems or appliances specified in the input file.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OutputCore {
     /// The list of timesteps, serves as an index for the other outputs (unit: Hours)
     pub(crate) timestep_array: Vec<f64>,
@@ -287,7 +288,7 @@ pub(crate) type OutputHeatBalanceAll =
     IndexMap<Arc<str>, IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>>;
 
 /// Details of the time-step with the peak electricity consumption within the simulation.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OutputSummaryPeakElectricityConsumption {
     /// The maximum electricity consumption (unit: kWh)
     pub(crate) peak: f64,
@@ -301,7 +302,7 @@ pub struct OutputSummaryPeakElectricityConsumption {
     pub(crate) hour: u8,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OutputSummaryEnergySupply {
     /// All energy generated on site (unit: kWh)
     pub(crate) generation: f64,
@@ -352,7 +353,7 @@ impl OutputSummaryEnergySupply {
 }
 
 /// Summary outputs from HEM Core.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OutputSummary {
     /// Total floor-area of all zones (unit: m²)
     pub(crate) total_floor_area: f64,
@@ -401,12 +402,12 @@ impl OutputSummary {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OutputMetadata {
-    pub(crate) hem_core_version: &'static str, // we'd expect this to always be statically available
+    pub(crate) hem_core_version: Cow<'static, str>, // deserialization doesn't like the static lifetime, so using a cow here
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Output {
     #[serde(rename = "static")]
     pub(crate) static_: OutputStatic,

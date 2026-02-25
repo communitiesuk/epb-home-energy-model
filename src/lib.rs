@@ -41,7 +41,7 @@ use erased_serde::Serialize as ErasedSerialize;
 use hem_core::external_conditions;
 use hem_core::simulation_time;
 use indexmap::IndexMap;
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use smartstring::alias::String;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
@@ -1332,7 +1332,7 @@ fn write_core_output_file_hot_water_source_summary(
     Ok(())
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 enum StringOrNumber {
     String(String),
     Float(f64),
