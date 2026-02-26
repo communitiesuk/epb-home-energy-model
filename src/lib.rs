@@ -41,6 +41,7 @@ use erased_serde::Serialize as ErasedSerialize;
 use hem_core::external_conditions;
 use hem_core::simulation_time;
 use indexmap::IndexMap;
+use jsonschema::Validator;
 use serde::{Deserialize, Serialize, Serializer};
 use smartstring::alias::String;
 use std::borrow::Cow;
@@ -92,15 +93,18 @@ pub fn run_project_from_input_file(
     #[instrument(skip_all)]
     fn finalize(input: impl Read) -> anyhow::Result<Input> {
         let input = serde_json::from_reader(input)?;
-        // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
-        // if let BasicOutput::Invalid(errors) =
-        //     CORE_INCLUDING_FHS_VALIDATOR.apply(&self.input).basic()
-        // {
-        //     bail!(
-        //         "Wrapper formed invalid JSON for the core schema: {}",
-        //         serde_json::to_value(errors)?.to_json_string_pretty()?
-        //     );
-        // }
+
+        let evaluation = CORE_INCLUDING_FHS_VALIDATOR.evaluate(&input);
+        if !evaluation.flag().valid {
+            bail!(
+                "Wrapper formed invalid JSON for the core schema: {}",
+                evaluation
+                    .iter_errors()
+                    .map(|e| format!("{}: {}", e.instance_location, e.error))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
+        }
 
         serde_json::from_value(input).map_err(|err| anyhow!(err))
     }
@@ -1498,3 +1502,8 @@ pub fn load_weather_data(
         WeatherFileType::Cibse => cibse_weather_data_to_external_conditions(input),
     }
 }
+
+static CORE_INCLUDING_FHS_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
+    let schema = serde_json::from_str(include_str!("../schemas/core-input.schema.json")).unwrap();
+    jsonschema::validator_for(&schema).unwrap()
+});
