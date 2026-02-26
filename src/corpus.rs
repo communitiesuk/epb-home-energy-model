@@ -2447,15 +2447,23 @@ impl Corpus {
             }
 
             for (h_name, output) in space_heat_provided {
+                let h_name = match h_name.as_ref() {
+                    "" => None,
+                    _ => Some(h_name.clone()),
+                };
                 space_heat_provided_dict
-                    .get_mut(&Some(h_name.clone()))
+                    .get_mut(&h_name)
                     .unwrap()
                     .push(output);
             }
 
             for (c_name, output) in space_cool_provided {
+                let c_name = match c_name.as_ref() {
+                    "" => None,
+                    _ => Some(c_name.clone()),
+                };
                 space_cool_provided_dict
-                    .get_mut(&Some(c_name.clone()))
+                    .get_mut(&c_name)
                     .unwrap()
                     .push(output);
             }
