@@ -549,6 +549,8 @@ fn write_core_output_file(
         units_row.push("[kWh]");
         headings.push(format!("{totals_key}: export").into());
         units_row.push("[kWh]");
+        headings.push(format!("{totals_key}: generation to grid").into());
+        units_row.push("[kWh]");
         headings.push(format!("{totals_key}: generated and consumed").into());
         units_row.push("[kWh]");
         headings.push(format!("{totals_key}: beta factor").into());
