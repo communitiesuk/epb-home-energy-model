@@ -110,7 +110,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     run_project_from_input_file(
-        BufReader::new(File::open(Path::new(input_file))?),
+        BufReader::new(File::open(Path::new(input_file))?).into(),
         &file_output,
         external_conditions,
         args.output.as_ref(),

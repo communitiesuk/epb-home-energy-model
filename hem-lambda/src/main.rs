@@ -27,7 +27,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     )))
     .ok();
 
-    let resp = match run_project_from_input_file(input, &output, external_conditions, None, None, false, false) {
+    let resp = match run_project_from_input_file(input.into(), &output, external_conditions, None, None, false, false) {
         Ok(CalculationResult { .. }) => {
             Response::builder()
             .status(200)

@@ -43,6 +43,7 @@ use hem_core::simulation_time;
 use indexmap::IndexMap;
 use jsonschema::Validator;
 use serde::{Deserialize, Serialize, Serializer};
+use serde_json::Value;
 use smartstring::alias::String;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
@@ -80,9 +81,20 @@ impl HemResponse {
     }
 }
 
+pub enum RunInput<'a> {
+    Json(Value),
+    Read(Box<dyn Read + 'a>),
+}
+
+impl<'a, T: Read + 'a> From<T> for RunInput<'a> {
+    fn from(value: T) -> Self {
+        RunInput::Read(Box::new(value))
+    }
+}
+
 #[instrument(skip_all)]
 pub fn run_project_from_input_file(
-    input: impl Read,
+    input: RunInput<'_>,
     output_writer: &impl OutputWriter,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     output_formats: Option<&Vec<OutputFormat>>,
@@ -91,9 +103,7 @@ pub fn run_project_from_input_file(
     detailed_output_heating_cooling: bool,
 ) -> Result<CalculationResult, HemError> {
     #[instrument(skip_all)]
-    fn finalize(input: impl Read) -> anyhow::Result<Input> {
-        let input = serde_json::from_reader(input)?;
-
+    fn finalize(input: Value) -> anyhow::Result<Input> {
         let evaluation = CORE_SCHEMA_VALIDATOR.evaluate(&input);
         if !evaluation.flag().valid {
             bail!(
@@ -108,6 +118,13 @@ pub fn run_project_from_input_file(
 
         serde_json::from_value(input).map_err(|err| anyhow!(err))
     }
+
+    let input = match input {
+        RunInput::Json(json) => json,
+        RunInput::Read(read) => {
+            serde_json::from_reader(read).map_err(|err| HemError::InvalidRequest(anyhow!(err)))?
+        }
+    };
     let input = finalize(input)?;
 
     let results = run_project(
