@@ -176,9 +176,9 @@ pub(crate) const H_RE: f64 = 4.14;
 
 // Surface resistances of building elements, in m2 K / W
 pub(crate) const R_SI_HORIZONTAL: f64 = 1.0 / (H_RI + H_CI_HORIZONTAL);
-pub(crate) const R_SI_UPWARDS: f64 = 1.0 / (H_RI + H_CI_UPWARDS);
+pub const R_SI_UPWARDS: f64 = 1.0 / (H_RI + H_CI_UPWARDS);
 pub(crate) const R_SI_DOWNWARDS: f64 = 1.0 / (H_RI + H_CI_DOWNWARDS);
-const R_SE: f64 = 1.0 / (H_CE + H_RE);
+pub const R_SE: f64 = 1.0 / (H_CE + H_RE);
 
 #[derive(Debug)]
 pub(crate) enum BuildingElement {
