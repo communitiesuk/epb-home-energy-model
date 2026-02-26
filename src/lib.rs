@@ -11,7 +11,7 @@ pub mod core;
 pub mod corpus;
 pub mod errors;
 
-mod hem_core;
+pub mod hem_core;
 
 pub mod input;
 mod input_dependency_resolvers;

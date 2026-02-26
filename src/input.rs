@@ -4596,15 +4596,14 @@ fn validate_backup_configuration(
     Ok(())
 }
 
-pub(crate) type WasteWaterHeatRecovery =
-    IndexMap<std::string::String, WasteWaterHeatRecoveryDetails>;
+pub type WasteWaterHeatRecovery = IndexMap<std::string::String, WasteWaterHeatRecoveryDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 #[validate(custom = validate_at_least_one_efficiency_set)]
 #[validate(custom = validate_flow_rates_and_efficiencies_length)]
-pub(crate) struct WasteWaterHeatRecoveryDetails {
+pub struct WasteWaterHeatRecoveryDetails {
     #[serde(rename = "type")]
     _type: MustBe!("WWHRS_Instantaneous"),
 
