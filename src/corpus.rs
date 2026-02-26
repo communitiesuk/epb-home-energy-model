@@ -2261,13 +2261,21 @@ impl Corpus {
 
         for z_h_names in self.heat_system_name_for_zone.values() {
             for h_name in z_h_names {
-                space_heat_provided_dict.insert(Some(h_name.clone()), vec_capacity());
+                let h_name = match h_name.as_ref() {
+                    "" => None,
+                    _ => Some(h_name.clone()),
+                };
+                space_heat_provided_dict.insert(h_name, vec_capacity());
             }
         }
 
         for z_c_names in self.cool_system_name_for_zone.values() {
             for c_name in z_c_names {
-                space_cool_provided_dict.insert(Some(c_name.clone()), vec_capacity());
+                let c_name = match c_name.as_ref() {
+                    "" => None,
+                    _ => Some(c_name.clone()),
+                };
+                space_cool_provided_dict.insert(c_name, vec_capacity());
             }
         }
 
