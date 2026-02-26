@@ -167,12 +167,12 @@ pub enum HeatFlowDirection {
 
 //Values from BS EN ISO 13789:2017, Table 8: Conventional surface heat
 //transfer coefficients
-const H_CI_UPWARDS: f64 = 5.0;
+pub const H_CI_UPWARDS: f64 = 5.0;
 const H_CI_HORIZONTAL: f64 = 2.5;
 const H_CI_DOWNWARDS: f64 = 0.7;
-pub(crate) const H_CE: f64 = 20.0;
-const H_RI: f64 = 5.13;
-pub(crate) const H_RE: f64 = 4.14;
+pub const H_CE: f64 = 20.0;
+pub const H_RI: f64 = 5.13;
+pub const H_RE: f64 = 4.14;
 
 // Surface resistances of building elements, in m2 K / W
 pub(crate) const R_SI_HORIZONTAL: f64 = 1.0 / (H_RI + H_CI_HORIZONTAL);
