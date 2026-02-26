@@ -94,7 +94,7 @@ pub fn run_project_from_input_file(
     fn finalize(input: impl Read) -> anyhow::Result<Input> {
         let input = serde_json::from_reader(input)?;
 
-        let evaluation = CORE_INCLUDING_FHS_VALIDATOR.evaluate(&input);
+        let evaluation = CORE_SCHEMA_VALIDATOR.evaluate(&input);
         if !evaluation.flag().valid {
             bail!(
                 "Wrapper formed invalid JSON for the core schema: {}",
@@ -1503,7 +1503,7 @@ pub fn load_weather_data(
     }
 }
 
-static CORE_INCLUDING_FHS_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
+static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     let schema = serde_json::from_str(include_str!("../schemas/core-input.schema.json")).unwrap();
     jsonschema::validator_for(&schema).unwrap()
 });
