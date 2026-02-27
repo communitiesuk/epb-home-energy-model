@@ -3122,14 +3122,14 @@ struct HeatCoolSystemsForZone {
     setpoints_and_convective_fractions: SetpointsAndConvectiveFractions,
 }
 
-pub type ColdWaterSources = IndexMap<String, Arc<ColdWaterSource>>;
+pub type ColdWaterSources = IndexMap<Arc<str>, Arc<ColdWaterSource>>;
 
 fn cold_water_sources_from_input(input: &ColdWaterSourceInput) -> ColdWaterSources {
     input
         .iter()
         .map(|(source_type, source_details)| {
             (
-                source_type.into(),
+                source_type.as_str().into(),
                 Arc::from(cold_water_source_from_input_details(source_details)),
             )
         })
@@ -3409,7 +3409,7 @@ fn wwhr_system_from_details(
     system: WasteWaterHeatRecoveryDetails,
     cold_water_sources: &ColdWaterSources,
 ) -> anyhow::Result<WwhrsInstantaneous> {
-    let cold_water_source = cold_water_sources.get(&system.cold_water_source).ok_or_else(|| anyhow!("Cold water source '{}' referenced by WWHRS input not found in cold water sources list.", system.cold_water_source))?;
+    let cold_water_source = cold_water_sources.get(system.cold_water_source.as_str()).ok_or_else(|| anyhow!("Cold water source '{}' referenced by WWHRS input not found in cold water sources list.", system.cold_water_source))?;
 
     // Get efficiency data for all systems if provided
     let WasteWaterHeatRecoveryDetails {

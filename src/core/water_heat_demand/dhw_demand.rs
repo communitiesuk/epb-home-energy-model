@@ -926,7 +926,10 @@ fn shower_from_input(
             flowrate,
             ..
         } => {
-            let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
+            let cold_water_source = cold_water_sources
+                .get(cold_water_source.as_str())
+                .unwrap()
+                .clone();
             let wwhrs_instance: Option<Arc<Mutex<WwhrsInstantaneous>>> = wwhrs_config
                 .as_ref()
                 .map(|config| &config.waste_water_heat_recovery_system)
@@ -952,7 +955,10 @@ fn shower_from_input(
             energy_supply,
             rated_power,
         } => {
-            let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
+            let cold_water_source = cold_water_sources
+                .get(cold_water_source.as_str())
+                .unwrap()
+                .clone();
 
             let energy_supply = energy_supplies
                 .get(energy_supply)
@@ -973,7 +979,7 @@ fn shower_from_input(
 
 fn input_to_bath(input: &BathDetails, cold_water_sources: &ColdWaterSources) -> Bath {
     let cold_water_source = cold_water_sources
-        .get(&input.cold_water_source)
+        .get(input.cold_water_source.as_str())
         .unwrap()
         .clone();
 
@@ -985,7 +991,7 @@ fn input_to_other_water_events(
     cold_water_sources: &ColdWaterSources,
 ) -> OtherHotWater {
     let cold_water_source = cold_water_sources
-        .get(&input.cold_water_source)
+        .get(input.cold_water_source.as_str())
         .unwrap()
         .clone();
 
