@@ -547,6 +547,22 @@ pub struct EnergySupplyDetails {
     pub(crate) tariff: Option<EnergySupplyTariff>,
 }
 
+impl EnergySupplyDetails {
+    pub fn with_fuel(fuel: FuelType) -> Self {
+        Self {
+            fuel,
+            diverter: None,
+            electric_battery: None,
+            factor: None,
+            priority: None,
+            is_export_capable: false,
+            threshold_charges: None,
+            threshold_prices: None,
+            tariff: None,
+        }
+    }
+}
+
 fn validate_threshold_value_fractions(
     values: &Option<[f64; 12]>,
 ) -> Result<(), serde_valid::validation::Error> {
