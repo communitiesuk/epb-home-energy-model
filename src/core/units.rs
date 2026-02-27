@@ -50,7 +50,7 @@ pub(crate) fn kelvin_to_celsius(temp_k: f64) -> Result<f64, BelowAbsoluteZeroErr
     }
 }
 
-pub(crate) fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f64> {
+pub fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f64> {
     let total_steps = timestep_totals.len();
     let steps_per_day = (HOURS_PER_DAY as f64 / timestep).floor() as usize;
     (0..total_steps)
