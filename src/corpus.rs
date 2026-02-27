@@ -3096,8 +3096,6 @@ impl Serialize for NumberOrDivisionByZero {
     }
 }
 
-pub type ResultsEndUser = IndexMap<String, IndexMap<String, Vec<f64>>>;
-
 enum SpaceHeatCoolSystems<'a> {
     Heat(&'a IndexMap<Arc<str>, Arc<Mutex<SpaceHeatSystem>>>),
     Cool(&'a IndexMap<Arc<str>, AirConditioning>),
