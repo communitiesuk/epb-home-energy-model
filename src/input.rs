@@ -1180,29 +1180,29 @@ pub struct SmartApplianceBattery {
     #[validate(custom = validate_battery_state_fractions)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
-    pub battery_state_of_charge: IndexMap<String, Vec<f64>>,
+    pub battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>>,
 
     /// Dictionary of lists containing energy sent to the battery from generation for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
-    pub energy_into_battery_from_generation: IndexMap<String, Vec<f64>>,
+    pub energy_into_battery_from_generation: IndexMap<Arc<str>, Vec<f64>>,
 
     /// Dictionary of lists containing energy sent to the battery from the grid for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
-    pub energy_into_battery_from_grid: IndexMap<String, Vec<f64>>,
+    pub energy_into_battery_from_grid: IndexMap<Arc<str>, Vec<f64>>,
 
     /// Dictionary of lists containing energy drawn from the battery for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
-    pub energy_out_of_battery: IndexMap<String, Vec<f64>>,
+    pub energy_out_of_battery: IndexMap<Arc<str>, Vec<f64>>,
 }
 
 fn validate_battery_state_fractions(
-    data: &IndexMap<String, Vec<f64>>,
+    data: &IndexMap<Arc<str>, Vec<f64>>,
 ) -> Result<(), serde_valid::validation::Error> {
     data
         .values()
@@ -1212,8 +1212,8 @@ fn validate_battery_state_fractions(
         .ok_or_else(|| serde_valid::validation::Error::Custom("battery_state_of_charge of SmartApplianceBattery was provided with numbers that were invalid fractions.".to_string()))
 }
 
-fn validate_all_sublists_non_empty(
-    data: &IndexMap<String, Vec<f64>>,
+fn validate_all_sublists_non_empty<T>(
+    data: &IndexMap<T, Vec<f64>>,
     struct_type: &str,
 ) -> Result<(), serde_valid::validation::Error> {
     data
@@ -1288,12 +1288,12 @@ pub(crate) struct SmartApplianceControlDetails {
 
     /// Dictionary of lists containing demand per end user for each timestep for each energy supply (unit: W)
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceControlDetails"))]
-    pub(crate) non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
+    pub(crate) non_appliance_demand_24hr: IndexMap<Arc<str>, Vec<f64>>,
 
     /// Dictionary of lists containing expected power for appliances for each energy supply, for the entire length of the simulation (unit: W)
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceControlDetails"))]
     #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceControlDetails"))]
-    pub(crate) power_timeseries: IndexMap<String, Vec<f64>>,
+    pub(crate) power_timeseries: IndexMap<Arc<str>, Vec<f64>>,
 
     /// Timestep of the power time series (unit: hours)
     #[validate(minimum = 0.)]
@@ -1301,8 +1301,8 @@ pub(crate) struct SmartApplianceControlDetails {
     pub(crate) time_series_step: f64,
 }
 
-fn validate_map_non_empty<T>(
-    data: &IndexMap<String, T>,
+fn validate_map_non_empty<T, U>(
+    data: &IndexMap<T, U>,
     struct_type: &str,
 ) -> Result<(), serde_valid::validation::Error> {
     (!data.is_empty()).then_some(()).ok_or_else(|| {

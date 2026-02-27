@@ -909,11 +909,11 @@ pub(crate) struct SmartApplianceControl {
     appliance_names: Vec<String>,
     energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
     battery_states_of_charge: IndexMap<String, Vec<AtomicF64>>,
-    ts_power: IndexMap<String, Vec<AtomicF64>>,
+    ts_power: IndexMap<Arc<str>, Vec<AtomicF64>>,
     ts_step: f64,
     simulation_timestep: f64,
     ts_step_ratio: f64,
-    non_appliance_demand_24hr: IndexMap<String, Vec<AtomicF64>>,
+    non_appliance_demand_24hr: IndexMap<Arc<str>, Vec<AtomicF64>>,
     buffer_length: usize,
 }
 
@@ -933,17 +933,17 @@ impl SmartApplianceControl {
     /// * `energysupplies` - dictionary of energysupply objects in the simulation
     /// * `appliances` - list of names of all appliance objects in the simulation
     pub(crate) fn new(
-        power_timeseries: &IndexMap<String, Vec<f64>>,
+        power_timeseries: &IndexMap<Arc<str>, Vec<f64>>,
         timeseries_step: f64,
         simulation_time_iterator: &SimulationTimeIterator,
-        non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
+        non_appliance_demand_24hr: IndexMap<Arc<str>, Vec<f64>>,
         battery_24hr: SmartApplianceBattery,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         appliance_names: Vec<String>,
     ) -> anyhow::Result<Self> {
         let energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>> = energy_supplies
             .iter()
-            .filter(|(key, _)| power_timeseries.contains_key(*key))
+            .filter(|(key, _)| power_timeseries.contains_key(key.as_str()))
             .map(|(k, v)| (k.to_owned(), v.clone()))
             .collect();
         let battery_states_of_charge = energy_supplies
@@ -952,7 +952,7 @@ impl SmartApplianceControl {
             .map(|(name, _supply)| {
                 (
                     name.to_owned(),
-                    battery_24hr.battery_state_of_charge[name]
+                    battery_24hr.battery_state_of_charge[name.as_str()]
                         .iter()
                         .map(|x| AtomicF64::new(*x))
                         .collect_vec(),
@@ -960,7 +960,7 @@ impl SmartApplianceControl {
             })
             .collect();
         for energy_supply in energy_supplies.keys() {
-            if power_timeseries[energy_supply].len() as f64 * timeseries_step
+            if power_timeseries[energy_supply.as_str()].len() as f64 * timeseries_step
                 < simulation_time_iterator.total_steps() as f64
                     * simulation_time_iterator.step_in_hours()
             {
@@ -971,7 +971,7 @@ impl SmartApplianceControl {
             appliance_names,
             energy_supplies,
             battery_states_of_charge,
-            ts_power: power_timeseries.iter().map(|(name, series)| (name.to_owned(), series.iter().map(|x| AtomicF64::new(*x)).collect_vec())).collect(),
+            ts_power: power_timeseries.iter().map(|(name, series)| (name.clone(), series.iter().map(|x| AtomicF64::new(*x)).collect_vec())).collect(),
             ts_step: timeseries_step,
             simulation_timestep: simulation_time_iterator.step_in_hours(),
             ts_step_ratio: simulation_time_iterator.step_in_hours() / timeseries_step,
@@ -1076,7 +1076,7 @@ impl SmartApplianceControl {
             // TODO (from Python) - it is possible to apply a weighting factor to energy generated in the dwelling here
             // (users for whom demand is negative)
             // to make it more or less preferable to use it immediately or export/charge battery
-            self.non_appliance_demand_24hr[name][idx_24hr].store(
+            self.non_appliance_demand_24hr[name.as_str()][idx_24hr].store(
                 FSum::with_all(
                     supply
                         .read()
@@ -2206,7 +2206,7 @@ mod tests {
             let power_timeseries = &IndexMap::from([("mains elec".into(), vec![100.; 12])]);
             let non_appliance_demand_24hr =
                 IndexMap::from([("mains elec".into(), vec![[0.1, 0.2]; 6].into_flattened())]);
-            let battery_state_of_charge: IndexMap<String, Vec<f64>> =
+            let battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>> =
                 IndexMap::from([("mains elec".into(), vec![0.5; 12])]);
             let battery_24hr = SmartApplianceBattery {
                 battery_state_of_charge,
@@ -2233,7 +2233,7 @@ mod tests {
             simulation_time_iterator: SimulationTimeIterator,
             energy_supply: Arc<RwLock<EnergySupply>>,
         ) {
-            let battery_state_of_charge: IndexMap<String, Vec<f64>> =
+            let battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>> =
                 IndexMap::from([("mains elec".into(), vec![0.; 12])]);
             let battery_24hr = SmartApplianceBattery {
                 battery_state_of_charge,
