@@ -1356,7 +1356,7 @@ fn write_core_output_file_hot_water_source_summary(
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-enum StringOrNumber {
+pub enum StringOrNumber {
     String(String),
     Float(f64),
     Integer(usize),
