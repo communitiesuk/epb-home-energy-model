@@ -3893,10 +3893,7 @@ fn building_element_from_input(
             treatment,
             ..
         } => {
-            let BuildingElementHeightWidthInput { height, width } =
-                area_input.height_and_width.ok_or_else(|| {
-                    anyhow!("Height and width of transparent building element must be provided.")
-                })?;
+            let BuildingElementHeightWidthInput { height, width } = *area_input;
 
             BuildingElement::Transparent(BuildingElementTransparent::new(
                 *pitch,

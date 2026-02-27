@@ -3197,8 +3197,7 @@ pub enum BuildingElement {
 
         #[serde(flatten)]
         #[validate]
-        #[validate(custom = validate_area_height_width)]
-        area_input: BuildingElementAreaOrHeightWidthInput,
+        area_input: BuildingElementHeightWidthInput,
 
         /// Height of the openable area, corrected for obstruction due to the window frame of the openable section (unit: m)
         #[validate(minimum = 0.)]
@@ -3397,7 +3396,7 @@ impl BuildingElementAreaOrHeightWidthInput {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) struct BuildingElementHeightWidthInput {
+pub struct BuildingElementHeightWidthInput {
     /// Height of the building element (m)
     #[validate(exclusive_minimum = 0.)]
     pub(crate) height: f64,
@@ -3408,7 +3407,7 @@ pub(crate) struct BuildingElementHeightWidthInput {
 }
 
 impl BuildingElementHeightWidthInput {
-    fn area(&self) -> f64 {
+    pub(crate) fn area(&self) -> f64 {
         self.height * self.width
     }
 }
@@ -5755,12 +5754,12 @@ mod tests {
                     // and rest of files give a good spread
                     && !e.file_name().to_str().unwrap().contains("FHS")
                     && !e
-                        .path()
-                        .parent()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .ends_with("results") // don't test against files in results output directories
+                    .path()
+                    .parent()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .ends_with("results") // don't test against files in results output directories
             })
             .collect_vec()
     }
@@ -6704,7 +6703,8 @@ mod tests {
                 "backup_ctrl_type": "TopUp",
                 "power_max_backup": null,
                 "time_delay_backup": 0.5,
-            }), false, "Either power_max_backup or boiler is required if backup_ctrl_type is set.".into())]
+            }), false, "Either power_max_backup or boiler is required if backup_ctrl_type is set.".into()
+            )]
             fn test_validate_backup_configuration(
                 #[case] mut inputs: JsonValue,
                 #[case] valid: bool,
@@ -7644,7 +7644,8 @@ mod tests {
                 case::daily_losses_declared_greater_than_zero(json!({"daily_losses_declared": 0})),
                 case::heat_exchanger_surface_area_declared_greater_than_zero(json!({"heat_exchanger_surface_area_declared": 0})
                 ),
-                case::in_use_factor_mismatch_greater_than_zero(json!({"in_use_factor_mismatch": 0})),
+                case::in_use_factor_mismatch_greater_than_zero(json!({"in_use_factor_mismatch": 0})
+                ),
                 case::power_max_greater_than_zero(json!({"power_max": 0})),
                 case::vol_hw_daily_average_greater_than_zero(json!({"vol_hw_daily_average": 0})),
                 case::tank_volume_declared_greater_than_zero(json!({"tank_volume_declared": 0})),
@@ -7724,7 +7725,8 @@ mod tests {
 
         #[rstest(inputs,
             case::sfp_greater_than_zero(json!({"sfp": -1})),
-            case::design_outdoor_air_flow_rate_greater_than_zero(json!({"design_outdoor_air_flow_rate": -1})),
+            case::design_outdoor_air_flow_rate_greater_than_zero(json!({"design_outdoor_air_flow_rate": -1})
+            ),
             case::mvhr_eff_at_least_zero(json!({"mvhr_eff": -1})),
             case::mech_vent_mvhr_needs_both_position_intake_and_position_exhaust(json!({"vent_type": "MVHR", "position_intake": null})
             ),
@@ -8374,8 +8376,10 @@ mod tests {
                     "system_c_efficiencies": [1, 2, 3],
                     "flow_rates": [1, 2, 3, 4],
                 })),
-            case::system_a_efficiencies_item_greater_than_zero(json!({"system_a_efficiencies": [0]})),
-            case::system_a_efficiencies_item_at_most_a_hundred(json!({"system_a_efficiencies": [101]})),
+            case::system_a_efficiencies_item_greater_than_zero(json!({"system_a_efficiencies": [0]})
+            ),
+            case::system_a_efficiencies_item_at_most_a_hundred(json!({"system_a_efficiencies": [101]})
+            ),
             case::flow_rates_item_greater_than_zero(json!({"flow_rates": [0]})),
             case::system_a_utilisation_factor_greater_than_zero(json!({"system_a_utilisation_factor": 0})
             ),
@@ -8526,9 +8530,12 @@ mod tests {
             }
 
             #[rstest(inputs,
-                case::u_value_or_thermal_resistance_construction_required(json!({"u_value": null, "thermal_resistance_construction": null})),
-                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})),
-                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": -1.0})),
+                case::u_value_or_thermal_resistance_construction_required(json!({"u_value": null, "thermal_resistance_construction": null})
+                ),
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})
+                ),
+                case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": -1.0})
+                ),
             )]
             fn test_validate(valid_example_with_thermal_resistance: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<BuildingElement>(
@@ -8630,12 +8637,9 @@ mod tests {
                     g_value: 10.,
                     frame_area_fraction: 0.25,
                     base_height: 10.,
-                    area_input: BuildingElementAreaOrHeightWidthInput {
-                        area: None,
-                        height_and_width: Some(BuildingElementHeightWidthInput {
-                            height: 10.,
-                            width: 5.,
-                        }),
+                    area_input: BuildingElementHeightWidthInput {
+                        height: 10.,
+                        width: 5.,
                     },
                     free_area_height: 1.6,
                     mid_height: 40.,
