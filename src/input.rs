@@ -124,6 +124,10 @@ impl Input {
     pub fn energy_supply(&self) -> &EnergySupplyInput {
         &self.energy_supply
     }
+
+    pub fn total_floor_area(&self) -> f64 {
+        self.zone.values().map(|z| z.area).sum::<f64>()
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
@@ -5804,6 +5808,16 @@ mod tests {
             let recreated_input: Input = serde_json::from_str(&json).unwrap();
             assert_eq!(input, recreated_input,);
         }
+    }
+
+    #[rstest]
+    fn test_total_floor_area(baseline_demo_file_input: Input) {
+        assert_eq!(baseline_demo_file_input.total_floor_area(), 48.);
+    }
+
+    #[fixture]
+    fn baseline_demo_file_input(baseline_demo_file_json: JsonValue) -> Input {
+        serde_json::from_value(baseline_demo_file_json).unwrap()
     }
 
     #[fixture]
