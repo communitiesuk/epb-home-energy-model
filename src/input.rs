@@ -328,6 +328,46 @@ pub struct ExternalConditionsInput {
 }
 
 impl ExternalConditionsInput {
+    pub fn direct_beam_conversion_needed(&self) -> Option<bool> {
+        self.direct_beam_conversion_needed
+    }
+
+    pub fn air_temperatures(&self) -> Option<&[f64]> {
+        self.air_temperatures.as_ref().map(|v| &v[..])
+    }
+
+    pub fn wind_speeds(&self) -> Option<&[f64]> {
+        self.wind_speeds.as_ref().map(|v| &v[..])
+    }
+
+    pub fn wind_directions(&self) -> Option<&[Orientation360]> {
+        self.wind_directions.as_ref().map(|v| &v[..])
+    }
+
+    pub fn diffuse_horizontal_radiation(&self) -> Option<&[f64]> {
+        self.diffuse_horizontal_radiation.as_ref().map(|v| &v[..])
+    }
+
+    pub fn direct_beam_radiation(&self) -> Option<&[f64]> {
+        self.direct_beam_radiation.as_ref().map(|v| &v[..])
+    }
+
+    pub fn solar_reflectivity_of_ground(&self) -> Option<&[f64]> {
+        self.solar_reflectivity_of_ground.as_ref().map(|v| &v[..])
+    }
+
+    pub fn latitude(&self) -> Option<f64> {
+        self.latitude
+    }
+
+    pub fn longitude(&self) -> Option<f64> {
+        self.longitude
+    }
+
+    pub fn shading_segments(&self) -> Option<&[ShadingSegment]> {
+        self.shading_segments.as_ref().map(|v| &v[..])
+    }
+
     /// Assert that all required fields are set and valid, allowing the model to run without a weather file.
     pub(crate) fn are_all_fields_set(&self) -> bool {
         [
