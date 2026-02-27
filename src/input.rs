@@ -120,6 +120,10 @@ impl Input {
     pub fn hot_water_source(&self) -> &HotWaterSource {
         &self.hot_water_source
     }
+
+    pub fn energy_supply(&self) -> &EnergySupplyInput {
+        &self.energy_supply
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
