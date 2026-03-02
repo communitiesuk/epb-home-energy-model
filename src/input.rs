@@ -637,7 +637,7 @@ pub(crate) enum EnergySupplyTariff {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum EnergySupplyPriorityEntry {
+pub enum EnergySupplyPriorityEntry {
     ElectricBattery,
 
     #[serde(rename = "diverter")]

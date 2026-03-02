@@ -77,7 +77,7 @@ impl EnergySupplyConnection {
     }
 }
 
-pub(crate) struct EnergySupplyTariffInput {
+pub struct EnergySupplyTariffInput {
     tariff: EnergySupplyTariff,
     tariff_data: Box<dyn Read>,
     threshold_charges: Option<Vec<f64>>,
@@ -763,7 +763,7 @@ enum BetaFactorFunction {
     Wind,
 }
 
-pub(crate) struct EnergySupplyBuilder {
+pub struct EnergySupplyBuilder {
     energy_supply: EnergySupply,
 }
 
