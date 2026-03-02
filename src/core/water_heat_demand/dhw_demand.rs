@@ -110,7 +110,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
     // Time of finalisation of the previous hot water event
     // __time_end_previous_event = 0.0
 
-    pub(crate) fn new(
+    pub fn new(
         showers_input: &ShowersInput,
         bath_input: &BathInput,
         other_hot_water_input: &OtherWaterUseInput,
