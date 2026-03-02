@@ -1815,7 +1815,7 @@ struct TemperatureCalculation {
 
 /// A struct to represent a smart hot water storage tank/cylinder
 #[derive(Debug)]
-pub(crate) struct SmartHotWaterTank {
+pub struct SmartHotWaterTank {
     storage_tank: StorageTank,
     power_pump_kw: f64,
     max_flow_rate_pump_l_per_min: f64,
@@ -2986,7 +2986,7 @@ pub trait SurplusDiverting: Send + Sync {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum HotWaterStorageTank {
+pub enum HotWaterStorageTank {
     StorageTank(Arc<RwLock<StorageTank>>),
     SmartHotWaterTank(Arc<RwLock<SmartHotWaterTank>>),
 }

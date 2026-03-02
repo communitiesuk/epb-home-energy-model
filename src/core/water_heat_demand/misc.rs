@@ -44,7 +44,7 @@ impl From<WaterScheduleEventType> for WaterEventResultType {
 
 #[derive(Clone, Copy, Debug)]
 /// Result of processing a single water use event
-pub(crate) struct WaterEventResult {
+pub struct WaterEventResult {
     pub(crate) event_result_type: WaterEventResultType,
     pub(crate) temperature_warm: f64, // Temperature of water at outlet (Celsius)
     pub(crate) volume_warm: f64,      // Volume of water at outlet (litres)

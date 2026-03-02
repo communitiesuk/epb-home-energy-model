@@ -22,7 +22,7 @@ pub(crate) trait WaterSupplyBehaviour {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum WaterSupply {
+pub enum WaterSupply {
     ColdWaterSource(Arc<ColdWaterSource>),
     Wwhrs(Arc<Mutex<WwhrsInstantaneous>>),
     Preheated(HotWaterStorageTank),
@@ -80,7 +80,7 @@ impl WaterSupplyBehaviour for WaterSupply {
 
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct MockWaterSupply {
+pub struct MockWaterSupply {
     temperature: f64,
 }
 

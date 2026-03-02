@@ -32,8 +32,7 @@ use std::sync::Arc;
 pub(crate) const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
 
 #[derive(Debug)]
-pub(crate) struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour = T>
-{
+pub struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour = T> {
     showers: HashMap<String, Shower>,
     baths: HashMap<String, Bath>,
     other: HashMap<String, OtherHotWater>,
