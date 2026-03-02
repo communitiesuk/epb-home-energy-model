@@ -890,12 +890,12 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
     }
 }
 
-struct HotWaterDemandResult {
-    hw_demand_vol: IndexMap<Arc<str>, f64>,
-    hw_duration: IndexMap<Arc<str>, f64>,
-    no_events: IndexMap<Arc<str>, u32>,
-    hw_energy_demand_at_tapping_points: IndexMap<Arc<str>, f64>,
-    usage_events: IndexMap<Arc<str>, Vec<WaterEventResult>>,
+pub struct HotWaterDemandResult {
+    pub hw_demand_vol: IndexMap<Arc<str>, f64>,
+    pub hw_duration: IndexMap<Arc<str>, f64>,
+    pub no_events: IndexMap<Arc<str>, u32>,
+    pub hw_energy_demand_at_tapping_points: IndexMap<Arc<str>, f64>,
+    pub usage_events: IndexMap<Arc<str>, Vec<WaterEventResult>>,
 }
 
 pub(crate) struct WaterHeatingCalculation {
