@@ -77,7 +77,7 @@ impl WwhrsInstantaneous {
     /// * `system_c_utilisation_factor`: Utilisation factor for System C
     /// * `system_b_efficiency_factor`: Reduction factor for System B (default 0.81)
     /// * `system_c_efficiency_factor`: Reduction factor for System C (default 0.88)
-    pub(crate) fn new(
+    pub fn new(
         flow_rates: Vec<f64>,
         system_a_efficiencies: Option<Vec<f64>>,
         cold_water_source: Arc<ColdWaterSource>,
