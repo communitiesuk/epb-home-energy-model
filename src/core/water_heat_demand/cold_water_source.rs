@@ -25,7 +25,7 @@ impl ColdWaterSource {
     }
 
     /// Return the cold water temperature and volume for the current timestep
-    pub(crate) fn get_temp_cold_water(
+    pub fn get_temp_cold_water(
         &self,
         volume_needed: f64,
         simtime: SimulationTimeIteration,
@@ -41,7 +41,7 @@ impl ColdWaterSource {
         Ok(vec![(temperature, volume_needed)])
     }
 
-    pub(crate) fn draw_off_water(
+    pub fn draw_off_water(
         &self,
         volume_needed: f64,
         simtime: SimulationTimeIteration,
