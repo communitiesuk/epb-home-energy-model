@@ -37,7 +37,6 @@ use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-
 type State = Vector1<f64>;
 type Time = f64;
 
