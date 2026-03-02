@@ -768,7 +768,7 @@ pub(crate) struct EnergySupplyBuilder {
 }
 
 impl EnergySupplyBuilder {
-    pub(crate) fn new(fuel_type: FuelType, simulation_timesteps: usize) -> Self {
+    pub fn new(fuel_type: FuelType, simulation_timesteps: usize) -> Self {
         Self {
             energy_supply: EnergySupply::new(
                 fuel_type,
@@ -782,12 +782,12 @@ impl EnergySupplyBuilder {
         }
     }
 
-    pub(crate) fn with_export_capable(mut self, is_export_capable: bool) -> Self {
+    pub fn with_export_capable(mut self, is_export_capable: bool) -> Self {
         self.energy_supply.is_export_capable = is_export_capable;
         self
     }
 
-    pub(crate) fn with_tariff_input(
+    pub fn with_tariff_input(
         mut self,
         tariff_input: EnergySupplyTariffInput,
     ) -> anyhow::Result<Self> {
@@ -795,17 +795,17 @@ impl EnergySupplyBuilder {
         Ok(self)
     }
 
-    pub(crate) fn with_electric_battery(mut self, electric_battery: ElectricBattery) -> Self {
+    pub fn with_electric_battery(mut self, electric_battery: ElectricBattery) -> Self {
         self.energy_supply.electric_battery = Some(electric_battery);
         self
     }
 
-    pub(crate) fn with_priority(mut self, priority: Vec<EnergySupplyPriorityEntry>) -> Self {
+    pub fn with_priority(mut self, priority: Vec<EnergySupplyPriorityEntry>) -> Self {
         self.energy_supply.priority = Some(priority);
         self
     }
 
-    pub(crate) fn build(self) -> EnergySupply {
+    pub fn build(self) -> EnergySupply {
         self.energy_supply
     }
 
