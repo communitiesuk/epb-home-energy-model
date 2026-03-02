@@ -4676,53 +4676,53 @@ pub struct WasteWaterHeatRecoveryDetails {
     _type: MustBe!("WWHRS_Instantaneous"),
 
     #[serde(rename = "ColdWaterSource")]
-    pub(crate) cold_water_source: String,
+    pub cold_water_source: String,
 
     /// Test flow rates in litres per minute (e.g., [5., 7., 9., 11., 13.])
     #[validate(custom = validate_all_items_at_least_zero)]
-    pub(crate) flow_rates: Vec<f64>,
+    pub flow_rates: Vec<f64>,
 
     /// Measured efficiencies for System A at the test flow rates
     #[validate(custom = validate_all_items_in_option_valid_system_efficiency)]
-    pub(crate) system_a_efficiencies: Option<Vec<f64>>,
+    pub system_a_efficiencies: Option<Vec<f64>>,
 
     /// Utilisation factor for System A
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     #[validate(maximum = 1.)]
-    pub(crate) system_a_utilisation_factor: Option<f64>,
+    pub system_a_utilisation_factor: Option<f64>,
 
     /// Measured efficiencies for System B (optional, uses system_b_efficiency_factor if not provided)
     #[validate(custom = validate_all_items_in_option_valid_system_efficiency)]
-    pub(crate) system_b_efficiencies: Option<Vec<f64>>,
+    pub system_b_efficiencies: Option<Vec<f64>>,
 
     /// Utilisation factor for System B. Required when using either system_b_efficiencies (pre-corrected data) or when converting system_a_efficiencies to System B (used with system_b_efficiency_factor).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     #[validate(maximum = 1.)]
-    pub(crate) system_b_utilisation_factor: Option<f64>,
+    pub system_b_utilisation_factor: Option<f64>,
 
     /// Measured efficiencies for System C (optional, uses system_c_efficiency_factor if not provided)
     #[validate(custom = validate_all_items_in_option_valid_system_efficiency)]
-    pub(crate) system_c_efficiencies: Option<Vec<f64>>,
+    pub system_c_efficiencies: Option<Vec<f64>>,
 
     /// Utilisation factor for System C. Required when using either system_c_efficiencies (pre-corrected data) or when converting system_a_efficiencies to System C (used with system_c_efficiency_factor).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(minimum = 0.)]
     #[validate(maximum = 1.)]
-    pub(crate) system_c_utilisation_factor: Option<f64>,
+    pub system_c_utilisation_factor: Option<f64>,
 
     /// Reduction factor for converting System A efficiency data to System B (default 0.81). Only used when system_b_efficiencies is not provided.
     #[serde(default = "default_system_b_efficiency_factor")]
     #[validate(minimum = 0.)]
     #[validate(maximum = 1.)]
-    pub(crate) system_b_efficiency_factor: f64,
+    pub system_b_efficiency_factor: f64,
 
     /// Reduction factor for converting System A efficiency data to System C (default 0.88). Only used when system_c_efficiencies is not provided.
     #[serde(default = "default_system_c_efficiency_factor")]
     #[validate(minimum = 0.)]
     #[validate(maximum = 1.)]
-    pub(crate) system_c_efficiency_factor: f64,
+    pub system_c_efficiency_factor: f64,
 }
 
 const fn default_system_b_efficiency_factor() -> f64 {
