@@ -415,7 +415,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         }
     }
 
-    fn hot_water_demand<'a>(
+    pub fn hot_water_demand<'a>(
         &'a self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<HotWaterDemandResult> {
