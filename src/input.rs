@@ -2287,6 +2287,15 @@ impl Default for WaterDistribution {
     }
 }
 
+impl WaterDistribution {
+    pub fn items(&self) -> Vec<WaterPipeworkSimple> {
+        match self {
+            WaterDistribution::List(list) => list.clone(),
+            WaterDistribution::Map(map) => map.values().flatten().cloned().collect(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
