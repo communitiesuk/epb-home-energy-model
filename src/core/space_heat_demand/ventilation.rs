@@ -455,7 +455,7 @@ impl Window {
         on_off_ctrl_obj: Option<Arc<Control>>,
         ventilation_zone_base_height: f64,
     ) -> Self {
-        let n_w_div = max_of_2(window_part_list.len() - 1, 0usize) as f64;
+        let n_w_div = max_of_2(window_part_list.len() as f64 - 1., 0f64);
         Self {
             a_w_max,
             c_d_w: 0.67,
