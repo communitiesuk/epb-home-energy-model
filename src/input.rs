@@ -4738,7 +4738,7 @@ pub(crate) struct PhotovoltaicSystemWithPanels {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PhotovoltaicSystem {
+pub struct PhotovoltaicSystem {
     #[serde(rename = "type")]
     #[cfg_attr(feature = "arbitrary", arbitrary(value = MustBe!("PhotovoltaicSystem")))]
     _type: MustBe!("PhotovoltaicSystem"),
