@@ -903,9 +903,8 @@ fn validate_running_water_temperatures(
 pub(crate) type ExtraControls = IndexMap<std::string::String, ControlDetails>;
 
 /// Control schedule configuration for heating and energy systems.
-#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 pub struct Control {
     #[serde(skip_serializing_if = "Option::is_none", rename = "hw timer")]
     #[validate]
@@ -930,9 +929,8 @@ impl Control {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")]
 #[validate(custom = validate_logic_type_for_charge_target)]
 pub(crate) enum ControlDetails {
@@ -1105,9 +1103,8 @@ fn validate_setpoint_bounds(
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(untagged)]
 pub(crate) enum ChargeLevel {
     Single(f64),
