@@ -2854,7 +2854,7 @@ pub enum ElectricStorageHeaterAirFlowType {
     DamperOnly,
 }
 
-pub(crate) type ZoneDictionary = IndexMap<std::string::String, ZoneInput>;
+pub type ZoneDictionary = IndexMap<std::string::String, ZoneInput>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
