@@ -268,9 +268,8 @@ fn validate_time_series(input: &Input) -> Result<(), serde_valid::validation::Er
     Ok(())
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub struct ExternalConditionsInput {
     /// List of external air temperatures, one entry per hour (unit: ˚C)

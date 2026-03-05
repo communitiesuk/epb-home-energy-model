@@ -24,9 +24,8 @@ pub enum DaylightSavingsConfig {
     NotApplicable,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub struct ShadingSegment {
     /// Starting angle of the shading segment
@@ -41,9 +40,8 @@ pub struct ShadingSegment {
     pub(crate) shading_objects: Vec<ShadingObject>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ShadingObject {
     #[serde(rename = "type")]
