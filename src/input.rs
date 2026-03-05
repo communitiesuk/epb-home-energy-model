@@ -2852,9 +2852,8 @@ pub enum ElectricStorageHeaterAirFlowType {
 
 pub type ZoneDictionary = IndexMap<std::string::String, ZoneInput>;
 
-#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 #[validate(custom = validate_system_list_no_duplicates)]
 pub struct ZoneInput {
@@ -3005,9 +3004,8 @@ pub enum ZoneTemperatureControlBasis {
 pub(crate) const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
 pub(crate) const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 
-#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")]
 #[validate(custom = validate_u_value_and_thermal_resistance_floor_construction)]
 #[validate(custom = validate_max_window_open_area_for_transparent)]
@@ -3825,18 +3823,16 @@ pub enum EdgeInsulation {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(untagged)]
 pub enum ThermalBridging {
     Elements(#[validate] IndexMap<std::string::String, ThermalBridgingDetails>),
     Number(f64),
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ThermalBridgingDetails {
     #[serde(rename = "ThermalBridgeLinear")]
