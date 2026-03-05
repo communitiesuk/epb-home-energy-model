@@ -5571,54 +5571,6 @@ impl InputForCalcHtcHlp for Input {
     }
 }
 
-// The purpose of this struct is to allow deserialisation of an input just containing the data needed for the
-// calc_htc_hlp function in the corpus module, so that we can ignore other areas of the data that may not be in the
-// expected shape for a core input.
-#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
-#[serde(rename_all = "PascalCase")]
-pub struct ReducedInputForCalcHtcHlp {
-    #[serde(rename = "temp_internal_air_static_calcs")]
-    pub(crate) temp_internal_air_static_calcs: f64,
-    pub(crate) simulation_time: SimulationTime,
-    pub(crate) external_conditions: Arc<ExternalConditionsInput>,
-    pub(crate) energy_supply: EnergySupplyInput,
-    pub(crate) control: Control,
-    pub(crate) zone: ZoneDictionary,
-    pub(crate) infiltration_ventilation: InfiltrationVentilation,
-}
-
-impl InputForCalcHtcHlp for ReducedInputForCalcHtcHlp {
-    fn simulation_time(&self) -> &SimulationTime {
-        &self.simulation_time
-    }
-
-    fn energy_supply(&self) -> &EnergySupplyInput {
-        &self.energy_supply
-    }
-
-    fn external_conditions(&self) -> &ExternalConditionsInput {
-        self.external_conditions.as_ref()
-    }
-
-    fn control(&self) -> &Control {
-        &self.control
-    }
-
-    fn infiltration_ventilation(&self) -> &InfiltrationVentilation {
-        &self.infiltration_ventilation
-    }
-
-    fn zone(&self) -> &ZoneDictionary {
-        &self.zone
-    }
-
-    fn temp_internal_air_static_calcs(&self) -> f64 {
-        self.temp_internal_air_static_calcs
-    }
-}
-
 #[expect(unused)]
 static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     let schema = serde_json::from_str(include_str!("../schemas/core-input.schema.json")).unwrap();
