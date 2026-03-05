@@ -552,7 +552,7 @@ pub struct ApplianceGainsEvent {
     pub demand_w: f64,
 }
 
-pub(crate) type EnergySupplyInput = IndexMap<std::string::String, EnergySupplyDetails>;
+pub type EnergySupplyInput = IndexMap<std::string::String, EnergySupplyDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
