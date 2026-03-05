@@ -3290,11 +3290,11 @@ impl BuildingElementAreaOrHeightWidthInput {
 pub struct BuildingElementHeightWidthInput {
     /// Height of the building element (m)
     #[validate(exclusive_minimum = 0.)]
-    pub(crate) height: f64,
+    pub height: f64,
 
     /// Width of the building element (m)
     #[validate(exclusive_minimum = 0.)]
-    pub(crate) width: f64,
+    pub width: f64,
 }
 
 impl BuildingElementHeightWidthInput {
