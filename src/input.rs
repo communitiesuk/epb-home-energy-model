@@ -3283,7 +3283,7 @@ pub struct BuildingElementAreaOrHeightWidthInput {
 }
 
 impl BuildingElementAreaOrHeightWidthInput {
-    pub(crate) fn area(&self) -> f64 {
+    pub fn area(&self) -> f64 {
         self.area.unwrap_or(self.height_and_width.unwrap_or_else(|| panic!("Building element area/ height and width code has a logic error and could not proceed.")).area())
     }
 }
@@ -3301,7 +3301,7 @@ pub struct BuildingElementHeightWidthInput {
 }
 
 impl BuildingElementHeightWidthInput {
-    pub(crate) fn area(&self) -> f64 {
+    pub fn area(&self) -> f64 {
         self.height * self.width
     }
 }
