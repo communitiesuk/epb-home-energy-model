@@ -255,7 +255,7 @@ pub fn run_project(
 }
 
 #[instrument(skip_all)]
-fn write_core_output_files(
+pub fn write_core_output_files(
     output: &Output,
     primary_input: &Input,
     output_writer: &impl OutputWriter,

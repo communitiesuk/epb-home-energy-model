@@ -86,7 +86,7 @@ pub struct Input {
     pub(crate) pre_heated_water_source: IndexMap<std::string::String, HotWaterSourceDetails>,
 
     #[validate]
-    pub(crate) simulation_time: SimulationTime,
+    pub simulation_time: SimulationTime,
 
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     #[validate]
