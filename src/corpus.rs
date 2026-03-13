@@ -561,8 +561,8 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
                 //Party wall calculations follow same approach as adjacent unconditioned space
                 let r_se = calculate_cavity_resistance(
                     &PartyWallCavityType::from(*party_wall_cavity_data),
-                    &party_wall_cavity_data.party_wall_lining_type(),
-                    Some(thermal_resistance_construction), // Reported to DESNZ as suspect thermal_resistance_cavity should be passed in here instead
+                    party_wall_cavity_data.party_wall_lining_type().as_ref(),
+                    party_wall_cavity_data.thermal_resistance_cavity(),
                 )?;
                 let u_value = 1.0 / (thermal_resistance_construction + r_se + r_si);
                 area * u_value
@@ -1225,13 +1225,15 @@ impl Corpus {
             gains_internal_zone += internal_gains.total_internal_gain_in_w(zone.area(), simtime)?;
         }
 
+        // Add total gains from all ventilation ductwork (calculated previously)
+        gains_internal_zone += internal_gains_ductwork_per_m3 * zone.volume();
+
         // Add gains from ventilation fans (also calculates elec demand from fans)
         // TODO (from Python) Remove the branch on the type of ventilation (find a better way)
         let mech_vents = self.ventilation.mech_vents();
         for mech_vent in mech_vents.iter() {
             gains_internal_zone +=
                 mech_vent.fans(zone.volume(), self.total_volume, None, &simtime)?;
-            gains_internal_zone += internal_gains_ductwork_per_m3 * zone.volume();
         }
 
         Ok(gains_internal_zone)
@@ -1749,24 +1751,22 @@ impl Corpus {
         // Calculate heating/cooling system response and temperature achieved in each zone
         for (z_name, zone) in self.zones.iter() {
             let z_name = z_name.as_ref();
-            let c_name_list_hashset = c_name_list_sorted_zone[z_name]
-                .iter()
-                .filter(|name| !name.is_empty()) // Ignore the "" placeholder to ensure zones with no system don't trigger the uniqueness error
-                .collect::<HashSet<_>>();
-            let h_name_list_hashset = h_name_list_sorted_zone[z_name]
-                .iter()
-                .filter(|name| !name.is_empty()) // Ignore the "" placeholder to ensure zones with no system don't trigger the uniqueness error
-                .collect::<HashSet<_>>();
-            let intersection = h_name_list_hashset
-                .intersection(&c_name_list_hashset)
-                .collect::<Vec<_>>();
-            if !intersection.is_empty() {
-                bail!("All heating and cooling systems must have unique names")
-            };
-            // drop temporary values for working out intersection from scope
-            drop(intersection);
-            drop(c_name_list_hashset);
-            drop(h_name_list_hashset);
+            {
+                let c_name_list_hashset = c_name_list_sorted_zone[z_name]
+                    .iter()
+                    .filter(|name| !name.is_empty()) // Ignore the "" placeholder to ensure zones with no system don't trigger the uniqueness error
+                    .collect::<HashSet<_>>();
+                let h_name_list_hashset = h_name_list_sorted_zone[z_name]
+                    .iter()
+                    .filter(|name| !name.is_empty()) // Ignore the "" placeholder to ensure zones with no system don't trigger the uniqueness error
+                    .collect::<HashSet<_>>();
+                let intersection = h_name_list_hashset
+                    .intersection(&c_name_list_hashset)
+                    .collect::<Vec<_>>();
+                if !intersection.is_empty() {
+                    bail!("All heating and cooling systems must have unique names")
+                };
+            }
 
             // Initialise system outputs to minimum output for each heating and cooling system
             let HeatCoolOutputs {
@@ -1823,7 +1823,9 @@ impl Corpus {
                 // lower-priority systems).
                 let (gains_heat_cool_convective, gains_heat_cool_radiative) =
                     self.gains_heat_cool(delta_t_h, &hc_output_convective, &hc_output_radiative);
-                if gains_heat_cool_convective == 0.0 && gains_heat_cool_radiative == 0.0 {
+                if is_close!(gains_heat_cool_convective, 0.0, abs_tol = 1e-10)
+                    && is_close!(gains_heat_cool_radiative, 0.0, abs_tol = 1e-10)
+                {
                     // If there is no output from any systems, then don't need to
                     // calculate demand again
                     space_heat_demand_zone_system.insert(h_name, space_heat_demand_zone[z_name]);
@@ -1995,7 +1997,7 @@ impl Corpus {
             let gains_heat_cool = (hc_output_convective_total + hc_output_radiative_total)
                 * WATTS_PER_KILOWATT as f64
                 / delta_t_h;
-            let frac_convective = if gains_heat_cool != 0.0 {
+            let frac_convective = if !is_close!(gains_heat_cool, 0.0, abs_tol = 1e-10) {
                 hc_output_convective_total
                     / (hc_output_convective_total + hc_output_radiative_total)
             } else {
@@ -2243,7 +2245,7 @@ impl Corpus {
         let mut esh_output_dict: IndexMap<Arc<str>, Vec<StorageHeaterDetailedResult>> =
             Default::default();
         let mut vent_output_list: Vec<VentilationDetailedResult> = Default::default();
-        let mut hot_water_source_results_summary: IndexMap<Arc<str>, Vec<Vec<StringOrNumber>>> =
+        let mut hot_water_source_results: IndexMap<Arc<str>, Vec<Vec<StringOrNumber>>> =
             Default::default();
 
         for z_name in self.zones.keys() {
@@ -2586,7 +2588,7 @@ impl Corpus {
                             if let Some(hot_water_source_output) =
                                 storage_tank.read().output_results()
                             {
-                                hot_water_source_results_summary
+                                hot_water_source_results
                                     .insert(name.to_string().into(), hot_water_source_output);
                             }
                         }
@@ -2594,7 +2596,7 @@ impl Corpus {
                             if let Some(hot_water_source_output) =
                                 smart_storage_tank.read().output_results()
                             {
-                                hot_water_source_results_summary
+                                hot_water_source_results
                                     .insert(name.to_string().into(), hot_water_source_output);
                             }
                         }
@@ -2730,7 +2732,7 @@ impl Corpus {
                 .collect(), // TODO (from Python) could be output object too fixed keys...
             heat_source_wet_results: heat_source_wet_results_dict,
             heat_source_wet_results_annual: heat_source_wet_results_annual_dict,
-            hot_water_source_results_summary,
+            hot_water_source_results,
             emitters: emitters_output_dict
                 .into_iter()
                 .map(|(k, v)| (k, v.into_iter().enumerate().collect()))
@@ -5294,7 +5296,16 @@ fn hot_water_source_from_input(
      -> anyhow::Result<()> {
         for (heat_source_name, hs) in heat_source {
             let heat_source_name = String::from(heat_source_name);
-            let energy_supply_name = hs.energy_supply_name();
+            // HeatSourceWet types do not have their own EnergySupply
+            // — the energy supply is on the parent HeatSourceWet object.
+            // PV diverters only connect to non-wet heat sources (e.g.
+            // immersion heaters), so skip the diverter check.
+            let energy_supply_name = if let Some(energy_supply_name) = hs.energy_supply_name() {
+                energy_supply_name
+            } else {
+                // it was a HeatSourceWet type - anything else would have returned its energy supply name
+                continue;
+            };
             if let Some(diverter) = diverter_types.get(energy_supply_name) {
                 if diverter.heat_source.matches(&heat_source_name) {
                     let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();

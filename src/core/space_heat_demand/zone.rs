@@ -1047,7 +1047,7 @@ impl Zone {
         temp_free: f64,
         temp_upper: f64,
     ) -> anyhow::Result<f64> {
-        if temp_upper - temp_free == 0.0 {
+        if is_close!(temp_upper - temp_free, 0.0, abs_tol = 1e-10) {
             bail!(
                 "Divide-by-zero in calculation of heating/cooling demand.
             This may be caused by the specification of very low overall
@@ -1125,7 +1125,7 @@ impl Zone {
 
         // For calculation of demand, set heating/cooling gains to zero
         let gains_heat_cool = gains_heat_cool_convective + gains_heat_cool_radiative;
-        let frac_conv_gains_heat_cool = if gains_heat_cool == 0.0 {
+        let frac_conv_gains_heat_cool = if is_close!(gains_heat_cool, 0.0, abs_tol = 1e-10) {
             0.0
         } else {
             gains_heat_cool_convective / gains_heat_cool
@@ -2003,7 +2003,6 @@ mod tests {
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered,
             thermal_resistance_of_insulation: 7.,
-            edge_insulation: Default::default(),
         };
         let be_ground = BuildingElement::Ground(
             BuildingElementGround::new(

@@ -349,7 +349,7 @@ impl StorageTank {
 
         self.temp_average_drawoff.store(
             match self.total_volume_drawoff.load(Ordering::SeqCst) {
-                value if value != 0. => {
+                value if !is_close!(value, 0., abs_tol = 1e-10) => {
                     let temp_average_drawoff_volweighted =
                         self.temp_average_drawoff_volweighted.load(Ordering::SeqCst);
                     temp_average_drawoff_volweighted / value
@@ -585,8 +585,8 @@ impl StorageTank {
             // Get ultimate cold water temperature for energy calculation
             let list_temp_vol = cold_water_source
                 .get_temp_cold_water(remaining_demanded_volume, simulation_time)?;
-            let sum_t_by_v = list_temp_vol.iter().map(|(t, v)| t * v).sum::<f64>();
-            let sum_v = list_temp_vol.iter().map(|(_t, v)| v).sum::<f64>();
+            let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
+            let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_t, v)| v)).value();
             let temp_cold = sum_t_by_v / sum_v;
 
             // Calculate volume-weighted temperature contribution from cold feed
@@ -1613,7 +1613,7 @@ impl StorageTank {
         control_max_diverter: Option<&Control>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        if energy_input == 0. {
+        if is_close!(energy_input, 0., abs_tol = 1e-10) {
             return Ok(0.);
         }
 
@@ -1678,7 +1678,11 @@ impl StorageTank {
         if let Some(primary_pipework) = self.primary_pipework.as_ref() {
             // start of heating event
             if input_energy_adj > 0.
-                && self.input_energy_adj_prev_timestep.load(Ordering::SeqCst) == 0.
+                && is_close!(
+                    self.input_energy_adj_prev_timestep.load(Ordering::SeqCst),
+                    0.,
+                    abs_tol = 1e-10
+                )
             {
                 for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
                     let outside_temperature = StorageTank::temperature_surrounding_primary_pipework(
@@ -1737,7 +1741,7 @@ impl StorageTank {
             }
 
             // end of heating event
-            if input_energy_adj == 0.
+            if is_close!(input_energy_adj, 0., abs_tol = 1e-10)
                 && self.input_energy_adj_prev_timestep.load(Ordering::SeqCst) > 0.
             {
                 for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {

@@ -730,10 +730,10 @@ impl EnergySupply {
         demand: f64,
         beta_factor_function: BetaFactorFunction,
     ) -> Result<f64, NotImplementedError> {
-        if supply == 0. {
+        if is_close!(supply, 0., abs_tol = 1e-10) {
             return Ok(1.);
         }
-        if demand == 0. {
+        if is_close!(demand, 0., abs_tol = 1e-10) {
             return Ok(0.);
         }
 

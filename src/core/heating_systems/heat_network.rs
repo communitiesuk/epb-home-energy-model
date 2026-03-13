@@ -410,8 +410,8 @@ impl HeatNetwork {
         let time_start = time_start.unwrap_or(0.);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let energy_output_max = self.energy_output_max(None);
-        if energy_output_max == 0. {
-            return Ok(energy_output_max);
+        if is_close!(energy_output_max, 0., abs_tol = 1e-10) {
+            return Ok(0.0);
         }
         let energy_output_provided =
             max_of_2(0., min_of_2(energy_output_required, energy_output_max));

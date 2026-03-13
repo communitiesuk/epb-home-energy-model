@@ -693,15 +693,14 @@ impl Emitters {
         // If this error is triggered, then there is probably an error in the code above
         // NB. debug_* assertions are elided for production builds
         let six_dec_places_divisor = 1e6;
-        debug_assert_eq!(
-            {
-                (power_total_weight.iter().sum::<f64>() * six_dec_places_divisor).round()
-                    / six_dec_places_divisor
-            },
-            1.0,
+        let weight_sum = (FSum::with_all(power_total_weight.iter().copied()).value()
+            * six_dec_places_divisor)
+            .round()
+            / six_dec_places_divisor;
+        debug_assert!(
+            is_close!(weight_sum, 1.0, abs_tol = 1e-6),
             "ERROR: Sum of emitter weightings should equal 1.0, not {}",
-            (power_total_weight.iter().sum::<f64>() * six_dec_places_divisor).round()
-                / six_dec_places_divisor
+            weight_sum
         );
 
         power_total_weight

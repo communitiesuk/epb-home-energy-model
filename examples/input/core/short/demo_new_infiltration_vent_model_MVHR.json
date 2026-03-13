@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a6"
+        "hem_core_version": "1.0.0a7"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -435,7 +435,69 @@
                 "mvhr_eff": 0.8,
                 "SFP": 1.5,
                 "EnergySupply": "mains elec",
-                "design_outdoor_air_flow_rate": 0.5,
+                "design_outdoor_air_flow_rate": 0.25,
+                "position_intake": {
+                    "orientation360": 180,
+                    "pitch": 90,
+                    "mid_height_air_flow_path": 3.0
+                },
+                "position_exhaust": {
+                    "orientation360": 0,
+                    "pitch": 90,
+                    "mid_height_air_flow_path": 2.0
+                },
+                "mvhr_location": "outside",
+                "ductwork": [
+                    {
+                        "cross_section_shape": "circular",
+                        "internal_diameter_mm": 200,
+                        "external_diameter_mm": 300,
+                        "length": 10.0,
+                        "insulation_thermal_conductivity": 0.023,
+                        "insulation_thickness_mm": 100,
+                        "reflective": false,
+                        "duct_type": "supply"
+                    },
+                    {
+                        "cross_section_shape": "circular",
+                        "internal_diameter_mm": 200,
+                        "external_diameter_mm": 300,
+                        "length": 10.0,
+                        "insulation_thermal_conductivity": 0.023,
+                        "insulation_thickness_mm": 100,
+                        "reflective": false,
+                        "duct_type": "extract"
+                    },
+                    {
+                        "cross_section_shape": "circular",
+                        "internal_diameter_mm": 200,
+                        "external_diameter_mm": 300,
+                        "length": 10.0,
+                        "insulation_thermal_conductivity": 0.023,
+                        "insulation_thickness_mm": 100,
+                        "reflective": false,
+                        "duct_type": "intake"
+                    },
+                    {
+                        "cross_section_shape": "circular",
+                        "internal_diameter_mm": 200,
+                        "external_diameter_mm": 300,
+                        "length": 10.0,
+                        "insulation_thermal_conductivity": 0.023,
+                        "insulation_thickness_mm": 100,
+                        "reflective": false,
+                        "duct_type": "exhaust"
+                    }
+                ]
+            },
+            "mechvent2": {
+                "sup_air_flw_ctrl": "ODA",
+                "sup_air_temp_ctrl": "NO_CTRL",
+                "vent_type": "MVHR",
+                "mvhr_eff": 0.8,
+                "SFP": 1.5,
+                "EnergySupply": "mains elec",
+                "design_outdoor_air_flow_rate": 0.25,
                 "position_intake": {
                     "orientation360": 180,
                     "pitch": 90,

@@ -211,7 +211,7 @@ pub(crate) fn calculate_volume_weighted_average_temperature(
     let weighted_temp_sum = FSum::with_all(&temp_volume_products).value();
     let total_volume = FSum::with_all(&volumes).value();
 
-    if total_volume == 0. {
+    if is_close!(total_volume, 0., abs_tol = 1e-10) {
         bail!("Cannot calculate weighted average: total volume is zero");
     }
 

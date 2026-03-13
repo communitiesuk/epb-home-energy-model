@@ -846,7 +846,7 @@
           "type": "number"
         },
         "u_value": {
-          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (unit: W/m2.K)",
+          "description": "Steady-state thermal transmittance of floor in accordance with BS EN ISO 13370, including internal surface resistance and the effect of the ground (unit: W/m2.K)",
           "exclusiveMinimum": 0,
           "title": "U-Value",
           "type": "number"
@@ -857,7 +857,7 @@
           "type": "string"
         },
         "thermal_resistance_floor_construction": {
-          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "description": "Total thermal resistance of all layers in the floor construction, excluding surface resistances (unit: m\u00b2.K/W)",
           "exclusiveMinimum": 0,
           "title": "Thermal Resistance Floor Construction",
           "type": "number"
@@ -897,39 +897,10 @@
           "type": "number"
         },
         "thermal_resist_walls_base": {
-          "description": "Thermal resistance of walls of the basement (unit: m\u00b2.K/W)",
+          "description": "Thermal resistance of walls of the basement, excluding surface resistances (unit: m\u00b2.K/W)",
           "exclusiveMinimum": 0,
           "title": "Thermal Resist Walls Base",
           "type": "number"
-        },
-        "edge_insulation": {
-          "anyOf": [
-            {
-              "items": {
-                "discriminator": {
-                  "mapping": {
-                    "horizontal": "#/$defs/EdgeInsulationHorizontal",
-                    "vertical": "#/$defs/EdgeInsulationVertical"
-                  },
-                  "propertyName": "type"
-                },
-                "oneOf": [
-                  {
-                    "$ref": "#/$defs/EdgeInsulationHorizontal"
-                  },
-                  {
-                    "$ref": "#/$defs/EdgeInsulationVertical"
-                  }
-                ]
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Edge Insulation"
         }
       },
       "required": [
@@ -978,7 +949,7 @@
           "type": "number"
         },
         "u_value": {
-          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (unit: W/m2.K)",
+          "description": "Steady-state thermal transmittance of floor in accordance with BS EN ISO 13370, including internal surface resistance and the effect of the ground (unit: W/m2.K)",
           "exclusiveMinimum": 0,
           "title": "U-Value",
           "type": "number"
@@ -989,7 +960,7 @@
           "type": "string"
         },
         "thermal_resistance_floor_construction": {
-          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "description": "Total thermal resistance of all layers in the floor construction, excluding surface resistances (unit: m\u00b2.K/W)",
           "exclusiveMinimum": 0,
           "title": "Thermal Resistance Floor Construction",
           "type": "number"
@@ -1096,7 +1067,7 @@
           "type": "number"
         },
         "u_value": {
-          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (unit: W/m2.K)",
+          "description": "Steady-state thermal transmittance of floor in accordance with BS EN ISO 13370, including internal surface resistance and the effect of the ground (unit: W/m2.K)",
           "exclusiveMinimum": 0,
           "title": "U-Value",
           "type": "number"
@@ -1107,7 +1078,7 @@
           "type": "string"
         },
         "thermal_resistance_floor_construction": {
-          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "description": "Total thermal resistance of all layers in the floor construction, excluding surface resistances (unit: m\u00b2.K/W)",
           "exclusiveMinimum": 0,
           "title": "Thermal Resistance Floor Construction",
           "type": "number"
@@ -1185,7 +1156,7 @@
           "type": "number"
         },
         "u_value": {
-          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (unit: W/m2.K)",
+          "description": "Steady-state thermal transmittance of floor in accordance with BS EN ISO 13370, including internal surface resistance and the effect of the ground (unit: W/m2.K)",
           "exclusiveMinimum": 0,
           "title": "U-Value",
           "type": "number"
@@ -1196,7 +1167,7 @@
           "type": "string"
         },
         "thermal_resistance_floor_construction": {
-          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "description": "Total thermal resistance of all layers in the floor construction, excluding surface resistances (unit: m\u00b2.K/W)",
           "exclusiveMinimum": 0,
           "title": "Thermal Resistance Floor Construction",
           "type": "number"
@@ -1236,13 +1207,13 @@
           "type": "number"
         },
         "thermal_resist_insul": {
-          "description": "Thermal resistance of insulation on base of underfloor space (unit: m\u00b2.K/W)",
+          "description": "Thermal resistance of insulation on base of underfloor space, excluding surface resistances (unit: m\u00b2.K/W)",
           "exclusiveMinimum": 0,
           "title": "Thermal Resist Insul",
           "type": "number"
         },
         "thermal_transm_walls": {
-          "description": "Thermal transmittance of walls above ground (unit: W/m\u00b2.K)",
+          "description": "Thermal transmittance of walls above ground in accordance with ISO 6946, i.e. including surface resistances (unit: W/m\u00b2.K)",
           "exclusiveMinimum": 0,
           "title": "Thermal Transm Walls",
           "type": "number"
@@ -1256,35 +1227,6 @@
         "shield_fact_location": {
           "$ref": "#/$defs/WindShieldLocation",
           "description": "Wind shielding factor"
-        },
-        "edge_insulation": {
-          "anyOf": [
-            {
-              "items": {
-                "discriminator": {
-                  "mapping": {
-                    "horizontal": "#/$defs/EdgeInsulationHorizontal",
-                    "vertical": "#/$defs/EdgeInsulationVertical"
-                  },
-                  "propertyName": "type"
-                },
-                "oneOf": [
-                  {
-                    "$ref": "#/$defs/EdgeInsulationHorizontal"
-                  },
-                  {
-                    "$ref": "#/$defs/EdgeInsulationVertical"
-                  }
-                ]
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Edge Insulation"
         }
       },
       "required": [
@@ -1336,7 +1278,7 @@
           "type": "number"
         },
         "u_value": {
-          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (unit: W/m2.K)",
+          "description": "Steady-state thermal transmittance of floor in accordance with BS EN ISO 13370, including internal surface resistance and the effect of the ground (unit: W/m2.K)",
           "exclusiveMinimum": 0,
           "title": "U-Value",
           "type": "number"
@@ -1347,7 +1289,7 @@
           "type": "string"
         },
         "thermal_resistance_floor_construction": {
-          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "description": "Total thermal resistance of all layers in the floor construction, excluding surface resistances (unit: m\u00b2.K/W)",
           "exclusiveMinimum": 0,
           "title": "Thermal Resistance Floor Construction",
           "type": "number"
@@ -1393,51 +1335,22 @@
           "type": "number"
         },
         "thermal_resist_walls_base": {
-          "description": "Thermal resistance of walls of the basement (unit: m\u00b2.K/W)",
+          "description": "Thermal resistance of walls of the basement, excluding surface resistances (unit: m\u00b2.K/W)",
           "exclusiveMinimum": 0,
           "title": "Thermal Resist Walls Base",
           "type": "number"
         },
         "thermal_transm_envi_base": {
-          "description": "Thermal transmittance of floor above basement (unit: W/m\u00b2.K)",
+          "description": "Thermal transmittance of floor above basement in accordance with ISO 6946, i.e. including surface resistances (unit: W/m\u00b2.K)",
           "exclusiveMinimum": 0,
           "title": "Thermal Transm Envi Base",
           "type": "number"
         },
         "thermal_transm_walls": {
-          "description": "Thermal transmittance of walls above ground (unit: W/m\u00b2.K)",
+          "description": "Thermal transmittance of walls above ground in accordance with ISO 6946, i.e. including surface resistances (unit: W/m\u00b2.K)",
           "exclusiveMinimum": 0,
           "title": "Thermal Transm Walls",
           "type": "number"
-        },
-        "edge_insulation": {
-          "anyOf": [
-            {
-              "items": {
-                "discriminator": {
-                  "mapping": {
-                    "horizontal": "#/$defs/EdgeInsulationHorizontal",
-                    "vertical": "#/$defs/EdgeInsulationVertical"
-                  },
-                  "propertyName": "type"
-                },
-                "oneOf": [
-                  {
-                    "$ref": "#/$defs/EdgeInsulationHorizontal"
-                  },
-                  {
-                    "$ref": "#/$defs/EdgeInsulationVertical"
-                  }
-                ]
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Edge Insulation"
         }
       },
       "required": [
@@ -2953,13 +2866,13 @@
         },
         "electricity_full_load": {
           "description": "Electrical power consumption at full load (unit: kW)",
-          "exclusiveMinimum": 0,
+          "minimum": 0,
           "title": "Electricity Full Load",
           "type": "number"
         },
         "electricity_part_load": {
           "description": "Electrical power consumption at part load (unit: kW)",
-          "exclusiveMinimum": 0,
+          "minimum": 0,
           "title": "Electricity Part Load",
           "type": "number"
         },
@@ -3391,13 +3304,13 @@
         },
         "electricity_full_load": {
           "description": "Electrical power consumption at full load (unit: kW)",
-          "exclusiveMinimum": 0,
+          "minimum": 0,
           "title": "Electricity Full Load",
           "type": "number"
         },
         "electricity_part_load": {
           "description": "Electrical power consumption at part load (unit: kW)",
-          "exclusiveMinimum": 0,
+          "minimum": 0,
           "title": "Electricity Part Load",
           "type": "number"
         },
@@ -4122,12 +4035,6 @@
           "title": "Controlmin",
           "type": "string"
         },
-        "EnergySupply": {
-          "description": "References a key (e.g., 'mains elec', 'mains gas') in $.EnergySupply",
-          "reference_to": "$.energy_supply",
-          "title": "Energysupply",
-          "type": "string"
-        },
         "heater_position": {
           "description": "Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.",
           "maximum": 1,
@@ -4174,7 +4081,6 @@
         "type",
         "Controlmax",
         "Controlmin",
-        "EnergySupply",
         "heater_position",
         "name"
       ],
