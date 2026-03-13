@@ -9301,7 +9301,7 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(320.0),
                 temp_source: 273.15,
-                cop_op_cond: Some(3.395194725645021), // 3.39519472564502 in Python
+                cop_op_cond: Some(3.39519472564502),
                 thermal_capacity_op_cond: Some(9.231749514150996),
                 time_running_full_load: 0.10832182984028522,
                 time_running_part_load: None,
@@ -9332,7 +9332,7 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(320.0),
                 temp_source: 275.65,
-                cop_op_cond: Some(3.515322632524056), // 3.5153226325240556 in Python
+                cop_op_cond: Some(3.5153226325240556),
                 thermal_capacity_op_cond: Some(9.487556781989081),
                 time_running_full_load: 0.10540121371377431,
                 time_running_part_load: None,
@@ -9401,7 +9401,7 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
+                cop_op_cond: Some(3.1824426759289044),
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running_full_load: 0.11879765621857688,
                 time_running_part_load: None,
@@ -9432,7 +9432,7 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: Some(3.1971341044162673), // 3.197134104416267 in Python
+                cop_op_cond: Some(3.197134104416267),
                 thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running_full_load: 0.11559458670751663,
                 time_running_part_load: None,
@@ -9662,7 +9662,7 @@ mod tests {
                 energy_output_required: 50.,
                 temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
+                cop_op_cond: Some(3.1824426759289044),
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running_full_load: 0.0,
                 time_running_part_load: None,
@@ -9693,7 +9693,7 @@ mod tests {
                 energy_output_required: 50.,
                 temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: Some(3.1971341044162673), // 3.197134104416267 in Python
+                cop_op_cond: Some(3.197134104416267),
                 thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running_full_load: 0.0,
                 time_running_part_load: None,
@@ -9794,7 +9794,7 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
+                cop_op_cond: Some(3.1824426759289044),
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running_full_load: 0.0,
                 time_running_part_load: None,
@@ -9825,7 +9825,7 @@ mod tests {
                 energy_output_required: 1.0,
                 temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: Some(3.1971341044162673), // 3.197134104416267 in Python
+                cop_op_cond: Some(3.197134104416267),
                 thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running_full_load: 0.0,
                 time_running_part_load: None,
@@ -10136,7 +10136,7 @@ mod tests {
             energy_output_required: 1.0,
             temp_output: Some(320.),
             temp_source: 273.15,
-            cop_op_cond: Some(3.395194725645021), // 3.39519472564502 in Python
+            cop_op_cond: Some(3.39519472564502),
             thermal_capacity_op_cond: Some(9.231749514150996),
             time_running_full_load: 0.10832182984028522,
             time_running_part_load: None,
@@ -10253,7 +10253,7 @@ mod tests {
             energy_output_required: 1.0,
             temp_output: Some(320.),
             temp_source: 273.15,
-            cop_op_cond: Some(3.395194725645021), // 3.39519472564502 in Python
+            cop_op_cond: Some(3.39519472564502),
             thermal_capacity_op_cond: Some(9.231749514150996),
             time_running_full_load: 0.10832182984028522,
             time_running_part_load: None,
@@ -10318,7 +10318,7 @@ mod tests {
             energy_output_required: 36.0,
             temp_output: Some(330.),
             temp_source: 273.15,
-            cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
+            cop_op_cond: Some(3.1824426759289044),
             thermal_capacity_op_cond: Some(8.417674488123662),
             time_running_full_load: 0.,
             time_running_part_load: None,
@@ -10375,7 +10375,7 @@ mod tests {
             energy_output_required: 1.0,
             temp_output: Some(330.),
             temp_source: 273.15,
-            cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
+            cop_op_cond: Some(3.1824426759289044),
             thermal_capacity_op_cond: Some(8.417674488123662),
             time_running_full_load: 0.,
             time_running_part_load: None,
@@ -10550,7 +10550,7 @@ mod tests {
                     energy_output_required: 1.0,
                     temp_output: Some(330.0),
                     temp_source: 273.15,
-                    cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
+                    cop_op_cond: Some(3.1824426759289044),
                     thermal_capacity_op_cond: Some(8.417674488123662),
                     time_running_full_load: 0.11879765621857688,
                     time_running_part_load: None,
@@ -10581,7 +10581,7 @@ mod tests {
                     energy_output_required: 1.0,
                     temp_output: Some(330.0),
                     temp_source: 275.65,
-                    cop_op_cond: Some(3.1971341044162673), // 3.197134104416267 in Python
+                    cop_op_cond: Some(3.197134104416267),
                     thermal_capacity_op_cond: Some(8.650924134797519),
                     time_running_full_load: 0.11559458670751663,
                     time_running_part_load: None,
@@ -11257,7 +11257,7 @@ mod tests {
             energy_output_required: 5.0,
             temp_output: Some(330.0),
             temp_source: 273.15,
-            cop_op_cond: Some(3.182442675928905), // 3.1824426759289044 in Python
+            cop_op_cond: Some(3.1824426759289044),
             thermal_capacity_op_cond: Some(8.417674488123662),
             time_running_full_load: 0.5939882810928845,
             time_running_part_load: None,
@@ -11877,7 +11877,7 @@ mod tests {
                 energy_output_required: 2.0,
                 temp_output: Some(308.15),
                 temp_source: 263.15,
-                cop_op_cond: Some(3.317191947724431), // 3.3171919477244307 in Python
+                cop_op_cond: Some(3.3171919477244307),
                 thermal_capacity_op_cond: Some(9.243872347406562),
                 time_running_full_load: 0.6666666666666666,
                 time_running_part_load: None,
@@ -11908,7 +11908,7 @@ mod tests {
                 energy_output_required: 2.0,
                 temp_output: Some(308.15),
                 temp_source: 263.15,
-                cop_op_cond: Some(3.317191947724431), // 3.3171919477244307 in Python
+                cop_op_cond: Some(3.3171919477244307),
                 thermal_capacity_op_cond: Some(9.243872347406562),
                 time_running_full_load: 0.25,
                 time_running_part_load: None,
