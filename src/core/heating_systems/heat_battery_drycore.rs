@@ -963,7 +963,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
         let volume_req_already = volume_req_already.unwrap_or(0.0);
 
         if is_close!(volume_req, 0.0, abs_tol = 1e-10) {
-            return Ok(vec![]);
+            bail!("volume_req must be non-zero");
         }
 
         let temp_hot_water = |volume| -> anyhow::Result<f64> {
@@ -1005,16 +1005,16 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
 
         if let Some(usage_events) = usage_events {
             for event in usage_events {
+                if is_close!(event.volume_hot, 0.0, abs_tol = 1e-10) {
+                    continue;
+                }
+
                 let hot_temp_list = self.get_temp_hot_water(event.volume_hot, None, simtime)?;
                 let hot_temp = hot_temp_list.first().map(|(t, _v)| t);
                 let hot_temp = match hot_temp {
                     Some(hot_temp) => *hot_temp,
-                    None => continue,
+                    None => bail!("hot temp list was unexpectedly empty"),
                 };
-
-                if is_close!(event.volume_hot, 0.0, abs_tol = 1e-10) {
-                    continue;
-                }
 
                 let list_temp_vol = self.cold_feed.draw_off_water(event.volume_hot, simtime)?;
                 let cold_temp = calculate_volume_weighted_average_temperature(
@@ -2656,15 +2656,9 @@ mod tests {
         assert!(hot_water_temp > mock_cold_feed_temperature);
         assert!(hot_water_temp < original_setpoint_temp_water);
 
-        let results_list = service
+        assert!(service
             .get_temp_hot_water(0.0, None, simulation_time.iter().current_iteration())
-            .unwrap();
-
-        assert_eq!(results_list.len(), 0);
-
-        // following is as per upstream Python at 2026-01-26 - have queried this as it should not be possible to return an empty temperature value here
-        // assert!(results.0.is_none());
-        // assert_eq!(results.1, 0.0);
+            .is_err());
     }
 
     // Skipping Python's test_heat_battery_direct_demand_energy_error as not relevant in the Rust
@@ -3051,13 +3045,9 @@ mod tests {
         // Test edge cases
 
         // Test with zero volume request
-        let temp_vol_list = service
+        assert!(service
             .get_temp_hot_water(0.0, None, simulation_time.iter().current_iteration())
-            .unwrap();
-        assert_eq!(temp_vol_list.len(), 0);
-        // following matches upstream Python as of 2026-01-26 - have queried this as it should not be possible to return an empty temperature value
-        // assert_eq!(temp_vol_list[0].0, None);
-        // assert_eq!(temp_vol_list[0].1, 0.0);
+            .is_err());
 
         // Test with very small volume (close to zero but not exactly zero)
         let temperature_volume = service
@@ -3355,9 +3345,6 @@ mod tests {
             (0.0, 0.0, 0.0, 0.0, 0.0)
         );
     }
-
-    // skipping test_demand_hot_water_with_none_temperature as just asserts types and call counts,
-    // and mocking behaviour to support it is not worth building out
 
     /// Test DHW service with cold water temperature that varies with volume demanded
     #[rstest]

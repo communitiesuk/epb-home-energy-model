@@ -66,7 +66,7 @@ fn calculate_area(height: f64, width: f64) -> f64 {
 /// * `r_cavity` - effective thermal resistance of the cavity, in m2.K / W
 pub(crate) fn calculate_cavity_resistance(
     party_wall_cavity_type: &PartyWallCavityType,
-    party_wall_lining_type: &Option<PartyWallLiningType>,
+    party_wall_lining_type: Option<&PartyWallLiningType>,
     thermal_resistance_cavity: Option<f64>,
 ) -> anyhow::Result<f64> {
     if *party_wall_cavity_type == PartyWallCavityType::DefinedResistance {
@@ -1695,7 +1695,7 @@ impl BuildingElementPartyWall {
 
         let r_unconditioned = calculate_cavity_resistance(
             &party_wall_cavity_type,
-            &party_wall_lining_type,
+            party_wall_lining_type.as_ref(),
             thermal_resistance_cavity,
         )?;
 
@@ -4114,7 +4114,6 @@ mod tests {
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered,
             thermal_resistance_of_insulation: 7.,
-            edge_insulation: Default::default(),
         };
         let be_i = BuildingElementGround::new(
             20.0,
@@ -4178,7 +4177,6 @@ mod tests {
         let be_d_floor_data = FloorData::HeatedBasement {
             depth_basement_floor: 2.3,
             thermal_resistance_of_basement_walls: 6.,
-            edge_insulation: Default::default(),
         };
         let be_d = BuildingElementGround::new(
             27.5,
@@ -4201,7 +4199,6 @@ mod tests {
             depth_basement_floor: 2.3,
             height_basement_walls: 2.3,
             thermal_resistance_of_basement_walls: 0.5,
-            edge_insulation: Default::default(),
         };
         let be_m = BuildingElementGround::new(
             30.0,
@@ -4315,7 +4312,6 @@ mod tests {
             area_per_perimeter_vent: 1.,
             shield_fact_location: wind_shield_location,
             thermal_resistance_of_insulation: 1.,
-            edge_insulation: Default::default(),
         }
     }
 

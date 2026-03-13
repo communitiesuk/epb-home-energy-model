@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a6"
+        "hem_core_version": "1.0.0a7"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -352,6 +352,19 @@
                 ]
             }
         },
+        "setpoint_temp_min": {
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    {
+                        "value": 52.0,
+                        "repeat": 24
+                    }
+                ]
+            }
+        },
         "setpoint_temp_max": {
             "type": "SetpointTimeControl",
             "start_day": 0,
@@ -427,10 +440,22 @@
     },
     "HotWaterSource": {
         "hw cylinder": {
-            "type": "HeatBattery",
+            "type": "StorageTank",
+            "volume": 150.0,
+            "daily_losses": 2.0,
+            "init_temp": 55.0,
             "ColdWaterSource": "mains water",
-            "setpoint_temp": 60.0,
-            "HeatSourceWet": "dry_core_hb"
+            "HeatSource": {
+                "dry_core_hb": {
+                    "type": "HeatSourceWet",
+                    "name": "dry_core_hb",
+                    "temp_flow_limit_upper": 65,
+                    "Controlmin": "setpoint_temp_min",
+                    "Controlmax": "setpoint_temp_max",
+                    "heater_position": 0.9,
+                    "thermostat_position": 0.3
+                }
+            }
         }
     },
     "HotWaterDemand": {

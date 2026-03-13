@@ -1457,8 +1457,8 @@ impl HeatPumpServiceWater {
 
         let temp_return_k = celsius_to_kelvin(temp_return)?;
 
-        if temp_flow.is_none() && energy_demand != 0. {
-            bail!("temp_flow is None and energy_demand is not 0")
+        if temp_flow.is_none() && !is_close!(energy_demand, 0., abs_tol = 1e-6) {
+            bail!("temp_flow is None and energy_demand is not 0");
         };
 
         let temp_flow_k = if let Some(temp_flow) = temp_flow {
@@ -4157,7 +4157,7 @@ impl HeatPump {
 
         results_totals.insert(
             ("CoP (H1)".into(), None),
-            if cop_h1_denominator == 0.0 {
+            if is_close!(cop_h1_denominator.as_f64(), 0.0, abs_tol = 1e-10) {
                 0.0.into()
             } else {
                 cop_h1_numerator / cop_h1_denominator
@@ -4165,7 +4165,7 @@ impl HeatPump {
         );
         results_totals.insert(
             ("CoP (H2)".into(), None),
-            if cop_h2_denominator == 0.0 {
+            if is_close!(cop_h2_denominator.as_f64(), 0.0, abs_tol = 1e-10) {
                 0.0.into()
             } else {
                 cop_h2_numerator / cop_h2_denominator
@@ -4173,7 +4173,7 @@ impl HeatPump {
         );
         results_totals.insert(
             ("CoP (H3)".into(), None),
-            if cop_h3_denominator == 0.0 {
+            if is_close!(cop_h3_denominator.as_f64(), 0.0, abs_tol = 1e-10) {
                 0.0.into()
             } else {
                 cop_h3_numerator / cop_h3_denominator
@@ -4181,14 +4181,14 @@ impl HeatPump {
         );
         results_totals.insert(
             ("CoP (H4)".into(), None),
-            if cop_h4_denominator == 0.0 {
+            if is_close!(cop_h4_denominator.as_f64(), 0.0, abs_tol = 1e-10) {
                 0.0.into()
             } else {
                 cop_h4_numerator / cop_h4_denominator
             },
         );
 
-        let (subkey, value) = if cop_h5_denominator == 0. {
+        let (subkey, value) = if is_close!(cop_h5_denominator.as_f64(), 0., abs_tol = 1e-10) {
             (None, ResultParamValue::from(0.))
         } else if cop_h5_numerator == ResultParamValue::Empty {
             let cop_h5_note = "Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank";

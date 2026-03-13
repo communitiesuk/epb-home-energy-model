@@ -1824,9 +1824,6 @@ pub enum HeatSource {
         #[validate(exclusive_minimum = 0.)]
         temp_flow_limit_upper: Option<f64>,
 
-        #[serde(rename = "EnergySupply")]
-        energy_supply: String,
-
         /// Reference to a control schedule of minimum temperature setpoints
         #[serde(rename = "Controlmin", skip_serializing_if = "Option::is_none")]
         control_min: Option<String>,
@@ -1939,13 +1936,14 @@ impl HeatSource {
         }
     }
 
-    pub(crate) fn energy_supply_name(&self) -> &str {
+    pub(crate) fn energy_supply_name(&self) -> Option<&str> {
         match self {
-            HeatSource::ImmersionHeater { energy_supply, .. } => energy_supply,
-            HeatSource::SolarThermalSystem { energy_supply, .. } => energy_supply,
-            HeatSource::ServiceWaterRegular { energy_supply, .. } => energy_supply,
-            HeatSource::HeatPumpHotWaterOnly { energy_supply, .. } => energy_supply,
+            HeatSource::ImmersionHeater { energy_supply, .. } => energy_supply.as_str(),
+            HeatSource::SolarThermalSystem { energy_supply, .. } => energy_supply.as_str(),
+            HeatSource::ServiceWaterRegular { .. } => return None,
+            HeatSource::HeatPumpHotWaterOnly { energy_supply, .. } => energy_supply.as_str(),
         }
+        .into()
     }
 }
 
@@ -3128,11 +3126,11 @@ pub enum BuildingElement {
         #[validate(maximum = 180.)]
         pitch: f64,
 
-        /// Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)
+        /// Steady-state thermal transmittance of floor in accordance with BS EN ISO 13370, including internal surface resistance and the effect of the ground (unit: W/m2.K)
         #[validate(exclusive_minimum = 0.)]
         u_value: f64,
 
-        /// Total thermal resistance of all layers in the floor construction (unit: m².K/W)
+        /// Total thermal resistance of all layers in the floor construction, excluding surface resistances (unit: m².K/W)
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_floor_construction: f64,
 
@@ -3717,7 +3715,7 @@ pub enum FloorData {
         #[validate(exclusive_minimum = 0.)]
         height_upper_surface: f64,
 
-        /// Thermal transmittance of walls above ground (unit: W/m².K)
+        /// Thermal transmittance of walls above ground in accordance with ISO 6946, i.e. including surface resistances (unit: W/m².K)
         #[serde(rename = "thermal_transm_walls")]
         #[validate(exclusive_minimum = 0.)]
         thermal_transmission_walls: f64,
@@ -3729,15 +3727,10 @@ pub enum FloorData {
         /// Wind shielding factor
         shield_fact_location: WindShieldLocation,
 
-        /// Thermal resistance of insulation on base of underfloor space (unit: m².K/W)
+        /// Thermal resistance of insulation on base of underfloor space, excluding surface resistances (unit: m².K/W)
         #[serde(rename = "thermal_resist_insul")]
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_of_insulation: f64,
-
-        // Edge insulation not typically used for suspended floors
-        #[serde(default)]
-        #[validate]
-        edge_insulation: Vec<EdgeInsulation>,
     },
 
     #[serde(rename = "Heated_basement")]
@@ -3746,25 +3739,20 @@ pub enum FloorData {
         #[validate(exclusive_minimum = 0.)]
         depth_basement_floor: f64,
 
-        /// Thermal resistance of walls of the basement (unit: m².K/W)
+        /// Thermal resistance of walls of the basement, excluding surface resistances (unit: m².K/W)
         #[serde(rename = "thermal_resist_walls_base")]
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_of_basement_walls: f64,
-
-        // Optional - edge insulation can be used with basements
-        #[serde(default)]
-        #[validate]
-        edge_insulation: Vec<EdgeInsulation>,
     },
 
     #[serde(rename = "Unheated_basement")]
     UnheatedBasement {
-        /// Thermal transmittance of floor above basement (unit: W/m².K)
+        /// Thermal transmittance of floor above basement in accordance with ISO 6946, i.e. including surface resistances (unit: W/m².K)
         #[serde(rename = "thermal_transm_envi_base")]
         #[validate(exclusive_minimum = 0.)]
         thermal_transmittance_of_floor_above_basement: f64,
 
-        /// Thermal transmittance of walls above ground (unit: W/m².K)
+        /// Thermal transmittance of walls above ground in accordance with ISO 6946, i.e. including surface resistances (unit: W/m².K)
         #[serde(rename = "thermal_transm_walls")]
         #[validate(exclusive_minimum = 0.)]
         thermal_transmission_walls: f64,
@@ -3777,15 +3765,10 @@ pub enum FloorData {
         #[validate(exclusive_minimum = 0.)]
         height_basement_walls: f64,
 
-        /// Thermal resistance of walls of the basement (unit: m².K/W)
+        /// Thermal resistance of walls of the basement, excluding surface resistances (unit: m².K/W)
         #[serde(rename = "thermal_resist_walls_base")]
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_of_basement_walls: f64,
-
-        // Optional - edge insulation can be used with basements
-        #[serde(default)]
-        #[validate]
-        edge_insulation: Vec<EdgeInsulation>,
     },
 }
 
@@ -4074,13 +4057,13 @@ pub enum HeatSourceWetDetails {
         #[validate(minimum = 0.)]
         electricity_circ_pump: f64,
 
-        /// Electrical power consumption at part load (unit: kW)
-        #[validate(exclusive_minimum = 0.)]
-        electricity_part_load: f64,
-
         /// Electrical power consumption at full load (unit: kW)
-        #[validate(exclusive_minimum = 0.)]
+        #[validate(minimum = 0.)]
         electricity_full_load: f64,
+
+        /// Electrical power consumption at part load (unit: kW)
+        #[validate(minimum = 0.)]
+        electricity_part_load: f64,
 
         /// Electrical power consumption in standby mode (unit: kW)
         #[validate(minimum = 0.)]
@@ -6294,9 +6277,9 @@ mod tests {
             case::modulation_load_at_most_one(json!({"modulation_load": 2})),
             case::electricity_circ_pump_at_least_zero(json!({"electricity_circ_pump": -1})
             ),
-            case::electricity_full_load_greater_than_zero(json!({"electricity_full_load": 0})
+            case::electricity_full_load_at_least_zero(json!({"electricity_full_load": -1})
             ),
-            case::electricity_part_load_greater_than_zero(json!({"electricity_part_load": 0})
+            case::electricity_part_load_at_least_zero(json!({"electricity_part_load": -1})
             ),
             case::electricity_standby_at_least_zero(json!({"electricity_standby": -0.1})
             ),
@@ -6697,7 +6680,6 @@ mod tests {
                         HeatSource::ServiceWaterRegular {
                             name: "hp".into(),
                             temp_flow_limit_upper: Some(65.),
-                            energy_supply: "mains elec".into(),
                             control_min: Some("min_temp".into()),
                             control_max: Some("setpoint_temp_max".into()),
                             heater_position: 0.1,
@@ -7424,7 +7406,6 @@ mod tests {
                 serde_json::to_value(HeatSource::ServiceWaterRegular {
                     name: Default::default(),
                     temp_flow_limit_upper: None,
-                    energy_supply: Default::default(),
                     heater_position: 0.8,
                     thermostat_position: None,
                     control_max: Some("control max".into()),
@@ -8633,48 +8614,6 @@ mod tests {
         mod ground {
             use super::*;
 
-            // for deletion during 1.0.0a6
-            // mod base {
-            //     use super::*;
-            //
-            //     #[fixture]
-            //     fn valid_example() -> JsonValue {
-            //         serde_json::to_value(BuildingElement::Ground {
-            //             area: 20.,
-            //             total_area: 15.,
-            //             pitch: 90.,
-            //             u_value: 1.4,
-            //             thermal_resistance_floor_construction: 0.2,
-            //             areal_heat_capacity: 19200.,
-            //             mass_distribution_class: MassDistributionClass::I,
-            //             perimeter: 16.,
-            //             psi_wall_floor_junc: 0.5,
-            //             thickness_walls: 0.2,
-            //             floor_data: FloorData::SlabNoEdgeInsulation,
-            //         })
-            //         .unwrap()
-            //     }
-            //
-            //     #[rstest(inputs,
-            //         case::calculated_r_vi_greater_than_zero(json!({"u_value": 1, "thermal_resistance_floor_construction": 1})
-            //         ),
-            //         case::area_greater_than_zero(json!({"area": 0})),
-            //         case::thickness_walls_greater_than_zero(json!({"thickness_walls": 0})),
-            //         case::total_area_greater_than_zero(json!({"total_area": 0})),
-            //         case::perimeter_greater_than_zero(json!({"perimeter": 0})),
-            //         case::areal_heat_capacity_greater_than_zero(json!({"areal_heat_capacity": 0})),
-            //         case::thermal_resistance_floor_construction_greater_than_zero(json!({"thermal_resistance_floor_construction": 0})
-            //         ),
-            //         case::u_value_greater_than_zero(json!({"u_value": 0})),
-            //         // height_upper_surface only present in suspended floor, so moved that test there
-            //         case::pitch_at_least_zero(json!({"pitch": -1})),
-            //         case::pitch_at_most_zero(json!({"pitch": 181})),
-            //     )]
-            //     fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
-            //         assert_range_constraints::<BuildingElement>(valid_example, inputs);
-            //     }
-            // }
-
             mod suspended_floor {
                 use super::*;
 
@@ -8697,7 +8636,6 @@ mod tests {
                             area_per_perimeter_vent: 0.0015,
                             shield_fact_location: WindShieldLocation::Average,
                             thermal_resistance_of_insulation: 0.5,
-                            edge_insulation: Default::default(),
                         },
                     })
                     .unwrap()
@@ -8745,7 +8683,6 @@ mod tests {
                         floor_data: FloorData::HeatedBasement {
                             depth_basement_floor: 10.,
                             thermal_resistance_of_basement_walls: 0.15,
-                            edge_insulation: Default::default(),
                         },
                     })
                     .unwrap()
@@ -8784,7 +8721,6 @@ mod tests {
                             depth_basement_floor: 10.,
                             height_basement_walls: 10.,
                             thermal_resistance_of_basement_walls: 0.15,
-                            edge_insulation: Default::default(),
                         },
                     })
                     .unwrap()

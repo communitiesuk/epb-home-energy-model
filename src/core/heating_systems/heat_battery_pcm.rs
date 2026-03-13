@@ -189,7 +189,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
         let volume_req_already = volume_req_already.unwrap_or(0.);
 
         if is_close!(volume_req, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
-            return Ok(vec![]);
+            bail!("volume_req must be non-zero");
         }
 
         let volume_req_cumulative = volume_req + volume_req_already;
@@ -246,6 +246,8 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
                     // Accumulate for weighted average cold water temperature
                     total_volume += event.volume_hot;
                     weighted_cold_temp_sum += cold_temp * event.volume_hot;
+                } else {
+                    bail!("No hot water temperatures were available for an event, unexpectedly");
                 }
             }
         }
@@ -3597,7 +3599,6 @@ mod tests {
     }
 
     #[rstest]
-    // #[ignore = "test to be updated during migration to 1.0.0a6"]
     fn test_output_detailed_results_space(
         simulation_time: SimulationTime,
         heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,

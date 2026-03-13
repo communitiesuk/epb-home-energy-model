@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a6"
+        "hem_core_version": "1.0.0a7"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -585,7 +585,6 @@
                     "type": "HeatSourceWet",
                     "name": "hp",
                     "temp_flow_limit_upper": 65,
-                    "EnergySupply": "mains elec",
                     "Controlmin": "min_temp",
                     "Controlmax": "setpoint_temp_max",
                     "heater_position": 0.5,

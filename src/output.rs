@@ -234,34 +234,34 @@ pub struct OutputCore {
     pub results_totals: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy per supply, per end use (unit: kWh)
     pub results_end_user: IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
-    /// Energy import (unit: kWh)
+    /// Total energy imported from the grid, including both direct consumption and battery charging (unit: kWh)
     pub energy_import: IndexMap<Arc<str>, Vec<f64>>,
-    /// Energy export (unit: kWh)
+    /// Total energy exported to the grid (unit: kWh)
     pub energy_export: IndexMap<Arc<str>, Vec<f64>>,
-    /// Energy from grid to consumption (unit: kWh)
+    /// Energy imported from the grid directly to consumption. Does not include grid to battery charging (unit: kWh)
     pub grid_to_consumption: IndexMap<Arc<str>, Vec<f64>>,
-    /// Energy export from generation (unit: kWh)
+    /// On-site generation immediately exported to the grid (unit: kWh)
     pub generation_to_grid: IndexMap<Arc<str>, Vec<f64>>,
-    /// Energy generated and consumed (unit: kWh)
+    /// On-site generation immediately consumed within the dwelling. Does not include energy via storage or PV diverter (unit: kWh)
     pub energy_generated_consumed: IndexMap<Arc<str>, Vec<f64>>,
-    /// Energy to storage (unit: kWh)
+    /// Energy from on-site generation to storage. Does not include energy from the grid to storage (unit: kWh)
     pub energy_to_storage: IndexMap<Arc<str>, Vec<f64>>,
-    /// Energy from storage (unit: kWh)
+    /// Energy discharged from storage to consumption (unit: kWh)
     pub energy_from_storage: IndexMap<Arc<str>, Vec<f64>>,
-    /// Imported energy to storage, (unit: kWh)
+    /// Energy imported from the grid to storage. Does not include energy from on-site generation to storage (unit: kWh)
     pub storage_from_grid: IndexMap<Arc<str>, Vec<f64>>,
-    /// Battery charge level (unit: ratio 0 to 1 as a percentage)
+    /// Battery charge level (unit: ratio 0 to 1)
     pub battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>>,
-    /// Energy diverted (unit: kWh)
+    /// Surplus on-site generation diverted to PV diverter, e.g. immersion heater (unit: kWh)
     pub energy_diverted: IndexMap<Arc<str>, Vec<f64>>,
-    /// Energy supply beta factor (unit: ratio 0 to 1)
+    /// Fraction of on-site generation immediately consumed within the dwelling. Does not include energy to storage or diverters (unit: ratio 0 to 1)
     pub beta_factor: IndexMap<Arc<str>, Vec<f64>>,
     /// List of the unique zone names in the zone data
     pub zone_list: Vec<Arc<str>>,
     pub zone_data: OutputZoneData,
     pub heating_cooling_system: OutputHeatingCoolingSystem,
     pub cop: OutputCop,
-    /// Ventilation ductwork gains (unit: kWh)
+    /// Ventilation ductwork gains (unit: W)
     pub ductwork_gains: Vec<f64>,
     /// Heat balance data for each zone.
     pub heat_balance_all: OutputHeatBalanceAll,
@@ -269,9 +269,9 @@ pub struct OutputCore {
     pub heat_source_wet_results: IndexMap<Arc<str>, ResultsPerTimestep>,
     /// Annual heat source wet detailed results.
     pub heat_source_wet_results_annual: IndexMap<Arc<str>, ResultsAnnual>,
-    /// Hot water source results summary.
+    /// Hot water source results.
     /// Currently unstructured, see CSV for column-order.
-    pub hot_water_source_results_summary: IndexMap<Arc<str>, Vec<Vec<StringOrNumber>>>,
+    pub hot_water_source_results: IndexMap<Arc<str>, Vec<Vec<StringOrNumber>>>,
     /// Heating system emitters detailed outputs.
     /// Currently unstructured, see CSV for column-order.
     pub emitters: IndexMap<Arc<str>, IndexMap<usize, OutputEmitters>>,
@@ -308,29 +308,27 @@ pub struct OutputSummaryEnergySupply {
     pub generation: f64,
     /// All energy consumed for space and water heating, appliances and cooking (unit: kWh)
     pub consumption: f64,
-    /// Total energy generated and consumed immediately, excluding PV diverter (unit: kWh)
+    /// Total on-site generation immediately consumed within the dwelling. Does not include energy via storage or PV diverter (unit: kWh)
     pub generation_to_consumption: f64,
-    /// Total energy exported to grid immediately from generation (unit: kWh)
+    /// Total on-site generation immediately exported to the grid (unit: kWh)
     pub generation_to_grid: f64,
-    /// Total energy generated and sent to PV diverter (unit: kWh)
+    /// Total surplus on-site generation diverted to PV diverter, e.g. immersion heater (unit: kWh)
     pub generation_to_diverter: f64,
-    /// Total energy imported from the grid (unit: kWh)
+    /// Total energy imported from the grid directly to consumption. Does not include grid to battery charging (unit: kWh)
     pub grid_to_consumption: f64,
-    /// Total energy imported and put into storage (unit: kWh)
+    /// Total energy imported from the grid to storage. Does not include on-site generation to storage (unit: kWh)
     pub grid_to_storage: f64,
-    /// Total energy generated and put into storage (unit: kWh)
+    /// Total on-site generation put into storage. Does not include energy from the grid to storage (unit: kWh)
     pub generation_to_storage: f64,
-    /// Total energy consumed from storage (unit: kWh)
+    /// Total energy discharged from storage to consumption (unit: kWh)
     pub storage_to_consumption: f64,
-    /// Storage round-trip efficiency.
-    /// Total energy consumed from storage divided by total energy put into storage, from both grid and on site generation.
-    /// (unit: kWh)
+    /// Storage round-trip efficiency: total energy discharged from storage divided by total energy put into storage from both grid and on-site generation (unit: kWh)
     pub storage_efficiency: f64,
-    /// Net import grid to consumption minus generation to grid (unit: kWh)
+    /// Net import: total gross import minus total gross export (unit: kWh)
     pub net_import: f64,
-    /// Gross import from grid (unit: kWh)
+    /// Total energy imported from the grid, including both direct consumption and battery charging (unit: kWh)
     pub total_gross_import: f64,
-    /// Gross export to grid (unit: kWh)
+    /// Total energy exported to the grid (unit: kWh)
     pub total_gross_export: f64,
 }
 

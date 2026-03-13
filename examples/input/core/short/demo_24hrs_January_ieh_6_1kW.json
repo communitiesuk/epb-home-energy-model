@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a6"
+        "hem_core_version": "1.0.0a7"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -378,7 +378,7 @@
                 ]
             }
         },
-        "main__hw timer__converted_from_OnOffTimeControl": {
+        "main_1_setpoint": {
             "type": "SetpointTimeControl",
             "start_day": 0,
             "time_series_step": 1,
@@ -408,6 +408,73 @@
                     15.0,
                     15.0,
                     15.0
+                ]
+            }
+        },
+        "main_2_setpoint": {
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    null,
+                    null,
+                    null,
+                    null
+                ]
+            },
+            "setpoint_min": 18.0
+        },
+        "main_3-6_setpoint": {
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    21.0,
+                    null,
+                    null,
+                    null,
+                    null
                 ]
             }
         }
@@ -525,12 +592,47 @@
         }
     },
     "SpaceHeatSystem": {
-        "main": {
+        "main1": {
             "type": "InstantElecHeater",
             "rated_power": 1.0,
             "frac_convective": 0.4,
             "EnergySupply": "mains elec",
-            "Control": "main__hw timer__converted_from_OnOffTimeControl"
+            "Control": "main_1_setpoint"
+        },
+        "main2": {
+            "type": "InstantElecHeater",
+            "rated_power": 1.0,
+            "frac_convective": 0.4,
+            "EnergySupply": "mains elec",
+            "Control": "main_2_setpoint"
+        },
+        "main3": {
+            "type": "InstantElecHeater",
+            "rated_power": 1.0,
+            "frac_convective": 0.4,
+            "EnergySupply": "mains elec",
+            "Control": "main_3-6_setpoint"
+        },
+        "main4": {
+            "type": "InstantElecHeater",
+            "rated_power": 1.0,
+            "frac_convective": 0.4,
+            "EnergySupply": "mains elec",
+            "Control": "main_3-6_setpoint"
+        },
+        "main5": {
+            "type": "InstantElecHeater",
+            "rated_power": 1.0,
+            "frac_convective": 0.4,
+            "EnergySupply": "mains elec",
+            "Control": "main_3-6_setpoint"
+        },
+        "main6": {
+            "type": "InstantElecHeater",
+            "rated_power": 1.0,
+            "frac_convective": 0.4,
+            "EnergySupply": "mains elec",
+            "Control": "main_3-6_setpoint"
         }
     },
     "InfiltrationVentilation": {
@@ -570,10 +672,17 @@
     },
     "Zone": {
         "zone 1": {
-            "SpaceHeatSystem": "main",
+            "SpaceHeatSystem": [
+                "main1",
+                "main2",
+                "main3",
+                "main4",
+                "main5",
+                "main6"
+            ],
             "area": 48.0,
             "volume": 129.6,
-            "temp_setpnt_init": 20.0,
+            "temp_setpnt_init": 10.0,
             "BuildingElement": {
                 "roof 0": {
                     "type": "BuildingElementOpaque",

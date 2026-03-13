@@ -53,8 +53,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, instrument};
 
-pub const HEM_VERSION: &str = "1.0.0a6";
-pub const HEM_VERSION_DATE: &str = "2026-01-17";
+pub const HEM_VERSION: &str = "1.0.0a7";
+pub const HEM_VERSION_DATE: &str = "2026-02-27";
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
@@ -327,13 +327,13 @@ fn write_core_output_files(
             )?;
 
             for (hot_water_source_name, hot_water_source_results) in
-                &output.core.hot_water_source_results_summary
+                &output.core.hot_water_source_results
             {
                 let hot_water_source_file = format!(
-                    "results_hot_water_source_summary__{}",
+                    "results_hot_water_source__{}",
                     hot_water_source_name.replace(" ", "_")
                 );
-                write_core_output_file_hot_water_source_summary(
+                write_core_output_file_hot_water_source(
                     hot_water_source_file.as_str(),
                     hot_water_source_results,
                     output_writer,
@@ -463,7 +463,7 @@ fn write_core_output_file(
     }
 
     headings.push("Ventilation: Ductwork gains".into());
-    units_row.push("[kWh]");
+    units_row.push("[W]");
 
     for zone in output.core.zone_list.iter() {
         for field_name in OUTPUT_ZONE_DATA_FIELD_HEADINGS {
@@ -1340,7 +1340,7 @@ fn write_core_output_file_ventilation_detailed(
     Ok(())
 }
 
-fn write_core_output_file_hot_water_source_summary(
+fn write_core_output_file_hot_water_source(
     output_key: &str,
     hot_water_source_results: &[Vec<StringOrNumber>],
     output_writer: &impl OutputWriter,

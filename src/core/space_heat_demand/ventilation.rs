@@ -1657,8 +1657,8 @@ impl MechanicalVentilation {
             simulation_time_iteration.index,
         )?;
 
-        Ok(supply_fan_energy_use_kwh
-            / (f64::from(WATTS_PER_KILOWATT) * simulation_time_iteration.timestep))
+        Ok(supply_fan_energy_use_kwh * f64::from(WATTS_PER_KILOWATT)
+            / simulation_time_iteration.timestep)
     }
 
     /// Calculate the internal gains/losses from MVHR ductwork.
@@ -4777,7 +4777,7 @@ mod tests {
             mechanical_ventilation
                 .fans(200., 2000., None, simtime)
                 .unwrap(),
-            1.1458333333333335e-06,
+            1.1458333333333335,
         );
     }
 
