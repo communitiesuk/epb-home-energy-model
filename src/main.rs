@@ -24,6 +24,7 @@ struct SapArgs {
         long,
         value_enum,
         num_args = 1..=2,
+        default_value = "csv",
         help = "output format(s): csv, json, or both; default to csv"
     )]
     output: Option<Vec<OutputFormat>>,
