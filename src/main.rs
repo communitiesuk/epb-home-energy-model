@@ -85,11 +85,7 @@ fn main() -> anyhow::Result<()> {
     output_path.push(format!("{}__results", input_file_stem.to_str().unwrap()));
     fs::create_dir_all(&output_path)?;
     let input_file_name = input_file_stem.file_name().unwrap().to_str().unwrap();
-    let output_type = "core";
-    let file_output = FileOutputWriter::new(
-        output_path,
-        format!("{input_file_name}__{output_type}__{{}}.{{}}"),
-    );
+    let file_output = FileOutputWriter::new(output_path, format!("{input_file_name}__{{}}.{{}}"));
 
     let external_conditions: Option<ExternalConditions> = match args.weather_file {
         WeatherFileType {

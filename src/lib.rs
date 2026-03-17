@@ -137,11 +137,12 @@ pub fn run_project_from_input_file(
 
     if let Some(output_formats) = output_formats {
         let steps_in_hours = results.input.simulation_time.step;
-
+        let output_mode = "core";
         write_core_output_files(
             &results.output,
             results.input.as_ref(),
             output_writer,
+            output_mode,
             output_formats,
             steps_in_hours,
             heat_balance,
@@ -259,6 +260,7 @@ pub fn write_core_output_files(
     output: &Output,
     primary_input: &Input,
     output_writer: &impl OutputWriter,
+    output_mode: &str,
     output_formats: &[OutputFormat],
     hour_per_step: f64,
     heat_balance: bool,
@@ -275,11 +277,14 @@ pub fn write_core_output_files(
     if output_formats.contains(&OutputFormat::Csv) {
         let input = primary_input;
 
-        write_core_output_file_static(&output.static_, "results_static", output_writer)?;
+        let output_key = format!("{output_mode}__results_static");
+        write_core_output_file_static(&output.static_, &output_key, output_writer)?;
 
-        write_core_output_file(output, "results", output_writer)?;
+        let output_key = format!("{output_mode}__results");
+        write_core_output_file(output, &output_key, output_writer)?;
 
-        write_core_output_file_summary(output, "results_summary", output_writer, input)?;
+        let output_key = format!("{output_mode}__results_summary");
+        write_core_output_file_summary(output, &output_key, output_writer, input)?;
 
         if heat_balance {
             for (hb_name, hb_map) in &output.core.heat_balance_all {
