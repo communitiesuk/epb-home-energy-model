@@ -108,7 +108,7 @@ use erased_serde::__private::serde::Serializer;
 use fsum::FSum;
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
-use indicatif::ProgressIterator;
+use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
@@ -2342,7 +2342,11 @@ impl Corpus {
 
         // Loop over each timestep
         #[cfg(feature = "indicatif")]
-        let simulation_time_iter = simulation_time.progress();
+        let simulation_time_iter = {
+            let pb = ProgressBar::new(simulation_time.total_steps() as u64);
+            pb.set_style(ProgressStyle::with_template("{spinner:.cyan} [{elapsed_precise}] [{bar:80.green/red}] ({human_pos}/{human_len}, ETA {eta})").expect("Could not create progress bar style"));
+            simulation_time.progress_with(pb)
+        };
         #[cfg(not(feature = "indicatif"))]
         let simulation_time_iter = simulation_time;
 
