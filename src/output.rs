@@ -294,7 +294,7 @@ pub struct OutputSummaryPeakElectricityConsumption {
     pub peak: f64,
     /// The time step the peak occurred at
     pub index: usize,
-    /// The month the peak occurred in
+    /// The month the peak occurred in (1=January, 12=December)
     pub month: u8,
     /// The day of the month the peak occurred on
     pub day: u8,
