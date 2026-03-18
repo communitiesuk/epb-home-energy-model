@@ -51,6 +51,7 @@ use std::io::Read;
 use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
+use thiserror::Error;
 use tracing::{debug, instrument};
 
 pub const HEM_VERSION: &str = "1.0.0a7";
@@ -764,7 +765,7 @@ fn write_core_output_file_summary(
         peak_consumption.peak.to_string(),
         peak_consumption.index.to_string(),
         peak_consumption.index.to_string(),
-        MONTH_NAMES[peak_consumption.month as usize - 1].to_string(),
+        month_name(peak_consumption.month)?.to_string(),
         peak_consumption.day.to_string(),
         peak_consumption.hour.to_string(),
     ])?;
@@ -900,6 +901,18 @@ fn write_core_output_file_summary(
 const MONTH_NAMES: [&str; 12] = [
     "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
 ];
+
+#[derive(Debug, Clone, Copy, Error)]
+#[error("Invalid month number (expected 1-12): {0}")]
+struct InvalidMonthNumberError(u8);
+
+fn month_name(month: u8) -> Result<&'static str, InvalidMonthNumberError> {
+    match month {
+        0 => Err(InvalidMonthNumberError(0)),
+        1..=12 => Ok(MONTH_NAMES[month as usize - 1]),
+        x => Err(InvalidMonthNumberError(x)),
+    }
+}
 
 fn write_output_json_file(
     output_key: &str,
