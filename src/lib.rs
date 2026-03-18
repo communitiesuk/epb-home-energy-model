@@ -764,7 +764,7 @@ fn write_core_output_file_summary(
         peak_consumption.peak.to_string(),
         peak_consumption.index.to_string(),
         peak_consumption.index.to_string(),
-        MONTH_NAMES[peak_consumption.month as usize].to_string(),
+        MONTH_NAMES[peak_consumption.month as usize - 1].to_string(),
         peak_consumption.day.to_string(),
         peak_consumption.hour.to_string(),
     ])?;
