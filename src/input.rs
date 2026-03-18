@@ -3339,11 +3339,11 @@ pub enum PartyWallCavityData {
         party_wall_lining_type: PartyWallLiningType,
     },
     /// Fully filled cavity with effective sealing
-    FilledSealed {
+    FilledSealed,
+    /// Fully filled cavity with no effective edge sealing
+    FilledUnsealed {
         party_wall_lining_type: PartyWallLiningType,
     },
-    /// Fully filled cavity with no effective edge sealing
-    FilledUnsealed,
     /// User-defined thermal resistance
     DefinedResistance {
         #[validate(exclusive_minimum = 0.)]
@@ -3557,8 +3557,8 @@ impl From<PartyWallCavityData> for PartyWallCavityType {
             PartyWallCavityData::Solid => Self::Solid,
             PartyWallCavityData::UnfilledUnsealed { .. } => Self::UnfilledUnsealed,
             PartyWallCavityData::UnfilledSealed { .. } => Self::UnfilledSealed,
-            PartyWallCavityData::FilledSealed { .. } => Self::FilledSealed,
-            PartyWallCavityData::FilledUnsealed => Self::FilledUnsealed,
+            PartyWallCavityData::FilledSealed => Self::FilledSealed,
+            PartyWallCavityData::FilledUnsealed { .. } => Self::FilledUnsealed,
             PartyWallCavityData::DefinedResistance { .. } => Self::DefinedResistance,
         }
     }
@@ -3573,7 +3573,7 @@ impl PartyWallCavityData {
             | Self::UnfilledSealed {
                 party_wall_lining_type,
             }
-            | Self::FilledSealed {
+            | Self::FilledUnsealed {
                 party_wall_lining_type,
             } => Some(*party_wall_lining_type),
             _ => None,
