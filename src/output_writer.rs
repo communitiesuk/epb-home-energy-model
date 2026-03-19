@@ -5,7 +5,7 @@ use std::io;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
-pub trait OutputWriter: Debug + Sync + Send {
+pub trait OutputWriter: Debug + Sync + Send + Sized + Clone {
     fn writer_for_location_key(
         &self,
         location_key: &str,
@@ -15,9 +15,14 @@ pub trait OutputWriter: Debug + Sync + Send {
     fn is_noop(&self) -> bool {
         false
     }
+
+    /// For writers that use a file template, create a writer with a template provided - else this is a no-op
+    fn with_file_template(&self, _file_template: String) -> Self {
+        self.clone()
+    }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FileOutputWriter {
     directory_path: PathBuf,
     file_template: String,
@@ -42,10 +47,17 @@ impl OutputWriter for FileOutputWriter {
             formatx!(&self.file_template, location_key, file_extension).unwrap(),
         ))?))
     }
+
+    fn with_file_template(&self, file_template: String) -> Self {
+        Self {
+            directory_path: self.directory_path.clone(),
+            file_template,
+        }
+    }
 }
 
 /// An output that goes to nowhere/ a "sink"/ /dev/null.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SinkOutputWriter;
 
 impl OutputWriter for SinkOutputWriter {
