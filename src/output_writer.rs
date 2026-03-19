@@ -44,20 +44,6 @@ impl OutputWriter for FileOutputWriter {
     }
 }
 
-impl OutputWriter for &FileOutputWriter {
-    fn writer_for_location_key(
-        &self,
-        location_key: &str,
-        file_extension: &str,
-    ) -> anyhow::Result<impl Write> {
-        <FileOutputWriter as OutputWriter>::writer_for_location_key(
-            self,
-            location_key,
-            file_extension,
-        )
-    }
-}
-
 /// An output that goes to nowhere/ a "sink"/ /dev/null.
 #[derive(Debug, Default)]
 pub struct SinkOutputWriter;
