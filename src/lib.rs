@@ -450,7 +450,7 @@ fn write_core_output_file(
     output_key: &str,
     output_writer: &impl OutputWriter,
 ) -> anyhow::Result<()> {
-    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv", true)?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     let mut headings: Vec<Cow<'static, str>> = vec!["Timestep".into()];
@@ -738,7 +738,7 @@ fn write_core_output_file_summary(
         })
         .collect::<Vec<_>>();
 
-    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv", true)?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     let blank_line: Vec<&'static str> = vec![];
@@ -925,7 +925,7 @@ fn write_output_json_file(
 
     debug!("writing JSON output file");
 
-    let writer = output_writer.writer_for_location_key(output_key, "json")?;
+    let writer = output_writer.writer_for_location_key(output_key, "json", true)?;
     serde_json::to_writer_pretty(writer, &output)?;
 
     Ok(())
@@ -990,7 +990,7 @@ fn write_core_output_file_static(
 ) -> Result<(), anyhow::Error> {
     debug!("writing out to {output_key}");
 
-    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv", true)?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     writer.write_record([
@@ -1038,7 +1038,7 @@ fn write_core_output_file_heat_balance(
     heat_balance_map: &IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
-    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv", true)?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     let mut headings = vec!["Timestep".to_string()];
@@ -1147,7 +1147,7 @@ fn write_core_output_file_heat_source_wet(
         );
     }
 
-    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv", true)?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     // Write column headings and units
@@ -1185,7 +1185,7 @@ fn write_core_output_file_heat_source_wet_summary(
     heat_source_wet_results_annual: &ResultsAnnual,
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
-    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv", true)?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     for (service_name, service_results) in heat_source_wet_results_annual {
@@ -1210,7 +1210,7 @@ fn write_core_output_file_emitters_detailed(
 ) -> Result<(), anyhow::Error> {
     for (emitter_name, emitters_detailed_results) in emitters_output_map {
         let output_key = format!("{}{}", output_prefix, emitter_name);
-        let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
+        let writer = output_writer.writer_for_location_key(&output_key, "csv", true)?;
         let mut writer = WriterBuilder::new()
             .flexible(true)
             .has_headers(false)
@@ -1278,7 +1278,7 @@ fn write_core_output_file_esh_detailed(
 
     for (esh, esh_output) in esh_output {
         let output_key = format!("{output_prefix}_{esh}");
-        let writer = output_writer.writer_for_location_key(&output_key, "csv")?;
+        let writer = output_writer.writer_for_location_key(&output_key, "csv", true)?;
         let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
         writer.write_record(headings)?;
         writer.write_record(units_row)?;
@@ -1297,7 +1297,7 @@ fn write_core_output_file_ventilation_detailed(
     vent_output_list: &[Vec<StringOrNumber>],
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
-    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv", true)?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     writer.write_record([
@@ -1363,7 +1363,7 @@ fn write_core_output_file_hot_water_source(
     hot_water_source_results: &[Vec<StringOrNumber>],
     output_writer: &impl OutputWriter,
 ) -> anyhow::Result<()> {
-    let writer = output_writer.writer_for_location_key(output_key, "csv")?;
+    let writer = output_writer.writer_for_location_key(output_key, "csv", true)?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     for hot_water_source_row in hot_water_source_results {
