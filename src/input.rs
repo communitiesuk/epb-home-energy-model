@@ -4956,11 +4956,11 @@ pub(crate) struct VentilationLeaks {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MechanicalVentilation {
     /// Supply air flow rate control
-    #[serde(rename = "sup_air_flw_ctrl")]
+    #[serde(rename = "sup_air_flw_ctrl", default)]
     pub(crate) supply_air_flow_rate_control: SupplyAirFlowRateControlType,
 
     /// Supply air temperature control
-    #[serde(rename = "sup_air_temp_ctrl")]
+    #[serde(rename = "sup_air_temp_ctrl", default)]
     pub(crate) supply_air_temperature_control_type: SupplyAirTemperatureControlType,
 
     /// MVHR efficiency
@@ -5195,23 +5195,25 @@ impl MechanicalVentilationForProcessing for MechanicalVentilationJsonValue<'_> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum SupplyAirFlowRateControlType {
     #[serde(rename = "ODA")]
+    #[default]
     Oda,
     // commented out from Python
     // #[serde(rename = "LOAD")]
     // Load,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum SupplyAirTemperatureControlType {
     // commented out from Python
     // #[serde(rename = "CONST")]
     // Constant,
     #[serde(rename = "NO_CTRL")]
+    #[default]
     NoControl,
     // commented out from Python
     // #[serde(rename = "LOAD_COM")]
