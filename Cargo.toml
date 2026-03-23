@@ -8,7 +8,7 @@ description = "An engine written in Rust implementing the Home Energy Model (HEM
 [dependencies]
 anyhow = "1.0.102"
 arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
-arc-swap = "1.8.2"
+arc-swap = "1.9.0"
 argmin = "0.11.0"
 atomic_float = "1.1.0"
 bounded-vec-deque = "0.1.1"
