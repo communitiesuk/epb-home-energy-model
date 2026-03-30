@@ -1057,7 +1057,7 @@ dependencies = [
  "itertools",
  "jsonschema",
  "monostate",
- "nalgebra 0.33.2",
+ "nalgebra 0.33.3",
  "ode_solvers",
  "ordered-float",
  "parking_lot",
@@ -1694,9 +1694,9 @@ dependencies = [
 
 [[package]]
 name = "nalgebra"
-version = "0.33.2"
+version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26aecdf64b707efd1310e3544d709c5c0ac61c13756046aaaba41be5c4f66a3b"
+checksum = "9d43ddcacf343185dfd6de2ee786d9e8b1c2301622afab66b6c73baf9882abfd"
 dependencies = [
  "approx",
  "matrixmultiply",
@@ -1864,7 +1864,7 @@ name = "ode_solvers"
 version = "0.5.0"
 source = "git+https://github.com/russ-madetech/ode-solvers?branch=events#e27a4af3cb662b67946f34d7c6e11f0093cbb2da"
 dependencies = [
- "nalgebra 0.33.2",
+ "nalgebra 0.33.3",
  "num-traits",
  "simba",
  "thiserror 1.0.69",
@@ -2828,7 +2828,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a3fe7c28c6512e766b0874335db33c94ad7b8f9054228ae1c2abd47ce7d335e"
 dependencies = [
  "approx",
- "nalgebra 0.33.2",
+ "nalgebra 0.33.3",
  "num-traits",
  "rand 0.8.5",
 ]
