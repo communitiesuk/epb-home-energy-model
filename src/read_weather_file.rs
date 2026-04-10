@@ -137,8 +137,8 @@ pub fn cibse_weather_data_to_external_conditions(
         solar_reflectivity_of_ground: ground_solar_reflc,
         latitude: latitude.unwrap(),
         longitude: longitude.unwrap(),
-        // Conversion is not needed as direct irradiation will be normal plane from this file
-        direct_beam_conversion_needed: false,
+        // CIBSE format provides direct beam as horizontal irradiance; conversion to normal plane required
+        direct_beam_conversion_needed: true,
     };
 
     validate_weather_data(&external_conditions)?;
