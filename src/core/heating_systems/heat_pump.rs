@@ -2661,8 +2661,8 @@ impl HeatPump {
             match (
                 self.backup_ctrl,
                 self.backup_ctrl != HeatPumpBackupControlType::None
-                    && self.backup_heater_delay_time_elapsed()
-                    && outside_operating_limits,
+                    && (self.backup_heater_delay_time_elapsed()
+                    || outside_operating_limits),
             ) {
                 (HeatPumpBackupControlType::None, _) | (_, false) => power_max_hp * time_available,
                 (HeatPumpBackupControlType::TopUp, _) => {
