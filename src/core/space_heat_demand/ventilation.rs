@@ -1746,7 +1746,7 @@ impl MechanicalVentilation {
 
                 // Account for effect of heat gained by intake duct on temperature in exhaust duct
                 let temp_gain_intake_duct = -gains_internal_intake_duct
-                    / (vol_flow_rate_litres_per_s / AIR.volumetric_heat_capacity());
+                    / (vol_flow_rate_litres_per_s * AIR.volumetric_heat_capacity());
 
                 // The duct heat loss calculation assumes a uniform temperature in the duct equal to the
                 // temperature before any heat gains/losses. If the volume flow rate is low enough, this
