@@ -12,6 +12,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
 use std::f64::consts::PI;
+use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -122,6 +123,7 @@ pub(crate) enum ShadingObjectType {
 #[derive(Clone, Debug)]
 pub struct ExternalConditions {
     pub(crate) air_temps: Vec<f64>,
+    air_temp_annual: OnceLock<Option<f64>>,
     wind_speeds: Vec<f64>,
     wind_directions: Vec<Orientation360>,
     diffuse_horizontal_radiations: Vec<f64>,
@@ -325,6 +327,7 @@ impl ExternalConditions {
 
         Self {
             air_temps,
+            air_temp_annual: OnceLock::new(),
             wind_speeds,
             wind_directions,
             diffuse_horizontal_radiations,
@@ -369,11 +372,14 @@ impl ExternalConditions {
 
     /// Return the average air temperature for the year
     pub(crate) fn air_temp_annual(&self) -> Option<f64> {
-        if self.air_temps.len() != 8760 {
-            return None;
-        }
-        let sum: f64 = FSum::with_all(self.air_temps.iter()).value();
-        Some(sum / self.air_temps.len() as f64)
+        *self.air_temp_annual.get_or_init(|| {
+            if self.air_temps.len() != 8760 {
+                return None;
+            }
+
+            let sum: f64 = FSum::with_all(self.air_temps.iter()).value();
+            Some(sum / self.air_temps.len() as f64)
+        })
     }
 
     /// Return the average air temperature for the current month
