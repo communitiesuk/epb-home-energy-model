@@ -1232,6 +1232,7 @@ impl Boiler {
         self.calc_auxiliary_energy(time_remaining_current_timestep, simtime.index);
 
         self.total_time_running_current_timestep = Default::default();
+        self.pump_running_time_current_timestep = Default::default();
         self.service_results = Default::default();
 
         Ok(())
