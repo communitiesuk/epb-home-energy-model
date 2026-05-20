@@ -2934,7 +2934,7 @@ impl Corpus {
                 simulation_time.step,
             );
             hot_water_demand_daily_75th_percentile_dict
-                .insert(hws_name.clone(), percentile(&daily_hw_demand, 75));
+                .insert(hws_name.clone(), percentile(daily_hw_demand, 75));
         }
 
         let space_heat_demand_total =
