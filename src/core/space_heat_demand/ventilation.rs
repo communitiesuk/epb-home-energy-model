@@ -640,14 +640,8 @@ impl Window {
     ) -> f64 {
         // Assume windows are shut if the control object is empty
         match &self.on_off_ctrl_obj {
-            None => 0.,
-            Some(ctrl) => {
-                if ctrl.is_on(&simtime) {
-                    r_w_arg * self.a_w_max
-                } else {
-                    0.
-                }
-            }
+            Some(ctrl) if ctrl.is_on(&simtime) => r_w_arg * self.a_w_max,
+            _ => 0.,
         }
     }
 
@@ -662,15 +656,11 @@ impl Window {
     ) -> f64 {
         // Assume windows are shut if the control object is empty
         match &self.on_off_ctrl_obj {
-            None => 0.,
-            Some(ctrl) => {
-                if ctrl.is_on(&simtime) {
-                    let a_w = self.calculate_window_opening_free_area(r_w_arg, simtime);
-                    3600. * self.c_d_w * a_w * (2. / p_a_ref()).powf(self.n_w)
-                } else {
-                    0.
-                }
+            Some(ctrl) if ctrl.is_on(&simtime) => {
+                let a_w = self.calculate_window_opening_free_area(r_w_arg, simtime);
+                3600. * self.c_d_w * a_w * (2. / p_a_ref()).powf(self.n_w)
             }
+            _ => 0.,
         }
     }
 

@@ -1143,10 +1143,8 @@ impl StorageTank {
 
         match (setpntmax, setpntmin) {
             (None, Some(_)) => bail!("setpntmin must be None if setpntmax is None"),
-            (Some(setpointmax), Some(setpointmin)) => {
-                if setpointmin > setpointmax {
-                    bail!("setpntmin: {setpointmin} must not be greater than setpntmax: {setpointmax}");
-                }
+            (Some(setpointmax), Some(setpointmin)) if setpointmin > setpointmax => {
+                bail!("setpntmin: {setpointmin} must not be greater than setpntmax: {setpointmax}");
             }
             _ => {}
         }

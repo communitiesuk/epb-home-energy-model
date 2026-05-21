@@ -3685,12 +3685,11 @@ fn zone_from_input(
 
     for zone_h_name in heat_system_name_for_zone.values() {
         let zone_h_name_set: HashSet<Arc<str>> = HashSet::from_iter(zone_h_name.iter().cloned());
-        let h_overassigned: Vec<Arc<str>> =
-            HashSet::from_iter(heat_system_names.clone().into_iter())
-                .intersection(&zone_h_name_set)
-                .filter(|&name| !name.is_empty())
-                .cloned()
-                .collect_vec();
+        let h_overassigned: Vec<Arc<str>> = HashSet::from_iter(heat_system_names.clone())
+            .intersection(&zone_h_name_set)
+            .filter(|&name| !name.is_empty())
+            .cloned()
+            .collect_vec();
         if !h_overassigned.is_empty() {
             bail!(
                 "Invalid input: SpaceHeatSystem ({}) has been assigned to more than one Zone",
@@ -3712,12 +3711,11 @@ fn zone_from_input(
 
     for zone_c_name in cool_system_name_for_zone.values() {
         let zone_c_name_set: HashSet<Arc<str>> = HashSet::from_iter(zone_c_name.iter().cloned());
-        let c_overassigned: Vec<Arc<str>> =
-            HashSet::from_iter(cool_system_names.clone().into_iter())
-                .intersection(&zone_c_name_set)
-                .filter(|&name| !name.is_empty())
-                .cloned()
-                .collect_vec();
+        let c_overassigned: Vec<Arc<str>> = HashSet::from_iter(cool_system_names.clone())
+            .intersection(&zone_c_name_set)
+            .filter(|&name| !name.is_empty())
+            .cloned()
+            .collect_vec();
         if !c_overassigned.is_empty() {
             bail!(
                 "Invalid input: SpaceCoolSystem ({}) has been assigned to more than one Zone",
