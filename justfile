@@ -4,3 +4,9 @@
 validate:
     #!/usr/bin/env bash
     cd {{justfile_directory()}}/../epb-home-energy-model-output-validator && cargo run -- --rust-only && cargo test && cd {{justfile_directory()}}
+
+unit:
+    cargo test --lib
+
+e2e:
+    cargo test --test e2e -- --nocapture
