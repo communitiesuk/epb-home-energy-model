@@ -1849,7 +1849,7 @@ const HEAT_PUMP_F_AUX: f64 = 0.0;
 pub struct HeatPump {
     // energy supply
     pub(crate) energy_supply: Arc<RwLock<EnergySupply>>,
-    energy_supply_connections: HashMap<String, Arc<EnergySupplyConnection>>,
+    energy_supply_connections: IndexMap<String, Arc<EnergySupplyConnection>>,
     energy_supply_connection_aux: Arc<EnergySupplyConnection>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
@@ -1887,7 +1887,7 @@ pub struct HeatPump {
     buffer_tank: Option<BufferTank>,
     #[derivative(Debug = "ignore")]
     temp_internal_air_fn: TempInternalAirFn,
-    energy_supply_heat_source_connections: HashMap<String, Arc<EnergySupplyConnection>>,
+    energy_supply_heat_source_connections: IndexMap<String, Arc<EnergySupplyConnection>>,
     overvent_ratio: f64,
     test_data: HeatPumpTestData,
     temp_min_modulation_rate_low: Option<f64>,
@@ -2661,8 +2661,7 @@ impl HeatPump {
             match (
                 self.backup_ctrl,
                 self.backup_ctrl != HeatPumpBackupControlType::None
-                    && (self.backup_heater_delay_time_elapsed()
-                    || outside_operating_limits),
+                    && (self.backup_heater_delay_time_elapsed() || outside_operating_limits),
             ) {
                 (HeatPumpBackupControlType::None, _) | (_, false) => power_max_hp * time_available,
                 (HeatPumpBackupControlType::TopUp, _) => {
