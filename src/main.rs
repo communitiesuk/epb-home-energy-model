@@ -2,7 +2,8 @@ use clap::{Args, Parser};
 
 use home_energy_model::output_writer::FileOutputWriter;
 use home_energy_model::read_weather_file::{
-    epw_weather_data_to_external_conditions, ExternalConditions,
+    cibse_weather_data_to_external_conditions, epw_weather_data_to_external_conditions,
+    ExternalConditions,
 };
 use home_energy_model::{run_project_from_input_file, OutputFormat};
 use std::ffi::OsStr;
@@ -101,8 +102,15 @@ fn main() -> anyhow::Result<()> {
         }
         WeatherFileType {
             epw_file: None,
-            cibse_weather_file: Some(_),
-        } => None,
+            cibse_weather_file: Some(ref file),
+        } => {
+            let external_conditions_data =
+                cibse_weather_data_to_external_conditions(File::open(file)?);
+            match external_conditions_data {
+                Ok(data) => Some(data),
+                Err(_) => panic!("Could not parse the weather file!"),
+            }
+        }
         _ => None,
     };
 
