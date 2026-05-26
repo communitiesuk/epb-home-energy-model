@@ -1,0 +1,23 @@
+{
+  "name": "Rust + PyO3 + Python Scientific Stack",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "PYO3_PYTHON": "/usr/bin/python3",
+    "PYTHON_SYS_EXECUTABLE": "/usr/bin/python3"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb",
+        "ms-python.python"
+      ]
+    }
+  },
+  "postCreateCommand": "python3 -c \"import numpy, scipy; print('numpy', numpy.__version__); print('scipy', scipy.__version__)\" && cargo --version"
+}

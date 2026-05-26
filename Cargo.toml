@@ -34,6 +34,7 @@ ode_solvers = { version = "0.5.0", git = "https://github.com/russ-madetech/ode-s
 ordered-float = "5.3.0"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 polyfit-rs = "0.2.2"
+pyo3 = { version = "0.28.3", features = ["auto-initialize"] }
 roots = "0.0.8"
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde-enum-str = "0.5.0"
