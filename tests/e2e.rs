@@ -1,6 +1,7 @@
 use home_energy_model::output_writer::OutputWriter;
 use home_energy_model::read_weather_file::cibse_weather_data_to_external_conditions;
 use home_energy_model::{run_project_from_input_file, OutputFormat};
+use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use rstest::*;
@@ -31,6 +32,7 @@ fn files() -> Vec<DirEntry> {
         .collect::<Vec<_>>()
 }
 
+// there is one short file that is treated differently to the rest in the e2e tests, i.e. it is given different parameters for a calculation run
 const EXCEPTIONAL_DEMO_FILE: &str = "demo_hp_with_setback_separate_ieh_plus_cooling";
 
 #[rstest]
@@ -83,22 +85,25 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             "Error running project for file: {}",
             file.path().display()
         );
+        println!(
+            "Successfully processed file: {}",
+            file.file_name().display()
+        );
+        println!("{} captured output files", output_writer.files().len());
     });
-
-    assert!(false, "hey at least we ran through all the files");
 }
 
 #[derive(Clone, Debug)]
 struct InMemoryDirectoryOutputWriter {
     input_filename: String,
-    files: Arc<Mutex<HashMap<String, FileWriter>>>,
+    files: Arc<Mutex<IndexMap<String, FileWriter>>>,
 }
 
 impl InMemoryDirectoryOutputWriter {
     fn new(input_filename: &str) -> Self {
         Self {
             input_filename: input_filename.into(),
-            files: Arc::new(Mutex::new(HashMap::new())),
+            files: Arc::new(Mutex::new(IndexMap::new())),
         }
     }
 
@@ -107,6 +112,14 @@ impl InMemoryDirectoryOutputWriter {
             "{}__{}.{}",
             self.input_filename, location_key, file_extension
         )
+    }
+
+    pub fn files(&self) -> HashMap<String, String> {
+        self.files
+            .lock()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.0.read().clone()))
+            .collect()
     }
 }
 
