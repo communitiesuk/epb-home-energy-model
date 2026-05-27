@@ -4174,9 +4174,12 @@ impl HeatSource {
                     .lock()
                     .demand_energy(energy_demand, simulation_time_iteration.index)),
             },
-            HeatSource::Wet(ref mut wet) => {
-                wet.demand_energy(energy_demand, None, temp_return, simulation_time_iteration)
-            }
+            HeatSource::Wet(ref mut wet) => wet.demand_energy(
+                energy_demand,
+                None,
+                temp_return.into(),
+                simulation_time_iteration,
+            ),
         }
     }
 

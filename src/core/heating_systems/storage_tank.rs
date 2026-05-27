@@ -856,9 +856,9 @@ impl StorageTank {
                         let (primary_pipework_losses_kwh, _) = self
                             .calculate_primary_pipework_losses(
                                 energy_potential,
-                                temp_flow,
+                                temp_flow.into(),
                                 simulation_time,
-                            );
+                            )?;
                         energy_potential -= primary_pipework_losses_kwh;
                     }
 
@@ -1087,9 +1087,11 @@ impl StorageTank {
         // TODO (from Python):  Critical - temp_flow cannot be None for downstream method calculate_primary_pipework_losses
         // but providing a fallback value will change the e2e test results
         let temp_flow = match smart_hot_water_tank {
-            None => self.temp_flow(heat_source, simulation_time_iteration),
-            Some(smart_hot_water_tank) => smart_hot_water_tank.temp_flow(simulation_time_iteration),
-        }?;
+            None => Some(self.temp_flow(heat_source, simulation_time_iteration)?),
+            Some(smart_hot_water_tank) => {
+                smart_hot_water_tank.temp_flow(simulation_time_iteration)?
+            }
+        };
 
         // Input energy rounded so that almost zero negative numbers (caused by
         // floating point error) do not cause errors in subsequent code
@@ -1109,14 +1111,14 @@ impl StorageTank {
                         input_energy_adj,
                         temp_flow,
                         simulation_time_iteration,
-                    );
+                    )?;
                 let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
 
                 // TODO Use different temperatures for flow and return in the call to
                 // heat_source.demand_energy below
                 let heat_source_output = wet_heat_source.demand_energy(
                     input_energy_adj,
-                    Some(temp_flow),
+                    temp_flow,
                     temp_flow,
                     simulation_time_iteration,
                 )? - primary_pipework_losses_kwh;
@@ -1668,9 +1670,9 @@ impl StorageTank {
     fn calculate_primary_pipework_losses(
         &self,
         input_energy_adj: f64,
-        temp_flow: f64,
+        temp_flow: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         let mut primary_pipework_losses_kwh: f64 = Default::default();
         let mut primary_gains_w = Default::default();
         if let Some(primary_pipework) = self.primary_pipework.as_ref() {
@@ -1690,7 +1692,7 @@ impl StorageTank {
                         &simulation_time_iteration,
                     );
                     let cool_down_loss =
-                        pipework_data.calculate_cool_down_loss(temp_flow, outside_temperature);
+                        pipework_data.calculate_cool_down_loss(temp_flow.ok_or_else(|| anyhow!("temp_flow is required to have a value when calculating cool down loss for primary pipework in storage tank module"))?, outside_temperature);
 
                     primary_pipework_losses_kwh += cool_down_loss;
 
@@ -1724,7 +1726,7 @@ impl StorageTank {
                         &simulation_time_iteration,
                     );
                     let primary_pipework_losses_w = pipework_data
-                        .calculate_steady_state_heat_loss(temp_flow, outside_temperature);
+                        .calculate_steady_state_heat_loss(temp_flow.ok_or_else(|| anyhow!("temp_flow is required to have a value when calculating steady state heat loss for primary pipework in storage tank module"))?, outside_temperature);
 
                     // Check if pipework location is internal
                     let location = pipework_data.location();
@@ -1753,9 +1755,10 @@ impl StorageTank {
                     self.temp_surrounding_prev_heating_event[pipe_idx]
                         .store(outside_temperature, Ordering::SeqCst);
                     if matches!(location, PipeworkLocation::Internal) {
-                        primary_gains_w += pipework_data
-                            .calculate_cool_down_loss(temp_flow, outside_temperature)
-                            * WATTS_PER_KILOWATT as f64
+                        primary_gains_w += pipework_data.calculate_cool_down_loss(
+                            temp_flow.ok_or_else(|| anyhow!("tbc"))?,
+                            outside_temperature,
+                        ) * WATTS_PER_KILOWATT as f64
                             / self.simulation_timestep
                     }
                 }
@@ -1771,7 +1774,7 @@ impl StorageTank {
         self.primary_pipework_losses_kwh
             .store(primary_pipework_losses_kwh, Ordering::SeqCst);
 
-        (primary_pipework_losses_kwh, primary_gains_w)
+        Ok((primary_pipework_losses_kwh, primary_gains_w))
     }
 
     // TODO Python has get_temp_cold_water and draw_off_water defined here
@@ -2163,7 +2166,9 @@ impl SmartHotWaterTank {
                 )?;
 
                 let default_temp_flow = self.storage_tank.temp_n.read()[heater_layer];
-                let temp_flow = self.temp_flow(simulation_time).unwrap_or(default_temp_flow);
+                let temp_flow = self
+                    .temp_flow(simulation_time)?
+                    .unwrap_or(default_temp_flow);
                 if self.storage_tank.heating_active[heat_source_name].load(Ordering::SeqCst) {
                     // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
                     let mut energy_potential = match heat_source {
@@ -2193,9 +2198,9 @@ impl SmartHotWaterTank {
                         let (primary_pipework_losses_kwh, _) =
                             self.storage_tank.calculate_primary_pipework_losses(
                                 energy_potential,
-                                temp_flow,
+                                temp_flow.into(),
                                 simulation_time,
-                            );
+                            )?;
                         energy_potential -= primary_pipework_losses_kwh;
                     }
 
@@ -2273,10 +2278,8 @@ impl SmartHotWaterTank {
     // Making this method return a Result as the corresponding method on StorageTank does, and in the original Python
     // SmartHotWaterTank subclasses StorageTank. We're making the assumption here that .setpnt() will always return a
     // `Some` value in normal functioning. If that isn't the case, we would need to address this differently.
-    fn temp_flow(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
-        self.temp_setpnt_max.setpnt(&simtime).ok_or_else(|| {
-            anyhow!("Expected to be able to access a setpoint value in SmartHotWaterTank")
-        })
+    fn temp_flow(&self, simtime: SimulationTimeIteration) -> anyhow::Result<Option<f64>> {
+        Ok(self.temp_setpnt_max.setpnt(&simtime))
     }
 
     fn calc_state_of_charge(
@@ -4831,7 +4834,9 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
-                storage_tank1.calculate_primary_pipework_losses(input_energy_adj, setpnt_max, t_it),
+                storage_tank1
+                    .calculate_primary_pipework_losses(input_energy_adj, setpnt_max.into(), t_it)
+                    .unwrap(),
                 [
                     (0.0, 0.0),
                     (0.0, 0.0),
@@ -4850,7 +4855,9 @@ mod tests {
 
         for t_it in simulation_time_for_storage_tank.iter() {
             assert_eq!(
-                storage_tank1.calculate_primary_pipework_losses(input_energy_adj, setpnt_max, t_it),
+                storage_tank1
+                    .calculate_primary_pipework_losses(input_energy_adj, setpnt_max.into(), t_it)
+                    .unwrap(),
                 (0.04746228058715814, 10.657894331822993),
             )
         }

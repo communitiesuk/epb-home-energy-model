@@ -99,7 +99,7 @@ impl HeatSourceWet {
         &self,
         energy_demand: f64,
         temp_flow: Option<f64>,
-        temperature: f64,
+        temperature: Option<f64>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match self {
@@ -110,7 +110,7 @@ impl HeatSourceWet {
                 .demand_energy(
                     energy_demand,
                     Default::default(),
-                    Some(temperature),
+                    temperature,
                     None,
                     None,
                     None,
@@ -121,7 +121,7 @@ impl HeatSourceWet {
                 .demand_energy(
                     energy_demand,
                     Default::default(),
-                    Some(temperature),
+                    temperature,
                     None,
                     None,
                     None,
@@ -135,9 +135,15 @@ impl HeatSourceWet {
                 temperature,
                 &simtime,
             ),
-            HeatSourceWet::HeatBatteryHotWater(battery) => {
-                battery.demand_energy(energy_demand, temp_flow, temperature, None, simtime)
-            }
+            HeatSourceWet::HeatBatteryHotWater(battery) => battery.demand_energy(
+                energy_demand,
+                temp_flow,
+                temperature.ok_or_else(|| {
+                    anyhow::anyhow!("Temperature must be provided for heat battery hot water")
+                })?,
+                None,
+                simtime,
+            ),
             HeatSourceWet::HeatPumpWater(water) => {
                 water.demand_energy(energy_demand, temp_flow, temperature, simtime)
             }
