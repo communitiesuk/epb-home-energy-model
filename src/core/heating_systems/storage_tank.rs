@@ -1802,7 +1802,9 @@ impl StorageTank {
     }
 
     pub(crate) fn output_results(&self) -> Option<Vec<Vec<StringOrNumber>>> {
-        None // TODO implement this
+        self.detailed_results
+            .as_ref()
+            .map(|results| results.read().clone())
     }
 }
 
