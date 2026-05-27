@@ -38,7 +38,7 @@ const EXCEPTIONAL_DEMO_FILE: &str = "demo_hp_with_setback_separate_ieh_plus_cool
 #[rstest]
 fn test_run_all_files(files: Vec<DirEntry>) {
     let london_weather = cibse_weather_data_to_external_conditions(BufReader::new(Cursor::new(
-        include_str!("./e2e/context/London_weather_CIBSE_format.csv"),
+        include_str!("../examples/weather_data/London_weather_CIBSE_format.csv"),
     )))
     .unwrap();
 
@@ -60,9 +60,9 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                     .unwrap()
                     .contains(EXCEPTIONAL_DEMO_FILE)
             {
-                "./tests/e2e/context/tariff_data_25-06-2024.csv"
+                "./examples/tariff_data/tariff_data_25-06-2024.csv"
             } else {
-                "./tests/e2e/context/tariff_data_demo_files_24timesteps.csv"
+                "./examples/tariff_data/tariff_data_demo_files_24timesteps.csv"
             },
         )
         .to_str()
