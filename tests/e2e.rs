@@ -2,10 +2,10 @@ use home_energy_model::output_writer::OutputWriter;
 use home_energy_model::read_weather_file::cibse_weather_data_to_external_conditions;
 use home_energy_model::{run_project_from_input_file, OutputFormat};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use rstest::*;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Write};
@@ -60,18 +60,17 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             "Error running project for file: {}",
             file.path().display()
         );
+        let output_files = output_writer.files();
         println!(
-            "Successfully processed file: {}",
-            file.file_name().display()
-        );
-        println!(
-            "{} captured output files compared to expected {}",
+            "Successfully processed file: {}\n{} captured output files compared to expected {}\nEmitted files from run were: {}\n\n",
+            file.file_name().display(),
             output_writer.files().len(),
             expected_directory(file)
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|f| !f.file_type().is_dir())
-                .count()
+                .count(),
+            output_files.keys().sorted().join(", ")
         );
     });
 
@@ -154,7 +153,7 @@ struct InMemoryDirectoryOutputWriter {
 impl InMemoryDirectoryOutputWriter {
     fn new(input_filename: &str) -> Self {
         Self {
-            input_filename: input_filename.into(),
+            input_filename: input_filename.split('.').next().unwrap().to_string(),
             files: Arc::new(Mutex::new(IndexMap::new())),
         }
     }
@@ -166,7 +165,7 @@ impl InMemoryDirectoryOutputWriter {
         )
     }
 
-    pub fn files(&self) -> HashMap<String, String> {
+    pub fn files(&self) -> IndexMap<String, String> {
         self.files
             .lock()
             .iter()
