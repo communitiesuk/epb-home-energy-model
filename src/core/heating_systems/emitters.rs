@@ -796,17 +796,17 @@ impl Emitters {
         // in following function
         let c_n_pairs = self.extract_c_n_pairs();
 
-        let func_temp_emitter_req = |temp_emitter: f64, _args| {
-            Ok(power_emitter_req
+        let func_temp_emitter_req = Box::new(move |temp_emitter: f64| {
+            power_emitter_req
                 - FSum::with_all(
                     c_n_pairs
                         .iter()
                         .map(|&(c, n)| c * (temp_emitter - temp_rm).powf(n)),
                 )
-                .value())
-        };
+                .value()
+        });
 
-        fsolve(func_temp_emitter_req, temp_rm + 10., [])
+        fsolve(func_temp_emitter_req, temp_rm + 10.)
     }
 
     /// Extract out c and n values from emitters so we don't need to hold a reference to emitters elsewhere
@@ -3168,7 +3168,6 @@ mod tests {
 
     /// Test emitter temperature that gives required power output at given room temp
     #[rstest]
-    #[ignore = "while fsolve unimplemented"]
     fn test_temp_emitter_req(emitters: Emitters) {
         let power_emitter_req = 0.22;
         let temp_rm = 2.0;
