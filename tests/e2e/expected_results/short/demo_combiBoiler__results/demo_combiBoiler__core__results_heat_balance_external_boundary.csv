@@ -1,0 +1,15 @@
+,zone 1: total solar gains,zone 1: total internal gains,zone 1: total heating or cooling system gains,zone 1: total thermal_bridges,zone 1: total infiltration_ventilation,zone 1: total fabric_ext_air_convective,zone 1: total fabric_ext_air_radiative,zone 1: total fabric_ext_sol,zone 1: total fabric_ext_sky,zone 1: total opaque_fabric_ext,zone 1: total transparent_fabric_ext,zone 1: total ground_fabric_ext,zone 1: total ZTC_fabric_ext,zone 1: total ZTU_fabric_ext
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,5.242154027,12.50558674,0.0,-3.785415007,18.22461043,3.810343677,0.0,-31.258656,-5.944790901,-3.096064046,-0.1828469481,0.0,0.0
+""
+Timestep,zone 1: solar gains,zone 1: internal gains,zone 1: heating or cooling system gains,zone 1: thermal_bridges,zone 1: infiltration_ventilation,zone 1: fabric_ext_air_convective,zone 1: fabric_ext_air_radiative,zone 1: fabric_ext_sol,zone 1: fabric_ext_sky,zone 1: opaque_fabric_ext,zone 1: transparent_fabric_ext,zone 1: ground_fabric_ext,zone 1: ZTC_fabric_ext,zone 1: ZTU_fabric_ext
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,256.0,3039.889597,0.0,-499.8902873,2157.033195,451.2331603,0.0,-3907.332,-836.6037515,-439.6247488,-22.83714485,0.0,0.0
+1,0.0,368.0,942.3768747,0.0,-467.3387612,2255.848678,471.6886332,0.0,-3907.332,-772.3919127,-384.5624047,-22.84037121,0.0,0.0
+2,0.0,584.0,320.26281,0.0,-433.9111879,2294.957455,479.7843801,0.0,-3907.332,-747.9518086,-361.7968739,-22.84148223,0.0,0.0
+3,0.0,416.0,3155.372777,0.0,-507.759195,2281.344997,476.9678211,0.0,-3907.332,-719.5322414,-406.639565,-22.84737585,0.0,0.0
+4,0.0,943.9518435,1495.713027,0.0,-501.5978362,2278.395445,476.3588747,0.0,-3907.332,-739.5222112,-390.2003117,-22.85515774,0.0,0.0
+5,0.0,448.0,1821.067317,0.0,-495.4289071,2270.188451,474.6619494,0.0,-3907.332,-752.919201,-386.6979538,-22.86444493,0.0,0.0
+6,0.0,933.3839648,1133.393585,0.0,-458.1214961,2323.86744,485.7756569,0.0,-3907.332,-703.7876671,-371.026372,-22.87486357,0.0,0.0
+7,0.0,1292.818219,597.510747,0.0,-421.367336,2362.974767,493.8732011,0.0,-3907.332,-672.0821077,-355.5158166,-22.88610773,0.0,0.0

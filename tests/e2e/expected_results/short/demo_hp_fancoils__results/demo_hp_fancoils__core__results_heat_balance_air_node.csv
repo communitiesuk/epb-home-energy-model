@@ -1,0 +1,15 @@
+,zone1_livingroom: total solar gains,zone1_livingroom: total internal gains,zone1_livingroom: total heating or cooling system gains,zone1_livingroom: total energy to change internal temperature,zone1_livingroom: total thermal_bridges,zone1_livingroom: total infiltration_ventilation,zone1_livingroom: total fabric,zone2_restofdwelling: total solar gains,zone2_restofdwelling: total internal gains,zone2_restofdwelling: total heating or cooling system gains,zone2_restofdwelling: total energy to change internal temperature,zone2_restofdwelling: total thermal_bridges,zone2_restofdwelling: total infiltration_ventilation,zone2_restofdwelling: total fabric
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,1.404227702,0.8879459106,-0.02656088272,-0.3584496098,-1.25842713,-0.6487359903,0.0,2.566606546,0.679379743,-0.409346445,-0.5310900309,-2.428601832,0.1230520191
+""
+Timestep,zone1_livingroom: solar gains,zone1_livingroom: internal gains,zone1_livingroom: heating or cooling system gains,zone1_livingroom: energy to change internal temperature,zone1_livingroom: thermal_bridges,zone1_livingroom: infiltration_ventilation,zone1_livingroom: fabric,zone2_restofdwelling: solar gains,zone2_restofdwelling: internal gains,zone2_restofdwelling: heating or cooling system gains,zone2_restofdwelling: energy to change internal temperature,zone2_restofdwelling: thermal_bridges,zone2_restofdwelling: infiltration_ventilation,zone2_restofdwelling: fabric
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,79.9047913,283.6855807,-7.613732578,-50.26155722,-164.4165196,-141.2985626,0.0,146.0476531,386.0583352,-130.220119,-69.41154793,-295.8499547,-36.6243667
+1,0.0,111.445077,0.0,79.27037616,-45.00972473,-152.4669845,6.761256098,0.0,203.6960699,208.8999474,-36.0245535,-68.13524921,-300.7264098,-7.709804762
+2,0.0,172.4106592,0.0,-4.362083407,-44.01811838,-149.1922584,25.16180092,0.0,315.1271876,78.14324664,-32.99286029,-67.58660057,-298.473435,5.782461614
+3,0.0,124.7422086,402.231913,-79.19136754,-45.71760497,-169.4586421,-232.6065069,0.0,228.0001801,29.46123887,41.81007541,-63.68979449,-307.5957748,72.01407485
+4,0.0,241.5447327,31.73583798,15.98398968,-44.42494745,-164.6431497,-80.19646323,0.0,441.488436,24.38480461,-99.82367712,-66.22090096,-319.7732235,19.94456091
+5,0.0,136.5538493,170.2925789,-2.813932864,-44.25264762,-163.9179349,-95.86191278,0.0,249.5891535,-11.6919922,49.99319942,-64.1228885,-309.4785538,85.71108157
+6,0.0,267.2286391,0.0,-8.252595887,-42.84022829,-152.3339256,-63.80188932,0.0,488.432733,8.315063384,-128.9342783,-65.97463988,-305.6695322,3.830653982
+7,0.0,270.397745,0.0,-19.58153628,-41.92478116,-141.997715,-66.89371251,0.0,494.2251325,-44.19090085,-73.15423167,-65.94840937,-291.0349483,-19.89664233

@@ -1,0 +1,15 @@
+,zone1_livingroom: total fabric_int_air_convective,zone1_livingroom: total fabric_int_sol,zone1_livingroom: total fabric_int_int_gains,zone1_livingroom: total fabric_int_heat_cool,zone2_restofdwelling: total fabric_int_air_convective,zone2_restofdwelling: total fabric_int_sol,zone2_restofdwelling: total fabric_int_int_gains,zone2_restofdwelling: total fabric_int_heat_cool
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.5819349486,0.0,2.096163875,0.09177878588,0.2022474878,0.0,3.831307355,0.09861127232
+""
+Timestep,zone1_livingroom: fabric_int_air_convective,zone1_livingroom: fabric_int_sol,zone1_livingroom: fabric_int_int_gains,zone1_livingroom: fabric_int_heat_cool,zone2_restofdwelling: fabric_int_air_convective,zone2_restofdwelling: fabric_int_sol,zone2_restofdwelling: fabric_int_int_gains,zone2_restofdwelling: fabric_int_heat_cool
+index,[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,130.7785734,0.0,119.8571869,30.07588709,268.3779073,0.0,219.0714797,74.41835222
+1,-9.170146431,0.0,167.1676155,0.0,-19.62108641,0.0,305.5441048,0.0
+2,-26.16363528,0.0,258.6159888,0.0,-47.85171933,0.0,472.6907814,0.0
+3,207.8865704,0.0,187.1133128,41.42274822,26.71597548,0.0,342.0002702,24.1929201
+4,71.2871308,0.0,362.8017156,2.61377417,1.281920679,0.0,663.1184221,0.0
+5,84.5611803,0.0,203.4681416,17.6663764,-70.1361742,0.0,371.8931505,0.0
+6,57.62321574,0.0,390.7658044,0.0,0.009037151275,0.0,714.2303701,0.0
+7,65.13205971,0.0,406.3741097,0.0,43.4716272,0.0,742.7587765,0.0

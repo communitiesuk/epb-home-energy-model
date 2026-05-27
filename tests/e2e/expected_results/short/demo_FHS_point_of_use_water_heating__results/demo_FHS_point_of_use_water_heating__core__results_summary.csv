@@ -1,0 +1,53 @@
+Energy Demand Summary
+,,Total
+Space heat demand,kWh/m2,0.05909067656
+Space cool demand,kWh/m2,0.0
+
+Energy Supply Summary
+,kWh,timestep,month,day,hour of day
+Peak consumption (electricity),4.525789509,15,JAN,1,7.5
+
+,Total,_unmet_demand,_energy_from_environment,mains elec,mains gas
+Consumption,kWh,0.7426907404,0.0,36.91777623,2.290867702
+Generation,kWh,0.0,0.0,0.0,0.0
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,0.0,0.0
+Generation to storage,kWh,0.0,0.0,0.0,0.0
+Generation to diverter,kWh,0.0,0.0,0.0,0.0
+Generation to grid,kWh,0.0,0.0,0.0,0.0
+Storage to consumption,kWh,0.0,0.0,0.0,0.0
+Grid to storage,kWh,0.0,0.0,0.0,0.0
+Grid to consumption,kWh,0.7426907404,0.0,36.91777623,2.290867702
+Total gross import,kWh,0.7426907404,0.0,36.91777623,2.290867702
+Total gross export,kWh,0.0,0.0,0.0,0.0
+Net import,kWh,0.7426907404,0.0,36.91777623,2.290867702
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,DIV/0,DIV/0
+
+Delivered Energy Summary
+Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec,mains gas
+total,0.09609961749,0.0,0.09048474567,0.00561487182
+mechvent1,0.0004764529235,0,0.0004764529235,0
+topup,0.002737673318,0,0.002737673318,0
+Microwave,0.0002273224748,0,0.0002273224748,0
+Kettle,0.0002624080645,0,0.0002624080645,0
+Fridge,0.0005150416331,0,0.0005150416331,0
+Clothes_washing,0.002613337751,0,0.002613337751,0
+Otherdevices,0.005697655056,0,0.005697655056,0
+Oven,0.007990433461,0,0.007990433461,0
+lighting,0.003057030163,0,0.003057030163,0
+hw cylinder,0.009637034707,0,0.009637034707,0
+main 1,0.05434629781,0,0.05434629781,0
+main 2,0.00292405831,0,0.00292405831,0
+cooling system 1,0.0,0,0.0,0
+cooling system 2,0.0,0,0.0,0
+Hobs,0.00561487182,0,0,0.00561487182
+
+Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
+hw cylinder,1.0,3.420289705,N/A
+
+Space heating system,Overall CoP
+main 1,1.0
+main 2,1.0
+
+Space cooling system,Overall CoP
+cooling system 1,DIV/0
+cooling system 2,DIV/0

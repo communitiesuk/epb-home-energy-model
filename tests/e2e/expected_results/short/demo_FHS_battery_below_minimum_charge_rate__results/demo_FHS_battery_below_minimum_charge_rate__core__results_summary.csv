@@ -1,0 +1,53 @@
+Energy Demand Summary
+,,Total
+Space heat demand,kWh/m2,0.4513704546
+Space cool demand,kWh/m2,0.0
+
+Energy Supply Summary
+,kWh,timestep,month,day,hour of day
+Peak consumption (electricity),5.400250656,67,JAN,28,9.0
+
+,Total,_unmet_demand,_energy_from_environment,mains elec,mains gas
+Consumption,kWh,24.26690434,0.0,229.2176433,4.148623015
+Generation,kWh,0.0,0.0,25.62506425,0.0
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,16.75986378,0.0
+Generation to storage,kWh,0.0,0.0,6.249409456,0.0
+Generation to diverter,kWh,0.0,0.0,1.62193647,0.0
+Generation to grid,kWh,0.0,0.0,0.9938545414,0.0
+Storage to consumption,kWh,0.0,0.0,22.10013858,0.0
+Grid to storage,kWh,0.0,0.0,23.16461815,0.0
+Grid to consumption,kWh,24.26690434,0.0,188.7357045,4.148623015
+Total gross import,kWh,24.26690434,0.0,211.9003227,4.148623015
+Total gross export,kWh,0.0,0.0,-0.9938545414,0.0
+Net import,kWh,24.26690434,0.0,210.9064681,4.148623015
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,0.7513469041,DIV/0
+
+Delivered Energy Summary
+Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec,mains gas
+total,0.571976143,0.0,0.5618079494,0.01016819366
+mechvent1,1.203539937e-05,0,1.203539937e-05,0
+topup,0.01001510126,0,0.01001510126,0
+Microwave,0.0008253891684,0,0.0008253891684,0
+Kettle,0.003418466316,0,0.003418466316,0
+Fridge,0.0020816266,0,0.0020816266,0
+Clothes_washing,0.007885969135,0,0.007885969135,0
+Otherdevices,0.02291027866,0,0.02291027866,0
+Oven,0.01452955363,0,0.01452955363,0
+lighting,0.01118338935,0,0.01118338935,0
+immersion,0.08469811501,0,0.08469811501,0
+main 1,0.3261675567,0,0.3261675567,0
+main 2,0.07808046812,0,0.07808046812,0
+cooling system 1,0.0,0,0.0,0
+cooling system 2,0.0,0,0.0,0
+Hobs,0.01016819366,0,0,0.01016819366
+
+Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
+hw cylinder,0.8308908238,7.800751879,80.0
+
+Space heating system,Overall CoP
+main 1,1.0
+main 2,1.0
+
+Space cooling system,Overall CoP
+cooling system 1,DIV/0
+cooling system 2,DIV/0

@@ -1,0 +1,15 @@
+,zone1_livingroom: total solar gains,zone1_livingroom: total internal gains,zone1_livingroom: total heating or cooling system gains,zone1_livingroom: total energy to change internal temperature,zone1_livingroom: total thermal_bridges,zone1_livingroom: total infiltration_ventilation,zone1_livingroom: total fabric,zone2_restofdwelling: total solar gains,zone2_restofdwelling: total internal gains,zone2_restofdwelling: total heating or cooling system gains,zone2_restofdwelling: total energy to change internal temperature,zone2_restofdwelling: total thermal_bridges,zone2_restofdwelling: total infiltration_ventilation,zone2_restofdwelling: total fabric
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,1.273099174,0.167260894,-0.04015570799,-0.3553779372,-1.155523667,0.1106972451,0.0,3.067960303,1.504147641,-0.226248822,-0.8517443709,-2.615988903,-0.8781258485
+""
+Timestep,zone1_livingroom: solar gains,zone1_livingroom: internal gains,zone1_livingroom: heating or cooling system gains,zone1_livingroom: energy to change internal temperature,zone1_livingroom: thermal_bridges,zone1_livingroom: infiltration_ventilation,zone1_livingroom: fabric,zone2_restofdwelling: solar gains,zone2_restofdwelling: internal gains,zone2_restofdwelling: heating or cooling system gains,zone2_restofdwelling: energy to change internal temperature,zone2_restofdwelling: thermal_bridges,zone2_restofdwelling: infiltration_ventilation,zone2_restofdwelling: fabric
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,66.26489957,116.8897083,12.18306904,-48.23638986,-144.3854833,-2.715803696,0.0,159.6875449,848.5914001,-174.357667,-117.8478616,-333.1956008,-382.8778156
+1,0.0,92.42120174,66.55623271,4.083470975,-46.29652193,-147.9740843,31.20970077,0.0,222.7199452,266.6685923,59.27665214,-110.8554618,-334.6749513,-103.1347765
+2,0.0,142.9798493,19.09462013,-3.31254976,-45.29103082,-144.4956207,31.0247318,0.0,344.5579975,61.769272,26.99685183,-106.7875237,-321.8042779,-4.732319709
+3,0.0,143.1576331,4.45106952,2.905762016,-43.40731837,-147.8686874,40.76154113,0.0,344.9864273,228.1555503,-54.02535973,-105.1671808,-338.3937326,-75.5557045
+4,0.0,271.6718886,3.40312757,-50.73469622,-45.24472849,-154.0963827,-24.99920876,0.0,654.6847152,87.39843261,-83.80407584,-107.7466742,-346.6228184,-203.9095794
+5,0.0,129.1896911,-43.15791854,62.3868054,-41.97914288,-142.994747,36.55531197,0.0,311.3259768,0.08686939907,81.794797,-103.1715079,-331.9518648,41.91572956
+6,0.0,209.0358148,38.50072183,-62.36060335,-43.20745912,-141.2958945,-0.6725796663,0.0,503.7420454,19.54320538,-52.23616043,-101.4663326,-313.4163127,-56.16644505
+7,0.0,218.3781953,-38.47666749,-5.306966091,-41.71534571,-132.4127676,-0.4664484421,0.0,526.255651,-8.065681493,-29.89385999,-98.70182833,-295.9293439,-93.66493732

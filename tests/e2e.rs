@@ -6,6 +6,7 @@ use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use rstest::*;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Write};
 use std::path::Path;
@@ -42,32 +43,6 @@ fn test_run_all_files(files: Vec<DirEntry>) {
     )))
     .unwrap();
 
-    fn use_additional_options(file: &DirEntry) -> bool {
-        !file
-            .file_name()
-            .to_str()
-            .unwrap()
-            .contains(EXCEPTIONAL_DEMO_FILE)
-            && !file.path().to_str().unwrap().contains("long/")
-    }
-
-    fn tariff_file(file: &DirEntry) -> Option<&str> {
-        Path::new(
-            if file.file_name().to_str().unwrap().contains("demo_FHS")
-                || file
-                    .file_name()
-                    .to_str()
-                    .unwrap()
-                    .contains(EXCEPTIONAL_DEMO_FILE)
-            {
-                "./examples/tariff_data/tariff_data_25-06-2024.csv"
-            } else {
-                "./examples/tariff_data/tariff_data_demo_files_24timesteps.csv"
-            },
-        )
-        .to_str()
-    }
-
     files.par_iter().for_each(move |file| {
         let output_writer = InMemoryDirectoryOutputWriter::new(file.file_name().to_str().unwrap());
         let use_additional_options = use_additional_options(file);
@@ -89,8 +64,85 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             "Successfully processed file: {}",
             file.file_name().display()
         );
-        println!("{} captured output files", output_writer.files().len());
+        println!(
+            "{} captured output files compared to expected {}",
+            output_writer.files().len(),
+            expected_directory(file)
+                .into_iter()
+                .filter_map(Result::ok)
+                .filter(|f| !f.file_type().is_dir())
+                .count()
+        );
     });
+
+    fn use_additional_options(file: &DirEntry) -> bool {
+        !file
+            .file_name()
+            .to_str()
+            .unwrap()
+            .contains(EXCEPTIONAL_DEMO_FILE)
+            && !file.path().to_str().unwrap().contains("long/")
+    }
+
+    enum FileKind {
+        Short,
+        Long,
+    }
+
+    impl Display for FileKind {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.as_str())
+        }
+    }
+
+    impl FileKind {
+        fn as_str(&self) -> &'static str {
+            match self {
+                FileKind::Short => "short",
+                FileKind::Long => "long",
+            }
+        }
+    }
+
+    impl From<&DirEntry> for FileKind {
+        fn from(file: &DirEntry) -> Self {
+            if file.path().to_str().unwrap().contains("long/") {
+                FileKind::Long
+            } else {
+                FileKind::Short
+            }
+        }
+    }
+
+    fn tariff_file(file: &DirEntry) -> Option<&str> {
+        Path::new(
+            if file.file_name().to_str().unwrap().contains("demo_FHS")
+                || file
+                    .file_name()
+                    .to_str()
+                    .unwrap()
+                    .contains(EXCEPTIONAL_DEMO_FILE)
+            {
+                "./examples/tariff_data/tariff_data_25-06-2024.csv"
+            } else {
+                "./examples/tariff_data/tariff_data_demo_files_24timesteps.csv"
+            },
+        )
+        .to_str()
+    }
+
+    fn expected_directory(file: &DirEntry) -> WalkDir {
+        WalkDir::new(format!(
+            "./tests/e2e/expected_results/{}/{}__results",
+            FileKind::from(file),
+            file.file_name()
+                .to_str()
+                .unwrap()
+                .split('.')
+                .next()
+                .unwrap()
+        ))
+    }
 }
 
 #[derive(Clone, Debug)]

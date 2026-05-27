@@ -1,0 +1,15 @@
+,zone 1: total solar gains,zone 1: total internal gains,zone 1: total heating or cooling system gains,zone 1: total thermal_bridges,zone 1: total infiltration_ventilation,zone 1: total fabric_ext_air_convective,zone 1: total fabric_ext_air_radiative,zone 1: total fabric_ext_sol,zone 1: total fabric_ext_sky,zone 1: total opaque_fabric_ext,zone 1: total transparent_fabric_ext,zone 1: total ground_fabric_ext,zone 1: total ZTC_fabric_ext,zone 1: total ZTU_fabric_ext
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,5.61559676,12.1562242,0.0,-3.787693862,18.22072122,3.809539237,0.0,-31.258656,-5.947709516,-3.097836055,-0.1828499728,0.0,0.0
+""
+Timestep,zone 1: solar gains,zone 1: internal gains,zone 1: heating or cooling system gains,zone 1: thermal_bridges,zone 1: infiltration_ventilation,zone 1: fabric_ext_air_convective,zone 1: fabric_ext_air_radiative,zone 1: fabric_ext_sol,zone 1: fabric_ext_sky,zone 1: opaque_fabric_ext,zone 1: transparent_fabric_ext,zone 1: ground_fabric_ext,zone 1: ZTC_fabric_ext,zone 1: ZTU_fabric_ext
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,308.8811111,2987.008486,0.0,-499.8902873,2157.033195,451.2331603,0.0,-3907.332,-836.6037515,-439.6247488,-22.83714485,0.0,0.0
+1,0.0,419.8528673,926.1267461,0.0,-468.5406912,2254.79934,471.4714344,0.0,-3907.332,-772.7294989,-385.491287,-22.84043941,0.0,0.0
+2,0.0,634.8446171,314.0240493,0.0,-435.5306118,2293.221475,479.4250868,0.0,-3907.332,-748.7485312,-363.0951605,-22.84174648,0.0,0.0
+3,0.0,465.8559718,3072.790063,0.0,-507.6755938,2281.095342,476.9162215,0.0,-3907.332,-720.1484857,-406.324194,-22.8477567,0.0,0.0
+4,0.0,992.8914701,1438.571944,0.0,-501.4427127,2278.057311,476.2889796,0.0,-3907.332,-739.9805432,-390.1495325,-22.85563336,0.0,0.0
+5,0.0,509.412863,1753.397642,0.0,-495.3023018,2269.949885,474.6126806,0.0,-3907.332,-753.2434777,-386.6609593,-22.86499782,0.0,0.0
+6,0.0,1005.622197,1056.188565,0.0,-458.0223621,2323.703254,485.7417979,0.0,-3907.332,-704.0140966,-370.9973716,-22.87547942,0.0,0.0
+7,0.0,1278.235663,608.116702,0.0,-421.2893019,2362.861417,493.8498756,0.0,-3907.332,-672.2411314,-355.4928016,-22.88677477,0.0,0.0

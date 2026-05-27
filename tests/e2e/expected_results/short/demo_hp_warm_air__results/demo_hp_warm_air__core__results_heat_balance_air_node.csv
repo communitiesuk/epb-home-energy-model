@@ -1,0 +1,15 @@
+,zone1_livingroom: total solar gains,zone1_livingroom: total internal gains,zone1_livingroom: total heating or cooling system gains,zone1_livingroom: total energy to change internal temperature,zone1_livingroom: total thermal_bridges,zone1_livingroom: total infiltration_ventilation,zone1_livingroom: total fabric,zone2_restofdwelling: total solar gains,zone2_restofdwelling: total internal gains,zone2_restofdwelling: total heating or cooling system gains,zone2_restofdwelling: total energy to change internal temperature,zone2_restofdwelling: total thermal_bridges,zone2_restofdwelling: total infiltration_ventilation,zone2_restofdwelling: total fabric
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,1.397442584,0.8260090729,-0.02635512101,-0.3579741983,-1.257187389,-0.5819349486,0.0,2.554204904,0.8875014509,-0.3677302937,-0.5152225218,-2.356506051,-0.2022474878
+""
+Timestep,zone1_livingroom: solar gains,zone1_livingroom: internal gains,zone1_livingroom: heating or cooling system gains,zone1_livingroom: energy to change internal temperature,zone1_livingroom: thermal_bridges,zone1_livingroom: infiltration_ventilation,zone1_livingroom: fabric,zone2_restofdwelling: solar gains,zone2_restofdwelling: internal gains,zone2_restofdwelling: heating or cooling system gains,zone2_restofdwelling: energy to change internal temperature,zone2_restofdwelling: thermal_bridges,zone2_restofdwelling: infiltration_ventilation,zone2_restofdwelling: fabric
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,79.9047913,270.6829838,-5.522882437,-50.16983687,-164.1164824,-130.7785734,0.0,146.0476531,669.76517,-174.3542653,-70.89743997,-302.1832106,-268.3779073
+1,0.0,111.445077,0.0,76.87100135,-45.02325893,-152.4629659,9.170146431,0.0,203.6960699,0.0,124.2782906,-64.22412465,-283.3713223,19.62108641
+2,0.0,172.4106592,0.0,-5.04498154,-44.06160961,-149.4677033,26.16363528,0.0,315.1271876,0.0,-20.19616699,-63.2446417,-279.5380982,47.85171933
+3,0.0,124.7422086,372.804734,-74.99572151,-45.57704373,-169.0876069,-207.8865704,0.0,228.0001801,217.7362809,-53.97825179,-62.57280142,-302.4694324,-26.71597548
+4,0.0,241.8678104,23.52396753,14.62427364,-44.34403354,-164.3848872,-71.2871308,0.0,442.0789481,0.0,-67.56587951,-64.01786435,-309.2132835,-1.281920679
+5,0.0,135.6454278,158.9973876,-2.317251982,-44.14994557,-163.6144375,-84.5611803,0.0,247.928767,0.0,44.01464652,-62.12113559,-299.9584522,70.1361742
+6,0.0,260.5105363,0.0,-8.142922331,-42.73271514,-152.011683,-57.62321574,0.0,476.1535801,0.0,-117.7762285,-63.59722189,-294.7710926,-0.009037151273
+7,0.0,270.9160731,0.0,-21.8266362,-41.91575491,-142.0416223,-65.13205971,0.0,495.1725177,0.0,-102.1524388,-64.54729225,-285.0011594,-43.4716272
