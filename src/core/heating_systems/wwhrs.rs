@@ -961,7 +961,7 @@ mod tests {
             .unwrap();
 
         // For System A, cylinder is not fed pre-heated water
-        assert_eq!(result.t_cyl_feed, 20.1038) // Same as cold water
+        assert_eq!(result.t_cyl_feed, 20.1038); // Same as cold water
     }
 
     #[rstest]
@@ -1437,7 +1437,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(result.flowrate_hot.unwrap(), 3.297999789473684) // Should use provided value
+        assert_eq!(result.flowrate_hot.unwrap(), 3.297999789473684); // Should use provided value
     }
 
     #[test]

@@ -2151,7 +2151,7 @@ mod tests {
         let thermal_bridging = ThermalBridging::Number(4.);
         let zone = zone(thermal_bridging, None).unwrap();
 
-        assert_eq!(zone.tb_heat_trans_coeff, 4.)
+        assert_eq!(zone.tb_heat_trans_coeff, 4.);
     }
 
     #[rstest]
@@ -3023,7 +3023,7 @@ mod tests {
         );
 
         // Verify the actual calculated value is reasonable
-        assert_relative_eq!(ztu_with_party_wall, -164.2832446432019, max_relative = 1e-7)
+        assert_relative_eq!(ztu_with_party_wall, -164.2832446432019, max_relative = 1e-7);
     }
 
     #[test]

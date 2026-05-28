@@ -4785,8 +4785,8 @@ mod tests {
             1.,
             1.25,
             4.,
-            Default::default(),
-            Default::default(),
+            None,
+            vec![],
             external_conditions,
         )
     }
@@ -4912,9 +4912,9 @@ mod tests {
             closing_irradiance_control: None,
             opening_irradiance_control: None,
             open_control: None,
-            is_open: Default::default(),
+            is_open: AtomicBool::default(),
             opening_delay_hrs: 0.0,
-            time_last_adjusted: Default::default(),
+            time_last_adjusted: AtomicF64::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
 
@@ -5052,9 +5052,9 @@ mod tests {
             closing_irradiance_control: None,
             opening_irradiance_control: None,
             open_control: None,
-            is_open: Default::default(),
+            is_open: AtomicBool::default(),
             opening_delay_hrs: 0.0,
-            time_last_adjusted: Default::default(),
+            time_last_adjusted: AtomicF64::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
         transparent_building_element.external_conditions = external_conditions_surface_irradiance(
@@ -5086,8 +5086,8 @@ mod tests {
             vec![Some(setpnt)], // causes control.setpnt() to return specified value
             0,
             1.0,
-            Default::default(),
-            Default::default(),
+            None,
+            None,
             1.0,
         )))
     }
@@ -5112,9 +5112,9 @@ mod tests {
             closing_irradiance_control: Some(setpoint_time_control.clone()),
             opening_irradiance_control: Some(setpoint_time_control),
             open_control: Some(control),
-            is_open: Default::default(),
+            is_open: AtomicBool::default(),
             opening_delay_hrs: 0.0,
-            time_last_adjusted: Default::default(),
+            time_last_adjusted: AtomicF64::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
         transparent_building_element.external_conditions = external_conditions_surface_irradiance(
@@ -5128,7 +5128,7 @@ mod tests {
 
         assert!(transparent_building_element.treatment[0]
             .is_open
-            .load(Ordering::SeqCst))
+            .load(Ordering::SeqCst));
     }
 
     #[rstest]
@@ -5151,9 +5151,9 @@ mod tests {
             closing_irradiance_control: Some(setpoint_time_control.clone()),
             opening_irradiance_control: Some(setpoint_time_control),
             open_control: Some(control),
-            is_open: Default::default(),
+            is_open: AtomicBool::default(),
             opening_delay_hrs: 0.0,
-            time_last_adjusted: Default::default(),
+            time_last_adjusted: AtomicF64::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
         transparent_building_element.external_conditions = external_conditions_surface_irradiance(
@@ -5167,7 +5167,7 @@ mod tests {
 
         assert!(!transparent_building_element.treatment[0]
             .is_open
-            .load(Ordering::SeqCst))
+            .load(Ordering::SeqCst));
     }
 
     #[rstest]
@@ -5192,7 +5192,7 @@ mod tests {
             open_control: Some(control),
             is_open: AtomicBool::from(true),
             opening_delay_hrs: 0.0,
-            time_last_adjusted: Default::default(),
+            time_last_adjusted: AtomicF64::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
         transparent_building_element.external_conditions = external_conditions_surface_irradiance(
@@ -5235,7 +5235,7 @@ mod tests {
             open_control: Some(control),
             is_open: AtomicBool::from(true),
             opening_delay_hrs: 0.0,
-            time_last_adjusted: Default::default(),
+            time_last_adjusted: AtomicF64::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
         transparent_building_element.external_conditions = external_conditions;
@@ -5264,9 +5264,9 @@ mod tests {
             closing_irradiance_control: Some(setpoint_time_control.clone()),
             opening_irradiance_control: Some(setpoint_time_control),
             open_control: None,
-            is_open: Default::default(),
+            is_open: AtomicBool::default(),
             opening_delay_hrs: 0.0,
-            time_last_adjusted: Default::default(),
+            time_last_adjusted: AtomicF64::default(),
         };
 
         transparent_building_element.treatment = vec![window_treatment];
@@ -5304,7 +5304,7 @@ mod tests {
             open_control: None,
             is_open: AtomicBool::from(true),
             opening_delay_hrs: 0.0,
-            time_last_adjusted: Default::default(),
+            time_last_adjusted: AtomicF64::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
         // The Python test sets the surface irradiance return value to 30, our building element gets
@@ -5602,7 +5602,7 @@ mod tests {
             assert_eq!(
                 party_wall.unwrap_err().to_string(),
                 "invalid combination of party wall cavity type and party wall lining type"
-            )
+            );
         }
 
         #[rstest]

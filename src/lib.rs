@@ -353,7 +353,7 @@ pub fn write_core_output_files(
             }
 
             // Create a file for emitters detailed output and write
-            let emitters_output_prefix = format!("{output_mode}__results_emitters_");
+            let emitters_output_prefix = format!("{output_mode}__results_emitters__");
             write_core_output_file_emitters_detailed(
                 &emitters_output_prefix,
                 &output.core.emitters,

@@ -274,7 +274,7 @@ mod tests {
 
     #[rstest]
     fn test_total_steps(simtime: SimulationTime) {
-        assert_eq!(simtime.total_steps(), 8)
+        assert_eq!(simtime.total_steps(), 8);
     }
 
     #[rstest]

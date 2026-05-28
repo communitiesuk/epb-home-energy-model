@@ -109,8 +109,8 @@ mod tests {
             vec![Some(21.0), Some(21.0), None, Some(21.0)],
             0,
             1.0,
-            Default::default(),
-            Default::default(),
+            None,
+            None,
             1.0,
         );
         let energy_supply = Arc::new(RwLock::new(
