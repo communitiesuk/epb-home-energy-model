@@ -2151,7 +2151,7 @@ mod tests {
         let thermal_bridging = ThermalBridging::Number(4.);
         let zone = zone(thermal_bridging, None).unwrap();
 
-        assert_eq!(zone.tb_heat_trans_coeff, 4.)
+        assert_eq!(zone.tb_heat_trans_coeff, 4.);
     }
 
     #[rstest]

@@ -1446,7 +1446,7 @@ mod tests {
         let pre_heated_water_sources: IndexMap<
             String,
             HotWaterSourceMockWithUniqueHotWaterTemperature,
-        > = Default::default();
+        > = IndexMap::default();
 
         let dhw_demand = create_dhw_demand(
             simulation_time,
@@ -1926,7 +1926,7 @@ mod tests {
         let pre_heated_water_sources: IndexMap<
             String,
             HotWaterSourceMockWithUniqueHotWaterTemperature,
-        > = Default::default();
+        > = IndexMap::default();
 
         let dhw_demand = create_dhw_demand(
             simulation_time,

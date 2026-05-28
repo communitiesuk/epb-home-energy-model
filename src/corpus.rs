@@ -6013,7 +6013,7 @@ struct RequiredVentData {
 
 #[cfg(test)]
 mod tests {
-    use crate::corpus::Corpus;
+    use crate::corpus::{Corpus, OutputOptions};
     use crate::input::{HotWaterSourceDetails, Input};
     use rstest::{fixture, rstest};
     use serde_json::json;
@@ -6189,8 +6189,13 @@ mod tests {
         minimal_input.pre_heated_water_source =
             serde_json::from_value(json!({"tank1": tank1, "tank2": tank2})).unwrap();
 
-        let corpus =
-            Corpus::from_inputs(Arc::new(minimal_input), None, None, &Default::default()).unwrap();
+        let corpus = Corpus::from_inputs(
+            Arc::new(minimal_input),
+            None,
+            None,
+            &OutputOptions::default(),
+        )
+        .unwrap();
 
         let pre_heated_sources = corpus.pre_heated_water_sources;
 
@@ -6207,7 +6212,12 @@ mod tests {
         minimal_input.pre_heated_water_source =
             serde_json::from_value(json!({"tank1": tank1, "tank2": tank2})).unwrap();
 
-        let result = Corpus::from_inputs(Arc::new(minimal_input), None, None, &Default::default());
+        let result = Corpus::from_inputs(
+            Arc::new(minimal_input),
+            None,
+            None,
+            &OutputOptions::default(),
+        );
 
         assert_eq!(
             result.unwrap_err().to_string(),
@@ -6226,8 +6236,13 @@ mod tests {
             serde_json::from_value(json!({"tank1": tank1, "tank2": tank2, "tank3": tank3}))
                 .unwrap();
 
-        let corpus =
-            Corpus::from_inputs(Arc::new(minimal_input), None, None, &Default::default()).unwrap();
+        let corpus = Corpus::from_inputs(
+            Arc::new(minimal_input),
+            None,
+            None,
+            &OutputOptions::default(),
+        )
+        .unwrap();
 
         let pre_heated_sources = corpus.pre_heated_water_sources;
 

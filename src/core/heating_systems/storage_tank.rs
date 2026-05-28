@@ -3571,23 +3571,11 @@ mod tests {
         control_max_schedule: Vec<Option<f64>>,
     ) -> PositionedHeatSource {
         let simulation_timestep = simulation_time_for_storage_tank.step;
-        let control_min = SetpointTimeControl::new(
-            control_min_schedule,
-            0,
-            1.,
-            Default::default(),
-            Default::default(),
-            simulation_timestep,
-        );
+        let control_min =
+            SetpointTimeControl::new(control_min_schedule, 0, 1., None, None, simulation_timestep);
 
-        let control_max = SetpointTimeControl::new(
-            control_max_schedule,
-            0,
-            1.,
-            Default::default(),
-            Default::default(),
-            simulation_timestep,
-        );
+        let control_max =
+            SetpointTimeControl::new(control_max_schedule, 0, 1., None, None, simulation_timestep);
 
         let immersion_heater = ImmersionHeater::new(
             rated_power,
@@ -3886,8 +3874,8 @@ mod tests {
             vec![Some(60.), Some(60.), Some(60.), Some(60.)],
             0,
             1.,
-            Default::default(),
-            Default::default(),
+            None,
+            None,
             1.,
         ))
         .into()
@@ -4057,8 +4045,8 @@ mod tests {
             ],
             212,
             1.,
-            Default::default(),
-            Default::default(),
+            None,
+            None,
             simulation_time_for_solar_thermal.step,
         );
 
@@ -4323,7 +4311,7 @@ mod tests {
                     &t_it
                 ),
                 [0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0][t_idx]
-            )
+            );
         }
         // Internal Pipe
         let pipework = Pipework::new(
@@ -4346,7 +4334,7 @@ mod tests {
                     &t_it
                 ),
                 [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx]
-            )
+            );
         }
     }
 
@@ -4513,7 +4501,7 @@ mod tests {
                 ],
                 vec![2.5, 3.7, 10.36, 17.43, 32.95, 35.91, 35.91, 42.2]
             )
-        )
+        );
     }
 
     #[rstest]
@@ -4643,7 +4631,7 @@ mod tests {
                     0.01762703703703704
                 ]
             }
-        )
+        );
     }
 
     #[rstest]
@@ -4849,7 +4837,7 @@ mod tests {
                     (0.0, 0.0),
                     (0.0, 0.0)
                 ][t_idx]
-            )
+            );
         }
 
         // With value for input_energy_adj
@@ -4861,7 +4849,7 @@ mod tests {
                     .calculate_primary_pipework_losses(input_energy_adj, setpnt_max.into(), t_it)
                     .unwrap(),
                 (0.04746228058715814, 10.657894331822993),
-            )
+            );
         }
     }
 
@@ -5222,8 +5210,8 @@ mod tests {
             vec![Some(52.), Some(52.), None, Some(52.)],
             0,
             1.,
-            Default::default(),
-            Default::default(),
+            None,
+            None,
             timestep,
         )));
 
@@ -5231,8 +5219,8 @@ mod tests {
             vec![Some(60.), Some(60.), Some(60.), Some(60.)],
             0,
             1.,
-            Default::default(),
-            Default::default(),
+            None,
+            None,
             timestep,
         )));
 
@@ -5523,7 +5511,7 @@ mod tests {
             ],
             0,
             1.,
-            Default::default(),
+            None,
             None,
             1.,
         )));
@@ -5585,7 +5573,7 @@ mod tests {
             ],
             0,
             1.,
-            Default::default(),
+            None,
             None,
             1.,
         ));
@@ -5602,7 +5590,7 @@ mod tests {
             ],
             0,
             1.,
-            Default::default(),
+            None,
             None,
             1.,
         ));

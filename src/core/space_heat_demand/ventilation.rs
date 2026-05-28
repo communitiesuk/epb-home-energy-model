@@ -96,7 +96,7 @@ fn calculate_pressure_difference_at_an_airflow_path(
 }
 
 /// Convert infiltration rate from ach to m^3/s
-fn _air_change_rate_to_flow_rate(air_change_rate: f64, zone_volume: f64) -> f64 {
+fn air_change_rate_to_flow_rate(air_change_rate: f64, zone_volume: f64) -> f64 {
     air_change_rate * zone_volume / SECONDS_PER_HOUR as f64
 }
 
@@ -3181,8 +3181,8 @@ mod tests {
 
     #[rstest]
     fn test_air_change_rate_to_flow_rate() {
-        assert_relative_eq!(_air_change_rate_to_flow_rate(3600., 1.), 1.);
-        assert_relative_eq!(_air_change_rate_to_flow_rate(120., 20.), 0.6666666666666666);
+        assert_relative_eq!(air_change_rate_to_flow_rate(3600., 1.), 1.);
+        assert_relative_eq!(air_change_rate_to_flow_rate(120., 20.), 0.6666666666666666);
     }
 
     #[test]
@@ -3190,7 +3190,7 @@ mod tests {
         let c_rgh_site = 0.8;
         let u_10 = 10.;
         let result = wind_speed_at_zone_level(c_rgh_site, u_10, None, None, None);
-        assert_eq!(result, 8.)
+        assert_eq!(result, 8.);
     }
 
     #[rstest]
@@ -3760,14 +3760,7 @@ mod tests {
         .unwrap();
         let energy_supplies =
             IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
-        let control1 = SetpointTime(SetpointTimeControl::new(
-            vec![],
-            0,
-            1.,
-            Default::default(),
-            Default::default(),
-            1.,
-        ));
+        let control1 = SetpointTime(SetpointTimeControl::new(vec![], 0, 1., None, None, 1.));
         let control2 = OnOffTime(OnOffTimeControl::new(vec![], 0, 1.));
         let controls: Controls = Controls::new(
             vec![],
@@ -3802,11 +3795,11 @@ mod tests {
         assert_eq!(infiltration_ventilation.mech_vents.len(), 2);
 
         for leak in infiltration_ventilation.leaks.iter() {
-            assert_eq!(leak.a_roof, 45.)
+            assert_eq!(leak.a_roof, 45.);
         }
 
         for leak in infiltration_ventilation.leaks.iter() {
-            assert_eq!(leak.a_facades, 25.)
+            assert_eq!(leak.a_facades, 25.);
         }
 
         assert!(infiltration_ventilation.mech_vents[0]
@@ -4014,7 +4007,7 @@ mod tests {
                 simulation_time_iterator.current_iteration()
             ),
             0.
-        )
+        );
     }
 
     #[rstest]
@@ -4029,7 +4022,7 @@ mod tests {
                 simulation_time_iterator.current_iteration()
             ),
             0.
-        )
+        );
     }
 
     #[rstest]
@@ -4044,7 +4037,7 @@ mod tests {
                 simulation_time_iterator.current_iteration()
             ),
             1.5
-        )
+        );
     }
 
     #[rstest]
@@ -4056,7 +4049,7 @@ mod tests {
             window
                 .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
             0.
-        )
+        );
     }
 
     #[rstest]
@@ -4069,7 +4062,7 @@ mod tests {
             window
                 .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
             0.
-        )
+        );
     }
 
     #[rstest]
@@ -4085,7 +4078,7 @@ mod tests {
             window
                 .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
             expected_flow_coeff
-        )
+        );
     }
 
     #[rstest]
@@ -4326,7 +4319,7 @@ mod tests {
     #[rstest]
     fn test_calculate_flow_coeff_for_leak(leaks: Leaks) {
         let expected_result = 2.6490460494125543;
-        assert_relative_eq!(leaks.calculate_flow_coeff_for_leak(), expected_result)
+        assert_relative_eq!(leaks.calculate_flow_coeff_for_leak(), expected_result);
     }
 
     #[rstest]

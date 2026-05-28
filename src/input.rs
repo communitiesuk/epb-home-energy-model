@@ -5843,7 +5843,7 @@ mod tests {
                 "sup_air_flw_ctrl": "ODA",
                 "sup_air_temp_ctrl": "NO_CTRL",
                 "vent_type": vent_type,
-                "Control": format!("{}_Control", vent_type.to_string().replace(" ", "_")),
+                "Control": format!("{}_Control", vent_type.to_string().replace(' ', "_")),
                 "SFP": 1.5,
                 "EnergySupply": "mains elec",
                 "design_outdoor_air_flow_rate": 0.5,
@@ -6802,7 +6802,7 @@ mod tests {
                     flowrate: 10.,
                     cold_water_source: "cold water source".into(),
                     hot_water_source: None,
-                    wwhrs_config: Default::default(),
+                    wwhrs_config: Option::default(),
                 })
                 .unwrap()
             }
@@ -7495,7 +7495,7 @@ mod tests {
                 init_temp: 15.,
                 cold_water_source: "cold water source".into(),
                 energy_supply_pump: "mains elec".into(),
-                heat_source: Default::default(),
+                heat_source: IndexMap::default(),
                 primary_pipework: None,
             })
             .unwrap()
@@ -7672,11 +7672,12 @@ mod tests {
 
     mod photovoltaic_system_with_panels {
         use super::*;
+        use monostate::MustBeStr;
 
         #[fixture]
         fn valid_example() -> JsonValue {
             serde_json::to_value(PhotovoltaicSystemWithPanels {
-                _type: Default::default(),
+                _type: MustBeStr::default(),
                 energy_supply: "mains elec".into(),
                 inverter_peak_power_ac: 1.4,
                 inverter_peak_power_dc: 3.5,
@@ -7840,6 +7841,7 @@ mod tests {
 
         mod wet_distribution {
             use super::*;
+            use monostate::MustBeBool;
 
             #[fixture]
             fn valid_example() -> JsonValue {
@@ -7872,7 +7874,7 @@ mod tests {
                     control: "control_test".into(),
                     thermal_mass: None,
                     flow_data: FlowData::Variable {
-                        _variable_flow: Default::default(),
+                        _variable_flow: MustBeBool::default(),
                         max_flow_rate: 18.,
                         min_flow_rate: 3.,
                     },
@@ -8037,7 +8039,7 @@ mod tests {
                     logic_type: None,
                     schedule: Schedule {
                         main: vec![],
-                        references: Default::default(),
+                        references: IndexMap::default(),
                     },
                     temp_charge_cut: None,
                     temp_charge_cut_delta: None,
@@ -8141,7 +8143,7 @@ mod tests {
                 serde_json::to_value(ControlDetails::OnOffCostMinimising {
                     schedule: Schedule {
                         main: vec![],
-                        references: Default::default(),
+                        references: IndexMap::default(),
                     },
                     start_day: 0,
                     time_series_step: 1.,
@@ -8162,11 +8164,12 @@ mod tests {
 
     mod waste_water_heat_recovery_system {
         use super::*;
+        use monostate::MustBeStr;
 
         #[fixture]
         fn valid_example() -> JsonValue {
             serde_json::to_value(WasteWaterHeatRecoveryDetails {
-                _type: Default::default(),
+                _type: MustBeStr::default(),
                 cold_water_source: "header tank".into(),
                 flow_rates: vec![],
                 system_a_efficiencies: Some(vec![]),
@@ -8220,7 +8223,7 @@ mod tests {
             let cold_water_source = "test_cold_water_source".into();
 
             let wwhrs = WasteWaterHeatRecoveryDetails {
-                _type: Default::default(),
+                _type: MustBeStr::default(),
                 cold_water_source,
                 flow_rates: vec![5., 7., 9., 11., 13.],
                 system_a_efficiencies: Some(vec![50., 55., 60., 65., 70.]),
@@ -8245,7 +8248,7 @@ mod tests {
             let cold_water_source = "test_cold_water_source".into();
 
             let wwhrs = WasteWaterHeatRecoveryDetails {
-                _type: Default::default(),
+                _type: MustBeStr::default(),
                 cold_water_source,
                 flow_rates: vec![5., 7., 9., 11., 13.],
                 system_a_efficiencies: Some(vec![50., 55., 60., 65., 70.]),
@@ -8850,11 +8853,11 @@ mod tests {
             serde_json::to_value(BoilerCostScheduleHybrid {
                 cost_schedule_boiler: NumericSchedule {
                     main: vec![],
-                    references: Default::default(),
+                    references: IndexMap::default(),
                 },
                 cost_schedule_hp: NumericSchedule {
                     main: vec![],
-                    references: Default::default(),
+                    references: IndexMap::default(),
                 },
                 cost_schedule_start_day: 0,
                 cost_schedule_time_series_step: 1.,
@@ -9043,8 +9046,8 @@ mod tests {
                     test_result: 1.2,
                     env_area: 220.,
                 },
-                mechanical_ventilation: Default::default(),
-                vents: Default::default(),
+                mechanical_ventilation: IndexMap::default(),
+                vents: IndexMap::default(),
                 ach_max_static_calcs: None,
                 ach_min_static_calcs: None,
                 altitude: 10.,
