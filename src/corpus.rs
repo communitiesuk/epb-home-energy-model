@@ -2241,7 +2241,8 @@ impl Corpus {
             Default::default();
         let mut heat_source_wet_results_annual_dict: IndexMap<Arc<str>, ResultsAnnual> =
             Default::default();
-        let mut emitters_output_dict: IndexMap<Arc<str>, Vec<OutputEmitters>> = Default::default();
+        let mut emitters_output_dict: IndexMap<Arc<str>, Vec<Option<OutputEmitters>>> =
+            Default::default();
         let mut esh_output_dict: IndexMap<Arc<str>, Vec<StorageHeaterDetailedResult>> =
             Default::default();
         let mut vent_output_list: Vec<VentilationDetailedResult> = Default::default();
@@ -2739,7 +2740,15 @@ impl Corpus {
             hot_water_source_results,
             emitters: emitters_output_dict
                 .into_iter()
-                .map(|(k, v)| (k, v.into_iter().enumerate().collect()))
+                .map(|(k, v)| {
+                    (
+                        k,
+                        v.into_iter()
+                            .enumerate()
+                            .filter_map(|(k, v)| v.map(|v| (k, v)))
+                            .collect(),
+                    )
+                })
                 .collect(),
             electric_storage_heaters: esh_output_dict
                 .into_iter()
