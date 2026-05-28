@@ -316,7 +316,7 @@ pub fn write_core_output_files(
             for (heat_source_wet_name, heat_source_wet_results_annual) in
                 &output.core.heat_source_wet_results_annual
             {
-                let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
+                let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
                 write_core_output_file_heat_source_wet_summary(
                     output_key.as_str(),
                     heat_source_wet_results_annual,
