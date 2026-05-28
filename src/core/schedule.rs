@@ -234,17 +234,17 @@ impl From<&WaterHeatingEvent> for ScheduleEvent {
 
 /// Data structures representing how schedules can be provided as input (in JSON).
 pub(crate) mod input {
+    use indexmap::IndexMap;
     use itertools::Itertools;
     use serde::{Deserialize, Serialize};
     use serde_valid::Validate;
-    use std::collections::HashMap;
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub struct Schedule<T: Copy> {
         pub main: Vec<ScheduleEntry<T>>,
         #[serde(flatten)]
-        pub references: HashMap<String, ScheduleReferenceEntry<T>>,
+        pub references: IndexMap<String, ScheduleReferenceEntry<T>>,
     }
 
     impl<T> Schedule<T>
