@@ -75,7 +75,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             let expected_file = if let Some(expected_file) = expected_file {
                 expected_file
             } else {
-                println!("Unexpected file emitted: {}", actual_file_name);
+                println!("🐙 Unexpected file emitted: {}", actual_file_name);
                 continue;
             };
             file_length_comparisons.push(format!("{}: actual is {} bytes, expected is {} bytes", actual_file_name, actual_file.len(), expected_file.metadata().unwrap().len()));
