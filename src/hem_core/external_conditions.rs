@@ -2955,14 +2955,14 @@ mod tests {
             external_conditions.wind_direction_annual().unwrap().angle(),
             39.11296611406138,
             max_relative = 0.01
-        )
+        );
     }
 
     #[rstest]
     fn test_wind_direction_annual_partial_wind_speeds(mut external_conditions: ExternalConditions) {
         external_conditions.wind_speeds = vec![10., 10., 10.];
 
-        assert!(external_conditions.wind_direction_annual().is_err())
+        assert!(external_conditions.wind_direction_annual().is_err());
     }
 
     #[rstest]
@@ -2972,7 +2972,7 @@ mod tests {
         external_conditions.wind_directions =
             vec![10., 10., 10.].into_iter().map(Into::into).collect();
 
-        assert!(external_conditions.wind_direction_annual().is_err())
+        assert!(external_conditions.wind_direction_annual().is_err());
     }
 
     #[rstest]
@@ -5228,7 +5228,7 @@ mod tests {
             assert_eq!(
                 external_conditions.sun_above_horizon(t_it),
                 [false, true, true, true, true, true, true, true][t_idx]
-            )
+            );
         }
     }
 

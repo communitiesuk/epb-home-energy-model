@@ -3023,7 +3023,7 @@ mod tests {
         );
 
         // Verify the actual calculated value is reasonable
-        assert_relative_eq!(ztu_with_party_wall, -164.2832446432019, max_relative = 1e-7)
+        assert_relative_eq!(ztu_with_party_wall, -164.2832446432019, max_relative = 1e-7);
     }
 
     #[test]
