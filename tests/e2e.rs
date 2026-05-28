@@ -61,15 +61,22 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             file.path().display()
         );
         let output_files = output_writer.files();
+        let actual_file_count = output_writer.files().len();
+        let expected_file_count = expected_directory(file)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|f| !f.file_type().is_dir())
+            .count();
         println!(
-            "Successfully processed file: {}\n{} captured output files compared to expected {}\nEmitted files from run were: {}\n\n",
+            "Successfully processed file: {}\n{} {} captured output files compared to expected {}\nEmitted files from run were: {}\n\n",
             file.file_name().display(),
-            output_writer.files().len(),
-            expected_directory(file)
-                .into_iter()
-                .filter_map(Result::ok)
-                .filter(|f| !f.file_type().is_dir())
-                .count(),
+            if actual_file_count < expected_file_count {
+                "❌"
+            } else {
+                "✅"
+            },
+            actual_file_count,
+            expected_file_count,
             output_files.keys().sorted().join(", ")
         );
     });
