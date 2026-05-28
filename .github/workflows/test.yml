@@ -13,8 +13,8 @@ jobs:
       - name: Installing Numpy
         run: |
           pip install pip --upgrade
-          pip install numpy
+          pip install numpy==2.1.0
       - name: Installing scipy
-        run: pip install scipy
+        run: pip install scipy==1.14.1
       - run: cargo test --workspace --exclude hem-lambda --exclude wrappers-lambda
       - run: cargo rustc --no-default-features -- -Awarnings
