@@ -83,10 +83,10 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             let rust_headers = csv_access::csv_reader(&mut rust_file_read).headers().unwrap().clone();
             let mut python_file_read = BufReader::new(File::open(expected_file.path()).unwrap());
             let python_headers = csv_access::csv_reader(&mut python_file_read).headers().unwrap().clone();
-            let differences = compare::compare(rust_headers, python_headers);
+            let differences = compare::compare(python_headers, rust_headers);
             if let Err(differences) = differences {
                 println!("❌ Headers differ for file: {}", actual_file_name);
-                println!("Differences: {:?}", differences);
+                println!("Differences: {}", differences.iter().join("\n"));
             }
         }
         println!(
@@ -292,10 +292,7 @@ mod compare {
                     right,
                     field_index,
                 } => {
-                    write!(
-                        f,
-                        "Index: {field_index}, Python: \"{left}\", Rust: \"{right}\""
-                    )
+                    write!(f, "column {field_index}, 🐍: \"{left}\", 🦀: \"{right}\"")
                 }
                 Difference::NumberDifference {
                     left,
@@ -303,7 +300,10 @@ mod compare {
                     numerical_difference,
                     field_index,
                 } => {
-                    write!(f, "Index: {field_index}, Python: {left}, Rust: {right}, Diff: {numerical_difference}")
+                    write!(
+                        f,
+                        "column {field_index}, 🐍: {left}, 🦀: {right}, Diff: {numerical_difference}"
+                    )
                 }
                 Difference::RecordDifference { message } => {
                     write!(f, "{}", message)
