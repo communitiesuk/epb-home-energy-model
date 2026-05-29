@@ -69,7 +69,6 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             .map(|f| (f.file_name().to_str().unwrap().to_owned(), f))
             .collect();
         let expected_file_count = expected_files.len();
-        let mut file_length_comparisons: Vec<String> = Vec::with_capacity(expected_file_count);
         for (actual_file_name, actual_file) in output_files.iter() {
             let expected_file = expected_files.get(actual_file_name);
             let expected_file = if let Some(expected_file) = expected_file {
@@ -78,7 +77,6 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                 println!("🐙 Unexpected file emitted: {}", actual_file_name);
                 continue;
             };
-            file_length_comparisons.push(format!("{}: actual is {} bytes, expected is {} bytes", actual_file_name, actual_file.len(), expected_file.metadata().unwrap().len()));
             let mut rust_file_read = BufReader::new(Cursor::new(actual_file));
             let rust_headers = csv_access::csv_reader(&mut rust_file_read).headers().unwrap().clone();
             let mut python_file_read = BufReader::new(File::open(expected_file.path()).unwrap());
@@ -90,7 +88,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             }
         }
         println!(
-            "Successfully processed file: {}\n{} {} captured output files compared to expected {}{}\nOutput file length comparisons:\n{}\n\n",
+            "Successfully processed file: {}\n{} {} captured output files compared to expected {}{}\n\n",
             file.file_name().display(),
             if actual_file_count < expected_file_count {
                 "❌"
@@ -104,7 +102,6 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             } else {
                 "".into()
             },
-            file_length_comparisons.join("\n"),
         );
     });
 
