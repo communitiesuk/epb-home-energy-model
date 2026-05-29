@@ -1948,9 +1948,11 @@ impl SmartHotWaterTank {
     ) -> anyhow::Result<f64> {
         // N.B. implementation from StorageTank but calling SmartHotWaterTank specific methods further down
         let mut q_use_w = 0.;
-        let mut _volume_demanded = 0.;
+        let q_unmet_w = 0.;
+        let mut volume_demanded = 0.;
 
         let mut temp_s3_n = self.storage_tank.temp_n.read().clone();
+        let temp_ini_n = temp_s3_n.clone();
 
         self.storage_tank
             .temp_average_drawoff_volweighted
@@ -1981,7 +1983,7 @@ impl SmartHotWaterTank {
 
             *self.storage_tank.temp_n.write() = temp_s3_n.clone();
 
-            _volume_demanded += volume_used;
+            volume_demanded += volume_used;
             q_use_w += energy_withdrawn;
         }
 
@@ -2012,7 +2014,15 @@ impl SmartHotWaterTank {
         *self.storage_tank.q_ls_n_prev_heat_source.write() =
             vec![0.0; self.storage_tank.number_of_volumes];
 
-        let mut temp_s8_n = vec![0.; self.storage_tank.number_of_volumes];
+        // With the possibility of not having heat sources now, some parameters might not be defined now
+        // in the for loop before and wouldn't be available for the testoutput unless initialised here.
+        let mut q_x_in_n = vec![0.; self.storage_tank.number_of_volumes];
+        let mut q_s6 = 0.;
+        let mut q_in_h_w = 0.;
+        let mut temp_s6_n = temp_s3_n.clone();
+        let mut temp_s7_n = temp_s3_n.clone();
+        let mut temp_s8_n = temp_s3_n.clone();
+        let mut q_ls_this_heat_source = 0.;
 
         for (heat_source_name, positioned_heat_source) in self.storage_tank.heat_source_data.clone()
         {
@@ -2029,13 +2039,7 @@ impl SmartHotWaterTank {
                 None => heater_layer,
             };
 
-            // N.B run_heat_sources is the SmartStorageTank specific call
-            let TemperatureCalculation {
-                temp_s8_n: temp_s8_n_step,
-                q_ls: q_ls_this_heat_source,
-                q_ls_n: q_ls_n_this_heat_source,
-                ..
-            } = self.run_heat_sources(
+            let calc = self.run_heat_sources(
                 temp_after_prev_heat_source.clone(),
                 &positioned_heat_source.heat_source.lock(),
                 &heat_source_name,
@@ -2044,27 +2048,53 @@ impl SmartHotWaterTank {
                 &self.storage_tank.q_ls_n_prev_heat_source.read().clone(),
                 simtime,
             )?;
+            let _ = std::mem::replace(&mut temp_s8_n, calc.temp_s8_n);
+            let _ = std::mem::replace(&mut q_x_in_n, calc.q_x_in_n);
+            q_s6 = calc.q_s6;
+            let _ = std::mem::replace(&mut temp_s6_n, calc.temp_s6_n);
+            let _ = std::mem::replace(&mut temp_s7_n, calc.temp_s7_n);
+            q_in_h_w = calc.q_in_h_w;
+            q_ls_this_heat_source = calc.q_ls;
+            let q_ls_n_this_heat_source = calc.q_ls_n;
 
-            temp_after_prev_heat_source = temp_s8_n_step.clone();
+            temp_after_prev_heat_source = temp_s8_n.clone();
             q_ls += q_ls_this_heat_source;
 
-            for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
+            {
                 let mut q_ls_n_prev = self.storage_tank.q_ls_n_prev_heat_source.write();
-                q_ls_n_prev[i] += q_ls_n;
+                for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
+                    q_ls_n_prev[i] += q_ls_n;
+                }
             }
 
-            temp_s8_n = temp_s8_n_step;
-
             // Trigger heating to stop
-            self.storage_tank.determine_heat_source_switch_off(
+            self.determine_heat_source_switch_off(
                 &temp_s8_n,
                 &heat_source_name,
-                positioned_heat_source,
                 heater_layer,
-                thermostat_layer,
                 simtime,
             )?;
         }
+
+        self.testoutput(
+            usage_events.as_ref().unwrap_or(&vec![]),
+            volume_demanded,
+            q_use_w,
+            q_unmet_w,
+            &temp_ini_n,
+            &temp_s3_n,
+            &q_x_in_n,
+            q_s6,
+            &temp_s6_n,
+            &temp_s7_n,
+            q_in_h_w,
+            q_ls_this_heat_source,
+            &temp_s8_n,
+            self.storage_tank
+                .temp_average_drawoff
+                .load(Ordering::SeqCst),
+            simtime,
+        )?;
 
         // Additional calculations
         // 6.4.6 Calculation of the auxiliary energy
@@ -2833,6 +2863,177 @@ impl SmartHotWaterTank {
         let volume_pumped = volume_pumped.min(max_volume_pumped);
 
         Ok(volume_pumped)
+    }
+
+    fn testoutput(
+        &self,
+        usage_events: &[WaterEventResult],
+        volume_extracted: f64,
+        q_use_w: f64,
+        q_unmet_w: f64,
+        temp_ini_n: &[f64],
+        temp_s3_n: &[f64],
+        q_x_in_n: &[f64],
+        q_s6: f64,
+        temp_s6_n: &[f64],
+        temp_s7_n: &[f64],
+        q_in_h_w: f64,
+        q_ls: f64,
+        temp_s8_n: &[f64],
+        temp_average: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<()> {
+        let mut detailed_output = match self.storage_tank.detailed_results.as_ref() {
+            None => return Ok(()),
+            Some(detailed_output) => detailed_output.write(),
+        };
+
+        let demand = summarise_events(usage_events);
+
+        // Calculates state of charge
+        let state_of_charge_draw_off =
+            (self.calc_state_of_charge(temp_s3_n, simtime)? * 1e6).round() / 1e6;
+        let state_of_charge_final =
+            (self.calc_state_of_charge(temp_s8_n, simtime)? * 1e6).round() / 1e6;
+
+        if simtime.index == 0 {
+            #[derive(Clone, Copy, Debug, Default)]
+            enum WithIndex {
+                #[default]
+                Yes,
+                No,
+            }
+
+            fn header_dup(header: &str, n: usize, with_index: WithIndex) -> Vec<StringOrNumber> {
+                (0..n)
+                    .map(|i| match with_index {
+                        WithIndex::Yes => format!("{header} {}", i + 1).into(),
+                        WithIndex::No => header.into(),
+                    })
+                    .collect()
+            }
+
+            let mut header_row: Vec<StringOrNumber> = [
+                "time",
+                "volume total",
+                "specific heat",
+                "density",
+                "cold water",
+                "events",
+                "volume extracted",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect();
+            header_row.extend(header_dup(
+                "initial temp.",
+                temp_ini_n.len(),
+                WithIndex::Yes,
+            ));
+            header_row.extend(["energy withdrawn", "energy unmet"].map(Into::into));
+            header_row.extend(header_dup(
+                "temp. after volume withdrawn",
+                temp_s3_n.len(),
+                WithIndex::Yes,
+            ));
+            header_row.extend(header_dup(
+                "potential energy input",
+                q_x_in_n.len(),
+                WithIndex::Yes,
+            ));
+            header_row.push("theoretical energy stored after energy input".into());
+            header_row.extend(header_dup(
+                "theoretical temp. after energy input",
+                temp_s6_n.len(),
+                WithIndex::Yes,
+            ));
+            header_row.extend(header_dup(
+                "temp. after volume mixing",
+                temp_s7_n.len(),
+                WithIndex::Yes,
+            ));
+            header_row.extend(
+                ["energy input (adjusted)", "thermal losses"]
+                    .into_iter()
+                    .map(Into::into),
+            );
+            header_row.extend(header_dup(
+                "temp. after thermal losses",
+                temp_s8_n.len(),
+                WithIndex::Yes,
+            ));
+            header_row.extend(
+                ["temp_average_drawoff", "state of charge final"]
+                    .into_iter()
+                    .map(Into::into),
+            );
+
+            detailed_output.push(header_row);
+
+            let mut units_row: Vec<StringOrNumber> = [
+                "h",
+                "litres",
+                "kWh/kgK",
+                "kg/l",
+                "oC",
+                "Type: litres hot (litres @ oC)",
+                "litres",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect();
+            units_row.extend(header_dup("oC", temp_ini_n.len(), WithIndex::No));
+            units_row.extend(["kWh", "kWh"].into_iter().map(Into::into));
+            units_row.extend(header_dup("oC", temp_s3_n.len(), WithIndex::No));
+            units_row.extend(["fraction"].into_iter().map(Into::into));
+            units_row.extend(header_dup("kWh", q_x_in_n.len(), WithIndex::No));
+            units_row.extend(["kWh"].into_iter().map(Into::into));
+            units_row.extend(header_dup("oC", temp_s6_n.len(), WithIndex::No));
+            units_row.extend(header_dup("oC", temp_s7_n.len(), WithIndex::No));
+            units_row.extend(["kWh", "kWh"].into_iter().map(Into::into));
+            units_row.extend(header_dup("oC", temp_s8_n.len(), WithIndex::No));
+            units_row.extend(["oC", "fraction"].into_iter().map(Into::into));
+
+            detailed_output.push(units_row);
+        }
+
+        let temp_cold_water: StringOrNumber = if is_close!(volume_extracted, 0.0, abs_tol = 1e-10) {
+            "".into()
+        } else {
+            let list_temp_vol = self
+                .storage_tank
+                .cold_feed
+                .get_temp_cold_water(volume_extracted, simtime)?;
+            (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
+                / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
+            .into()
+        };
+
+        let mut values_row: Vec<StringOrNumber> = vec![
+            simtime.hour_of_day().into(),
+            self.storage_tank.volume_total_in_litres.into(),
+            self.storage_tank.cp.into(),
+            self.storage_tank.rho.into(),
+            temp_cold_water,
+            demand.into(),
+            volume_extracted.into(),
+        ];
+        values_row.extend(temp_ini_n.iter().map(|t| t.into()));
+        values_row.extend([q_use_w.into(), q_unmet_w.into()]);
+        values_row.extend(temp_s3_n.iter().map(|t| t.into()));
+        values_row.push(state_of_charge_draw_off.into());
+        values_row.extend(q_x_in_n.iter().map(|q| q.into()));
+        values_row.push(q_s6.into());
+        values_row.extend(temp_s6_n.iter().map(|t| t.into()));
+        values_row.extend(temp_s7_n.iter().map(|t| t.into()));
+        values_row.extend([q_in_h_w.into(), q_ls.into()]);
+        values_row.extend(temp_s8_n.iter().map(|t| t.into()));
+        values_row.push(temp_average.into());
+        values_row.push(state_of_charge_final.into());
+
+        detailed_output.push(values_row);
+
+        Ok(())
     }
 
     pub(crate) fn get_temp_hot_water(
