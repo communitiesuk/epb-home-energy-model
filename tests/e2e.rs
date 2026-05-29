@@ -112,9 +112,9 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             "Successfully processed file: {}\n{} {} captured output files compared to expected {}{}\n\n",
             file.file_name().display(),
             if actual_file_count < expected_file_count {
-                "❌"
+                "🚮"
             } else {
-                "✅"
+                "🎉"
             },
             actual_file_count,
             expected_file_count,
