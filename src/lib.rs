@@ -1135,11 +1135,8 @@ fn write_core_output_file_heat_source_wet(
                 .keys()
                 .cloned()
                 .collect::<IndexMap<_, _>>()
-                .values()
-                .map(|col_heading| match col_heading {
-                    None => service_name.clone(),
-                    Some(col_heading) => format!("{service_name}: {col_heading}").into(),
-                })
+                .keys()
+                .map(|col_heading| format!("{service_name}: {col_heading}").into())
                 .collect::<Vec<Arc<str>>>(),
         );
         col_units_row.extend(
