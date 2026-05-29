@@ -1518,11 +1518,20 @@ pub struct HeatBalanceInternalBoundary {
 
 impl From<HeatBalanceInternalBoundaryFieldName> for Arc<str> {
     fn from(value: HeatBalanceInternalBoundaryFieldName) -> Self {
-        serde_json::to_value(&value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .into()
+        value.as_str().into()
+    }
+}
+
+impl HeatBalanceInternalBoundaryFieldName {
+    fn as_str(&self) -> &str {
+        match self {
+            HeatBalanceInternalBoundaryFieldName::FabricIntAirConvective => {
+                "fabric_int_air_convective"
+            }
+            HeatBalanceInternalBoundaryFieldName::FabricIntSol => "fabric_int_sol",
+            HeatBalanceInternalBoundaryFieldName::FabricIntIntGains => "fabric_int_int_gains",
+            HeatBalanceInternalBoundaryFieldName::FabricIntHeatCool => "fabric_int_heat_cool",
+        }
     }
 }
 
@@ -1574,23 +1583,38 @@ pub struct HeatBalanceExternalBoundary {
     pub ztu_fabric_ext: f64,
 }
 
-impl From<HeatBalanceExternalBoundaryFieldName> for String {
+impl From<HeatBalanceExternalBoundaryFieldName> for Arc<str> {
     fn from(value: HeatBalanceExternalBoundaryFieldName) -> Self {
-        serde_json::to_value(&value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .into()
+        value.as_str().into()
     }
 }
 
-impl From<HeatBalanceExternalBoundaryFieldName> for Arc<str> {
-    fn from(value: HeatBalanceExternalBoundaryFieldName) -> Self {
-        serde_json::to_value(&value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .into()
+impl HeatBalanceExternalBoundaryFieldName {
+    fn as_str(&self) -> &str {
+        match self {
+            HeatBalanceExternalBoundaryFieldName::SolarGains => "solar gains",
+            HeatBalanceExternalBoundaryFieldName::InternalGains => "internal gains",
+            HeatBalanceExternalBoundaryFieldName::HeatingOrCoolingSystemGains => {
+                "heating or cooling system gains"
+            }
+            HeatBalanceExternalBoundaryFieldName::ThermalBridges => "thermal_bridges", // NB. this correctly diverges from above variants
+            HeatBalanceExternalBoundaryFieldName::InfiltrationVentilation => {
+                "infiltration_ventilation"
+            }
+            HeatBalanceExternalBoundaryFieldName::FabricExtAirConvective => {
+                "fabric_ext_air_convective"
+            }
+            HeatBalanceExternalBoundaryFieldName::FabricExtAirRadiative => {
+                "fabric_ext_air_radiative"
+            }
+            HeatBalanceExternalBoundaryFieldName::FabricExtSol => "fabric_ext_sol",
+            HeatBalanceExternalBoundaryFieldName::FabricExtSky => "fabric_ext_sky",
+            HeatBalanceExternalBoundaryFieldName::OpaqueFabricExt => "opaque_fabric_ext",
+            HeatBalanceExternalBoundaryFieldName::TransparentFabricExt => "transparent_fabric_ext",
+            HeatBalanceExternalBoundaryFieldName::GroundFabricExt => "ground_fabric_ext",
+            HeatBalanceExternalBoundaryFieldName::ZtcFabricExt => "ztc_fabric_ext",
+            HeatBalanceExternalBoundaryFieldName::ZtuFabricExt => "ztu_fabric_ext",
+        }
     }
 }
 
