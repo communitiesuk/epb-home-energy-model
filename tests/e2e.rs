@@ -79,6 +79,15 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                 continue;
             };
             file_length_comparisons.push(format!("{}: actual is {} bytes, expected is {} bytes", actual_file_name, actual_file.len(), expected_file.metadata().unwrap().len()));
+            let mut rust_file_read = BufReader::new(Cursor::new(actual_file));
+            let rust_headers = csv_access::csv_reader(&mut rust_file_read).headers().unwrap().clone();
+            let mut python_file_read = BufReader::new(File::open(expected_file.path()).unwrap());
+            let python_headers = csv_access::csv_reader(&mut python_file_read).headers().unwrap().clone();
+            let differences = compare::compare(rust_headers, python_headers);
+            if let Err(differences) = differences {
+                println!("❌ Headers differ for file: {}", actual_file_name);
+                println!("Differences: {:?}", differences);
+            }
         }
         println!(
             "Successfully processed file: {}\n{} {} captured output files compared to expected {}{}\nOutput file length comparisons:\n{}\n\n",
@@ -234,5 +243,196 @@ impl Write for FileWriter {
 
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
+    }
+}
+
+mod csv_access {
+    use std::io::Read;
+
+    pub fn csv_reader<T: Read>(read: &mut T) -> csv::Reader<&mut T> {
+        csv::ReaderBuilder::new().flexible(true).from_reader(read)
+    }
+}
+
+mod compare {
+    use csv::StringRecord;
+    use std::fmt;
+    use std::mem::discriminant;
+
+    pub fn compare(left: StringRecord, right: StringRecord) -> ComparisonResult {
+        OutputRecord::from(left).equiv(&OutputRecord::from(right))
+    }
+
+    const FLOAT_THRESHOLD: f64 = 1e-6; // 0.000001
+
+    #[derive(Debug, Clone)]
+    pub enum Difference {
+        StringDifference {
+            left: String,
+            right: String,
+            field_index: usize,
+        },
+        NumberDifference {
+            left: f64,
+            right: f64,
+            numerical_difference: f64,
+            field_index: usize,
+        },
+        RecordDifference {
+            message: String,
+        },
+    }
+
+    impl fmt::Display for Difference {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            // assumption here that left is Python and right is Rust
+            match self {
+                Difference::StringDifference {
+                    left,
+                    right,
+                    field_index,
+                } => {
+                    write!(
+                        f,
+                        "Index: {field_index}, Python: \"{left}\", Rust: \"{right}\""
+                    )
+                }
+                Difference::NumberDifference {
+                    left,
+                    right,
+                    numerical_difference,
+                    field_index,
+                } => {
+                    write!(f, "Index: {field_index}, Python: {left}, Rust: {right}, Diff: {numerical_difference}")
+                }
+                Difference::RecordDifference { message } => {
+                    write!(f, "{}", message)
+                }
+            }
+        }
+    }
+
+    pub struct OutputRecord {
+        record: StringRecord,
+    }
+
+    impl From<StringRecord> for OutputRecord {
+        fn from(value: StringRecord) -> Self {
+            Self { record: value }
+        }
+    }
+
+    impl PartialEq for OutputRecord {
+        fn eq(&self, other: &Self) -> bool {
+            self.equiv(other).is_ok()
+        }
+    }
+
+    type ComparisonResult = Result<(), Vec<Difference>>;
+
+    impl OutputRecord {
+        pub fn equiv(&self, other: &OutputRecord) -> ComparisonResult {
+            if self.len() != other.len() {
+                let message = format!(
+                    "Record has unequal number of fields, {} to {}.",
+                    self.len(),
+                    other.len()
+                );
+                return Err(vec![Difference::RecordDifference { message }]);
+            }
+            let differences = self
+                .record
+                .iter()
+                .zip(&other.record)
+                .map(|(left_str, right_str)| {
+                    (
+                        OutputCellValue::from(left_str),
+                        OutputCellValue::from(right_str),
+                    )
+                })
+                .enumerate()
+                // Result<(), Difference>
+                .filter_map(|(index, (left, right))| {
+                    let comparison = left.equiv(&right, index);
+                    match comparison {
+                        Ok(_) => None,
+                        Err(difference) => Some(difference),
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            if differences.is_empty() {
+                Ok(())
+            } else {
+                Err(differences)
+            }
+        }
+
+        fn len(&self) -> usize {
+            self.record.len()
+        }
+    }
+
+    #[derive(Debug)]
+    enum OutputCellValue {
+        Number(f64),
+        String(String),
+    }
+
+    impl OutputCellValue {
+        fn equiv(&self, other: &OutputCellValue, field_index: usize) -> Result<(), Difference> {
+            if discriminant(self) != discriminant(other) {
+                return Err(Difference::StringDifference {
+                    left: format!("{:?}", self),
+                    right: format!("{:?}", other),
+                    field_index,
+                });
+            }
+            match self {
+                OutputCellValue::Number(float) => {
+                    let other_float = match other {
+                        OutputCellValue::Number(other_float) => *other_float,
+                        _ => unreachable!(),
+                    };
+                    let numerical_difference = (*float - other_float).abs();
+                    if numerical_difference < FLOAT_THRESHOLD {
+                        Ok(())
+                    } else {
+                        Err(Difference::NumberDifference {
+                            left: *float,
+                            right: other_float,
+                            numerical_difference,
+                            field_index,
+                        })
+                    }
+                }
+                OutputCellValue::String(string) => {
+                    let other_string = match other {
+                        OutputCellValue::String(string) => string,
+                        _ => unreachable!(),
+                    };
+
+                    if string == other_string {
+                        Ok(())
+                    } else {
+                        Err(Difference::StringDifference {
+                            left: string.clone(),
+                            right: other_string.clone(),
+                            field_index,
+                        })
+                    }
+                }
+            }
+        }
+    }
+
+    impl From<&str> for OutputCellValue {
+        fn from(value: &str) -> Self {
+            if let Ok(float) = value.parse::<f64>() {
+                Self::Number(float)
+            } else {
+                Self::String(value.to_string())
+            }
+        }
     }
 }
