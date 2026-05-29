@@ -2936,6 +2936,7 @@ impl SmartHotWaterTank {
                 temp_s3_n.len(),
                 WithIndex::Yes,
             ));
+            header_row.push("state of charge after volume withdrawn".into());
             header_row.extend(header_dup(
                 "potential energy input",
                 q_x_in_n.len(),
