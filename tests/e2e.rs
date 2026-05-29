@@ -78,10 +78,10 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                 continue;
             };
             let mut rust_file_read = BufReader::new(Cursor::new(actual_file));
-            let rust_headers = csv_access::csv_reader(&mut rust_file_read).headers().unwrap().clone();
+            let mut rust_reader = csv_access::csv_reader(&mut rust_file_read);
             let mut python_file_read = BufReader::new(File::open(expected_file.path()).unwrap());
-            let python_headers = csv_access::csv_reader(&mut python_file_read).headers().unwrap().clone();
-            let differences = compare::compare(python_headers, rust_headers);
+            let mut python_reader = csv_access::csv_reader(&mut python_file_read);
+            let differences = compare::compare_headers(&mut python_reader, &mut rust_reader);
             if let Err(differences) = differences {
                 println!("❌ Headers differ for file: {}", actual_file_name);
                 println!("Differences: {}", differences.iter().join("\n"));
@@ -252,8 +252,9 @@ mod csv_access {
 }
 
 mod compare {
-    use csv::StringRecord;
+    use csv::{Reader, StringRecord};
     use std::fmt;
+    use std::io::Read;
     use std::mem::discriminant;
 
     pub fn compare(left: StringRecord, right: StringRecord) -> ComparisonResult {
@@ -431,5 +432,23 @@ mod compare {
                 Self::String(value.to_string())
             }
         }
+    }
+
+    pub fn compare_headers<T, U>(
+        py_reader: &mut Reader<T>,
+        rust_reader: &mut Reader<U>,
+    ) -> ComparisonResult
+    where
+        T: Read,
+        U: Read,
+    {
+        let rust_headers = rust_reader
+            .headers()
+            .expect("Failed to read Rust CSV headers");
+        let py_headers = py_reader
+            .headers()
+            .expect("Failed to read Python CSV headers");
+
+        compare(py_headers.clone(), rust_headers.clone())
     }
 }
