@@ -1462,7 +1462,25 @@ pub struct HeatBalanceAirNode {
 
 impl From<HeatBalanceAirNodeFieldName> for Arc<str> {
     fn from(value: HeatBalanceAirNodeFieldName) -> Self {
-        value.name().replace('_', " ").into()
+        value.as_str().into()
+    }
+}
+
+impl HeatBalanceAirNodeFieldName {
+    fn as_str(&self) -> &str {
+        match self {
+            HeatBalanceAirNodeFieldName::SolarGains => "solar gains",
+            HeatBalanceAirNodeFieldName::InternalGains => "internal gains",
+            HeatBalanceAirNodeFieldName::HeatingOrCoolingSystemGains => {
+                "heating or cooling system gains"
+            }
+            HeatBalanceAirNodeFieldName::EnergyToChangeInternalTemperature => {
+                "energy to change internal temperature"
+            }
+            HeatBalanceAirNodeFieldName::ThermalBridges => "thermal_bridges", // NB. casing scheme is correctly different from those above (correctly in sense this fits with the upstream Python)
+            HeatBalanceAirNodeFieldName::InfiltrationVentilation => "infiltration_ventilation",
+            HeatBalanceAirNodeFieldName::FabricHeatLoss => "fabric", // upstream Python uses just "fabric" for this
+        }
     }
 }
 
@@ -1612,8 +1630,8 @@ impl HeatBalanceExternalBoundaryFieldName {
             HeatBalanceExternalBoundaryFieldName::OpaqueFabricExt => "opaque_fabric_ext",
             HeatBalanceExternalBoundaryFieldName::TransparentFabricExt => "transparent_fabric_ext",
             HeatBalanceExternalBoundaryFieldName::GroundFabricExt => "ground_fabric_ext",
-            HeatBalanceExternalBoundaryFieldName::ZtcFabricExt => "ztc_fabric_ext",
-            HeatBalanceExternalBoundaryFieldName::ZtuFabricExt => "ztu_fabric_ext",
+            HeatBalanceExternalBoundaryFieldName::ZtcFabricExt => "ZTC_fabric_ext",
+            HeatBalanceExternalBoundaryFieldName::ZtuFabricExt => "ZTU_fabric_ext",
         }
     }
 }
