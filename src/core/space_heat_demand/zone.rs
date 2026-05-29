@@ -1462,11 +1462,7 @@ pub struct HeatBalanceAirNode {
 
 impl From<HeatBalanceAirNodeFieldName> for Arc<str> {
     fn from(value: HeatBalanceAirNodeFieldName) -> Self {
-        serde_json::to_value(&value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .into()
+        value.name().replace('_', " ").into()
     }
 }
 
