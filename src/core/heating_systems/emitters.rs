@@ -7,7 +7,7 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
-use crate::core::solvers::{bisect, fsolve, root};
+use crate::core::solvers::{bisect::bisect, fsolve, root};
 use crate::core::space_heat_demand::zone::SimpleZone;
 use crate::core::units::{
     JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE,
@@ -1884,7 +1884,7 @@ impl Emitters {
             return Ok(temp_flow_target);
         }
 
-        let temp_return_target = bisect(energy_difference, 0., temp_flow_target, 1e-6)?;
+        let (temp_return_target, _) = bisect(energy_difference, 0., temp_flow_target, 1e-6)?;
 
         Ok(if temp_return_target > temp_flow_target {
             temp_flow_target
