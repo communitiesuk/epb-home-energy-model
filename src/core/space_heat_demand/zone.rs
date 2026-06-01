@@ -1462,11 +1462,25 @@ pub struct HeatBalanceAirNode {
 
 impl From<HeatBalanceAirNodeFieldName> for Arc<str> {
     fn from(value: HeatBalanceAirNodeFieldName) -> Self {
-        serde_json::to_value(&value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .into()
+        value.as_str().into()
+    }
+}
+
+impl HeatBalanceAirNodeFieldName {
+    fn as_str(&self) -> &str {
+        match self {
+            HeatBalanceAirNodeFieldName::SolarGains => "solar gains",
+            HeatBalanceAirNodeFieldName::InternalGains => "internal gains",
+            HeatBalanceAirNodeFieldName::HeatingOrCoolingSystemGains => {
+                "heating or cooling system gains"
+            }
+            HeatBalanceAirNodeFieldName::EnergyToChangeInternalTemperature => {
+                "energy to change internal temperature"
+            }
+            HeatBalanceAirNodeFieldName::ThermalBridges => "thermal_bridges", // NB. casing scheme is correctly different from those above (correctly in sense this fits with the upstream Python)
+            HeatBalanceAirNodeFieldName::InfiltrationVentilation => "infiltration_ventilation",
+            HeatBalanceAirNodeFieldName::FabricHeatLoss => "fabric", // upstream Python uses just "fabric" for this
+        }
     }
 }
 
@@ -1522,11 +1536,20 @@ pub struct HeatBalanceInternalBoundary {
 
 impl From<HeatBalanceInternalBoundaryFieldName> for Arc<str> {
     fn from(value: HeatBalanceInternalBoundaryFieldName) -> Self {
-        serde_json::to_value(&value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .into()
+        value.as_str().into()
+    }
+}
+
+impl HeatBalanceInternalBoundaryFieldName {
+    fn as_str(&self) -> &str {
+        match self {
+            HeatBalanceInternalBoundaryFieldName::FabricIntAirConvective => {
+                "fabric_int_air_convective"
+            }
+            HeatBalanceInternalBoundaryFieldName::FabricIntSol => "fabric_int_sol",
+            HeatBalanceInternalBoundaryFieldName::FabricIntIntGains => "fabric_int_int_gains",
+            HeatBalanceInternalBoundaryFieldName::FabricIntHeatCool => "fabric_int_heat_cool",
+        }
     }
 }
 
@@ -1578,23 +1601,38 @@ pub struct HeatBalanceExternalBoundary {
     pub ztu_fabric_ext: f64,
 }
 
-impl From<HeatBalanceExternalBoundaryFieldName> for String {
+impl From<HeatBalanceExternalBoundaryFieldName> for Arc<str> {
     fn from(value: HeatBalanceExternalBoundaryFieldName) -> Self {
-        serde_json::to_value(&value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .into()
+        value.as_str().into()
     }
 }
 
-impl From<HeatBalanceExternalBoundaryFieldName> for Arc<str> {
-    fn from(value: HeatBalanceExternalBoundaryFieldName) -> Self {
-        serde_json::to_value(&value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .into()
+impl HeatBalanceExternalBoundaryFieldName {
+    fn as_str(&self) -> &str {
+        match self {
+            HeatBalanceExternalBoundaryFieldName::SolarGains => "solar gains",
+            HeatBalanceExternalBoundaryFieldName::InternalGains => "internal gains",
+            HeatBalanceExternalBoundaryFieldName::HeatingOrCoolingSystemGains => {
+                "heating or cooling system gains"
+            }
+            HeatBalanceExternalBoundaryFieldName::ThermalBridges => "thermal_bridges", // NB. this correctly diverges from above variants
+            HeatBalanceExternalBoundaryFieldName::InfiltrationVentilation => {
+                "infiltration_ventilation"
+            }
+            HeatBalanceExternalBoundaryFieldName::FabricExtAirConvective => {
+                "fabric_ext_air_convective"
+            }
+            HeatBalanceExternalBoundaryFieldName::FabricExtAirRadiative => {
+                "fabric_ext_air_radiative"
+            }
+            HeatBalanceExternalBoundaryFieldName::FabricExtSol => "fabric_ext_sol",
+            HeatBalanceExternalBoundaryFieldName::FabricExtSky => "fabric_ext_sky",
+            HeatBalanceExternalBoundaryFieldName::OpaqueFabricExt => "opaque_fabric_ext",
+            HeatBalanceExternalBoundaryFieldName::TransparentFabricExt => "transparent_fabric_ext",
+            HeatBalanceExternalBoundaryFieldName::GroundFabricExt => "ground_fabric_ext",
+            HeatBalanceExternalBoundaryFieldName::ZtcFabricExt => "ZTC_fabric_ext",
+            HeatBalanceExternalBoundaryFieldName::ZtuFabricExt => "ZTU_fabric_ext",
+        }
     }
 }
 
@@ -2151,7 +2189,7 @@ mod tests {
         let thermal_bridging = ThermalBridging::Number(4.);
         let zone = zone(thermal_bridging, None).unwrap();
 
-        assert_eq!(zone.tb_heat_trans_coeff, 4.)
+        assert_eq!(zone.tb_heat_trans_coeff, 4.);
     }
 
     #[rstest]
@@ -3023,7 +3061,7 @@ mod tests {
         );
 
         // Verify the actual calculated value is reasonable
-        assert_relative_eq!(ztu_with_party_wall, -164.2832446432019, max_relative = 1e-7)
+        assert_relative_eq!(ztu_with_party_wall, -164.2832446432019, max_relative = 1e-7);
     }
 
     #[test]

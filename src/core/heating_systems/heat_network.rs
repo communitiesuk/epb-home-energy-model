@@ -146,7 +146,7 @@ impl HeatNetworkServiceWaterStorage {
         &self,
         energy_demand: f64,
         _temp_flow: f64,
-        _temp_return: f64,
+        _temp_return: Option<f64>,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         if !self.is_on(simulation_time_iteration) {
@@ -775,7 +775,7 @@ mod tests {
         for (t_idx, t_it) in two_len_simulation_time.iter().enumerate() {
             assert_eq!(
                 heat_network_service_water_storage
-                    .demand_energy(energy_demanded[t_idx], 60., 60., &t_it)
+                    .demand_energy(energy_demanded[t_idx], 60., Some(60.), &t_it)
                     .unwrap(),
                 [7.0, 2.0][t_idx]
             );
@@ -834,8 +834,8 @@ mod tests {
             heat_network_service_water_storage
                 .demand_energy(
                     10.,
-                    0., // Python passes None here but the parameter is unused
-                    0., // Python passes None here but the parameter is unused
+                    0.,       // Python passes None here but the parameter is unused
+                    Some(0.), // Python passes None here but the parameter is unused
                     &two_len_simulation_time.iter().current_iteration()
                 )
                 .unwrap(),

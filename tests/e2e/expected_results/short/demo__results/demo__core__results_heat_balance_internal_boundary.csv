@@ -1,0 +1,15 @@
+,zone 1: total fabric_int_air_convective,zone 1: total fabric_int_sol,zone 1: total fabric_int_int_gains,zone 1: total fabric_int_heat_cool
+,[kWh],[kWh],[kWh],[kWh]
+,5.307704996,0.0,7.301643252,3.84617444
+""
+Timestep,zone 1: fabric_int_air_convective,zone 1: fabric_int_sol,zone 1: fabric_int_int_gains,zone 1: fabric_int_heat_cool
+index,[W],[W],[W],[W]
+
+0,853.44048,0.0,427.7286667,1442.943394
+1,754.3365753,0.0,457.7117204,1015.464753
+2,678.1280693,0.0,633.2067703,717.9269048
+3,602.1511288,0.0,961.4135831,330.270209
+4,641.107308,0.0,1426.007053,0.0
+5,497.9864812,0.0,719.061587,339.5691792
+6,733.935751,0.0,1662.267607,0.0
+7,546.6192028,0.0,1014.246265,0.0

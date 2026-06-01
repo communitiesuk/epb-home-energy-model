@@ -1,0 +1,54 @@
+Energy Demand Summary
+,,Total
+Space heat demand,kWh/m2,0.03845369635
+Space cool demand,kWh/m2,-0.001880018687
+
+Energy Supply Summary
+,kWh,timestep,month,day,hour of day
+Peak consumption (electricity),9.632125744,48,MAY,6,0.0
+
+,Total,_unmet_demand,_energy_from_environment,mains elec,mains gas
+Consumption,kWh,6.183120561,0.0,29.78595573,3.282823107
+Generation,kWh,0.0,0.0,33.15477214,0.0
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,7.149191265,0.0
+Generation to storage,kWh,0.0,0.0,5.391946493,0.0
+Generation to diverter,kWh,0.0,0.0,0.0,0.0
+Generation to grid,kWh,0.0,0.0,20.61363438,0.0
+Storage to consumption,kWh,0.0,0.0,4.197202065,0.0
+Grid to storage,kWh,0.0,0.0,0.0,0.0
+Grid to consumption,kWh,6.183120561,0.0,18.4395624,3.282823107
+Total gross import,kWh,6.183120561,0.0,18.4395624,3.282823107
+Total gross export,kWh,0.0,0.0,-20.61363438,0.0
+Net import,kWh,6.183120561,0.0,-2.174071981,3.282823107
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,0.7784205704,DIV/0
+
+Delivered Energy Summary
+Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec,mains gas
+total,0.08105092853,0.0,0.07300479346,0.008046135066
+mechvent1,0.000952905847,0,0.000952905847,0
+topup,0.00219677229,0,0.00219677229,0
+Microwave,0.0004519388464,0,0.0004519388464,0
+Kettle,0.001044626036,0,0.001044626036,0
+Fridge,0.001030083266,0,0.001030083266,0
+Clothes_washing,0.00394206545,0,0.00394206545,0
+Otherdevices,0.01139531011,0,0.01139531011,0
+Oven,0.008019845226,0,0.008019845226,0
+lighting,0.002453031597,0,0.002453031597,0
+hb1,0.04104326285,0,0.04104326285,0
+hb1_water_heating: hw cylinder,0.0,0,0.0,0
+hb1_space_heating: zone 1 radiators,0.0,0,0.0,0
+hb1_space_heating: zone 2 radiators,0.0,0,0.0,0
+cooling system 1,0.0,0,0.0,0
+cooling system 2,0.000474951935,0,0.000474951935,0
+Hobs,0.008046135066,0,0,0.008046135066
+
+Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
+hw cylinder,DIV/0,5.923396751,80.0
+
+Space heating system,Overall CoP
+zone 1 radiators,DIV/0
+zone 2 radiators,DIV/0
+
+Space cooling system,Overall CoP
+cooling system 1,DIV/0
+cooling system 2,4.3

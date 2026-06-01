@@ -104,7 +104,7 @@ mod tests {
         let actual = np_interp(input, &x, &y);
         let expected = interp(&x, &y, input, &InterpMode::Extrapolate);
 
-        assert_eq!(actual, expected)
+        assert_eq!(actual, expected);
     }
 
     #[rstest]
@@ -119,7 +119,7 @@ mod tests {
 
         let actual = np_interp(input, &x, &y);
 
-        assert_eq!(actual, expected)
+        assert_eq!(actual, expected);
     }
 
     #[rstest]
@@ -134,7 +134,7 @@ mod tests {
 
         let actual = np_interp(input, &x, &y);
 
-        assert_eq!(actual, expected)
+        assert_eq!(actual, expected);
     }
 
     #[rstest]
@@ -149,7 +149,7 @@ mod tests {
 
         let actual = np_interp(input, &x, &y);
 
-        assert_eq!(actual, expected)
+        assert_eq!(actual, expected);
     }
 
     #[rstest]
@@ -163,7 +163,7 @@ mod tests {
         let y = [50., 40., 30., 20., 10., 0.];
 
         let actual = np_interp(input, &x, &y);
-        assert_eq!(actual, expected)
+        assert_eq!(actual, expected);
     }
 
     #[test]

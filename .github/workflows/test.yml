@@ -16,5 +16,6 @@ jobs:
           pip install numpy==2.1.0
       - name: Installing scipy
         run: pip install scipy==1.14.1
-      - run: cargo test --workspace --exclude hem-lambda --exclude wrappers-lambda
+      - uses: extractions/setup-just@v4
+      - run: just unit
       - run: cargo rustc --no-default-features -- -Awarnings

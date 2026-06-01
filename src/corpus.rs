@@ -2241,7 +2241,8 @@ impl Corpus {
             Default::default();
         let mut heat_source_wet_results_annual_dict: IndexMap<Arc<str>, ResultsAnnual> =
             Default::default();
-        let mut emitters_output_dict: IndexMap<Arc<str>, Vec<OutputEmitters>> = Default::default();
+        let mut emitters_output_dict: IndexMap<Arc<str>, Vec<Option<OutputEmitters>>> =
+            Default::default();
         let mut esh_output_dict: IndexMap<Arc<str>, Vec<StorageHeaterDetailedResult>> =
             Default::default();
         let mut vent_output_list: Vec<VentilationDetailedResult> = Default::default();
@@ -2739,7 +2740,15 @@ impl Corpus {
             hot_water_source_results,
             emitters: emitters_output_dict
                 .into_iter()
-                .map(|(k, v)| (k, v.into_iter().enumerate().collect()))
+                .map(|(k, v)| {
+                    (
+                        k,
+                        v.into_iter()
+                            .enumerate()
+                            .filter_map(|(k, v)| v.map(|v| (k, v)))
+                            .collect(),
+                    )
+                })
                 .collect(),
             electric_storage_heaters: esh_output_dict
                 .into_iter()
@@ -4174,9 +4183,12 @@ impl HeatSource {
                     .lock()
                     .demand_energy(energy_demand, simulation_time_iteration.index)),
             },
-            HeatSource::Wet(ref mut wet) => {
-                wet.demand_energy(energy_demand, None, temp_return, simulation_time_iteration)
-            }
+            HeatSource::Wet(ref mut wet) => wet.demand_energy(
+                energy_demand,
+                None,
+                temp_return.into(),
+                simulation_time_iteration,
+            ),
         }
     }
 
@@ -6001,7 +6013,7 @@ struct RequiredVentData {
 
 #[cfg(test)]
 mod tests {
-    use crate::corpus::Corpus;
+    use crate::corpus::{Corpus, OutputOptions};
     use crate::input::{HotWaterSourceDetails, Input};
     use rstest::{fixture, rstest};
     use serde_json::json;
@@ -6177,8 +6189,13 @@ mod tests {
         minimal_input.pre_heated_water_source =
             serde_json::from_value(json!({"tank1": tank1, "tank2": tank2})).unwrap();
 
-        let corpus =
-            Corpus::from_inputs(Arc::new(minimal_input), None, None, &Default::default()).unwrap();
+        let corpus = Corpus::from_inputs(
+            Arc::new(minimal_input),
+            None,
+            None,
+            &OutputOptions::default(),
+        )
+        .unwrap();
 
         let pre_heated_sources = corpus.pre_heated_water_sources;
 
@@ -6195,7 +6212,12 @@ mod tests {
         minimal_input.pre_heated_water_source =
             serde_json::from_value(json!({"tank1": tank1, "tank2": tank2})).unwrap();
 
-        let result = Corpus::from_inputs(Arc::new(minimal_input), None, None, &Default::default());
+        let result = Corpus::from_inputs(
+            Arc::new(minimal_input),
+            None,
+            None,
+            &OutputOptions::default(),
+        );
 
         assert_eq!(
             result.unwrap_err().to_string(),
@@ -6214,8 +6236,13 @@ mod tests {
             serde_json::from_value(json!({"tank1": tank1, "tank2": tank2, "tank3": tank3}))
                 .unwrap();
 
-        let corpus =
-            Corpus::from_inputs(Arc::new(minimal_input), None, None, &Default::default()).unwrap();
+        let corpus = Corpus::from_inputs(
+            Arc::new(minimal_input),
+            None,
+            None,
+            &OutputOptions::default(),
+        )
+        .unwrap();
 
         let pre_heated_sources = corpus.pre_heated_water_sources;
 

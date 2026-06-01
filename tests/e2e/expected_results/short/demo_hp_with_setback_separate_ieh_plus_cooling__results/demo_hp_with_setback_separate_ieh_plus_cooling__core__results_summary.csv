@@ -1,0 +1,55 @@
+Energy Demand Summary
+,,Total
+Space heat demand,kWh/m2,0.1464168191
+Space cool demand,kWh/m2,-0.1460174275
+
+Energy Supply Summary
+,kWh,timestep,month,day,hour of day
+Peak consumption (electricity),4.6935449,0,JAN,1,0.0
+
+,Total,_unmet_demand,_energy_from_environment,mains elec
+Consumption,kWh,5.650938688,10.88794719,13.10194493
+Generation,kWh,0.0,0.0,0.0
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,0.0
+Generation to storage,kWh,0.0,0.0,0.0
+Generation to diverter,kWh,0.0,0.0,0.0
+Generation to grid,kWh,0.0,0.0,0.0
+Storage to consumption,kWh,0.0,0.0,0.0
+Grid to storage,kWh,0.0,0.0,0.0
+Grid to consumption,kWh,5.650938688,10.88794719,13.10194493
+Total gross import,kWh,5.650938688,10.88794719,13.10194493
+Total gross export,kWh,0.0,0.0,0.0
+Net import,kWh,5.650938688,10.88794719,13.10194493
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,DIV/0
+
+Delivered Energy Summary
+Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec
+total,0.2822672328,0.1281085679,0.1541586649
+hp1_space_heating: livingroom_radiators,0.06396317293,0.0466196179,0.01734355503
+hp2_space_heating: restofdwelling_radiators,0.111918534,0.08148895001,0.03042958397
+mechvent1,0.003451386438,0,0.003451386438
+HeatPump_auxiliary: hp1,0.001962048595,0,0.001962048595
+HeatPump_auxiliary: hp2,0.002038909007,0,0.002038909007
+hw cylinder,0.03060422795,0,0.03060422795
+IES,0.03176844335,0,0.03176844335
+livingroom_ieh,0.0,0,0.0
+restofdwelling_ieh,0.01176609013,0,0.01176609013
+livingroom_aircon1,0.006200079028,0,0.006200079028
+livingroom_aircon2,0.00547260006,0,0.00547260006
+restofdwelling_aircon1,0.007649141245,0,0.007649141245
+restofdwelling_aircon2,0.00547260006,0,0.00547260006
+
+Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
+hw cylinder,1.0,2.080842667,N/A
+
+Space heating system,Overall CoP
+livingroom_radiators,3.632748969
+livingroom_ieh,DIV/0
+restofdwelling_radiators,3.647107477
+restofdwelling_ieh,1.0
+
+Space cooling system,Overall CoP
+livingroom_aircon1,4.3
+livingroom_aircon2,4.3
+restofdwelling_aircon1,4.3
+restofdwelling_aircon2,4.3

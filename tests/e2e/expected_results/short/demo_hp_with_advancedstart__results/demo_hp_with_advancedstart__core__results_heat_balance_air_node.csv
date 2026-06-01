@@ -1,0 +1,15 @@
+,zone1_livingroom: total solar gains,zone1_livingroom: total internal gains,zone1_livingroom: total heating or cooling system gains,zone1_livingroom: total energy to change internal temperature,zone1_livingroom: total thermal_bridges,zone1_livingroom: total infiltration_ventilation,zone1_livingroom: total fabric,zone2_restofdwelling: total solar gains,zone2_restofdwelling: total internal gains,zone2_restofdwelling: total heating or cooling system gains,zone2_restofdwelling: total energy to change internal temperature,zone2_restofdwelling: total thermal_bridges,zone2_restofdwelling: total infiltration_ventilation,zone2_restofdwelling: total fabric
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,1.397620792,0.5322708777,-0.04669696479,-0.3627333059,-1.27301619,-0.247445208,0.0,2.554530627,0.4782029024,-0.3583491708,-0.5173291675,-2.365421834,0.2083666427
+""
+Timestep,zone1_livingroom: solar gains,zone1_livingroom: internal gains,zone1_livingroom: heating or cooling system gains,zone1_livingroom: energy to change internal temperature,zone1_livingroom: thermal_bridges,zone1_livingroom: infiltration_ventilation,zone1_livingroom: fabric,zone2_restofdwelling: solar gains,zone2_restofdwelling: internal gains,zone2_restofdwelling: heating or cooling system gains,zone2_restofdwelling: energy to change internal temperature,zone2_restofdwelling: thermal_bridges,zone2_restofdwelling: infiltration_ventilation,zone2_restofdwelling: fabric
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,79.9047913,172.0881995,10.33140575,-49.47434903,-161.8413899,-51.0086576,0.0,146.0476531,386.0583352,-130.220119,-69.41154793,-295.8499547,-36.6243667
+1,0.0,111.445077,119.8758597,5.745267902,-47.44787855,-160.7483075,-28.8700186,0.0,203.6960699,115.2798049,14.18571266,-66.44478862,-293.3059008,26.58910199
+2,0.0,172.4106592,56.27245116,-4.469728203,-46.46099431,-157.4656349,-20.28675295,0.0,315.1271876,29.32845955,-24.73300291,-65.61805018,-289.7683026,35.66370852
+3,0.0,124.7422086,79.15949308,5.676923904,-44.4375219,-164.7170349,-0.4240687392,0.0,228.0001801,2.035016072,39.07537148,-61.81331509,-298.5389398,91.24168717
+4,0.0,242.2988154,57.77117117,-33.53272267,-45.3170383,-168.0483545,-53.17187104,0.0,442.8667264,11.78134278,-90.96883487,-64.04630002,-309.4546819,9.821747611
+5,0.0,135.6400937,17.9394112,40.04626766,-43.26456903,-160.307592,9.946388544,0.0,247.9190175,-33.01850582,43.78370262,-62.15734659,-300.085107,103.5582393
+6,0.0,260.612007,29.12715746,-46.33785036,-43.52285425,-154.8412186,-45.03724121,0.0,476.3390453,11.6431608,-116.9723123,-63.60636694,-294.8492781,-12.55424875
+7,0.0,270.5671394,0.03713442387,-24.15652877,-42.80810055,-145.0466581,-58.59298645,0.0,494.5347468,-44.9047111,-92.49968845,-64.23145209,-283.5696687,-9.329226396

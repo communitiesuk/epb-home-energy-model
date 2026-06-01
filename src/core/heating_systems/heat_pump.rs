@@ -1449,24 +1449,22 @@ impl HeatPumpServiceWater {
         &self,
         energy_demand: f64,
         temp_flow: Option<f64>,
-        temp_return: f64,
+        temp_return: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        let temp_return_k = celsius_to_kelvin(temp_return)?;
-
-        if temp_flow.is_none() && !is_close!(energy_demand, 0., abs_tol = 1e-6) {
+        if (temp_flow.is_none() || temp_return.is_none())
+            && !is_close!(energy_demand, 0., abs_tol = 1e-6)
+        {
             bail!("temp_flow is None and energy_demand is not 0");
         };
 
-        let temp_flow_k = if let Some(temp_flow) = temp_flow {
-            Some(celsius_to_kelvin(temp_flow)?)
-        } else {
-            None
-        };
-        let design_flow_temp_op_cond = temp_flow_k.ok_or_else(|| anyhow!("temp_flow_k is None"))?;
+        let temp_return_k = temp_return.map(celsius_to_kelvin).transpose()?;
+        let temp_flow_k = temp_flow.map(celsius_to_kelvin).transpose()?;
+
+        let design_flow_temp_op_cond = temp_flow_k;
 
         // TODO (from Python) Arbitrary volume used here for reference cold water temperature
         let list_temp_vol = self
@@ -1653,9 +1651,9 @@ impl HeatPumpServiceSpace {
             &Self::SERVICE_TYPE,
             energy_demand,
             Some(celsius_to_kelvin(temp_flow)?),
-            celsius_to_kelvin(temp_return)?,
+            celsius_to_kelvin(temp_return)?.into(),
             self.temp_limit_upper_in_k,
-            self.design_flow_temp_op_cond,
+            self.design_flow_temp_op_cond.into(),
             time_constant_for_service,
             service_on,
             simulation_time_iteration,
@@ -2995,9 +2993,9 @@ impl HeatPump {
         service_type: &HeatingServiceType,
         energy_output_required: f64,
         temp_output: Option<f64>,
-        temp_return_feed: f64,
+        temp_return_feed: Option<f64>,
         temp_limit_upper: f64,
-        design_flow_temp_op_cond: f64,
+        design_flow_temp_op_cond: Option<f64>,
         time_constant_for_service: f64,
         service_on: bool,
         simtime: SimulationTimeIteration,
@@ -3046,7 +3044,11 @@ impl HeatPump {
 
         let temp_spread_correction =
             temp_spread_correction.unwrap_or(TempSpreadCorrectionArg::Float(1.0));
-        let temp_used_for_scaling = temp_used_for_scaling.unwrap_or(temp_return_feed);
+        let temp_used_for_scaling = match (temp_used_for_scaling, temp_return_feed) {
+            (None, Some(temp_return_feed)) => temp_return_feed,
+            (Some(temp_used_for_scaling), _) => temp_used_for_scaling,
+            (None, None) => bail!("Temperature return feed must be provided when needing a temperature for scaling when calculating heat pump demand energy"),
+        };
         let additional_time_unavailable = additional_time_unavailable.unwrap_or(0.0);
 
         let timestep = self.simulation_timestep;
@@ -3066,6 +3068,7 @@ impl HeatPump {
 
         // Get thermal capacity and CoP at operating conditions
         let (thermal_capacity_op_cond, cop_op_cond) = if let Some(temp_output) = temp_output {
+            let design_flow_temp_op_cond = design_flow_temp_op_cond.ok_or_else(|| anyhow!("Design flow temperature for operating conditions must be provided when getting thermal capacity and CoP"))?;
             let thermal_capacity_op_cond =
                 self.thermal_capacity_op_cond(temp_output, temp_source, design_flow_temp_op_cond)?;
             let cop_op_cond = self.cop_op_cond(
@@ -3116,7 +3119,7 @@ impl HeatPump {
         if let (Some(_), Some(boiler)) = (&hybrid_boiler_service, &self.boiler) {
             boiler_eff = Some(boiler.read().calc_boiler_eff(
                 false,
-                kelvin_to_celsius(temp_return_feed)?,
+                kelvin_to_celsius(temp_return_feed.ok_or_else(|| anyhow!("Temperature return feed must be provided when calculating boiler efficiency"))?)?,
                 energy_output_required,
                 Some(time_start),
                 Some(timestep),
@@ -3133,7 +3136,7 @@ impl HeatPump {
                     temp_output,
                     time_available_for_capacity_calc,
                     time_start,
-                    temp_return_feed,
+                    temp_return_feed.ok_or_else(|| anyhow!("Temperature return feed must be provided when calculating use_backup_heater_only"))?,
                     hybrid_boiler_service.clone(),
                     boiler_eff,
                     simtime,
@@ -3170,7 +3173,7 @@ impl HeatPump {
             (HeatPumpBackupControlType::TopUp | HeatPumpBackupControlType::Substitute, _) => {
                 let energy_max_backup = self.backup_energy_output_max(
                     temp_output.ok_or_else(|| anyhow!("Expected temp_output to be set"))?,
-                    temp_return_feed,
+                    temp_return_feed.ok_or_else(|| anyhow!("Temperature return feed must be provided when calculating backup_energy_output_max"))?,
                     time_available_for_capacity_calc,
                     time_start,
                     hybrid_boiler_service.clone(),
@@ -3369,16 +3372,18 @@ impl HeatPump {
         energy_delivered_hp: f64,
         energy_delivered_hp_aggregated: f64,
         thermal_capacity_op_cond: Option<f64>,
-        cop_op_cond: f64,
+        cop_op_cond: Option<f64>,
         time_available_for_current_service: f64,
         load_ratio: f64,
         load_ratio_continuous_min: f64,
         time_constant_for_service: f64,
         _service_type: HeatingServiceType,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         let Some(thermal_capacity_op_cond) = thermal_capacity_op_cond else {
-            return (0.0, 0.0);
+            return Ok((0.0, 0.0));
         };
+
+        let cop_op_cond = cop_op_cond.ok_or_else(|| anyhow::anyhow!("cop_op_cond must be provided to energy_input_compressor if thermal_capacity_op_cond is provided"))?;
 
         let compressor_power_full_load = thermal_capacity_op_cond / cop_op_cond;
 
@@ -3440,7 +3445,7 @@ impl HeatPump {
             energy_delivered_hp / cop_op_cond
         };
 
-        (energy_input_hp, compressor_power_min_load)
+        Ok((energy_input_hp, compressor_power_min_load))
     }
 
     /// Calculate energy required by heat pump to satisfy demand for the service indicated.
@@ -3452,9 +3457,9 @@ impl HeatPump {
         service_type: &HeatingServiceType,
         energy_output_required: f64,
         temp_output: Option<f64>,
-        temp_return_feed: f64,
+        temp_return_feed: Option<f64>,
         temp_limit_upper: f64,
-        design_flow_temp_op_cond: f64,
+        design_flow_temp_op_cond: Option<f64>,
         time_constant_for_service: f64,
         service_on: bool,
         simtime: SimulationTimeIteration,
@@ -3507,7 +3512,7 @@ impl HeatPump {
                         kelvin_to_celsius(
                             temp_output.ok_or_else(|| anyhow!("Expected temp_output to be set"))?,
                         )?,
-                        Some(kelvin_to_celsius(temp_return_feed)?),
+                        temp_return_feed.map(kelvin_to_celsius).transpose()?,
                         Some(is_hybrid_service),
                         time_elapsed_hp,
                         Some(update_heat_source_state),
@@ -3519,7 +3524,7 @@ impl HeatPump {
                     kelvin_to_celsius(
                         temp_output.ok_or_else(|| anyhow!("Expected temp_output to be set"))?,
                     )?,
-                    Some(kelvin_to_celsius(temp_return_feed)?),
+                    temp_return_feed.map(kelvin_to_celsius).transpose()?,
                     time_start,
                     Some(is_hybrid_service),
                     time_elapsed_hp,
@@ -3575,9 +3580,9 @@ impl HeatPump {
             service_type,
             energy_output_required,
             Some(temp_output),
-            temp_return_feed,
+            temp_return_feed.into(),
             temp_limit_upper,
-            design_flow_temp_op_cond,
+            design_flow_temp_op_cond.into(),
             time_constant_for_service,
             service_on,
             simtime,
@@ -3651,9 +3656,7 @@ impl HeatPump {
 
         for service_data in self.service_results.write().iter_mut() {
             if let ServiceResult::Full(service_data) = service_data {
-                let temp_output = service_data
-                    .temp_output
-                    .ok_or_else(|| anyhow!("Expected temp_output to be set"))?;
+                let temp_output = service_data.temp_output;
                 let energy_input_backup = service_data.energy_input_backup;
                 let energy_heating_circ_pump = service_data.energy_heating_circ_pump;
                 let energy_source_circ_pump = service_data.energy_source_circ_pump;
@@ -3686,7 +3689,7 @@ impl HeatPump {
                             self.load_ratio_and_mode(
                                 time_running_for_load_ratio,
                                 time_available_for_current_service,
-                                temp_output,
+                                temp_output.ok_or_else(|| anyhow!("Expected temp_output to be set for getting load ratio and mode for space service"))?,
                             )?;
 
                         (
@@ -3716,15 +3719,13 @@ impl HeatPump {
                     service_data.energy_delivered_hp,
                     energy_delivered_hp_aggregated,
                     service_data.thermal_capacity_op_cond,
-                    service_data
-                        .cop_op_cond
-                        .ok_or_else(|| anyhow::anyhow!("Expected cop_op_cond to be set"))?,
+                    service_data.cop_op_cond,
                     time_available_for_current_service,
                     load_ratio,
                     load_ratio_continuous_min,
                     service_data.time_constant_for_service,
                     service_data.service_type,
-                );
+                )?;
 
                 let energy_input_total = energy_input_hp
                     + energy_input_backup
@@ -4313,25 +4314,12 @@ impl HeatPumpEnergyCalculation {
             "service_type" => ResultParamValue::String(self.service_type.to_string().into()),
             "service_on" => ResultParamValue::Boolean(self.service_on),
             "energy_output_required" => ResultParamValue::Number(self.energy_output_required),
-            "temp_output" => ResultParamValue::Number(
-                self.temp_output
-                    .expect("The temp output value is expected to have been calculated."),
-            ),
+            "temp_output" => self.temp_output.into(),
             "temp_source" => ResultParamValue::Number(self.temp_source),
-            "thermal_capacity_op_cond" => ResultParamValue::Number(
-                self.thermal_capacity_op_cond
-                    .expect("The thermal capacity op cond is expected to have been calculated."),
-            ),
-            "cop_op_cond" => ResultParamValue::Number(
-                self.cop_op_cond
-                    .expect("The cop op cond value is expected to have been calculated."),
-            ),
+            "thermal_capacity_op_cond" => self.thermal_capacity_op_cond.into(),
+            "cop_op_cond" => self.cop_op_cond.into(),
             "time_running_full_load" => ResultParamValue::Number(self.time_running_full_load),
-            "time_running_part_load" => {
-                ResultParamValue::Number(self.time_running_part_load.expect(
-                    "The time_running_part_load value is expected to have been calculated.",
-                ))
-            }
+            "time_running_part_load" => self.time_running_part_load.into(),
             "load_ratio" => ResultParamValue::Number(self.load_ratio),
             "hp_operating_in_onoff_mode" => {
                 ResultParamValue::Boolean(self.hp_operating_in_onoff_mode)
@@ -4347,11 +4335,7 @@ impl HeatPumpEnergyCalculation {
                 ResultParamValue::Number(self.energy_heating_warm_air_fan)
             }
             "energy_input_total" => ResultParamValue::Number(self.energy_input_total),
-            "energy_output_delivered_boiler" => {
-                ResultParamValue::Number(self.energy_output_delivered_boiler.expect(
-                    "The energy output delivered boiler value is expected to have been calculated.",
-                ))
-            }
+            "energy_output_delivered_boiler" => self.energy_output_delivered_boiler.into(),
             &_ => panic!("Parameter {param} not recognised"),
         }
     }
@@ -4573,7 +4557,7 @@ impl HeatPumpHotWaterOnly {
         &self,
         energy_demand: f64,
         _temp_flow: f64,
-        _temp_return: f64,
+        _temp_return: Option<f64>,
         simtime: SimulationTimeIteration,
     ) -> f64 {
         // Account for time control. In the Python they also check here whether control_min is None
@@ -8653,9 +8637,9 @@ mod tests {
                 &HeatingServiceType::DomesticHotWaterRegular,
                 500.,
                 Some(330.),
-                330.,
+                Some(330.),
                 340.,
-                design_flow_temp_op_cond_k(55.),
+                design_flow_temp_op_cond_k(55.).into(),
                 1560.,
                 true,
                 t_it,
@@ -8808,130 +8792,144 @@ mod tests {
             simulation_time_for_heat_pump,
             None,
         );
-        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
-            true,
-            false,
-            false,
-            8.4,
-            8.4,
-            Some(8.4),
-            2.9,
-            1.,
-            1.,
-            0.4,
-            1560.,
-            HeatingServiceType::DomesticHotWaterRegular,
-        );
+        let (energy_input_hp, compressor_power_min_load) = heat_pump
+            .energy_input_compressor(
+                true,
+                false,
+                false,
+                8.4,
+                8.4,
+                Some(8.4),
+                Some(2.9),
+                1.,
+                1.,
+                0.4,
+                1560.,
+                HeatingServiceType::DomesticHotWaterRegular,
+            )
+            .unwrap();
 
         assert_relative_eq!(energy_input_hp, 2.896551724137931);
         assert_relative_eq!(compressor_power_min_load, 1.1586206896551725);
 
-        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
-            false,
-            false,
-            false,
-            8.4,
-            8.4,
-            Some(8.4),
-            2.9,
-            1.,
-            1.,
-            0.4,
-            1560.,
-            HeatingServiceType::DomesticHotWaterRegular,
-        );
+        let (energy_input_hp, compressor_power_min_load) = heat_pump
+            .energy_input_compressor(
+                false,
+                false,
+                false,
+                8.4,
+                8.4,
+                Some(8.4),
+                Some(2.9),
+                1.,
+                1.,
+                0.4,
+                1560.,
+                HeatingServiceType::DomesticHotWaterRegular,
+            )
+            .unwrap();
 
         assert_relative_eq!(energy_input_hp, 0.);
         assert_relative_eq!(compressor_power_min_load, 1.1586206896551725);
 
-        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
-            false,
-            false,
-            false,
-            8.4,
-            8.4,
-            None,
-            2.9,
-            1.,
-            1.,
-            0.4,
-            1560.,
-            HeatingServiceType::DomesticHotWaterRegular,
-        );
+        let (energy_input_hp, compressor_power_min_load) = heat_pump
+            .energy_input_compressor(
+                false,
+                false,
+                false,
+                8.4,
+                8.4,
+                None,
+                Some(2.9),
+                1.,
+                1.,
+                0.4,
+                1560.,
+                HeatingServiceType::DomesticHotWaterRegular,
+            )
+            .unwrap();
 
         assert_relative_eq!(energy_input_hp, 0.);
         assert_relative_eq!(compressor_power_min_load, 0.);
 
-        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
-            true,
-            false,
-            true,
-            8.4,
-            8.4,
-            Some(0.4),
-            2.9,
-            1.,
-            1.,
-            0.4,
-            1560.,
-            HeatingServiceType::Space,
-        );
+        let (energy_input_hp, compressor_power_min_load) = heat_pump
+            .energy_input_compressor(
+                true,
+                false,
+                true,
+                8.4,
+                8.4,
+                Some(0.4),
+                Some(2.9),
+                1.,
+                1.,
+                0.4,
+                1560.,
+                HeatingServiceType::Space,
+            )
+            .unwrap();
 
         assert_relative_eq!(energy_input_hp, 0.13793103448275862);
         assert_relative_eq!(compressor_power_min_load, 0.05517241379310345);
 
-        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
-            true,
-            false,
-            true,
-            8.4,
-            8.4,
-            Some(0.4),
-            2.9,
-            1.,
-            1.,
-            0.4,
-            1560.,
-            HeatingServiceType::DomesticHotWaterRegular,
-        );
+        let (energy_input_hp, compressor_power_min_load) = heat_pump
+            .energy_input_compressor(
+                true,
+                false,
+                true,
+                8.4,
+                8.4,
+                Some(0.4),
+                Some(2.9),
+                1.,
+                1.,
+                0.4,
+                1560.,
+                HeatingServiceType::DomesticHotWaterRegular,
+            )
+            .unwrap();
 
         assert_relative_eq!(energy_input_hp, 0.13793103448275862);
         assert_relative_eq!(compressor_power_min_load, 0.05517241379310345);
 
         heat_pump.sink_type = HeatPumpSinkType::Air;
 
-        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
-            true,
-            false,
-            true,
-            8.4,
-            12.,
-            Some(0.4),
-            2.9,
-            1.,
-            1.,
-            0.4,
-            1560.,
-            HeatingServiceType::Space,
-        );
+        let (energy_input_hp, compressor_power_min_load) = heat_pump
+            .energy_input_compressor(
+                true,
+                false,
+                true,
+                8.4,
+                12.,
+                Some(0.4),
+                Some(2.9),
+                1.,
+                1.,
+                0.4,
+                1560.,
+                HeatingServiceType::Space,
+            )
+            .unwrap();
 
         assert_relative_eq!(energy_input_hp, 0.09655172413793105);
         assert_relative_eq!(compressor_power_min_load, 0.05517241379310345);
 
-        let (energy_input_hp, compressor_power_min_load) = heat_pump.energy_input_compressor(
-            true,
-            false,
-            true,
-            8.4,
-            8.4,
-            Some(0.4),
-            2.9,
-            1.,
-            1.,
-            0.4,
-            1560.,
-            HeatingServiceType::DomesticHotWaterRegular,
-        );
+        let (energy_input_hp, compressor_power_min_load) = heat_pump
+            .energy_input_compressor(
+                true,
+                false,
+                true,
+                8.4,
+                8.4,
+                Some(0.4),
+                Some(2.9),
+                1.,
+                1.,
+                0.4,
+                1560.,
+                HeatingServiceType::DomesticHotWaterRegular,
+            )
+            .unwrap();
 
         assert_relative_eq!(energy_input_hp, 0.13793103448275862);
         assert_relative_eq!(compressor_power_min_load, 0.05517241379310345);
@@ -9365,9 +9363,9 @@ mod tests {
                         &HeatingServiceType::DomesticHotWaterRegular,
                         1.,
                         Some(320.),
-                        310.,
+                        Some(310.),
                         340.,
-                        design_flow_temp_op_cond_k(55.),
+                        design_flow_temp_op_cond_k(55.).into(),
                         1560.,
                         true,
                         t_it,
@@ -9465,9 +9463,9 @@ mod tests {
                         &HeatingServiceType::DomesticHotWaterRegular,
                         1.,
                         Some(330.),
-                        330.,
+                        Some(330.),
                         340.,
-                        design_flow_temp_op_cond_k(55.),
+                        design_flow_temp_op_cond_k(55.).into(),
                         1560.,
                         true,
                         t_it,
@@ -9633,9 +9631,9 @@ mod tests {
                         &HeatingServiceType::DomesticHotWaterRegular,
                         1.0,
                         Some(330.0),
-                        330.0,
+                        Some(330.0),
                         340.0,
-                        design_flow_temp_op_cond_k(55.),
+                        design_flow_temp_op_cond_k(55.).into(),
                         1560.,
                         true,
                         t_it,
@@ -9726,9 +9724,9 @@ mod tests {
                         &HeatingServiceType::DomesticHotWaterRegular,
                         50.,
                         Some(330.),
-                        330.,
+                        Some(330.),
                         340.,
-                        design_flow_temp_op_cond_k(55.),
+                        design_flow_temp_op_cond_k(55.).into(),
                         1560.,
                         false,
                         t_it,
@@ -9858,9 +9856,9 @@ mod tests {
                         &HeatingServiceType::DomesticHotWaterRegular,
                         1.0,
                         Some(330.0),
-                        330.0,
+                        Some(330.0),
                         340.0,
-                        design_flow_temp_op_cond_k(55.),
+                        design_flow_temp_op_cond_k(55.).into(),
                         1560.,
                         false,
                         t_it,
@@ -10026,9 +10024,9 @@ mod tests {
                         &HeatingServiceType::Space,
                         1.0,
                         Some(330.0),
-                        330.0,
+                        Some(330.0),
                         340.0,
-                        design_flow_temp_op_cond_k(55.),
+                        design_flow_temp_op_cond_k(55.).into(),
                         1560.,
                         true,
                         t_it,
@@ -10112,9 +10110,9 @@ mod tests {
                 &HeatingServiceType::DomesticHotWaterRegular,
                 1.,
                 Some(320.0),
-                310.0,
+                Some(310.0),
                 340.0,
-                design_flow_temp_op_cond_k(55.),
+                design_flow_temp_op_cond_k(55.).into(),
                 1560.,
                 true,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -10169,9 +10167,9 @@ mod tests {
                 &HeatingServiceType::DomesticHotWaterRegular,
                 1.,
                 None,
-                310.0,
+                Some(310.0),
                 340.0,
-                design_flow_temp_op_cond_k(55.),
+                design_flow_temp_op_cond_k(55.).into(),
                 1560.,
                 false,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -10229,9 +10227,9 @@ mod tests {
                 &HeatingServiceType::Space,
                 1.,
                 Some(320.),
-                310.0,
+                Some(310.0),
                 340.0,
-                design_flow_temp_op_cond_k(55.),
+                design_flow_temp_op_cond_k(55.).into(),
                 1560.,
                 true,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -10294,9 +10292,9 @@ mod tests {
                 &HeatingServiceType::Space,
                 1.,
                 Some(320.),
-                310.0,
+                Some(310.0),
                 340.0,
-                design_flow_temp_op_cond_k(55.),
+                design_flow_temp_op_cond_k(55.).into(),
                 1560.,
                 true,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -10351,9 +10349,9 @@ mod tests {
                 &HeatingServiceType::Space,
                 1.,
                 Some(320.),
-                310.0,
+                Some(310.0),
                 340.0,
-                design_flow_temp_op_cond_k(55.),
+                design_flow_temp_op_cond_k(55.).into(),
                 1560.,
                 false,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -10410,9 +10408,9 @@ mod tests {
                 &HeatingServiceType::Space,
                 1.,
                 Some(100.),
-                310.0,
+                Some(310.0),
                 340.0,
-                design_flow_temp_op_cond_k(55.),
+                design_flow_temp_op_cond_k(55.).into(),
                 1560.,
                 true,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -10521,9 +10519,9 @@ mod tests {
                         &HeatingServiceType::DomesticHotWaterRegular,
                         1.0,
                         Some(330.0),
-                        330.0,
+                        Some(330.0),
                         340.0,
-                        design_flow_temp_op_cond_k(55.),
+                        design_flow_temp_op_cond_k(55.).into(),
                         1560.,
                         true,
                         t_it,
@@ -10669,9 +10667,9 @@ mod tests {
                 &HeatingServiceType::DomesticHotWaterRegular,
                 1.0,
                 Some(330.0),
-                330.0,
+                Some(330.0),
                 340.0,
-                design_flow_temp_op_cond_k(55.),
+                design_flow_temp_op_cond_k(55.).into(),
                 1560.,
                 true,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -11179,9 +11177,9 @@ mod tests {
                 &HeatingServiceType::DomesticHotWaterRegular,
                 1.0,
                 Some(330.0),
-                330.0,
+                Some(330.0),
                 340.0,
-                design_flow_temp_op_cond_k(55.),
+                design_flow_temp_op_cond_k(55.).into(),
                 1560.,
                 true,
                 simtime,
@@ -11229,9 +11227,9 @@ mod tests {
                 &HeatingServiceType::DomesticHotWaterRegular,
                 5.0,
                 Some(330.0),
-                330.0,
+                Some(330.0),
                 340.0,
-                design_flow_temp_op_cond_k(55.),
+                design_flow_temp_op_cond_k(55.).into(),
                 1560.,
                 true,
                 simtime,
@@ -11332,9 +11330,9 @@ mod tests {
                     &HeatingServiceType::DomesticHotWaterRegular,
                     5.,
                     Some(330.),
-                    330.,
+                    Some(330.),
                     340.,
-                    design_flow_temp_op_cond_k(55.),
+                    design_flow_temp_op_cond_k(55.).into(),
                     1560.,
                     true,
                     t_it,
@@ -11605,9 +11603,9 @@ mod tests {
                     &HeatingServiceType::Space,
                     5.,
                     Some(330.),
-                    330.,
+                    Some(330.),
                     340.,
-                    design_flow_temp_op_cond_k(55.),
+                    design_flow_temp_op_cond_k(55.).into(),
                     1560.,
                     true,
                     t_it,
@@ -12101,7 +12099,7 @@ mod tests {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
         let heat_pump = create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
 
-        assert_relative_eq!(heat_pump.demand_energy(10., 50., 40., simtime), 3.);
+        assert_relative_eq!(heat_pump.demand_energy(10., 50., Some(40.), simtime), 3.);
     }
 
     #[rstest]
@@ -12115,7 +12113,7 @@ mod tests {
             1.,
         )));
 
-        assert_relative_eq!(heat_pump.demand_energy(10., 50., 40., simtime), 0.);
+        assert_relative_eq!(heat_pump.demand_energy(10., 50., Some(40.), simtime), 0.);
     }
 
     #[rstest]

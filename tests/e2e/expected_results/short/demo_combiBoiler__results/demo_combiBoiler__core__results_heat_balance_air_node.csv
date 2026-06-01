@@ -1,0 +1,15 @@
+,zone 1: total solar gains,zone 1: total internal gains,zone 1: total heating or cooling system gains,zone 1: total energy to change internal temperature,zone 1: total thermal_bridges,zone 1: total infiltration_ventilation,zone 1: total fabric
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,2.096861611,5.002234694,-0.1141208473,0.0,-3.785415007,-3.199560451
+""
+Timestep,zone 1: solar gains,zone 1: internal gains,zone 1: heating or cooling system gains,zone 1: energy to change internal temperature,zone 1: thermal_bridges,zone 1: infiltration_ventilation,zone 1: fabric
+index,[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,102.4,1215.955839,-172.9366172,0.0,-499.8902873,-645.5289345
+1,0.0,147.2,376.9507499,213.033162,0.0,-467.3387612,-269.8451508
+2,0.0,233.6,128.105124,80.05997857,0.0,-433.9111879,-7.853914698
+3,0.0,166.4,1262.149111,-267.9296661,0.0,-507.759195,-652.8602497
+4,0.0,377.5807374,598.2852109,6.397468981,0.0,-501.5978362,-480.6655811
+5,0.0,179.2,728.4269267,11.0636429,0.0,-495.4289071,-423.2616626
+6,0.0,373.3535859,453.3574341,9.055854298,0.0,-458.1214961,-377.6453783
+7,0.0,517.1272876,239.0042988,7.135329238,0.0,-421.367336,-341.8995796

@@ -289,7 +289,10 @@ pub fn write_core_output_files(
 
         if heat_balance {
             for (hb_name, hb_map) in &output.core.heat_balance_all {
-                let output_key = format!("results_heat_balance_{}", hb_name.to_case(Case::Snake));
+                let output_key = format!(
+                    "{output_mode}__results_heat_balance_{}",
+                    hb_name.to_case(Case::Snake)
+                );
                 write_core_output_file_heat_balance(
                     output_key.as_str(),
                     &output.core.timestep_array,
@@ -304,7 +307,8 @@ pub fn write_core_output_files(
             for (heat_source_wet_name, heat_source_wet_results) in
                 &output.core.heat_source_wet_results
             {
-                let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
+                let output_key =
+                    format!("{output_mode}__results_heat_source_wet__{heat_source_wet_name}");
                 write_core_output_file_heat_source_wet(
                     output_key.as_str(),
                     &output.core.timestep_array,
@@ -316,7 +320,9 @@ pub fn write_core_output_files(
             for (heat_source_wet_name, heat_source_wet_results_annual) in
                 &output.core.heat_source_wet_results_annual
             {
-                let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
+                let output_key = format!(
+                    "{output_mode}__results_heat_source_wet_summary__{heat_source_wet_name}"
+                );
                 write_core_output_file_heat_source_wet_summary(
                     output_key.as_str(),
                     heat_source_wet_results_annual,
@@ -325,9 +331,9 @@ pub fn write_core_output_files(
             }
 
             // Function call to write detailed ventilation results
-            let vent_output_key = "ventilation_results";
+            let vent_output_key = format!("{output_mode}__ventilation_results");
             write_core_output_file_ventilation_detailed(
-                vent_output_key,
+                &vent_output_key,
                 &output.core.ventilation,
                 output_writer,
             )?;
@@ -336,7 +342,7 @@ pub fn write_core_output_files(
                 &output.core.hot_water_source_results
             {
                 let hot_water_source_file = format!(
-                    "results_hot_water_source__{}",
+                    "{output_mode}__results_hot_water_source__{}",
                     hot_water_source_name.replace(" ", "_")
                 );
                 write_core_output_file_hot_water_source(
@@ -347,17 +353,17 @@ pub fn write_core_output_files(
             }
 
             // Create a file for emitters detailed output and write
-            let emitters_output_prefix = "results_emitters_";
+            let emitters_output_prefix = format!("{output_mode}__results_emitters__");
             write_core_output_file_emitters_detailed(
-                emitters_output_prefix,
+                &emitters_output_prefix,
                 &output.core.emitters,
                 output_writer,
             )?;
 
             // Create a file for esh detailed output and write
-            let esh_output_prefix = "results_esh_";
+            let esh_output_prefix = format!("{output_mode}__results_esh_");
             write_core_output_file_esh_detailed(
-                esh_output_prefix,
+                &esh_output_prefix,
                 &output.core.electric_storage_heaters,
                 output_writer,
             )?;
@@ -1129,11 +1135,8 @@ fn write_core_output_file_heat_source_wet(
                 .keys()
                 .cloned()
                 .collect::<IndexMap<_, _>>()
-                .values()
-                .map(|col_heading| match col_heading {
-                    None => service_name.clone(),
-                    Some(col_heading) => format!("{service_name}: {col_heading}").into(),
-                })
+                .keys()
+                .map(|col_heading| format!("{service_name}: {col_heading}").into())
                 .collect::<Vec<Arc<str>>>(),
         );
         col_units_row.extend(

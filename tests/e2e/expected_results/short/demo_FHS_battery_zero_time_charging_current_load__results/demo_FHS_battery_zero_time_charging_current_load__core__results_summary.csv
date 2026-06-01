@@ -1,0 +1,53 @@
+Energy Demand Summary
+,,Total
+Space heat demand,kWh/m2,0.1174801771
+Space cool demand,kWh/m2,-0.03662886531
+
+Energy Supply Summary
+,kWh,timestep,month,day,hour of day
+Peak consumption (electricity),3.296343337,496,AUG,29,7.5
+
+,Total,_unmet_demand,_energy_from_environment,mains elec,mains gas
+Consumption,kWh,8.417164338,0.0,206.8887522,8.642050354
+Generation,kWh,0.0,0.0,123.4055592,0.0
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,36.43600238,0.0
+Generation to storage,kWh,0.0,0.0,32.7571033,0.0
+Generation to diverter,kWh,0.0,0.0,15.62477114,0.0
+Generation to grid,kWh,0.0,0.0,38.58768242,0.0
+Storage to consumption,kWh,0.0,0.0,34.20942554,0.0
+Grid to storage,kWh,0.0,0.0,10.45189222,0.0
+Grid to consumption,kWh,8.417164338,0.0,120.6185532,8.642050354
+Total gross import,kWh,8.417164338,0.0,131.0704454,8.642050354
+Total gross export,kWh,0.0,0.0,-38.58768242,0.0
+Net import,kWh,8.417164338,0.0,92.48276297,8.642050354
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,0.7917199909,DIV/0
+
+Delivered Energy Summary
+Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec,mains gas
+total,0.528261771,0.0,0.5070802751,0.02118149596
+mechvent1,3.585804555e-05,0,3.585804555e-05,0
+topup,0.01246315402,0,0.01246315402,0
+Microwave,0.001966824369,0,0.001966824369,0
+Kettle,0.007874215367,0,0.007874215367,0
+Fridge,0.006201959665,0,0.006201959665,0
+Clothes_washing,0.01980040078,0,0.01980040078,0
+Otherdevices,0.06849151911,0,0.06849151911,0
+Oven,0.02803248818,0,0.02803248818,0
+lighting,0.01391701396,0,0.01391701396,0
+immersion,0.2229910445,0,0.2229910445,0
+main 1,0.1169454026,0,0.1169454026,0
+main 2,0.0005347744713,0,0.0005347744713,0
+cooling system 1,0.005377539729,0,0.005377539729,0
+cooling system 2,0.002448080292,0,0.002448080292,0
+Hobs,0.02118149596,0,0,0.02118149596
+
+Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
+hw cylinder,0.7955664875,7.381704473,80.0
+
+Space heating system,Overall CoP
+main 1,1.0
+main 2,1.0
+
+Space cooling system,Overall CoP
+cooling system 1,4.3
+cooling system 2,4.3

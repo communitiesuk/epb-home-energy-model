@@ -1,0 +1,89 @@
+Overall
+energy_output_required,kWh,5.288653895
+time_running_full_load,hours,0.5269136262
+time_running_part_load,hours,0.8950952126
+energy_delivered_HP,kWh,5.288653895
+energy_delivered_backup,kWh,0.0
+energy_delivered_total,kWh,5.288653895
+energy_input_HP,kWh,1.37385794
+energy_input_backup,kWh,0.0
+energy_heating_circ_pump,kWh,0.004929930041
+energy_source_circ_pump,kWh,0.005269136262
+energy_heating_warm_air_fan,kWh,0.002973774352
+energy_input_total,kWh,1.38703078
+energy_output_delivered_boiler,kWh,0.0
+energy_delivered_H5,kWh,4.907439192
+CoP (H1),,3.453294829
+CoP (H2),,3.441454331
+CoP (H3),,3.441454331
+CoP (H4),,3.423845049
+CoP (H5),"Note: For water heating services, only valid when HP is only heat source",3.177048775
+
+auxiliary
+energy_standby,kWh,0.1065735718
+energy_crankcase_heater_mode,kWh,0.05104904787
+energy_off_mode,kWh,0.0
+
+hp_water_heating: hw cylinder
+energy_output_required,kWh,3.384753313
+time_running_full_load,hours,0.3286620027
+time_running_part_load,hours,0.3286620027
+energy_delivered_HP,kWh,3.384753313
+energy_delivered_backup,kWh,0.0
+energy_delivered_total,kWh,3.384753313
+energy_input_HP,kWh,0.8624516711
+energy_input_backup,kWh,0.0
+energy_heating_circ_pump,kWh,0.004929930041
+energy_source_circ_pump,kWh,0.003286620027
+energy_heating_warm_air_fan,kWh,0
+energy_input_total,kWh,0.8706682211
+energy_output_delivered_boiler,kWh,0.0
+energy_delivered_H5,kWh,3.00353861
+CoP (H1),,3.924571575
+CoP (H2),,3.909672644
+CoP (H3),,3.909672644
+CoP (H4),,3.88753515
+CoP (H5),"Note: For water heating services, only valid when HP is only heat source",3.449693623
+
+hp_space_heating: space_heat_system_livingroom
+energy_output_required,kWh,0.9177878588
+time_running_full_load,hours,0.09517088034
+time_running_part_load,hours,0.271916801
+energy_delivered_HP,kWh,0.9177878588
+energy_delivered_backup,kWh,0.0
+energy_delivered_total,kWh,0.9177878588
+energy_input_HP,kWh,0.2471708873
+energy_input_backup,kWh,0.0
+energy_heating_circ_pump,kWh,0
+energy_source_circ_pump,kWh,0.0009517088034
+energy_heating_warm_air_fan,kWh,0.001427563205
+energy_input_total,kWh,0.2495501593
+energy_output_delivered_boiler,kWh,0.0
+energy_delivered_H5,kWh,0.9177878588
+CoP (H1),,3.713171356
+CoP (H2),,3.69892897
+CoP (H3),,3.69892897
+CoP (H4),,3.677769076
+CoP (H5),"Note: For water heating services, only valid when HP is only heat source",3.677769076
+
+hp_space_heating: space_heat_system_restofdwelling
+energy_output_required,kWh,0.9861127232
+time_running_full_load,hours,0.1030807431
+time_running_part_load,hours,0.2945164089
+energy_delivered_HP,kWh,0.9861127232
+energy_delivered_backup,kWh,0.0
+energy_delivered_total,kWh,0.9861127232
+energy_input_HP,kWh,0.2642353812
+energy_input_backup,kWh,0.0
+energy_heating_circ_pump,kWh,0
+energy_source_circ_pump,kWh,0.001030807431
+energy_heating_warm_air_fan,kWh,0.001546211146
+energy_input_total,kWh,0.2668123997
+energy_output_delivered_boiler,kWh,0.0
+energy_delivered_H5,kWh,0.9861127232
+CoP (H1),,3.731948079
+CoP (H2),,3.717445968
+CoP (H3),,3.717445968
+CoP (H4),,3.695902905
+CoP (H5),"Note: For water heating services, only valid when HP is only heat source",3.695902905
+

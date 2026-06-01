@@ -1,0 +1,55 @@
+Energy Demand Summary
+,,Total
+Space heat demand,kWh/m2,0.5477276767
+Space cool demand,kWh/m2,-0.01007278463
+
+Energy Supply Summary
+,kWh,timestep,month,day,hour of day
+Peak consumption (electricity),4.232774006,257,JAN,6,8.5
+
+,Total,_unmet_demand,_energy_from_environment,mains elec,mains gas
+Consumption,kWh,9.983378116,0.0,169.4900453,5.503545949
+Generation,kWh,0.0,0.0,31.25243931,0.0
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,13.24609721,0.0
+Generation to storage,kWh,0.0,0.0,9.84647328,0.0
+Generation to diverter,kWh,0.0,0.0,0.0,0.0
+Generation to grid,kWh,0.0,0.0,8.159868818,0.0
+Storage to consumption,kWh,0.0,0.0,7.877178624,0.0
+Grid to storage,kWh,0.0,0.0,0.0,0.0
+Grid to consumption,kWh,9.983378116,0.0,148.3667695,5.503545949
+Total gross import,kWh,9.983378116,0.0,148.3667695,5.503545949
+Total gross export,kWh,0.0,0.0,-8.159868818,0.0
+Net import,kWh,9.983378116,0.0,140.2069007,5.503545949
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,0.8,DIV/0
+
+Delivered Energy Summary
+Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec,mains gas
+total,2.336987063,0.0,2.263488853,0.07349820979
+mechvent1,2.466322296e-06,0,2.466322296e-06,0
+Microwave,0.01201315823,0,0.01201315823,0
+Kettle,0.02262037211,0,0.02262037211,0
+Fridge-Freezer,0.06406439581,0,0.06406439581,0
+Otherdevices,0.2437592203,0,0.2437592203,0
+Oven,0.08647992955,0,0.08647992955,0
+Fridge,0.06406439581,0,0.06406439581,0
+Clothes_drying,0.1203936187,0,0.1203936187,0
+Clothes_washing,0.07098916681,0,0.07098916681,0
+Dishwasher,0.05315282243,0,0.05315282243,0
+lighting,0.1398654045,0,0.1398654045,0
+immersion,0.8360137178,0,0.8360137178,0
+space_heat_system_livingroom,0.1047276597,0,0.1047276597,0
+space_heat_system_restofdwelling,0.443000017,0,0.443000017,0
+space_cool_system_livingroom,0.002342508053,0,0.002342508053,0
+space_cool_system_restofdwelling,0.0,0,0.0,0
+Hobs,0.07349820979,0,0,0.07349820979
+
+Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
+hw cylinder,0.8296656566,9.068191269,80.0
+
+Space heating system,Overall CoP
+space_heat_system_livingroom,1.0
+space_heat_system_restofdwelling,1.0
+
+Space cooling system,Overall CoP
+space_cool_system_livingroom,4.3
+space_cool_system_restofdwelling,DIV/0

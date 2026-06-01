@@ -1,0 +1,15 @@
+,zone1_livingroom: total solar gains,zone1_livingroom: total internal gains,zone1_livingroom: total heating or cooling system gains,zone1_livingroom: total energy to change internal temperature,zone1_livingroom: total thermal_bridges,zone1_livingroom: total infiltration_ventilation,zone1_livingroom: total fabric,zone2_restofdwelling: total solar gains,zone2_restofdwelling: total internal gains,zone2_restofdwelling: total heating or cooling system gains,zone2_restofdwelling: total energy to change internal temperature,zone2_restofdwelling: total thermal_bridges,zone2_restofdwelling: total infiltration_ventilation,zone2_restofdwelling: total fabric
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,1.51025282,0.3732623782,-0.03027336623,-0.3608720147,-1.266535346,-0.2258344709,0.0,2.760396172,0.4586287466,-0.3974433285,-0.5272275397,-2.411917217,0.1175631667
+""
+Timestep,zone1_livingroom: solar gains,zone1_livingroom: internal gains,zone1_livingroom: heating or cooling system gains,zone1_livingroom: energy to change internal temperature,zone1_livingroom: thermal_bridges,zone1_livingroom: infiltration_ventilation,zone1_livingroom: fabric,zone2_restofdwelling: solar gains,zone2_restofdwelling: internal gains,zone2_restofdwelling: heating or cooling system gains,zone2_restofdwelling: energy to change internal temperature,zone2_restofdwelling: thermal_bridges,zone2_restofdwelling: infiltration_ventilation,zone2_restofdwelling: fabric
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,79.9047913,172.0881995,10.33140575,-49.47434903,-161.8413899,-51.0086576,0.0,146.0476531,386.0583352,-130.220119,-69.41154793,-295.8499547,-36.6243667
+1,0.0,111.445077,88.2025094,19.77022053,-46.83263907,-158.6639423,-13.92122559,0.0,203.6960699,115.2798049,14.18571266,-66.44478862,-293.3059008,26.58910199
+2,0.0,172.4106592,32.20034941,-2.800650368,-45.77253657,-155.1486464,-0.8891753375,0.0,315.1271876,29.32845955,-24.72196206,-65.61767846,-289.7971687,35.6811621
+3,0.0,172.155962,66.79082202,-11.95165872,-44.52238585,-165.049671,-17.42306843,0.0,314.6616594,2.037731706,-7.149825172,-63.36923611,-306.0870618,59.90673199
+4,0.0,321.0665392,27.76851282,-47.2269979,-46.00263574,-170.5338411,-85.07157732,0.0,586.8360808,-0.9005114477,-160.3358328,-67.93764337,-328.1471247,-29.51496845
+5,0.0,133.8029688,-24.17715593,66.35582624,-42.79603215,-158.4253732,25.23976626,0.0,244.5611741,-72.86678063,109.3115368,-63.84252316,-307.936765,90.77335799
+6,0.0,254.4858683,36.88087851,-53.84866094,-43.38379778,-154.3078242,-39.8264639,0.0,465.1418672,32.81972683,-109.989903,-65.05646235,-301.4956778,-21.41955093
+7,0.0,264.9809542,-26.49173749,-10.90285083,-42.08763849,-142.5646584,-42.93406902,0.0,484.3244799,-33.1280195,-88.52293597,-65.54765967,-289.2975636,-7.828301254

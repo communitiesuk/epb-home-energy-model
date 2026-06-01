@@ -1,0 +1,15 @@
+,zone1_livingroom: total solar gains,zone1_livingroom: total internal gains,zone1_livingroom: total heating or cooling system gains,zone1_livingroom: total energy to change internal temperature,zone1_livingroom: total thermal_bridges,zone1_livingroom: total infiltration_ventilation,zone1_livingroom: total fabric,zone2_restofdwelling: total solar gains,zone2_restofdwelling: total internal gains,zone2_restofdwelling: total heating or cooling system gains,zone2_restofdwelling: total energy to change internal temperature,zone2_restofdwelling: total thermal_bridges,zone2_restofdwelling: total infiltration_ventilation,zone2_restofdwelling: total fabric
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,0.2578933602,1.416057784,0.01670794217,-0.3536629798,-1.242508563,-0.09448754316,0.0,0.4713699818,1.784919936,-0.1046805673,-0.489681857,-2.241616838,0.5796893448
+""
+Timestep,zone1_livingroom: solar gains,zone1_livingroom: internal gains,zone1_livingroom: heating or cooling system gains,zone1_livingroom: energy to change internal temperature,zone1_livingroom: thermal_bridges,zone1_livingroom: infiltration_ventilation,zone1_livingroom: fabric,zone2_restofdwelling: solar gains,zone2_restofdwelling: internal gains,zone2_restofdwelling: heating or cooling system gains,zone2_restofdwelling: energy to change internal temperature,zone2_restofdwelling: thermal_bridges,zone2_restofdwelling: infiltration_ventilation,zone2_restofdwelling: fabric
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,7.932907281,244.0600835,10.33140575,-49.47434903,-161.8413899,-51.0086576,0.0,14.49953716,517.6064512,-130.220119,-69.41154793,-295.8499547,-36.6243667
+1,0.0,7.985493743,164.6545936,31.72913525,-46.30803149,-156.8866283,-1.174562865,0.0,14.59565317,161.8896895,90.58315368,-63.87266796,-281.9518401,78.75601164
+2,0.0,8.224798815,85.31711566,30.93942707,-43.76783646,-148.4507186,67.73721356,0.0,15.03304802,62.89800156,90.99106804,-59.14977449,-261.4030107,151.6306675
+3,0.0,7.787897039,322.854018,-62.18240033,-44.72118233,-166.0581631,-57.68016936,0.0,14.23449166,497.2387524,-159.4731423,-62.02969699,-300.1075207,10.1371159
+4,0.0,42.0125162,190.3696738,3.876398943,-43.95965443,-163.0002562,-29.29867827,0.0,76.789255,197.4640605,5.520703161,-61.01410801,-294.7776488,76.01773817
+5,0.0,18.04711105,196.4620414,1.465230456,-43.59963845,-161.6848436,-10.68990081,0.0,32.98598461,222.5092377,4.458991832,-60.44912433,-292.0832846,92.57819477
+6,0.0,65.52212888,130.9109449,0.44673646,-41.80560124,-148.7722905,-6.301918545,0.0,119.7594412,103.5261001,-3.087272327,-58.06390547,-269.2303936,107.0960301
+7,0.0,100.3805072,81.42931288,0.1020085733,-40.02668638,-135.814273,-6.070869251,0.0,183.472571,21.78764255,-3.453950456,-55.69103179,-246.2131847,100.0979534

@@ -1,0 +1,15 @@
+,zone 1: total solar gains,zone 1: total internal gains,zone 1: total heating or cooling system gains,zone 1: total thermal_bridges,zone 1: total infiltration_ventilation,zone 1: total fabric_ext_air_convective,zone 1: total fabric_ext_air_radiative,zone 1: total fabric_ext_sol,zone 1: total fabric_ext_sky,zone 1: total opaque_fabric_ext,zone 1: total transparent_fabric_ext,zone 1: total ground_fabric_ext,zone 1: total ZTC_fabric_ext,zone 1: total ZTU_fabric_ext
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,12.16940542,6.410290733,0.0,-1.933677104,17.21578973,3.788563682,0.0,-31.258656,-6.019098273,-3.148754035,-0.1823182999,0.0,-0.9041319813
+""
+Timestep,zone 1: solar gains,zone 1: internal gains,zone 1: heating or cooling system gains,zone 1: thermal_bridges,zone 1: infiltration_ventilation,zone 1: fabric_ext_air_convective,zone 1: fabric_ext_air_radiative,zone 1: fabric_ext_sol,zone 1: fabric_ext_sky,zone 1: opaque_fabric_ext,zone 1: transparent_fabric_ext,zone 1: ground_fabric_ext,zone 1: ZTC_fabric_ext,zone 1: ZTU_fabric_ext
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,712.8811111,2404.905656,0.0,-209.1176358,2045.633761,453.3253862,0.0,-3907.332,-832.4282414,-431.600661,-22.76426223,0.0,-121.5796877
+1,0.0,762.8528673,1692.441255,0.0,-242.7016668,2108.803103,465.7279816,0.0,-3907.332,-779.1401554,-412.5702322,-22.76881856,0.0,-118.3217089
+2,0.0,1055.344617,1196.544841,0.0,-234.0662897,2127.256058,469.0821624,0.0,-3907.332,-770.0625951,-402.0898396,-22.77485424,0.0,-116.066491
+3,0.0,1602.355972,550.4503483,0.0,-269.8538235,2173.016878,477.7419316,0.0,-3907.332,-733.8386828,-387.819349,-22.78214389,0.0,-112.1330148
+4,0.0,2376.678421,0.0,0.0,-271.0000616,2157.336067,474.4520215,0.0,-3907.332,-750.4427241,-390.3985029,-22.79101788,0.0,-111.9116666
+5,0.0,1198.435978,565.9486321,0.0,-262.3018478,2161.920906,475.2059167,0.0,-3907.332,-758.1338951,-378.3114309,-22.80049287,0.0,-110.9593583
+6,0.0,2770.446012,0.0,0.0,-241.9824647,2193.234831,481.2777819,0.0,-3907.332,-713.3151459,-387.7256329,-22.81218276,0.0,-108.9664254
+7,0.0,1690.410442,0.0,0.0,-202.6533137,2248.588124,491.7505001,0.0,-3907.332,-681.7368332,-358.2383861,-22.82452752,0.0,-104.1936287

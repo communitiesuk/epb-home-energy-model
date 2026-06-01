@@ -1,0 +1,55 @@
+Energy Demand Summary
+,,Total
+Space heat demand,kWh/m2,22.58548502
+Space cool demand,kWh/m2,0.0
+
+Energy Supply Summary
+,kWh,timestep,month,day,hour of day
+Peak consumption (electricity),3.384180646,784,FEB,12,8.0
+
+,Total,_unmet_demand,_energy_from_environment,mains elec,mains gas
+Consumption,kWh,908.8106919,1558.334176,860.4330037,18.79680553
+Generation,kWh,0.0,0.0,0.0,0.0
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,0.0,0.0
+Generation to storage,kWh,0.0,0.0,0.0,0.0
+Generation to diverter,kWh,0.0,0.0,0.0,0.0
+Generation to grid,kWh,0.0,0.0,0.0,0.0
+Storage to consumption,kWh,0.0,0.0,0.0,0.0
+Grid to storage,kWh,0.0,0.0,0.0,0.0
+Grid to consumption,kWh,908.8106919,1558.334176,860.4330037,18.79680553
+Total gross import,kWh,908.8106919,1558.334176,860.4330037,18.79680553
+Total gross export,kWh,0.0,0.0,0.0,0.0
+Net import,kWh,908.8106919,1558.334176,860.4330037,18.79680553
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,DIV/0,DIV/0
+
+Delivered Energy Summary
+Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec,mains gas
+total,15.23477491,9.739588598,5.377706273,0.1174800346
+hp_water_heating: hw cylinder,1.447392966,0.9923793185,0.4550136472,0
+hp_space_heating: zone 1 radiators,7.814196127,5.492245952,2.321950175,0
+hp_space_heating: zone 2 radiators,4.970253177,3.254963327,1.71528985,0
+mechvent1,0.03401873874,0,0.03401873874,0
+topup,0.05623563745,0,0.05623563745,0
+Microwave,0.01052619171,0,0.01052619171,0
+Kettle,0.05047216232,0,0.05047216232,0
+Fridge,0.0367739726,0,0.0367739726,0
+Clothes_washing,0.09487115771,0,0.09487115771,0
+Otherdevices,0.2571518637,0,0.2571518637,0
+Oven,0.1128007973,0,0.1128007973,0
+lighting,0.1184512541,0,0.1184512541,0
+HeatPump_auxiliary: hp,0.0348606212,0,0.0348606212,0
+IES,0.07929020409,0,0.07929020409,0
+cooling system 1,0.0,0,0.0,0
+cooling system 2,0.0,0,0.0,0
+Hobs,0.1174800346,0,0,0.1174800346
+
+Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
+hw cylinder,2.437651246,7.528846283,80.0
+
+Space heating system,Overall CoP
+zone 1 radiators,3.333810866
+zone 2 radiators,2.871608068
+
+Space cooling system,Overall CoP
+cooling system 1,DIV/0
+cooling system 2,DIV/0

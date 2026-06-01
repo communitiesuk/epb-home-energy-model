@@ -1,0 +1,40 @@
+Energy Demand Summary
+,,Total
+Space heat demand,kWh/m2,0.04437731545
+Space cool demand,kWh/m2,0.0
+
+Energy Supply Summary
+,kWh,timestep,month,day,hour of day
+Peak consumption (electricity),2.692993887,0,JAN,1,0.0
+
+,Total,_unmet_demand,_energy_from_environment,mains elec
+Consumption,kWh,1.190407849,9.947313154,6.987204329
+Generation,kWh,0.0,0.0,0.0
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,0.0
+Generation to storage,kWh,0.0,0.0,0.0
+Generation to diverter,kWh,0.0,0.0,0.0
+Generation to grid,kWh,0.0,0.0,0.0
+Storage to consumption,kWh,0.0,0.0,0.0
+Grid to storage,kWh,0.0,0.0,0.0
+Grid to consumption,kWh,1.190407849,9.947313154,6.987204329
+Total gross import,kWh,1.190407849,9.947313154,6.987204329
+Total gross export,kWh,0.0,0.0,0.0
+Net import,kWh,1.190407849,9.947313154,6.987204329
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,DIV/0
+
+Delivered Energy Summary
+Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec
+total,0.199253059,0.1170409831,0.08221207588
+hp_water_heating: hw cylinder,0.04286721536,0.03021723703,0.01264997833
+hp_space_heating: space_heat_system_livingroom,0.01722387152,0.01255106736,0.004672804158
+hp_space_heating: space_heat_system_restofdwelling,0.1020273047,0.07427267872,0.02775462594
+mechvent1,0.003451386438,0,0.003451386438
+HeatPump_auxiliary: hp,0.001914837668,0,0.001914837668
+IES,0.03176844335,0,0.03176844335
+
+Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
+hw cylinder,2.793673244,3.00353861,80.0
+
+Space heating system,Overall CoP
+space_heat_system_livingroom,3.085999722
+space_heat_system_restofdwelling,2.62726573

@@ -1,0 +1,15 @@
+,zone1_livingroom: total solar gains,zone1_livingroom: total internal gains,zone1_livingroom: total heating or cooling system gains,zone1_livingroom: total energy to change internal temperature,zone1_livingroom: total thermal_bridges,zone1_livingroom: total infiltration_ventilation,zone1_livingroom: total fabric,zone2_restofdwelling: total solar gains,zone2_restofdwelling: total internal gains,zone2_restofdwelling: total heating or cooling system gains,zone2_restofdwelling: total energy to change internal temperature,zone2_restofdwelling: total thermal_bridges,zone2_restofdwelling: total infiltration_ventilation,zone2_restofdwelling: total fabric
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,1.179805825,0.2649836118,-0.04566926736,-0.3556903402,-1.156413096,0.1129832663,0.0,2.843138627,1.64901322,-0.218360599,-0.8483315497,-2.605080754,-0.8203789454
+""
+Timestep,zone1_livingroom: solar gains,zone1_livingroom: internal gains,zone1_livingroom: heating or cooling system gains,zone1_livingroom: energy to change internal temperature,zone1_livingroom: thermal_bridges,zone1_livingroom: infiltration_ventilation,zone1_livingroom: fabric,zone2_restofdwelling: solar gains,zone2_restofdwelling: internal gains,zone2_restofdwelling: heating or cooling system gains,zone2_restofdwelling: energy to change internal temperature,zone2_restofdwelling: thermal_bridges,zone2_restofdwelling: infiltration_ventilation,zone2_restofdwelling: fabric
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,66.26489957,116.8897083,12.18306904,-48.23638986,-144.3854833,-2.715803696,0.0,159.6875449,848.5914001,-174.357667,-117.8478616,-333.1956008,-382.8778156
+1,0.0,92.42120174,77.99462487,-0.4348173784,-46.5119628,-148.6626817,25.19363528,0.0,222.7199452,266.6685923,59.27665214,-110.8554618,-334.6749513,-103.1347765
+2,0.0,142.9798493,29.27580733,-5.341048821,-45.60319452,-145.4986802,24.18726687,0.0,344.5579975,61.769272,27.00053903,-106.7873489,-321.8195404,-4.720919293
+3,0.0,103.448489,29.60578238,10.99030601,-43.33399511,-147.6212456,46.91066335,0.0,249.2938997,323.8558839,-54.02890895,-105.1671742,-338.3990681,-75.55463226
+4,0.0,207.8042585,25.82769741,-36.24850082,-44.48067493,-151.4935758,-1.409204341,0.0,500.7741967,124.2500774,-45.60800236,-105.9356541,-340.7954741,-132.6851436
+5,0.0,131.8483419,-4.586982263,33.74816243,-42.58063616,-145.0264431,26.59755723,0.0,317.7328894,13.74181149,58.57750355,-102.4613034,-329.6277335,42.03683248
+6,0.0,211.5756905,13.10584651,-44.6661017,-42.96524376,-140.5018569,3.451665343,0.0,509.8627296,19.68982261,-56.30246951,-100.9489265,-311.813782,-60.4873742
+7,0.0,223.4630945,-23.12887273,-15.90033612,-41.97824306,-133.2231289,-9.232513688,0.0,538.5094244,-9.55363952,-32.91824586,-98.32781923,-294.7546034,-102.9551164
