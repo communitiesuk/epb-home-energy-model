@@ -2036,7 +2036,7 @@ mod tests {
 
     #[fixture]
     fn simulation_time() -> SimulationTime {
-        SimulationTime::new(0., 8., 1.)
+        SimulationTime::new(0., 2., 0.25)
     }
 
     #[fixture]
