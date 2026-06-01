@@ -1403,7 +1403,7 @@ impl Emitters {
     ///                         If no recirculated water, the it will be equal to the flow temp.
     fn demand_energy_flow_return(
         &self,
-        mut energy_demand: f64,
+        energy_demand: f64,
         temp_flow_target: f64,
         temp_return_target: f64,
         simtime: SimulationTimeIteration,
@@ -1411,6 +1411,8 @@ impl Emitters {
         update_temp_emitter_prev: Option<bool>,
         blended_temp_flow: Option<f64>,
     ) -> anyhow::Result<(f64, f64)> {
+        let mut energy_demand = energy_demand;
+
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let update_temp_emitter_prev = update_temp_emitter_prev.unwrap_or(true);
 
@@ -1477,7 +1479,8 @@ impl Emitters {
                     );
                     // Adding back pipework internal distribution losses to power required from heat source
                     let power_req_from_heat_source =
-                        (power_delivered_by_fancoil - fan_power_single_unit) * n_units;
+                        (power_delivered_by_fancoil - fan_power_single_unit) * n_units
+                            + pw_heat_loss / timestep;
                     let fan_power = fan_power_single_unit * n_units;
                     energy_demand = (power_req_from_heat_source + fan_power) * timestep;
                     let fan_energy_kwh = fan_power / WATTS_PER_KILOWATT as f64
@@ -2325,11 +2328,11 @@ mod tests {
 
         let pipework = [WaterPipework {
             location: WaterPipeworkLocation::Internal,
-            internal_diameter_mm: 10.0,
-            external_diameter_mm: 12.0,
-            length: 1.0,
+            internal_diameter_mm: 25.0,
+            external_diameter_mm: 27.0,
+            length: 10.0,
             insulation_thermal_conductivity: 0.035,
-            insulation_thickness_mm: 0.0,
+            insulation_thickness_mm: 38.0,
             surface_reflectivity: false,
             pipe_contents: PipeworkContents::Water,
         }];
@@ -2987,7 +2990,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "while fsolve unimplemented"]
     fn test_demand_energy_fancoil(
         mut fancoil: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
@@ -3012,7 +3014,7 @@ mod tests {
                 ][t_idx],
                 max_relative = EIGHT_DECIMAL_PLACES
             );
-            assert_relative_eq!(
+            assert_eq!(
                 fancoil.temp_emitter_prev(),
                 [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx],
             )
@@ -3169,7 +3171,6 @@ mod tests {
 
     /// Test emitter temperature that gives required power output at given room temp
     #[rstest]
-    #[ignore = "while fsolve unimplemented"]
     fn test_temp_emitter_req(emitters: Emitters) {
         let power_emitter_req = 0.22;
         let temp_rm = 2.0;
@@ -3337,7 +3338,8 @@ mod tests {
                     2.4627899136391274,
                     2.4627899136391274,
                     2.4627899136391274,
-                ][t_idx]
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
             );
 
             assert_eq!(
@@ -3418,7 +3420,8 @@ mod tests {
                     2.4627899136391274,
                     2.4627899136391274,
                     2.4627899136391274,
-                ][t_idx]
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
             );
 
             assert_eq!(
@@ -3440,7 +3443,8 @@ mod tests {
                     9.702252941082214,
                     11.401689338957867,
                     13.084599772694327,
-                ][t_idx]
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
             )
         }
     }
