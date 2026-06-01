@@ -1863,7 +1863,7 @@ impl Emitters {
         update_heat_source_state: bool,
         update_temp_emitter_prev: bool,
     ) -> anyhow::Result<f64> {
-        let energy_difference = |temp_return: f64| -> anyhow::Result<f64> {
+        let energy_difference = Box::new(move |temp_return: f64| -> anyhow::Result<f64> {
             let (energy_released_from_emitters, _) = self.demand_energy_flow_return(
                 energy_demand,
                 temp_flow_target,
@@ -1885,7 +1885,7 @@ impl Emitters {
             } else {
                 Ok(diff)
             }
-        };
+        });
 
         if energy_difference(temp_flow_target)? < 0. {
             return Ok(temp_flow_target);
