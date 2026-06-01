@@ -2883,7 +2883,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "while fsolve unimplemented"]
     fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
         mut emitters: Emitters,
@@ -2908,7 +2907,8 @@ mod tests {
                     0.8741640483161602,
                     0.8741640483161602,
                     0.7491924984261082,
-                ][t_idx]
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
             );
 
             assert_relative_eq!(
@@ -2922,7 +2922,8 @@ mod tests {
                     43.22916666666667,
                     43.22916666666667,
                     37.88127852847367
-                ][t_idx]
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
             )
         }
     }
