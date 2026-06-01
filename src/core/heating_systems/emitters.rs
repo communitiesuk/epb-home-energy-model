@@ -796,17 +796,17 @@ impl Emitters {
         // in following function
         let c_n_pairs = self.extract_c_n_pairs();
 
-        let func_temp_emitter_req = |temp_emitter: f64, _args| {
-            Ok(power_emitter_req
+        let func_temp_emitter_req = |temp_emitter: f64| {
+            power_emitter_req
                 - FSum::with_all(
                     c_n_pairs
                         .iter()
                         .map(|&(c, n)| c * (temp_emitter - temp_rm).powf(n)),
                 )
-                .value())
+                .value()
         };
 
-        fsolve(func_temp_emitter_req, temp_rm + 10., [])
+        fsolve(func_temp_emitter_req, temp_rm + 10.)
     }
 
     /// Extract out c and n values from emitters so we don't need to hold a reference to emitters elsewhere
@@ -3691,7 +3691,6 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
     fn test_demand_energy_flow_return_no_progress(
         heat_source: SpaceHeatingService,
         zone: Arc<dyn SimpleZone>,
@@ -3724,15 +3723,17 @@ mod tests {
         .unwrap();
 
         // this should panic, though ideally this would be reflected in an error from the method
-        let _ = fancoil.demand_energy_flow_return(
-            -1.,
-            50.,
-            40.,
-            simulation_time_iterator.current_iteration(),
-            Some(true),
-            Some(false),
-            None,
-        );
+        assert!(fancoil
+            .demand_energy_flow_return(
+                -1.,
+                50.,
+                40.,
+                simulation_time_iterator.current_iteration(),
+                Some(true),
+                Some(false),
+                None,
+            )
+            .is_err());
     }
 
     /// Test that the demand_energy_flow_return results are correct for zero demand

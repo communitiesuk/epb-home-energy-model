@@ -1,15 +1,10 @@
+use eqsolver::single_variable::FDNewton;
 use roots::{find_root_brent, SimpleConvergency};
 
-// TODO this is from scipy
-// Find equivalent function in a Rust library or implement
-pub(crate) fn fsolve<const ARGCOUNT: usize>(
-    _func: impl Fn(f64, [f64; ARGCOUNT]) -> anyhow::Result<f64>,
-    x0: f64,
-    _args: [f64; ARGCOUNT],
-) -> anyhow::Result<f64> {
-    // For the time being we use the other root solver we have
-    // TODO implement fsolve
-    Ok(x0) // stub response
+pub(crate) fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
+    let solver = FDNewton::new(func);
+
+    solver.solve(x0).map_err(|e| anyhow::anyhow!(e))
 }
 
 // TODO this is from scipy
