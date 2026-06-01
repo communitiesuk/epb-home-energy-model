@@ -105,7 +105,14 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                     println!("✅ Tabular records match for file: {}", file_name);
                 }
             } else {
-                // TODO: perform non-tabular comparison
+                let file_differences = compare::compare_non_tabular_files(&mut python_reader, &mut rust_reader);
+                if let Err(comparison_error) = file_differences {
+                    let file_difference_count = comparison_error.differences.len();
+                    println!("❌ Non-tabular records differ for file: {} - difference count is {}", file_name, file_difference_count);
+                    difference_count += file_difference_count;
+                } else {
+                    println!("✅ Non-tabular records match for file: {}", file_name);
+                }
             }
         }
         println!(
@@ -598,5 +605,66 @@ mod compare {
     pub struct FileComparisonError {
         pub differences: Vec<DifferenceInFile>,
         pub warnings: Vec<String>,
+    }
+
+    pub fn compare_non_tabular_files<T, U>(
+        py_reader: &mut Reader<T>,
+        rust_reader: &mut Reader<U>,
+    ) -> FileComparisonResult
+    where
+        T: Read,
+        U: Read,
+    {
+        let mut rust_records = rust_reader.records();
+        let python_records = py_reader.records();
+
+        let mut blank_lines = usize::default();
+
+        let mut file_differences: Vec<DifferenceInFile> = vec![];
+
+        for (record_index, python_record) in python_records.enumerate() {
+            let python_record = python_record.unwrap();
+
+            let mut rust_record = if let Some(next_record) = rust_records.next() {
+                next_record.unwrap()
+            } else {
+                file_differences.push(DifferenceInFile::new(
+                    Difference::RecordDifference {
+                        message: format!("Rust file only had {} lines", record_index + 1),
+                    },
+                    0,
+                    None,
+                ));
+                break;
+            };
+
+            // hack to handle python blank lines (no data at all) being ignored
+            // but rust blank lines (double quotes) being included
+            //
+            // skip over rust records with just "" on them
+            while rust_record.as_slice().trim().is_empty() {
+                blank_lines += 1;
+                rust_record = rust_records.next().unwrap().unwrap();
+            }
+
+            if let Err(differences) = compare(python_record, rust_record) {
+                for difference in differences {
+                    file_differences.push(DifferenceInFile::new(
+                        difference,
+                        record_index + blank_lines + 1,
+                        None,
+                    ));
+                }
+            }
+        }
+
+        if file_differences.is_empty() {
+            Ok(())
+        } else {
+            Err(FileComparisonError {
+                differences: file_differences,
+                warnings: vec![],
+            })
+        }
     }
 }
