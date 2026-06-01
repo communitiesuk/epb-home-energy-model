@@ -1123,7 +1123,7 @@ dependencies = [
  "itertools",
  "jsonschema",
  "monostate",
- "nalgebra 0.33.3",
+ "nalgebra 0.34.2",
  "ode_solvers",
  "ordered-float",
  "parking_lot",
