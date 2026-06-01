@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/rust:1-bookworm
+FROM mcr.microsoft.com/devcontainers/rust:1-trixie
 
 USER root
 
@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas-dev \
     liblapack-dev \
     lldb \
+    just \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYO3_PYTHON=/usr/bin/python3
