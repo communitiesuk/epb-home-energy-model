@@ -22,27 +22,21 @@ use crate::output::OutputEmitters;
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use crate::StringOrNumber;
-use anyhow::{anyhow, bail, Error};
-use argmin::core::{CostFunction, Executor};
-use argmin::solver::brent::BrentRoot;
+use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use derivative::Derivative;
 use fsum::FSum;
 use itertools::Itertools;
 use numpy::ndarray::ArrayD;
-use numpy::{PyArrayDyn, PyReadonlyArrayDyn};
-use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
+use numpy::PyReadonlyArrayDyn;
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
 use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyDict};
+use pyo3::types::IntoPyDict;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-
-type State = Vector1<f64>;
-type Time = f64;
 
 /// Convert flow temperature to return temperature using the 6/7th rule.
 ///
@@ -83,102 +77,6 @@ pub(crate) struct Emitters {
     min_flow_rate: f64,
     max_flow_rate: f64,
     fancoil: Option<Arc<WetEmitter>>,
-}
-
-#[derive(Copy, Clone)]
-struct EmittersAndPowerInput<'a> {
-    emitters: &'a Emitters,
-    power_input: f64,
-    temp_diff_max: Option<f64>,
-    previous_difference_from_temp_diff_max: Option<f64>,
-}
-
-impl EmittersAndPowerInput<'_> {
-    pub fn new(
-        emitters: &Emitters,
-        power_input: f64,
-        temp_diff_max: Option<f64>,
-        temp_diff_start: f64,
-    ) -> EmittersAndPowerInput<'_> {
-        let previous_difference_from_temp_diff_max = temp_diff_max.map(|max| temp_diff_start - max);
-
-        EmittersAndPowerInput {
-            emitters,
-            power_input,
-            temp_diff_max,
-            previous_difference_from_temp_diff_max,
-        }
-    }
-
-    fn difference_from_temp_diff_max(&self, y: f64) -> f64 {
-        y - self.temp_diff_max.unwrap()
-    }
-}
-
-// Here we're using the ode_solvers crate to replicate
-// ODE solving functionality in scipy's solve_ivp
-impl System<Time, State> for EmittersAndPowerInput<'_> {
-    fn system(&self, _x: Time, y: &State, dy: &mut State) {
-        dy[0] = self
-            .emitters
-            .func_temp_emitter_change_rate(self.power_input)(0., [y[0]]);
-    }
-
-    // Stop function called at every successful integration step. The integration is stopped when this function returns true.
-    fn solout(&mut self, _x: Time, y: &State, _dy: &State) -> bool {
-        if self.temp_diff_max.is_none() {
-            // no maximum - keep going
-            return false;
-        }
-
-        let current_difference = self.difference_from_temp_diff_max(y[0]);
-
-        if let Some(previous_difference) = self.previous_difference_from_temp_diff_max {
-            // signs are different - we must have passed zero
-            if current_difference == 0.
-                || signs_are_different(current_difference, previous_difference)
-                || previous_difference == 0.
-            {
-                // passing zero means we hit temp_diff_max, so stop solver
-                return true;
-            }
-        }
-
-        self.previous_difference_from_temp_diff_max = Some(current_difference);
-        false
-    }
-}
-
-fn signs_are_different(a: f64, b: f64) -> bool {
-    (b > 0. && a < 0.) || (b < 0. && a > 0.)
-}
-
-// Here we're using argmin for root solving on our ode_solver `stepper`
-// This is to replicate the `events` feature in scipy's solve_ivp
-struct RootProblem<'a> {
-    pub stepper: &'a Dopri5<
-        f64,
-        nalgebra::Matrix<
-            f64,
-            nalgebra::Const<1>,
-            nalgebra::Const<1>,
-            nalgebra::ArrayStorage<f64, 1, 1>,
-        >,
-        EmittersAndPowerInput<'a>,
-    >,
-    pub max_temp: f64,
-}
-
-impl CostFunction for RootProblem<'_> {
-    type Param = f64;
-    type Output = f64;
-
-    fn cost(&self, x: &Self::Param) -> Result<Self::Output, Error> {
-        // Difference between the (interpolated) temperature at time x
-        // and the maximum temperature of the emitter
-        let cost = self.stepper.dense_output_for_last_step(*x)[0];
-        Ok(cost - self.max_temp)
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
