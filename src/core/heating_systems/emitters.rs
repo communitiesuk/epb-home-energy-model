@@ -796,7 +796,7 @@ impl Emitters {
         // in following function
         let c_n_pairs = self.extract_c_n_pairs();
 
-        let func_temp_emitter_req = Box::new(move |temp_emitter: f64| {
+        let func_temp_emitter_req = |temp_emitter: f64| {
             power_emitter_req
                 - FSum::with_all(
                     c_n_pairs
@@ -804,7 +804,7 @@ impl Emitters {
                         .map(|&(c, n)| c * (temp_emitter - temp_rm).powf(n)),
                 )
                 .value()
-        });
+        };
 
         fsolve(func_temp_emitter_req, temp_rm + 10.)
     }
@@ -1403,7 +1403,7 @@ impl Emitters {
     ///                         If no recirculated water, the it will be equal to the flow temp.
     fn demand_energy_flow_return(
         &self,
-        mut energy_demand: f64,
+        energy_demand: f64,
         temp_flow_target: f64,
         temp_return_target: f64,
         simtime: SimulationTimeIteration,
@@ -1411,6 +1411,8 @@ impl Emitters {
         update_temp_emitter_prev: Option<bool>,
         blended_temp_flow: Option<f64>,
     ) -> anyhow::Result<(f64, f64)> {
+        let mut energy_demand = energy_demand;
+
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let update_temp_emitter_prev = update_temp_emitter_prev.unwrap_or(true);
 
@@ -1477,7 +1479,8 @@ impl Emitters {
                     );
                     // Adding back pipework internal distribution losses to power required from heat source
                     let power_req_from_heat_source =
-                        (power_delivered_by_fancoil - fan_power_single_unit) * n_units;
+                        (power_delivered_by_fancoil - fan_power_single_unit) * n_units
+                            + pw_heat_loss / timestep;
                     let fan_power = fan_power_single_unit * n_units;
                     energy_demand = (power_req_from_heat_source + fan_power) * timestep;
                     let fan_energy_kwh = fan_power / WATTS_PER_KILOWATT as f64
@@ -2036,7 +2039,7 @@ mod tests {
 
     #[fixture]
     fn simulation_time() -> SimulationTime {
-        SimulationTime::new(0., 8., 1.)
+        SimulationTime::new(0., 2., 0.25)
     }
 
     #[fixture]
@@ -2325,11 +2328,11 @@ mod tests {
 
         let pipework = [WaterPipework {
             location: WaterPipeworkLocation::Internal,
-            internal_diameter_mm: 10.0,
-            external_diameter_mm: 12.0,
-            length: 1.0,
+            internal_diameter_mm: 25.0,
+            external_diameter_mm: 27.0,
+            length: 10.0,
             insulation_thermal_conductivity: 0.035,
-            insulation_thickness_mm: 0.0,
+            insulation_thickness_mm: 38.0,
             surface_reflectivity: false,
             pipe_contents: PipeworkContents::Water,
         }];
@@ -2883,7 +2886,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "while fsolve unimplemented"]
     fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
         mut emitters: Emitters,
@@ -2908,7 +2910,8 @@ mod tests {
                     0.8741640483161602,
                     0.8741640483161602,
                     0.7491924984261082,
-                ][t_idx]
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
             );
 
             assert_relative_eq!(
@@ -2922,7 +2925,8 @@ mod tests {
                     43.22916666666667,
                     43.22916666666667,
                     37.88127852847367
-                ][t_idx]
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
             )
         }
     }
@@ -2986,7 +2990,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "while fsolve unimplemented"]
     fn test_demand_energy_fancoil(
         mut fancoil: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
@@ -3011,7 +3014,7 @@ mod tests {
                 ][t_idx],
                 max_relative = EIGHT_DECIMAL_PLACES
             );
-            assert_relative_eq!(
+            assert_eq!(
                 fancoil.temp_emitter_prev(),
                 [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx],
             )
@@ -3335,7 +3338,8 @@ mod tests {
                     2.4627899136391274,
                     2.4627899136391274,
                     2.4627899136391274,
-                ][t_idx]
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
             );
 
             assert_eq!(
@@ -3416,7 +3420,8 @@ mod tests {
                     2.4627899136391274,
                     2.4627899136391274,
                     2.4627899136391274,
-                ][t_idx]
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
             );
 
             assert_eq!(
@@ -3438,7 +3443,8 @@ mod tests {
                     9.702252941082214,
                     11.401689338957867,
                     13.084599772694327,
-                ][t_idx]
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
             )
         }
     }
@@ -3690,7 +3696,6 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
     fn test_demand_energy_flow_return_no_progress(
         heat_source: SpaceHeatingService,
         zone: Arc<dyn SimpleZone>,
@@ -3723,15 +3728,17 @@ mod tests {
         .unwrap();
 
         // this should panic, though ideally this would be reflected in an error from the method
-        let _ = fancoil.demand_energy_flow_return(
-            -1.,
-            50.,
-            40.,
-            simulation_time_iterator.current_iteration(),
-            Some(true),
-            Some(false),
-            None,
-        );
+        assert!(fancoil
+            .demand_energy_flow_return(
+                -1.,
+                50.,
+                40.,
+                simulation_time_iterator.current_iteration(),
+                Some(true),
+                Some(false),
+                None,
+            )
+            .is_err());
     }
 
     /// Test that the demand_energy_flow_return results are correct for zero demand

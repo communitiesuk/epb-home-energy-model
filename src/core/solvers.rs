@@ -1,37 +1,10 @@
-use anyhow::anyhow;
+use eqsolver::single_variable::FDNewton;
 use roots::{find_root_brent, SimpleConvergency};
-use pyo3::prelude::*;
 
-#[pyclass]
-struct RustCallback {
-    // We use Box<dyn Fn> to store the closure.
-    // Note: It needs to be Send + Sync because it will need to be passed to a Python thread.
-    inner: Box<dyn Fn(f64) -> f64 + Send + Sync>,
-}
+pub(crate) fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
+    let solver = FDNewton::new(func);
 
-#[pymethods]
-impl RustCallback {
-    // The `__call__` method makes the object act like a function in Python.
-    #[pyo3(signature = (arg, /))]
-    fn __call__(&self, arg: f64) -> PyResult<f64> {
-        // Execute the boxed closure
-        let result = (self.inner)(arg);
-        Ok(result)
-    }
-}
-
-pub(crate) fn fsolve(
-    func: Box<dyn Fn(f64) -> f64 + Send + Sync>,
-    x0: f64,
-) -> anyhow::Result<f64> {
-    let callback = RustCallback { inner: func };
-
-    Python::attach(|py| -> PyResult<f64> {
-        let optimize = py.import("scipy.optimize")?;
-        let fsolve = optimize.getattr("fsolve")?;
-        let result = fsolve.call1((callback, x0))?.extract::<f64>()?;
-        Ok(result)
-    }).map_err( |e| anyhow!(e))
+    solver.solve(x0).map_err(|e| anyhow::anyhow!(e))
 }
 
 // TODO this is from scipy
