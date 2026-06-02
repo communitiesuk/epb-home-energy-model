@@ -29,9 +29,13 @@ use atomic_float::AtomicF64;
 use derivative::Derivative;
 use fsum::FSum;
 use itertools::Itertools;
+use numpy::ndarray::ArrayD;
+use numpy::{PyArrayDyn, PyReadonlyArrayDyn};
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
+use pyo3::prelude::*;
+use pyo3::types::{IntoPyDict, PyDict};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
@@ -117,7 +121,7 @@ impl System<Time, State> for EmittersAndPowerInput<'_> {
     fn system(&self, _x: Time, y: &State, dy: &mut State) {
         dy[0] = self
             .emitters
-            .func_temp_emitter_change_rate(self.power_input)([y[0]]);
+            .func_temp_emitter_change_rate(self.power_input)(0., [y[0]]);
     }
 
     // Stop function called at every successful integration step. The integration is stopped when this function returns true.
@@ -824,7 +828,7 @@ impl Emitters {
     pub(crate) fn func_temp_emitter_change_rate(
         &self,
         power_input: f64,
-    ) -> impl Fn([f64; 1]) -> f64 {
+    ) -> impl Fn(f64, [f64; 1]) -> f64 {
         /*
             Differential eqn for change rate of emitter temperature, to be solved iteratively
 
@@ -865,7 +869,7 @@ impl Emitters {
         let thermal_mass = self.thermal_mass;
 
         // (power_input - self.c * max_of_2(0., y).powf(self.n)) / self.thermal_mass
-        move |temp_diff: [f64; 1]| -> f64 {
+        move |_t, temp_diff: [f64; 1]| -> f64 {
             (power_input
                 - c_n_pairs
                     .iter()
@@ -887,113 +891,56 @@ impl Emitters {
     ) -> anyhow::Result<(f64, Option<f64>)> {
         // Calculate emitter temp at start of timestep
         let temp_diff_start = temp_emitter_start - temp_rm;
-        let temp_diff_max = temp_emitter_max.map(|emitter_max| emitter_max - temp_rm);
 
-        let emitter_with_power_input =
-            EmittersAndPowerInput::new(self, power_input, temp_diff_max, temp_diff_start);
+        let events = if let Some(temp_emitter_max) = temp_emitter_max {
+            let temp_diff_max = temp_emitter_max - temp_rm;
 
-        let f = emitter_with_power_input; // f - Structure implementing the System trait
-        let x: Time = time_start; // x - Initial value of the independent variable (usually time)
-        let x_end: Time = time_end; // x_end - Final value of the independent variable
-        let dx = 0.; // dx - Increment in the dense output. This argument has no effect if the output type is Sparse
-        let y0: State = State::new(temp_diff_start); // y - Initial value of the dependent variable(s)
+            // Define event where emitter reaches max. temp (event occurs when func returns zero)
+            let func: Box<dyn Fn(&[f64], &[f64]) -> f64 + Send + Sync> =
+                Box::new(move |_t: &[f64], y: &[f64]| -> f64 { y[0] - temp_diff_max });
+            let temp_diff_max_reached = TerminalFunction { inner: func };
 
-        // scipy implementation for reference:
-        // https://github.com/scipy/scipy/blob/6b657ede0c3c4cffef3156229afddf02a2b1d99a/scipy/integrate/_ivp/rk.py#L293
-        let rtol = 1e-3; // rtol - set from scipy docs - Relative tolerance used in the computation of the adaptive step size
-        let atol = 1e-6; // atol - set from scipy docs - Absolute tolerance used in the computation of the adaptive step size
-        let h = 0.; // initial step size - 0
-        let safety_factor = 0.9; // matches scipy implementation
-        let beta = 0.; // setting this to 0 gives us an alpha of 0.2 and matches scipy's adaptive step size logic (default was 0.04)
-        let fac_min = 0.2; // matches scipy implementation
-        let fac_max = 10.; // matches scipy implementation
-        let h_max = x_end - x;
-        let n_max = 100000;
-        let n_stiff = 1000;
-        let mut stepper = Dopri5::from_param(
-            f,
-            x,
-            x_end,
-            dx,
-            y0,
-            rtol,
-            atol,
-            safety_factor,
-            beta,
-            fac_min,
-            fac_max,
-            h_max,
-            h,
-            n_max,
-            n_stiff,
-            OutputType::Sparse,
-        );
-
-        let _ = stepper.integrate();
-
-        // similar logic to EmittersAndPowerOutput System
-        // in future we could consolidate these
-        let temp_diff_max_was_reached = match temp_diff_max {
-            Some(temp_diff_max) => {
-                let y_count = stepper.y_out().len();
-                let current_y = stepper.y_out().last().expect("y_out was empty")[0];
-                let previous_y = stepper
-                    .y_out()
-                    .get(y_count - 2)
-                    .ok_or_else(|| anyhow!("Error while using Dopri stepper."))?[0];
-
-                let current_temp_diff = current_y - temp_diff_max;
-                let previous_temp_diff = previous_y - temp_diff_max;
-
-                previous_temp_diff == 0.
-                    || current_temp_diff == 0.
-                    || signs_are_different(previous_temp_diff, current_temp_diff)
-            }
-            None => false,
+            Some(temp_diff_max_reached)
+        } else {
+            None
         };
 
-        let temp_emitter;
+        // Get function representing change rate equation and solve iteratively
+        let func_temp_emitter_change_rate =
+            Box::new(self.func_temp_emitter_change_rate(power_input));
+        let callback = RustCallback {
+            inner: func_temp_emitter_change_rate,
+        };
+
+        let temp_diff_emitter_rm_results = Python::attach(|py| -> PyResult<OdeResult> {
+            let integrate = py.import("scipy.integrate")?;
+            let solve_ivp = integrate.getattr("solve_ivp")?;
+            let kwargs = [("events", events)].into_py_dict(py)?;
+            solve_ivp
+                .call(
+                    (callback, (time_start, time_end), (temp_diff_start,)),
+                    Some(&kwargs),
+                )?
+                .extract::<OdeResult>()
+        })
+        .map_err(|e| anyhow!(e))?;
+
+        // Get time at which emitters reach max. temp
+        let OdeResult { y, t_events } = temp_diff_emitter_rm_results;
+
         let mut time_temp_diff_max_reached: Option<f64> = None;
-        if temp_diff_max_was_reached {
-            // We stopped early because the temp diff max was passed.
-            // The Python code uses a built in feature of scipy's solve_ivp here.
-            // when an "event" (in this case, max temp diff) happens a root solver
-            // finds the exact x (time) value for that event occuring
-            // and sets time_temp_diff_max_reached
-            // We use a combination of ode_solvers and argmin to achieve the same.
 
-            // max temp diff was reached, so that should be our result
-            temp_emitter = temp_rm + temp_diff_max.unwrap();
-
-            let root_problem = RootProblem {
-                stepper: &stepper,
-                max_temp: temp_diff_max.unwrap(),
-            };
-
-            let previous_step_x = *stepper.x_out().get(stepper.x_out().len() - 2).unwrap();
-            let current_step_x = *stepper.x_out().last().unwrap();
-
-            let eps = (2.0_f64).powf(-52.0_f64);
-            let tol = 4.0 * eps; // From scipy source - 4 * EPS
-
-            // Some time (x) between the previous step and the current step we passed the max temp
-            // Use a root solver to find when that was - i.e. when temp - max = 0
-            let solver = BrentRoot::new(previous_step_x, current_step_x, tol);
-
-            let executor = Executor::new(root_problem, solver);
-            let res = executor.run();
-
-            if res.is_err() {
-                panic!("An error occurred in the root solver for emitters")
+        if let Some(t_events) = t_events {
+            let t_events = &t_events[0];
+            if !t_events.is_empty() {
+                time_temp_diff_max_reached = t_events.iter().copied().last();
             }
-
-            let best_x = res.unwrap().state().best_param;
-            time_temp_diff_max_reached = best_x;
-        } else {
-            let last_y = stepper.y_out().last().expect("y_out was empty")[0];
-            let temp_diff_emitter_rm_final = last_y;
-            temp_emitter = temp_rm + temp_diff_emitter_rm_final;
         }
+
+        let temp_diff_emitter_rm_final = *y.iter().last().ok_or_else(|| {
+            anyhow!("y ndarray field of solve_ivp result was empty when this was not expected")
+        })?;
+        let temp_emitter = temp_rm + temp_diff_emitter_rm_final;
 
         Ok((temp_emitter, time_temp_diff_max_reached))
     }
@@ -1982,6 +1929,69 @@ impl Emitters {
     }
 }
 
+#[pyclass]
+struct TerminalFunction {
+    inner: Box<dyn Fn(&[f64], &[f64]) -> f64 + Send + Sync>,
+}
+
+#[pymethods]
+impl TerminalFunction {
+    #[pyo3(signature = (t, y, /))]
+    fn __call__(&self, t: Vec<f64>, y: Vec<f64>) -> PyResult<f64> {
+        // Execute the boxed closure
+        let result = (self.inner)(&t, &y);
+        Ok(result)
+    }
+
+    fn __getattribute__(&self, name: String) -> PyResult<Option<bool>> {
+        Ok((name == "Terminal").then_some(true))
+    }
+}
+
+#[pyclass]
+struct RustCallback {
+    // We use Box<dyn Fn> to store the closure.
+    // Note: It needs to be Send + Sync because it will need to be passed to a Python thread.
+    inner: Box<dyn Fn(f64, [f64; 1]) -> f64 + Send + Sync>,
+}
+
+#[pymethods]
+impl RustCallback {
+    // The `__call__` method makes the object act like a function in Python.
+    #[pyo3(signature = (arg1, arg2, /))]
+    fn __call__(&self, arg1: f64, arg2: [f64; 1]) -> PyResult<f64> {
+        // Execute the boxed closure
+        let result = (self.inner)(arg1, arg2);
+        Ok(result)
+    }
+}
+
+#[derive(Debug)]
+struct OdeResult {
+    y: ArrayD<f64>,
+    t_events: Option<Vec<ArrayD<f64>>>,
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for OdeResult {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+        let y: PyReadonlyArrayDyn<'py, f64> = ob.getattr("y")?.extract()?;
+        let t_events: Option<Vec<PyReadonlyArrayDyn<'py, f64>>> =
+            ob.getattr("t_events")?.extract()?;
+
+        let y = y.as_array().to_owned();
+        let t_events = t_events.map(|t_events| {
+            t_events
+                .into_iter()
+                .map(|row| row.as_array().to_owned())
+                .collect()
+        });
+
+        Ok(Self { y, t_events })
+    }
+}
+
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub(crate) struct EmittersDetailedResult {
@@ -2170,8 +2180,11 @@ mod tests {
         override_variable_flow: Option<bool>,
         override_design_flow_rate: Option<f64>,
         override_bypass_fraction_recirculated: Option<f64>,
+        thermal_mass: Option<f64>,
+        pipework: Option<Vec<WaterPipework>>,
+        wet_emitters: Option<Value>,
     ) -> Emitters {
-        let thermal_mass = 0.07;
+        let thermal_mass = thermal_mass.unwrap_or(0.07);
         let temp_diff_emit_dsgn = 10.0;
         let ecodesign_controller = override_ecodesign_controller.unwrap_or(ecodesign_controller);
 
@@ -2179,25 +2192,26 @@ mod tests {
 
         let with_buffer_tank = with_buffer_tank.unwrap_or(false);
 
-        let wet_emitters: Vec<WetEmitterInput> = serde_json::from_value(json!([
-            {
-                "wet_emitter_type": "radiator",
-                "c": 0.04,
-                "n": 1.2,
-                "frac_convective": 0.4
-            },
-            {
-                "wet_emitter_type": "radiator",
-                "c_per_m": 0.08,
-                "thermal_mass_per_m": 0.14,
-                "length": 0.5,
-                "n": 1.2,
-                "frac_convective": 0.4
-            },
-        ]))
-        .unwrap();
+        let wet_emitters: Vec<WetEmitterInput> =
+            serde_json::from_value(wet_emitters.unwrap_or(json!([
+                {
+                    "wet_emitter_type": "radiator",
+                    "c": 0.04,
+                    "n": 1.2,
+                    "frac_convective": 0.4
+                },
+                {
+                    "wet_emitter_type": "radiator",
+                    "c_per_m": 0.08,
+                    "thermal_mass_per_m": 0.14,
+                    "length": 0.5,
+                    "n": 1.2,
+                    "frac_convective": 0.4
+                },
+            ])))
+            .unwrap();
 
-        let pipework = [WaterPipework {
+        let pipework = pipework.unwrap_or(vec![WaterPipework {
             location: WaterPipeworkLocation::Internal,
             internal_diameter_mm: 10.0,
             external_diameter_mm: 12.0,
@@ -2206,7 +2220,7 @@ mod tests {
             insulation_thickness_mm: 0.0,
             surface_reflectivity: false,
             pipe_contents: PipeworkContents::Water,
-        }];
+        }]);
 
         Emitters::new(
             Some(thermal_mass),
@@ -2254,6 +2268,9 @@ mod tests {
             zone,
             ecodesign_controller,
             simulation_time,
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -2961,6 +2978,9 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         )
     }
 
@@ -2984,6 +3004,9 @@ mod tests {
             zone,
             ecodesign_controller,
             simulation_time,
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -3373,6 +3396,9 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         )
     }
 
@@ -3523,17 +3549,47 @@ mod tests {
         }
     }
 
+    #[fixture]
+    fn emitters_for_energy_output_min(
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+        zone: Arc<dyn SimpleZone>,
+        ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
+    ) -> Emitters {
+        emitters_fixture(
+            heat_source,
+            external_conditions,
+            zone,
+            ecodesign_controller,
+            simulation_time,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(0.14),
+            Some(vec![]),
+            Some(json!([{
+                "wet_emitter_type": "radiator",
+                "c": 0.08,
+                "n": 1.2,
+                "frac_convective": 0.4,
+            }])),
+        )
+    }
+
     #[rstest]
-    #[ignore = "blocked by temp_emitters issue"]
+    // #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_output_min(
-        mut emitters: Emitters,
+        mut emitters_for_energy_output_min: Emitters,
         zone_for_energy_output_min: Arc<dyn SimpleZone>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        emitters.zone = zone_for_energy_output_min;
-
+        emitters_for_energy_output_min.zone = zone_for_energy_output_min;
         assert_relative_eq!(
-            emitters
+            emitters_for_energy_output_min
                 .energy_output_min(simulation_time_iterator.current_iteration())
                 .unwrap(),
             0.2780866841016483,
@@ -3564,6 +3620,9 @@ mod tests {
             None,
             Some(true),
             Some((0.01, 0.02)),
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -3610,6 +3669,9 @@ mod tests {
             None,
             Some(false),
             Some(0.02),
+            None,
+            None,
+            None,
             None,
         )
     }
@@ -3675,6 +3737,9 @@ mod tests {
             None,
             None,
             Some(0.5),
+            None,
+            None,
+            None,
         )
     }
 
