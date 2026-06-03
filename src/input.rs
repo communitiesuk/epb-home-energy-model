@@ -1017,7 +1017,7 @@ pub(crate) enum ControlDetails {
 
         /// Temperature delta schedule for charge cut-off adjustment (unit: ˚C)
         #[serde(skip_serializing_if = "Option::is_none")]
-        temp_charge_cut_delta: Option<NumericSchedule>,
+        temp_charge_cut_delta: Option<Box<NumericSchedule>>,
 
         /// Indicates from which hour of the day the system starts to target the charge level for the next day rather than the current day
         #[serde(default = "default_charge_calc_time")]
@@ -7874,7 +7874,7 @@ mod tests {
                     control: "control_test".into(),
                     thermal_mass: None,
                     flow_data: FlowData::Variable {
-                        _variable_flow: MustBeBool::default(),
+                        _variable_flow: MustBeBool,
                         max_flow_rate: 18.,
                         min_flow_rate: 3.,
                     },
