@@ -794,8 +794,8 @@ impl Emitters {
             let temp_diff_max = temp_emitter_max - temp_rm;
 
             // Define event where emitter reaches max. temp (event occurs when func returns zero)
-            let func: Box<dyn Fn(&[f64], &[f64]) -> f64 + Send + Sync> =
-                Box::new(move |_t: &[f64], y: &[f64]| -> f64 { y[0] - temp_diff_max });
+            let func: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync> =
+                Box::new(move |_t: f64, y: &[f64]| -> f64 { y[0] - temp_diff_max });
             let temp_diff_max_reached = TerminalFunction { inner: func };
 
             Some(temp_diff_max_reached)
@@ -1825,15 +1825,15 @@ impl Emitters {
 
 #[pyclass]
 struct TerminalFunction {
-    inner: Box<dyn Fn(&[f64], &[f64]) -> f64 + Send + Sync>,
+    inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
 }
 
 #[pymethods]
 impl TerminalFunction {
     #[pyo3(signature = (t, y, /))]
-    fn __call__(&self, t: Vec<f64>, y: Vec<f64>) -> PyResult<f64> {
+    fn __call__(&self, t: f64, y: Vec<f64>) -> PyResult<f64> {
         // Execute the boxed closure
-        let result = (self.inner)(&t, &y);
+        let result = (self.inner)(t, &y);
         Ok(result)
     }
 
