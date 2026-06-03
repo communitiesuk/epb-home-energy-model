@@ -1657,7 +1657,7 @@ impl Emitters {
     /// Energy released from emitters after doing a previous loop
     /// that updates the return temperature.
     pub(crate) fn demand_energy(
-        &mut self,
+        &self,
         energy_demand: f64,
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -2890,10 +2890,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_demand_energy(
-        simulation_time_iterator: SimulationTimeIterator,
-        mut emitters: Emitters,
-    ) {
+    fn test_demand_energy(simulation_time_iterator: SimulationTimeIterator, emitters: Emitters) {
         let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let mut energy_demand = 0.0;
 
@@ -2995,7 +2992,7 @@ mod tests {
 
     #[rstest]
     fn test_demand_energy_fancoil(
-        mut fancoil: Emitters,
+        fancoil: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
@@ -4209,7 +4206,7 @@ mod tests {
             },
         ];
 
-        let mut fancoil_system = Emitters::new(
+        let fancoil_system = Emitters::new(
             None,
             &emitters,
             &pipework,
@@ -4277,7 +4274,7 @@ mod tests {
             pipe_contents: PipeworkContents::Water,
         }];
 
-        let mut fancoil_system = Emitters::new(
+        let fancoil_system = Emitters::new(
             None,
             &emitters,
             &pipework,
