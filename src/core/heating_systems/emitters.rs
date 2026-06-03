@@ -3224,7 +3224,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_required_from_heat_source(
         simulation_time_iterator: SimulationTimeIterator,
         emitters: Emitters,
@@ -3306,12 +3305,11 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_required_from_heat_source_with_buffer_tank(
         simulation_time_iterator: SimulationTimeIterator,
         emitters_with_buffer_tank: Emitters,
     ) {
-        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         let temp_flow_target = 30.0;
 
         let mut energy_demand = 0.0;
@@ -3389,7 +3387,7 @@ mod tests {
         emitters_with_buffer_tank: Emitters,
     ) {
         let temp_flow_target = 30.0;
-        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         let mut energy_demand = 0.0;
         let timestep = 1.0;
         let temp_rm_prev = 10.0;
