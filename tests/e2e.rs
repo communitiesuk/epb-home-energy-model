@@ -63,11 +63,11 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             use_additional_options,
             use_additional_options,
         );
-        assert!(
-            result.is_ok(),
-            "Error running project for file: {}",
-            file.path().display()
-        );
+        if let Err(e) = result {
+            println!("💥 Error running project for file (100,000 difference penalty!) {}: {}", file.path().display(), e);
+            difference_count += 100000;
+            return difference_count;
+        }
         let output_files = output_writer.files();
         let actual_file_count = output_files.len();
         let expected_files: IndexMap<String, DirEntry> = expected_directory(file)
