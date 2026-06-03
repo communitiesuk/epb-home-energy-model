@@ -308,18 +308,18 @@ mod compare {
 
     #[derive(Debug, Clone)]
     pub enum Difference {
-        StringDifference {
+        String {
             left: String,
             right: String,
             field_index: usize,
         },
-        NumberDifference {
+        Number {
             left: f64,
             right: f64,
             numerical_difference: f64,
             field_index: usize,
         },
-        RecordDifference {
+        Record {
             message: String,
         },
     }
@@ -327,9 +327,9 @@ mod compare {
     impl Difference {
         fn field_index(&self) -> Option<usize> {
             match self {
-                Difference::StringDifference { field_index, .. } => Some(*field_index),
-                Difference::NumberDifference { field_index, .. } => Some(*field_index),
-                Difference::RecordDifference { .. } => None,
+                Difference::String { field_index, .. } => Some(*field_index),
+                Difference::Number { field_index, .. } => Some(*field_index),
+                Difference::Record { .. } => None,
             }
         }
     }
@@ -338,14 +338,14 @@ mod compare {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             // assumption here that left is Python and right is Rust
             match self {
-                Difference::StringDifference {
+                Difference::String {
                     left,
                     right,
                     field_index,
                 } => {
                     write!(f, "column {field_index}, 🐍: \"{left}\", 🦀: \"{right}\"")
                 }
-                Difference::NumberDifference {
+                Difference::Number {
                     left,
                     right,
                     numerical_difference,
@@ -356,7 +356,7 @@ mod compare {
                         "column {field_index}, 🐍: {left}, 🦀: {right}, Diff: {numerical_difference}"
                     )
                 }
-                Difference::RecordDifference { message } => {
+                Difference::Record { message } => {
                     write!(f, "{}", message)
                 }
             }
@@ -409,7 +409,7 @@ mod compare {
                     self.len(),
                     other.len()
                 );
-                return Err(vec![Difference::RecordDifference { message }]);
+                return Err(vec![Difference::Record { message }]);
             }
             let differences = self
                 .record
@@ -423,13 +423,7 @@ mod compare {
                 })
                 .enumerate()
                 // Result<(), Difference>
-                .filter_map(|(index, (left, right))| {
-                    let comparison = left.equiv(&right, index);
-                    match comparison {
-                        Ok(_) => None,
-                        Err(difference) => Some(difference),
-                    }
-                })
+                .filter_map(|(index, (left, right))| left.equiv(&right, index).err())
                 .collect::<Vec<_>>();
 
             if differences.is_empty() {
@@ -453,7 +447,7 @@ mod compare {
     impl OutputCellValue {
         fn equiv(&self, other: &OutputCellValue, field_index: usize) -> Result<(), Difference> {
             if discriminant(self) != discriminant(other) {
-                return Err(Difference::StringDifference {
+                return Err(Difference::String {
                     left: format!("{:?}", self),
                     right: format!("{:?}", other),
                     field_index,
@@ -469,7 +463,7 @@ mod compare {
                     if numerical_difference < FLOAT_THRESHOLD {
                         Ok(())
                     } else {
-                        Err(Difference::NumberDifference {
+                        Err(Difference::Number {
                             left: *float,
                             right: other_float,
                             numerical_difference,
@@ -486,7 +480,7 @@ mod compare {
                     if string == other_string {
                         Ok(())
                     } else {
-                        Err(Difference::StringDifference {
+                        Err(Difference::String {
                             left: string.clone(),
                             right: other_string.clone(),
                             field_index,
@@ -629,7 +623,7 @@ mod compare {
                 next_record.unwrap()
             } else {
                 file_differences.push(DifferenceInFile::new(
-                    Difference::RecordDifference {
+                    Difference::Record {
                         message: format!("Rust file only had {} lines", record_index + 1),
                     },
                     0,
