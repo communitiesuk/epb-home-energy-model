@@ -17,6 +17,7 @@ clap = { version = "4.6.1", features = ["derive"], optional = true }
 convert_case = "0.11.0"
 csv = "1.4.0"
 derivative = "2.2.0"
+eqsolver = "0.4.0"
 erased-serde = "0.4.10"
 field_types = "1.1.0"
 format_num = "0.1.0"
@@ -30,9 +31,11 @@ itertools = "0.14.0"
 jsonschema = "0.46.5"
 monostate = "1.0.2"
 nalgebra = "0.33.3"
+numpy = "0.28.0"
 ode_solvers = { version = "0.5.0", git = "https://github.com/russ-madetech/ode-solvers", branch = "events" }
 ordered-float = "5.3.0"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
+petgraph = "0.8.3"
 polyfit-rs = "0.2.2"
 pyo3 = { version = "0.28.3", features = ["auto-initialize"] }
 roots = "0.0.8"
@@ -46,8 +49,6 @@ smartstring = { version = "1.0.1", features = ["arbitrary", "serde"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
-petgraph = "0.8.3"
-eqsolver = "0.4.0"
 
 [dev-dependencies]
 approx = "0.5.1"
