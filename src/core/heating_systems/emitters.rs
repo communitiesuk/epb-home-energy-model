@@ -1258,7 +1258,7 @@ impl Emitters {
                 let power_output_max_min = energy_provided_by_heat_source_max_min / timestep;
 
                 let (temp_emitter, time_temp_emitter_max_reached) = self.temp_emitter(
-                    0.0,
+                    time_heating_start,
                     timestep,
                     self.temp_emitter_prev(),
                     temp_rm_prev,
