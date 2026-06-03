@@ -795,7 +795,9 @@ impl Emitters {
 
             // Define event where emitter reaches max. temp (event occurs when func returns zero)
             let func: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync> =
-                Box::new(move |_t: f64, y: &[f64]| -> f64 { y[0] - temp_diff_max });
+                Box::new(move |_t: f64, y: &[f64]| -> f64 {
+                    y[0] - temp_diff_max
+                });
             let temp_diff_max_reached = TerminalFunction { inner: func };
 
             Some(temp_diff_max_reached)
@@ -830,9 +832,7 @@ impl Emitters {
 
         if let Some(t_events) = t_events {
             let t_events = &t_events[0];
-            if !t_events.is_empty() {
-                time_temp_diff_max_reached = t_events.iter().copied().last();
-            }
+            time_temp_diff_max_reached = t_events.iter().copied().last();
         }
 
         let temp_diff_emitter_rm_final = *y.iter().last().ok_or_else(|| {
@@ -1841,8 +1841,14 @@ impl TerminalFunction {
         Ok(result)
     }
 
-    fn __getattribute__(&self, name: String) -> PyResult<Option<bool>> {
-        Ok((name == "Terminal").then_some(true))
+    fn __getattribute__(&self, name: String) -> PyResult<Option<f64>> {
+        Ok(
+            match name.as_str() {
+                "terminal" => Some(1.0), // a float value that Python would consider truthy
+                "direction" => Some(0.0),
+                _ => None,
+            }
+        )
     }
 }
 
@@ -3132,11 +3138,10 @@ mod tests {
             .unwrap();
         assert_eq!(temp_emitter, 25.);
 
-        // TODO decrease max_relative when possible
         assert_relative_eq!(
             time_temp_diff_max_reached.unwrap(),
             1.2964605622321956,
-            max_relative = FOUR_DECIMAL_PLACES
+            max_relative = EIGHT_DECIMAL_PLACES
         );
     }
 
@@ -3479,7 +3484,6 @@ mod tests {
     }
 
     #[rstest]
-    // #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_output_min(
         mut emitters_for_energy_output_min: Emitters,
         zone_for_energy_output_min: Arc<dyn SimpleZone>,
