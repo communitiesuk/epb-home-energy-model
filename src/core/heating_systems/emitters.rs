@@ -1051,14 +1051,18 @@ impl Emitters {
         let (energy_provided_by_heat_source_max_min, emitters_data_for_buffer_tank_with_result) =
             if self.fancoil.is_some()
                 || temp_emitter_heating_start < temp_emitter_max
-                || (temp_emitter_heating_start - temp_emitter_max).abs() < 1e-10
+                || is_close!(
+                    temp_emitter_heating_start,
+                    temp_emitter_max,
+                    abs_tol = 1e-10
+                )
             {
                 // If emitters are below max. temp for this timestep, then max energy
                 // required from heat source will depend on maximum warm-up rate,
                 // which depends on the maximum energy output from the heat source
                 let emitters_data_for_buffer_tank = self.with_buffer_tank.then(|| {
                     let power_req_from_buffer_tank = if (timestep - time_heating_start) < 0.0
-                        || (timestep - time_heating_start).abs() < 1e-10
+                        || is_close!(timestep, time_heating_start, rel_tol = 1e-9)
                     {
                         // If there is no time remaining in the timestep, then there
                         // is no power requirement (and we need to avoid div-by-zero)
