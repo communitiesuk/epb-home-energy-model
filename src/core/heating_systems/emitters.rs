@@ -3525,7 +3525,7 @@ mod tests {
             simulation_time,
             None,
             Some(true),
-            Some((0.01, 0.02)),
+            Some((0.01 * SECONDS_PER_MINUTE as f64, 0.02 * SECONDS_PER_MINUTE as f64)), // value is divided by 60 on way in through Emitters::new
             None,
             None,
             None,
@@ -3536,7 +3536,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "presumed blocked by temp_emitters issue"]
     fn test_return_temp_from_flow_rate_above_max(
         emitters_with_flow_rate_above_max: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
@@ -3575,7 +3574,7 @@ mod tests {
             Some(true),
             None,
             Some(false),
-            Some(0.02),
+            Some(0.02 * SECONDS_PER_MINUTE as f64), // value passed is divided by 60 in Emitters::new
             None,
             None,
             None,
@@ -3584,12 +3583,11 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "presumed blocked by temp_emitters issue"]
     fn test_return_temp_from_flow_rate_non_variable_flow(
-        emitters_with_flow_rate_above_max: Emitters,
+        emitters_with_non_variable_flow: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let emitters = Arc::new(emitters_with_flow_rate_above_max);
+        let emitters = Arc::new(emitters_with_non_variable_flow);
         let (temp_return_target, blended_temp_flow_target, flow_rate_m3s) =
             Emitters::return_temp_from_flow_rate(
                 emitters,
@@ -3600,17 +3598,17 @@ mod tests {
             )
             .unwrap();
 
-        assert_relative_eq!(temp_return_target, 37.341333463552274);
+        assert_relative_eq!(temp_return_target, 37.316179275512695);
         assert_eq!(blended_temp_flow_target, 50.);
         assert_relative_eq!(flow_rate_m3s, 0.00002);
     }
 
     #[rstest]
     fn test_return_temp_from_flow_rate_non_variable_flow_no_energy(
-        emitters_with_flow_rate_above_max: Emitters,
+        emitters_with_non_variable_flow: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let emitters = Arc::new(emitters_with_flow_rate_above_max);
+        let emitters = Arc::new(emitters_with_non_variable_flow);
         let (temp_return_target, blended_temp_flow_target, flow_rate_m3s) =
             Emitters::return_temp_from_flow_rate(
                 emitters,
