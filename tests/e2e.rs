@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use home_energy_model::output_writer::OutputWriter;
 use home_energy_model::read_weather_file::cibse_weather_data_to_external_conditions;
 use home_energy_model::{run_project_from_input_file, OutputFormat};
@@ -7,13 +6,14 @@ use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use rstest::*;
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Write};
 use std::path::Path;
 use std::str::from_utf8;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use walkdir::{DirEntry, WalkDir};
 
 #[fixture]

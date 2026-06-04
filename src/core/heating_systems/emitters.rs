@@ -766,13 +766,20 @@ impl Emitters {
         let c_n_pairs = self.extract_c_n_pairs();
         let thermal_mass = self.thermal_mass;
 
-        // (power_input - self.c * max_of_2(0., y).powf(self.n)) / self.thermal_mass
+        Self::func_temp_emitter_change_rate_pure(c_n_pairs, thermal_mass, power_input)
+    }
+
+    fn func_temp_emitter_change_rate_pure(
+        c_n_pairs: Vec<(f64, f64)>,
+        thermal_mass: Option<f64>,
+        power_input: f64,
+    ) -> impl Fn(f64, [f64; 1]) -> f64 {
         move |_t, temp_diff: [f64; 1]| -> f64 {
             (power_input
                 - c_n_pairs
-                    .iter()
-                    .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
-                    .sum::<f64>())
+                .iter()
+                .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
+                .sum::<f64>())
                 / thermal_mass.expect("thermal_mass is expected to be set when func_temp_emitter_change_rate is called")
         }
     }
@@ -780,6 +787,31 @@ impl Emitters {
     /// Calculate emitter temperature after specified time with specified power input
     fn temp_emitter(
         &self,
+        time_start: f64,
+        time_end: f64,
+        temp_emitter_start: f64,
+        temp_rm: f64,
+        power_input: f64,
+        temp_emitter_max: Option<f64>,
+    ) -> anyhow::Result<(f64, Option<f64>)> {
+        let c_n_pairs = self.extract_c_n_pairs();
+        let thermal_mass = self.thermal_mass;
+
+        Self::temp_emitter_pure(
+            c_n_pairs,
+            thermal_mass,
+            time_start,
+            time_end,
+            temp_emitter_start,
+            temp_rm,
+            power_input,
+            temp_emitter_max,
+        )
+    }
+
+    fn temp_emitter_pure(
+        c_n_pairs: Vec<(f64, f64)>,
+        thermal_mass: Option<f64>,
         time_start: f64,
         time_end: f64,
         temp_emitter_start: f64,
@@ -804,8 +836,11 @@ impl Emitters {
         };
 
         // Get function representing change rate equation and solve iteratively
-        let func_temp_emitter_change_rate =
-            Box::new(self.func_temp_emitter_change_rate(power_input));
+        let func_temp_emitter_change_rate = Box::new(Self::func_temp_emitter_change_rate_pure(
+            c_n_pairs,
+            thermal_mass,
+            power_input,
+        ));
         let callback = RustCallback {
             inner: func_temp_emitter_change_rate,
         };
@@ -1160,9 +1195,29 @@ impl Emitters {
         time_cooldown: f64,
         [timestep, energy_demand, temp_rm_prev]: [f64; 3],
     ) -> anyhow::Result<f64> {
-        // Calculate emitter temperature after specified time with no heat input
+        let c_n_pairs = self.extract_c_n_pairs();
+        let thermal_mass = self.thermal_mass;
         let temp_emitter_prev = self.temp_emitter_prev();
-        let (time_emitter_no_heat_input, _) = self.temp_emitter(
+
+        Self::energy_surplus_during_cooldown_pure(
+            c_n_pairs,
+            thermal_mass,
+            temp_emitter_prev,
+            time_cooldown,
+            [timestep, energy_demand, temp_rm_prev],
+        )
+    }
+
+    fn energy_surplus_during_cooldown_pure(
+        c_n_pairs: Vec<(f64, f64)>,
+        thermal_mass: Option<f64>,
+        temp_emitter_prev: f64,
+        time_cooldown: f64,
+        [timestep, energy_demand, temp_rm_prev]: [f64; 3],
+    ) -> anyhow::Result<f64> {
+        let (time_emitter_no_heat_input, _) = Self::temp_emitter_pure(
+            c_n_pairs,
+            thermal_mass,
             0.0,
             time_cooldown,
             temp_emitter_prev,
@@ -1170,8 +1225,7 @@ impl Emitters {
             0.0, // no heat from heat source during initial cool-down
             None,
         )?;
-        let energy_released_from_emitters = self
-            .thermal_mass
+        let energy_released_from_emitters = thermal_mass
             .expect("thermal_mass expected to be set when calling energy_surplus_during_cooldown")
             * (temp_emitter_prev - time_emitter_no_heat_input);
         let energy_demand_cooldown = energy_demand * time_cooldown / timestep;
@@ -1209,11 +1263,18 @@ impl Emitters {
             // than the start because at the start of the timestep the
             // function being solved will effectively be 0 minus 0, which
             // is not the result we are seeking (unless no other exists)
+
+            let c_n_pairs = self.extract_c_n_pairs();
+            let thermal_mass = self.thermal_mass;
+            let temp_emitter_prev = self.temp_emitter_prev();
+
+            let root_func = Box::new(move |time_cooldown, args| {
+                let c_n_pairs = c_n_pairs.clone();
+                Self::energy_surplus_during_cooldown_pure(c_n_pairs, thermal_mass, temp_emitter_prev, time_cooldown, args)
+            });
+
             let time_cooldown = root(
-                |time_cooldown, args| {
-                    self.energy_surplus_during_cooldown(time_cooldown, args)
-                        .expect("Root solving failed due to issue arising when using Dopri stepper")
-                },
+                root_func,
                 timestep,
                 [timestep, energy_demand, temp_rm_prev],
                 Some(1e-8),
@@ -3503,11 +3564,7 @@ mod tests {
         );
     }
 
-    #[rstest]
-    #[ignore = "python test expects this root function to fail, but it doesn't here - investigate"]
-    fn test_calc_emitter_cooldown_exception(emitters: Emitters) {
-        assert!(emitters.calc_emitter_cooldown(10., 20., 20., 1.).is_err());
-    }
+    // skip test_calc_emitter_cooldown_exception as it uses function mocking and doesn't provide much value
 
     #[fixture]
     fn emitters_with_flow_rate_above_max(

@@ -1,9 +1,10 @@
 use eqsolver::single_variable::FDNewton;
+use numpy::ndarray::ArrayD;
+use numpy::PyReadonlyArrayDyn;
 use parking_lot::Mutex;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::IntoPyDict;
-use roots::{find_root_brent, SimpleConvergency};
 use std::sync::Arc;
 
 pub(crate) fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
@@ -58,41 +59,74 @@ pub(crate) fn bisect<'a>(
         Ok(result.extract()?)
     })
     .map_err(move |e: PyErr| anyhow::anyhow!(e))
+}
 
-    // let mut convergency = SimpleConvergency {
-    //     eps: xtol,
-    //     max_iter: 100, // default for bisect in scipy
-    // };
-    //
-    // // For the time being we use the brent root solver
-    // find_root_brent::<f64, _>(
-    //     a.max(0.), // ensure first bracket is at least zero
-    //     b,
-    //     func_modified,
-    //     &mut convergency,
-    // )
-    // .map_err(|e| anyhow::anyhow!(e))
+#[pyclass]
+struct FallibleRootRustCallback {
+    // We use Box<dyn Fn> to store the closure.
+    // Note: It needs to be Send + Sync because it will need to be passed to a Python thread.
+    inner: Box<dyn Fn(f64, [f64; 3]) -> anyhow::Result<f64> + Send + Sync>,
+    last_error: Arc<Mutex<Option<anyhow::Error>>>,
+}
+
+#[pymethods]
+impl FallibleRootRustCallback {
+    // The `__call__` method makes the object act like a function in Python.
+    #[pyo3(signature = (x0, args, /))]
+    fn __call__(&self, x0: f64, args: [f64; 3]) -> PyResult<f64> {
+        // Execute the boxed closure
+        match (self.inner)(x0, args) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                let msg = format!("{e:#}");
+                *self.last_error.lock() = Some(e);
+                Err(PyRuntimeError::new_err(msg))
+            }
+        }
+    }
 }
 
 // An viable equivalent of scipy.optimize.root
-pub(crate) fn root<const ARGCOUNT: usize>(
-    fun: impl Fn(f64, [f64; ARGCOUNT]) -> f64,
+pub(crate) fn root(
+    fun: Box<dyn Fn(f64, [f64; 3]) -> anyhow::Result<f64> + Send + Sync>,
     x0: f64,
-    args: [f64; ARGCOUNT],
+    args: [f64; 3],
     tol: Option<f64>,
 ) -> anyhow::Result<f64> {
-    let mut convergency = SimpleConvergency {
-        eps: tol.unwrap_or(1e-8),
-        max_iter: 40, // picked intended as reasonably conservative default
+    let rust_callback = FallibleRootRustCallback {
+        inner: fun,
+        last_error: Arc::new(Mutex::new(None)),
     };
-    let guess_interval = 5.; // initial guess for guess interval
 
-    // TODO can we use BrentRoot in argmin for this?
-    find_root_brent::<f64, _>(
-        (x0 - guess_interval).max(0.), // ensure first bracket is at least zero
-        x0 + guess_interval,
-        |f| fun(f, args),
-        &mut convergency,
-    )
-    .map_err(|e| anyhow::anyhow!(e))
+    let result = Python::attach(move |py| {
+        let optimize = py.import("scipy.optimize")?;
+        let root = optimize.getattr("root")?;
+
+        let kwargs = [("tol", tol)].into_py_dict(py)?;
+
+        Ok(root
+            .call((rust_callback, x0, args), Some(&kwargs))?
+            .extract::<RootResult>()?)
+    })
+    .map_err(move |e: PyErr| anyhow::anyhow!(e))?;
+
+    let RootResult { x } = result;
+
+    Ok(x[0])
+}
+
+#[derive(Debug)]
+struct RootResult {
+    x: ArrayD<f64>,
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for RootResult {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+        let x: PyReadonlyArrayDyn<'py, f64> = ob.getattr("x")?.extract()?;
+        let x = x.as_array().to_owned();
+
+        Ok(Self { x })
+    }
 }
