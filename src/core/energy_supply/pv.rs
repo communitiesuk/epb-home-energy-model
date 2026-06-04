@@ -587,7 +587,6 @@ mod tests {
         assert!(pv_system_with_shading.inverter_is_inside());
     }
 
-    // #[ignore]
     #[rstest]
     fn test_produce_energy(
         pv_system_with_energy_supply: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
