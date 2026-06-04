@@ -2286,8 +2286,25 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO: Python uses np.linalg.solve, what would be valuable in Rust?"]
-    fn test_fast_solver() {}
+    fn test_fast_solver(thermal_bridging_objects: ThermalBridging) {
+        let mut coeffs: DMatrix<f64> = DMatrix::zeros(28, 28);
+        let mut rhs: DVector<f64> = DVector::zeros(28);
+        coeffs[(0, 1)] = 3.;
+        coeffs[(2, 1)] = 3.;
+        coeffs[(4, 3)] = 3.;
+
+        coeffs.fill_diagonal(2.);
+        rhs.fill(2000.);
+
+        let expected = coeffs.clone().lu().solve(&rhs).unwrap();
+
+        let zone = zone(thermal_bridging_objects, None).unwrap();
+        let result = &zone.fast_solver(coeffs, rhs).unwrap();
+
+        for (i, expected_temp) in expected.data.as_vec().into_iter().enumerate() {
+            assert_relative_eq!(result[i], expected_temp)
+        }
+    }
 
     fn maps_approx_equal(
         actual: &IndexMap<Arc<str>, f64>,
