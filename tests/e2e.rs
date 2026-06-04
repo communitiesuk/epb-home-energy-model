@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use home_energy_model::output_writer::OutputWriter;
 use home_energy_model::read_weather_file::cibse_weather_data_to_external_conditions;
 use home_energy_model::{run_project_from_input_file, OutputFormat};
@@ -12,6 +13,7 @@ use std::io::{BufReader, Cursor, Write};
 use std::path::Path;
 use std::str::from_utf8;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use walkdir::{DirEntry, WalkDir};
 
 #[fixture]
@@ -50,11 +52,19 @@ fn test_run_all_files(files: Vec<DirEntry>) {
     )))
     .unwrap();
 
+    let tracked_files: Arc<RwLock<HashSet<String>>> = Default::default();
+
     let difference_count: usize = files.par_iter().map(move |file| {
         println!("\n🎬 starting to run HEM calculation on file {}\n", file.file_name().display());
         let mut difference_count = 0usize;
         let output_writer = InMemoryDirectoryOutputWriter::new(file.file_name().to_str().unwrap());
         let use_additional_options = use_additional_options(file);
+        let file_name_string = file.file_name().to_str().unwrap().to_string();
+        {
+            let mut tracked_files = tracked_files.write();
+            tracked_files.insert(file_name_string.clone());
+            println!("🏃‍♂️ starting new calc - current count of calculations under way: {}", tracked_files.len());
+        }
         let result = run_project_from_input_file(
             BufReader::new(File::open(file.path()).unwrap()).into(),
             &output_writer,
@@ -64,6 +74,12 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             use_additional_options,
             use_additional_options,
         );
+        {
+            let mut tracked_files = tracked_files.write();
+            println!("🏁 finished calculation for {}", &file_name_string);
+            tracked_files.remove(&file_name_string);
+            println!("📋 {} files left being calculated: {}", tracked_files.len(), tracked_files.iter().join(", "));
+        }
         if let Err(e) = result {
             println!("💥 Error running project for file (100,000 difference penalty!) {}: {}", file.path().display(), e);
             difference_count += 100000;
