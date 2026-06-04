@@ -51,6 +51,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
     .unwrap();
 
     let difference_count: usize = files.par_iter().map(move |file| {
+        println!("\n🎬 starting to run HEM calculation on file {}\n", file.file_name().display());
         let mut difference_count = 0usize;
         let output_writer = InMemoryDirectoryOutputWriter::new(file.file_name().to_str().unwrap());
         let use_additional_options = use_additional_options(file);
