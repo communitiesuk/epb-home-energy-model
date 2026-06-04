@@ -823,7 +823,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue"]
+    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_output_min(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -870,7 +870,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue"]
+    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_output_max(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1301,7 +1301,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue (energy_output)"]
+    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_demand_energy_no_demand(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1695,7 +1695,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue"]
+    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1739,7 +1739,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue"]
+    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_instant(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1783,7 +1783,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue"]
+    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_charged(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1827,7 +1827,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue"]
+    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_stored_delivered(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1989,8 +1989,8 @@ mod tests {
         assert!(actual_energy < 10.);
     }
 
-    #[ignore = "known issue"]
     #[rstest]
+    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_elec_storage_energy_output_modes(
         elec_storage_heater: Arc<ElecStorageHeater>,
         simulation_time: SimulationTime,
