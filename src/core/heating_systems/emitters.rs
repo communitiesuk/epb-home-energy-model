@@ -1270,7 +1270,13 @@ impl Emitters {
 
             let root_func = Box::new(move |time_cooldown, args| {
                 let c_n_pairs = c_n_pairs.clone();
-                Self::energy_surplus_during_cooldown_pure(c_n_pairs, thermal_mass, temp_emitter_prev, time_cooldown, args)
+                Self::energy_surplus_during_cooldown_pure(
+                    c_n_pairs,
+                    thermal_mass,
+                    temp_emitter_prev,
+                    time_cooldown,
+                    args,
+                )
             });
 
             let time_cooldown = root(
@@ -3564,7 +3570,7 @@ mod tests {
         );
     }
 
-    // skip test_calc_emitter_cooldown_exception as it uses function mocking and doesn't provide much value
+    // skip test_calc_emitter_cooldown_exception as it requires function mocking and it doesn't provide much value
 
     #[fixture]
     fn emitters_with_flow_rate_above_max(
