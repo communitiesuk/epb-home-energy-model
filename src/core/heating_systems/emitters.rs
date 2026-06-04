@@ -3656,7 +3656,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "presumed blocked by temp_emitters issue"]
     fn test_return_temp_from_flow_rate_recirculated(
         emitters_with_flow_rate_recirculated: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
