@@ -751,7 +751,7 @@ impl Emitters {
         };
 
         // NOTE Python uses math.isclose here with a relative tolerance which will be slightly different
-        let return_temp = if flow_temp > 70.0 || (flow_temp - 70.0).abs() < 1e-10 {
+        let return_temp = if flow_temp > 70.0 || is_close!(flow_temp, 70.0, rel_tol = 1e-9) {
             60.0
         } else {
             flow_temp * 6.0 / 7.0
@@ -1124,7 +1124,8 @@ impl Emitters {
             1f64.min(actual_output / fancoil_min_output)
         };
 
-        let fan_power_value = if actual_output < 0. || actual_output.abs() < 1e-10 {
+        let fan_power_value = if actual_output < 0. || is_close!(actual_output, 0., abs_tol = 1e-10)
+        {
             actual_output = 0.;
             0.
         } else {
@@ -1448,7 +1449,7 @@ impl Emitters {
             energy_req_from_heat_source,
             temp_emitter_max_is_final_temp,
             fan_energy_kwh,
-        ) = if energy_demand < 0. || energy_demand.abs() < 1e-10 {
+        ) = if energy_demand < 0. || is_close!(energy_demand, 0., abs_tol = 1e-10) {
             (0.0, self.temp_emitter_prev(), 0.0, false, 0.0)
         } else {
             let (time_heating_start, temp_emitter_heating_start, fan_energy_kwh) =
@@ -1729,7 +1730,7 @@ impl Emitters {
 
                 if energy_released_from_emitters < 0.
                     || energy_required_from_heat_source < 0.
-                    || energy_required_from_heat_source.abs() < 1e-10
+                    || is_close!(energy_required_from_heat_source, 0., abs_tol = 1e-10)
                 {
                     return Ok((temp_flow_target, temp_flow_target, 0.0));
                 }
@@ -1778,7 +1779,9 @@ impl Emitters {
                         Default::default(),
                     )?;
 
-                if energy_required_from_heat_source <= 0. {
+                if energy_required_from_heat_source < 0.
+                    || is_close!(energy_required_from_heat_source, 0., abs_tol = 1e-10)
+                {
                     return Ok((temp_flow_target, temp_flow_target, 0.0));
                 } else {
                     design_flow_rate / LITRES_PER_CUBIC_METRE as f64
@@ -1880,7 +1883,7 @@ impl Emitters {
             // Should be zero at the correct temp_return
             let diff = power_released_from_emitters - calculated_power;
 
-            if diff.abs() < 1e-10 {
+            if is_close!(diff, 0., abs_tol = 1e-6) {
                 Ok(0.0)
             } else {
                 Ok(diff)
