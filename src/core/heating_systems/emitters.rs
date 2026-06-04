@@ -1113,8 +1113,8 @@ impl Emitters {
 
                 let (time_in_warmup_cooldown_phase, temp_emitter_max_reached) =
                     match time_temp_emitter_max_reached {
-                        None => (timestep, false),
-                        Some(time) => (time, true),
+                        None => (timestep - time_heating_start, false),
+                        Some(time) => (time - time_heating_start, true),
                     };
 
                 // Before this time, energy output from heat source is maximum
@@ -1125,7 +1125,7 @@ impl Emitters {
                 // emitter temp (based on emitter output at constant emitter temp)
                 let energy_req_from_heat_source_after_temp_emitter_max_reached = self
                     .power_output_emitter(temp_emitter, temp_rm_prev)
-                    * (timestep - time_in_warmup_cooldown_phase);
+                    * (timestep - time_heating_start - time_in_warmup_cooldown_phase);
 
                 // Total energy input req from heat source is therefore sum of energy
                 // output required before and after max emitter temp reached
@@ -3378,7 +3378,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_required_from_heat_source_with_buffer_tank_no_time_remaining(
         simulation_time_iterator: SimulationTimeIterator,
         emitters_with_buffer_tank: Emitters,
