@@ -1503,16 +1503,17 @@ impl Emitters {
     /// Energy released from emitters after doing a previous loop
     /// that updates the return temperature.
     pub(crate) fn demand_energy(
-        &self,
+        emitters: Arc<Self>,
         energy_demand: f64,
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         // ecodesign controls to determine flow temperature,
         // and 6/7th rule to calculate the initial return temperature
-        let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
+        let (temp_flow_target, temp_return_target) = emitters.temp_flow_return(&simulation_time);
 
-        let (temp_return_target, blended_temp_flow, _flow_rate_m3s) = self
-            .return_temp_from_flow_rate(
+        let (temp_return_target, blended_temp_flow, _flow_rate_m3s) =
+            Self::return_temp_from_flow_rate(
+                emitters.clone(),
                 energy_demand,
                 temp_flow_target,
                 temp_return_target,
@@ -1521,7 +1522,7 @@ impl Emitters {
 
         // Last call to demand_energy_flow_return that updates the heat source state and other internal variables
         // before going to the next timestep.
-        let (energy_released_from_emitters, _) = self.demand_energy_flow_return(
+        let (energy_released_from_emitters, _) = emitters.demand_energy_flow_return(
             energy_demand,
             temp_flow_target,
             temp_return_target,
@@ -1546,7 +1547,7 @@ impl Emitters {
     /// * `temp_flow_target` - flow temp in C
     /// * `temp_return_target` - return temp in C
     fn return_temp_from_flow_rate(
-        &self,
+        emitters: Arc<Self>,
         energy_demand: f64,
         temp_flow_target: f64,
         temp_return_target: f64,
@@ -1557,12 +1558,14 @@ impl Emitters {
         let specific_heat_capacity = WATER.specific_heat_capacity() / JOULES_PER_KILOJOULE as f64;
         let density = WATER.density() * LITRES_PER_CUBIC_METRE as f64;
 
+        let self_ref = emitters.as_ref();
+
         // The heat source can modulate the flow rate
-        let flow_rate_m3s = match self.variable_flow_data {
+        let flow_rate_m3s = match self_ref.variable_flow_data {
             VariableFlowData::Yes => {
                 // The return temperature is calculated from temp_diff_emit_dsgn (not the 6/7th rule).
-                let temp_return_target = temp_flow_target - self.temp_diff_emit_dsgn;
-                let (energy_released_from_emitters, energy_required_from_heat_source) = self
+                let temp_return_target = temp_flow_target - self_ref.temp_diff_emit_dsgn;
+                let (energy_released_from_emitters, energy_required_from_heat_source) = emitters
                     .demand_energy_flow_return(
                         energy_demand,
                         temp_flow_target,
@@ -1583,13 +1586,13 @@ impl Emitters {
                 // The flow rate is calculated from energy_released_from_emitters and delta T
                 let power_released_from_emitters = energy_released_from_emitters / simtime.timestep;
                 let flow_rate_m3s = power_released_from_emitters
-                    / (specific_heat_capacity * density * self.temp_diff_emit_dsgn);
+                    / (specific_heat_capacity * density * self_ref.temp_diff_emit_dsgn);
                 let flow_rate = flow_rate_m3s * LITRES_PER_CUBIC_METRE as f64;
 
-                let (flow_rate, flow_rate_in_range) = if flow_rate < self.min_flow_rate {
-                    (self.min_flow_rate, false)
-                } else if flow_rate > self.max_flow_rate {
-                    (self.max_flow_rate, false)
+                let (flow_rate, flow_rate_in_range) = if flow_rate < self_ref.min_flow_rate {
+                    (self_ref.min_flow_rate, false)
+                } else if flow_rate > self_ref.max_flow_rate {
+                    (self_ref.max_flow_rate, false)
                 } else {
                     (flow_rate, true)
                 };
@@ -1600,10 +1603,10 @@ impl Emitters {
                     // The heat source can operate at this flow rate, so no need of loop.
 
                     // If there is bypass recirculated water, blended temp is calculated and return temp reduced accordingly.
-                    let blended_temp_flow_target = self.blended_temp(
+                    let blended_temp_flow_target = emitters.blended_temp(
                         temp_flow_target,
                         temp_return_target,
-                        self.bypass_fraction_recirculated,
+                        self_ref.bypass_fraction_recirculated,
                     );
                     let temp_return_target =
                         temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
@@ -1613,16 +1616,16 @@ impl Emitters {
                 flow_rate_m3s
             }
             VariableFlowData::No { design_flow_rate } => {
-                let (_energy_released_from_emitters, energy_required_from_heat_source) = self
+                let (_energy_released_from_emitters, energy_required_from_heat_source) = emitters
                     .demand_energy_flow_return(
-                        energy_demand,
-                        temp_flow_target,
-                        temp_return_target,
-                        simtime,
-                        update_heat_source_state.into(),
-                        update_temp_emitter_prev.into(),
-                        Default::default(),
-                    )?;
+                    energy_demand,
+                    temp_flow_target,
+                    temp_return_target,
+                    simtime,
+                    update_heat_source_state.into(),
+                    update_temp_emitter_prev.into(),
+                    Default::default(),
+                )?;
 
                 if energy_required_from_heat_source < 0.
                     || is_close!(energy_required_from_heat_source, 0., abs_tol = 1e-10)
@@ -1637,7 +1640,8 @@ impl Emitters {
         // Loop when the flow rate is constant (design_flow_rate). The initial return temp is the 6/7th rule.
         // Also, for the case of variable flow rate with flow rate out of the allowed range.
         // In this case the initial return temp is calculated from the temp_diff_emit_dsgn.
-        let temp_return_target = self.update_return_temp(
+        let temp_return_target = Self::update_return_temp(
+            emitters.clone(),
             energy_demand,
             temp_flow_target,
             temp_return_target,
@@ -1650,17 +1654,18 @@ impl Emitters {
         )?;
 
         // If there is bypass recirculated water, blended temp is calculated and return temp reduced accordingly.
-        let blended_temp_flow_target = self.blended_temp(
+        let blended_temp_flow_target = self_ref.blended_temp(
             temp_flow_target,
             temp_return_target,
-            self.bypass_fraction_recirculated,
+            self_ref.bypass_fraction_recirculated,
         );
         let mut temp_return_target =
             temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
 
-        if self.bypass_fraction_recirculated > 0. {
+        if self_ref.bypass_fraction_recirculated > 0. {
             // Loop again but this time using blended temp and initial reduced return temp.
-            temp_return_target = self.update_return_temp(
+            temp_return_target = Self::update_return_temp(
+                emitters,
                 energy_demand,
                 blended_temp_flow_target,
                 temp_return_target,
@@ -1700,7 +1705,7 @@ impl Emitters {
     /// * `update_heat_source_state` - if False then heat source state not updated.
     /// * `update_temp_emitter_prev` - if False then emitter temperature is not updated for next time step.
     fn update_return_temp(
-        &self,
+        emitters: Arc<Self>,
         energy_demand: f64,
         temp_flow_target: f64,
         _temp_return_target: f64,
@@ -1711,8 +1716,9 @@ impl Emitters {
         update_heat_source_state: bool,
         update_temp_emitter_prev: bool,
     ) -> anyhow::Result<f64> {
-        let energy_difference = |temp_return: f64| -> anyhow::Result<f64> {
-            let (energy_released_from_emitters, _) = self.demand_energy_flow_return(
+        let emitters = emitters.clone();
+        let energy_difference = Box::new(move |temp_return: f64| -> anyhow::Result<f64> {
+            let (energy_released_from_emitters, _) = emitters.demand_energy_flow_return(
                 energy_demand,
                 temp_flow_target,
                 temp_return,
@@ -1733,7 +1739,7 @@ impl Emitters {
             } else {
                 Ok(diff)
             }
-        };
+        });
 
         if energy_difference(temp_flow_target)? < 0. {
             return Ok(temp_flow_target);
@@ -2815,13 +2821,15 @@ mod tests {
 
     #[rstest]
     fn test_demand_energy(simulation_time_iterator: SimulationTimeIterator, emitters: Emitters) {
+        let emitters = Arc::new(emitters);
         let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let mut energy_demand = 0.0;
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             energy_demand += energy_demand_list[t_idx];
 
-            let energy_provided = emitters.demand_energy(energy_demand, t_it).unwrap();
+            let energy_provided =
+                Emitters::demand_energy(emitters.clone(), energy_demand, t_it).unwrap();
             energy_demand -= energy_provided;
 
             assert_relative_eq!(
@@ -2925,11 +2933,13 @@ mod tests {
         fancoil: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
+        let fancoil = Arc::new(fancoil);
         let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let mut energy_demand = 0.0;
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             energy_demand += energy_demand_list[t_idx];
-            let energy_provided = fancoil.demand_energy(energy_demand, t_it).unwrap();
+            let energy_provided =
+                Emitters::demand_energy(fancoil.clone(), energy_demand, t_it).unwrap();
             energy_demand -= energy_provided;
             assert_relative_eq!(
                 energy_provided,
@@ -3534,15 +3544,16 @@ mod tests {
         emitters_with_flow_rate_above_max: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
+        let emitters = Arc::new(emitters_with_flow_rate_above_max);
         let (temp_return_target, blended_temp_flow_target, flow_rate_m3s) =
-            emitters_with_flow_rate_above_max
-                .return_temp_from_flow_rate(
-                    3.,
-                    50.,
-                    30.,
-                    simulation_time_iterator.current_iteration(),
-                )
-                .unwrap();
+            Emitters::return_temp_from_flow_rate(
+                emitters,
+                3.,
+                50.,
+                30.,
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
 
         assert_relative_eq!(temp_return_target, 37.316179275512695);
         assert_eq!(blended_temp_flow_target, 50.);
@@ -3581,15 +3592,16 @@ mod tests {
         emitters_with_flow_rate_above_max: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
+        let emitters = Arc::new(emitters_with_flow_rate_above_max);
         let (temp_return_target, blended_temp_flow_target, flow_rate_m3s) =
-            emitters_with_flow_rate_above_max
-                .return_temp_from_flow_rate(
-                    3.,
-                    50.,
-                    30.,
-                    simulation_time_iterator.current_iteration(),
-                )
-                .unwrap();
+            Emitters::return_temp_from_flow_rate(
+                emitters,
+                3.,
+                50.,
+                30.,
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
 
         assert_relative_eq!(temp_return_target, 37.341333463552274);
         assert_eq!(blended_temp_flow_target, 50.);
@@ -3601,15 +3613,16 @@ mod tests {
         emitters_with_flow_rate_above_max: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
+        let emitters = Arc::new(emitters_with_flow_rate_above_max);
         let (temp_return_target, blended_temp_flow_target, flow_rate_m3s) =
-            emitters_with_flow_rate_above_max
-                .return_temp_from_flow_rate(
-                    0.,
-                    50.,
-                    30.,
-                    simulation_time_iterator.current_iteration(),
-                )
-                .unwrap();
+            Emitters::return_temp_from_flow_rate(
+                emitters,
+                0.,
+                50.,
+                30.,
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
 
         assert_eq!(temp_return_target, 50.);
         assert_eq!(blended_temp_flow_target, 50.);
@@ -3648,15 +3661,16 @@ mod tests {
         emitters_with_flow_rate_recirculated: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
+        let emitters = Arc::new(emitters_with_flow_rate_recirculated);
         let (temp_return_target, blended_temp_flow_target, flow_rate_m3s) =
-            emitters_with_flow_rate_recirculated
-                .return_temp_from_flow_rate(
-                    3.,
-                    50.,
-                    30.,
-                    simulation_time_iterator.current_iteration(),
-                )
-                .unwrap();
+            Emitters::return_temp_from_flow_rate(
+                emitters,
+                3.,
+                50.,
+                30.,
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
 
         assert_relative_eq!(temp_return_target, 42.38971339502484);
         assert_relative_eq!(blended_temp_flow_target, 47.46323823928833);
@@ -4202,11 +4216,14 @@ mod tests {
         // Test energy demand to trigger pipework heat loss calculation
         // This will execute the lines that calculate pw_heat_loss
         let energy_demand = 2.;
-
+        let fancoil_system = Arc::new(fancoil_system);
         // Call demand_energy which should trigger the pipework heat loss calculation
-        let energy_released = fancoil_system
-            .demand_energy(energy_demand, simulation_time_iterator.current_iteration())
-            .unwrap();
+        let energy_released = Emitters::demand_energy(
+            fancoil_system,
+            energy_demand,
+            simulation_time_iterator.current_iteration(),
+        )
+        .unwrap();
 
         // Verify that energy was released (should be less than demand due to pipework losses)
         assert!(energy_released > 0.);
@@ -4241,28 +4258,30 @@ mod tests {
             pipe_contents: PipeworkContents::Water,
         }];
 
-        let fancoil_system = Emitters::new(
-            None,
-            &emitters,
-            &pipework,
-            10.,
-            true,
-            None,
-            Some(3.),
-            Some(18.),
-            Some(0.),
-            Arc::new(RwLock::new(heat_source)),
-            zone,
-            external_conditions.into(),
-            ecodesign_controller,
-            55.,
-            20.,
-            simulation_time_iterator.total_steps(),
-            Some(Arc::new(energy_supply_conn)),
-            Some(true),
-            None,
-        )
-        .unwrap();
+        let fancoil_system = Arc::new(
+            Emitters::new(
+                None,
+                &emitters,
+                &pipework,
+                10.,
+                true,
+                None,
+                Some(3.),
+                Some(18.),
+                Some(0.),
+                Arc::new(RwLock::new(heat_source)),
+                zone,
+                external_conditions.into(),
+                ecodesign_controller,
+                55.,
+                20.,
+                simulation_time_iterator.total_steps(),
+                Some(Arc::new(energy_supply_conn)),
+                Some(true),
+                None,
+            )
+            .unwrap(),
+        );
 
         // Set up test conditions
         let energy_demand_list = [1.5, 2.0, 1.0, 0.5];
@@ -4272,7 +4291,8 @@ mod tests {
                 let energy_demand = energy_demand_list[t_idx];
 
                 // Call demand_energy to trigger pipework heat loss calculation
-                let energy_released = fancoil_system.demand_energy(energy_demand, t_it).unwrap();
+                let energy_released =
+                    Emitters::demand_energy(fancoil_system.clone(), energy_demand, t_it).unwrap();
 
                 // Verify energy was processed
                 assert!(energy_released > 0.);

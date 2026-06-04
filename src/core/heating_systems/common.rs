@@ -242,7 +242,7 @@ pub(crate) enum SpaceHeatSystem {
     ElecStorage(Arc<ElecStorageHeater>),
     Instant(InstantElecHeater),
     WarmAir(HeatPumpWarmAir),
-    WetDistribution(Emitters),
+    WetDistribution(Arc<Emitters>),
 }
 
 impl SpaceHeatSystem {
@@ -286,7 +286,7 @@ impl SpaceHeatSystem {
                 warm_air.demand_energy(energy_demand, simulation_time_iteration)?
             }
             SpaceHeatSystem::WetDistribution(ref wet_distribution) => {
-                wet_distribution.demand_energy(energy_demand, simulation_time_iteration)?
+                Emitters::demand_energy(wet_distribution.clone(), energy_demand, simulation_time_iteration)?
             }
         })
     }
