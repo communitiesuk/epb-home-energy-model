@@ -285,9 +285,11 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::WarmAir(ref mut warm_air) => {
                 warm_air.demand_energy(energy_demand, simulation_time_iteration)?
             }
-            SpaceHeatSystem::WetDistribution(ref wet_distribution) => {
-                Emitters::demand_energy(wet_distribution.clone(), energy_demand, simulation_time_iteration)?
-            }
+            SpaceHeatSystem::WetDistribution(ref wet_distribution) => Emitters::demand_energy(
+                wet_distribution.clone(),
+                energy_demand,
+                simulation_time_iteration,
+            )?,
         })
     }
 

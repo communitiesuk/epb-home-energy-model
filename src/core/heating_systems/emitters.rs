@@ -3525,7 +3525,10 @@ mod tests {
             simulation_time,
             None,
             Some(true),
-            Some((0.01 * SECONDS_PER_MINUTE as f64, 0.02 * SECONDS_PER_MINUTE as f64)), // value is divided by 60 on way in through Emitters::new
+            Some((
+                0.01 * SECONDS_PER_MINUTE as f64,
+                0.02 * SECONDS_PER_MINUTE as f64,
+            )), // value is divided by 60 on way in through Emitters::new
             None,
             None,
             None,
