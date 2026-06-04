@@ -795,9 +795,7 @@ impl Emitters {
 
             // Define event where emitter reaches max. temp (event occurs when func returns zero)
             let func: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync> =
-                Box::new(move |_t: f64, y: &[f64]| -> f64 {
-                    y[0] - temp_diff_max
-                });
+                Box::new(move |_t: f64, y: &[f64]| -> f64 { y[0] - temp_diff_max });
             let temp_diff_max_reached = TerminalFunction { inner: func };
 
             Some(temp_diff_max_reached)
@@ -1851,13 +1849,11 @@ impl TerminalFunction {
     }
 
     fn __getattribute__(&self, name: String) -> PyResult<Option<f64>> {
-        Ok(
-            match name.as_str() {
-                "terminal" => Some(1.0), // a float value that Python would consider truthy
-                "direction" => Some(0.0),
-                _ => None,
-            }
-        )
+        Ok(match name.as_str() {
+            "terminal" => Some(1.0), // a float value that Python would consider truthy
+            "direction" => Some(0.0),
+            _ => None,
+        })
     }
 }
 
@@ -3497,6 +3493,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         emitters_for_energy_output_min.zone = zone_for_energy_output_min;
+
         assert_relative_eq!(
             emitters_for_energy_output_min
                 .energy_output_min(simulation_time_iterator.current_iteration())
