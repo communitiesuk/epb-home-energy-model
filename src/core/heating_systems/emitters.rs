@@ -2173,8 +2173,11 @@ mod tests {
         override_variable_flow: Option<bool>,
         override_design_flow_rate: Option<f64>,
         override_bypass_fraction_recirculated: Option<f64>,
+        thermal_mass: Option<f64>,
+        pipework: Option<Vec<WaterPipework>>,
+        wet_emitters: Option<Value>,
     ) -> Emitters {
-        let thermal_mass = 0.07;
+        let thermal_mass = thermal_mass.unwrap_or(0.07);
         let temp_diff_emit_dsgn = 10.0;
         let ecodesign_controller = override_ecodesign_controller.unwrap_or(ecodesign_controller);
 
@@ -2182,25 +2185,26 @@ mod tests {
 
         let with_buffer_tank = with_buffer_tank.unwrap_or(false);
 
-        let wet_emitters: Vec<WetEmitterInput> = serde_json::from_value(json!([
-            {
-                "wet_emitter_type": "radiator",
-                "c": 0.04,
-                "n": 1.2,
-                "frac_convective": 0.4
-            },
-            {
-                "wet_emitter_type": "radiator",
-                "c_per_m": 0.08,
-                "thermal_mass_per_m": 0.14,
-                "length": 0.5,
-                "n": 1.2,
-                "frac_convective": 0.4
-            },
-        ]))
-        .unwrap();
+        let wet_emitters: Vec<WetEmitterInput> =
+            serde_json::from_value(wet_emitters.unwrap_or(json!([
+                {
+                    "wet_emitter_type": "radiator",
+                    "c": 0.04,
+                    "n": 1.2,
+                    "frac_convective": 0.4
+                },
+                {
+                    "wet_emitter_type": "radiator",
+                    "c_per_m": 0.08,
+                    "thermal_mass_per_m": 0.14,
+                    "length": 0.5,
+                    "n": 1.2,
+                    "frac_convective": 0.4
+                },
+            ])))
+            .unwrap();
 
-        let pipework = [WaterPipework {
+        let pipework = pipework.unwrap_or(vec![WaterPipework {
             location: WaterPipeworkLocation::Internal,
             internal_diameter_mm: 10.0,
             external_diameter_mm: 12.0,
@@ -2209,7 +2213,7 @@ mod tests {
             insulation_thickness_mm: 0.0,
             surface_reflectivity: false,
             pipe_contents: PipeworkContents::Water,
-        }];
+        }]);
 
         Emitters::new(
             Some(thermal_mass),
@@ -2257,6 +2261,9 @@ mod tests {
             zone,
             ecodesign_controller,
             simulation_time,
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -2961,6 +2968,9 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         )
     }
 
@@ -2984,6 +2994,9 @@ mod tests {
             zone,
             ecodesign_controller,
             simulation_time,
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -3373,6 +3386,9 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         )
     }
 
@@ -3382,7 +3398,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
         emitters_with_buffer_tank: Emitters,
     ) {
-        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         let temp_flow_target = 30.0;
 
         let mut energy_demand = 0.0;
@@ -3460,7 +3476,7 @@ mod tests {
         emitters_with_buffer_tank: Emitters,
     ) {
         let temp_flow_target = 30.0;
-        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         let mut energy_demand = 0.0;
         let timestep = 1.0;
         let temp_rm_prev = 10.0;
@@ -3523,17 +3539,48 @@ mod tests {
         }
     }
 
+    #[fixture]
+    fn emitters_for_energy_output_min(
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+        zone: Arc<dyn SimpleZone>,
+        ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
+    ) -> Emitters {
+        emitters_fixture(
+            heat_source,
+            external_conditions,
+            zone,
+            ecodesign_controller,
+            simulation_time,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(0.14),
+            Some(vec![]),
+            Some(json!([{
+                "wet_emitter_type": "radiator",
+                "c": 0.08,
+                "n": 1.2,
+                "frac_convective": 0.4,
+            }])),
+        )
+    }
+
     #[rstest]
     #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_output_min(
-        mut emitters: Emitters,
+        mut emitters_for_energy_output_min: Emitters,
         zone_for_energy_output_min: Arc<dyn SimpleZone>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        emitters.zone = zone_for_energy_output_min;
+        emitters_for_energy_output_min.zone = zone_for_energy_output_min;
 
         assert_relative_eq!(
-            emitters
+            emitters_for_energy_output_min
                 .energy_output_min(simulation_time_iterator.current_iteration())
                 .unwrap(),
             0.2780866841016483,
@@ -3564,6 +3611,9 @@ mod tests {
             None,
             Some(true),
             Some((0.01, 0.02)),
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -3610,6 +3660,9 @@ mod tests {
             None,
             Some(false),
             Some(0.02),
+            None,
+            None,
+            None,
             None,
         )
     }
@@ -3675,6 +3728,9 @@ mod tests {
             None,
             None,
             Some(0.5),
+            None,
+            None,
+            None,
         )
     }
 
