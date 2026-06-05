@@ -770,7 +770,6 @@ fn write_core_output_file_summary(
         "Peak consumption (electricity)".to_string(),
         peak_consumption.peak.to_string(),
         peak_consumption.index.to_string(),
-        peak_consumption.index.to_string(),
         month_name(peak_consumption.month)?.to_string(),
         peak_consumption.day.to_string(),
         peak_consumption.hour.to_string(),
