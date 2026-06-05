@@ -576,8 +576,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                 );
 
                 *hw_energy_demand.get_mut(&hot_water_source_name).unwrap() += hw_energy_demand_i;
-                *hw_duration.get_mut(&hot_water_source_name).unwrap() +=
-                    Self::get_duration_for_tapping_point_event(&tapping_point, event);
+                *hw_duration.get_mut(&hot_water_source_name).unwrap() += event_duration_i;
                 *all_events.get_mut(&hot_water_source_name).unwrap() += 1;
 
                 if hw_demand_i.is_none() {
@@ -866,27 +865,6 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
             pw_losses_external,
             gains_internal_dhw_use,
         )
-    }
-
-    fn get_duration_for_tapping_point_event(
-        tapping_point: &TappingPoint,
-        event: &TypedScheduleEvent,
-    ) -> f64 {
-        // In Python, for Baths, the hot_water_demand function mutates the event we pass in
-        // to avoid this in the Rust we replicate the logic here
-        match tapping_point {
-            TappingPoint::Bath(bath) => {
-                match event.duration {
-                    Some(duration) => duration,
-                    None => {
-                        // if no duration is specified for a Bath then a volume is required
-                        // to calculate the duration
-                        event.volume.unwrap() / bath.get_flowrate()
-                    }
-                }
-            }
-            _ => event.duration.unwrap(),
-        }
     }
 }
 

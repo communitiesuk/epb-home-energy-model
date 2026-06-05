@@ -37,7 +37,7 @@ impl Bath {
     /// (and volume of warm water draining to WWHRS, if applicable)
     pub(crate) fn hot_water_demand<'a>(
         &'a self,
-        mut event: WaterHeatingEvent,
+        event: WaterHeatingEvent,
         func_temp_hot_water: &'a (dyn Fn(f64) -> anyhow::Result<f64> + 'a),
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64, f64)> {
@@ -46,8 +46,8 @@ impl Bath {
         let (vol_warm_water, bath_duration) = match (event.volume, event.duration) {
             (Some(volume), _) => {
                 let bath_duration = volume / peak_flowrate;
-                event.duration = Some(bath_duration);
-                (volume, volume / peak_flowrate)
+                // the Python mutates the event duration here but we are returning and using the updated duration instead
+                (volume, bath_duration)
             }
             (_, Some(duration)) => (duration * peak_flowrate, duration),
             _ => bail!("Invalid bath event {event:?} - must specify either volume or duration"),
