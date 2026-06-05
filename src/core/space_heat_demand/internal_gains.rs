@@ -220,8 +220,7 @@ impl EventApplianceGains {
             .map(|load_shifting| anyhow::Ok::<LoadShiftingMetadata>(load_shifting.try_into()?))
             .transpose()?;
         let time_series_step = appliance_data.time_series_step;
-        let series_length = (simulation_time.total_steps() as f64
-            / simulation_time.step_in_hours()
+        let series_length = (simulation_time.total_steps() as f64 * simulation_time.step_in_hours()
             / time_series_step)
             .ceil() as usize;
         let max_shift = appliance_data
@@ -279,9 +278,10 @@ impl EventApplianceGains {
                 self.total_power_supply[t_idx].fetch_add(*power, Ordering::SeqCst);
                 if let Some(smart_control) = self.smart_control.as_ref() {
                     smart_control.add_appliance_demand(
-                        simtime,
+                        t_idx,
                         power / WATTS_PER_KILOWATT as f64 * self.simulation_timestep,
                         &self.energy_supply_name,
+                        simtime,
                     )
                 }
             }
