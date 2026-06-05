@@ -1127,7 +1127,6 @@ dependencies = [
  "pretty_assertions",
  "pyo3",
  "rayon",
- "roots",
  "rstest",
  "serde",
  "serde-enum-str",
@@ -2493,12 +2492,6 @@ dependencies = [
  "untrusted",
  "windows-sys 0.52.0",
 ]
-
-[[package]]
-name = "roots"
-version = "0.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "082f11ffa03bbef6c2c6ea6bea1acafaade2fd9050ae0234ab44a2153742b058"
 
 [[package]]
 name = "rstest"
