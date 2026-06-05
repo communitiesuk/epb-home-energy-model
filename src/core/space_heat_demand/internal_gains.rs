@@ -220,8 +220,7 @@ impl EventApplianceGains {
             .map(|load_shifting| anyhow::Ok::<LoadShiftingMetadata>(load_shifting.try_into()?))
             .transpose()?;
         let time_series_step = appliance_data.time_series_step;
-        let series_length = (simulation_time.total_steps() as f64
-            / simulation_time.step_in_hours()
+        let series_length = (simulation_time.total_steps() as f64 * simulation_time.step_in_hours()
             / time_series_step)
             .ceil() as usize;
         let max_shift = appliance_data
