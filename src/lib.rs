@@ -799,7 +799,7 @@ fn write_core_output_file_summary(
             EnergySupplyStatKey::GenerationToDiverter,
         ),
         (
-            "Generation to grid (export)",
+            "Generation to grid",
             "kWh",
             EnergySupplyStatKey::GenerationToGrid,
         ),
@@ -814,9 +814,19 @@ fn write_core_output_file_summary(
             EnergySupplyStatKey::StorageFromGrid,
         ),
         (
-            "Grid to consumption (import)",
+            "Grid to consumption",
             "kWh",
             EnergySupplyStatKey::GridToConsumption,
+        ),
+        (
+            "Total gross import",
+            "kWh",
+            EnergySupplyStatKey::TotalGrossImport,
+        ),
+        (
+            "Total gross export",
+            "kWh",
+            EnergySupplyStatKey::TotalGrossExport,
         ),
         ("Net import", "kWh", EnergySupplyStatKey::NetImport),
         (
@@ -942,6 +952,8 @@ struct EnergySupplyStat {
     consumption: f64,
     gen_to_consumption: f64,
     grid_to_consumption: f64,
+    total_gross_import: f64,
+    total_gross_export: f64,
     generation_to_grid: f64,
     net_import: f64,
     gen_to_storage: f64,
@@ -960,6 +972,8 @@ impl EnergySupplyStat {
                 self.gen_to_consumption.to_string().into()
             }
             EnergySupplyStatKey::GridToConsumption => self.grid_to_consumption.to_string().into(),
+            EnergySupplyStatKey::TotalGrossImport => self.total_gross_import.to_string().into(),
+            EnergySupplyStatKey::TotalGrossExport => self.total_gross_export.to_string().into(),
             EnergySupplyStatKey::GenerationToGrid => self.generation_to_grid.to_string().into(),
             EnergySupplyStatKey::NetImport => self.net_import.to_string().into(),
             EnergySupplyStatKey::GenerationToStorage => self.gen_to_storage.to_string().into(),
@@ -979,6 +993,8 @@ enum EnergySupplyStatKey {
     Consumption,
     GenerationToConsumption,
     GridToConsumption,
+    TotalGrossImport,
+    TotalGrossExport,
     GenerationToGrid,
     NetImport,
     GenerationToStorage,

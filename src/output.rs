@@ -339,6 +339,8 @@ impl OutputSummaryEnergySupply {
             EnergySupplyStatKey::Consumption => self.consumption,
             EnergySupplyStatKey::GenerationToConsumption => self.generation_to_consumption,
             EnergySupplyStatKey::GridToConsumption => self.grid_to_consumption,
+            EnergySupplyStatKey::TotalGrossImport => self.total_gross_import,
+            EnergySupplyStatKey::TotalGrossExport => self.total_gross_export,
             EnergySupplyStatKey::GenerationToGrid => self.generation_to_grid,
             EnergySupplyStatKey::NetImport => self.net_import,
             EnergySupplyStatKey::GenerationToStorage => self.generation_to_storage,
