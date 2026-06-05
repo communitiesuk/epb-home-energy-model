@@ -1178,11 +1178,7 @@ mod tests {
             .contains_key(service_name));
     }
 
-    #[rstest]
-    #[ignore = "test unimplemented as would need mocked methods on an energy supply connection"]
-    fn test_timestep_end() {
-        // complete me (uses mocks)
-    }
+    // skipping Python's test_timestep_end due to mocking
 
     #[rstest]
     fn test_create_service_hot_water_storage(

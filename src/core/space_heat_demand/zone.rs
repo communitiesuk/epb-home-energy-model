@@ -2935,11 +2935,8 @@ mod tests {
     // In Python there are two more assertions in test_space_heat_cool_demand that we have skipped
     // they both use a canned return value for zone.interp_heat_cool_demand() which we cannot
     // easily replicate in Rust
-    #[test]
-    #[ignore]
-    pub fn test_space_heat_cool_demand_fast_solver() {
-        todo!("we have skipped this for now as Python uses a difficult to replicate Mock");
-    }
+
+    // skipping Python's test_space_heat_cool_demand_fast_solver due to mocking
 
     #[test]
     fn test_zone_with_party_wall() {
