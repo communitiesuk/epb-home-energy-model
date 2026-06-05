@@ -11,17 +11,20 @@ use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT
 use crate::corpus::TempInternalAirFn;
 use crate::input::ZoneTemperatureControlBasis;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use field_types::FieldName;
 use fsum::FSum;
 use indexmap::IndexMap;
-use nalgebra::{DMatrix, DVector};
+use nalgebra::{DMatrix, DVector, Matrix};
 use parking_lot::RwLock;
+use pyo3::prelude::*;
 use serde_enum_str::Serialize_enum_str;
 use smartstring::alias::String;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::sync::Arc;
+use numpy::{PyArray, PyArrayMethods};
+use numpy::ndarray::{Dim, Ix};
 use thiserror::Error;
 
 // Convective fractions
@@ -484,7 +487,19 @@ impl Zone {
             + F_SOL_C * gains_solar
             + f_hc_c * gains_heat_cool;
 
-        let vector_x = self.fast_solver(matrix_a, vector_b)?;
+        // we're skipping using the fast solver because np.linalg.solve has the same behaviour
+        // though NB we're using an unsafe block here - which is _probably_ fine as we're passing across a foreign function interface
+        // but, still sub-optimal
+        // let vector_x = self.fast_solver(matrix_a, vector_b)?;
+        let vector_x = Python::attach(|py| unsafe {
+            let linalg = py.import("numpy.linalg")?;
+            let solve = linalg.getattr("solve")?;
+
+            let py_matrix_a = matrix_to_numpy(py, &matrix_a);
+            let py_vector_b = matrix_to_numpy(py, &vector_b);
+
+            solve.call1((py_matrix_a, py_vector_b))?.extract::<Vec<f64>>()
+        }).map_err(|e| anyhow!(e))?;
 
         let heat_balance = print_heat_balance.then(|| {
             // Collect outputs, in W, for heat balance at air node
@@ -741,6 +756,7 @@ impl Zone {
     /// - Solve heat balance eqns for inside and air nodes using normal matrix solver
     /// - Loop over nodes, from internal inside node (i.e. inside node nearest to the internal surface) to
     ///   external surface, and calculate temperatures in sequence
+    #[allow(dead_code)]
     fn fast_solver(
         &self,
         coeffs: DMatrix<f64>,
@@ -1358,6 +1374,26 @@ impl ZoneTempInternalAir {
         let zone = self.0.clone();
         Arc::from(move || zone.temp_internal_air())
     }
+}
+
+// this is forward-ported from the nalgebra-numpy crate, which depends on very old versions of pyo3
+unsafe fn matrix_to_numpy<'py, N, R, C, S>(py: pyo3::Python<'py>, matrix: &Matrix<N, R, C, S>) -> Bound<'py, PyArray<N, Dim<[Ix; 2]>>>
+where
+    N: nalgebra::Scalar + numpy::Element,
+    R: nalgebra::Dim,
+    C: nalgebra::Dim,
+    S: nalgebra::storage::Storage<N, R, C>,
+{
+    let array = PyArray::new(py, (matrix.nrows(), matrix.ncols()), false);
+    for r in 0..matrix.nrows() {
+        for c in 0..matrix.ncols() {
+            unsafe {
+                *array.uget_mut((r, c)) = matrix[(r, c)].clone();
+            }
+        }
+    }
+
+    array
 }
 
 const DELTA_T_H: u32 = 8760;
