@@ -1011,13 +1011,13 @@ impl SmartApplianceControl {
 
     pub(crate) fn add_appliance_demand(
         &self,
-        simtime: SimulationTimeIteration,
+        t_idx: usize,
         demand: f64,
         energy_supply: &str,
+        simtime: SimulationTimeIteration,
     ) {
         // convert demand from appliance usage event to average power over the demand series timestep
         // and add it to the series
-        let t_idx = simtime.index;
         self.ts_power[energy_supply][self.ts_step(t_idx)].fetch_add(
             demand * WATTS_PER_KILOWATT as f64 / self.ts_step,
             Ordering::SeqCst,
@@ -2267,7 +2267,12 @@ mod tests {
             mut simulation_time_iterator: SimulationTimeIterator,
         ) {
             let iteration = simulation_time_iterator.nth(5).unwrap();
-            smart_appliance_control.add_appliance_demand(iteration, 100., "mains elec");
+            smart_appliance_control.add_appliance_demand(
+                iteration.index,
+                100.,
+                "mains elec",
+                iteration,
+            );
             assert_eq!(smart_appliance_control.get_demand(5, "mains elec"), -9950.2);
         }
 
