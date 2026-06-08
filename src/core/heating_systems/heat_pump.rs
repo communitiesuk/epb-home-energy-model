@@ -35,7 +35,6 @@ use parking_lot::{Mutex, RwLock};
 use polyfit_rs::polyfit_rs::polyfit;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String;
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
@@ -108,7 +107,7 @@ fn interpolate_exhaust_air_heat_pump_test_data(
     source_type: HeatPumpSourceType,
 ) -> anyhow::Result<(f64, Vec<HeatPumpTestDatum>)> {
     // split test records into different lists by air flow rate
-    let mut test_data_by_air_flow_rate: HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>> =
+    let mut test_data_by_air_flow_rate: IndexMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>> =
         Default::default();
     for test_data_record in test_data {
         if test_data_record.air_flow_rate.is_none() {
@@ -645,14 +644,14 @@ impl HeatPumpTestDatum {
 ///
 /// NB. OrderedFloat values are used as keys for the test data as,
 /// unlike f64, this is a representation of a float that is both Hash + Eq and so can be
-/// used as a key in a HashMap.
+/// used as a key in an IndexMap.
 #[derive(Clone, Debug)]
 pub(crate) struct HeatPumpTestData {
-    test_data: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
+    test_data: IndexMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
     design_flow_temps: Vec<OrderedFloat<f64>>,
     average_cap: Vec<f64>,
     temp_spread_test_conditions: Vec<f64>,
-    regression_coeffs: HashMap<OrderedFloat<f64>, Vec<f64>>,
+    regression_coeffs: IndexMap<OrderedFloat<f64>, Vec<f64>>,
 }
 
 const TEST_LETTERS_NON_BIVALENT: [char; 4] = ['A', 'B', 'C', 'D'];
@@ -661,11 +660,11 @@ const TEST_LETTERS_ALL: [char; 5] = ['A', 'B', 'C', 'D', 'F'];
 impl HeatPumpTestData {
     pub(crate) fn new(data: Vec<HeatPumpTestDatum>) -> anyhow::Result<Self> {
         // keyed by design flow temp
-        let mut test_data: HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>> = Default::default();
+        let mut test_data: IndexMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>> = Default::default();
         let mut design_flow_temps: Vec<OrderedFloat<f64>> = Default::default();
 
         // variable to count duplicate records for each design flow temp
-        let mut dupl: HashMap<OrderedFloat<f64>, usize> = Default::default();
+        let mut dupl: IndexMap<OrderedFloat<f64>, usize> = Default::default();
 
         for datum in data {
             let mut saved_datum = datum.clone();
@@ -755,7 +754,7 @@ impl HeatPumpTestData {
         let regression_coeffs = init_regression_coeffs(&design_flow_temps, &test_data)?;
 
         // Calculate derived variables for each data record which are not time-dependent
-        let test_data: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>> = test_data
+        let test_data: IndexMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>> = test_data
             .iter()
             .map(|(design_flow_temp, data)| {
                 let (carnot_cops, exergetic_effs) =
@@ -1273,7 +1272,7 @@ impl HeatPumpTestData {
 /// is relied upon elsewhere.
 fn average_capacity(
     design_flow_temps: &[OrderedFloat<f64>],
-    test_data: &HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>>,
+    test_data: &IndexMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>>,
 ) -> Vec<f64> {
     design_flow_temps
         .iter()
@@ -1316,9 +1315,9 @@ fn init_temp_spread_test_conditions(
 
 fn init_regression_coeffs(
     design_flow_temps: &Vec<OrderedFloat<f64>>,
-    test_data: &HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>>,
-) -> anyhow::Result<HashMap<OrderedFloat<f64>, Vec<f64>>> {
-    let mut regression_coeffs: HashMap<OrderedFloat<f64>, Vec<f64>> = Default::default();
+    test_data: &IndexMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>>,
+) -> anyhow::Result<IndexMap<OrderedFloat<f64>, Vec<f64>>> {
+    let mut regression_coeffs: IndexMap<OrderedFloat<f64>, Vec<f64>> = Default::default();
     for design_flow_temp in design_flow_temps {
         let temp_test_list: Vec<f64> = test_data[design_flow_temp]
             .iter()
@@ -4028,7 +4027,7 @@ impl HeatPump {
             let service_name: Arc<str> = service_name.as_str().into();
             let param_totals_for_overall = {
                 let annual_results_entry = results_annual.entry(service_name.clone()).or_default();
-                let mut param_totals_for_overall: HashMap<(&str, &str), ResultParamValue> =
+                let mut param_totals_for_overall: IndexMap<(&str, &str), ResultParamValue> =
                     Default::default();
                 for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
                     if incl_in_annual {
@@ -5174,8 +5173,8 @@ mod tests {
     }
 
     #[fixture]
-    pub fn data_sorted() -> HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>> {
-        let mut data: HashMap<_, _> = Default::default();
+    pub fn data_sorted() -> IndexMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>> {
+        let mut data: IndexMap<_, _> = Default::default();
         data.insert(
             OrderedFloat(35.),
             vec![
@@ -5342,7 +5341,7 @@ mod tests {
     // In Python this test is called `test_init`
     pub fn should_have_constructed_internal_data_structures(
         test_data: HeatPumpTestData,
-        data_sorted: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
+        data_sorted: IndexMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
     ) {
         assert_eq!(
             test_data.design_flow_temps,
@@ -5361,7 +5360,7 @@ mod tests {
                             .collect(),
                     )
                 })
-                .collect::<HashMap<&OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>>(),
+                .collect::<IndexMap<&OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>>(),
             data_sorted
                 .iter()
                 .map(|(key, val)| {
@@ -5372,7 +5371,7 @@ mod tests {
                             .collect(),
                     )
                 })
-                .collect::<HashMap<&OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>>(),
+                .collect::<IndexMap<&OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>>(),
             "list of test data records populated incorrectly"
         );
     }
@@ -5464,8 +5463,8 @@ mod tests {
     }
 
     #[fixture]
-    fn expected_init_regression_coeffs() -> HashMap<OrderedFloat<f64>, Vec<f64>> {
-        let mut expected: HashMap<_, _> = Default::default();
+    fn expected_init_regression_coeffs() -> IndexMap<OrderedFloat<f64>, Vec<f64>> {
+        let mut expected: IndexMap<_, _> = Default::default();
         expected.insert(
             OrderedFloat(35.),
             vec![
@@ -5488,18 +5487,18 @@ mod tests {
     #[rstest]
     fn test_init_regression_coeffs(
         test_data: HeatPumpTestData,
-        expected_init_regression_coeffs: HashMap<OrderedFloat<f64>, Vec<f64>>,
+        expected_init_regression_coeffs: IndexMap<OrderedFloat<f64>, Vec<f64>>,
     ) {
         assert_eq!(
             test_data
                 .regression_coeffs
                 .iter()
                 .map(|(key, val)| (key, round_each_by_precision(val, 1e7)))
-                .collect::<HashMap<_, _>>(),
+                .collect::<IndexMap<_, _>>(),
             expected_init_regression_coeffs
                 .iter()
                 .map(|(key, val)| (key, round_each_by_precision(val, 1e7)))
-                .collect::<HashMap<_, _>>(),
+                .collect::<IndexMap<_, _>>(),
             "list of regression coefficients populated incorrectly"
         );
     }

@@ -14,9 +14,9 @@ use crate::statistics::np_interp;
 use anyhow::bail;
 use atomic_float::AtomicF64;
 use fsum::FSum;
+use indexmap::IndexMap;
 use parking_lot::RwLock;
 use smartstring::alias::String;
-use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -527,7 +527,7 @@ pub(crate) struct Boiler {
     energy_supply: Arc<RwLock<EnergySupply>>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
-    energy_supply_connections: HashMap<String, EnergySupplyConnection>,
+    energy_supply_connections: IndexMap<String, EnergySupplyConnection>,
     energy_supply_connection_aux: EnergySupplyConnection,
     _energy_supply_type: String,
     // service_results: (),

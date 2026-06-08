@@ -22,7 +22,6 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use smartstring::alias::String;
-use std::collections::HashMap;
 use std::iter;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -115,7 +114,7 @@ pub struct StorageTank {
     temp_surrounding_prev_heating_event: Vec<AtomicF64>,
     flag_first_water_heating_event: AtomicBool,
     heat_source_data: IndexMap<String, PositionedHeatSource>, // heat sources, sorted by heater position
-    heating_active: HashMap<String, AtomicBool>,
+    heating_active: IndexMap<String, AtomicBool>,
     q_ls_n_prev_heat_source: Arc<RwLock<Vec<f64>>>,
     q_sto_h_ls_rbl: AtomicF64, // total recoverable heat losses for heating in kWh, memoised between steps
     pipework_primary_gains_for_timestep: AtomicF64, // primary pipework gains for a timestep (mutates over lifetime)

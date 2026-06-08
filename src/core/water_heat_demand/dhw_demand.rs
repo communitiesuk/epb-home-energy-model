@@ -26,19 +26,18 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use smartstring::alias::String;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
 
 #[derive(Debug)]
 pub struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour = T> {
-    showers: HashMap<String, Shower>,
-    baths: HashMap<String, Bath>,
-    other: HashMap<String, OtherHotWater>,
+    showers: IndexMap<String, Shower>,
+    baths: IndexMap<String, Bath>,
+    other: IndexMap<String, OtherHotWater>,
     hot_water_sources: IndexMap<Arc<str>, T>,
     energy_supply_conn_unmet_demand: IndexMap<Arc<str>, EnergySupplyConnection>,
-    source_supplying_outlet: HashMap<(OutletType, Arc<str>), Arc<str>>,
+    source_supplying_outlet: IndexMap<(OutletType, Arc<str>), Arc<str>>,
     hot_water_distribution_pipework: IndexMap<Arc<str>, Vec<PipeworkSimple>>,
     event_schedules: EventSchedule,
     pre_heated_water_sources: IndexMap<String, U>,
@@ -122,7 +121,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         hot_water_sources: IndexMap<Arc<str>, T>,
         pre_heated_water_sources: IndexMap<String, U>,
     ) -> anyhow::Result<Self> {
-        let showers: HashMap<String, Shower> = showers_input
+        let showers: IndexMap<String, Shower> = showers_input
             .0
             .iter()
             .map(|(name, shower)| {
@@ -131,13 +130,13 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                     shower_from_input(name, shower, cold_water_sources, energy_supplies, wwhrs)?,
                 ))
             })
-            .collect::<anyhow::Result<HashMap<_, _>>>()?;
-        let baths: HashMap<String, Bath> = bath_input
+            .collect::<anyhow::Result<IndexMap<_, _>>>()?;
+        let baths: IndexMap<String, Bath> = bath_input
             .0
             .iter()
             .map(|(name, bath)| (name.into(), input_to_bath(bath, cold_water_sources)))
             .collect();
-        let other: HashMap<String, OtherHotWater> = other_hot_water_input
+        let other: IndexMap<String, OtherHotWater> = other_hot_water_input
             .0
             .iter()
             .map(|(name, other)| {
@@ -266,8 +265,8 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         baths_dict: &BathInput,
         other_hw_users_dict: &OtherWaterUseInput,
         hot_water_sources: &IndexMap<Arc<str>, impl HotWaterSourceBehaviour>,
-    ) -> HashMap<(OutletType, Arc<str>), Arc<str>> {
-        let mut mapping = HashMap::<(OutletType, Arc<str>), Arc<str>>::default();
+    ) -> IndexMap<(OutletType, Arc<str>), Arc<str>> {
+        let mut mapping = IndexMap::<(OutletType, Arc<str>), Arc<str>>::default();
         for (shower_name, shower) in showers_dict.0.iter() {
             match shower {
                 ShowerInput::InstantElectricShower { .. } => {

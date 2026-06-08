@@ -3160,7 +3160,6 @@ mod tests {
     use parking_lot::lock_api::RwLock;
     use rstest::{fixture, rstest};
     use serde_json::json;
-    use std::collections::HashMap;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
 
@@ -3764,7 +3763,7 @@ mod tests {
         let control2 = OnOffTime(OnOffTimeControl::new(vec![], 0, 1.));
         let controls: Controls = Controls::new(
             vec![],
-            HashMap::from([
+            IndexMap::from([
                 ("min_temp".into(), control1.into()),
                 ("_window_opening_closedsleeping".into(), control2.into()),
             ]),

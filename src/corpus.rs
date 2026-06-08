@@ -116,7 +116,7 @@ use serde::{Deserialize, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use smartstring::alias::String;
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::default::Default;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
@@ -145,7 +145,7 @@ fn control_from_input(
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<Controls> {
     let mut core: Vec<HeatSourceControl> = Default::default();
-    let mut extra: HashMap<String, Arc<Control>> = Default::default();
+    let mut extra: IndexMap<String, Arc<Control>> = Default::default();
 
     // this is very ugly(!) but is just a reflection of the lack of clarity in the schema
     // and the way the variants-struct crate works;
@@ -1372,7 +1372,7 @@ impl Corpus {
         r_w_arg: Option<f64>,
         initial_p_z_ref_guess: f64,
         reporting_flag: ReportingFlag,
-        internal_pressure_window: &mut HashMap<ReportingFlag, f64>,
+        internal_pressure_window: &mut IndexMap<ReportingFlag, f64>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let current_internal_pressure_window = if self.initial_loop.load(Ordering::SeqCst) {
@@ -1420,10 +1420,10 @@ impl Corpus {
     /// Get minimum output for each heating/cooling system in the specified zone
     fn heat_cool_system_output_min(
         &self,
-        h_name_list_sorted_zone: &HashMap<&str, Vec<Arc<str>>>,
-        c_name_list_sorted_zone: &HashMap<&str, Vec<Arc<str>>>,
-        frac_convective_heat_zone_system: &HashMap<&str, IndexMap<Arc<str>, f64>>,
-        frac_convective_cool_zone_system: &HashMap<&str, IndexMap<Arc<str>, f64>>,
+        h_name_list_sorted_zone: &IndexMap<&str, Vec<Arc<str>>>,
+        c_name_list_sorted_zone: &IndexMap<&str, Vec<Arc<str>>>,
+        frac_convective_heat_zone_system: &IndexMap<&str, IndexMap<Arc<str>, f64>>,
+        frac_convective_cool_zone_system: &IndexMap<&str, IndexMap<Arc<str>, f64>>,
         z_name: &str,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<HeatCoolOutputs> {
@@ -1501,7 +1501,7 @@ impl Corpus {
         delta_t_h: f64,
         gains_internal_dhw_on_site_generation: f64,
         gains_internal_hb: f64,
-        internal_pressure_window: &mut HashMap<ReportingFlag, f64>,
+        internal_pressure_window: &mut IndexMap<ReportingFlag, f64>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<SpaceHeatingCalculation> {
         let wind_speed = self.external_conditions.wind_speed(&simtime);
@@ -1584,27 +1584,27 @@ impl Corpus {
             ach_windows_shut
         };
 
-        let mut gains_internal_zone: HashMap<Arc<str>, f64> = Default::default();
-        let mut gains_solar_zone: HashMap<Arc<str>, f64> = Default::default();
-        let mut h_name_list_sorted_zone: HashMap<&str, Vec<Arc<str>>> = Default::default();
-        let mut c_name_list_sorted_zone: HashMap<&str, Vec<Arc<str>>> = Default::default();
-        let mut temp_setpnt_heat_zone_system: HashMap<&str, IndexMap<Arc<str>, f64>> =
+        let mut gains_internal_zone: IndexMap<Arc<str>, f64> = Default::default();
+        let mut gains_solar_zone: IndexMap<Arc<str>, f64> = Default::default();
+        let mut h_name_list_sorted_zone: IndexMap<&str, Vec<Arc<str>>> = Default::default();
+        let mut c_name_list_sorted_zone: IndexMap<&str, Vec<Arc<str>>> = Default::default();
+        let mut temp_setpnt_heat_zone_system: IndexMap<&str, IndexMap<Arc<str>, f64>> =
             Default::default();
-        let mut temp_setpnt_cool_zone_system: HashMap<&str, IndexMap<Arc<str>, f64>> =
+        let mut temp_setpnt_cool_zone_system: IndexMap<&str, IndexMap<Arc<str>, f64>> =
             Default::default();
-        let mut frac_convective_heat_zone_system: HashMap<&str, IndexMap<Arc<str>, f64>> =
+        let mut frac_convective_heat_zone_system: IndexMap<&str, IndexMap<Arc<str>, f64>> =
             Default::default();
-        let mut frac_convective_cool_zone_system: HashMap<&str, IndexMap<Arc<str>, f64>> =
+        let mut frac_convective_cool_zone_system: IndexMap<&str, IndexMap<Arc<str>, f64>> =
             Default::default();
-        let mut ach_cooling_zone: HashMap<&str, f64> = Default::default();
-        let mut ach_to_trigger_heating_zone: HashMap<&str, Option<f64>> = Default::default();
-        let mut internal_air_temp: HashMap<Arc<str>, f64> = Default::default();
-        let mut operative_temp: HashMap<Arc<str>, f64> = Default::default();
-        let mut space_heat_demand_zone: HashMap<Arc<str>, f64> = Default::default();
-        let mut space_cool_demand_zone: HashMap<Arc<str>, f64> = Default::default();
-        let mut space_heat_provided_system: HashMap<Arc<str>, f64> = Default::default();
-        let mut space_cool_provided_system: HashMap<Arc<str>, f64> = Default::default();
-        let mut heat_balance_map: HashMap<Arc<str>, Option<HeatBalance>> = Default::default();
+        let mut ach_cooling_zone: IndexMap<&str, f64> = Default::default();
+        let mut ach_to_trigger_heating_zone: IndexMap<&str, Option<f64>> = Default::default();
+        let mut internal_air_temp: IndexMap<Arc<str>, f64> = Default::default();
+        let mut operative_temp: IndexMap<Arc<str>, f64> = Default::default();
+        let mut space_heat_demand_zone: IndexMap<Arc<str>, f64> = Default::default();
+        let mut space_cool_demand_zone: IndexMap<Arc<str>, f64> = Default::default();
+        let mut space_heat_provided_system: IndexMap<Arc<str>, f64> = Default::default();
+        let mut space_cool_provided_system: IndexMap<Arc<str>, f64> = Default::default();
+        let mut heat_balance_map: IndexMap<Arc<str>, Option<HeatBalance>> = Default::default();
 
         // Average supply temperature
         let avg_air_supply_temp = self.external_conditions.air_temp(&simtime);
@@ -2336,7 +2336,7 @@ impl Corpus {
             .collect();
         let mut ductwork_gains_list = vec_capacity();
         self.initial_loop.store(true, Ordering::SeqCst);
-        let mut internal_pressure_window: HashMap<ReportingFlag, f64> = Default::default();
+        let mut internal_pressure_window: IndexMap<ReportingFlag, f64> = Default::default();
 
         let delta_t_h = simulation_time.step_in_hours();
 
@@ -3375,11 +3375,11 @@ fn convert_energy_to_wm2(
 #[derive(Debug)]
 pub struct Controls {
     core: Vec<HeatSourceControl>,
-    extra: HashMap<String, Arc<Control>>,
+    extra: IndexMap<String, Arc<Control>>,
 }
 
 impl Controls {
-    pub(crate) fn new(core: Vec<HeatSourceControl>, extra: HashMap<String, Arc<Control>>) -> Self {
+    pub(crate) fn new(core: Vec<HeatSourceControl>, extra: IndexMap<String, Arc<Control>>) -> Self {
         Self { core, extra }
     }
 
@@ -3492,16 +3492,16 @@ pub(crate) type HeatBalanceAllResults =
     IndexMap<HeatBalanceFieldName, IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>>;
 
 struct SpaceHeatingCalculation {
-    gains_internal_zone: HashMap<Arc<str>, f64>,
-    gains_solar_zone: HashMap<Arc<str>, f64>,
-    operative_temp: HashMap<Arc<str>, f64>,
-    internal_air_temp: HashMap<Arc<str>, f64>,
-    space_heat_demand_zone: HashMap<Arc<str>, f64>,
-    space_cool_demand_zone: HashMap<Arc<str>, f64>,
-    space_heat_provided_system: HashMap<Arc<str>, f64>,
-    space_cool_provided_system: HashMap<Arc<str>, f64>,
+    gains_internal_zone: IndexMap<Arc<str>, f64>,
+    gains_solar_zone: IndexMap<Arc<str>, f64>,
+    operative_temp: IndexMap<Arc<str>, f64>,
+    internal_air_temp: IndexMap<Arc<str>, f64>,
+    space_heat_demand_zone: IndexMap<Arc<str>, f64>,
+    space_cool_demand_zone: IndexMap<Arc<str>, f64>,
+    space_heat_provided_system: IndexMap<Arc<str>, f64>,
+    space_cool_provided_system: IndexMap<Arc<str>, f64>,
     internal_gains_ductwork: f64,
-    heat_balance_map: HashMap<Arc<str>, Option<HeatBalance>>,
+    heat_balance_map: IndexMap<Arc<str>, Option<HeatBalance>>,
 }
 
 #[derive(Clone, Copy, Deserialize_enum_str, Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
