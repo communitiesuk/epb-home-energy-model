@@ -63,13 +63,10 @@ impl WaterEventResult {
             if num == 0.0 {
                 return "0".into();
             }
-
             // 10 total digits minus the digits left of the decimal point
             let precision = (10 - (num.abs().log10().floor() as i32 + 1)).max(0) as usize;
-
             // set decimal precision dynamically
             let mut s = format!("{:.1$}", num, precision);
-
             if s.contains('.') {
                 s = s.trim_end_matches('0').trim_end_matches('.').into();
             }
