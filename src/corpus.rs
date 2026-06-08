@@ -1800,7 +1800,6 @@ impl Corpus {
 
             let mut h_idx: usize = 0;
             let mut c_idx: usize = 0;
-            let _space_heat_running_time_cumulative = 0.0;
 
             // these following variables need to be referenced outside the while loop with their last value retained
 
