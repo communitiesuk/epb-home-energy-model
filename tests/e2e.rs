@@ -12,7 +12,6 @@ use std::fs::File;
 use std::io::{BufReader, Cursor, Write};
 use std::path::Path;
 use std::str::from_utf8;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use walkdir::{DirEntry, WalkDir};
 
