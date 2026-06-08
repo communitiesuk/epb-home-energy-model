@@ -1704,7 +1704,7 @@ impl Emitters {
         &self,
         energy_demand: f64,
         temp_flow_target: f64,
-        temp_return_target: f64,
+        mut temp_return_target: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64)> {
         let update_heat_source_state = false;
@@ -1716,7 +1716,7 @@ impl Emitters {
         let flow_rate_m3s = match self.variable_flow_data {
             VariableFlowData::Yes => {
                 // The return temperature is calculated from temp_diff_emit_dsgn (not the 6/7th rule).
-                let temp_return_target = temp_flow_target - self.temp_diff_emit_dsgn;
+                temp_return_target = temp_flow_target - self.temp_diff_emit_dsgn;
                 let (energy_released_from_emitters, energy_required_from_heat_source) = self
                     .demand_energy_flow_return(
                         energy_demand,
@@ -1760,7 +1760,7 @@ impl Emitters {
                         temp_return_target,
                         self.bypass_fraction_recirculated,
                     );
-                    let temp_return_target =
+                    temp_return_target =
                         temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
                     return Ok((temp_return_target, blended_temp_flow_target, flow_rate_m3s));
                 }
