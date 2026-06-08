@@ -622,7 +622,7 @@ impl Zone {
             }
         });
 
-        Ok((vector_x, heat_balance)) // pass empty heat balance map for now
+        Ok((vector_x, heat_balance))
     }
 
     /// Optimised heat balance solver
@@ -1778,7 +1778,6 @@ mod tests {
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
-    use std::collections::HashMap;
 
     const BASE_AIR_TEMPS: [f64; 24] = [
         0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 7.5, 10.0, 12.5, 15.0, 19.5, 17.0,
@@ -2151,10 +2150,10 @@ mod tests {
             None,
             2.5,
         );
-        let windows = HashMap::from([("window 0".to_string(), window)]);
+        let windows = IndexMap::from([("window 0".to_string(), window)]);
 
         let vent = Vent::new(1.5, 100.0, 20.0, 180.0.into(), 60.0, 30.0, 2.5);
-        let vents = HashMap::from([("vent 1".to_string(), vent)]);
+        let vents = IndexMap::from([("vent 1".to_string(), vent)]);
 
         let leaks = CompletedVentilationLeaks {
             ventilation_zone_height: 6.,
@@ -2301,7 +2300,7 @@ mod tests {
         let zone = zone(thermal_bridging_objects, None).unwrap();
         let result = &zone.fast_solver(coeffs, rhs).unwrap();
 
-        for (i, expected_temp) in expected.data.as_vec().into_iter().enumerate() {
+        for (i, expected_temp) in expected.data.as_vec().iter().enumerate() {
             assert_relative_eq!(result[i], expected_temp)
         }
     }

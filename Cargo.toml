@@ -12,7 +12,7 @@ arc-swap = "1.9.0"
 argmin = "0.11.0"
 atomic_float = "1.1.0"
 bounded-vec-deque = "0.1.1"
-chrono = "0.4.44"
+chrono = "0.4.45"
 clap = { version = "4.6.1", features = ["derive"], optional = true }
 convert_case = "0.11.0"
 csv = "1.4.0"
@@ -42,7 +42,7 @@ serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde-enum-str = "0.5.0"
 serde_json = { version = "1.0.150", features = ["preserve_order"] }
 serde_repr = "0.1.20"
-serde_with = { version = "3.20.0", features = ["json", "macros"] }
+serde_with = { version = "3.21.0", features = ["json", "macros"] }
 serde_valid = "2.0.1"
 smartstring = { version = "1.0.1", features = ["arbitrary", "serde"] }
 thiserror = "2.0.18"
