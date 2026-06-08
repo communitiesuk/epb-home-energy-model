@@ -2300,7 +2300,7 @@ mod tests {
         let zone = zone(thermal_bridging_objects, None).unwrap();
         let result = &zone.fast_solver(coeffs, rhs).unwrap();
 
-        for (i, expected_temp) in expected.data.as_vec().into_iter().enumerate() {
+        for (i, expected_temp) in expected.data.as_vec().iter().enumerate() {
             assert_relative_eq!(result[i], expected_temp)
         }
     }
