@@ -1016,25 +1016,25 @@ impl Boiler {
         let time_running_current_service =
             self.time_running(energy_output_provided, time_available);
 
-        // Track pump running time (only for regular DHW and space heating)
-        // Combi services don't use circulation pumps
-        match service_type {
-            ServiceType::WaterRegular | ServiceType::Space => {
-                self.pump_running_time_current_timestep
-                    .fetch_add(time_running_current_service, Ordering::SeqCst);
-            }
-            ServiceType::WaterCombi => {
-                // do nothing
-            }
-            ServiceType::DomesticHotWaterDirect => {
-                // TODO Python errors here - check this is correct
-                bail!("Unexpected service type - ServiceType::DomesticHotWaterDirect");
-            }
-        }
-
         if update_heat_source_state {
             self.total_time_running_current_timestep
                 .fetch_add(time_running_current_service, Ordering::SeqCst);
+
+            // Track pump running time (only for regular DHW and space heating)
+            // Combi services don't use circulation pumps
+            match service_type {
+                ServiceType::WaterRegular | ServiceType::Space => {
+                    self.pump_running_time_current_timestep
+                        .fetch_add(time_running_current_service, Ordering::SeqCst);
+                }
+                ServiceType::WaterCombi => {
+                    // do nothing
+                }
+                ServiceType::DomesticHotWaterDirect => {
+                    // TODO Python errors here - check this is correct
+                    bail!("Unexpected service type - ServiceType::DomesticHotWaterDirect");
+                }
+            }
 
             // Save results that are needed later (in the timestep_end function)
             self.service_results.write().push(ServiceResult {
