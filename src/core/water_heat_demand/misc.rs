@@ -2,7 +2,6 @@ use crate::core::material_properties::WATER;
 use crate::core::schedule::WaterScheduleEventType;
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
-use format_num::format_num;
 use fsum::FSum;
 use itertools::Itertools;
 use smartstring::alias::String;
@@ -59,11 +58,30 @@ impl WaterEventResult {
         let temperature = self.temperature_warm;
         let abbrev = self.event_result_type.abbreviation();
 
+        // equivalent of Python's formatting to 10 significant figures
+        let format_number = |num: f64| -> String {
+            if num == 0.0 {
+                return "0".into();
+            }
+
+            // 10 total digits minus the digits left of the decimal point
+            let precision = (10 - (num.abs().log10().floor() as i32 + 1)).max(0) as usize;
+
+            // set decimal precision dynamically
+            let mut s = format!("{:.1$}", num, precision);
+
+            if s.contains('.') {
+                s = s.trim_end_matches('0').trim_end_matches('.').into();
+            }
+
+            s.into()
+        };
+
         format!(
             "{abbrev}: {} ({} @ {})",
-            format_num!(".10g", hot_volume),
-            format_num!(".10g", warm_volume),
-            format_num!(".10g", temperature)
+            format_number(hot_volume),
+            format_number(warm_volume),
+            format_number(temperature)
         )
         .into()
     }
