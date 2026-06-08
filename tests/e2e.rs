@@ -566,12 +566,21 @@ mod compare {
                 ));
             }
 
-            let (rust_record, python_record) =
+            let (mut rust_record, python_record) =
                 if let (Ok(rust_record), Ok(python_record)) = (rust_record, python_record) {
                     (rust_record, python_record)
                 } else {
                     continue;
                 };
+
+            // hack to handle python blank lines (no data at all) being ignored
+            // but rust blank lines (double quotes) being included
+            // skip over rust records with just "" on them
+            let mut blank_lines = usize::default();
+            while rust_record.as_slice() == "" && python_record.as_slice() != "" {
+                blank_lines += 1;
+                rust_record = rust_records.next().map(|(_, res)| res.unwrap()).unwrap();
+            }
 
             if let Err(differences) = compare(python_record, rust_record) {
                 file_differences.extend(differences.into_iter().map(|difference: Difference| {
@@ -580,7 +589,7 @@ mod compare {
                         .and_then(|index| headers.get(index))
                         .map(ToOwned::to_owned);
 
-                    DifferenceInFile::new(difference, record_index + 2, column_field)
+                    DifferenceInFile::new(difference, record_index + blank_lines + 2, column_field)
                 }));
             }
         }
