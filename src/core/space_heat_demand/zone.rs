@@ -622,7 +622,7 @@ impl Zone {
             }
         });
 
-        Ok((vector_x, heat_balance)) // pass empty heat balance map for now
+        Ok((vector_x, heat_balance))
     }
 
     /// Optimised heat balance solver
