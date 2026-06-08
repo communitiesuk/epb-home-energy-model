@@ -1792,7 +1792,7 @@ impl Emitters {
         // Loop when the flow rate is constant (design_flow_rate). The initial return temp is the 6/7th rule.
         // Also, for the case of variable flow rate with flow rate out of the allowed range.
         // In this case the initial return temp is calculated from the temp_diff_emit_dsgn.
-        let temp_return_target = self.update_return_temp(
+        temp_return_target = self.update_return_temp(
             energy_demand,
             temp_flow_target,
             temp_return_target,
@@ -1810,7 +1810,7 @@ impl Emitters {
             temp_return_target,
             self.bypass_fraction_recirculated,
         );
-        let mut temp_return_target =
+        temp_return_target =
             temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
 
         if self.bypass_fraction_recirculated > 0. {
