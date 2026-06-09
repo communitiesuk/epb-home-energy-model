@@ -1157,10 +1157,7 @@ fn write_core_output_file_heat_source_wet(
         col_units_row.extend(
             service_results
                 .keys()
-                .cloned()
-                .collect::<IndexMap<_, _>>()
-                .keys()
-                .cloned()
+                .map(|(_, col_unit)| col_unit.clone().unwrap_or_default())
                 .collect::<Vec<Arc<str>>>(),
         );
     }
