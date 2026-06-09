@@ -710,7 +710,6 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                 pw_losses_internal_for_hws + pw_losses_external_for_hws,
             );
 
-            // TODO check timestep is correct here
             let gains_internal_dhw_for_hws = (pw_losses_internal_for_hws
                 + gains_internal_dhw_use_for_hws)
                 * (WATTS_PER_KILOWATT as f64)
@@ -729,7 +728,6 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                 .copied()
                 .collect();
 
-            // TODO update demand_hot_water to accept usage_events
             hw_energy_output.insert(
                 hws_name.clone(),
                 hws.demand_hot_water(filtered_events.clone(), simtime)?,
