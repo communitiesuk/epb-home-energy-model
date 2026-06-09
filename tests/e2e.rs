@@ -102,9 +102,6 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                     let file_difference_count = comparison_error.differences.len();
                     println!("❌ Tabular records differ for file: {} - difference count is {}", file_name, file_difference_count);
                     difference_count += file_difference_count;
-                    if file_name == "demo_hp_warm_air__core__results_heat_source_wet_summary__hp.csv" {
-                        println!("DIFFERENCES: {:?}", comparison_error.differences);
-                    }
                 } else {
                     println!("✅ Tabular records match for file: {}", file_name);
                 }
