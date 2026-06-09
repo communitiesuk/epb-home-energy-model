@@ -2870,6 +2870,11 @@ impl SmartHotWaterTank {
         Ok(volume_pumped)
     }
 
+    fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+        self.storage_tank
+            .get_losses_from_primary_pipework_and_storage()
+    }
+
     fn testoutput(
         &self,
         usage_events: &[WaterEventResult],
@@ -3281,11 +3286,13 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
             HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
                 .read()
                 .get_losses_from_primary_pipework_and_storage(),
+            HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock
+                .read()
+                .get_losses_from_primary_pipework_and_storage(),
             #[cfg(test)]
             HotWaterStorageTank::Mock(source) => {
                 source.get_losses_from_primary_pipework_and_storage()
             }
-            _ => (0., 0.),
         }
     }
 
