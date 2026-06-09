@@ -4225,7 +4225,7 @@ impl HeatBattery {
     pub(crate) fn timestep_end(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
         match self {
             HeatBattery::DryCore(heat_battery) => heat_battery.timestep_end(simtime)?,
-            HeatBattery::Pcm(heat_battery) => heat_battery.read().timestep_end(simtime.index)?,
+            HeatBattery::Pcm(heat_battery) => heat_battery.read().timestep_end(simtime)?,
         }
 
         Ok(())
@@ -4701,7 +4701,7 @@ fn heat_source_wet_from_input(
                             .clone(),
                         energy_supply,
                         energy_supply_conn,
-                        simulation_time,
+                        simulation_time.step_in_hours(),
                         None,
                         None,
                         None,

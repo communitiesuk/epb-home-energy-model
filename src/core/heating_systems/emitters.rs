@@ -1615,7 +1615,7 @@ impl Emitters {
         emitters: Arc<Self>,
         energy_demand: f64,
         temp_flow_target: f64,
-        temp_return_target: f64,
+        mut temp_return_target: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64)> {
         let update_heat_source_state = false;
@@ -1629,7 +1629,7 @@ impl Emitters {
         let flow_rate_m3s = match self_ref.variable_flow_data {
             VariableFlowData::Yes => {
                 // The return temperature is calculated from temp_diff_emit_dsgn (not the 6/7th rule).
-                let temp_return_target = temp_flow_target - self_ref.temp_diff_emit_dsgn;
+                temp_return_target = temp_flow_target - self_ref.temp_diff_emit_dsgn;
                 let (energy_released_from_emitters, energy_required_from_heat_source) = emitters
                     .demand_energy_flow_return(
                         energy_demand,
@@ -1673,7 +1673,7 @@ impl Emitters {
                         temp_return_target,
                         self_ref.bypass_fraction_recirculated,
                     );
-                    let temp_return_target =
+                    temp_return_target =
                         temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
                     return Ok((temp_return_target, blended_temp_flow_target, flow_rate_m3s));
                 }
@@ -1705,7 +1705,7 @@ impl Emitters {
         // Loop when the flow rate is constant (design_flow_rate). The initial return temp is the 6/7th rule.
         // Also, for the case of variable flow rate with flow rate out of the allowed range.
         // In this case the initial return temp is calculated from the temp_diff_emit_dsgn.
-        let temp_return_target = Self::update_return_temp(
+        temp_return_target = Self::update_return_temp(
             emitters.clone(),
             energy_demand,
             temp_flow_target,
@@ -1724,7 +1724,7 @@ impl Emitters {
             temp_return_target,
             self_ref.bypass_fraction_recirculated,
         );
-        let mut temp_return_target =
+        temp_return_target =
             temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
 
         if self_ref.bypass_fraction_recirculated > 0. {
