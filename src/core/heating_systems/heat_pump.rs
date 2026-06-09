@@ -4151,7 +4151,8 @@ impl HeatPump {
             + &results_totals[&("energy_input_backup".into(), Some("kWh".into()))].clone();
         let cop_h4_numerator = cop_h3_numerator.clone();
         let cop_h4_denominator = &cop_h3_denominator
-            + &results_totals[&("energy_heating_circ_pump".into(), Some("kWh".into()))].clone();
+            + &results_totals[&("energy_heating_circ_pump".into(), Some("kWh".into()))].clone()
+            + results_totals[&("energy_heating_warm_air_fan".into(), Some("kWh".into()))].clone();
         let cop_h5_numerator =
             results_totals[&("energy_delivered_H5".into(), Some("kWh".into()))].clone();
         let cop_h5_denominator = cop_h4_denominator.clone();
