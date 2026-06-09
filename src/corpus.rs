@@ -104,6 +104,7 @@ use crate::{convert_profile_to_daily, HEM_VERSION};
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use chrono::{prelude::*, TimeDelta};
+use convert_case::{Case, Casing};
 use erased_serde::__private::serde::Serializer;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -4466,7 +4467,7 @@ impl Display for ResultParamValue {
             match self {
                 ResultParamValue::String(string) => string.to_string(),
                 ResultParamValue::Number(number) => number.to_string(),
-                ResultParamValue::Boolean(boolean) => boolean.to_string(),
+                ResultParamValue::Boolean(boolean) => boolean.to_string().to_case(Case::Title),
                 ResultParamValue::Empty => "".to_string(),
             }
         )
