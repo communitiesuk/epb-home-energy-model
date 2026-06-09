@@ -30,7 +30,7 @@ pub enum ServiceType {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct BoilerServiceWaterCombi {
+pub struct BoilerServiceWaterCombi {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
     temperature_hot_water_in_c: f64,
@@ -523,7 +523,7 @@ impl BoilerServiceSpace {
 }
 
 #[derive(Debug)]
-pub(crate) struct Boiler {
+pub struct Boiler {
     energy_supply: Arc<RwLock<EnergySupply>>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,

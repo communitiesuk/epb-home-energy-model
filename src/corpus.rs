@@ -64,6 +64,8 @@ use crate::core::space_heat_demand::zone::{
 };
 use crate::core::units::{kelvin_to_celsius, Orientation360, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+#[cfg(test)]
+use crate::core::water_heat_demand::dhw_demand::tests::HotWaterSourceMockKind;
 use crate::core::water_heat_demand::dhw_demand::ELECTRIC_SHOWERS_HWS_NAME;
 use crate::core::water_heat_demand::dhw_demand::{DomesticHotWaterDemand, WaterHeatingCalculation};
 use crate::core::water_heat_demand::misc::WaterEventResult;
@@ -696,8 +698,7 @@ pub struct Corpus {
     pre_heated_water_sources: IndexMap<String, HotWaterStorageTank>,
     pub(crate) energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
     pub(crate) internal_gains: InternalGainsCollection,
-    pub(crate) domestic_hot_water_demand:
-        DomesticHotWaterDemand<HotWaterSource, HotWaterStorageTank>,
+    pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand,
     r_v_arg: AtomicF64,
     pub(crate) ventilation: Arc<InfiltrationVentilation>,
     pub(crate) zones: IndexMap<Arc<str>, Arc<Zone>>,
@@ -2614,6 +2615,8 @@ impl Corpus {
                                     .insert(name.to_string().into(), hot_water_source_output);
                             }
                         }
+                        #[cfg(test)]
+                        HotWaterStorageTank::Mock(_source) => {}
                     }
                 }
             }
@@ -5001,13 +5004,15 @@ fn heat_source_from_input(
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) enum HotWaterSource {
+#[derive(Clone, Debug)]
+pub enum HotWaterSource {
     PreHeated(HotWaterStorageTank),
     CombiBoiler(Arc<BoilerServiceWaterCombi>),
     PointOfUse(Arc<PointOfUse>),
     HeatNetwork(Arc<HeatNetworkServiceWaterDirect>),
     HeatBattery(HeatBatteryHotWaterSource),
+    #[cfg(test)]
+    Mock(HotWaterSourceMockKind),
 }
 
 pub trait HotWaterSourceBehaviour: std::fmt::Debug + Clone {
@@ -5042,6 +5047,8 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             HotWaterSource::PointOfUse(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatBattery(source) => source.get_cold_water_source().clone(),
+            #[cfg(test)]
+            HotWaterSource::Mock(source) => source.get_cold_water_source(),
         }
     }
 
@@ -5066,6 +5073,8 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             HotWaterSource::HeatBattery(heat_battery_hot_water_source) => {
                 heat_battery_hot_water_source.demand_hot_water(usage_events, simtime)?
             }
+            #[cfg(test)]
+            HotWaterSource::Mock(source) => source.demand_hot_water(usage_events, simtime)?,
         })
     }
 
@@ -5096,6 +5105,10 @@ impl HotWaterSourceBehaviour for HotWaterSource {
                     simtime,
                 )
             }
+            #[cfg(test)]
+            HotWaterSource::Mock(source) => {
+                source.get_temp_hot_water(volume_required, volume_required_already, simtime)
+            }
         }
     }
 
@@ -5111,6 +5124,8 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             HotWaterSource::PointOfUse(_) => None,
             HotWaterSource::HeatNetwork(_) => None,
             HotWaterSource::HeatBattery(_) => None,
+            #[cfg(test)]
+            HotWaterSource::Mock(source) => source.internal_gains(),
         }
     }
 
@@ -5120,6 +5135,8 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             HotWaterSource::PreHeated(hot_water_storage_tank) => {
                 hot_water_storage_tank.get_losses_from_primary_pipework_and_storage()
             }
+            #[cfg(test)]
+            HotWaterSource::Mock(source) => source.get_losses_from_primary_pipework_and_storage(),
             _ => (0., 0.),
         }
     }
@@ -5130,7 +5147,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum HeatBatteryHotWaterSource {
+pub enum HeatBatteryHotWaterSource {
     Pcm(Arc<HeatBatteryPcmServiceWaterDirect<WaterSupply>>),
     DryCore(Arc<HeatBatteryDryCoreServiceWaterDirect<WaterSupply>>),
 }

@@ -5,6 +5,8 @@ use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
 use crate::core::units::{Orientation360, MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
+#[cfg(test)]
+use crate::core::water_heat_demand::dhw_demand::tests::HotWaterSourceMockKind;
 use crate::core::water_heat_demand::misc::{summarise_events, WaterEventResult};
 use crate::corpus::{HeatSource, HotWaterSourceBehaviour, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
@@ -3202,6 +3204,8 @@ pub trait SurplusDiverting: Send + Sync {
 pub enum HotWaterStorageTank {
     StorageTank(Arc<RwLock<StorageTank>>),
     SmartHotWaterTank(Arc<RwLock<SmartHotWaterTank>>),
+    #[cfg(test)]
+    Mock(Box<HotWaterSourceMockKind>),
 }
 
 impl HotWaterSourceBehaviour for HotWaterStorageTank {
@@ -3213,6 +3217,8 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
             HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
                 smart_storage_tank.read().get_cold_water_source().clone()
             }
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(source) => source.get_cold_water_source(),
         }
     }
 
@@ -3228,6 +3234,10 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
             HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock
                 .read()
                 .demand_hot_water(usage_events.into(), simtime),
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(source) => {
+                source.demand_hot_water(usage_events.into(), simtime)
+            }
         }
     }
 
@@ -3248,6 +3258,10 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
                 Some(volume_required_already),
                 simtime,
             ),
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(source) => {
+                source.get_temp_hot_water(volume_required, volume_required_already, simtime)
+            }
         }
     }
 
@@ -3257,6 +3271,8 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
             HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
                 Some(rw_lock.read().internal_gains())
             }
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(source) => source.internal_gains(),
         }
     }
 
@@ -3265,6 +3281,10 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
             HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
                 .read()
                 .get_losses_from_primary_pipework_and_storage(),
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(source) => {
+                source.get_losses_from_primary_pipework_and_storage()
+            }
             _ => (0., 0.),
         }
     }
@@ -3362,6 +3382,8 @@ impl SurplusDiverting for PVDiverter {
                     self.control_max.as_ref().map(|control| control.as_ref()),
                     simulation_time_iteration,
                 )?,
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(_source) => 0.,
         };
         Ok(energy_diverted)
     }

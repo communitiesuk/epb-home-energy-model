@@ -925,7 +925,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
 #[derive(Debug)]
-pub(crate) struct HeatBatteryDryCoreServiceWaterDirect<T: WaterSupplyBehaviour> {
+pub struct HeatBatteryDryCoreServiceWaterDirect<T: WaterSupplyBehaviour> {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,
     service_name: String,

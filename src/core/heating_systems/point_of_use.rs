@@ -5,7 +5,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use fsum::FSum;
 
 #[derive(Debug, Clone)]
-pub(crate) struct PointOfUse {
+pub struct PointOfUse {
     efficiency: f64,
     energy_supply_connection: EnergySupplyConnection,
     cold_feed: WaterSupply,
