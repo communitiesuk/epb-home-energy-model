@@ -326,7 +326,12 @@ impl OnSiteGeneration for PhotovoltaicSystem {
         }
 
         if total_unshaded_energy_produced < 0.
-            || is_close!(total_unshaded_energy_produced, 0., abs_tol = 1e-10)
+            || is_close!(
+                total_unshaded_energy_produced,
+                0.,
+                abs_tol = 1e-10,
+                rel_tol = 1e-9
+            )
         {
             weighted_f_sh_dir = 1.;
         } else {

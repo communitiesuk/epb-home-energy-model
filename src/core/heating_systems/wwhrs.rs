@@ -127,7 +127,7 @@ impl WwhrsInstantaneous {
         temperature: f64,
         volume: f64,
     ) -> anyhow::Result<()> {
-        if is_close!(volume, 0.0, abs_tol = 1e-10) {
+        if is_close!(volume, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
             return Ok(());
         }
 
@@ -260,7 +260,7 @@ impl WwhrsInstantaneous {
         let temp_pre = temp_main + eta_uf * (temp_drain - temp_main);
 
         // For System A: m_hot = flowrate_waste_water * (T_target - T_pre_A) / (temp_hot - T_pre_A)
-        let flowrate_hot = if is_close!(temp_hot, temp_pre, abs_tol = 1e-10) {
+        let flowrate_hot = if is_close!(temp_hot, temp_pre, abs_tol = 1e-10, rel_tol = 1e-9) {
             None
         } else {
             Some(flowrate_waste_water * (temp_target - temp_pre) / (temp_hot - temp_pre))
@@ -326,7 +326,7 @@ impl WwhrsInstantaneous {
         let temp_drain = temp_target - DELTA_T_SHOWER;
 
         // Implement algebraic solution from Technical Recommendations
-        let temp_pre = if is_close!(temp_hot, temp_target, abs_tol = 1e-10) {
+        let temp_pre = if is_close!(temp_hot, temp_target, abs_tol = 1e-10, rel_tol = 1e-9) {
             temp_main
         } else {
             let temp = eta_uf * (temp_drain - temp_main) / (temp_hot - temp_target);
@@ -334,7 +334,7 @@ impl WwhrsInstantaneous {
         };
 
         // For System B: m_hot = flowrate_waste_water * (T_target - T_pre_B) / (temp_hot - T_pre_B)
-        let flowrate_hot = if is_close!(temp_hot, temp_pre, abs_tol = 1e-10) {
+        let flowrate_hot = if is_close!(temp_hot, temp_pre, abs_tol = 1e-10, rel_tol = 1e-9) {
             None
         } else {
             Some(flowrate_waste_water * (temp_target - temp_pre) / (temp_hot - temp_pre))
@@ -397,7 +397,7 @@ impl WwhrsInstantaneous {
         let temp_drain = temp_target - DELTA_T_SHOWER;
 
         // Direct calculation for System C
-        let temp_pre = if is_close!(temp_target, temp_main, abs_tol = 1e-10) {
+        let temp_pre = if is_close!(temp_target, temp_main, abs_tol = 1e-10, rel_tol = 1e-9) {
             temp_main
         } else {
             temp_main
@@ -406,7 +406,7 @@ impl WwhrsInstantaneous {
         };
 
         // For System C: m_hot = flowrate_waste_water * (T_target - T_main) / (temp_hot - T_main)
-        let flowrate_hot = if is_close!(temp_hot, temp_main, abs_tol = 1e-10) {
+        let flowrate_hot = if is_close!(temp_hot, temp_main, abs_tol = 1e-10, rel_tol = 1e-9) {
             None
         } else {
             Some(flowrate_waste_water * (temp_target - temp_main) / (temp_hot - temp_main))

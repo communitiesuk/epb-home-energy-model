@@ -348,7 +348,7 @@ impl StorageTank {
 
         self.temp_average_drawoff.store(
             match self.total_volume_drawoff.load(Ordering::SeqCst) {
-                value if !is_close!(value, 0., abs_tol = 1e-10) => {
+                value if !is_close!(value, 0., abs_tol = 1e-10, rel_tol = 1e-9) => {
                     let temp_average_drawoff_volweighted =
                         self.temp_average_drawoff_volweighted.load(Ordering::SeqCst);
                     temp_average_drawoff_volweighted / value
@@ -1427,16 +1427,17 @@ impl StorageTank {
             detailed_output.push(units_row);
         }
 
-        let temp_cold_water: StringOrNumber = if is_close!(volume_extracted, 0.0, abs_tol = 1e-10) {
-            "".into() // using empty string to represent None
-        } else {
-            let list_temp_vol = self
-                .cold_feed
-                .get_temp_cold_water(volume_extracted, simtime)?;
-            (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
-                / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
-            .into()
-        };
+        let temp_cold_water: StringOrNumber =
+            if is_close!(volume_extracted, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+                "".into() // using empty string to represent None
+            } else {
+                let list_temp_vol = self
+                    .cold_feed
+                    .get_temp_cold_water(volume_extracted, simtime)?;
+                (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
+                    / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
+                .into()
+            };
 
         let mut values_row: Vec<StringOrNumber> = vec![
             simtime.hour_of_day().into(),
@@ -1612,7 +1613,7 @@ impl StorageTank {
         control_max_diverter: Option<&Control>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        if is_close!(energy_input, 0., abs_tol = 1e-10) {
+        if is_close!(energy_input, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
             return Ok(0.);
         }
 
@@ -1680,7 +1681,8 @@ impl StorageTank {
                 && is_close!(
                     self.input_energy_adj_prev_timestep.load(Ordering::SeqCst),
                     0.,
-                    abs_tol = 1e-10
+                    abs_tol = 1e-10,
+                    rel_tol = 1e-9
                 )
             {
                 for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
@@ -1740,7 +1742,7 @@ impl StorageTank {
             }
 
             // end of heating event
-            if is_close!(input_energy_adj, 0., abs_tol = 1e-10)
+            if is_close!(input_energy_adj, 0., abs_tol = 1e-10, rel_tol = 1e-9)
                 && self.input_energy_adj_prev_timestep.load(Ordering::SeqCst) > 0.
             {
                 for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
@@ -2656,7 +2658,7 @@ impl SmartHotWaterTank {
             let mut volume_pumped_remaining = volume_pumped;
             for remaining_vol in remaining_vols.iter_mut() {
                 if volume_pumped_remaining < 0.
-                    || is_close!(volume_pumped_remaining, 0., abs_tol = 1e-10)
+                    || is_close!(volume_pumped_remaining, 0., abs_tol = 1e-10, rel_tol = 1e-9)
                 {
                     break;
                 }
@@ -2674,7 +2676,9 @@ impl SmartHotWaterTank {
                 let mut needed_volume = self.storage_tank.vol_n[i] - remaining_vols[i];
 
                 // If this layer is already full, continue to the next
-                if needed_volume < 0. || is_close!(needed_volume, 0., abs_tol = 1e-10) {
+                if needed_volume < 0.
+                    || is_close!(needed_volume, 0., abs_tol = 1e-10, rel_tol = 1e-9)
+                {
                     continue;
                 }
 
@@ -2997,17 +3001,18 @@ impl SmartHotWaterTank {
             detailed_output.push(units_row);
         }
 
-        let temp_cold_water: StringOrNumber = if is_close!(volume_extracted, 0.0, abs_tol = 1e-10) {
-            "".into()
-        } else {
-            let list_temp_vol = self
-                .storage_tank
-                .cold_feed
-                .get_temp_cold_water(volume_extracted, simtime)?;
-            (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
-                / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
-            .into()
-        };
+        let temp_cold_water: StringOrNumber =
+            if is_close!(volume_extracted, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+                "".into()
+            } else {
+                let list_temp_vol = self
+                    .storage_tank
+                    .cold_feed
+                    .get_temp_cold_water(volume_extracted, simtime)?;
+                (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
+                    / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
+                .into()
+            };
 
         let mut values_row: Vec<StringOrNumber> = vec![
             simtime.hour_of_day().into(),

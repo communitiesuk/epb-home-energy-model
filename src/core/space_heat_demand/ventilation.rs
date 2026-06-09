@@ -86,7 +86,7 @@ fn calculate_pressure_difference_at_an_airflow_path(
 
     // TODO (from Python): Investigate why, due to differences in internal temperature, these values are different in
     // Windows implementation when compared to Linux
-    let delta_p_path = if is_close!(p_e_path, p_z_path, abs_tol = 1e-12) {
+    let delta_p_path = if is_close!(p_e_path, p_z_path, abs_tol = 1e-12, rel_tol = 1e-9) {
         0.
     } else {
         p_e_path - p_z_path // (4)

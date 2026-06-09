@@ -107,19 +107,19 @@ impl HeatStorageDryCore {
         }
 
         // Validate that both SOC arrays start at 0.0 and end at 1.0
-        if !is_close!(*soc_max_array.first().unwrap(), 0.) {
+        if !is_close!(*soc_max_array.first().unwrap(), 0., rel_tol = 1e-9) {
             bail!("The first SOC value in dry_core_max_output must be 0.0 (fully discharged).");
         }
 
-        if !is_close!(*soc_max_array.last().unwrap(), 1.) {
+        if !is_close!(*soc_max_array.last().unwrap(), 1., rel_tol = 1e-9) {
             bail!("The last SOC value in dry_core_max_output must be 1.0 (fully charged).");
         }
 
-        if !is_close!(*soc_min_array.first().unwrap(), 0.) {
+        if !is_close!(*soc_min_array.first().unwrap(), 0., rel_tol = 1e-9) {
             bail!("The first SOC value in dry_core_min_output must be 0.0 (fully discharged).");
         }
 
-        if !is_close!(*soc_min_array.last().unwrap(), 1.) {
+        if !is_close!(*soc_min_array.last().unwrap(), 1., rel_tol = 1e-9) {
             bail!("The last SOC value in dry_core_min_output must be 1.0 (fully charged).");
         }
 
@@ -962,7 +962,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         let volume_req_already = volume_req_already.unwrap_or(0.0);
 
-        if is_close!(volume_req, 0.0, abs_tol = 1e-10) {
+        if is_close!(volume_req, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
             bail!("volume_req must be non-zero");
         }
 
@@ -981,14 +981,15 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
 
         // Base temperature on the part of the draw-off for volume_req, and
         // ignore any volume previously considered
-        let temp_hot_water_req = if is_close!(volume_req_already, 0.0, abs_tol = 1e-10) {
-            temp_hot_water_cumulative
-        } else {
-            let temp_hot_water_req_already = temp_hot_water(volume_req_already)?;
-            (temp_hot_water_cumulative * volume_req_cumulative
-                - temp_hot_water_req_already * volume_req_already)
-                / volume_req
-        };
+        let temp_hot_water_req =
+            if is_close!(volume_req_already, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+                temp_hot_water_cumulative
+            } else {
+                let temp_hot_water_req_already = temp_hot_water(volume_req_already)?;
+                (temp_hot_water_cumulative * volume_req_cumulative
+                    - temp_hot_water_req_already * volume_req_already)
+                    / volume_req
+            };
 
         Ok(vec![(temp_hot_water_req, volume_req)])
     }
@@ -1005,7 +1006,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
 
         if let Some(usage_events) = usage_events {
             for event in usage_events {
-                if is_close!(event.volume_hot, 0.0, abs_tol = 1e-10) {
+                if is_close!(event.volume_hot, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
                     continue;
                 }
 
@@ -1360,7 +1361,7 @@ impl HeatBatteryDryCore {
         // Process energy demand from a specific service
         if !service_on
             || energy_output_required < 0.
-            || is_close!(energy_output_required, 0.0, abs_tol = 1e-10)
+            || is_close!(energy_output_required, 0.0, abs_tol = 1e-10, rel_tol = 1e-9)
         {
             if update_heat_source_state {
                 self.service_results.write().push(ServiceResult {
@@ -1386,7 +1387,7 @@ impl HeatBatteryDryCore {
         }
 
         let (energy_delivered_hb, energy_lost, energy_charged) = if time_remaining < 0.
-            || is_close!(time_remaining, 0.0, abs_tol = 1e-10)
+            || is_close!(time_remaining, 0.0, abs_tol = 1e-10, rel_tol = 1e-9)
         {
             // No time left to run this service
             let energy_delivered_hb = 0.0;
@@ -1422,8 +1423,12 @@ impl HeatBatteryDryCore {
                 final_soc,
                 energy_lost,
             ) = if q_released_max > energy_output_required
-                || is_close!(q_released_max, energy_output_required, abs_tol = 1e-10)
-            {
+                || is_close!(
+                    q_released_max,
+                    energy_output_required,
+                    abs_tol = 1e-10,
+                    rel_tol = 1e-9
+                ) {
                 let (
                     energy_delivered_hb,
                     time_running_current_service,

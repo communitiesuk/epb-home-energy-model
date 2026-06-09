@@ -1823,9 +1823,17 @@ impl Corpus {
                 // lower-priority systems).
                 let (gains_heat_cool_convective, gains_heat_cool_radiative) =
                     self.gains_heat_cool(delta_t_h, &hc_output_convective, &hc_output_radiative);
-                if is_close!(gains_heat_cool_convective, 0.0, abs_tol = 1e-10)
-                    && is_close!(gains_heat_cool_radiative, 0.0, abs_tol = 1e-10)
-                {
+                if is_close!(
+                    gains_heat_cool_convective,
+                    0.0,
+                    abs_tol = 1e-10,
+                    rel_tol = 1e-9
+                ) && is_close!(
+                    gains_heat_cool_radiative,
+                    0.0,
+                    abs_tol = 1e-10,
+                    rel_tol = 1e-9
+                ) {
                     // If there is no output from any systems, then don't need to
                     // calculate demand again
                     space_heat_demand_zone_system.insert(h_name, space_heat_demand_zone[z_name]);
@@ -1997,12 +2005,13 @@ impl Corpus {
             let gains_heat_cool = (hc_output_convective_total + hc_output_radiative_total)
                 * WATTS_PER_KILOWATT as f64
                 / delta_t_h;
-            let frac_convective = if !is_close!(gains_heat_cool, 0.0, abs_tol = 1e-10) {
-                hc_output_convective_total
-                    / (hc_output_convective_total + hc_output_radiative_total)
-            } else {
-                1.0
-            };
+            let frac_convective =
+                if !is_close!(gains_heat_cool, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+                    hc_output_convective_total
+                        / (hc_output_convective_total + hc_output_radiative_total)
+                } else {
+                    1.0
+                };
 
             // Calculate final temperatures achieved
             heat_balance_map.insert(
