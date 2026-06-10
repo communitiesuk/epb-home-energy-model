@@ -234,7 +234,7 @@ impl Zone {
                 0.0,
                 temp_ext_air_init,
                 simtime,
-                self.print_heat_balance,
+                false,
             )?;
 
             if !isclose(
@@ -944,7 +944,7 @@ impl Zone {
                     ach_windows_open,
                     avg_supply_temp,
                     simtime,
-                    self.print_heat_balance,
+                    false,
                 )?;
                 let temp_int_air_vent_max = temp_vector_vent_max[self.zone_idx];
 
@@ -996,7 +996,7 @@ impl Zone {
                         ach_cooling,
                         avg_supply_temp,
                         simtime,
-                        self.print_heat_balance,
+                        false,
                     )?;
 
                     // Calculate internal operative temperature at free-floating conditions
@@ -1147,7 +1147,7 @@ impl Zone {
             },
             avg_air_supply_temp,
             simulation_time_iteration,
-            self.print_heat_balance,
+            false,
         )?;
 
         // Calculate internal operative temperature at free-floating conditions
@@ -1214,7 +1214,7 @@ impl Zone {
             ach_cooling,
             avg_air_supply_temp,
             simulation_time_iteration,
-            self.print_heat_balance,
+            false,
         )?;
 
         // Calculate internal operative temperature with maximum heating/cooling
