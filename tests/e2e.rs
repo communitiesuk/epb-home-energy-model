@@ -481,11 +481,20 @@ mod compare {
                     if string == other_string {
                         Ok(())
                     } else {
-                        Err(Difference::String {
-                            left: string.clone(),
-                            right: other_string.clone(),
-                            field_index,
-                        })
+                        // deal with boolean "True"/"False" values rendered as strings, as these should be compared case-insensitively
+                        let lowercase_bools = ["true", "false"];
+                        if lowercase_bools.contains(&string.to_lowercase().as_str())
+                            && lowercase_bools.contains(&other_string.to_lowercase().as_str())
+                            && string.to_lowercase() == other_string.to_lowercase()
+                        {
+                            Ok(())
+                        } else {
+                            Err(Difference::String {
+                                left: string.clone(),
+                                right: other_string.clone(),
+                                field_index,
+                            })
+                        }
                     }
                 }
             }
