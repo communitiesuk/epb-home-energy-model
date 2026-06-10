@@ -6,6 +6,7 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::IntoPyDict;
 use std::sync::Arc;
+use anyhow::anyhow;
 
 pub(crate) fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
     let solver = FDNewton::new(func);
@@ -128,5 +129,89 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RootResult {
         let x = x.as_array().to_owned();
 
         Ok(Self { x })
+    }
+}
+
+pub(crate) fn solve_ivp(func: Box<dyn Fn(f64, [f64; 1]) -> f64 + Send + Sync>, t_span: (f64, f64), y0: [f64; 1], events: Option<TerminalFunction>) -> anyhow::Result<OdeResult> {
+    Python::attach(move |py| -> PyResult<OdeResult> {
+        let callback = OdeSolverCallback { inner: func };
+        let integrate = py.import("scipy.integrate")?;
+        let solve_ivp = integrate.getattr("solve_ivp")?;
+        let kwargs = [("events", events)].into_py_dict(py)?;
+        solve_ivp
+            .call(
+                (callback, t_span, y0),
+                Some(&kwargs),
+            )?
+            .extract::<OdeResult>()
+    })
+        .map_err(|e| anyhow!(e))
+}
+
+#[pyclass]
+pub(crate) struct TerminalFunction {
+    pub(crate) inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
+}
+
+#[pymethods]
+impl TerminalFunction {
+    #[pyo3(signature = (t, y, /))]
+    fn __call__(&self, t: f64, y: Vec<f64>) -> PyResult<f64> {
+        // Execute the boxed closure
+        let result = (self.inner)(t, &y);
+        Ok(result)
+    }
+
+    fn __getattribute__(&self, name: String) -> PyResult<Option<f64>> {
+        Ok(match name.as_str() {
+            "terminal" => Some(1.0), // a float value that Python would consider truthy
+            "direction" => Some(0.0),
+            _ => None,
+        })
+    }
+}
+
+
+#[pyclass]
+struct OdeSolverCallback {
+    // We use Box<dyn Fn> to store the closure.
+    // Note: It needs to be Send + Sync because it will need to be passed to a Python thread.
+    inner: Box<dyn Fn(f64, [f64; 1]) -> f64 + Send + Sync>,
+}
+
+#[pymethods]
+impl OdeSolverCallback {
+    // The `__call__` method makes the object act like a function in Python.
+    #[pyo3(signature = (arg1, arg2, /))]
+    fn __call__(&self, arg1: f64, arg2: [f64; 1]) -> PyResult<f64> {
+        // Execute the boxed closure
+        let result = (self.inner)(arg1, arg2);
+        Ok(result)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct OdeResult {
+    pub(crate) y: ArrayD<f64>,
+    pub(crate) t_events: Option<Vec<ArrayD<f64>>>,
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for OdeResult {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+        let y: PyReadonlyArrayDyn<'py, f64> = ob.getattr("y")?.extract()?;
+        let t_events: Option<Vec<PyReadonlyArrayDyn<'py, f64>>> =
+            ob.getattr("t_events")?.extract()?;
+
+        let y = y.as_array().to_owned();
+        let t_events = t_events.map(|t_events| {
+            t_events
+                .into_iter()
+                .map(|row| row.as_array().to_owned())
+                .collect()
+        });
+
+        Ok(Self { y, t_events })
     }
 }

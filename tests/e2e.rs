@@ -127,7 +127,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                 println!("Differences: {}", differences.iter().join("\n"));
                 difference_count += differences.len();
             }
-            let difference_kind = DifferenceKind::Full;
+            let difference_kind = DifferenceKind::CountOnly;
             if is_tabular(file_name) {
                 let file_differences = compare::compare_tabular_records_within_threshold(&mut python_reader, &mut rust_reader, difference_kind);
                 if let Err(comparison_error) = file_differences {

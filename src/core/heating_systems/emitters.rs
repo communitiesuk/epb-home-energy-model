@@ -7,7 +7,7 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
-use crate::core::solvers::{bisect, fsolve, root};
+use crate::core::solvers::{bisect, fsolve, root, solve_ivp, OdeResult, TerminalFunction};
 use crate::core::space_heat_demand::zone::SimpleZone;
 use crate::core::units::{
     JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE,
@@ -27,12 +27,8 @@ use atomic_float::AtomicF64;
 use derivative::Derivative;
 use fsum::FSum;
 use itertools::Itertools;
-use numpy::ndarray::ArrayD;
-use numpy::PyReadonlyArrayDyn;
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
-use pyo3::prelude::*;
-use pyo3::types::IntoPyDict;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
@@ -841,22 +837,8 @@ impl Emitters {
             thermal_mass,
             power_input,
         ));
-        let callback = RustCallback {
-            inner: func_temp_emitter_change_rate,
-        };
 
-        let temp_diff_emitter_rm_results = Python::attach(|py| -> PyResult<OdeResult> {
-            let integrate = py.import("scipy.integrate")?;
-            let solve_ivp = integrate.getattr("solve_ivp")?;
-            let kwargs = [("events", events)].into_py_dict(py)?;
-            solve_ivp
-                .call(
-                    (callback, (time_start, time_end), (temp_diff_start,)),
-                    Some(&kwargs),
-                )?
-                .extract::<OdeResult>()
-        })
-        .map_err(|e| anyhow!(e))?;
+        let temp_diff_emitter_rm_results = solve_ivp(func_temp_emitter_change_rate, (time_start, time_end), [temp_diff_start], events)?;
 
         // Get time at which emitters reach max. temp
         let OdeResult { y, t_events } = temp_diff_emitter_rm_results;
@@ -1910,73 +1892,6 @@ impl Emitters {
                 .expect("thermal_mass expected to be set for non fancoil emitters")
                 * (self.temp_emitter_prev() - temp_emitter)
         })
-    }
-}
-
-#[pyclass]
-struct TerminalFunction {
-    inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
-}
-
-#[pymethods]
-impl TerminalFunction {
-    #[pyo3(signature = (t, y, /))]
-    fn __call__(&self, t: f64, y: Vec<f64>) -> PyResult<f64> {
-        // Execute the boxed closure
-        let result = (self.inner)(t, &y);
-        Ok(result)
-    }
-
-    fn __getattribute__(&self, name: String) -> PyResult<Option<f64>> {
-        Ok(match name.as_str() {
-            "terminal" => Some(1.0), // a float value that Python would consider truthy
-            "direction" => Some(0.0),
-            _ => None,
-        })
-    }
-}
-
-#[pyclass]
-struct RustCallback {
-    // We use Box<dyn Fn> to store the closure.
-    // Note: It needs to be Send + Sync because it will need to be passed to a Python thread.
-    inner: Box<dyn Fn(f64, [f64; 1]) -> f64 + Send + Sync>,
-}
-
-#[pymethods]
-impl RustCallback {
-    // The `__call__` method makes the object act like a function in Python.
-    #[pyo3(signature = (arg1, arg2, /))]
-    fn __call__(&self, arg1: f64, arg2: [f64; 1]) -> PyResult<f64> {
-        // Execute the boxed closure
-        let result = (self.inner)(arg1, arg2);
-        Ok(result)
-    }
-}
-
-#[derive(Debug)]
-struct OdeResult {
-    y: ArrayD<f64>,
-    t_events: Option<Vec<ArrayD<f64>>>,
-}
-
-impl<'a, 'py> FromPyObject<'a, 'py> for OdeResult {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        let y: PyReadonlyArrayDyn<'py, f64> = ob.getattr("y")?.extract()?;
-        let t_events: Option<Vec<PyReadonlyArrayDyn<'py, f64>>> =
-            ob.getattr("t_events")?.extract()?;
-
-        let y = y.as_array().to_owned();
-        let t_events = t_events.map(|t_events| {
-            t_events
-                .into_iter()
-                .map(|row| row.as_array().to_owned())
-                .collect()
-        });
-
-        Ok(Self { y, t_events })
     }
 }
 
