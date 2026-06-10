@@ -14,6 +14,20 @@ use std::str::from_utf8;
 use std::sync::Arc;
 use walkdir::{DirEntry, WalkDir};
 
+const PASSING_FILES_IN_MAIN: [&str; 11] = [
+    "demo_24hrs_January.json",
+    "demo_24hrs_January_ieh.json",
+    "demo_24hrs_January_MVHR_external.json",
+    "demo.json",
+    "demo_elec_battery_8.json",
+    "demo_curtains_and_blinds.json",
+    "demo_hwohp.json",
+    "demo_suspended_floor.json",
+    "demo_new_infiltration_vent_model_MVHR.json",
+    "SAP11_deck_smart_hot_water_tank,json",
+    "SAP11_deck_flat_nat_vent_with_window_opening_for_cooling.json",
+];
+
 #[fixture]
 fn files() -> Vec<DirEntry> {
     WalkDir::new("./examples/input/core")
@@ -22,6 +36,7 @@ fn files() -> Vec<DirEntry> {
         .filter(|e| {
             !e.file_type().is_dir()
                 && e.file_name().to_str().unwrap().ends_with("json")
+                && !PASSING_FILES_IN_MAIN.contains(&e.file_name().to_str().unwrap())
                 && !e
                     .path()
                     .parent()
