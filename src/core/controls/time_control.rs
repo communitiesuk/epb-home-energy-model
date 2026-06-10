@@ -366,7 +366,7 @@ impl ChargeControl {
                 if temp_charge_cut.is_some_and(|temp_charge_cut| {
                     temp_air.is_some_and(|temp_air| {
                         temp_air > temp_charge_cut
-                            || is_close!(temp_air, temp_charge_cut, abs_tol = 1e-10)
+                            || is_close!(temp_air, temp_charge_cut, abs_tol = 1e-10, rel_tol = 1e-9)
                     })
                 }) {
                     // Control logic cut when temp_air is over temp_charge cut
@@ -539,7 +539,8 @@ impl ChargeControl {
             || is_close!(
                 external_temperature,
                 first_correlation.temperature,
-                abs_tol = 1e-10
+                abs_tol = 1e-10,
+                rel_tol = 1e-9
             )
         {
             return Ok(first_correlation.max_charge);
@@ -547,7 +548,8 @@ impl ChargeControl {
             || is_close!(
                 external_temperature,
                 last_correlation.temperature,
-                abs_tol = 1e-10
+                abs_tol = 1e-10,
+                rel_tol = 1e-9
             )
         {
             return Ok(last_correlation.max_charge);
@@ -566,9 +568,19 @@ impl ChargeControl {
 
             if !is_close!(temp_1, temp_2)
                 && (temp_1 < external_temperature
-                    || is_close!(temp_1, external_temperature, abs_tol = 1e-10))
+                    || is_close!(
+                        temp_1,
+                        external_temperature,
+                        abs_tol = 1e-10,
+                        rel_tol = 1e-9
+                    ))
                 && (external_temperature < temp_2
-                    || is_close!(temp_2, external_temperature, abs_tol = 1e-10))
+                    || is_close!(
+                        temp_2,
+                        external_temperature,
+                        abs_tol = 1e-10,
+                        rel_tol = 1e-9
+                    ))
             {
                 // perform linear interpolation
                 let slope = (max_charge_2 - max_charge_1) / (temp_2 - temp_1);

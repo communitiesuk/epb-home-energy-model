@@ -113,8 +113,8 @@ pub fn calc_fraction_hot_water(
     temperature_cold: f64,
 ) -> Result<f64, UnachievableTemperatureByMixingError> {
     let fraction = (temperature_target - temperature_cold) / (temperature_hot - temperature_cold);
-    if (fraction < 0.0 && !is_close!(fraction, 0.0, abs_tol = 1e-10))
-        || (fraction > 1.0 && !is_close!(fraction, 1.0, abs_tol = 1e-10))
+    if (fraction < 0.0 && !is_close!(fraction, 0.0, abs_tol = 1e-10, rel_tol = 1e-9))
+        || (fraction > 1.0 && !is_close!(fraction, 1.0, abs_tol = 1e-10, rel_tol = 1e-9))
     {
         return Err(UnachievableTemperatureByMixingError {
             temperature_target,

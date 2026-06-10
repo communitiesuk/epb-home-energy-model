@@ -1047,7 +1047,7 @@ impl Zone {
         temp_free: f64,
         temp_upper: f64,
     ) -> anyhow::Result<f64> {
-        if is_close!(temp_upper - temp_free, 0.0, abs_tol = 1e-10) {
+        if is_close!(temp_upper - temp_free, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
             bail!(
                 "Divide-by-zero in calculation of heating/cooling demand.
             This may be caused by the specification of very low overall
@@ -1125,11 +1125,12 @@ impl Zone {
 
         // For calculation of demand, set heating/cooling gains to zero
         let gains_heat_cool = gains_heat_cool_convective + gains_heat_cool_radiative;
-        let frac_conv_gains_heat_cool = if is_close!(gains_heat_cool, 0.0, abs_tol = 1e-10) {
-            0.0
-        } else {
-            gains_heat_cool_convective / gains_heat_cool
-        };
+        let frac_conv_gains_heat_cool =
+            if is_close!(gains_heat_cool, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+                0.0
+            } else {
+                gains_heat_cool_convective / gains_heat_cool
+            };
 
         // Calculate node and internal air temperatures with heating/cooling gains of zero
         let (temp_vector_no_heat_cool, _) = self.calc_temperatures(

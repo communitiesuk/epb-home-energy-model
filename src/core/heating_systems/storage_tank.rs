@@ -5,6 +5,8 @@ use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
 use crate::core::units::{Orientation360, MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
+#[cfg(test)]
+use crate::core::water_heat_demand::dhw_demand::tests::HotWaterSourceMockKind;
 use crate::core::water_heat_demand::misc::{summarise_events, WaterEventResult};
 use crate::corpus::{HeatSource, HotWaterSourceBehaviour, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
@@ -348,7 +350,7 @@ impl StorageTank {
 
         self.temp_average_drawoff.store(
             match self.total_volume_drawoff.load(Ordering::SeqCst) {
-                value if !is_close!(value, 0., abs_tol = 1e-10) => {
+                value if !is_close!(value, 0., abs_tol = 1e-10, rel_tol = 1e-9) => {
                     let temp_average_drawoff_volweighted =
                         self.temp_average_drawoff_volweighted.load(Ordering::SeqCst);
                     temp_average_drawoff_volweighted / value
@@ -1427,16 +1429,17 @@ impl StorageTank {
             detailed_output.push(units_row);
         }
 
-        let temp_cold_water: StringOrNumber = if is_close!(volume_extracted, 0.0, abs_tol = 1e-10) {
-            "".into() // using empty string to represent None
-        } else {
-            let list_temp_vol = self
-                .cold_feed
-                .get_temp_cold_water(volume_extracted, simtime)?;
-            (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
-                / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
-            .into()
-        };
+        let temp_cold_water: StringOrNumber =
+            if is_close!(volume_extracted, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+                "".into() // using empty string to represent None
+            } else {
+                let list_temp_vol = self
+                    .cold_feed
+                    .get_temp_cold_water(volume_extracted, simtime)?;
+                (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
+                    / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
+                .into()
+            };
 
         let mut values_row: Vec<StringOrNumber> = vec![
             simtime.hour_of_day().into(),
@@ -1612,7 +1615,7 @@ impl StorageTank {
         control_max_diverter: Option<&Control>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        if is_close!(energy_input, 0., abs_tol = 1e-10) {
+        if is_close!(energy_input, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
             return Ok(0.);
         }
 
@@ -1680,7 +1683,8 @@ impl StorageTank {
                 && is_close!(
                     self.input_energy_adj_prev_timestep.load(Ordering::SeqCst),
                     0.,
-                    abs_tol = 1e-10
+                    abs_tol = 1e-10,
+                    rel_tol = 1e-9
                 )
             {
                 for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
@@ -1740,7 +1744,7 @@ impl StorageTank {
             }
 
             // end of heating event
-            if is_close!(input_energy_adj, 0., abs_tol = 1e-10)
+            if is_close!(input_energy_adj, 0., abs_tol = 1e-10, rel_tol = 1e-9)
                 && self.input_energy_adj_prev_timestep.load(Ordering::SeqCst) > 0.
             {
                 for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
@@ -2656,7 +2660,7 @@ impl SmartHotWaterTank {
             let mut volume_pumped_remaining = volume_pumped;
             for remaining_vol in remaining_vols.iter_mut() {
                 if volume_pumped_remaining < 0.
-                    || is_close!(volume_pumped_remaining, 0., abs_tol = 1e-10)
+                    || is_close!(volume_pumped_remaining, 0., abs_tol = 1e-10, rel_tol = 1e-9)
                 {
                     break;
                 }
@@ -2674,7 +2678,9 @@ impl SmartHotWaterTank {
                 let mut needed_volume = self.storage_tank.vol_n[i] - remaining_vols[i];
 
                 // If this layer is already full, continue to the next
-                if needed_volume < 0. || is_close!(needed_volume, 0., abs_tol = 1e-10) {
+                if needed_volume < 0.
+                    || is_close!(needed_volume, 0., abs_tol = 1e-10, rel_tol = 1e-9)
+                {
                     continue;
                 }
 
@@ -2864,6 +2870,11 @@ impl SmartHotWaterTank {
         Ok(volume_pumped)
     }
 
+    fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+        self.storage_tank
+            .get_losses_from_primary_pipework_and_storage()
+    }
+
     fn testoutput(
         &self,
         usage_events: &[WaterEventResult],
@@ -2997,17 +3008,18 @@ impl SmartHotWaterTank {
             detailed_output.push(units_row);
         }
 
-        let temp_cold_water: StringOrNumber = if is_close!(volume_extracted, 0.0, abs_tol = 1e-10) {
-            "".into()
-        } else {
-            let list_temp_vol = self
-                .storage_tank
-                .cold_feed
-                .get_temp_cold_water(volume_extracted, simtime)?;
-            (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
-                / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
-            .into()
-        };
+        let temp_cold_water: StringOrNumber =
+            if is_close!(volume_extracted, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+                "".into()
+            } else {
+                let list_temp_vol = self
+                    .storage_tank
+                    .cold_feed
+                    .get_temp_cold_water(volume_extracted, simtime)?;
+                (FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value()
+                    / FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value())
+                .into()
+            };
 
         let mut values_row: Vec<StringOrNumber> = vec![
             simtime.hour_of_day().into(),
@@ -3197,6 +3209,8 @@ pub trait SurplusDiverting: Send + Sync {
 pub enum HotWaterStorageTank {
     StorageTank(Arc<RwLock<StorageTank>>),
     SmartHotWaterTank(Arc<RwLock<SmartHotWaterTank>>),
+    #[cfg(test)]
+    Mock(Box<HotWaterSourceMockKind>),
 }
 
 impl HotWaterSourceBehaviour for HotWaterStorageTank {
@@ -3208,6 +3222,8 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
             HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
                 smart_storage_tank.read().get_cold_water_source().clone()
             }
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(source) => source.get_cold_water_source(),
         }
     }
 
@@ -3223,6 +3239,10 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
             HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock
                 .read()
                 .demand_hot_water(usage_events.into(), simtime),
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(source) => {
+                source.demand_hot_water(usage_events.into(), simtime)
+            }
         }
     }
 
@@ -3243,6 +3263,10 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
                 Some(volume_required_already),
                 simtime,
             ),
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(source) => {
+                source.get_temp_hot_water(volume_required, volume_required_already, simtime)
+            }
         }
     }
 
@@ -3252,6 +3276,8 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
             HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
                 Some(rw_lock.read().internal_gains())
             }
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(source) => source.internal_gains(),
         }
     }
 
@@ -3260,7 +3286,13 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
             HotWaterStorageTank::StorageTank(rw_lock) => rw_lock
                 .read()
                 .get_losses_from_primary_pipework_and_storage(),
-            _ => (0., 0.),
+            HotWaterStorageTank::SmartHotWaterTank(rw_lock) => rw_lock
+                .read()
+                .get_losses_from_primary_pipework_and_storage(),
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(source) => {
+                source.get_losses_from_primary_pipework_and_storage()
+            }
         }
     }
 
@@ -3357,6 +3389,8 @@ impl SurplusDiverting for PVDiverter {
                     self.control_max.as_ref().map(|control| control.as_ref()),
                     simulation_time_iteration,
                 )?,
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(_source) => 0.,
         };
         Ok(energy_diverted)
     }

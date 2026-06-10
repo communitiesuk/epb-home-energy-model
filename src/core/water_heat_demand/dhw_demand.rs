@@ -1,5 +1,6 @@
 use crate::core::common::WaterSupplyBehaviour;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::heating_systems::storage_tank::HotWaterStorageTank;
 use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
 use crate::core::schedule::{TypedScheduleEvent, WaterScheduleEventType};
@@ -12,7 +13,7 @@ use crate::core::water_heat_demand::misc::{
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
 use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
-use crate::corpus::{ColdWaterSources, EventSchedule, HotWaterSourceBehaviour};
+use crate::corpus::{ColdWaterSources, EventSchedule, HotWaterSource, HotWaterSourceBehaviour};
 use crate::input::{
     BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput,
     PipeworkContents, Shower as ShowerInput, Showers as ShowersInput,
@@ -31,16 +32,16 @@ use std::sync::Arc;
 pub(crate) const ELECTRIC_SHOWERS_HWS_NAME: &str = "_electric_showers";
 
 #[derive(Debug)]
-pub struct DomesticHotWaterDemand<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour = T> {
+pub struct DomesticHotWaterDemand {
     showers: IndexMap<String, Shower>,
     baths: IndexMap<String, Bath>,
     other: IndexMap<String, OtherHotWater>,
-    hot_water_sources: IndexMap<Arc<str>, T>,
+    hot_water_sources: IndexMap<Arc<str>, HotWaterSource>,
     energy_supply_conn_unmet_demand: IndexMap<Arc<str>, EnergySupplyConnection>,
     source_supplying_outlet: IndexMap<(OutletType, Arc<str>), Arc<str>>,
     hot_water_distribution_pipework: IndexMap<Arc<str>, Vec<PipeworkSimple>>,
     event_schedules: EventSchedule,
-    pre_heated_water_sources: IndexMap<String, U>,
+    pre_heated_water_sources: IndexMap<String, HotWaterStorageTank>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -102,7 +103,7 @@ pub enum OutletType {
     Other,
 }
 
-impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDemand<T, U> {
+impl DomesticHotWaterDemand {
     // TODO (from Python) Enhance analysis for overlapping events
     // Part of draft code for future overlapping analysis of events
     // For pipework losses count only none overlapping events
@@ -118,8 +119,8 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
         wwhrs: &IndexMap<String, Arc<Mutex<WwhrsInstantaneous>>>,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         event_schedules: EventSchedule,
-        hot_water_sources: IndexMap<Arc<str>, T>,
-        pre_heated_water_sources: IndexMap<String, U>,
+        hot_water_sources: IndexMap<Arc<str>, HotWaterSource>,
+        pre_heated_water_sources: IndexMap<String, HotWaterStorageTank>,
     ) -> anyhow::Result<Self> {
         let showers: IndexMap<String, Shower> = showers_input
             .0
@@ -349,7 +350,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
 
     fn temp_hot_water(
         &self,
-        hot_water_source: T,
+        hot_water_source: &HotWaterSource,
         volume_required_already: f64,
         volume_required: f64,
         simtime: SimulationTimeIteration,
@@ -522,7 +523,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
 
                         let func = move |volume_required: f64| -> anyhow::Result<f64> {
                             self.temp_hot_water(
-                                hot_water_source.clone(),
+                                &hot_water_source,
                                 volume_required_already,
                                 volume_required,
                                 simtime,
@@ -614,7 +615,7 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                             *hw_demand_volume.get(&hot_water_source_name).unwrap();
                         let volume_required = volume_hot_water_left;
                         let temperature_pipe_flush = self.temp_hot_water(
-                            hot_water_source.clone(),
+                            &hot_water_source,
                             volume_required_already,
                             volume_required,
                             simtime,
@@ -710,7 +711,6 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                 pw_losses_internal_for_hws + pw_losses_external_for_hws,
             );
 
-            // TODO check timestep is correct here
             let gains_internal_dhw_for_hws = (pw_losses_internal_for_hws
                 + gains_internal_dhw_use_for_hws)
                 * (WATTS_PER_KILOWATT as f64)
@@ -729,7 +729,6 @@ impl<T: HotWaterSourceBehaviour, U: HotWaterSourceBehaviour> DomesticHotWaterDem
                 .copied()
                 .collect();
 
-            // TODO update demand_hot_water to accept usage_events
             hw_energy_output.insert(
                 hws_name.clone(),
                 hws.demand_hot_water(filtered_events.clone(), simtime)?,
@@ -992,7 +991,7 @@ fn input_to_water_distribution_pipework(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::compare_floats::max_of_2;
     use crate::core::common::WaterSupply;
@@ -1009,8 +1008,98 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rstest::*;
 
+    #[derive(Clone, Debug)]
+    pub enum HotWaterSourceMockKind {
+        Simple(HotWaterSourceMock),
+        WithUniqueHotWaterTemperature(HotWaterSourceMockWithUniqueHotWaterTemperature),
+        WithInternalGains(HotWaterSourceMockWithInternalGains),
+    }
+
+    impl HotWaterSourceBehaviour for HotWaterSourceMockKind {
+        fn get_cold_water_source(&self) -> WaterSupply {
+            match self {
+                HotWaterSourceMockKind::Simple(mock) => mock.get_cold_water_source(),
+                HotWaterSourceMockKind::WithUniqueHotWaterTemperature(mock) => {
+                    mock.get_cold_water_source()
+                }
+                HotWaterSourceMockKind::WithInternalGains(mock) => mock.get_cold_water_source(),
+            }
+        }
+
+        fn demand_hot_water(
+            &self,
+            usage_events: Vec<WaterEventResult>,
+            simtime: SimulationTimeIteration,
+        ) -> anyhow::Result<f64> {
+            match self {
+                HotWaterSourceMockKind::Simple(mock) => {
+                    mock.demand_hot_water(usage_events, simtime)
+                }
+                HotWaterSourceMockKind::WithUniqueHotWaterTemperature(mock) => {
+                    mock.demand_hot_water(usage_events, simtime)
+                }
+                HotWaterSourceMockKind::WithInternalGains(mock) => {
+                    mock.demand_hot_water(usage_events, simtime)
+                }
+            }
+        }
+
+        fn get_temp_hot_water(
+            &self,
+            volume_required: f64,
+            volume_required_already: f64,
+            simtime: SimulationTimeIteration,
+        ) -> anyhow::Result<Vec<(f64, f64)>> {
+            match self {
+                HotWaterSourceMockKind::Simple(mock) => {
+                    mock.get_temp_hot_water(volume_required, volume_required_already, simtime)
+                }
+                HotWaterSourceMockKind::WithUniqueHotWaterTemperature(mock) => {
+                    mock.get_temp_hot_water(volume_required, volume_required_already, simtime)
+                }
+                HotWaterSourceMockKind::WithInternalGains(mock) => {
+                    mock.get_temp_hot_water(volume_required, volume_required_already, simtime)
+                }
+            }
+        }
+
+        fn internal_gains(&self) -> Option<f64> {
+            match self {
+                HotWaterSourceMockKind::Simple(mock) => mock.internal_gains(),
+                HotWaterSourceMockKind::WithUniqueHotWaterTemperature(mock) => {
+                    mock.internal_gains()
+                }
+                HotWaterSourceMockKind::WithInternalGains(mock) => mock.internal_gains(),
+            }
+        }
+
+        fn get_losses_from_primary_pipework_and_storage(&self) -> (f64, f64) {
+            match self {
+                HotWaterSourceMockKind::Simple(mock) => {
+                    mock.get_losses_from_primary_pipework_and_storage()
+                }
+                HotWaterSourceMockKind::WithUniqueHotWaterTemperature(mock) => {
+                    mock.get_losses_from_primary_pipework_and_storage()
+                }
+                HotWaterSourceMockKind::WithInternalGains(mock) => {
+                    mock.get_losses_from_primary_pipework_and_storage()
+                }
+            }
+        }
+
+        fn is_point_of_use(&self) -> bool {
+            match self {
+                HotWaterSourceMockKind::Simple(mock) => mock.is_point_of_use(),
+                HotWaterSourceMockKind::WithUniqueHotWaterTemperature(mock) => {
+                    mock.is_point_of_use()
+                }
+                HotWaterSourceMockKind::WithInternalGains(mock) => mock.is_point_of_use(),
+            }
+        }
+    }
+
     #[derive(Debug, Clone)]
-    struct HotWaterSourceMock {
+    pub struct HotWaterSourceMock {
         cold_feed: WaterSupply,
     }
 
@@ -1063,7 +1152,7 @@ mod tests {
     }
 
     #[derive(Debug, Clone)]
-    struct HotWaterSourceMockWithUniqueHotWaterTemperature {}
+    pub struct HotWaterSourceMockWithUniqueHotWaterTemperature {}
 
     impl HotWaterSourceBehaviour for HotWaterSourceMockWithUniqueHotWaterTemperature {
         fn get_cold_water_source(&self) -> WaterSupply {
@@ -1090,7 +1179,7 @@ mod tests {
     }
 
     #[derive(Debug, Clone)]
-    struct HotWaterSourceMockWithInternalGains {
+    pub struct HotWaterSourceMockWithInternalGains {
         cold_feed: WaterSupply,
     }
 
@@ -1267,13 +1356,13 @@ mod tests {
         ]
     }
 
-    fn create_dhw_demand<T: HotWaterSourceBehaviour>(
+    fn create_dhw_demand(
         simulation_time: SimulationTime,
-        hot_water_sources: IndexMap<Arc<str>, T>,
-        pre_heated_water_sources: IndexMap<String, T>,
+        hot_water_sources: IndexMap<Arc<str>, HotWaterSource>,
+        pre_heated_water_sources: IndexMap<String, HotWaterStorageTank>,
         cold_water_source: Arc<ColdWaterSource>,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
-    ) -> DomesticHotWaterDemand<T> {
+    ) -> DomesticHotWaterDemand {
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let system_a_efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let system_a_utilisation_factor = 0.7;
@@ -1415,15 +1504,13 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
         cold_water_source: Arc<ColdWaterSource>,
     ) {
-        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithUniqueHotWaterTemperature> =
-            IndexMap::from([(
-                "hw cylinder".into(),
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSource> = IndexMap::from([(
+            "hw cylinder".into(),
+            HotWaterSource::Mock(HotWaterSourceMockKind::WithUniqueHotWaterTemperature(
                 HotWaterSourceMockWithUniqueHotWaterTemperature {},
-            )]);
-        let pre_heated_water_sources: IndexMap<
-            String,
-            HotWaterSourceMockWithUniqueHotWaterTemperature,
-        > = IndexMap::default();
+            )),
+        )]);
+        let pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> = IndexMap::default();
 
         let dhw_demand = create_dhw_demand(
             simulation_time,
@@ -1894,16 +1981,14 @@ mod tests {
             },
         ]);
 
-        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithUniqueHotWaterTemperature> =
-            IndexMap::from([(
-                "hw cylinder".into(),
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSource> = IndexMap::from([(
+            "hw cylinder".into(),
+            HotWaterSource::Mock(HotWaterSourceMockKind::WithUniqueHotWaterTemperature(
                 HotWaterSourceMockWithUniqueHotWaterTemperature {},
-            )]);
+            )),
+        )]);
 
-        let pre_heated_water_sources: IndexMap<
-            String,
-            HotWaterSourceMockWithUniqueHotWaterTemperature,
-        > = IndexMap::default();
+        let pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> = IndexMap::default();
 
         let dhw_demand = create_dhw_demand(
             simulation_time,
@@ -1972,18 +2057,20 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
         cold_water_source: Arc<ColdWaterSource>,
     ) {
-        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMock> = IndexMap::from([(
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSource> = IndexMap::from([(
             "hw cylinder".into(),
-            HotWaterSourceMock {
+            HotWaterSource::Mock(HotWaterSourceMockKind::Simple(HotWaterSourceMock {
                 cold_feed: WaterSupply::ColdWaterSource(cold_water_source.clone()),
-            },
+            })),
         )]);
 
-        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMock> = IndexMap::from([(
+        let pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> = IndexMap::from([(
             "pre-heat tank".into(),
-            HotWaterSourceMock {
-                cold_feed: WaterSupply::ColdWaterSource(cold_water_source.clone()),
-            },
+            HotWaterStorageTank::Mock(Box::new(HotWaterSourceMockKind::Simple(
+                HotWaterSourceMock {
+                    cold_feed: WaterSupply::ColdWaterSource(cold_water_source.clone()),
+                },
+            ))),
         )]);
 
         let temp_int_air = 20.;
@@ -2404,16 +2491,16 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
         cold_water_source: Arc<ColdWaterSource>,
     ) {
-        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithInternalGains> =
-            IndexMap::from([(
-                "hw cylinder".into(),
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSource> = IndexMap::from([(
+            "hw cylinder".into(),
+            HotWaterSource::Mock(HotWaterSourceMockKind::WithInternalGains(
                 HotWaterSourceMockWithInternalGains {
                     cold_feed: WaterSupply::ColdWaterSource(cold_water_source.clone()),
                 },
-            )]);
+            )),
+        )]);
 
-        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> =
-            IndexMap::from([]);
+        let pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> = IndexMap::from([]);
 
         let temp_int_air = 20.;
         let temp_ext_air = 5.;
@@ -2833,16 +2920,16 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
         cold_water_source: Arc<ColdWaterSource>,
     ) {
-        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithInternalGains> =
-            IndexMap::from([(
-                "hw cylinder".into(),
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSource> = IndexMap::from([(
+            "hw cylinder".into(),
+            HotWaterSource::Mock(HotWaterSourceMockKind::WithInternalGains(
                 HotWaterSourceMockWithInternalGains {
                     cold_feed: WaterSupply::ColdWaterSource(cold_water_source.clone()),
                 },
-            )]);
+            )),
+        )]);
 
-        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> =
-            IndexMap::from([]);
+        let pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> = IndexMap::from([]);
 
         let dhw_demand = create_dhw_demand(
             simulation_time,
@@ -2904,16 +2991,16 @@ mod tests {
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
         cold_water_source: Arc<ColdWaterSource>,
     ) {
-        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithInternalGains> =
-            IndexMap::from([(
-                "hw cylinder".into(),
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSource> = IndexMap::from([(
+            "hw cylinder".into(),
+            HotWaterSource::Mock(HotWaterSourceMockKind::WithInternalGains(
                 HotWaterSourceMockWithInternalGains {
                     cold_feed: WaterSupply::ColdWaterSource(cold_water_source.clone()),
                 },
-            )]);
+            )),
+        )]);
 
-        let pre_heated_water_sources: IndexMap<String, HotWaterSourceMockWithInternalGains> =
-            IndexMap::from([]);
+        let pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> = IndexMap::from([]);
 
         let dhw_demand = create_dhw_demand(
             simulation_time,
@@ -2968,16 +3055,14 @@ mod tests {
             None,
         ];
 
-        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithUniqueHotWaterTemperature> =
-            IndexMap::from([(
-                "hw cylinder".into(),
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSource> = IndexMap::from([(
+            "hw cylinder".into(),
+            HotWaterSource::Mock(HotWaterSourceMockKind::WithUniqueHotWaterTemperature(
                 HotWaterSourceMockWithUniqueHotWaterTemperature {},
-            )]);
+            )),
+        )]);
 
-        let pre_heated_water_sources: IndexMap<
-            String,
-            HotWaterSourceMockWithUniqueHotWaterTemperature,
-        > = IndexMap::from([]);
+        let pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> = IndexMap::from([]);
 
         let dhw_demand = create_dhw_demand(
             simulation_time,
@@ -3055,16 +3140,14 @@ mod tests {
             None,
         ];
 
-        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithUniqueHotWaterTemperature> =
-            IndexMap::from([(
-                "hw cylinder".into(),
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSource> = IndexMap::from([(
+            "hw cylinder".into(),
+            HotWaterSource::Mock(HotWaterSourceMockKind::WithUniqueHotWaterTemperature(
                 HotWaterSourceMockWithUniqueHotWaterTemperature {},
-            )]);
+            )),
+        )]);
 
-        let pre_heated_water_sources: IndexMap<
-            String,
-            HotWaterSourceMockWithUniqueHotWaterTemperature,
-        > = IndexMap::from([]);
+        let pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> = IndexMap::from([]);
 
         let dhw_demand = create_dhw_demand(
             simulation_time,
@@ -3154,16 +3237,14 @@ mod tests {
             None,
         ];
 
-        let hot_water_sources: IndexMap<Arc<str>, HotWaterSourceMockWithUniqueHotWaterTemperature> =
-            IndexMap::from([(
-                "hw cylinder".into(),
+        let hot_water_sources: IndexMap<Arc<str>, HotWaterSource> = IndexMap::from([(
+            "hw cylinder".into(),
+            HotWaterSource::Mock(HotWaterSourceMockKind::WithUniqueHotWaterTemperature(
                 HotWaterSourceMockWithUniqueHotWaterTemperature {},
-            )]);
+            )),
+        )]);
 
-        let pre_heated_water_sources: IndexMap<
-            String,
-            HotWaterSourceMockWithUniqueHotWaterTemperature,
-        > = IndexMap::from([]);
+        let pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> = IndexMap::from([]);
 
         let dhw_demand = create_dhw_demand(
             simulation_time,

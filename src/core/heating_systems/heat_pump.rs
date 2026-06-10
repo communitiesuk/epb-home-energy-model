@@ -26,6 +26,7 @@ use crate::input::{
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
+use convert_case::{Case, Casing};
 use derivative::Derivative;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -37,6 +38,7 @@ use serde::{Deserialize, Serialize};
 use smartstring::alias::String;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
+
 
 const N_EXER: f64 = 3.0;
 
@@ -1455,7 +1457,7 @@ impl HeatPumpServiceWater {
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
         if (temp_flow.is_none() || temp_return.is_none())
-            && !is_close!(energy_demand, 0., abs_tol = 1e-6)
+            && !is_close!(energy_demand, 0., abs_tol = 1e-10, rel_tol = 1e-9)
         {
             bail!("temp_flow is None and energy_demand is not 0");
         };
@@ -4149,14 +4151,20 @@ impl HeatPump {
             + &results_totals[&("energy_input_backup".into(), Some("kWh".into()))].clone();
         let cop_h4_numerator = cop_h3_numerator.clone();
         let cop_h4_denominator = &cop_h3_denominator
-            + &results_totals[&("energy_heating_circ_pump".into(), Some("kWh".into()))].clone();
+            + &results_totals[&("energy_heating_circ_pump".into(), Some("kWh".into()))].clone()
+            + results_totals[&("energy_heating_warm_air_fan".into(), Some("kWh".into()))].clone();
         let cop_h5_numerator =
             results_totals[&("energy_delivered_H5".into(), Some("kWh".into()))].clone();
         let cop_h5_denominator = cop_h4_denominator.clone();
 
         results_totals.insert(
             ("CoP (H1)".into(), None),
-            if is_close!(cop_h1_denominator.as_f64(), 0.0, abs_tol = 1e-10) {
+            if is_close!(
+                cop_h1_denominator.as_f64(),
+                0.0,
+                abs_tol = 1e-10,
+                rel_tol = 1e-9
+            ) {
                 0.0.into()
             } else {
                 cop_h1_numerator / cop_h1_denominator
@@ -4164,7 +4172,12 @@ impl HeatPump {
         );
         results_totals.insert(
             ("CoP (H2)".into(), None),
-            if is_close!(cop_h2_denominator.as_f64(), 0.0, abs_tol = 1e-10) {
+            if is_close!(
+                cop_h2_denominator.as_f64(),
+                0.0,
+                abs_tol = 1e-10,
+                rel_tol = 1e-9
+            ) {
                 0.0.into()
             } else {
                 cop_h2_numerator / cop_h2_denominator
@@ -4172,7 +4185,12 @@ impl HeatPump {
         );
         results_totals.insert(
             ("CoP (H3)".into(), None),
-            if is_close!(cop_h3_denominator.as_f64(), 0.0, abs_tol = 1e-10) {
+            if is_close!(
+                cop_h3_denominator.as_f64(),
+                0.0,
+                abs_tol = 1e-10,
+                rel_tol = 1e-9
+            ) {
                 0.0.into()
             } else {
                 cop_h3_numerator / cop_h3_denominator
@@ -4180,14 +4198,24 @@ impl HeatPump {
         );
         results_totals.insert(
             ("CoP (H4)".into(), None),
-            if is_close!(cop_h4_denominator.as_f64(), 0.0, abs_tol = 1e-10) {
+            if is_close!(
+                cop_h4_denominator.as_f64(),
+                0.0,
+                abs_tol = 1e-10,
+                rel_tol = 1e-9
+            ) {
                 0.0.into()
             } else {
                 cop_h4_numerator / cop_h4_denominator
             },
         );
 
-        let (subkey, value) = if is_close!(cop_h5_denominator.as_f64(), 0., abs_tol = 1e-10) {
+        let (subkey, value) = if is_close!(
+            cop_h5_denominator.as_f64(),
+            0.,
+            abs_tol = 1e-10,
+            rel_tol = 1e-9
+        ) {
             (None, ResultParamValue::from(0.))
         } else if cop_h5_numerator == ResultParamValue::Empty {
             let cop_h5_note = "Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank";
@@ -4310,7 +4338,9 @@ impl HeatPumpEnergyCalculation {
     fn param(&self, param: &str) -> ResultParamValue {
         match param {
             "service_name" => ResultParamValue::String(self.service_name.clone()),
-            "service_type" => ResultParamValue::String(self.service_type.to_string().into()),
+            "service_type" => {
+                ResultParamValue::String(self.service_type.to_string().to_case(Case::Snake).into())
+            }
             "service_on" => ResultParamValue::Boolean(self.service_on),
             "energy_output_required" => ResultParamValue::Number(self.energy_output_required),
             "temp_output" => self.temp_output.into(),
@@ -11355,7 +11385,7 @@ mod tests {
             },
             "servicetimestep_demand_energy".into() => indexmap! {
                 ("service_name".into(), None) => vec![ResultParamValue::String("servicetimestep_demand_energy".into()); 2],
-                ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::DomesticHotWaterRegular.to_string().into()); 2],
+                ("service_type".into(), None) => vec![ResultParamValue::String("domestic_hot_water_regular".into()); 2],
                 ("service_on".into(), None) => vec![ResultParamValue::Boolean(true); 2],
                 ("energy_output_required".into(), Some("kWh".into())) => vec![5.0.into(); 2],
                 ("temp_output".into(), Some("K".into())) => vec![330.0.into(); 2],
@@ -11628,7 +11658,7 @@ mod tests {
             },
             "servicetimestep_demand_energy".into() => indexmap! {
                 ("service_name".into(), None) => vec![ResultParamValue::String("servicetimestep_demand_energy".into()); 2],
-                ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::Space.to_string().into()); 2],
+                ("service_type".into(), None) => vec![ResultParamValue::String("space".into()); 2],
                 ("service_on".into(), None) => vec![ResultParamValue::Boolean(true); 2],
                 ("energy_output_required".into(), Some("kWh".into())) => vec![5.0.into(); 2],
                 ("temp_output".into(), Some("K".into())) => vec![330.0.into(); 2],

@@ -2512,13 +2512,13 @@ fn validate_dry_core_output(
     }
 
     // Validate that both SOC arrays start at 0.0 and end at 1.0
-    if !is_close!(*soc_values.first().unwrap(), 0.) {
+    if !is_close!(*soc_values.first().unwrap(), 0., rel_tol = 1e-9) {
         return custom_validation_error(format!(
             "The first SOC value in {field} must be 0.0 (fully discharged)."
         ));
     }
 
-    if !is_close!(*soc_values.last().unwrap(), 1.) {
+    if !is_close!(*soc_values.last().unwrap(), 1., rel_tol = 1e-9) {
         return custom_validation_error(format!(
             "The last SOC value in {field} must be 1.0 (fully charged)."
         ));
@@ -3312,7 +3312,7 @@ fn validate_area_height_width(
         BuildingElementAreaOrHeightWidthInput {
             area: Some(area),
             height_and_width: Some(height_and_width),
-        } if !is_close!(*area, height_and_width.area()) => custom_validation_error(
+        } if !is_close!(*area, height_and_width.area(), rel_tol = 1e-9) => custom_validation_error(
             format!(
                 "Building element specified an area of {area} but a height and width pair of {} and {} making an area {} was also provided. These areas need to align.",
                 height_and_width.height,

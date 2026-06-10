@@ -136,7 +136,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
 #[derive(Debug)]
-pub(crate) struct HeatBatteryPcmServiceWaterDirect<T: WaterSupplyBehaviour> {
+pub struct HeatBatteryPcmServiceWaterDirect<T: WaterSupplyBehaviour> {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
     setpoint_temp: f64,

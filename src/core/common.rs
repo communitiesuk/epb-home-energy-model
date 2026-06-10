@@ -7,7 +7,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-pub(crate) trait WaterSupplyBehaviour {
+pub trait WaterSupplyBehaviour {
     fn get_temp_cold_water(
         &self,
         volume_needed: f64,
@@ -48,6 +48,8 @@ impl WaterSupplyBehaviour for WaterSupply {
                 HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
                     rw_lock.read().get_temp_cold_water(volume_needed, simtime)
                 }
+                #[cfg(test)]
+                HotWaterStorageTank::Mock(_source) => Ok(vec![]),
             },
             #[cfg(test)]
             WaterSupply::Mock(mock) => mock.get_temp_cold_water(volume_needed, simtime),
@@ -71,6 +73,8 @@ impl WaterSupplyBehaviour for WaterSupply {
                 HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
                     rw_lock.read().draw_off_water(volume_needed, simtime)
                 }
+                #[cfg(test)]
+                HotWaterStorageTank::Mock(_source) => Ok(vec![]),
             },
             #[cfg(test)]
             WaterSupply::Mock(mock) => mock.draw_off_water(volume_needed, simtime),
