@@ -1,3 +1,4 @@
+use crate::compare::DifferenceKind;
 use home_energy_model::output_writer::OutputWriter;
 use home_energy_model::read_weather_file::cibse_weather_data_to_external_conditions;
 use home_energy_model::{run_project_from_input_file, OutputFormat};
@@ -126,8 +127,9 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                 println!("Differences: {}", differences.iter().join("\n"));
                 difference_count += differences.len();
             }
+            let difference_kind = DifferenceKind::Full;
             if is_tabular(file_name) {
-                let file_differences = compare::compare_tabular_records_within_threshold(&mut python_reader, &mut rust_reader);
+                let file_differences = compare::compare_tabular_records_within_threshold(&mut python_reader, &mut rust_reader, difference_kind);
                 if let Err(comparison_error) = file_differences {
                     let file_difference_count = comparison_error.differences.len();
                     println!("❌ Tabular records differ for file: {} - difference count is {}", file_name, file_difference_count);
@@ -136,7 +138,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                     println!("✅ Tabular records match for file: {}", file_name);
                 }
             } else {
-                let file_differences = compare::compare_non_tabular_files(&mut python_reader, &mut rust_reader);
+                let file_differences = compare::compare_non_tabular_files(&mut python_reader, &mut rust_reader, difference_kind);
                 if let Err(comparison_error) = file_differences {
                     let file_difference_count = comparison_error.differences.len();
                     println!("❌ Non-tabular records differ for file: {} - difference count is {}", file_name, file_difference_count);
@@ -562,6 +564,7 @@ mod compare {
     pub fn compare_tabular_records_within_threshold<T, U>(
         py_reader: &mut Reader<T>,
         rust_reader: &mut Reader<U>,
+        difference_kind: DifferenceKind,
     ) -> FileComparisonResult
     where
         T: Read,
@@ -578,6 +581,7 @@ mod compare {
         let python_records = py_reader.records().enumerate();
 
         let mut file_differences: Vec<DifferenceInFile> = vec![];
+        let mut difference_count = usize::default();
 
         let mut warnings: Vec<String> = vec![];
 
@@ -622,22 +626,42 @@ mod compare {
             }
 
             if let Err(differences) = compare(python_record, rust_record) {
-                file_differences.extend(differences.into_iter().map(|difference: Difference| {
-                    let column_field = difference
-                        .field_index()
-                        .and_then(|index| headers.get(index))
-                        .map(ToOwned::to_owned);
+                match difference_kind {
+                    DifferenceKind::Full => {
+                        file_differences.extend(differences.into_iter().map(
+                            |difference: Difference| {
+                                let column_field = difference
+                                    .field_index()
+                                    .and_then(|index| headers.get(index))
+                                    .map(ToOwned::to_owned);
 
-                    DifferenceInFile::new(difference, record_index + blank_lines + 2, column_field)
-                }));
+                                DifferenceInFile::new(
+                                    difference,
+                                    record_index + blank_lines + 2,
+                                    column_field,
+                                )
+                            },
+                        ));
+                    }
+                    DifferenceKind::CountOnly => {
+                        difference_count += differences.len();
+                    }
+                }
             }
         }
 
-        if file_differences.is_empty() {
+        if match difference_kind {
+            DifferenceKind::Full => file_differences.is_empty(),
+            DifferenceKind::CountOnly => difference_count == 0,
+        } {
             Ok(())
         } else {
             Err(FileComparisonError {
-                differences: file_differences,
+                differences: if difference_kind == DifferenceKind::CountOnly {
+                    difference_count.into()
+                } else {
+                    file_differences.into()
+                },
                 warnings,
             })
         }
@@ -646,13 +670,48 @@ mod compare {
     #[derive(Debug, Error)]
     #[error("File comparison failed with {} differences and {} warnings", self.differences.len(), self.warnings.len())]
     pub struct FileComparisonError {
-        pub differences: Vec<DifferenceInFile>,
+        pub differences: FileDifferences,
         pub warnings: Vec<String>,
+    }
+
+    #[derive(Debug)]
+    pub enum FileDifferences {
+        List(Vec<DifferenceInFile>),
+        Count(usize),
+    }
+
+    impl FileDifferences {
+        pub fn len(&self) -> usize {
+            match self {
+                FileDifferences::List(differences) => differences.len(),
+                FileDifferences::Count(count) => *count,
+            }
+        }
+    }
+
+    impl From<Vec<DifferenceInFile>> for FileDifferences {
+        fn from(differences: Vec<DifferenceInFile>) -> Self {
+            FileDifferences::List(differences)
+        }
+    }
+
+    impl From<usize> for FileDifferences {
+        fn from(count: usize) -> Self {
+            FileDifferences::Count(count)
+        }
+    }
+
+    #[allow(dead_code)]
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub enum DifferenceKind {
+        Full,
+        CountOnly,
     }
 
     pub fn compare_non_tabular_files<T, U>(
         py_reader: &mut Reader<T>,
         rust_reader: &mut Reader<U>,
+        difference_kind: DifferenceKind,
     ) -> FileComparisonResult
     where
         T: Read,
@@ -664,6 +723,7 @@ mod compare {
         let mut blank_lines = usize::default();
 
         let mut file_differences: Vec<DifferenceInFile> = vec![];
+        let mut difference_count = usize::default();
 
         for (record_index, python_record) in python_records.enumerate() {
             let python_record = python_record.unwrap();
@@ -671,13 +731,21 @@ mod compare {
             let mut rust_record = if let Some(next_record) = rust_records.next() {
                 next_record.unwrap()
             } else {
-                file_differences.push(DifferenceInFile::new(
-                    Difference::Record {
-                        message: format!("Rust file only had {} lines", record_index + 1),
-                    },
-                    0,
-                    None,
-                ));
+                match difference_kind {
+                    DifferenceKind::Full => {
+                        file_differences.push(DifferenceInFile::new(
+                            Difference::Record {
+                                message: format!("Rust file only had {} lines", record_index + 1),
+                            },
+                            0,
+                            None,
+                        ));
+                    }
+                    DifferenceKind::CountOnly => {
+                        difference_count += 1;
+                    }
+                }
+
                 break;
             };
 
@@ -692,20 +760,34 @@ mod compare {
 
             if let Err(differences) = compare(python_record, rust_record) {
                 for difference in differences {
-                    file_differences.push(DifferenceInFile::new(
-                        difference,
-                        record_index + blank_lines + 1,
-                        None,
-                    ));
+                    match difference_kind {
+                        DifferenceKind::Full => {
+                            file_differences.push(DifferenceInFile::new(
+                                difference,
+                                record_index + blank_lines + 1,
+                                None,
+                            ));
+                        }
+                        DifferenceKind::CountOnly => {
+                            difference_count += 1;
+                        }
+                    }
                 }
             }
         }
 
-        if file_differences.is_empty() {
+        if match difference_kind {
+            DifferenceKind::Full => file_differences.is_empty(),
+            DifferenceKind::CountOnly => difference_count == 0,
+        } {
             Ok(())
         } else {
             Err(FileComparisonError {
-                differences: file_differences,
+                differences: if difference_kind == DifferenceKind::CountOnly {
+                    difference_count.into()
+                } else {
+                    file_differences.into()
+                },
                 warnings: vec![],
             })
         }
