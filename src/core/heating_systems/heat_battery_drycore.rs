@@ -16,7 +16,7 @@ use crate::core::water_heat_demand::misc::{
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{ControlLogicType, HeatBattery};
-use crate::statistics::{np_interp, np_interp_with_extrapolate};
+use crate::statistics::{linspace, np_interp, np_interp_with_extrapolate};
 use anyhow::bail;
 use atomic_float::AtomicF64;
 use fsum::FSum;
@@ -125,8 +125,7 @@ impl HeatStorageDryCore {
 
         // Validate that for any SOC, power_max >= power_min
         // Sample a fine grid of SOCs and ensure power_max >= power_min
-        let fine_soc: Vec<f64> =
-            crate::core::heating_systems::elec_storage_heater::linspace(0., 1., 100);
+        let fine_soc: Vec<f64> = linspace(0., 1., 100);
 
         let power_max_fine: Vec<f64> = fine_soc
             .iter()
