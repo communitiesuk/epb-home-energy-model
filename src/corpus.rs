@@ -3043,7 +3043,7 @@ impl Corpus {
             index: index_peak_elec_consumption,
             month: peak_datetime.month() as u8,
             day: peak_datetime.day() as u8,
-            hour: ((peak_step % (24. / stepping)) * stepping) as u8,
+            hour: ((peak_step % (24. / stepping)) * stepping),
         }
     }
 }
