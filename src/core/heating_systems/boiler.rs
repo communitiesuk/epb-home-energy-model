@@ -1058,22 +1058,16 @@ impl Boiler {
     }
 
     fn sum_space_heating_service_results_energy_output_required(&self) -> f64 {
-        FSum::with_all(
-            self.service_results
-                .read()
-                .iter()
-                .map(|r| r.energy_output_required),
-        )
+        FSum::with_all(self.service_results.read().iter().filter_map(|x| {
+            (x.service_type == ServiceType::Space).then_some(x.energy_output_required)
+        }))
         .value()
     }
 
     fn sum_space_heating_service_results_energy_output_provided(&self) -> f64 {
-        FSum::with_all(
-            self.service_results
-                .read()
-                .iter()
-                .map(|r| r.energy_output_provided),
-        )
+        FSum::with_all(self.service_results.read().iter().filter_map(|x| {
+            (x.service_type == ServiceType::Space).then_some(x.energy_output_provided)
+        }))
         .value()
     }
 
