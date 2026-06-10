@@ -20,12 +20,6 @@ type Time = f64;
 
 type EnergyOutputState = Vector3<f64>;
 
-// replicates numpys's linspace function
-pub(super) fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
-    let step = (end - start) / f64::from(num - 1);
-    (0..num).map(|n| start + (f64::from(n) * step)).collect()
-}
-
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub(crate) struct ElecStorageHeater {
