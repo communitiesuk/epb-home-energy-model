@@ -299,7 +299,7 @@ pub struct OutputSummaryPeakElectricityConsumption {
     /// The day of the month the peak occurred on
     pub day: u8,
     /// The hour of the day the peak occurred on. Decimal-time is used if the simulation step is less than 1 hour.
-    pub hour: u8,
+    pub hour: f64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -433,7 +433,7 @@ mod tests {
                 index: 0,
                 month: 0,
                 day: 0,
-                hour: 0,
+                hour: 0.0,
             },
             energy_supply: Default::default(),
             delivered_energy: Default::default(),
