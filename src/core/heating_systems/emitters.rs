@@ -722,7 +722,7 @@ impl Emitters {
     pub(crate) fn func_temp_emitter_change_rate(
         &self,
         power_input: f64,
-    ) -> impl Fn(f64, [f64; 1]) -> f64 {
+    ) -> impl Fn(f64, &[f64]) -> f64 {
         /*
             Differential eqn for change rate of emitter temperature, to be solved iteratively
 
@@ -769,8 +769,8 @@ impl Emitters {
         c_n_pairs: Vec<(f64, f64)>,
         thermal_mass: Option<f64>,
         power_input: f64,
-    ) -> impl Fn(f64, [f64; 1]) -> f64 {
-        move |_t, temp_diff: [f64; 1]| -> f64 {
+    ) -> impl Fn(f64, &[f64]) -> f64 {
+        move |_t, temp_diff: &[f64]| -> f64 {
             (power_input
                 - c_n_pairs
                 .iter()
@@ -838,7 +838,15 @@ impl Emitters {
             power_input,
         ));
 
-        let temp_diff_emitter_rm_results = solve_ivp(func_temp_emitter_change_rate, (time_start, time_end), [temp_diff_start], events)?;
+        let temp_diff_emitter_rm_results = solve_ivp(
+            func_temp_emitter_change_rate,
+            (time_start, time_end),
+            [temp_diff_start],
+            events,
+            None,
+            None,
+            None,
+        )?;
 
         // Get time at which emitters reach max. temp
         let OdeResult { y, t_events } = temp_diff_emitter_rm_results;

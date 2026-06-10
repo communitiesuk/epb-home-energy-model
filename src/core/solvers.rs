@@ -1,12 +1,12 @@
+use anyhow::anyhow;
 use eqsolver::single_variable::FDNewton;
 use numpy::ndarray::ArrayD;
 use numpy::PyReadonlyArrayDyn;
 use parking_lot::Mutex;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::IntoPyDict;
+use pyo3::types::{IntoPyDict, PyDict};
 use std::sync::Arc;
-use anyhow::anyhow;
 
 pub(crate) fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
     let solver = FDNewton::new(func);
@@ -132,20 +132,29 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RootResult {
     }
 }
 
-pub(crate) fn solve_ivp(func: Box<dyn Fn(f64, [f64; 1]) -> f64 + Send + Sync>, t_span: (f64, f64), y0: [f64; 1], events: Option<TerminalFunction>) -> anyhow::Result<OdeResult> {
+pub(crate) fn solve_ivp<const ARGCOUNT: usize>(
+    func: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
+    t_span: (f64, f64),
+    y0: [f64; ARGCOUNT],
+    events: Option<TerminalFunction>,
+    method: Option<&'static str>,
+    rtol: Option<f64>,
+    atol: Option<f64>,
+) -> anyhow::Result<OdeResult> {
     Python::attach(move |py| -> PyResult<OdeResult> {
         let callback = OdeSolverCallback { inner: func };
         let integrate = py.import("scipy.integrate")?;
         let solve_ivp = integrate.getattr("solve_ivp")?;
-        let kwargs = [("events", events)].into_py_dict(py)?;
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("events", events)?;
+        kwargs.set_item("method", method.unwrap_or("RK45"))?;
+        kwargs.set_item("rtol", rtol.unwrap_or(1e-3))?;
+        kwargs.set_item("atol", atol.unwrap_or(1e-6))?;
         solve_ivp
-            .call(
-                (callback, t_span, y0),
-                Some(&kwargs),
-            )?
+            .call((callback, t_span, y0), Some(&kwargs))?
             .extract::<OdeResult>()
     })
-        .map_err(|e| anyhow!(e))
+    .map_err(|e| anyhow!(e))
 }
 
 #[pyclass]
@@ -171,21 +180,20 @@ impl TerminalFunction {
     }
 }
 
-
 #[pyclass]
 struct OdeSolverCallback {
     // We use Box<dyn Fn> to store the closure.
     // Note: It needs to be Send + Sync because it will need to be passed to a Python thread.
-    inner: Box<dyn Fn(f64, [f64; 1]) -> f64 + Send + Sync>,
+    inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
 }
 
 #[pymethods]
 impl OdeSolverCallback {
     // The `__call__` method makes the object act like a function in Python.
     #[pyo3(signature = (arg1, arg2, /))]
-    fn __call__(&self, arg1: f64, arg2: [f64; 1]) -> PyResult<f64> {
+    fn __call__(&self, arg1: f64, arg2: Vec<f64>) -> PyResult<f64> {
         // Execute the boxed closure
-        let result = (self.inner)(arg1, arg2);
+        let result = (self.inner)(arg1, &arg2);
         Ok(result)
     }
 }

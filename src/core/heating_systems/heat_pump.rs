@@ -39,7 +39,6 @@ use smartstring::alias::String;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
-
 const N_EXER: f64 = 3.0;
 
 impl HeatPumpSourceType {
