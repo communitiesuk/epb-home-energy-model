@@ -7,6 +7,7 @@ use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
+use crate::core::solvers::{interp1d, solve_ivp, Interp1dFillValue, OdeResult};
 use crate::core::units::{
     HOURS_PER_DAY, KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
@@ -16,8 +17,8 @@ use crate::core::water_heat_demand::misc::{
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{ControlLogicType, HeatBattery};
-use crate::statistics::{linspace, np_interp, np_interp_with_extrapolate};
-use anyhow::bail;
+use crate::statistics::{np_interp, np_interp_with_extrapolate};
+use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -26,6 +27,8 @@ use nalgebra::{Const, OVector, SVector, Vector1};
 use ode_solvers::dop_shared::OutputType;
 use ode_solvers::{Dopri5, System};
 use parking_lot::RwLock;
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use smartstring::alias::String;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
@@ -57,6 +60,8 @@ pub(crate) struct HeatStorageDryCore {
     power_max_array: Vec<f64>,
     soc_min_array: Vec<f64>,
     power_min_array: Vec<f64>,
+    power_max_func: Arc<Py<PyAny>>, // unbound Python function
+    power_min_func: Arc<Py<PyAny>>, // unbound Python function
     heat_retention_ratio: f64,
     // weak reference back to value that is composing this struct, as we need two-way references
     owner: Option<Weak<dyn HeatBatteryDryCoreCommonBehaviour>>,
@@ -125,27 +130,83 @@ impl HeatStorageDryCore {
 
         // Validate that for any SOC, power_max >= power_min
         // Sample a fine grid of SOCs and ensure power_max >= power_min
-        let fine_soc: Vec<f64> = linspace(0., 1., 100);
+        {
+            let all_correct: bool = Python::attach(|py| {
+                let np = py.import("numpy")?;
+                let linspace = np.getattr("linspace")?;
 
-        let power_max_fine: Vec<f64> = fine_soc
-            .iter()
-            .map(|s| np_interp(*s, &soc_max_array, &power_max_array))
-            .collect();
+                let fine_soc = linspace.call1((0.0, 1.0, 100))?;
 
-        // TODO in Python a fill_value is used to make this return 0 when out of bounds
-        let power_min_fine: Vec<f64> = fine_soc
-            .iter()
-            .map(|s| np_interp(*s, &soc_min_array, &power_min_array))
-            .collect();
+                let interpolate = py.import("scipy.interpolate")?;
+                let interp1d = interpolate.getattr("interp1d")?;
 
-        for i in 0..fine_soc.len() {
-            if power_max_fine[i] < power_min_fine[i] {
-                bail!("At all SOC levels, dry_core_max_output must be >= dry_core_min_output.")
+                let max_kwargs = PyDict::new(py);
+                max_kwargs.set_item("kind", "linear")?;
+                max_kwargs.set_item("fill_value", "extrapolate")?;
+                max_kwargs.set_item("bounds_error", false)?;
+                max_kwargs.set_item("assume_sorted", true)?;
+
+                let power_max_fine = interp1d
+                    .call((&soc_max_array, &power_max_array), Some(&max_kwargs))?
+                    .call1((&fine_soc,))?;
+
+                let min_kwargs = PyDict::new(py);
+                min_kwargs.set_item("kind", "linear")?;
+                min_kwargs.set_item("fill_value", (0., 0.))?;
+                min_kwargs.set_item("bounds_error", false)?;
+                min_kwargs.set_item("assume_sorted", true)?;
+
+                let power_min_fine = interp1d
+                    .call((&soc_min_array, &power_min_array), Some(&min_kwargs))?
+                    .call1((&fine_soc,))?;
+
+                let numpy_all = np.getattr("all")?;
+                numpy_all
+                    .call1((power_max_fine.getattr("__ge__")?.call1((power_min_fine,))?,))?
+                    .extract::<bool>()
+            })
+            .map_err(|e| anyhow!(e))?;
+
+            if !all_correct {
+                bail!("At all SOC levels, dry_core_max_output must be >= dry_core_min_output.");
             }
         }
 
-        let heat_retention_ratio =
-            Self::heat_retention_output(&soc_min_array, &power_min_array, storage_capacity);
+        let (start_power_max_array, end_power_max_array) =
+            if let (Some(start_power_max_array), Some(end_power_max_array)) =
+                (power_max_array.first(), power_max_array.last())
+            {
+                (*start_power_max_array, *end_power_max_array)
+            } else {
+                bail!("power_max_array must not be empty for dry core heat battery.");
+            };
+
+        let power_max_func = Arc::new(interp1d(
+            &soc_max_array,
+            &power_max_array,
+            Interp1dFillValue::FillValues((start_power_max_array, end_power_max_array)),
+        ));
+
+        let (start_power_min_array, end_power_min_array) =
+            if let (Some(start_power_min_array), Some(end_power_min_array)) =
+                (power_min_array.first(), power_min_array.last())
+            {
+                (*start_power_min_array, *end_power_min_array)
+            } else {
+                bail!("power_min_array must not be empty for dry core heat battery.");
+            };
+
+        let power_min_func = Arc::new(interp1d(
+            &soc_min_array,
+            &power_min_array,
+            Interp1dFillValue::FillValues((start_power_min_array, end_power_min_array)),
+        ));
+
+        let heat_retention_ratio = Self::heat_retention_output(
+            &soc_min_array,
+            Arc::clone(&power_min_func),
+            storage_capacity,
+        )?;
 
         Ok(Self {
             pwr_in,
@@ -162,6 +223,8 @@ impl HeatStorageDryCore {
             power_max_array,
             soc_min_array,
             power_min_array,
+            power_max_func,
+            power_min_func,
             heat_retention_ratio,
             owner: None,
         })
@@ -169,9 +232,9 @@ impl HeatStorageDryCore {
 
     pub(super) fn heat_retention_output(
         soc_array: &[f64],
-        power_array: &[f64],
+        power_min_func: Arc<Py<PyAny>>,
         storage_capacity: f64,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         // Simulates the heat retention over 16 hours in OutputMode.MIN.
 
         // Starts with a SOC of 1.0 and calculates the SOC after 16 hours.
@@ -185,62 +248,58 @@ impl HeatStorageDryCore {
         // Total time for the simulation (16 hours)
         let total_time = 16.0; // This is the value from BS EN 60531 for determining heat retention ability
 
-        // Select the SOC and power arrays for OutputMode.MIN
-        let soc_ode = SocOdeFunction {
-            soc_array,
-            power_array,
-            storage_capacity,
-        };
+        let power_values: Vec<f64> = Python::attach(|py| {
+            let power_min_func = power_min_func.bind(py);
+            power_min_func.call1((soc_array,))?.extract::<Vec<f64>>()
+        })
+        .map_err(|e| anyhow!(e))?;
 
-        let f = soc_ode; // f - Structure implementing the System trait
-        let x = 0.; // x - Initial value of the independent variable (usually time)
-        let x_end = total_time; // x_end - Final value of the independent variable
-        let dx = 0.; // dx - Increment in the dense output. This argument has no effect if the output type is Sparse
-        let y0: State = State::new(initial_soc); // y - Initial value of the dependent variable(s)
+        let power_interp = Arc::new(interp1d(soc_array, &power_values, Interp1dFillValue::Extrapolate));
 
-        // scipy implementation for reference:
-        // https://github.com/scipy/scipy/blob/6b657ede0c3c4cffef3156229afddf02a2b1d99a/scipy/integrate/_ivp/rk.py#L293
-        let rtol = 1e-3; // rtol - set from scipy docs - Relative tolerance used in the computation of the adaptive step size
-        let atol = 1e-6; // atol - set from scipy docs - Absolute tolerance used in the computation of the adaptive step size
-        let h = 0.; // initial step size - 0
-        let safety_factor = 0.9; // matches scipy implementation
-        let beta = 0.; // setting this to 0 gives us an alpha of 0.2 and matches scipy's adaptive step size logic (default was 0.04)
-        let fac_min = 0.2; // matches scipy implementation
-        let fac_max = 10.; // matches scipy implementation
-        let h_max = x_end - x;
-        let n_max = 100000;
-        let n_stiff = 1000;
-        let mut stepper = Dopri5::from_param(
-            f,
-            x,
-            x_end,
-            dx,
-            y0,
-            rtol,
-            atol,
-            safety_factor,
-            beta,
-            fac_min,
-            fac_max,
-            h_max,
-            h,
-            n_max,
-            n_stiff,
-            OutputType::Sparse,
-        );
+        let power_interp = Arc::clone(&power_interp);
+
+        // Define the ODE for SOC and energy delivered (no charging, only discharging)
+        let soc_ode = Box::new(move |_t: f64, y: &[f64]| -> PyResult<f64> {
+            let soc = y; // y[0] is SOC, y[1] is total energy delivered
+
+            // Ensure SOC stays within bounds
+            let soc = soc.iter().map(|x| clip(*x, 0., 1.)).collect_vec();
+
+            let power_interp = power_interp.clone();
+
+            // Discharging: calculate power used based on SOC
+            let discharge_rate: f64 = Python::attach(move |py| {
+                let power_interp = power_interp.bind(py);
+                power_interp.call1((soc,))?.extract::<f64>().map(|x| -x)
+            })?;
+
+            // Track the total energy delivered (discharged energy)
+            let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
+
+            // SOC rate of change (discharging), divided by storage capacity
+            Ok(-ddelivered_dt / storage_capacity)
+        });
 
         // Solve the ODE for SOC and cumulative energy delivered
-        let _ = stepper.integrate();
+        let sol = solve_ivp(
+            soc_ode,
+            (0., total_time),
+            [initial_soc],
+            None,
+            "RK45".into(),
+            1e-1.into(),
+            1e-3.into(),
+        )?;
 
-        // sol = solve_ivp(soc_ode, [0, total_time], [initial_soc], method='RK45', rtol=1e-1, atol=1e-3)
+        let OdeResult { y, .. } = sol;
 
         // Final state of charge after 16 hours
-        let final_soc = stepper.y_out().last().unwrap()[0];
+        let final_soc = *y
+            .last()
+            .ok_or_else(|| anyhow!("no soc values found in heat_retention_output"))?;
 
         // Clip the final SOC to ensure it's between 0 and 1
-
-        // Return the final state of charge after 16 hours
-        clip(final_soc, 0., 1.)
+        Ok(clip(final_soc, 0., 1.))
     }
 
     pub(crate) fn energy_output(

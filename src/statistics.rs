@@ -64,12 +64,6 @@ pub fn np_interp_with_extrapolate(input: f64, x: &[f64], y: &[f64]) -> f64 {
     interp(x, y, input, &InterpMode::Extrapolate)
 }
 
-// replicates numpys's linspace function
-pub fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
-    let step = (end - start) / f64::from(num - 1);
-    (0..num).map(|n| start + (f64::from(n) * step)).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

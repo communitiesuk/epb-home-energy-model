@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict};
 use std::sync::Arc;
 
-pub(crate) fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
+pub fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
     let solver = FDNewton::new(func);
 
     solver.solve(x0).map_err(|e| anyhow::anyhow!(e))
@@ -41,7 +41,7 @@ impl FallibleRustCallback {
 
 // TODO this is from scipy
 // Find equivalent function in a Rust library or implement
-pub(crate) fn bisect<'a>(
+pub fn bisect<'a>(
     func: Box<dyn Fn(f64) -> anyhow::Result<f64> + Send + Sync>,
     a: f64,
     b: f64,
@@ -88,7 +88,7 @@ impl FallibleRootRustCallback {
 }
 
 // An viable equivalent of scipy.optimize.root
-pub(crate) fn root(
+pub fn root(
     fun: Box<dyn Fn(f64, [f64; 3]) -> anyhow::Result<f64> + Send + Sync>,
     x0: f64,
     args: [f64; 3],
@@ -132,8 +132,8 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RootResult {
     }
 }
 
-pub(crate) fn solve_ivp<const ARGCOUNT: usize>(
-    func: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
+pub fn solve_ivp<const ARGCOUNT: usize>(
+    func: Box<dyn Fn(f64, &[f64]) -> PyResult<f64> + Send + Sync>,
     t_span: (f64, f64),
     y0: [f64; ARGCOUNT],
     events: Option<TerminalFunction>,
@@ -158,8 +158,8 @@ pub(crate) fn solve_ivp<const ARGCOUNT: usize>(
 }
 
 #[pyclass]
-pub(crate) struct TerminalFunction {
-    pub(crate) inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
+pub struct TerminalFunction {
+    pub inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
 }
 
 #[pymethods]
@@ -184,7 +184,7 @@ impl TerminalFunction {
 struct OdeSolverCallback {
     // We use Box<dyn Fn> to store the closure.
     // Note: It needs to be Send + Sync because it will need to be passed to a Python thread.
-    inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
+    inner: Box<dyn Fn(f64, &[f64]) -> PyResult<f64> + Send + Sync>,
 }
 
 #[pymethods]
@@ -193,15 +193,14 @@ impl OdeSolverCallback {
     #[pyo3(signature = (arg1, arg2, /))]
     fn __call__(&self, arg1: f64, arg2: Vec<f64>) -> PyResult<f64> {
         // Execute the boxed closure
-        let result = (self.inner)(arg1, &arg2);
-        Ok(result)
+        (self.inner)(arg1, &arg2)
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct OdeResult {
-    pub(crate) y: ArrayD<f64>,
-    pub(crate) t_events: Option<Vec<ArrayD<f64>>>,
+pub struct OdeResult {
+    pub y: ArrayD<f64>,
+    pub t_events: Option<Vec<ArrayD<f64>>>,
 }
 
 impl<'a, 'py> FromPyObject<'a, 'py> for OdeResult {
@@ -222,4 +221,34 @@ impl<'a, 'py> FromPyObject<'a, 'py> for OdeResult {
 
         Ok(Self { y, t_events })
     }
+}
+
+pub fn interp1d(x: &[f64], y: &[f64], fill_value: Interp1dFillValue) -> Py<PyAny> {
+    Python::attach(|py| {
+        let interpolate = py.import("scipy.interpolate")?;
+        let interp1d = interpolate.getattr("interp1d")?;
+
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("kind", "linear")?;
+        match fill_value {
+            Interp1dFillValue::Extrapolate => {
+                kwargs.set_item("fill_value", "extrapolate")?;
+            }
+            Interp1dFillValue::FillValues(values) => {
+                kwargs.set_item("fill_value", values)?;
+            }
+        }
+        kwargs.set_item("bounds_error", false)?;
+        kwargs.set_item("assume_sorted", true)?;
+
+        interp1d
+            .call((x, y), Some(&kwargs))
+            .map(|func| func.unbind())
+    })
+    .unwrap()
+}
+
+pub enum Interp1dFillValue {
+    Extrapolate,
+    FillValues((f64, f64)),
 }

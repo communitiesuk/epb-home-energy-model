@@ -29,6 +29,7 @@ use fsum::FSum;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
+use pyo3::PyResult;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
@@ -722,7 +723,7 @@ impl Emitters {
     pub(crate) fn func_temp_emitter_change_rate(
         &self,
         power_input: f64,
-    ) -> impl Fn(f64, &[f64]) -> f64 {
+    ) -> impl Fn(f64, &[f64]) -> PyResult<f64> {
         /*
             Differential eqn for change rate of emitter temperature, to be solved iteratively
 
@@ -769,14 +770,14 @@ impl Emitters {
         c_n_pairs: Vec<(f64, f64)>,
         thermal_mass: Option<f64>,
         power_input: f64,
-    ) -> impl Fn(f64, &[f64]) -> f64 {
-        move |_t, temp_diff: &[f64]| -> f64 {
-            (power_input
+    ) -> impl Fn(f64, &[f64]) -> PyResult<f64> {
+        move |_t, temp_diff: &[f64]| -> PyResult<f64> {
+            Ok((power_input
                 - c_n_pairs
                 .iter()
                 .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
                 .sum::<f64>())
-                / thermal_mass.expect("thermal_mass is expected to be set when func_temp_emitter_change_rate is called")
+                / thermal_mass.expect("thermal_mass is expected to be set when func_temp_emitter_change_rate is called"))
         }
     }
 
