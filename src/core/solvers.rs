@@ -160,6 +160,22 @@ pub fn solve_ivp<const ARGCOUNT: usize>(
 #[pyclass]
 pub struct TerminalFunction {
     pub inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
+    is_terminal: Option<bool>,
+    direction: Option<f64>,
+}
+
+impl TerminalFunction {
+    pub fn new(inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>, is_terminal: Option<bool>, direction: Option<f64>)   -> Self {
+        Self {  inner, is_terminal, direction }
+    }
+
+    fn is_terminal(&self) -> bool {
+        self.is_terminal.unwrap_or(false)
+    }
+
+    fn direction(&self) -> f64 {
+        self.direction.unwrap_or(0.)
+    }
 }
 
 #[pymethods]
@@ -173,8 +189,8 @@ impl TerminalFunction {
 
     fn __getattribute__(&self, name: String) -> PyResult<Option<f64>> {
         Ok(match name.as_str() {
-            "terminal" => Some(1.0), // a float value that Python would consider truthy
-            "direction" => Some(0.0),
+            "terminal" => Some(if self.is_terminal() { 1.0 } else { 0.0 }), // a float value that Python would consider truthy
+            "direction" => Some(self.direction()),
             _ => None,
         })
     }

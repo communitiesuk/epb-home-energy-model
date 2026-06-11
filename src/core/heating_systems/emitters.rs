@@ -825,7 +825,7 @@ impl Emitters {
             // Define event where emitter reaches max. temp (event occurs when func returns zero)
             let func: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync> =
                 Box::new(move |_t: f64, y: &[f64]| -> f64 { y[0] - temp_diff_max });
-            let temp_diff_max_reached = TerminalFunction { inner: func };
+            let temp_diff_max_reached = TerminalFunction::new(func, true.into(), None);
 
             Some(temp_diff_max_reached)
         } else {
