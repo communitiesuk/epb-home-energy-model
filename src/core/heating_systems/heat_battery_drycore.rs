@@ -294,7 +294,7 @@ impl HeatStorageDryCore {
         let OdeResult { y, .. } = sol;
 
         // Final state of charge after 16 hours
-        let final_soc = *y
+        let final_soc = *y[0]
             .last()
             .ok_or_else(|| anyhow!("no soc values found in heat_retention_output"))?;
 

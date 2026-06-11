@@ -859,7 +859,7 @@ impl Emitters {
             time_temp_diff_max_reached = t_events.iter().copied().last();
         }
 
-        let temp_diff_emitter_rm_final = *y.iter().last().ok_or_else(|| {
+        let temp_diff_emitter_rm_final = *y[0].iter().last().ok_or_else(|| {
             anyhow!("y ndarray field of solve_ivp result was empty when this was not expected")
         })?;
         let temp_emitter = temp_rm + temp_diff_emitter_rm_final;

@@ -7,6 +7,7 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict};
 use std::sync::Arc;
+use itertools::Itertools;
 
 pub fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
     let solver = FDNewton::new(func);
@@ -215,7 +216,7 @@ impl OdeSolverCallback {
 
 #[derive(Debug)]
 pub struct OdeResult {
-    pub y: ArrayD<f64>,
+    pub y: Vec<ArrayD<f64>>,
     pub t_events: Option<Vec<ArrayD<f64>>>,
 }
 
@@ -223,11 +224,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for OdeResult {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        let y: PyReadonlyArrayDyn<'py, f64> = ob.getattr("y")?.extract()?;
+        let y: Vec<PyReadonlyArrayDyn<'py, f64>> = ob.getattr("y")?.extract()?;
         let t_events: Option<Vec<PyReadonlyArrayDyn<'py, f64>>> =
             ob.getattr("t_events")?.extract()?;
 
-        let y = y.as_array().to_owned();
+        let y = y.into_iter().map(|y| y.as_array().to_owned()).collect_vec();
         let t_events = t_events.map(|t_events| {
             t_events
                 .into_iter()
