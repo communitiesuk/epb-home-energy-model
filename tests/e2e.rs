@@ -15,7 +15,7 @@ use std::str::from_utf8;
 use std::sync::Arc;
 use walkdir::{DirEntry, WalkDir};
 
-const PASSING_FILES_IN_MAIN: [&str; 11] = [
+const PASSING_FILES_IN_MAIN: [&str; 37] = [
     "demo_24hrs_January.json",
     "demo_24hrs_January_ieh.json",
     "demo_24hrs_January_MVHR_external.json",
@@ -25,8 +25,34 @@ const PASSING_FILES_IN_MAIN: [&str; 11] = [
     "demo_hwohp.json",
     "demo_suspended_floor.json",
     "demo_new_infiltration_vent_model_MVHR.json",
-    "SAP11_deck_smart_hot_water_tank,json",
+    "SAP11_deck_smart_hot_water_tank.json",
     "SAP11_deck_flat_nat_vent_with_window_opening_for_cooling.json",
+    "demo_new_infiltration_vent_model_MVHR_inside.json",
+    "demo_new_infiltration_vent_model.json",
+    "demo_new_infiltration_vent_model_intermit_mev.json",
+    "demo_hp_warm_air.json",
+    "demo_FHS_storage_tank_held_at_setpnt.json",
+    "demo_24hrs_January_instant_elec_heater_comp.json",
+    "demo_24hrs_August_WWHRS_A.json",
+    "demo_24hrs_August_WWHRS_B.json",
+    "demo_24hrs_August_WWHRS_C.json",
+    "demo_24hrs_August_nearby_shading_obstacle.json",
+    "demo_elec_battery_inverter_inside.json",
+    "demo_24hrs_August_pvdiverter.json",
+    "demo_168hrs_loadshifting_appliances.json",
+    "demo_168hrs_loadshifting_appliances_flat_weights+limit_0.json",
+    "demo_FHS_default_hw_sched_allday.json",
+    "demo_FHS_default_hw_sched_heatinghours.json",
+    "demo_int_air_setpoint.json",
+    "demo_24hrs_August.json",
+    "demo_24hrs_August_remote_shading_objects.json",
+    "demo_24hrs_August_cost_minimising_time_ctrl.json",
+    "demo_two_hot_water_sources_associated_outlets.json",
+    "demo_elec_battery.json",
+    "demo_24hrs_January_MVHR.json",
+    "demo_FHS_U_values.json",
+    "demo_unconditioned.json",
+    "demo_24hrs_January_point_of_use.json",
 ];
 
 #[fixture]

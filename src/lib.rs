@@ -1121,7 +1121,21 @@ fn write_core_output_file_heat_balance(
     writer.write_record(&headings)?;
     writer.write_record(&units_row)?;
     for row in rows {
-        writer.write_record(row.iter().map(|x| format!("{}", x).into_bytes()))?;
+        let mut record: Vec<Vec<u8>> = Vec::new();
+        for entry in row {
+            let bytes = match entry {
+                StringOrNumber::Float(f) => {
+                    // Round any floating point numbers to 10 significant figures, like the Python does
+                    let rounded = format!("{:.9e}", f).parse::<f64>()?;
+                    rounded.to_string().into_bytes()
+                }
+                _ => entry.to_string().into_bytes(),
+            };
+
+            record.push(bytes);
+        }
+
+        writer.write_record(&record)?;
     }
 
     Ok(())
