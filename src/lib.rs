@@ -63,22 +63,23 @@ pub enum OutputFormat {
     Json,
     Csv,
 }
-fn format_row(row: &[StringOrNumber]) -> anyhow::Result<Vec<std::string::String>> {
-    fn format_value(value: &StringOrNumber) -> anyhow::Result<std::string::String> {
-        Ok(match value {
-            StringOrNumber::Float(f) => {
-                let rounded = if is_close!(*f, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
-                    0.
-                } else {
-                    // Round any floating point numbers to 10 significant figures, like the Python does
-                    format!("{:.9e}", f).parse::<f64>()?
-                };
-                rounded.to_string()
-            }
-            _ => value.to_string(),
-        })
-    }
 
+fn format_value(value: &StringOrNumber) -> anyhow::Result<std::string::String> {
+    Ok(match value {
+        StringOrNumber::Float(f) => {
+            let rounded = if is_close!(*f, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+                0.
+            } else {
+                // Round any floating point numbers to 10 significant figures, like the Python does
+                format!("{:.9e}", f).parse::<f64>()?
+            };
+            rounded.to_string()
+        }
+        _ => value.to_string(),
+    })
+}
+
+fn format_row(row: &[StringOrNumber]) -> anyhow::Result<Vec<std::string::String>> {
     let mut formatted_row: Vec<std::string::String> = Vec::new();
     for value in row {
         formatted_row.push(format_value(value)?);
@@ -878,7 +879,7 @@ fn write_core_output_file_summary(
             .map(|x| format!("{}", x).into_bytes()),
     )?;
     for row in delivered_energy_rows {
-        writer.write_record(row.iter().map(|x| format!("{}", x).into_bytes()))?;
+        writer.write_record(format_row(&row)?)?;
     }
 
     if !dhw_cop_rows.is_empty() {
@@ -911,21 +912,21 @@ fn write_core_output_file_summary(
             });
         }
         for row in dhw_cop_rows {
-            writer.write_record(row.iter().map(|x| format!("{}", x).into_bytes()))?;
+            writer.write_record(format_row(&row)?)?;
         }
     }
     if !heat_cop_rows.is_empty() {
         writer.write_record(&blank_line)?;
         writer.write_record(["Space heating system", "Overall CoP"])?;
         for row in heat_cop_rows {
-            writer.write_record(row.iter().map(|x| format!("{}", x).into_bytes()))?;
+            writer.write_record(format_row(&row)?)?;
         }
     }
     if !cool_cop_rows.is_empty() {
         writer.write_record(&blank_line)?;
         writer.write_record(["Space cooling system", "Overall CoP"])?;
         for row in cool_cop_rows {
-            writer.write_record(row.iter().map(|x| format!("{}", x).into_bytes()))?;
+            writer.write_record(format_row(&row)?)?;
         }
     }
 
@@ -1138,7 +1139,7 @@ fn write_core_output_file_heat_balance(
 
     writer.write_record(&headings_annual)?;
     writer.write_record(&units_annual)?;
-    writer.write_record(annual_totals.iter().map(|x| format!("{}", x).into_bytes()))?;
+    writer.write_record(format_row(&annual_totals)?)?;
     writer.write_record([""])?;
     writer.write_record(&headings)?;
     writer.write_record(&units_row)?;
@@ -1202,7 +1203,7 @@ fn write_core_output_file_heat_source_wet(
 
     // Write rows
     for t_idx in 0..timestep_array.len() {
-        let mut row: Vec<String> = vec![t_idx.to_string().into()];
+        let mut row: Vec<StringOrNumber> = vec![t_idx.to_string().into()];
         for (service_name, service_results) in heat_source_wet_results {
             row.extend(
                 columns[service_name]
@@ -1210,7 +1211,7 @@ fn write_core_output_file_heat_source_wet(
                     .map(|col| service_results[col][t_idx].clone().into()),
             );
         }
-        writer.write_record(row.iter().map(|x| x.to_string().into_bytes()))?;
+        writer.write_record(format_row(&row)?)?;
     }
 
     Ok(())
@@ -1283,7 +1284,27 @@ fn write_core_output_file_emitters_detailed(
             "[kWh]",
         ])?;
         for emitters_detailed_result in emitters_detailed_results.values() {
-            writer.serialize(emitters_detailed_result)?;
+            let row: &[StringOrNumber] = &[
+                StringOrNumber::from(emitters_detailed_result.simulation_time_idx),
+                StringOrNumber::from(emitters_detailed_result.energy_demand),
+                StringOrNumber::from(emitters_detailed_result.temp_emitter_required),
+                StringOrNumber::from(emitters_detailed_result.time_heating_start),
+                StringOrNumber::from(emitters_detailed_result.energy_provided_by_heat_source),
+                emitters_detailed_result.temp_emitter.clone(),
+                StringOrNumber::from(emitters_detailed_result.temp_emitter_max),
+                StringOrNumber::from(emitters_detailed_result.energy_released_from_emitters),
+                StringOrNumber::from(emitters_detailed_result.temp_flow_target),
+                StringOrNumber::from(emitters_detailed_result.temp_return_target),
+                StringOrNumber::from(
+                    emitters_detailed_result
+                        .temp_emitter_max_is_final_temp
+                        .to_string(),
+                ),
+                StringOrNumber::from(emitters_detailed_result.energy_required_from_heat_source),
+                StringOrNumber::from(emitters_detailed_result.fan_energy_kwh),
+            ];
+
+            writer.write_record(format_row(row)?)?;
         }
     }
 
