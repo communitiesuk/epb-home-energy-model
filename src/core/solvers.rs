@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use eqsolver::single_variable::FDNewton;
+use itertools::Itertools;
 use numpy::ndarray::ArrayD;
 use numpy::PyReadonlyArrayDyn;
 use parking_lot::Mutex;
@@ -7,7 +8,6 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict};
 use std::sync::Arc;
-use itertools::Itertools;
 
 pub fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
     let solver = FDNewton::new(func);
@@ -134,10 +134,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RootResult {
 }
 
 pub fn solve_ivp<const ARGCOUNT: usize>(
-    func: Box<dyn Fn(f64, &[f64]) -> PyResult<f64> + Send + Sync>,
+    func: Box<dyn Fn(f64, &[f64]) -> PyResult<Vec<f64>> + Send + Sync>,
     t_span: (f64, f64),
     y0: [f64; ARGCOUNT],
-    events: Option<TerminalFunction>,
+    events: Option<Vec<TerminalFunction>>,
     method: Option<&'static str>,
     rtol: Option<f64>,
     atol: Option<f64>,
@@ -166,8 +166,16 @@ pub struct TerminalFunction {
 }
 
 impl TerminalFunction {
-    pub fn new(inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>, is_terminal: Option<bool>, direction: Option<f64>)   -> Self {
-        Self {  inner, is_terminal, direction }
+    pub fn new(
+        inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
+        is_terminal: Option<bool>,
+        direction: Option<f64>,
+    ) -> Self {
+        Self {
+            inner,
+            is_terminal,
+            direction,
+        }
     }
 
     fn is_terminal(&self) -> bool {
@@ -201,14 +209,14 @@ impl TerminalFunction {
 struct OdeSolverCallback {
     // We use Box<dyn Fn> to store the closure.
     // Note: It needs to be Send + Sync because it will need to be passed to a Python thread.
-    inner: Box<dyn Fn(f64, &[f64]) -> PyResult<f64> + Send + Sync>,
+    inner: Box<dyn Fn(f64, &[f64]) -> PyResult<Vec<f64>> + Send + Sync>,
 }
 
 #[pymethods]
 impl OdeSolverCallback {
     // The `__call__` method makes the object act like a function in Python.
     #[pyo3(signature = (arg1, arg2, /))]
-    fn __call__(&self, arg1: f64, arg2: Vec<f64>) -> PyResult<f64> {
+    fn __call__(&self, arg1: f64, arg2: Vec<f64>) -> PyResult<Vec<f64>> {
         // Execute the boxed closure
         (self.inner)(arg1, &arg2)
     }
@@ -217,7 +225,8 @@ impl OdeSolverCallback {
 #[derive(Debug)]
 pub struct OdeResult {
     pub y: Vec<ArrayD<f64>>,
-    pub t_events: Option<Vec<ArrayD<f64>>>,
+    pub t_events: Vec<ArrayD<f64>>,
+    pub t: ArrayD<f64>,
 }
 
 impl<'a, 'py> FromPyObject<'a, 'py> for OdeResult {
@@ -236,7 +245,14 @@ impl<'a, 'py> FromPyObject<'a, 'py> for OdeResult {
                 .collect()
         });
 
-        Ok(Self { y, t_events })
+        let t: PyReadonlyArrayDyn<'py, f64> = ob.getattr("t")?.extract()?;
+        let t = t.as_array().to_owned();
+
+        Ok(Self {
+            y,
+            t_events: t_events.unwrap_or_default(),
+            t,
+        })
     }
 }
 

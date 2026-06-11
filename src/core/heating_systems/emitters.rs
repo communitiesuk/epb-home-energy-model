@@ -723,7 +723,7 @@ impl Emitters {
     pub(crate) fn func_temp_emitter_change_rate(
         &self,
         power_input: f64,
-    ) -> impl Fn(f64, &[f64]) -> PyResult<f64> {
+    ) -> impl Fn(f64, &[f64]) -> PyResult<Vec<f64>> {
         /*
             Differential eqn for change rate of emitter temperature, to be solved iteratively
 
@@ -770,14 +770,14 @@ impl Emitters {
         c_n_pairs: Vec<(f64, f64)>,
         thermal_mass: Option<f64>,
         power_input: f64,
-    ) -> impl Fn(f64, &[f64]) -> PyResult<f64> {
-        move |_t, temp_diff: &[f64]| -> PyResult<f64> {
-            Ok((power_input
+    ) -> impl Fn(f64, &[f64]) -> PyResult<Vec<f64>> {
+        move |_t, temp_diff: &[f64]| -> PyResult<Vec<f64>> {
+            Ok(vec![(power_input
                 - c_n_pairs
                 .iter()
                 .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
                 .sum::<f64>())
-                / thermal_mass.expect("thermal_mass is expected to be set when func_temp_emitter_change_rate is called"))
+                / thermal_mass.expect("thermal_mass is expected to be set when func_temp_emitter_change_rate is called")])
         }
     }
 
@@ -827,7 +827,7 @@ impl Emitters {
                 Box::new(move |_t: f64, y: &[f64]| -> f64 { y[0] - temp_diff_max });
             let temp_diff_max_reached = TerminalFunction::new(func, true.into(), None);
 
-            Some(temp_diff_max_reached)
+            Some(vec![temp_diff_max_reached])
         } else {
             None
         };
@@ -850,14 +850,14 @@ impl Emitters {
         )?;
 
         // Get time at which emitters reach max. temp
-        let OdeResult { y, t_events } = temp_diff_emitter_rm_results;
+        let OdeResult { y, t_events, .. } = temp_diff_emitter_rm_results;
 
-        let mut time_temp_diff_max_reached: Option<f64> = None;
-
-        if let Some(t_events) = t_events {
+        let time_temp_diff_max_reached = if !t_events.is_empty() {
             let t_events = &t_events[0];
-            time_temp_diff_max_reached = t_events.iter().copied().last();
-        }
+            t_events.iter().copied().last()
+        } else {
+            None
+        };
 
         let temp_diff_emitter_rm_final = *y[0].iter().last().ok_or_else(|| {
             anyhow!("y ndarray field of solve_ivp result was empty when this was not expected")
