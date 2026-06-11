@@ -63,6 +63,28 @@ pub enum OutputFormat {
     Json,
     Csv,
 }
+fn format_row(row: &[StringOrNumber]) -> anyhow::Result<Vec<std::string::String>> {
+    fn format_value(value: &StringOrNumber) -> anyhow::Result<std::string::String> {
+        Ok(match value {
+            StringOrNumber::Float(f) => {
+                let rounded = if is_close!(*f, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+                    0.
+                } else {
+                    // Round any floating point numbers to 10 significant figures, like the Python does
+                    format!("{:.9e}", f).parse::<f64>()?
+                };
+                rounded.to_string()
+            }
+            _ => value.to_string(),
+        })
+    }
+
+    let mut formatted_row: Vec<std::string::String> = Vec::new();
+    for value in row {
+        formatted_row.push(format_value(value)?);
+    }
+    Ok(formatted_row)
+}
 
 #[derive(Serialize)]
 pub struct HemResponse {
@@ -1121,23 +1143,8 @@ fn write_core_output_file_heat_balance(
     writer.write_record(&headings)?;
     writer.write_record(&units_row)?;
     for row in rows {
-        let mut record: Vec<Vec<u8>> = Vec::new();
-        for entry in row {
-            let bytes = match entry {
-                StringOrNumber::Float(f) => {
-                    // Round any floating point numbers to 10 significant figures, like the Python does
-                    let rounded = format!("{:.9e}", f).parse::<f64>()?;
-                    rounded.to_string().into_bytes()
-                }
-                _ => entry.to_string().into_bytes(),
-            };
-
-            record.push(bytes);
-        }
-
-        writer.write_record(&record)?;
+        writer.write_record(format_row(&row)?)?;
     }
-
     Ok(())
 }
 
