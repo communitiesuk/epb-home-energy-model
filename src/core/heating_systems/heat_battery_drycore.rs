@@ -17,26 +17,18 @@ use crate::core::water_heat_demand::misc::{
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{ControlLogicType, HeatBattery};
-use crate::statistics::{np_interp, np_interp_with_extrapolate};
+use crate::statistics::{np_interp};
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use nalgebra::{Const, OVector, SVector, Vector1};
-use ode_solvers::dop_shared::OutputType;
-use ode_solvers::{Dopri5, System};
 use parking_lot::RwLock;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use smartstring::alias::String;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
-
-type State = Vector1<f64>;
-type Time = f64;
-
-type EnergyOutputState<const D: usize> = SVector<f64, D>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum OutputMode {
@@ -465,80 +457,273 @@ impl HeatStorageDryCore {
                 .ok_or_else(|| anyhow!("t_events is empty for energy_output ode results"))?
         };
 
-        Ok((total_energy_delivered, time_used, total_energy_charged, final_soc))
+        Ok((
+            total_energy_delivered,
+            time_used,
+            total_energy_charged,
+            final_soc,
+        ))
     }
 
     fn energy_output_with_losses(
         &self,
         mode: OutputMode,
         time_remaining: Option<f64>,
-        _target_energy: Option<f64>,
+        target_energy: Option<f64>,
         simtime: &SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64, f64, f64)> {
-        let time_remaining = time_remaining.unwrap_or(simtime.timestep);
-
-        // TODO: complete porting this function!
-
-        let (soc_array, power_array) = match mode {
-            OutputMode::Min => (&self.soc_min_array, &self.power_min_array),
-            OutputMode::Max => (&self.soc_max_array, &self.power_max_array),
+        let (soc_array, power_func) = match mode {
+            OutputMode::Min => (&self.soc_min_array, Arc::clone(&self.power_min_func)),
+            OutputMode::Max => (&self.soc_max_array, Arc::clone(&self.power_max_func)),
         };
 
-        let target_charge = self.target_electric_charge(*simtime)?;
+        let power_interp = {
+            let power_values: Vec<f64> = Python::attach(|py| {
+                let power_func = power_func.clone();
+                let power_func = power_func.bind(py);
+                power_func.call1((soc_array,))?.extract::<Vec<f64>>()
+            })
+            .map_err(|e| anyhow!(e))?;
 
+            Arc::new(interp1d(
+                soc_array,
+                &power_values,
+                Interp1dFillValue::Extrapolate,
+            ))
+        };
+
+        let power_min_interp = {
+            let soc_min_array = self.soc_min_array.clone();
+
+            let power_func = Arc::clone(&self.power_min_func);
+
+            let power_values: Vec<f64> = Python::attach(|py| {
+                let power_func = power_func.clone();
+                let power_func = power_func.bind(py);
+                power_func.call1((&soc_min_array,))?.extract::<Vec<f64>>()
+            })
+            .map_err(|e| anyhow!(e))?;
+
+            Arc::new(interp1d(
+                &soc_min_array,
+                &power_values,
+                Interp1dFillValue::Extrapolate,
+            ))
+        };
+
+        // Charging: determine the maximum power available for charging
+        let target_charge = self.target_electric_charge(*simtime)?;
         let (charge_rate, soc_max) = if target_charge > 0.
-            && !is_close!(target_charge, 0., rel_tol = 1e-9, abs_tol = 1e-10)
+            && !is_close!(target_charge, 0.0, rel_tol = 1e-9, abs_tol = 1e-10)
         {
             (self.pwr_in, target_charge)
         } else {
             (0., 1.)
         };
 
-        // TODO Stop function!!
-        let energy_output_soc_ode = EnergyOutputWithLossesSocOdeFunction {
-            soc_array,
-            power_array,
-            soc_min_array: &self.soc_min_array,
-            output_mode: mode,
-            storage_capacity: self.storage_capacity,
-            soc_max,
-            charge_rate,
-            pwr_in: self.pwr_in,
-            target_charge,
-        };
+        let storage_capacity = self.storage_capacity;
 
-        let mut stepper = create_stepper(
-            self.state_of_charge.load(Ordering::SeqCst),
-            time_remaining,
-            energy_output_soc_ode,
+        // Define the ODE for SOC, total energy charged, and total energy delivered
+        let soc_ode = Box::new(move |_t: f64, y: &[f64]| -> PyResult<Vec<f64>> {
+            let soc = y[0];
+            let _energy_charged = y[1];
+            let _energy_delivered = y[2];
+            let _energy_lost = y[3];
+
+            // Ensure soc stays within bounds
+            let soc = clip(soc, 0., soc_max);
+
+            let power_interp = Arc::clone(&power_interp);
+
+            let (ddelivered_dt, dlost_dt) = match mode {
+                OutputMode::Max => {
+                    // Total power output when actively delivering
+                    let total_discharge_rate: f64 = Python::attach(|py| {
+                        let power_interp = power_interp.bind(py);
+                        power_interp.call1((soc,))?.extract()
+                    })?;
+
+                    // Calculate the instantaneous loss rate (always based on MIN output)
+                    let loss_rate = {
+                        let power_min_interp = Arc::clone(&power_min_interp);
+                        Python::attach(|py| {
+                            let power_min_interp = power_min_interp.bind(py);
+                            power_min_interp.call1((soc,))?.extract::<f64>()
+                        })?
+                    };
+
+                    // The useful energy delivered is the difference between MAX and MIN
+                    // (since MIN represents the losses that happen anyway)
+                    let useful_discharge_rate = total_discharge_rate - loss_rate;
+                    (useful_discharge_rate, loss_rate)
+                }
+                OutputMode::Min => (
+                    0.0,
+                    Python::attach(|py| {
+                        let power_interp = power_interp.bind(py);
+                        power_interp.call1((soc,))?.extract::<f64>()
+                    })?,
+                ),
+            };
+
+            let dcharged_dt = if soc < soc_max {
+                charge_rate
+            } else if target_charge > 0. {
+                (ddelivered_dt + dlost_dt).min(charge_rate)
+            } else {
+                0.0
+            };
+
+            // Net SOC rate of change
+            let dsoc_dt = (-ddelivered_dt - dlost_dt + dcharged_dt) / storage_capacity;
+
+            Ok(vec![dsoc_dt, dcharged_dt, ddelivered_dt, dlost_dt])
+        });
+
+        // Event function to stop the solver when SOC reaches 0
+        let soc_zero_event = TerminalFunction::new(
+            Box::new(move |_t: f64, y: &[f64]| -> f64 { y[0] }),
+            Some(true),
+            Some(-1.),
         );
 
-        // Solve the ODE for SOC and cumulative energy delivered
-        let _ = stepper.integrate();
+        // Event function to stop when target energy is delivered
+        let target_energy_event = TerminalFunction::new(
+            Box::new(move |_t: f64, y: &[f64]| -> f64 {
+                let energy_delivered = y[2];
+                if let Some(target_energy) = target_energy {
+                    target_energy - energy_delivered
+                } else {
+                    1.0
+                }
+            }),
+            Some(true),
+            Some(-1.),
+        );
 
-        // Final state of charge after 16 hours
-        let final_soc = stepper.y_out().last().unwrap()[0];
+        let mut events = vec![soc_zero_event];
+        if target_energy.is_some_and(|target_energy| target_energy > 0.0) {
+            events.push(target_energy_event);
+        }
+
+        // Initial conditions
+        let current_soc = self.state_of_charge.load(Ordering::SeqCst);
+        let initial_conditions = [current_soc, 0.0, 0.0, 0.0];
+        let time_remaining = time_remaining.unwrap_or(simtime.timestep);
+
+        // Solve the ODE for SOC, cumulative energy charged, and cumulative energy delivered
+        let sol = solve_ivp(
+            soc_ode,
+            (0., time_remaining),
+            initial_conditions,
+            Some(events),
+            "RK45".into(),
+            1e-4.into(),
+            1e-6.into(),
+        )?;
+
+        let OdeResult { y, t_events, t } = sol;
+
+        let final_soc = *y[0]
+            .last()
+            .ok_or_else(|| anyhow!("ODE solving result was unexpectedly empty for final_soc"))?;
 
         // Total energy charged during the timestep
-        let total_energy_charged = stepper.y_out().last().unwrap()[1];
+        let total_energy_charged = *y[1].last().ok_or_else(|| {
+            anyhow!("ODE solving result was unexpectedly empty for total_energy_charged")
+        })?;
 
         // Total energy delivered during the timestep
-        let total_energy_delivered = stepper.y_out().last().unwrap()[2];
+        let total_energy_delivered = *y[2].last().ok_or_else(|| {
+            anyhow!("ODE solving result was unexpectedly empty for total_energy_delivered")
+        })?;
 
-        // Total energy lost during the timestep
-        let total_energy_lost = stepper.y_out().last().unwrap()[3];
+        let total_energy_lost = *y[3].last().ok_or_else(|| {
+            anyhow!("ODE solving result was unexpectedly empty for total_energy_lost")
+        })?;
 
-        // Total time used in delivering energy
-        let time_used = stepper.x_out().last().unwrap(); // TODO implement with root finder
+        // Determine actual time used
+        let time_used: f64 = if !t_events[0].is_empty() {
+            t_events[0][0]
+        } else if target_energy.is_some() && t_events.len() > 1 && !t_events[1].is_empty() {
+            t_events[1][0]
+        } else {
+            *t.last()
+                .ok_or_else(|| anyhow!("t_events is empty for energy_output ode results"))?
+        };
 
-        // Return the total energy delivered, time used, and total energy charged
         Ok((
             total_energy_delivered,
-            *time_used,
+            time_used,
             total_energy_charged,
             final_soc,
             total_energy_lost,
         ))
+
+        // let time_remaining = time_remaining.unwrap_or(simtime.timestep);
+        //
+        // // TODO: complete porting this function!
+        //
+        // let (soc_array, power_array) = match mode {
+        //     OutputMode::Min => (&self.soc_min_array, &self.power_min_array),
+        //     OutputMode::Max => (&self.soc_max_array, &self.power_max_array),
+        // };
+        //
+        // let target_charge = self.target_electric_charge(*simtime)?;
+        //
+        // let (charge_rate, soc_max) = if target_charge > 0.
+        //     && !is_close!(target_charge, 0., rel_tol = 1e-9, abs_tol = 1e-10)
+        // {
+        //     (self.pwr_in, target_charge)
+        // } else {
+        //     (0., 1.)
+        // };
+        //
+        // // TODO Stop function!!
+        // let energy_output_soc_ode = EnergyOutputWithLossesSocOdeFunction {
+        //     soc_array,
+        //     power_array,
+        //     soc_min_array: &self.soc_min_array,
+        //     output_mode: mode,
+        //     storage_capacity: self.storage_capacity,
+        //     soc_max,
+        //     charge_rate,
+        //     pwr_in: self.pwr_in,
+        //     target_charge,
+        // };
+        //
+        // let mut stepper = create_stepper(
+        //     self.state_of_charge.load(Ordering::SeqCst),
+        //     time_remaining,
+        //     energy_output_soc_ode,
+        // );
+        //
+        // // Solve the ODE for SOC and cumulative energy delivered
+        // let _ = stepper.integrate();
+        //
+        // // Final state of charge after 16 hours
+        // let final_soc = stepper.y_out().last().unwrap()[0];
+        //
+        // // Total energy charged during the timestep
+        // let total_energy_charged = stepper.y_out().last().unwrap()[1];
+        //
+        // // Total energy delivered during the timestep
+        // let total_energy_delivered = stepper.y_out().last().unwrap()[2];
+        //
+        // // Total energy lost during the timestep
+        // let total_energy_lost = stepper.y_out().last().unwrap()[3];
+        //
+        // // Total time used in delivering energy
+        // let time_used = stepper.x_out().last().unwrap(); // TODO implement with root finder
+        //
+        // // Return the total energy delivered, time used, and total energy charged
+        // Ok((
+        //     total_energy_delivered,
+        //     *time_used,
+        //     total_energy_charged,
+        //     final_soc,
+        //     total_energy_lost,
+        // ))
     }
 
     pub(crate) fn target_electric_charge(
@@ -750,226 +935,6 @@ pub(crate) fn clip(n: f64, min: f64, max: f64) -> f64 {
     }
 }
 
-fn create_stepper<T, const D: usize>(
-    initial_state_of_change: f64,
-    time_remaining: f64,
-    energy_output_ode_func: T,
-) -> Dopri5<Time, OVector<Time, Const<D>>, T>
-where
-    T: System<Time, EnergyOutputState<D>>,
-{
-    let current_soc = initial_state_of_change;
-
-    let f = energy_output_ode_func; // f - Structure implementing the System trait
-    let x = 0.; // x - Initial value of the independent variable (usually time)
-    let x_end = time_remaining; // x_end - Final value of the independent variable
-    let dx = 0.; // dx - Increment in the dense output. This argument has no effect if the output type is Sparse
-    let mut y0 = EnergyOutputState::<D>::zeros();
-    y0[(0, 0)] = current_soc;
-
-    // scipy implementation for reference:
-    // https://github.com/scipy/scipy/blob/6b657ede0c3c4cffef3156229afddf02a2b1d99a/scipy/integrate/_ivp/rk.py#L293
-    let rtol = 1e-4; // rtol - set to match Python - Relative tolerance used in the computation of the adaptive step size
-    let atol = 1e-6; // atol - set from scipy docs - Absolute tolerance used in the computation of the adaptive step size
-    let h = 0.; // initial step size - 0
-    let safety_factor = 0.9; // matches scipy implementation
-    let beta = 0.; // setting this to 0 gives us an alpha of 0.2 and matches scipy's adaptive step size logic (default was 0.04)
-    let fac_min = 0.2; // matches scipy implementation
-    let fac_max = 10.; // matches scipy implementation
-    let h_max = x_end - x;
-    let n_max = 100000;
-    let n_stiff = 1000;
-    Dopri5::from_param(
-        f,
-        x,
-        x_end,
-        dx,
-        y0,
-        rtol,
-        atol,
-        safety_factor,
-        beta,
-        fac_min,
-        fac_max,
-        h_max,
-        h,
-        n_max,
-        n_stiff,
-        OutputType::Sparse,
-    )
-}
-
-struct SocOdeFunction<'a> {
-    soc_array: &'a [f64],
-    power_array: &'a [f64],
-    storage_capacity: f64,
-}
-
-impl System<Time, State> for SocOdeFunction<'_> {
-    fn system(&self, _x: Time, y: &State, dy: &mut State) {
-        // Define the ODE for SOC and energy delivered (no charging, only discharging)
-
-        // Ensure SOC stays within bounds
-        let soc = clip(y[0], 0., 1.);
-
-        // Discharging: calculate power used based on SOC
-        let discharge_rate = -np_interp(soc, self.soc_array, self.power_array);
-
-        // Track the total energy delivered (discharged energy)
-        let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
-
-        // SOC rate of change (discharging), divided by storage capacity
-        let dsoc_dt = -ddelivered_dt / self.storage_capacity;
-
-        dy[0] = dsoc_dt;
-    }
-}
-
-pub(crate) struct EnergyOutputSocOdeFunction<'a> {
-    pub(crate) soc_array: &'a Vec<f64>,
-    pub(crate) power_array: &'a Vec<f64>,
-    pub(crate) storage_capacity: f64,
-    pub(crate) soc_max: f64,
-    pub(crate) charge_rate: f64,
-    pub(crate) pwr_in: f64,
-    pub(crate) target_charge: f64,
-}
-
-type EnergyOutputStateWithoutLosses = EnergyOutputState<3>;
-
-impl System<Time, EnergyOutputStateWithoutLosses> for EnergyOutputSocOdeFunction<'_> {
-    fn system(
-        &self,
-        _x: Time,
-        y: &EnergyOutputStateWithoutLosses,
-        dy: &mut EnergyOutputStateWithoutLosses,
-    ) {
-        // Ensure SOC stays within bounds
-        let mut soc = clip(y[0], 0., 1.);
-        if is_close!(soc, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
-            soc = 0.;
-        }
-        if is_close!(soc, self.soc_max, rel_tol = 1e-09, abs_tol = 1e-10) {
-            soc = self.soc_max;
-        }
-        // Discharging: calculate power used based on SOC
-
-        // // Python does two interpolations, which we've copied here
-        // TODO confirm this is intended
-        let power_max_func_result_arr = self
-            .soc_array
-            .iter()
-            .map(|s| np_interp(*s, self.soc_array, self.power_array))
-            .collect_vec();
-        let discharge_rate =
-            -np_interp_with_extrapolate(soc, self.soc_array, &power_max_func_result_arr);
-
-        // Single interpolation version:
-        // let discharge_rate =
-        //     -np_interp_with_extrapolate(soc, self.soc_array, &self.power_array);
-
-        // Track the total energy delivered (discharged energy)
-        let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
-
-        let dcharged_dt = if soc < self.soc_max {
-            self.charge_rate
-        } else if self.target_charge > 0.
-            && !is_close!(self.target_charge, 0., rel_tol = 1e-09, abs_tol = 1e-10)
-        {
-            ddelivered_dt.min(self.charge_rate)
-        } else {
-            0.0
-        };
-
-        // Net SOC rate of change (discharge + charge), divided by storage capacity
-        let dsoc_dt = (-ddelivered_dt + dcharged_dt) / self.storage_capacity;
-
-        dy[0] = dsoc_dt;
-        dy[1] = dcharged_dt;
-        dy[2] = ddelivered_dt;
-    }
-
-    // TODO implement
-    // fn solout(&mut self, _x: Time, y: &EnergyOutputState, _dy: &EnergyOutputState) -> bool {
-    //     // TODO we want to check if we've passed this value, not that we are equal to it
-    //     // see Emitters for example of this
-    //     todo!()
-    // }
-}
-
-pub(crate) struct EnergyOutputWithLossesSocOdeFunction<'a> {
-    pub(crate) soc_array: &'a Vec<f64>,
-    pub(crate) power_array: &'a Vec<f64>,
-    pub(crate) soc_min_array: &'a Vec<f64>,
-    pub(crate) output_mode: OutputMode,
-    pub(crate) storage_capacity: f64,
-    pub(crate) soc_max: f64,
-    pub(crate) charge_rate: f64,
-    pub(crate) pwr_in: f64,
-    pub(crate) target_charge: f64,
-}
-
-type EnergyOutputStateWithLosses = EnergyOutputState<4>;
-
-impl System<Time, EnergyOutputStateWithLosses> for EnergyOutputWithLossesSocOdeFunction<'_> {
-    fn system(
-        &self,
-        _x: Time,
-        y: &EnergyOutputStateWithLosses,
-        dy: &mut EnergyOutputStateWithLosses,
-    ) {
-        // Ensure SOC stays within bounds
-        let soc = clip(y[0], 0., 1.);
-
-        // Calculate the instantaneous loss rate (always based on MIN output)
-        let power_min_func_result_arr = self
-            .soc_min_array
-            .iter()
-            .map(|s| np_interp(*s, self.soc_array, self.power_array))
-            .collect_vec();
-        let loss_rate =
-            np_interp_with_extrapolate(soc, self.soc_min_array, &power_min_func_result_arr);
-        let mut dlost_dt = loss_rate;
-
-        // Calculate the active discharge rate
-        let ddelivered_dt = if self.output_mode == OutputMode::Max {
-            let power_max_func_result_arr = self
-                .soc_array
-                .iter()
-                .map(|s| np_interp(*s, self.soc_array, self.power_array))
-                .collect_vec();
-            let total_discharge_rate =
-                np_interp_with_extrapolate(soc, self.soc_array, &power_max_func_result_arr);
-            total_discharge_rate - loss_rate
-        } else {
-            dlost_dt = {
-                let power_max_func_result_arr = self
-                    .soc_array
-                    .iter()
-                    .map(|s| np_interp(*s, self.soc_array, self.power_array))
-                    .collect_vec();
-                np_interp_with_extrapolate(soc, self.soc_array, &power_max_func_result_arr)
-            };
-            0.0
-        };
-
-        let dcharged_dt = if soc < self.soc_max {
-            self.charge_rate
-        } else if self.target_charge > 0. {
-            (ddelivered_dt + dlost_dt).min(self.charge_rate)
-        } else {
-            0.0
-        };
-
-        // Net SOC rate of change
-        let dsoc_dt = (-ddelivered_dt - dlost_dt + dcharged_dt) / self.storage_capacity;
-
-        dy[0] = dsoc_dt;
-        dy[1] = dcharged_dt;
-        dy[2] = ddelivered_dt;
-        dy[3] = dlost_dt;
-    }
-}
 
 /// A trait that will need to be implemented by any type that uses HeatBatteryDryCore in
 /// every case. This is written as the equivalent of the mechanism in the upstream Python
