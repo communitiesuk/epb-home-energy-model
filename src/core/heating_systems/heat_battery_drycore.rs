@@ -426,7 +426,7 @@ impl HeatStorageDryCore {
                 // the next day’s heating demand based on external temperature, room temperature
                 // settings and heat demand periods.
 
-                let mut energy_to_store = charge_control.energy_to_store(
+                let energy_to_store = charge_control.energy_to_store(
                     self.demand_met.load(Ordering::SeqCst)
                         + self.demand_unmet.load(Ordering::SeqCst),
                     self.owner().get_zone_setpoint(),
@@ -435,9 +435,7 @@ impl HeatStorageDryCore {
 
                 // None means not enough past data to do the calculation (Initial 24h of the calculation)
                 // We go for a full load of the hhrsh
-                if energy_to_store.is_nan() {
-                    energy_to_store = self.pwr_in * HOURS_PER_DAY as f64;
-                }
+                let energy_to_store = energy_to_store.unwrap_or(self.pwr_in * HOURS_PER_DAY as f64);
 
                 let target_charge_hhrsh = if energy_to_store > 0. {
                     let current_state_of_charge = self.state_of_charge.load(Ordering::SeqCst);
@@ -476,7 +474,9 @@ impl HeatStorageDryCore {
                     simulation_time_iteration,
                 );
 
-                // Python here allows for energy_to_store to be optional - here it's not, so skipping this logic
+                // None means not enough past data to do the calculation (Initial 24h of the calculation)
+                // We go for a full load of the heat battery
+                let energy_to_store = energy_to_store.unwrap_or(self.pwr_in * HOURS_PER_DAY as f64);
 
                 let target_charge_hb = if energy_to_store > 0. {
                     let heat_retention_ratio = self.heat_retention_ratio;

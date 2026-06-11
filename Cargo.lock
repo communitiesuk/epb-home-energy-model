@@ -727,15 +727,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "format_num"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14ac05eb8d2eb4ed1eeff847911deae077b0b53332465de9d6a26b0ea9961bc8"
-dependencies = [
- "regex",
-]
-
-[[package]]
 name = "formatx"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1113,7 +1104,6 @@ dependencies = [
  "eqsolver",
  "erased-serde",
  "field_types",
- "format_num",
  "formatx",
  "fsum",
  "indexmap 2.14.0",
