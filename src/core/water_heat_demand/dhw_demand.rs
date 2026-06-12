@@ -725,7 +725,7 @@ impl DomesticHotWaterDemand {
                 .get(hws_name)
                 .unwrap()
                 .iter()
-                .filter(|event| event.volume_hot.abs() > 1e-10)
+                .filter(|event| !is_close!(event.volume_hot, 0., abs_tol = 1e-10, rel_tol = 1e-9))
                 .copied()
                 .collect();
 
