@@ -179,7 +179,7 @@ pub(crate) struct ChargeControlHeatRetentionFields {
     demand: Arc<RwLock<BoundedVecDeque<Option<f64>>>>,
     past_ext_temp: Arc<RwLock<BoundedVecDeque<Option<f64>>>>,
     future_ext_temp: Arc<RwLock<BoundedVecDeque<Option<f64>>>>,
-    energy_to_store: AtomicF64,
+    energy_to_store: Arc<RwLock<Option<f64>>>,
 }
 
 impl ChargeControl {
@@ -272,7 +272,7 @@ impl ChargeControl {
                             .air_temp_with_offset(&simulation_time_iterator.current_iteration(), i),
                     ));
                 }
-                let energy_to_store = AtomicF64::new(0.0);
+                let energy_to_store = Arc::new(RwLock::new(Some(0.0)));
                 Some(ChargeControlHeatRetentionFields {
                     steps_day,
                     demand,
@@ -310,7 +310,7 @@ impl ChargeControl {
                             .air_temp_with_offset(&simulation_time_iterator.current_iteration(), i),
                     ));
                 }
-                let energy_to_store = AtomicF64::new(0.0);
+                let energy_to_store = Arc::new(RwLock::new(Some(0.0)));
                 Some(ChargeControlHeatRetentionFields {
                     steps_day,
                     demand,
@@ -438,7 +438,7 @@ impl ChargeControl {
         energy_demand: f64,
         base_temp: f64,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> Option<f64> {
         // ugly, but this method cannot be called when control does not have HHRSH or Heat Battery logic type
         let heat_retention_data = if let Some(heat_retention_data) =
             self.heat_retention_data.as_ref()
@@ -470,19 +470,19 @@ impl ChargeControl {
             self.calculate_heating_degree_hours(past_ext_temp.read().as_ref(), base_temp);
 
         let energy_to_store = if !self.is_on(&simtime) {
-            0.
+            Some(0.)
         } else {
             match (future_hdh, past_hdh) {
-                (None, _) | (_, None) => f64::NAN,
+                (None, _) | (_, None) => None,
                 // Can't calculate tomorrow's demand if no past_hdh, so assume zero to store
-                (_, Some(0.)) => 0.,
-                (Some(future_hdh), Some(past_hdh)) => {
-                    future_hdh / past_hdh * FSum::with_all(demand.read().iter().flatten()).value()
-                }
+                (_, Some(0.)) => Some(0.),
+                (Some(future_hdh), Some(past_hdh)) => Some(
+                    future_hdh / past_hdh * FSum::with_all(demand.read().iter().flatten()).value(),
+                ),
             }
         };
 
-        energy_to_store_atomic.store(energy_to_store, Ordering::SeqCst);
+        *energy_to_store_atomic.write() = energy_to_store;
 
         energy_to_store
     }
@@ -2570,8 +2570,14 @@ mod tests {
             )
             .unwrap();
             assert_eq!(
-                charge_control.heat_retention_data.unwrap().energy_to_store,
-                (0.).into()
+                charge_control
+                    .heat_retention_data
+                    .unwrap()
+                    .energy_to_store
+                    .read()
+                    .as_ref()
+                    .copied(),
+                Some(0.)
             )
         }
 
@@ -2889,12 +2895,12 @@ mod tests {
                 None,
             );
 
-            let expected: Vec<f64> = [
-                vec![f64::NAN; 8],
-                vec![0.0; 8],
-                vec![f64::NAN; 4],
-                vec![0.0; 4],
-                vec![2400.0; 24],
+            let expected: Vec<Option<f64>> = [
+                vec![None; 8],
+                vec![Some(0.0); 8],
+                vec![None; 4],
+                vec![Some(0.0); 4],
+                vec![Some(2400.0); 24],
             ]
             .concat();
 
@@ -2903,7 +2909,7 @@ mod tests {
                     .as_ref()
                     .unwrap()
                     .energy_to_store(100., 70., t_it);
-                assert!(actual.total_cmp(expected).is_eq()); // comparison including NaN values
+                assert_eq!(actual, *expected);
             }
         }
 
@@ -2938,14 +2944,14 @@ mod tests {
                 demand: heat_retention_data.demand.clone(),
                 past_ext_temp,
                 future_ext_temp: heat_retention_data.future_ext_temp.clone(),
-                energy_to_store: AtomicF64::new(
-                    heat_retention_data.energy_to_store.load(Ordering::SeqCst),
-                ),
+                energy_to_store: Arc::new(RwLock::new(
+                    heat_retention_data.energy_to_store.read().as_ref().copied(),
+                )),
             });
 
             for t_it in simulation_time.iter() {
                 let actual = charge_control.energy_to_store(100., 19., t_it);
-                assert_eq!(actual, 0.);
+                assert_eq!(actual, Some(0.));
             }
         }
 
