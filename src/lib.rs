@@ -676,7 +676,7 @@ fn write_core_output_file(
                 .collect(),
         );
 
-        writer.write_record(row.iter().map(StringOrNumber::as_bytes))?;
+        writer.write_record(format_row(&row)?)?;
     }
 
     Ok(())
@@ -778,12 +778,12 @@ fn write_core_output_file_summary(
     writer.write_record([
         "Space heat demand".to_string(),
         "kWh/m2".to_string(),
-        output.summary.space_heat_demand_by_floor_area().to_string(),
+        format_value(&output.summary.space_heat_demand_by_floor_area().into())?,
     ])?;
     writer.write_record([
         "Space cool demand".to_string(),
         "kWh/m2".to_string(),
-        output.summary.space_cool_demand_by_floor_area().to_string(),
+        format_value(&output.summary.space_cool_demand_by_floor_area().into())?,
     ])?;
     writer.write_record(&blank_line)?;
     writer.write_record(["Energy Supply Summary"])?;
@@ -792,11 +792,11 @@ fn write_core_output_file_summary(
     let peak_consumption = &output.summary.electricity_peak_consumption;
     writer.write_record([
         "Peak consumption (electricity)".to_string(),
-        peak_consumption.peak.to_string(),
+        format_value(&peak_consumption.peak.into())?,
         peak_consumption.index.to_string(),
         month_name(peak_consumption.month)?.to_string(),
         peak_consumption.day.to_string(),
-        peak_consumption.hour.to_string(),
+        format_value(&peak_consumption.hour.into())?,
     ])?;
     writer.write_record(&blank_line)?;
 
@@ -866,7 +866,7 @@ fn write_core_output_file_summary(
             let value = if field == EnergySupplyStatKey::StorageEfficiency && value.is_nan() {
                 "DIV/0".into()
             } else {
-                value.to_string()
+                format_value(&value.into())?
             };
             row.push(value);
         }
