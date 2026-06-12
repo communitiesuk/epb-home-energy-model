@@ -31,6 +31,8 @@ use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
+use pyo3::prelude::*;
+use pyo3::types::{IntoPyDict, PyDict};
 use serde::Serialize;
 use smartstring::alias::String;
 use std::fmt::{Display, Formatter};
@@ -1825,12 +1827,12 @@ pub(crate) struct InfiltrationVentilation {
     shield_class: VentilationShieldClass,
     c_rgh_site: f64,
     ventilation_zone_height: f64,
-    windows: Vec<Window>,
-    vents: Vec<Vent>,
-    leaks: Vec<Leaks>,
-    combustion_appliances: Vec<CombustionAppliances>,
+    windows: Arc<Vec<Window>>,
+    vents: Arc<Vec<Vent>>,
+    leaks: Arc<Vec<Leaks>>,
+    combustion_appliances: Arc<Vec<CombustionAppliances>>,
     air_terminal_devices: Vec<AirTerminalDevices>,
-    mech_vents: Vec<Arc<MechanicalVentilation>>,
+    mech_vents: Arc<Vec<MechanicalVentilation>>,
     detailed_output_heating_cooling: bool,
     p_a_alt: f64,
     total_volume: f64,
@@ -2591,27 +2593,81 @@ impl InfiltrationVentilation {
             None => return Ok(initial_r_v_arg),
         };
 
+        // With ach_target set to either ach_min or ach_max, run the minimize_scalar solver
+        let result_x: f64 = Python::attach(|py| {
+            let optimize = py.import("scipy.optimize")?;
+            let minimize_scalar = optimize.getattr("minimize_scalar")?;
+
+            let args = (
+                wind_speed,
+                wind_direction.angle(),
+                temp_interior_air,
+                temp_exterior_air,
+                ach_target,
+                r_w_arg,
+                initial_p_z_ref_guess,
+                match reporting_flag {
+                    None => "".to_string(),
+                    Some(flag) => flag.to_string(),
+                },
+            );
+
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("args", args)?;
+            kwargs.set_item("bounds", (0., 1.))?;
+            kwargs.set_item("method", "bounded")?;
+            kwargs.set_item("options", [("xatol", 1e-10)].into_py_dict(py)?)?;
+
+            minimize_scalar
+                .call((()), (Some(&kwargs)))?
+                .getattr("x")?
+                .extract::<f64>()
+        })
+        .map_err(|e| anyhow!(e))?;
+
+        //             with warnings.catch_warnings():
+        //                 warnings.filterwarnings("error", category=RuntimeWarning)
+        //                 result = minimize_scalar(
+        //                     self.calc_diff_ach_target,
+        //                     args=(
+        //                         wind_speed,
+        //                         wind_direction,
+        //                         temp_interior_air,
+        //                         temp_exterior_air,
+        //                         ach_target,
+        //                         R_w_arg,
+        //                         initial_p_z_ref_guess,
+        //                         reporting_flag,
+        //                     ),
+        //                     bounds=(0, 1),
+        //                     method="bounded",
+        //                     options={"xatol": 1e-10},
+        //                 )
+        //             R_v_arg_solution = max(0.0, min(1.0, float(result.x)))
+
+        Ok(0.0f64.max(1.0f64.min(result_x)))
+
         // With ach_target set to either ach_min or ach_max, run a Brent search (as equivalent of the minimize_scalar solver in Python)
-        let cost = FindRVArgProblem {
-            infiltration_ventilation: self,
-            wind_speed,
-            wind_direction,
-            temp_interior_air,
-            temp_exterior_air,
-            ach_target,
-            r_w_arg,
-            initial_p_z_ref_guess,
-            reporting_flag,
-            simtime,
-        };
-        let solver = BrentRoot::new(0., 1., 1e-10);
-
-        let optimization = Executor::new(cost, solver).run()?;
-
-        optimization
-            .state()
-            .best_param
-            .ok_or_else(|| anyhow!("No best param available in solver result"))
+        // let cost = FindRVArgProblem {
+        //     infiltration_ventilation: self,
+        //     wind_speed,
+        //     wind_direction,
+        //     temp_interior_air,
+        //     temp_exterior_air,
+        //     ach_target,
+        //     r_w_arg,
+        //     initial_p_z_ref_guess,
+        //     reporting_flag,
+        //     simtime,
+        // };
+        // let solver = BrentRoot::new(0., 1., 1e-10);
+        //
+        // let optimization = Executor::new(cost, solver).run()?;
+        //
+        // optimization
+        //     .state()
+        //     .best_param
+        //     .ok_or_else(|| anyhow!("No best param available in solver result"))
     }
 
     pub(crate) fn calc_internal_gains_ductwork(
