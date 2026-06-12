@@ -81,7 +81,7 @@ const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 24] = [
     "demo_24hrs_January_esh_hhrsh.json",
     "demo_24hrs_January_esh_manual.json",
     "demo_hp_buffer_tank_fancoils.json",
-    "demo_24hrs_August_pvdiverter_and_hp.json"
+    "demo_24hrs_August_pvdiverter_and_hp.json",
 ];
 
 const _NON_PASSING_FILES: [&str; 49] = [

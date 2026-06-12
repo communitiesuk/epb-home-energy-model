@@ -4514,7 +4514,7 @@ fn heat_source_wet_from_input(
     input: HeatSourceWetDetails,
     external_conditions: Arc<ExternalConditions>,
     simulation_time: Arc<SimulationTimeIterator>,
-    mechanical_ventilations: &[Arc<MechanicalVentilation>],
+    mechanical_ventilations: &[MechanicalVentilation],
     number_of_zones: usize,
     temp_internal_air_fn: TempInternalAirFn,
     controls: &Controls,
@@ -4542,7 +4542,7 @@ fn heat_source_wet_from_input(
                         }
                         _ => {
                             throughput_exhaust_air =
-                                Some(mech_vent.as_ref().design_outdoor_air_flow_rate_m3_h);
+                                Some(mech_vent.design_outdoor_air_flow_rate_m3_h);
                             // In Python code data is appended here to a project instance variable called __heat_source_wet_names_requiring_overvent
                             // but this is never read, so we are leaving out the implementation here
                         }

@@ -1212,7 +1212,11 @@ impl StorageTank {
             }
             None => {
                 let temp_flow_prev = self.temp_flow_prev.load(Ordering::SeqCst);
-                if temp_flow_prev.is_nan() { None } else { Some(temp_flow_prev) }
+                if temp_flow_prev.is_nan() {
+                    None
+                } else {
+                    Some(temp_flow_prev)
+                }
             }
         };
 

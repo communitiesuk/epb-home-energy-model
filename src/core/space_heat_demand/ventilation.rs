@@ -22,17 +22,17 @@ use crate::input::{
 };
 use crate::simulation_time::SimulationTimeIteration;
 use crate::StringOrNumber;
-use anyhow::{anyhow, bail, Error};
-use argmin::{
-    core::{CostFunction, Executor},
-    solver::brent::BrentRoot,
-};
+use anyhow::{anyhow, bail};
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
+use pyo3::types::{IntoPyDict, PyDict};
 use serde::Serialize;
 use smartstring::alias::String;
+use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use thiserror::Error;
@@ -1825,12 +1825,12 @@ pub(crate) struct InfiltrationVentilation {
     shield_class: VentilationShieldClass,
     c_rgh_site: f64,
     ventilation_zone_height: f64,
-    windows: Vec<Window>,
-    vents: Vec<Vent>,
-    leaks: Vec<Leaks>,
-    combustion_appliances: Vec<CombustionAppliances>,
+    windows: Arc<Vec<Window>>,
+    vents: Arc<Vec<Vent>>,
+    leaks: Arc<Vec<Leaks>>,
+    combustion_appliances: Arc<Vec<CombustionAppliances>>,
     air_terminal_devices: Vec<AirTerminalDevices>,
-    mech_vents: Vec<Arc<MechanicalVentilation>>,
+    mech_vents: Arc<Vec<MechanicalVentilation>>,
     detailed_output_heating_cooling: bool,
     p_a_alt: f64,
     total_volume: f64,
@@ -1841,7 +1841,7 @@ pub(crate) struct InfiltrationVentilation {
 
 #[cfg(test)]
 type CalcAirChangesFn = fn(
-    &InfiltrationVentilation,
+    VentilationFieldsForSolvers,
     f64,
     Orientation360,
     f64,
@@ -1875,12 +1875,12 @@ impl InfiltrationVentilation {
         shield_class: VentilationShieldClass,
         terrain_class: &TerrainClass,
         average_roof_pitch: f64,
-        windows: Vec<Window>,
-        vents: Vec<Vent>,
+        windows: Arc<Vec<Window>>,
+        vents: Arc<Vec<Vent>>,
         leaks: CompletedVentilationLeaks,
-        combustion_appliances: Vec<CombustionAppliances>,
+        combustion_appliances: Arc<Vec<CombustionAppliances>>,
         air_terminal_devices: Vec<AirTerminalDevices>,
-        mech_vents: Vec<Arc<MechanicalVentilation>>,
+        mech_vents: Arc<Vec<MechanicalVentilation>>,
         detailed_output_heating_cooling: bool,
         altitude: f64,
         total_volume: f64,
@@ -1920,7 +1920,7 @@ impl InfiltrationVentilation {
         self.calc_air_changes_fn.replace(calc_air_changes_fn);
     }
 
-    pub(crate) fn mech_vents(&self) -> &Vec<Arc<MechanicalVentilation>> {
+    pub(crate) fn mech_vents(&self) -> &[MechanicalVentilation] {
         &self.mech_vents
     }
 
@@ -1953,7 +1953,7 @@ impl InfiltrationVentilation {
         average_roof_pitch: f64,
         ventilation_zone_base_height: f64,
         f_cross: bool,
-    ) -> Vec<Leaks> {
+    ) -> Arc<Vec<Leaks>> {
         let h_path1_2 = 0.25 * leaks.ventilation_zone_height;
         let h_path3_4 = 0.75 * leaks.ventilation_zone_height;
         let h_path5 = leaks.ventilation_zone_height;
@@ -1995,7 +1995,8 @@ impl InfiltrationVentilation {
                     ventilation_zone_base_height,
                 )
             })
-            .collect()
+            .collect_vec()
+            .into()
     }
 
     // // TODO (from Python) uncomment when re-implementing ATDs
@@ -2067,6 +2068,30 @@ impl InfiltrationVentilation {
         r_w_arg: Option<f64>,
         simtime: SimulationTimeIteration,
     ) -> Result<f64, InternalReferencePressureCalculationError> {
+        Self::calculate_internal_reference_pressure_pure(
+            VentilationFieldsForSolvers::from(self),
+            initial_p_z_ref_guess,
+            wind_speed,
+            wind_direction,
+            temp_interior_air,
+            temp_exterior_air,
+            r_v_arg,
+            r_w_arg,
+            simtime,
+        )
+    }
+
+    fn calculate_internal_reference_pressure_pure(
+        owned_ventilation_fields: VentilationFieldsForSolvers,
+        initial_p_z_ref_guess: f64,
+        wind_speed: f64,
+        wind_direction: Orientation360,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
+        r_v_arg: f64,
+        r_w_arg: Option<f64>,
+        simtime: SimulationTimeIteration,
+    ) -> Result<f64, InternalReferencePressureCalculationError> {
         for interval_expansion in INTERVAL_EXPANSION_LIST {
             let bracket = (
                 initial_p_z_ref_guess - interval_expansion,
@@ -2074,7 +2099,7 @@ impl InfiltrationVentilation {
             );
 
             let result = root_scalar_for_implicit_mass_balance(
-                self,
+                owned_ventilation_fields.clone(),
                 wind_speed,
                 wind_direction,
                 temp_interior_air,
@@ -2085,9 +2110,25 @@ impl InfiltrationVentilation {
                 bracket,
             );
 
-            if let Ok(root) = result {
-                let p_z_ref = root;
-                return Ok(p_z_ref);
+            match result {
+                Ok(root) => {
+                    let p_z_ref = root;
+                    return Ok(p_z_ref);
+                }
+                Err(e)
+                    if e.to_string()
+                        .contains("f(a) and f(b) must have different signs") =>
+                {
+                    continue;
+                }
+                Err(e) => {
+                    return Err(InternalReferencePressureCalculationError {
+                        initial_p_z_ref_guess,
+                        temp_interior_air,
+                        r_w_arg,
+                        original: Some(e.into()),
+                    })
+                }
             }
         }
 
@@ -2095,6 +2136,7 @@ impl InfiltrationVentilation {
             initial_p_z_ref_guess,
             temp_interior_air,
             r_w_arg,
+            original: None,
         })
     }
 
@@ -2126,6 +2168,34 @@ impl InfiltrationVentilation {
         Ok(qm_in + qm_out)
     }
 
+    fn implicit_mass_balance_for_internal_reference_pressure_pure(
+        owned_ventilation_fields: VentilationFieldsForSolvers,
+        p_z_ref: f64,
+        wind_speed: f64,
+        wind_direction: Orientation360,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
+        r_v_arg: f64,
+        r_w_arg_min_max: Option<f64>,
+        reporting_flag: Option<ReportingFlag>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let (qm_in, qm_out, _) =
+            Self::implicit_mass_balance_for_internal_reference_pressure_components_pure(
+                owned_ventilation_fields,
+                p_z_ref,
+                wind_speed,
+                wind_direction,
+                temp_interior_air,
+                temp_exterior_air,
+                r_v_arg,
+                r_w_arg_min_max,
+                reporting_flag,
+                simtime,
+            )?;
+        Ok(qm_in + qm_out)
+    }
+
     /// Calculate incoming air flow, in m3/hr, at specified conditions
     pub(crate) fn incoming_air_flow(
         &self,
@@ -2140,9 +2210,39 @@ impl InfiltrationVentilation {
         report_effective_flow_rate: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
+        Self::incoming_air_flow_pure(
+            VentilationFieldsForSolvers::from(self),
+            p_z_ref,
+            wind_speed,
+            wind_direction,
+            temp_interior_air,
+            temp_exterior_air,
+            r_v_arg,
+            r_w_arg_min_max,
+            reporting_flag,
+            report_effective_flow_rate,
+            simtime,
+        )
+    }
+
+    fn incoming_air_flow_pure(
+        owned_ventilation_fields: VentilationFieldsForSolvers,
+        p_z_ref: f64,
+        wind_speed: f64,
+        wind_direction: Orientation360,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
+        r_v_arg: f64,
+        r_w_arg_min_max: Option<f64>,
+        reporting_flag: Option<ReportingFlag>,
+        report_effective_flow_rate: Option<bool>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
         let report_effective_flow_rate = report_effective_flow_rate.unwrap_or(false);
-        let (mut qm_in, _, qm_effective_flow_rate) = self
-            .implicit_mass_balance_for_internal_reference_pressure_components(
+        let VentilationFieldsForSolvers { p_a_alt, .. } = owned_ventilation_fields;
+        let (mut qm_in, _, qm_effective_flow_rate) =
+            Self::implicit_mass_balance_for_internal_reference_pressure_components_pure(
+                owned_ventilation_fields,
                 p_z_ref,
                 wind_speed,
                 wind_direction,
@@ -2160,7 +2260,7 @@ impl InfiltrationVentilation {
         Ok(convert_mass_flow_rate_to_volume_flow_rate(
             qm_in,
             celsius_to_kelvin(temp_exterior_air)?,
-            self.p_a_alt,
+            p_a_alt,
         ))
     }
 
@@ -2200,7 +2300,52 @@ impl InfiltrationVentilation {
         reporting_flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64)> {
-        let u_site = wind_speed_at_zone_level(self.c_rgh_site, wind_speed, None, None, None);
+        let owned_fields = VentilationFieldsForSolvers::from(self);
+
+        Self::implicit_mass_balance_for_internal_reference_pressure_components_pure(
+            owned_fields,
+            p_z_ref,
+            wind_speed,
+            wind_direction,
+            temp_interior_air,
+            temp_exterior_air,
+            r_v_arg,
+            r_w_arg_min_max,
+            reporting_flag,
+            simtime,
+        )
+    }
+
+    fn implicit_mass_balance_for_internal_reference_pressure_components_pure(
+        owned_ventilation_fields: VentilationFieldsForSolvers,
+        p_z_ref: f64,
+        wind_speed: f64,
+        wind_direction: Orientation360,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
+        r_v_arg: f64,
+        r_w_arg_min_max: Option<f64>,
+        reporting_flag: Option<ReportingFlag>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64, f64)> {
+        let VentilationFieldsForSolvers {
+            c_rgh_site,
+            windows,
+            vents,
+            leaks,
+            combustion_appliances,
+            mech_vents,
+            f_cross,
+            shield_class,
+            p_a_alt,
+            total_volume,
+            detailed_output_heating_cooling,
+            detailed_results,
+            #[cfg(test)]
+                calc_air_changes_fn: _,
+        } = owned_ventilation_fields;
+
+        let u_site = wind_speed_at_zone_level(c_rgh_site, wind_speed, None, None, None);
         let t_e = celsius_to_kelvin(temp_exterior_air)?;
         let t_z = celsius_to_kelvin(temp_interior_air)?;
         let mut qm_in_through_window_opening = 0.;
@@ -2217,15 +2362,15 @@ impl InfiltrationVentilation {
         let mut qm_eta_from_vent_zone = 0.;
         let mut qm_in_effective_heat_recovery_saving_total = 0.0;
 
-        for window in &self.windows {
+        for window in windows.as_ref().iter() {
             let (qm_in, qm_out) = window.calculate_flow_from_internal_p(
                 wind_direction,
                 u_site,
                 t_e,
                 t_z,
                 p_z_ref,
-                self.f_cross,
-                self.shield_class,
+                f_cross,
+                shield_class,
                 r_w_arg_min_max,
                 simtime,
             )?;
@@ -2233,29 +2378,29 @@ impl InfiltrationVentilation {
             qm_out_through_window_opening += qm_out;
         }
 
-        for vent in &self.vents {
+        for vent in vents.as_ref().iter() {
             let (qm_in, qm_out) = vent.calculate_flow_from_internal_p(
                 wind_direction,
                 u_site,
                 t_e,
                 t_z,
                 p_z_ref,
-                self.f_cross,
-                self.shield_class,
+                f_cross,
+                shield_class,
                 r_v_arg,
             )?;
             qm_in_through_vents += qm_in;
             qm_out_through_vents += qm_out;
         }
 
-        for leak in &self.leaks {
+        for leak in leaks.as_ref().iter() {
             let (qm_in, qm_out) = leak.calculate_flow_from_internal_p(
                 u_site,
                 t_e,
                 t_z,
                 p_z_ref,
-                self.f_cross,
-                self.shield_class,
+                f_cross,
+                shield_class,
             );
             qm_in_through_leaks += qm_in;
             qm_out_through_leaks += qm_out;
@@ -2280,24 +2425,24 @@ impl InfiltrationVentilation {
         //     qm_out_through_passive_hybrid_ducts += qm_out_through_phds;
         // }
 
-        for combustion_appliance in &self.combustion_appliances {
+        for combustion_appliance in combustion_appliances.iter() {
             let p_h_fi = 0.; // TODO (from Python) to work out from previous zone temperature? - Combustion appliance heating fuel input power
             let f_op_comb = 1.; // TODO (from Python) work out what turns the appliance on or off. Schedule or Logic?
             let (qv_in, qv_out) =
                 combustion_appliance.calculate_air_flow_req_for_comb_appliance(f_op_comb, p_h_fi);
             let (qm_in_comb, qm_out_comb) =
-                convert_to_mass_air_flow_rate(qv_in, qv_out, t_e, t_z, self.p_a_alt);
+                convert_to_mass_air_flow_rate(qv_in, qv_out, t_e, t_z, p_a_alt);
             qm_in_through_comb += qm_in_comb;
             qm_out_through_comb += qm_out_comb;
         }
 
-        for mech_vent in &self.mech_vents {
+        for mech_vent in mech_vents.as_ref().iter() {
             let (qm_sup, qm_eta, qm_in_effective_heat_recovery_saving) = mech_vent
                 .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
                     u_site,
                     wind_direction,
-                    self.f_cross,
-                    self.shield_class,
+                    f_cross,
+                    shield_class,
                     t_z,
                     t_e,
                     p_z_ref,
@@ -2323,39 +2468,37 @@ impl InfiltrationVentilation {
             + qm_eta_from_vent_zone;
 
         // Output detailed ventilation file
-        if self.detailed_output_heating_cooling {
+        if detailed_output_heating_cooling {
             if let Some(reporting_flag) = reporting_flag {
                 let incoming_air_flow =
-                    convert_mass_flow_rate_to_volume_flow_rate(qm_in, t_e, self.p_a_alt);
-                let air_changes_per_hour = incoming_air_flow / self.total_volume;
+                    convert_mass_flow_rate_to_volume_flow_rate(qm_in, t_e, p_a_alt);
+                let air_changes_per_hour = incoming_air_flow / total_volume;
 
-                self.detailed_results
-                    .write()
-                    .push(VentilationDetailedResult {
-                        timestep_index: simtime.index,
-                        reporting_flag,
-                        r_v_arg,
-                        incoming_air_flow,
-                        total_volume: self.total_volume,
-                        air_changes_per_hour,
-                        temp_interior_air,
-                        p_z_ref,
-                        qm_in_through_window_opening,
-                        qm_out_through_window_opening,
-                        qm_in_through_vents,
-                        qm_out_through_vents,
-                        qm_in_through_leaks,
-                        qm_out_through_leaks,
-                        qm_in_through_comb,
-                        qm_out_through_comb,
-                        qm_in_through_passive_hybrid_ducts,
-                        qm_out_through_passive_hybrid_ducts,
-                        qm_sup_to_vent_zone,
-                        qm_eta_from_vent_zone,
-                        qm_in_effective_heat_recovery_saving_total,
-                        qm_in,
-                        qm_out,
-                    });
+                detailed_results.write().push(VentilationDetailedResult {
+                    timestep_index: simtime.index,
+                    reporting_flag,
+                    r_v_arg,
+                    incoming_air_flow,
+                    total_volume: total_volume,
+                    air_changes_per_hour,
+                    temp_interior_air,
+                    p_z_ref,
+                    qm_in_through_window_opening,
+                    qm_out_through_window_opening,
+                    qm_in_through_vents,
+                    qm_out_through_vents,
+                    qm_in_through_leaks,
+                    qm_out_through_leaks,
+                    qm_in_through_comb,
+                    qm_out_through_comb,
+                    qm_in_through_passive_hybrid_ducts,
+                    qm_out_through_passive_hybrid_ducts,
+                    qm_sup_to_vent_zone,
+                    qm_eta_from_vent_zone,
+                    qm_in_effective_heat_recovery_saving_total,
+                    qm_in,
+                    qm_out,
+                });
             }
         }
 
@@ -2385,7 +2528,7 @@ impl InfiltrationVentilation {
             // if there is an override implementation for calculating air changes per hour, use that
             if let Some(calc_ach_fn) = self.calc_air_changes_fn {
                 return calc_ach_fn(
-                    self,
+                    VentilationFieldsForSolvers::from(self),
                     wind_speed,
                     wind_direction,
                     temp_interior_air,
@@ -2426,6 +2569,70 @@ impl InfiltrationVentilation {
         Ok(incoming_air_flow / self.total_volume)
     }
 
+    fn calc_air_changes_per_hour_pure(
+        owned_ventilation_fields: VentilationFieldsForSolvers,
+        wind_speed: f64,
+        wind_direction: Orientation360,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
+        r_v_arg: f64,
+        r_w_arg: Option<f64>,
+        initial_p_z_ref_guess: f64,
+        reporting_flag: Option<ReportingFlag>,
+        report_effective_flow_rate: Option<bool>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let report_effective_flow_rate = report_effective_flow_rate.unwrap_or(false);
+        #[cfg(test)]
+        {
+            // if there is an override implementation for calculating air changes per hour, use that
+            if let Some(calc_ach_fn) = owned_ventilation_fields.calc_air_changes_fn {
+                return calc_ach_fn(
+                    owned_ventilation_fields.clone(),
+                    wind_speed,
+                    wind_direction,
+                    temp_interior_air,
+                    temp_exterior_air,
+                    r_v_arg,
+                    r_w_arg,
+                    initial_p_z_ref_guess,
+                    reporting_flag,
+                    simtime,
+                );
+            }
+        }
+
+        let internal_reference_pressure = Self::calculate_internal_reference_pressure_pure(
+            owned_ventilation_fields.clone(),
+            initial_p_z_ref_guess,
+            wind_speed,
+            wind_direction,
+            temp_interior_air,
+            temp_exterior_air,
+            r_v_arg,
+            r_w_arg,
+            simtime,
+        )?;
+
+        let incoming_air_flow = Self::incoming_air_flow_pure(
+            owned_ventilation_fields.clone(),
+            internal_reference_pressure,
+            wind_speed,
+            wind_direction,
+            temp_interior_air,
+            temp_exterior_air,
+            r_v_arg,
+            r_w_arg,
+            reporting_flag,
+            report_effective_flow_rate.into(),
+            simtime,
+        )?;
+
+        let VentilationFieldsForSolvers { total_volume, .. } = owned_ventilation_fields;
+
+        Ok(incoming_air_flow / total_volume)
+    }
+
     /// Calculates the difference between the target air changes per hour (ACH) and the current ACH.
     ///
     /// Arguments:
@@ -2456,7 +2663,36 @@ impl InfiltrationVentilation {
         reporting_flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let ach = self.calc_air_changes_per_hour(
+        Self::calc_diff_ach_target_pure(
+            VentilationFieldsForSolvers::from(self),
+            r_v_arg,
+            wind_speed,
+            wind_direction,
+            temp_interior_air,
+            temp_exterior_air,
+            ach_target,
+            r_w_arg,
+            initial_p_z_ref_guess,
+            reporting_flag,
+            simtime,
+        )
+    }
+
+    fn calc_diff_ach_target_pure(
+        owned_ventilation_fields: VentilationFieldsForSolvers,
+        r_v_arg: f64,
+        wind_speed: f64,
+        wind_direction: Orientation360,
+        temp_interior_air: f64,
+        temp_exterior_air: f64,
+        ach_target: f64,
+        r_w_arg: Option<f64>,
+        initial_p_z_ref_guess: f64,
+        reporting_flag: Option<ReportingFlag>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let ach = Self::calc_air_changes_per_hour_pure(
+            owned_ventilation_fields,
             wind_speed,
             wind_direction,
             temp_interior_air,
@@ -2591,27 +2827,42 @@ impl InfiltrationVentilation {
             None => return Ok(initial_r_v_arg),
         };
 
-        // With ach_target set to either ach_min or ach_max, run a Brent search (as equivalent of the minimize_scalar solver in Python)
-        let cost = FindRVArgProblem {
-            infiltration_ventilation: self,
-            wind_speed,
-            wind_direction,
-            temp_interior_air,
-            temp_exterior_air,
-            ach_target,
-            r_w_arg,
-            initial_p_z_ref_guess,
-            reporting_flag,
-            simtime,
-        };
-        let solver = BrentRoot::new(0., 1., 1e-10);
+        let ventilation_fields = VentilationFieldsForSolvers::from(self);
 
-        let optimization = Executor::new(cost, solver).run()?;
+        let root_func = RootFunction::new(move |r_v_arg| {
+            Self::calc_diff_ach_target_pure(
+                ventilation_fields.clone(),
+                r_v_arg,
+                wind_speed,
+                wind_direction,
+                temp_interior_air,
+                temp_exterior_air,
+                ach_target,
+                r_w_arg,
+                initial_p_z_ref_guess,
+                reporting_flag,
+                simtime,
+            )
+        });
 
-        optimization
-            .state()
-            .best_param
-            .ok_or_else(|| anyhow!("No best param available in solver result"))
+        // With ach_target set to either ach_min or ach_max, run the minimize_scalar solver
+        let result_x: f64 = Python::attach(|py| {
+            let optimize = py.import("scipy.optimize")?;
+            let minimize_scalar = optimize.getattr("minimize_scalar")?;
+
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("bounds", (0., 1.))?;
+            kwargs.set_item("method", "bounded")?;
+            kwargs.set_item("options", [("xatol", 1e-10)].into_py_dict(py)?)?;
+
+            minimize_scalar
+                .call((root_func,), Some(&kwargs))?
+                .getattr("x")?
+                .extract::<f64>()
+        })
+        .map_err(|e| anyhow!(e))?;
+
+        Ok(0.0f64.max(1.0f64.min(result_x)))
     }
 
     pub(crate) fn calc_internal_gains_ductwork(
@@ -2635,7 +2886,7 @@ impl InfiltrationVentilation {
     ) -> anyhow::Result<Self> {
         let ventilation_zone_base_height = input.ventilation_zone_base_height;
 
-        let windows = zones
+        let windows: Vec<Window> = zones
             .values()
             .flat_map(|zone| zone.building_elements.values())
             .map(|building_element| {
@@ -2678,6 +2929,7 @@ impl InfiltrationVentilation {
             .filter_map(|x| x.ok())
             .flatten()
             .try_collect()?;
+        let windows = Arc::new(windows);
 
         let (pitches, areas): (Vec<f64>, Vec<f64>) = zones
             .values()
@@ -2752,7 +3004,8 @@ impl InfiltrationVentilation {
                     ventilation_zone_base_height,
                 )
             })
-            .collect();
+            .collect_vec()
+            .into();
 
         let leaks = CompletedVentilationLeaks::complete_input(
             input,
@@ -2760,7 +3013,7 @@ impl InfiltrationVentilation {
             surface_area_roof,
         );
 
-        let combustion_appliances = vec![];
+        let combustion_appliances = Arc::new(vec![]);
         // there is no combustion appliances field defined in the Python input file for 0.36+
         // let combustion_appliances = input
         //     .combustion_appliances
@@ -2778,7 +3031,7 @@ impl InfiltrationVentilation {
         // (unfinished in upstream Python)
         let atds = Default::default();
 
-        let mut mechanical_ventilations: Vec<Arc<MechanicalVentilation>> = Default::default();
+        let mut mechanical_ventilations: Vec<MechanicalVentilation> = Default::default();
 
         for (mech_vents_name, mech_vents_data) in input.mechanical_ventilation.iter() {
             // Assign the appropriate control object
@@ -2879,7 +3132,7 @@ impl InfiltrationVentilation {
                     None
                 };
 
-            mechanical_ventilations.push(Arc::new(MechanicalVentilation::new(
+            mechanical_ventilations.push(MechanicalVentilation::new(
                 mech_vents_data.supply_air_flow_rate_control,
                 mech_vents_data.supply_air_temperature_control_type,
                 0.,
@@ -2916,8 +3169,10 @@ impl InfiltrationVentilation {
                 } else {
                     None
                 },
-            )));
+            ));
         }
+
+        let mechanical_ventilations = Arc::new(mechanical_ventilations);
 
         Ok(InfiltrationVentilation::new(
             input.cross_vent_possible,
@@ -2938,75 +3193,8 @@ impl InfiltrationVentilation {
     }
 }
 
-struct FindRVArgProblem<'a> {
-    infiltration_ventilation: &'a InfiltrationVentilation,
-    wind_speed: f64,
-    wind_direction: Orientation360,
-    temp_interior_air: f64,
-    temp_exterior_air: f64,
-    ach_target: f64,
-    r_w_arg: Option<f64>,
-    initial_p_z_ref_guess: f64,
-    reporting_flag: Option<ReportingFlag>,
-    simtime: SimulationTimeIteration,
-}
-
-impl CostFunction for FindRVArgProblem<'_> {
-    type Param = f64;
-    type Output = f64;
-
-    fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
-        InfiltrationVentilation::calc_diff_ach_target(
-            self.infiltration_ventilation,
-            *param,
-            self.wind_speed,
-            self.wind_direction,
-            self.temp_interior_air,
-            self.temp_exterior_air,
-            self.ach_target,
-            self.r_w_arg,
-            self.initial_p_z_ref_guess,
-            self.reporting_flag,
-            self.simtime,
-        )
-    }
-}
-
-struct ImplicitMassBalanceProblem<'a> {
-    wind_speed: f64,
-    wind_direction: Orientation360,
-    temp_interior_air: f64,
-    temp_exterior_air: f64,
-    r_v_arg: f64,
-    r_w_arg: Option<f64>,
-    simtime: SimulationTimeIteration,
-    infiltration_ventilation: &'a InfiltrationVentilation,
-}
-
-impl CostFunction for ImplicitMassBalanceProblem<'_> {
-    type Param = f64;
-    type Output = f64;
-
-    fn cost(&self, p_z_ref: &Self::Param) -> Result<Self::Output, Error> {
-        let cost = self
-            .infiltration_ventilation
-            .implicit_mass_balance_for_internal_reference_pressure(
-                *p_z_ref,
-                self.wind_speed,
-                self.wind_direction,
-                self.temp_interior_air,
-                self.temp_exterior_air,
-                self.r_v_arg,
-                self.r_w_arg,
-                None,
-                self.simtime,
-            )?;
-        Ok(cost)
-    }
-}
-
 fn root_scalar_for_implicit_mass_balance(
-    infiltration_ventilation: &InfiltrationVentilation,
+    infiltration_ventilation_fields: VentilationFieldsForSolvers,
     wind_speed: f64,
     wind_direction: Orientation360,
     temp_interior_air: f64,
@@ -3015,34 +3203,105 @@ fn root_scalar_for_implicit_mass_balance(
     r_w_arg: Option<f64>,
     simtime: SimulationTimeIteration,
     bracket: (f64, f64),
-) -> Result<f64, &'static str> {
-    let problem = ImplicitMassBalanceProblem {
-        wind_speed,
-        wind_direction,
-        temp_interior_air,
-        temp_exterior_air,
-        r_v_arg,
-        r_w_arg,
-        simtime,
-        infiltration_ventilation,
-    };
+) -> anyhow::Result<f64> {
+    let root_func = RootFunction::new(move |p_z_ref| {
+        InfiltrationVentilation::implicit_mass_balance_for_internal_reference_pressure_pure(
+            infiltration_ventilation_fields.clone(),
+            p_z_ref,
+            wind_speed,
+            wind_direction,
+            temp_interior_air,
+            temp_exterior_air,
+            r_v_arg,
+            r_w_arg,
+            None,
+            simtime,
+        )
+    });
 
-    let tol = 0.;
+    Python::attach(move |py| {
+        let optimize = py.import("scipy.optimize")?;
+        let root_scalar = optimize.getattr("root_scalar")?;
 
-    let (min, max) = bracket;
-    let solver = BrentRoot::new(min, max, tol);
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("method", "brentq")?;
+        kwargs.set_item("bracket", bracket)?;
 
-    let executor = Executor::new(problem, solver);
-    let res = executor.run();
+        root_scalar
+            .call((root_func,), Some(&kwargs))?
+            .getattr("root")?
+            .extract::<f64>()
+    })
+    .map_err(|e| anyhow!(e))
+}
 
-    let best_p_z_ref = match res {
-        Ok(res) => res.state().best_param,
-        Err(_) => return Err("Error calculating root for implicit mass balance"),
-    };
+#[pyclass]
+struct RootFunction {
+    inner: Box<dyn Fn(f64) -> anyhow::Result<f64> + Send + Sync>,
+    last_error: Arc<Mutex<Option<anyhow::Error>>>,
+}
 
-    match best_p_z_ref {
-        Some(p_z_ref) => Ok(p_z_ref),
-        None => Err("No best_param in result"),
+#[pymethods]
+impl RootFunction {
+    #[pyo3(signature = (arg, /))]
+    fn __call__(&self, arg: f64) -> PyResult<f64> {
+        // Execute the boxed closure
+        match (self.inner)(arg) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                let msg = format!("{e:#}");
+                *self.last_error.lock() = Some(e);
+                Err(PyRuntimeError::new_err(msg))
+            }
+        }
+    }
+}
+
+impl RootFunction {
+    fn new(func: impl Fn(f64) -> anyhow::Result<f64> + Send + Sync + 'static) -> Self {
+        Self {
+            inner: Box::new(func),
+            last_error: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct VentilationFieldsForSolvers {
+    c_rgh_site: f64,
+    windows: Arc<Vec<Window>>,
+    vents: Arc<Vec<Vent>>,
+    leaks: Arc<Vec<Leaks>>,
+    combustion_appliances: Arc<Vec<CombustionAppliances>>,
+    mech_vents: Arc<Vec<MechanicalVentilation>>,
+    f_cross: bool,
+    shield_class: VentilationShieldClass,
+    p_a_alt: f64,
+    total_volume: f64,
+    detailed_output_heating_cooling: bool,
+    detailed_results: Arc<RwLock<Vec<VentilationDetailedResult>>>,
+    #[cfg(test)] // optional behaviour override for tests, akin to mocking
+    calc_air_changes_fn: Option<CalcAirChangesFn>,
+}
+
+impl From<&InfiltrationVentilation> for VentilationFieldsForSolvers {
+    fn from(value: &InfiltrationVentilation) -> Self {
+        Self {
+            c_rgh_site: value.c_rgh_site,
+            windows: value.windows.clone(),
+            vents: value.vents.clone(),
+            leaks: value.leaks.clone(),
+            combustion_appliances: value.combustion_appliances.clone(),
+            mech_vents: value.mech_vents.clone(),
+            f_cross: value.f_cross,
+            shield_class: value.shield_class,
+            p_a_alt: value.p_a_alt,
+            total_volume: value.total_volume,
+            detailed_output_heating_cooling: value.detailed_output_heating_cooling,
+            detailed_results: value.detailed_results.clone(),
+            #[cfg(test)]
+            calc_air_changes_fn: value.calc_air_changes_fn,
+        }
     }
 }
 
@@ -3142,6 +3401,7 @@ pub struct InternalReferencePressureCalculationError {
     initial_p_z_ref_guess: f64,
     temp_interior_air: f64,
     r_w_arg: Option<f64>,
+    original: Option<Box<dyn Error + Send + Sync + 'static>>,
 }
 
 #[cfg(test)]
@@ -5077,17 +5337,17 @@ mod tests {
                 MVHRLocation::Inside.into(),
                 mvhr_ductwork.into(),
             );
-            let mechanical_ventilations = vec![Arc::new(mechanical_ventilation)];
+            let mechanical_ventilations = Arc::new(vec![mechanical_ventilation]);
 
             InfiltrationVentilation::new(
                 true,
                 VentilationShieldClass::Open,
                 &TerrainClass::OpenField,
                 20.0,
-                windows,
-                vents,
+                windows.into(),
+                vents.into(),
                 leaks,
-                combustion_appliances_list,
+                combustion_appliances_list.into(),
                 air_terminal_devices,
                 mechanical_ventilations,
                 false,

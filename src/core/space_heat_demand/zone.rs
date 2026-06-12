@@ -1777,6 +1777,7 @@ mod tests {
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
     use indexmap::IndexMap;
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
 
@@ -2171,12 +2172,12 @@ mod tests {
             VentilationShieldClass::Normal,
             &TerrainClass::OpenField,
             20.0,
-            windows.into_values().collect(),
-            vents.into_values().collect(),
+            windows.into_values().collect_vec().into(),
+            vents.into_values().collect_vec().into(),
             leaks,
+            vec![].into(),
             vec![],
-            vec![],
-            vec![],
+            vec![].into(),
             false,
             30.0,
             250.0,
