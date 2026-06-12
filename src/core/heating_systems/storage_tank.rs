@@ -1,4 +1,6 @@
 use crate::compare_floats::{max_of_2, min_of_2};
+#[cfg(test)]
+use crate::core::common::MockWaterSupply;
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
@@ -496,7 +498,7 @@ impl StorageTank {
         let mut remaining_demanded_volume = hot_volume;
         let mut energy_withdrawn = 0.;
 
-        let cold_water_source = &self.cold_feed;
+        let cold_water_source = &self.cold_feed.ultimate_cold_water_source();
 
         let mut temp_average_drawoff_volweighted: f64 =
             self.temp_average_drawoff_volweighted.load(Ordering::SeqCst);
@@ -3298,6 +3300,19 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
 
     fn is_point_of_use(&self) -> bool {
         false
+    }
+}
+
+impl HotWaterStorageTank {
+    pub(crate) fn ultimate_cold_water_source(&self) -> WaterSupply {
+        match self {
+            HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().cold_feed.clone(),
+            HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
+                rw_lock.read().storage_tank.cold_feed.clone()
+            }
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(_) => WaterSupply::Mock(MockWaterSupply::default()),
+        }
     }
 }
 

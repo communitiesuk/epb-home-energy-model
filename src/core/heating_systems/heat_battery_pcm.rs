@@ -4193,7 +4193,7 @@ mod tests {
             }
         }
 
-        #[derive(Default)]
+        #[derive(Default, Clone)]
         struct VaryingTempWaterSupply {
             volumes_passed_to_draw_off_hot_water: Arc<RwLock<Vec<f64>>>,
         }
