@@ -523,7 +523,7 @@ impl DomesticHotWaterDemand {
 
                         let func = move |volume_required: f64| -> anyhow::Result<f64> {
                             self.temp_hot_water(
-                                &hot_water_source,
+                                hot_water_source,
                                 volume_required_already,
                                 volume_required,
                                 simtime,
@@ -615,7 +615,7 @@ impl DomesticHotWaterDemand {
                             *hw_demand_volume.get(&hot_water_source_name).unwrap();
                         let volume_required = volume_hot_water_left;
                         let temperature_pipe_flush = self.temp_hot_water(
-                            &hot_water_source,
+                            hot_water_source,
                             volume_required_already,
                             volume_required,
                             simtime,
