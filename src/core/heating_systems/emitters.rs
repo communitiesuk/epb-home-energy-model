@@ -1671,8 +1671,7 @@ impl Emitters {
                         temp_return_target,
                         self_ref.bypass_fraction_recirculated,
                     );
-                    temp_return_target =
-                        temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
+                    temp_return_target -= (blended_temp_flow_target - temp_flow_target).abs();
                     return Ok((temp_return_target, blended_temp_flow_target, flow_rate_m3s));
                 }
 
@@ -1727,8 +1726,7 @@ impl Emitters {
             temp_return_target,
             self_ref.bypass_fraction_recirculated,
         );
-        temp_return_target =
-            temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
+        temp_return_target -= (blended_temp_flow_target - temp_flow_target).abs();
 
         if self_ref.bypass_fraction_recirculated > 0. {
             // Loop again but this time using blended temp and initial reduced return temp.

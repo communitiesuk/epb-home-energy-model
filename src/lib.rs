@@ -41,6 +41,7 @@ use erased_serde::Serialize as ErasedSerialize;
 use hem_core::external_conditions;
 use hem_core::simulation_time;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use jsonschema::Validator;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
@@ -675,7 +676,7 @@ fn write_core_output_file(
                 .collect(),
         );
 
-        writer.write_record(row.iter().map(StringOrNumber::as_bytes))?;
+        writer.write_record(format_row(&row)?)?;
     }
 
     Ok(())
@@ -777,12 +778,12 @@ fn write_core_output_file_summary(
     writer.write_record([
         "Space heat demand".to_string(),
         "kWh/m2".to_string(),
-        output.summary.space_heat_demand_by_floor_area().to_string(),
+        format_value(&output.summary.space_heat_demand_by_floor_area().into())?,
     ])?;
     writer.write_record([
         "Space cool demand".to_string(),
         "kWh/m2".to_string(),
-        output.summary.space_cool_demand_by_floor_area().to_string(),
+        format_value(&output.summary.space_cool_demand_by_floor_area().into())?,
     ])?;
     writer.write_record(&blank_line)?;
     writer.write_record(["Energy Supply Summary"])?;
@@ -791,11 +792,11 @@ fn write_core_output_file_summary(
     let peak_consumption = &output.summary.electricity_peak_consumption;
     writer.write_record([
         "Peak consumption (electricity)".to_string(),
-        peak_consumption.peak.to_string(),
+        format_value(&peak_consumption.peak.into())?,
         peak_consumption.index.to_string(),
         month_name(peak_consumption.month)?.to_string(),
         peak_consumption.day.to_string(),
-        peak_consumption.hour.to_string(),
+        format_value(&peak_consumption.hour.into())?,
     ])?;
     writer.write_record(&blank_line)?;
 
@@ -865,7 +866,7 @@ fn write_core_output_file_summary(
             let value = if field == EnergySupplyStatKey::StorageEfficiency && value.is_nan() {
                 "DIV/0".into()
             } else {
-                value.to_string()
+                format_value(&value.into())?
             };
             row.push(value);
         }
@@ -1340,7 +1341,8 @@ fn write_core_output_file_esh_detailed(
         writer.write_record(headings)?;
         writer.write_record(units_row)?;
         for esh_results in esh_output.values() {
-            writer.serialize(esh_results)?;
+            let row = esh_results.iter().map(StringOrNumber::from).collect_vec();
+            writer.write_record(format_row(&row)?)?;
         }
 
         writer.flush()?;
@@ -1409,7 +1411,7 @@ fn write_core_output_file_ventilation_detailed(
     ])?;
 
     for ventilation_results in vent_output_list.iter() {
-        writer.write_record(ventilation_results.iter().map(StringOrNumber::as_bytes))?;
+        writer.write_record(format_row(ventilation_results)?)?;
     }
 
     Ok(())
@@ -1424,7 +1426,7 @@ fn write_core_output_file_hot_water_source(
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     for hot_water_source_row in hot_water_source_results {
-        writer.write_record(hot_water_source_row.iter().map(StringOrNumber::as_bytes))?;
+        writer.write_record(format_row(hot_water_source_row)?)?;
     }
 
     Ok(())
