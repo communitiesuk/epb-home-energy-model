@@ -3071,7 +3071,6 @@ mod tests {
 
     /// Test HeatBatteryDryCore with multiple services demanding energy
     #[rstest]
-    #[ignore = "will not pass until ode solver code is correct"]
     fn test_heat_battery_dry_core_multiple_services_interaction(
         heat_battery_input: HeatBattery,
         charge_control: Arc<Control>,
