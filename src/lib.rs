@@ -41,6 +41,7 @@ use erased_serde::Serialize as ErasedSerialize;
 use hem_core::external_conditions;
 use hem_core::simulation_time;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use jsonschema::Validator;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
@@ -1340,7 +1341,8 @@ fn write_core_output_file_esh_detailed(
         writer.write_record(headings)?;
         writer.write_record(units_row)?;
         for esh_results in esh_output.values() {
-            writer.serialize(esh_results)?;
+            let row = esh_results.iter().map(StringOrNumber::from).collect_vec();
+            writer.write_record(format_row(&row)?)?;
         }
 
         writer.flush()?;
@@ -1409,7 +1411,7 @@ fn write_core_output_file_ventilation_detailed(
     ])?;
 
     for ventilation_results in vent_output_list.iter() {
-        writer.write_record(ventilation_results.iter().map(StringOrNumber::as_bytes))?;
+        writer.write_record(format_row(ventilation_results)?)?;
     }
 
     Ok(())
@@ -1424,7 +1426,7 @@ fn write_core_output_file_hot_water_source(
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     for hot_water_source_row in hot_water_source_results {
-        writer.write_record(hot_water_source_row.iter().map(StringOrNumber::as_bytes))?;
+        writer.write_record(format_row(hot_water_source_row)?)?;
     }
 
     Ok(())
