@@ -3476,7 +3476,6 @@ mod tests {
 
     /// Test DHW service with cold water temperature that varies with volume demanded
     #[rstest]
-    #[ignore = "likely won't pass until ode solving with stop function is implemented successfully"]
     fn test_demand_hot_water_with_varying_cold_temperatures(
         heat_battery: Arc<HeatBatteryDryCore>,
         simulation_time: SimulationTime,
