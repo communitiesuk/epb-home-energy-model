@@ -18,7 +18,7 @@ mod input_dependency_resolvers;
 pub mod output;
 pub mod output_writer;
 pub mod read_weather_file;
-pub(crate) mod statistics;
+pub mod statistics;
 
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 use crate::corpus::{
