@@ -2397,7 +2397,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "until ode solving code is corrected in heat battery drycore module"]
     fn test_create_service_hot_water_regular(
         heat_battery: Arc<HeatBatteryDryCore>,
         mock_control_dhw_off: Arc<Control>,
@@ -2466,7 +2465,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "will not resolve until ode solving code is corrected in heat battery drycore module"]
     fn test_heat_battery_dhw_temperature_edge_case(
         charge_control: Arc<Control>,
         energy_supply: Arc<RwLock<EnergySupply>>,
@@ -3434,7 +3432,6 @@ mod tests {
 
     // NB. in the Python this test is called test_heat_battery_edge_cases_with_loses (sic)
     #[rstest]
-    #[ignore = "won't quite pass until ode solving with stop function is implemented successfully"]
     fn test_heat_battery_edge_cases_with_losses(
         heat_battery_input: HeatBattery,
         charge_control_target_0: Arc<Control>,
