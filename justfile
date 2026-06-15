@@ -13,9 +13,20 @@ e2e:
 
 IMAGE := "dev"
 
+INPUT_FILE := "examples/input/core/short/demo_hp_buffer_tank_fancoils.json"
+
 # Build the image (cached)
 build:
     docker build -t {{IMAGE}} .
+
+
+run: build
+    docker run --rm -it \
+        -v $(pwd):/app \
+        -w /app \
+        {{IMAGE}} \
+        cargo run --release --features="clap indicatif" -- {{INPUT_FILE}} --detailed-output-heating-cooling --heat-balance -e examples/weather_data/London_weather_EnergyPlus_format.epw
+
 
 docker-unit: build
     docker run --rm -it \
