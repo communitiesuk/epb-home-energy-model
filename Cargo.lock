@@ -2156,27 +2156,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "proc-macro-error-attr2"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96de42df36bb9bba5542fe9f1a054b8cc87e172759a1868aa05c1f3acc89dfc5"
-dependencies = [
- "proc-macro2 1.0.106",
- "quote 1.0.45",
-]
-
-[[package]]
-name = "proc-macro-error2"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11ec05c52be0a07b08061f7dd003e7d7092e0472bc731b4af7bb1ef876109802"
-dependencies = [
- "proc-macro-error-attr2",
- "proc-macro2 1.0.106",
- "quote 1.0.45",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "0.4.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2795,15 +2774,14 @@ dependencies = [
 
 [[package]]
 name = "serde_valid"
-version = "2.0.1"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f42934923d8de725824a50e9ea6a2beb964d354b2665b01812041be35e28fe6e"
+checksum = "14898149f45af618f6150444291e81af5e43a236c881059e6a7964863df15bfa"
 dependencies = [
  "indexmap 2.14.0",
  "itertools",
  "num-traits",
  "once_cell",
- "paste",
  "regex",
  "serde",
  "serde_json",
@@ -2815,13 +2793,11 @@ dependencies = [
 
 [[package]]
 name = "serde_valid_derive"
-version = "2.0.1"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e632fc514d779ef03918eb01a99d4d09521454288877d76972b717a08ec9526"
+checksum = "762918719d8704b61b91d606e6c7f370789b0850dc207b4f33b426b0968181e2"
 dependencies = [
  "itertools",
- "paste",
- "proc-macro-error2",
  "proc-macro2 1.0.106",
  "quote 1.0.45",
  "strsim",
@@ -2830,11 +2806,10 @@ dependencies = [
 
 [[package]]
 name = "serde_valid_literal"
-version = "2.0.1"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f9247e440c9daf89d3652e6b4f3756801952dc13761d4c459974ae00c87650e"
+checksum = "430bdea6d307daca078b9635725a0c5e3f7ea3e055531a9dd411eacc6dc9b258"
 dependencies = [
- "paste",
  "regex",
 ]
 
