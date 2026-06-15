@@ -56,6 +56,26 @@ const PASSING_FILES_IN_MAIN: [&str; 37] = [
     "demo_24hrs_January_point_of_use.json",
 ];
 
+const PASSING_FILES_IN_USE_PYTHON: [&str; 17] = [
+    "demo_hp_smart_hot_water_tank.json",
+    "demo_hp_default_to_max.json",
+    "demo_combiBoiler.json",
+    "demo_hp_buffer_tank.json",
+    "demo_hp_ufh.json",
+    "demo_hp_with_setback_separate_ieh_same_setpoint.json",
+    "demo_24hrs_August_WWHRS.json",
+    "demo_hp_with_setback.json",
+    "emo_hp_with_setback_separate_ieh_diff_setpoint.json",
+    "demo_emitter_pipework.json",
+    "demo_hp_surfacewater.json",
+    "demo_hp_bypass.json",
+    "demo_eahp_mixed.json",
+    "demo_hp_with_advancedstart.json",
+    "demo_heat_network_5G.json",
+    "demo_eahp_single_zone.json",
+    "demo_eahp.json",
+];
+
 #[fixture]
 fn files() -> Vec<DirEntry> {
     WalkDir::new("./examples/input/core")
@@ -65,6 +85,7 @@ fn files() -> Vec<DirEntry> {
             !e.file_type().is_dir()
                 && e.file_name().to_str().unwrap().ends_with("json")
                 && !PASSING_FILES_IN_MAIN.contains(&e.file_name().to_str().unwrap())
+                && !PASSING_FILES_IN_USE_PYTHON.contains(&e.file_name().to_str().unwrap())
                 && !e
                     .path()
                     .parent()

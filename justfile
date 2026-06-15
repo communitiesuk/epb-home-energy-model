@@ -19,6 +19,8 @@ build:
 
 docker-unit: build
     docker run --rm -it \
+        --memory=16g \
+        --memory-swap=16g \
         -v $(pwd):/app \
         -w /app \
         {{IMAGE}} \
@@ -26,6 +28,8 @@ docker-unit: build
 
 docker-e2e: build
     docker run --rm -it \
+        --memory=16g \
+        --memory-swap=16g \
         -v $(pwd):/app \
         -w /app \
         {{IMAGE}} \
@@ -40,5 +44,8 @@ docker-test: build
 
 # Remove local Rust build artifacts + Docker leftovers
 clean:
-    rm -rf target
+    cargo clean
+    docker system prune -f
+
+prune:
     docker system prune -f
