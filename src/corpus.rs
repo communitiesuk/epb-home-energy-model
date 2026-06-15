@@ -5053,7 +5053,7 @@ pub trait HotWaterSourceBehaviour: std::fmt::Debug {
 impl HotWaterSourceBehaviour for HotWaterSource {
     fn get_cold_water_source(&self) -> WaterSupply {
         match self {
-            HotWaterSource::PreHeated(source) => source.get_cold_water_source(),
+            HotWaterSource::PreHeated(source) => source.ultimate_cold_water_source(),
             HotWaterSource::CombiBoiler(source) => source.get_cold_water_source().clone(),
             HotWaterSource::PointOfUse(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),

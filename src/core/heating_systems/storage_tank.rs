@@ -3306,9 +3306,21 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
 impl HotWaterStorageTank {
     pub(crate) fn ultimate_cold_water_source(&self) -> WaterSupply {
         match self {
-            HotWaterStorageTank::StorageTank(rw_lock) => rw_lock.read().cold_feed.clone(),
+            HotWaterStorageTank::StorageTank(rw_lock) => {
+                let cold_feed = rw_lock.read().cold_feed.clone();
+                if let WaterSupply::Preheated(tank) = cold_feed {
+                    tank.ultimate_cold_water_source()
+                } else {
+                    cold_feed
+                }
+            }
             HotWaterStorageTank::SmartHotWaterTank(rw_lock) => {
-                rw_lock.read().storage_tank.cold_feed.clone()
+                let cold_feed = rw_lock.read().storage_tank.cold_feed.clone().clone();
+                if let WaterSupply::Preheated(tank) = cold_feed {
+                    tank.ultimate_cold_water_source()
+                } else {
+                    cold_feed
+                }
             }
             #[cfg(test)]
             HotWaterStorageTank::Mock(_) => WaterSupply::Mock(MockWaterSupply::default()),

@@ -736,8 +736,6 @@ impl DomesticHotWaterDemand {
 
             // Convert from litres to kWh
             // Find underlying cold water source, ignoring pre-heat tanks
-
-            // NOTE - Python has some logic here to find a cold water source - assumption is that we don't need that here
             let cold_water_source = hws.get_cold_water_source();
             hw_energy_demand_at_hot_water_source.insert(hws_name.clone(), 0.);
             for event in &filtered_events {
