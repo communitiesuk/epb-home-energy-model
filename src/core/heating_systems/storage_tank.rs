@@ -240,7 +240,6 @@ impl StorageTank {
                 .sorted_by(|a, b| {
                     OrderedFloat(a.1.heater_position).cmp(&OrderedFloat(b.1.heater_position))
                 })
-                .rev()
                 .map(|x| (x.0.to_owned(), x.1.to_owned()))
                 .collect();
         }
