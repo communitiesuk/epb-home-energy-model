@@ -16,7 +16,7 @@ use std::str::from_utf8;
 use std::sync::Arc;
 use walkdir::{DirEntry, WalkDir};
 
-const PASSING_FILES_IN_MAIN: [&str; 37] = [
+const PASSING_FILES: [&str; 38] = [
     "demo_24hrs_January.json",
     "demo_24hrs_January_ieh.json",
     "demo_24hrs_January_MVHR_external.json",
@@ -54,9 +54,10 @@ const PASSING_FILES_IN_MAIN: [&str; 37] = [
     "demo_FHS_U_values.json",
     "demo_unconditioned.json",
     "demo_24hrs_January_point_of_use.json",
+    "demo_24hrs_August_SolarThermal_to_preheat.json",
 ];
 
-const PASSING_FILES_IN_USE_PYTHON: [&str; 17] = [
+const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 22] = [
     "demo_hp_smart_hot_water_tank.json",
     "demo_hp_default_to_max.json",
     "demo_combiBoiler.json",
@@ -65,7 +66,7 @@ const PASSING_FILES_IN_USE_PYTHON: [&str; 17] = [
     "demo_hp_with_setback_separate_ieh_same_setpoint.json",
     "demo_24hrs_August_WWHRS.json",
     "demo_hp_with_setback.json",
-    "emo_hp_with_setback_separate_ieh_diff_setpoint.json",
+    "demo_hp_with_setback_separate_ieh_diff_setpoint.json",
     "demo_emitter_pipework.json",
     "demo_hp_surfacewater.json",
     "demo_hp_bypass.json",
@@ -74,6 +75,64 @@ const PASSING_FILES_IN_USE_PYTHON: [&str; 17] = [
     "demo_heat_network_5G.json",
     "demo_eahp_single_zone.json",
     "demo_eahp.json",
+    "demo_24hrs_January_esh_automatic.json",
+    "demo_24hrs_January_esh_celect.json",
+    "demo_heat_battery_space_heat.json",
+    "demo_24hrs_January_esh_hhrsh.json",
+    "demo_24hrs_January_esh_manual.json",
+];
+
+const NON_PASSING_FILES: [&str; 50] = [
+    "demo_hp_buffer_tank_fancoils.json",
+    "demo_168hrs_heat_battery.json",
+    "demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry.json",
+    "demo_FHS_negative_energy_released_from_emitters.json",
+    "demo_hp_hybrid_combiboiler.json",
+    "demo_FHS_multiple_intermittent_MEV.json",
+    "demo_heat_battery_drycore_all.json",
+    "demo_FHS_hp_with_buffer_tank.json",
+    "demo_hp_no_buffer_tank_fancoils.json",
+    "demo_heat_network_storage_tank.json",
+    "demo_hp_primary_pipework.json",
+    "demo_24hrs_August_pvdiverter_and_hp.json",
+    "demo_FHS_battery_no_scope_for_charging.json",
+    "demo_FHS_heating_system_priority.json",
+    "demo_24hrs_January_ieh_6_1kW.json",
+    "demo_hp_hybrid_regularboiler.json",
+    "demo_FHS_bottomup.json",
+    "demo_FHS_hp_use_backup_heater_only.json",
+    "demo_168hrs_heat_battery_charge_calc_time_3.json",
+    "demo_two_storage_tanks_cold_source.json",
+    "demo_3tanks_3hps.json",
+    "demo_FHS_bath_no_demand.json",
+    "demo_FHS_heat_battery.json",
+    "demo_hp_no_variable_flow.json",
+    "demo_168hrs_loadshifting_appliances_2_controls.json",
+    "demo_heat_battery_charge_level.json",
+    "demo_FHS_battery_capacity_reduction_due_to_temp.json",
+    "demo_heat_network.json",
+    "demo_hp_fancoils_pipework.json",
+    "demo_multiple_heat_source.json",
+    "demo_FHS_battery_zero_time_charging_current_load.json",
+    "demo_FHS_with_setback.json",
+    "demo_FHS_point_of_use_water_heating.json",
+    "demo_regularBoiler.json",
+    "demo_FHS_battery_below_minimum_charge_rate.json",
+    "demo_24hrs_August_pvdiverter_and_hp_smart_hot_water.json",
+    "demo_hp.json",
+    "demo_FHS_cooling_demand_beyond_free_ventilation.json",
+    "demo_heat_battery_water_only.json",
+    "demo_FHS_smart_hot_water_tank.json",
+    "demo_FHS.json",
+    "demo_heat_battery_all.json",
+    "demo_168hrs_heat_battery_charge_calc_time_18.json",
+    "demo_FHS_hp_temp_output_over_upper_limit.json",
+    "demo_FHS_emitters_outside_temp_over_maximum.json",
+    "demo_FHS_hp_with_advancedstart.json",
+    "demo_hp_fancoils.json",
+    "demo_combiBoilerLPG.json",
+    "demo_24hrs_August_SolarThermal.json",
+    "demo_FHS_bottomup_loadshifting.json",
 ];
 
 #[fixture]
@@ -84,8 +143,9 @@ fn files() -> Vec<DirEntry> {
         .filter(|e| {
             !e.file_type().is_dir()
                 && e.file_name().to_str().unwrap().ends_with("json")
-                && !PASSING_FILES_IN_MAIN.contains(&e.file_name().to_str().unwrap())
-                && !PASSING_FILES_IN_USE_PYTHON.contains(&e.file_name().to_str().unwrap())
+                && !PASSING_FILES.contains(&e.file_name().to_str().unwrap())
+                && !PASSING_FILES_IN_USE_PYTHON_ONLY.contains(&e.file_name().to_str().unwrap())
+                // && !NON_PASSING_FILES.contains(&e.file_name().to_str().unwrap())
                 && !e
                     .path()
                     .parent()
