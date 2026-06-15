@@ -235,7 +235,7 @@ impl InstantElectricShower {
         let mut volume_warm_water = total_shower_duration * 6.0;
         let mut volume_warm_water_prev = 0.0;
 
-        while !is_close!(volume_warm_water, volume_warm_water_prev, abs_tol = 1e-10) {
+        while !is_close!(volume_warm_water, volume_warm_water_prev, abs_tol = 1e-10, rel_tol = 1e-9) {
             let list_temperature_volume = self
                 .cold_water_source
                 .get_temp_cold_water(volume_warm_water, simtime)?;
