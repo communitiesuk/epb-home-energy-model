@@ -161,7 +161,7 @@ pub(crate) fn volume_hot_water_required<
     let mut volume_hot_water: f64 = Default::default();
     let mut was_in_loop = false;
 
-    while !is_close!(temperature_warm_water, temperature_target, abs_tol = 1e-10) {
+    while !is_close!(temperature_warm_water, temperature_target, abs_tol = 1e-10, rel_tol = 1e-9) {
         was_in_loop = true;
         // Calculate the volume of hot/cold water needed if heating from cold water source
         if temperature_target > temperature_hot_water {
