@@ -4080,9 +4080,8 @@ fn apply_appliance_gains_from_input(
         .sorted_by(|_, details1, _, details2| {
             details1.priority.expect(
                 "All details in the output from check_priority were expected to have a priority.",
-            ).cmp(&details2.priority.expect("All details in the output from check_priority were expected to have a priority."))
+            ).cmp(&details2.priority.expect("All details in the output from check_priority were expected to have a priority.")).reverse()
         })
-        .rev()
         .collect::<IndexMap<_, _>>();
 
     for (name, gains_details) in sorted_input {
