@@ -1263,8 +1263,7 @@ impl Corpus {
         // listed first by the user takes priority
         let h_name_list_sorted: Vec<Arc<str>> = temp_setpnt_heat_system
             .iter()
-            .sorted_by(|a, b| OrderedFloat(*a.1).cmp(&OrderedFloat(*b.1)))
-            .rev()
+            .sorted_by(|a, b| OrderedFloat(*a.1).cmp(&OrderedFloat(*b.1)).reverse())
             .map(|x| x.0.to_owned())
             .collect();
         let c_name_list_sorted: Vec<Arc<str>> = temp_setpnt_cool_system

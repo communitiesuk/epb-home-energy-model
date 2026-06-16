@@ -57,7 +57,7 @@ const PASSING_FILES: [&str; 38] = [
     "demo_24hrs_August_SolarThermal_to_preheat.json",
 ];
 
-const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 23] = [
+const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 24] = [
     "demo_hp_smart_hot_water_tank.json",
     "demo_hp_default_to_max.json",
     "demo_combiBoiler.json",
@@ -81,6 +81,7 @@ const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 23] = [
     "demo_24hrs_January_esh_hhrsh.json",
     "demo_24hrs_January_esh_manual.json",
     "demo_hp_buffer_tank_fancoils.json",
+    "demo_24hrs_August_pvdiverter_and_hp.json"
 ];
 
 const _NON_PASSING_FILES: [&str; 49] = [
