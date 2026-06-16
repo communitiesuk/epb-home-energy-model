@@ -255,7 +255,7 @@ impl StorageTank {
             cold_feed,
             simulation_timestep: simulation_time_iteration.timestep,
             number_of_volumes,
-            temp_flow_prev: Default::default(),
+            temp_flow_prev: AtomicF64::new(f64::NAN), // using NaN to represent None here,
             temp_internal_air_fn,
             external_conditions,
             volume_total_in_litres,
@@ -827,7 +827,7 @@ impl StorageTank {
 
                 let default_temp_flow = self.temp_n.read()[heater_layer];
                 let temp_flow = self
-                    .temp_flow(heat_source, simulation_time)
+                    .temp_flow(heat_source, simulation_time)?
                     .unwrap_or(default_temp_flow);
                 if self.heating_active[heat_source_name].load(Ordering::SeqCst) {
                     // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
@@ -1089,7 +1089,7 @@ impl StorageTank {
         // TODO (from Python):  Critical - temp_flow cannot be None for downstream method calculate_primary_pipework_losses
         // but providing a fallback value will change the e2e test results
         let temp_flow = match smart_hot_water_tank {
-            None => Some(self.temp_flow(heat_source, simulation_time_iteration)?),
+            None => self.temp_flow(heat_source, simulation_time_iteration)?,
             Some(smart_hot_water_tank) => {
                 smart_hot_water_tank.temp_flow(simulation_time_iteration)?
             }
@@ -1202,16 +1202,19 @@ impl StorageTank {
         &self,
         heat_source: &HeatSource,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
+    ) -> anyhow::Result<Option<f64>> {
         let (_, setpntmax) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
 
-        let setpntmax = if let Some(setpntmax) = setpntmax {
-            setpntmax
-        } else {
-            self.temp_flow_prev.load(Ordering::SeqCst)
+        let setpntmax = match setpntmax {
+            Some(setpntmax) => {
+                self.temp_flow_prev.store(setpntmax, Ordering::SeqCst);
+                Some(setpntmax)
+            }
+            None => {
+                let temp_flow_prev = self.temp_flow_prev.load(Ordering::SeqCst);
+                if temp_flow_prev.is_nan() { None } else { Some(temp_flow_prev) }
+            }
         };
-
-        self.temp_flow_prev.store(setpntmax, Ordering::SeqCst);
 
         Ok(setpntmax)
     }
