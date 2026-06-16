@@ -5803,7 +5803,6 @@ fn space_heat_systems_from_input(
                             let energy_supply_name = energy_supply.clone().unwrap();
                             let energy_supply = energy_supplies.get(&energy_supply_name).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply_name}'."))?.clone();
                             let energy_supply_fc_conn_name: Arc<str> = format!("FC_fan {system_name}").into();
-                            energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_fc_conn_name.clone());
                             Some(Arc::new(EnergySupply::connection(energy_supply, energy_supply_fc_conn_name.as_ref()).unwrap()))
                         };
 
