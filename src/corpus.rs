@@ -108,7 +108,7 @@ use atomic_float::AtomicF64;
 use chrono::{prelude::*, TimeDelta};
 use erased_serde::__private::serde::Serializer;
 use fsum::FSum;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 #[cfg(feature = "indicatif")]
 use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
 use itertools::Itertools;
@@ -118,7 +118,6 @@ use serde::{Deserialize, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use smartstring::alias::String;
 use std::borrow::Cow;
-use std::collections::HashSet;
 use std::default::Default;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
@@ -323,14 +322,14 @@ fn single_control_from_details(
             fn collect_controls(
                 control_combinations: &ControlCombinations,
                 current_key: &str,
-                visited: Option<&mut HashSet<String>>,
+                visited: Option<&mut IndexSet<String>>,
                 control_input: &ControlInput,
                 external_conditions: Arc<ExternalConditions>,
                 simulation_time_iterator: &SimulationTimeIterator,
             ) -> anyhow::Result<IndexMap<String, Arc<Control>>> {
-                let mut empty_set: HashSet<String> = Default::default();
+                let mut empty_set: IndexSet<String> = Default::default();
                 let visited = visited.unwrap_or(&mut empty_set);
-                let mut controls: HashSet<String> = Default::default();
+                let mut controls: IndexSet<String> = Default::default();
 
                 if visited.contains(current_key) {
                     bail!("Error: Circular reference detected involving '{current_key}' in CombinationTimeControl. Exiting program.")
@@ -930,13 +929,13 @@ impl Corpus {
             Default::default();
         let mut hot_water_source_name_for_service: IndexMap<Arc<str>, Arc<str>> =
             Default::default();
-        let mut used_heat_source_names: HashSet<String> = Default::default();
+        let mut used_heat_source_names: IndexSet<String> = Default::default();
 
         // Track pre-heat sources and WWHRS allocated to ensure single allocation only
         // This is required to avoid double-counting of the saving without significant additional
         // book-keeping code or a complete re-conceptualisation of the water heating calculation,
         // to handle an arrangement which is unlikely to occur in practice
-        let mut cold_water_sources_already_allocated: HashSet<String> = Default::default();
+        let mut cold_water_sources_already_allocated: IndexSet<String> = Default::default();
 
         // processing pre-heated sources
         let mut pre_heated_water_sources: IndexMap<String, HotWaterStorageTank> =
@@ -1755,11 +1754,11 @@ impl Corpus {
                 let c_name_list_hashset = c_name_list_sorted_zone[z_name]
                     .iter()
                     .filter(|name| !name.is_empty()) // Ignore the "" placeholder to ensure zones with no system don't trigger the uniqueness error
-                    .collect::<HashSet<_>>();
+                    .collect::<IndexSet<_>>();
                 let h_name_list_hashset = h_name_list_sorted_zone[z_name]
                     .iter()
                     .filter(|name| !name.is_empty()) // Ignore the "" placeholder to ensure zones with no system don't trigger the uniqueness error
-                    .collect::<HashSet<_>>();
+                    .collect::<IndexSet<_>>();
                 let intersection = h_name_list_hashset
                     .intersection(&c_name_list_hashset)
                     .collect::<Vec<_>>();
@@ -3703,12 +3702,13 @@ fn zone_from_input(
     .collect();
 
     for zone_h_name in heat_system_name_for_zone.values() {
-        let zone_h_name_set: HashSet<Arc<str>> = HashSet::from_iter(zone_h_name.iter().cloned());
-        let h_overassigned: Vec<Arc<str>> = HashSet::from_iter(heat_system_names.clone())
-            .intersection(&zone_h_name_set)
-            .filter(|&name| !name.is_empty())
-            .cloned()
-            .collect_vec();
+        let zone_h_name_set: IndexSet<Arc<str>> = IndexSet::from_iter(zone_h_name.iter().cloned());
+        let h_overassigned: Vec<Arc<str>> =
+            IndexSet::<Arc<str>>::from_iter(heat_system_names.clone())
+                .intersection(&zone_h_name_set)
+                .filter(|&name| !name.is_empty())
+                .cloned()
+                .collect_vec();
         if !h_overassigned.is_empty() {
             bail!(
                 "Invalid input: SpaceHeatSystem ({}) has been assigned to more than one Zone",
@@ -3729,12 +3729,13 @@ fn zone_from_input(
     .collect();
 
     for zone_c_name in cool_system_name_for_zone.values() {
-        let zone_c_name_set: HashSet<Arc<str>> = HashSet::from_iter(zone_c_name.iter().cloned());
-        let c_overassigned: Vec<Arc<str>> = HashSet::from_iter(cool_system_names.clone())
-            .intersection(&zone_c_name_set)
-            .filter(|&name| !name.is_empty())
-            .cloned()
-            .collect_vec();
+        let zone_c_name_set: IndexSet<Arc<str>> = IndexSet::from_iter(zone_c_name.iter().cloned());
+        let c_overassigned: Vec<Arc<str>> =
+            IndexSet::<Arc<str>>::from_iter(cool_system_names.clone())
+                .intersection(&zone_c_name_set)
+                .filter(|&name| !name.is_empty())
+                .cloned()
+                .collect_vec();
         if !c_overassigned.is_empty() {
             bail!(
                 "Invalid input: SpaceCoolSystem ({}) has been assigned to more than one Zone",
@@ -5227,8 +5228,8 @@ fn hot_water_source_from_input(
     simulation_time: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
-    used_heat_source_names: &mut HashSet<String>,
-    cold_water_sources_already_allocated: &mut HashSet<String>,
+    used_heat_source_names: &mut IndexSet<String>,
+    cold_water_sources_already_allocated: &mut IndexSet<String>,
 ) -> anyhow::Result<(HotWaterSource, Vec<String>, IndexMap<String, String>)> {
     let mut energy_supply_conn_names = vec![];
     let mut hot_water_source_name_for_service: IndexMap<String, String> = Default::default();
@@ -5236,7 +5237,7 @@ fn hot_water_source_from_input(
 
     let cold_water_source_for_hot_water_tank =
         |cold_water_source_type: &str,
-         cold_water_sources_already_allocated: &mut HashSet<String>|
+         cold_water_sources_already_allocated: &mut IndexSet<String>|
          -> anyhow::Result<WaterSupply> {
             cold_water_sources.get(cold_water_source_type).map(|source| Ok(WaterSupply::ColdWaterSource(source.clone()))).or_else(|| {
                 let source = pre_heated_water_sources
