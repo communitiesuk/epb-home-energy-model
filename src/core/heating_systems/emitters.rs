@@ -1245,6 +1245,7 @@ impl Emitters {
                 self.heat_source.read().energy_output_max(
                     temp_flow_target,
                     temp_return,
+                    Some(time_heating_start),
                     emitters_data_for_buffer_tank,
                     simulation_time,
                 )?
