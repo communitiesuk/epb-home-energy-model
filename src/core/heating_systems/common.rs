@@ -361,6 +361,7 @@ impl SpaceHeatingService {
         &self,
         temp_output: f64,
         temp_return_feed: f64,
+        time_start: Option<f64>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersData>,
         simtime: SimulationTimeIteration,
     ) -> Result<(f64, Option<BufferTankEmittersDataWithResult>), Error> {
@@ -369,7 +370,7 @@ impl SpaceHeatingService {
                 .energy_output_max(
                     temp_output,
                     temp_return_feed,
-                    None,
+                    time_start,
                     emitters_data_for_buffer_tank,
                     simtime,
                 ),
