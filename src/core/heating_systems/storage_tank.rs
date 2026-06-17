@@ -102,7 +102,7 @@ pub struct StorageTank {
     cold_feed: WaterSupply,
     simulation_timestep: f64,
     number_of_volumes: usize,
-    temp_flow_prev: AtomicF64,
+    temp_flow_prev: Arc<RwLock<Option<f64>>>,
     #[derivative(Debug = "ignore")]
     temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
@@ -255,7 +255,7 @@ impl StorageTank {
             cold_feed,
             simulation_timestep: simulation_time_iteration.timestep,
             number_of_volumes,
-            temp_flow_prev: AtomicF64::new(f64::NAN), // using NaN to represent None here,
+            temp_flow_prev: Default::default(),
             temp_internal_air_fn,
             external_conditions,
             volume_total_in_litres,
@@ -1205,16 +1205,11 @@ impl StorageTank {
     ) -> anyhow::Result<Option<f64>> {
         let (_, setpntmax) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
 
-        let setpntmax = match setpntmax {
-            Some(setpntmax) => {
-                self.temp_flow_prev.store(setpntmax, Ordering::SeqCst);
-                Some(setpntmax)
-            }
-            None => {
-                let temp_flow_prev = self.temp_flow_prev.load(Ordering::SeqCst);
-                if temp_flow_prev.is_nan() { None } else { Some(temp_flow_prev) }
-            }
-        };
+        let setpntmax = setpntmax
+            .inspect(|&setpntmax| {
+                *self.temp_flow_prev.write() = Some(setpntmax);
+            })
+            .or_else(|| *self.temp_flow_prev.read());
 
         Ok(setpntmax)
     }
