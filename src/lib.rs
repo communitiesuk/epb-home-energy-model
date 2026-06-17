@@ -68,13 +68,12 @@ pub enum OutputFormat {
 fn format_value(value: &StringOrNumber) -> anyhow::Result<std::string::String> {
     Ok(match value {
         StringOrNumber::Float(f) => {
-            let rounded = if is_close!(*f, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
-                0.
+            if is_close!(*f, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+                "0.0".to_string()
             } else {
                 // Round any floating point numbers to 10 significant figures, like the Python does
-                format!("{:.9e}", f).parse::<f64>()?
-            };
-            rounded.to_string()
+                format!("{:.9e}", f)
+            }
         }
         _ => value.to_string(),
     })
