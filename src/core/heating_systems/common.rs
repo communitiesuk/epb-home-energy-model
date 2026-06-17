@@ -27,6 +27,7 @@ use serde_enum_str::Serialize_enum_str;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize_enum_str)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum HeatingServiceType {
     DomesticHotWaterCombi,
     DomesticHotWaterRegular,
