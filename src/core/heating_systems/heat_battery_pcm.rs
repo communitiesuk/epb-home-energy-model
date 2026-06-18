@@ -382,7 +382,7 @@ struct HeatBatteryResult {
     energy_delivered_total: f64,
     energy_charged_during_service: f64,
     hb_zone_temperatures: Vec<f64>,
-    current_hb_power: f64,
+    current_hb_power: ResultParamValue,
 }
 
 impl HeatBatteryResult {
@@ -403,7 +403,7 @@ impl HeatBatteryResult {
             "energy_delivered_backup" => self.energy_delivered_backup.into(),
             "energy_delivered_total" => self.energy_delivered_total.into(),
             "energy_charged_during_service" => self.energy_charged_during_service.into(),
-            "current_hb_power" => self.current_hb_power.into(),
+            "current_hb_power" => self.current_hb_power.clone(),
             _ => panic!("Unknown parameter: {}", param),
         }
     }
@@ -1546,7 +1546,7 @@ impl HeatBatteryPcm {
                     energy_delivered_total: 0.,
                     energy_charged_during_service: 0.,
                     hb_zone_temperatures: zone_temp_c_dist,
-                    current_hb_power: Default::default(),
+                    current_hb_power: ResultParamValue::Empty,
                 });
             }
             return Ok(0.);
@@ -1684,7 +1684,7 @@ impl HeatBatteryPcm {
                 energy_delivered_total: energy_delivered_hb * self.n_units as f64 + 0.,
                 energy_charged_during_service: energy_charged * self.n_units as f64,
                 hb_zone_temperatures: zone_temp_c_dist,
-                current_hb_power: current_hb_power * self.n_units as f64,
+                current_hb_power: ResultParamValue::Number(current_hb_power * self.n_units as f64),
             });
         }
 
@@ -1778,7 +1778,7 @@ impl HeatBatteryPcm {
                         energy_delivered_total: 0.,
                         energy_charged_during_service: 0.,
                         hb_zone_temperatures: initial_temps.clone(),
-                        current_hb_power: 0.,
+                        current_hb_power: 0.0.into(),
                     });
                 }
             }
