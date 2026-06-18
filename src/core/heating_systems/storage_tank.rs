@@ -2150,7 +2150,7 @@ impl SmartHotWaterTank {
 
         // N.B. we're calling the SmartHotWaterTank specific method here
         self.calc_final_temps(
-            temp_s3_n,
+            &temp_s3_n,
             heat_source,
             q_x_in_n,
             heater_layer,
@@ -2247,6 +2247,54 @@ impl SmartHotWaterTank {
         q_x_in_n[heater_layer] += energy_potential;
 
         Ok(q_x_in_n)
+    }
+
+    fn additional_energy_input(
+        &self,
+        heat_source: &HeatSource,
+        heat_source_name: &str,
+        energy_input: f64,
+        control_max_diverter: Option<&Control>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        // N.B. implementation from StorageTank but calling SmartHotWaterTank specific methods further down
+
+        if is_close!(energy_input, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+            return Ok(0.);
+        }
+
+        let heat_source_data = &self.storage_tank.heat_source_data[heat_source_name];
+
+        let heater_layer = (heat_source_data.heater_position
+            * self.storage_tank.number_of_volumes as f64) as usize;
+
+        let mut q_x_in_n = vec![0.; self.storage_tank.number_of_volumes];
+        q_x_in_n[heater_layer] = energy_input;
+
+        // N.B. we're calling the SmartHotWaterTank specific method here
+        let TemperatureCalculation {
+            temp_s8_n,
+            q_in_h_w,
+            q_ls_n: q_ls_n_this_heat_source,
+            ..
+        } = self.calc_final_temps(
+            &self.storage_tank.temp_n.read(),
+            heat_source,
+            q_x_in_n,
+            heater_layer,
+            &self.storage_tank.q_ls_n_prev_heat_source.read(),
+            control_max_diverter,
+            simulation_time_iteration,
+        )?;
+
+        for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
+            let mut q_ls_n_prev = self.storage_tank.q_ls_n_prev_heat_source.write();
+            q_ls_n_prev[i] += *q_ls_n;
+        }
+
+        *self.storage_tank.temp_n.write() = temp_s8_n;
+
+        Ok(q_in_h_w)
     }
 
     /// Return the DHW recoverable heat losses as internal gain for the current timestep in W
@@ -2517,7 +2565,7 @@ impl SmartHotWaterTank {
 
     fn calc_final_temps(
         &self,
-        temp_s3_n: Vec<f64>,
+        temp_s3_n: &[f64],
         heat_source: &HeatSource,
         q_x_in_n: Vec<f64>,
         heater_layer: usize,
@@ -2530,7 +2578,7 @@ impl SmartHotWaterTank {
         // Tank with energy required for state of charge
         let (energy_req_for_soc, q_in_h_w_n) = self.calculate_energy_for_state_of_charge(
             heat_source,
-            temp_s3_n.as_slice(),
+            temp_s3_n,
             q_x_in_n.as_slice(),
             heater_layer,
             q_ls_n_prev_heat_source,
@@ -2541,7 +2589,7 @@ impl SmartHotWaterTank {
         // Calculate temperatures after energy required to hit state of charge input
         let (q_s6, temp_s6_n) = self
             .storage_tank
-            .calc_temps_with_energy_input(temp_s3_n.as_slice(), &q_in_h_w_n);
+            .calc_temps_with_energy_input(temp_s3_n, &q_in_h_w_n);
 
         // Rearrange tank
         let (_q_h_sto_s7, temp_s7_n) = self.storage_tank.rearrange_temperatures(&temp_s6_n);
@@ -2588,7 +2636,7 @@ impl SmartHotWaterTank {
         // calculate volume pumped using actual heat source output
         let volumes = self.storage_tank.vol_n.clone();
         let volume_pumped = self.bottom_to_top_pump_volume(
-            temp_s3_n.as_slice(),
+            temp_s3_n,
             heat_source_output,
             heater_layer,
             &volumes,
@@ -3388,7 +3436,6 @@ impl SurplusDiverting for PVDiverter {
         let energy_diverted_max = min_of_2(imm_heater_max_capacity_spare, -supply_surplus);
 
         // Add additional energy to storage tank and calculate how much energy was accepted
-
         let energy_diverted = match &self.pre_heated_water_source {
             HotWaterStorageTank::StorageTank(storage_tank) => {
                 storage_tank.read().additional_energy_input(
@@ -3401,10 +3448,8 @@ impl SurplusDiverting for PVDiverter {
                     simulation_time_iteration,
                 )?
             }
-            HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => smart_hot_water_tank
-                .read()
-                .storage_tank
-                .additional_energy_input(
+            HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
+                smart_hot_water_tank.read().additional_energy_input(
                     &HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
                         self.immersion_heater.clone(),
                     )),
@@ -3412,7 +3457,8 @@ impl SurplusDiverting for PVDiverter {
                     energy_diverted_max,
                     self.control_max.as_ref().map(|control| control.as_ref()),
                     simulation_time_iteration,
-                )?,
+                )?
+            }
             #[cfg(test)]
             HotWaterStorageTank::Mock(_source) => 0.,
         };
@@ -6455,7 +6501,7 @@ mod tests {
 
         let actual = smart_hot_water_tank
             .calc_final_temps(
-                temp_s3_n.clone(),
+                &temp_s3_n,
                 heat_source,
                 q_x_in_n.clone(),
                 heater_layer,
@@ -6510,7 +6556,7 @@ mod tests {
 
         let actual = smart_hot_water_tank
             .calc_final_temps(
-                temp_s3_n,
+                &temp_s3_n,
                 heat_source,
                 q_x_in_n,
                 heater_layer,
