@@ -2634,10 +2634,14 @@ impl InfiltrationVentilation {
         controls: &Controls,
     ) -> anyhow::Result<Self> {
         let ventilation_zone_base_height = input.ventilation_zone_base_height;
-
-        let windows = zones
+        // TODO potentially revert back to retaining all windows after checking what the intention is in the upstream python
+        let unique_building_elements: IndexMap<std::string::String, BuildingElement> = zones
             .values()
-            .flat_map(|zone| zone.building_elements.values())
+            .flat_map(|zone| zone.building_elements.clone())
+            .collect();
+
+        let windows = unique_building_elements
+            .values()
             .map(|building_element| {
                 anyhow::Ok(
                     if let BuildingElement::Transparent {
