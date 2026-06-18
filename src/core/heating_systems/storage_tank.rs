@@ -3371,6 +3371,38 @@ impl HotWaterStorageTank {
             HotWaterStorageTank::Mock(_) => WaterSupply::Mock(MockWaterSupply::default()),
         }
     }
+
+    fn additional_energy_input(
+        &self,
+        heat_source: &HeatSource,
+        heat_source_name: &str,
+        energy_input: f64,
+        control_max_diverter: Option<&Control>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            HotWaterStorageTank::StorageTank(storage_tank) => {
+                storage_tank.read().additional_energy_input(
+                    heat_source,
+                    heat_source_name,
+                    energy_input,
+                    control_max_diverter,
+                    simulation_time_iteration,
+                )
+            }
+            HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
+                smart_hot_water_tank.read().additional_energy_input(
+                    heat_source,
+                    heat_source_name,
+                    energy_input,
+                    control_max_diverter,
+                    simulation_time_iteration,
+                )
+            }
+            #[cfg(test)]
+            HotWaterStorageTank::Mock(_source) => Ok(0.),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -3436,32 +3468,16 @@ impl SurplusDiverting for PVDiverter {
         let energy_diverted_max = min_of_2(imm_heater_max_capacity_spare, -supply_surplus);
 
         // Add additional energy to storage tank and calculate how much energy was accepted
-        let energy_diverted = match &self.pre_heated_water_source {
-            HotWaterStorageTank::StorageTank(storage_tank) => {
-                storage_tank.read().additional_energy_input(
-                    &HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
-                        self.immersion_heater.clone(),
-                    )),
-                    &self.heat_source_name,
-                    energy_diverted_max,
-                    self.control_max.as_ref().map(|control| control.as_ref()),
-                    simulation_time_iteration,
-                )?
-            }
-            HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
-                smart_hot_water_tank.read().additional_energy_input(
-                    &HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
-                        self.immersion_heater.clone(),
-                    )),
-                    &self.heat_source_name,
-                    energy_diverted_max,
-                    self.control_max.as_ref().map(|control| control.as_ref()),
-                    simulation_time_iteration,
-                )?
-            }
-            #[cfg(test)]
-            HotWaterStorageTank::Mock(_source) => 0.,
-        };
+        let energy_diverted = self.pre_heated_water_source.additional_energy_input(
+            &HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
+                self.immersion_heater.clone(),
+            )),
+            &self.heat_source_name,
+            energy_diverted_max,
+            self.control_max.as_ref().map(|control| control.as_ref()),
+            simulation_time_iteration,
+        )?;
+
         Ok(energy_diverted)
     }
 }
