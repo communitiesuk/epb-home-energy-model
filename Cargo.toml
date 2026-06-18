@@ -50,6 +50,7 @@ smallvec = "1.16.4"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", optional = true }
+trait-variant = "0.1.2"
 
 [dev-dependencies]
 divan = { package = "codspeed-divan-compat", version = "6.1.0" }

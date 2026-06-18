@@ -46,8 +46,10 @@ use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use serde_valid::{validation::Errors, Validate};
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
+use std::hash::Hash;
 use std::io::{Read, Write};
 use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -400,6 +402,29 @@ fn write_formatted_row(
 
     Ok(())
 }
+
+/// Public trait defining how multiple HEM calculations can be run together, whether serially, in parallel on the same machine, or fanned out to different computing nodes.
+#[trait_variant::make(MultithreadHemRunner: Send)]
+pub trait HemRunner {
+    fn run_batched_hem<T>(
+        inputs: &HashMap<T, RunInput>,
+    ) -> Result<HashMap<T, CalculationResult>, BatchError>
+    where
+        T: Hash + Eq;
+}
+
+pub struct BatchError;
+
+pub struct RayonHemRunner;
+
+// impl MultithreadHemRunner for RayonHemRunner {
+//     fn run_batched_hem<T>(inputs: &HashMap<T, RunInput>) -> Result<HashMap<T, CalculationResult>, BatchError>
+//     where
+//         T: Hash + Eq
+//     {
+//         inputs.par_iter().map(|(key, input)|)
+//     }
+// }
 
 #[instrument(skip_all)]
 pub fn write_core_output_files(
