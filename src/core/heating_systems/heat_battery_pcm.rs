@@ -1121,7 +1121,7 @@ impl HeatBatteryPcm {
         pwr_in: Option<f64>,
         mode: Option<HeatBatteryPcmOperationMode>,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, Vec<f64>, Vec<f64>, f64)> {
+    ) -> anyhow::Result<(f64, Vec<f64>, f64)> {
         let pwr_in = pwr_in.unwrap_or(0.);
         let mode = mode.unwrap_or(HeatBatteryPcmOperationMode::Normal);
         let target_temp = self.max_temp_of_charge * self.target_charge(simtime)?;
@@ -1174,12 +1174,7 @@ impl HeatBatteryPcm {
             inlet_temp_c_zone = outlet_temp_c
         }
 
-        Ok((
-            outlet_temp_c,
-            zone_temp_c_dist.to_owned(),
-            energy_transf_delivered,
-            energy_charged,
-        ))
+        Ok((outlet_temp_c, energy_transf_delivered, energy_charged))
     }
 
     /// Charge the battery (update the zones temperature)
@@ -1212,19 +1207,16 @@ impl HeatBatteryPcm {
 
         for _ in 0..n_time_steps {
             // Processing HB zones
-            let (outlet_temp_c, zone_temp_c_dist_new, energy_transf_charged, _) = self
-                .process_heat_battery_zones(
-                    inlet_temp_c,
-                    &mut zone_temp_c_dist,
-                    flow_rate_kg_per_s,
-                    time_step_s,
-                    reynold_number_at_1_l_per_min,
-                    Some(0.),
-                    None,
-                    simtime,
-                )?;
-
-            zone_temp_c_dist = zone_temp_c_dist_new;
+            let (outlet_temp_c, energy_transf_charged, _) = self.process_heat_battery_zones(
+                inlet_temp_c,
+                &mut zone_temp_c_dist,
+                flow_rate_kg_per_s,
+                time_step_s,
+                reynold_number_at_1_l_per_min,
+                Some(0.),
+                None,
+                simtime,
+            )?;
 
             // RN for next time step
             water_kinematic_viscosity_m2_per_s =
@@ -1262,17 +1254,16 @@ impl HeatBatteryPcm {
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
 
         // Processing HB zones
-        let (_, zone_temp_c_dist, _, energy_charged_during_battery_time_step) = self
-            .process_heat_battery_zones(
-                0.,
-                &mut zone_temp_c_dist,
-                0.,
-                time_step_s,
-                0.,
-                Some(pwr_in),
-                Some(HeatBatteryPcmOperationMode::OnlyCharging),
-                simtime,
-            )?;
+        let (_, _, energy_charged_during_battery_time_step) = self.process_heat_battery_zones(
+            0.,
+            &mut zone_temp_c_dist,
+            0.,
+            time_step_s,
+            0.,
+            Some(pwr_in),
+            Some(HeatBatteryPcmOperationMode::OnlyCharging),
+            simtime,
+        )?;
 
         self.energy_charged
             .fetch_add(energy_charged_during_battery_time_step, Ordering::SeqCst);
@@ -1292,7 +1283,7 @@ impl HeatBatteryPcm {
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
 
         // Processing HB zones
-        let (_, zone_temp_c_dist, energy_loss, _) = self.process_heat_battery_zones(
+        let (_, energy_loss, _) = self.process_heat_battery_zones(
             22.,
             &mut zone_temp_c_dist,
             0.,
@@ -1351,7 +1342,7 @@ impl HeatBatteryPcm {
         };
 
         for _ in 0..n_time_steps {
-            (outlet_temp_c, zone_temp_c_dist, _, _) = self.process_heat_battery_zones(
+            (outlet_temp_c, _, _) = self.process_heat_battery_zones(
                 inlet_temp_c,
                 &mut zone_temp_c_dist,
                 flow_rate_kg_per_s,
@@ -1428,19 +1419,16 @@ impl HeatBatteryPcm {
 
         for _ in 0..n_time_steps {
             // Processing HB zones
-            let (outlet_temp_c, zone_temp_c_dist_new, energy_transf_delivered, _) = self
-                .process_heat_battery_zones(
-                    inlet_temp_c,
-                    &mut zone_temp_c_dist,
-                    flow_rate_kg_per_s,
-                    time_step_s,
-                    reynold_number_at_1_l_per_min,
-                    pwr_in.into(),
-                    None,
-                    simtime,
-                )?;
-
-            zone_temp_c_dist = zone_temp_c_dist_new;
+            let (outlet_temp_c, energy_transf_delivered, _) = self.process_heat_battery_zones(
+                inlet_temp_c,
+                &mut zone_temp_c_dist,
+                flow_rate_kg_per_s,
+                time_step_s,
+                reynold_number_at_1_l_per_min,
+                pwr_in.into(),
+                None,
+                simtime,
+            )?;
 
             // RN for next time step
             water_kinematic_viscosity_m2_per_s =
@@ -1563,7 +1551,6 @@ impl HeatBatteryPcm {
             // Processing HB zones
             let (
                 outlet_temp_c_new,
-                zone_temp_c_dist_new,
                 energy_transf_delivered,
                 energy_charged_during_battery_time_step,
             ) = self.process_heat_battery_zones(
@@ -1577,7 +1564,6 @@ impl HeatBatteryPcm {
                 simtime,
             )?;
 
-            zone_temp_c_dist = zone_temp_c_dist_new;
             outlet_temp_c = Some(outlet_temp_c_new);
 
             if update_heat_source_state {
