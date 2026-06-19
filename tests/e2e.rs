@@ -81,7 +81,7 @@ const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 24] = [
     "demo_24hrs_January_esh_hhrsh.json",
     "demo_24hrs_January_esh_manual.json",
     "demo_hp_buffer_tank_fancoils.json",
-    "demo_24hrs_August_pvdiverter_and_hp.json"
+    "demo_24hrs_August_pvdiverter_and_hp.json",
 ];
 
 const _NON_PASSING_FILES: [&str; 49] = [
@@ -167,6 +167,8 @@ const NON_TABULAR_FILE_SUFFIXES: &[&str] = &[
     "postproc.csv",
     "postproc_summary.csv",
 ];
+
+const NON_TABULAR_FILE_FRAGMENTS: &[&str] = &["_summary__"];
 
 #[rstest]
 fn test_run_all_files(files: Vec<DirEntry>) {
@@ -342,6 +344,9 @@ fn test_run_all_files(files: Vec<DirEntry>) {
         !NON_TABULAR_FILE_SUFFIXES
             .iter()
             .any(|suffix| file_name.ends_with(suffix))
+            && !NON_TABULAR_FILE_FRAGMENTS
+                .iter()
+                .any(|fragment| file_name.contains(fragment))
     }
 
     fn expected_directory(file: &DirEntry) -> WalkDir {
