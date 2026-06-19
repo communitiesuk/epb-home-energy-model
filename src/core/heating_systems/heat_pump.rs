@@ -26,7 +26,6 @@ use crate::input::{
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
-use convert_case::{Case, Casing};
 use derivative::Derivative;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -38,6 +37,7 @@ use serde::{Deserialize, Serialize};
 use smartstring::alias::String;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
+
 
 const N_EXER: f64 = 3.0;
 
@@ -4337,9 +4337,7 @@ impl HeatPumpEnergyCalculation {
     fn param(&self, param: &str) -> ResultParamValue {
         match param {
             "service_name" => ResultParamValue::String(self.service_name.clone()),
-            "service_type" => {
-                ResultParamValue::String(self.service_type.to_string().to_case(Case::Snake).into())
-            }
+            "service_type" => ResultParamValue::String(self.service_type.to_string().into()),
             "service_on" => ResultParamValue::Boolean(self.service_on),
             "energy_output_required" => ResultParamValue::Number(self.energy_output_required),
             "temp_output" => self.temp_output.into(),
