@@ -379,7 +379,7 @@ impl SpaceHeatingService {
                 boiler_service_space.energy_output_max(
                     temp_output,
                     temp_return_feed,
-                    None,
+                    time_start,
                     None,
                     simtime,
                 ),
@@ -389,7 +389,7 @@ impl SpaceHeatingService {
                 heat_network_service_space.energy_output_max(
                     temp_output,
                     temp_return_feed,
-                    None,
+                    time_start,
                     &simtime,
                 ),
                 None,
@@ -398,6 +398,7 @@ impl SpaceHeatingService {
                 Ok(heat_battery_service_space.energy_output_max(
                     temp_output,
                     temp_return_feed,
+                    time_start,
                     simtime,
                 )?)
             }
@@ -508,15 +509,16 @@ impl HeatBatteryServiceSpace {
         &self,
         temp_output: f64,
         temp_return_feed: f64,
+        time_start: Option<f64>,
         simtime: SimulationTimeIteration,
     ) -> Result<(f64, Option<BufferTankEmittersDataWithResult>), Error> {
         Ok(match self {
             Self::Pcm(pcm) => (
-                pcm.energy_output_max(temp_output, temp_return_feed, None, simtime)?,
+                pcm.energy_output_max(temp_output, temp_return_feed, time_start, simtime)?,
                 None,
             ),
             Self::DryCore(dry_core) => (
-                dry_core.energy_output_max(temp_output, temp_return_feed, None, simtime)?,
+                dry_core.energy_output_max(temp_output, temp_return_feed, time_start, simtime)?,
                 None,
             ),
         })
