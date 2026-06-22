@@ -15,7 +15,7 @@ use crate::core::water_heat_demand::misc::{
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
 use crate::input::{HeatBattery as HeatBatteryInput, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -90,7 +90,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
         &self,
         energy_demand: f64,
         temp_flow: Option<f64>,
-        temp_return: f64,
+        temp_return: Option<f64>,
         update_heat_source_state: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -264,8 +264,8 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
             self.service_name.as_str(),
             HeatingServiceType::DomesticHotWaterDirect,
             energy_demand,
-            cold_water_temp, // return temperature (cold water inlet)
-            None,            // flow temperature (hot water outlet)
+            Some(cold_water_temp), // return temperature (cold water inlet)
+            None,                  // flow temperature (hot water outlet)
             true,
             None,
             Some(true),
@@ -328,7 +328,7 @@ impl HeatBatteryPcmServiceSpace {
             &self.service_name,
             HeatingServiceType::Space,
             energy_demand,
-            temp_return,
+            Some(temp_return),
             Some(temp_flow),
             service_on,
             time_start,
@@ -374,7 +374,7 @@ struct HeatBatteryResult {
     service_on: bool,
     energy_output_required: f64,
     temp_output: Option<f64>,
-    temp_inlet: f64,
+    temp_inlet: Option<f64>,
     time_running: f64,
     energy_delivered_hb: f64,
     energy_delivered_backup: f64,
@@ -1465,7 +1465,7 @@ impl HeatBatteryPcm {
         service_name: &str,
         service_type: HeatingServiceType,
         energy_output_required: f64,
-        temp_return_feed: f64,
+        temp_return_feed: Option<f64>,
         temp_output: Option<f64>,
         service_on: bool,
         time_start: Option<f64>,
@@ -1513,7 +1513,7 @@ impl HeatBatteryPcm {
             (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
 
         let mut energy_delivered_hb = 0.;
-        let inlet_temp_c = temp_return_feed;
+        // inlet_temp_c assignment moved down in comparison with Python, as we have to deal with None case
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
 
         if energy_output_required < 0.
@@ -1538,6 +1538,9 @@ impl HeatBatteryPcm {
             }
             return Ok(0.);
         }
+
+        let temp_return_feed = temp_return_feed.ok_or_else(|| anyhow!("temp_return_feed value was expected to be set for demand_energy method on HeatBatteryPcm when energy_output_required > 0"))?;
+        let inlet_temp_c = temp_return_feed;
 
         let mut time_step_s = 1.;
         let mut time_running_current_service = 0.;
@@ -1662,7 +1665,7 @@ impl HeatBatteryPcm {
                 service_on,
                 energy_output_required,
                 temp_output: outlet_temp_c,
-                temp_inlet: temp_return_feed,
+                temp_inlet: Some(temp_return_feed),
                 time_running: time_running_current_service,
                 energy_delivered_hb: energy_delivered_hb * self.n_units as f64,
                 energy_delivered_backup: 0.,
@@ -1756,7 +1759,7 @@ impl HeatBatteryPcm {
                         service_on: false,
                         energy_output_required: 0.,
                         temp_output: None,
-                        temp_inlet: 0.,
+                        temp_inlet: None,
                         time_running: 0.,
                         energy_delivered_hb: 0.,
                         energy_delivered_backup: 0.,
@@ -2373,7 +2376,7 @@ mod tests {
             .demand_energy(
                 energy_demand,
                 Some(temp_flow),
-                temp_return,
+                Some(temp_return),
                 None,
                 simulation_time_iteration,
             )
@@ -2657,7 +2660,7 @@ mod tests {
                     service_name,
                     HeatingServiceType::DomesticHotWaterRegular,
                     5.,
-                    40.,
+                    Some(40.),
                     Some(52.5),
                     true,
                     Some(1.), // the Python here erroneously uses too many arguments to demand_energy so this is to fake the equivalent in the Rust, for example the Python True is understood as the number 1
@@ -2738,7 +2741,7 @@ mod tests {
                     SERVICE_NAME,
                     HeatingServiceType::DomesticHotWaterRegular,
                     0.08,
-                    40.,
+                    Some(40.),
                     None,
                     true,
                     None,
@@ -2756,7 +2759,7 @@ mod tests {
                     SERVICE_NAME,
                     HeatingServiceType::DomesticHotWaterRegular,
                     0.06,
-                    40.,
+                    Some(40.),
                     None,
                     true,
                     None,
@@ -2790,7 +2793,7 @@ mod tests {
                     "new_service",
                     HeatingServiceType::DomesticHotWaterRegular,
                     0.08,
-                    40.,
+                    Some(40.),
                     Some(40.),
                     true,
                     None,
@@ -2815,7 +2818,7 @@ mod tests {
                     "new_service",
                     HeatingServiceType::DomesticHotWaterRegular,
                     0.08,
-                    40.,
+                    Some(40.),
                     Some(40.),
                     true,
                     None,
@@ -2840,7 +2843,7 @@ mod tests {
                     "new_service",
                     HeatingServiceType::DomesticHotWaterRegular,
                     0.08,
-                    40.,
+                    Some(40.),
                     Some(80.),
                     true,
                     None,
@@ -2864,7 +2867,7 @@ mod tests {
                     "new_service",
                     HeatingServiceType::DomesticHotWaterRegular,
                     0.08,
-                    40.,
+                    Some(40.),
                     Some(79.),
                     true,
                     None,
@@ -3026,7 +3029,7 @@ mod tests {
                 service_name,
                 HeatingServiceType::DomesticHotWaterRegular,
                 5.0,
-                40.,
+                Some(40.),
                 Some(55.),
                 true,
                 None,
@@ -3526,7 +3529,7 @@ mod tests {
                     service_name,
                     HeatingServiceType::DomesticHotWaterRegular,
                     100.,
-                    40.,
+                    Some(40.),
                     Some(55.),
                     true,
                     None,
@@ -3733,7 +3736,7 @@ mod tests {
                     service_name,
                     HeatingServiceType::Space,
                     100.,
-                    40.,
+                    Some(40.),
                     Some(55.),
                     true,
                     None,
@@ -3836,7 +3839,7 @@ mod tests {
                 "test_service",
                 HeatingServiceType::DomesticHotWaterRegular,
                 0.1,
-                40.,
+                Some(40.),
                 Some(50.),
                 true,
                 Some(0.),
@@ -3885,7 +3888,7 @@ mod tests {
                 service1,
                 HeatingServiceType::DomesticHotWaterRegular,
                 5.,
-                40.,
+                Some(40.),
                 Some(55.),
                 true,
                 Some(0.),
@@ -3900,7 +3903,7 @@ mod tests {
                 service3,
                 HeatingServiceType::Space,
                 3.,
-                35.,
+                Some(35.),
                 Some(50.),
                 true,
                 Some(0.),
@@ -3969,7 +3972,7 @@ mod tests {
                 service2,
                 HeatingServiceType::Space,
                 4.,
-                38.,
+                Some(38.),
                 Some(52.),
                 true,
                 Some(0.),

@@ -22,7 +22,7 @@ use crate::core::heating_systems::heat_pump::{
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::output::OutputEmitters;
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::{bail, Error};
+use anyhow::{anyhow, bail, Error};
 use serde_enum_str::Serialize_enum_str;
 use std::sync::Arc;
 
@@ -136,15 +136,9 @@ impl HeatSourceWet {
                 temperature,
                 &simtime,
             ),
-            HeatSourceWet::HeatBatteryHotWater(battery) => battery.demand_energy(
-                energy_demand,
-                temp_flow,
-                temperature.ok_or_else(|| {
-                    anyhow::anyhow!("Temperature must be provided for heat battery hot water")
-                })?,
-                None,
-                simtime,
-            ),
+            HeatSourceWet::HeatBatteryHotWater(battery) => {
+                battery.demand_energy(energy_demand, temp_flow, temperature, None, simtime)
+            }
             HeatSourceWet::HeatPumpWater(water) => {
                 water.demand_energy(energy_demand, temp_flow, temperature, simtime)
             }
@@ -200,7 +194,7 @@ impl HeatBatteryWaterService {
         &self,
         energy_demand: f64,
         temp_flow: Option<f64>,
-        temp_return: f64,
+        temp_return: Option<f64>,
         update_heat_source_state: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -215,7 +209,7 @@ impl HeatBatteryWaterService {
             HeatBatteryWaterService::DryCore(service) => service.demand_energy(
                 energy_demand,
                 temp_flow,
-                temp_return,
+                temp_return.ok_or_else(|| anyhow!("Water service for drycore heat battery expected a temp_return value to be provided"))?,
                 update_heat_source_state,
                 simtime,
             ),

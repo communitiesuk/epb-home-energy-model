@@ -16,7 +16,7 @@ use std::str::from_utf8;
 use std::sync::Arc;
 use walkdir::{DirEntry, WalkDir};
 
-const PASSING_FILES: [&str; 38] = [
+const PASSING_FILES: [&str; 46] = [
     "demo_24hrs_January.json",
     "demo_24hrs_January_ieh.json",
     "demo_24hrs_January_MVHR_external.json",
@@ -55,9 +55,17 @@ const PASSING_FILES: [&str; 38] = [
     "demo_unconditioned.json",
     "demo_24hrs_January_point_of_use.json",
     "demo_24hrs_August_SolarThermal_to_preheat.json",
+    "demo_24hrs_August_SolarThermal.json",
+    "demo_FHS_with_setback.json",
+    "demo_FHS.json",
+    "demo_FHS_battery_no_scope_for_charging.json",
+    "demo_FHS_cooling_demand_beyond_free_ventilation.json",
+    "demo_FHS_battery_capacity_reduction_due_to_temp.json",
+    "demo_24hrs_January_ieh_6_1kW.json",
+    "demo_FHS_smart_hot_water_tank.json",
 ];
 
-const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 24] = [
+const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 30] = [
     "demo_hp_smart_hot_water_tank.json",
     "demo_hp_default_to_max.json",
     "demo_combiBoiler.json",
@@ -82,9 +90,15 @@ const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 24] = [
     "demo_24hrs_January_esh_manual.json",
     "demo_hp_buffer_tank_fancoils.json",
     "demo_24hrs_August_pvdiverter_and_hp.json",
+    "demo_heat_battery_water_only.json",
+    "demo_FHS_heating_system_priority.json",
+    "demo_hp_primary_pipework.json",
+    "demo_FHS_emitters_outside_temp_over_maximum.json",
+    "demo_24hrs_August_pvdiverter_and_hp_smart_hot_water.json",
+    "demo_combiBoilerLPG.json",
 ];
 
-const _NON_PASSING_FILES: [&str; 49] = [
+const _NON_PASSING_FILES: [&str; 35] = [
     "demo_168hrs_heat_battery.json",
     "demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry.json",
     "demo_FHS_negative_energy_released_from_emitters.json",
@@ -94,11 +108,7 @@ const _NON_PASSING_FILES: [&str; 49] = [
     "demo_FHS_hp_with_buffer_tank.json",
     "demo_hp_no_buffer_tank_fancoils.json",
     "demo_heat_network_storage_tank.json",
-    "demo_hp_primary_pipework.json",
     "demo_24hrs_August_pvdiverter_and_hp.json",
-    "demo_FHS_battery_no_scope_for_charging.json",
-    "demo_FHS_heating_system_priority.json",
-    "demo_24hrs_January_ieh_6_1kW.json",
     "demo_hp_hybrid_regularboiler.json",
     "demo_FHS_bottomup.json",
     "demo_FHS_hp_use_backup_heater_only.json",
@@ -110,29 +120,19 @@ const _NON_PASSING_FILES: [&str; 49] = [
     "demo_hp_no_variable_flow.json",
     "demo_168hrs_loadshifting_appliances_2_controls.json",
     "demo_heat_battery_charge_level.json",
-    "demo_FHS_battery_capacity_reduction_due_to_temp.json",
     "demo_heat_network.json",
     "demo_hp_fancoils_pipework.json",
     "demo_multiple_heat_source.json",
     "demo_FHS_battery_zero_time_charging_current_load.json",
-    "demo_FHS_with_setback.json",
     "demo_FHS_point_of_use_water_heating.json",
     "demo_regularBoiler.json",
     "demo_FHS_battery_below_minimum_charge_rate.json",
-    "demo_24hrs_August_pvdiverter_and_hp_smart_hot_water.json",
     "demo_hp.json",
-    "demo_FHS_cooling_demand_beyond_free_ventilation.json",
-    "demo_heat_battery_water_only.json",
-    "demo_FHS_smart_hot_water_tank.json",
-    "demo_FHS.json",
     "demo_heat_battery_all.json",
     "demo_168hrs_heat_battery_charge_calc_time_18.json",
     "demo_FHS_hp_temp_output_over_upper_limit.json",
-    "demo_FHS_emitters_outside_temp_over_maximum.json",
     "demo_FHS_hp_with_advancedstart.json",
     "demo_hp_fancoils.json",
-    "demo_combiBoilerLPG.json",
-    "demo_24hrs_August_SolarThermal.json",
     "demo_FHS_bottomup_loadshifting.json",
 ];
 
