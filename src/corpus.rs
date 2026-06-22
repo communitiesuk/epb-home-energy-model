@@ -4460,11 +4460,32 @@ impl From<StringOrNumber> for ResultParamValue {
     }
 }
 
+impl From<&StringOrNumber> for ResultParamValue {
+    fn from(value: &StringOrNumber) -> Self {
+        match value {
+            StringOrNumber::String(string) => Self::String(string.to_owned()),
+            StringOrNumber::Float(number) => Self::Number(*number),
+            StringOrNumber::Integer(number) => Self::Number(*number as f64),
+        }
+    }
+}
+
 impl From<ResultParamValue> for StringOrNumber {
     fn from(value: ResultParamValue) -> Self {
         match value {
             ResultParamValue::String(string) => Self::String(string),
             ResultParamValue::Number(number) => Self::Float(number),
+            ResultParamValue::Boolean(bool) => Self::String(String::from(bool.to_string())),
+            ResultParamValue::Empty => Self::String(String::default()),
+        }
+    }
+}
+
+impl From<&ResultParamValue> for StringOrNumber {
+    fn from(value: &ResultParamValue) -> Self {
+        match value {
+            ResultParamValue::String(string) => Self::String(string.to_owned()),
+            ResultParamValue::Number(number) => Self::Float(*number),
             ResultParamValue::Boolean(bool) => Self::String(String::from(bool.to_string())),
             ResultParamValue::Empty => Self::String(String::default()),
         }

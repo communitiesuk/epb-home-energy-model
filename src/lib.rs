@@ -1231,7 +1231,7 @@ fn write_core_output_file_heat_source_wet_summary(
             writer.write_record([
                 name.0.as_bytes(),
                 name.1.as_ref().map(|x| x.as_bytes()).unwrap_or_default(),
-                String::from(value).as_bytes(),
+                String::from(format_value(&StringOrNumber::from(value))?).as_bytes(),
             ])?;
         }
         writer.write_record([""])?;
