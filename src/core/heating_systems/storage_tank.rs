@@ -919,7 +919,7 @@ impl StorageTank {
         }
 
         let _heat_source_output =
-            self.heat_source_output(heat_source, input_energy_adj, heater_layer, simtime, None);
+            self.heat_source_output(heat_source, input_energy_adj, heater_layer, simtime, None)?;
         // variable is updated in upstream but then never read
         // input_energy_adj -= _heat_source_output;
 
