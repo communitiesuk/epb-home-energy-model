@@ -99,6 +99,10 @@ const PASSING_FILES_IN_USE_PYTHON_ONLY: &[&str] = &[
     "demo_FHS_emitters_outside_temp_over_maximum.json",
     "demo_24hrs_August_pvdiverter_and_hp_smart_hot_water.json",
     "demo_combiBoilerLPG.json",
+    "demo_168hrs_heat_battery",
+    "demo_168hrs_heat_battery_charge_calc_time_3.json",
+    "demo_168hrs_heat_battery_charge_calc_time_18.json",
+    "demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry.json",
 ];
 
 #[fixture]
