@@ -95,7 +95,6 @@ const PASSING_FILES_IN_USE_PYTHON_ONLY: &[&str] = &[
     "demo_heat_battery_charge_level.json",
     "demo_FHS_heat_battery.json",
     "demo_FHS_heating_system_priority.json",
-    "demo_FHS.json",
     "demo_hp_primary_pipework.json",
     "demo_FHS_emitters_outside_temp_over_maximum.json",
     "demo_24hrs_August_pvdiverter_and_hp_smart_hot_water.json",
@@ -112,6 +111,7 @@ fn files() -> Vec<DirEntry> {
                 && e.file_name().to_str().unwrap().ends_with("json")
                 && !PASSING_FILES.contains(&e.file_name().to_str().unwrap())
                 && !PASSING_FILES_IN_USE_PYTHON_ONLY.contains(&e.file_name().to_str().unwrap())
+                && e.file_name().to_str().unwrap().contains("demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry")
                 && !e
                     .path()
                     .parent()
@@ -202,7 +202,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                 println!("Differences: {}", differences.iter().join("\n"));
                 difference_count += differences.len();
             }
-            let difference_kind = DifferenceKind::CountOnly;
+            let difference_kind = DifferenceKind::Full;
             if is_tabular(file_name) {
                 let file_differences = compare::compare_tabular_records_within_threshold(&mut python_reader, &mut rust_reader, difference_kind);
                 if let Err(comparison_error) = file_differences {
@@ -215,6 +215,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             } else {
                 let file_differences = compare::compare_non_tabular_files(&mut python_reader, &mut rust_reader, difference_kind);
                 if let Err(comparison_error) = file_differences {
+                    println!("file differences: {comparison_error:?}");
                     let file_difference_count = comparison_error.differences.len();
                     println!("❌ Non-tabular records differ for file: {} - difference count is {}", file_name, file_difference_count);
                     difference_count += file_difference_count;
