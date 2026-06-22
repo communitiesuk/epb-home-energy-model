@@ -54,6 +54,7 @@ const PASSING_FILES: &[&str] = &[
     "demo_elec_battery.json",
     "demo_24hrs_January_MVHR.json",
     "demo_FHS_U_values.json",
+    "demo_FHS.json",
     "demo_FHS_battery_no_scope_for_charging.json",
     "demo_FHS_cooling_demand_beyond_free_ventilation.json",
     "demo_FHS_battery_capacity_reduction_due_to_temp.json",
