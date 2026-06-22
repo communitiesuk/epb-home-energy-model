@@ -319,7 +319,6 @@ impl HeatBatteryPcmServiceSpace {
         update_heat_source_state: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let _time_start = time_start.unwrap_or(0.);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let service_on = self.is_on(simtime);
 
@@ -332,7 +331,7 @@ impl HeatBatteryPcmServiceSpace {
             temp_return,
             Some(temp_flow),
             service_on,
-            None,
+            time_start,
             Some(update_heat_source_state),
             simtime,
         )
