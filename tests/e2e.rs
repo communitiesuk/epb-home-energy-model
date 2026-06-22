@@ -111,7 +111,6 @@ fn files() -> Vec<DirEntry> {
                 && e.file_name().to_str().unwrap().ends_with("json")
                 && !PASSING_FILES.contains(&e.file_name().to_str().unwrap())
                 && !PASSING_FILES_IN_USE_PYTHON_ONLY.contains(&e.file_name().to_str().unwrap())
-                && e.file_name().to_str().unwrap().contains("demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry")
                 && !e
                     .path()
                     .parent()
@@ -199,7 +198,6 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             let header_differences = compare::compare_headers(&mut python_reader, &mut rust_reader);
             if let Err(differences) = header_differences {
                 println!("❌ Headers differ for file: {}", file_name);
-                println!("Differences: {}", differences.iter().join("\n"));
                 difference_count += differences.len();
             }
             let difference_kind = DifferenceKind::Full;
@@ -215,7 +213,6 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             } else {
                 let file_differences = compare::compare_non_tabular_files(&mut python_reader, &mut rust_reader, difference_kind);
                 if let Err(comparison_error) = file_differences {
-                    println!("file differences: {comparison_error:?}");
                     let file_difference_count = comparison_error.differences.len();
                     println!("❌ Non-tabular records differ for file: {} - difference count is {}", file_name, file_difference_count);
                     difference_count += file_difference_count;
