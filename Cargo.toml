@@ -25,7 +25,7 @@ indexmap = { version = "2.13.1", features = ["serde", "arbitrary"] }
 indicatif = { version = "0.18.4", optional = true }
 interp = "2.1.1"
 is_close = "0.1.3"
-itertools = "0.14.0"
+itertools = "0.15.0"
 jsonschema = "0.46.5"
 monostate = "1.0.2"
 nalgebra = "0.33.3"
