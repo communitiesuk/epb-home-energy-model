@@ -64,7 +64,7 @@ const PASSING_FILES: &[&str] = &[
     "demo_24hrs_August_SolarThermal_to_preheat.json",
 ];
 
-const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 30] = [
+const PASSING_FILES_IN_USE_PYTHON_ONLY: &[&str] = &[
     "demo_hp_smart_hot_water_tank.json",
     "demo_hp_default_to_max.json",
     "demo_combiBoiler.json",
@@ -90,7 +90,11 @@ const PASSING_FILES_IN_USE_PYTHON_ONLY: [&str; 30] = [
     "demo_hp_buffer_tank_fancoils.json",
     "demo_24hrs_August_pvdiverter_and_hp.json",
     "demo_heat_battery_water_only.json",
+    "demo_heat_battery_all.json",
+    "demo_heat_battery_charge_level.json",
+    "demo_FHS_heat_battery.json",
     "demo_FHS_heating_system_priority.json",
+    "demo_FHS.json",
     "demo_hp_primary_pipework.json",
     "demo_FHS_emitters_outside_temp_over_maximum.json",
     "demo_24hrs_August_pvdiverter_and_hp_smart_hot_water.json",
