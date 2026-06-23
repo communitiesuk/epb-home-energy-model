@@ -904,28 +904,33 @@ impl Corpus {
             .unwrap_or_default()
             .iter()
             .map(|(name, heat_source_wet_details)| {
-                let (heat_source, internal_gains_from_heat_source_wet) =
-                    heat_source_wet_from_input(
-                        name,
-                        (*heat_source_wet_details).clone(),
-                        external_conditions.clone(),
-                        simulation_time_iterator.clone(),
-                        mechanical_ventilations,
-                        zones.len(),
-                        shareable_fn(&temp_internal_air_prev),
-                        &controls,
-                        &mut energy_supplies,
-                        total_floor_area,
-                        &existing_internal_gains_names,
-                        output_options.detailed_output_heating_cooling,
-                    )?;
+                let (
+                    heat_source,
+                    internal_gains_from_heat_source_wet,
+                    timestep_end_calcs_from_heat_source_wet,
+                ) = heat_source_wet_from_input(
+                    name,
+                    (*heat_source_wet_details).clone(),
+                    external_conditions.clone(),
+                    simulation_time_iterator.clone(),
+                    mechanical_ventilations,
+                    zones.len(),
+                    shareable_fn(&temp_internal_air_prev),
+                    &controls,
+                    &mut energy_supplies,
+                    total_floor_area,
+                    &existing_internal_gains_names,
+                    output_options.detailed_output_heating_cooling,
+                )?;
                 // add any internal gains from heat source wet to existing list
                 for (name, internal_gains_item) in internal_gains_from_heat_source_wet {
                     internal_gains.insert(name, Gains::Internal(internal_gains_item));
                 }
-                timestep_end_calcs
-                    .write()
-                    .push(HeatSystem::WetSystem(heat_source.clone()));
+                for timestep_end_calc_heat_source in timestep_end_calcs_from_heat_source_wet {
+                    timestep_end_calcs
+                        .write()
+                        .push(HeatSystem::WetSystem(timestep_end_calc_heat_source));
+                }
                 if let HeatSourceWetDetails::HeatPump {
                     buffer_tank: Some(_),
                     ..
@@ -4555,8 +4560,13 @@ fn heat_source_wet_from_input(
     total_floor_area: f64,
     existing_internal_gains_names: &[Arc<str>],
     detailed_output_heating_cooling: bool,
-) -> anyhow::Result<(WetHeatSource, Vec<(Arc<str>, InternalGains)>)> {
+) -> anyhow::Result<(
+    WetHeatSource,
+    Vec<(Arc<str>, InternalGains)>,
+    Vec<WetHeatSource>,
+)> {
     let mut internal_gains_from_heat_source_wet = vec![];
+    let mut timestep_end_calcs = vec![];
     let wet_heat_source = match &input {
         HeatSourceWetDetails::HeatPump {
             source_type,
@@ -4625,13 +4635,15 @@ fn heat_source_wet_from_input(
 
                 let cost_schedule_hybrid_hp = boiler.cost_schedule_hybrid.clone();
 
-                let boiler = Boiler::new(
+                let boiler = Arc::new(RwLock::new(Boiler::new(
                     boiler.as_ref().into(),
                     energy_supply_boiler,
                     energy_supply_conn_aux_boiler,
                     external_conditions.clone(),
                     simulation_time.step_in_hours(),
-                )?;
+                )?));
+
+                timestep_end_calcs.push(WetHeatSource::Boiler(boiler.clone()));
 
                 (Some(boiler), cost_schedule_hybrid_hp)
             } else {
@@ -4646,7 +4658,7 @@ fn heat_source_wet_from_input(
                 .clone();
             let energy_supply_conn_name_auxiliary = format!("HeatPump_auxiliary: {name}");
 
-            WetHeatSource::HeatPump(Arc::new(Mutex::new(HeatPump::new(
+            let heat_source = WetHeatSource::HeatPump(Arc::new(Mutex::new(HeatPump::new(
                 &input,
                 energy_supply,
                 &energy_supply_conn_name_auxiliary,
@@ -4656,11 +4668,15 @@ fn heat_source_wet_from_input(
                 throughput_exhaust_air,
                 energy_supply_heat_source,
                 detailed_output_heating_cooling,
-                boiler.map(|boiler: Boiler| Arc::new(RwLock::new(boiler))),
+                boiler,
                 cost_schedule_hybrid_hp,
                 temp_internal_air_fn,
                 simulation_time.as_ref(),
-            )?)))
+            )?)));
+
+            timestep_end_calcs.push(heat_source.clone());
+
+            heat_source
         }
         HeatSourceWetDetails::Boiler {
             energy_supply,
@@ -4678,7 +4694,7 @@ fn heat_source_wet_from_input(
             let energy_supply_conn_aux =
                 EnergySupply::connection(energy_supply_aux.clone(), aux_supply_name.as_str())?;
 
-            WetHeatSource::Boiler(Arc::new(RwLock::new(
+            let heat_source = WetHeatSource::Boiler(Arc::new(RwLock::new(
                 Boiler::new(
                     input,
                     energy_supply,
@@ -4687,7 +4703,11 @@ fn heat_source_wet_from_input(
                     simulation_time.step_in_hours(),
                 )
                 .expect("could not construct boiler value from provided data"),
-            )))
+            )));
+
+            timestep_end_calcs.push(heat_source.clone());
+
+            heat_source
         }
         HeatSourceWetDetails::Hiu {
             power_max,
@@ -4724,6 +4744,8 @@ fn heat_source_wet_from_input(
 
             let heat_source = WetHeatSource::Hiu(Arc::new(Mutex::new(heat_network)));
 
+            timestep_end_calcs.push(heat_source.clone());
+
             // Create list of internal gains for each hour of the year, in W / m²
             let internal_gains_hiu =
                 heat_network_hiu_loss * WATTS_PER_KILOWATT as f64 / total_floor_area;
@@ -4745,79 +4767,89 @@ fn heat_source_wet_from_input(
 
             heat_source
         }
-        HeatSourceWetDetails::HeatBattery { battery } => match battery {
-            HeatBatteryInput::Pcm {
-                control_charge,
-                energy_supply,
-                ..
-            } => {
-                let energy_supply = energy_supplies
-                    .get(energy_supply)
-                    .ok_or_else(|| {
-                        anyhow!(
+        HeatSourceWetDetails::HeatBattery { battery } => {
+            let heat_source = match battery {
+                HeatBatteryInput::Pcm {
+                    control_charge,
+                    energy_supply,
+                    ..
+                } => {
+                    let energy_supply = energy_supplies
+                        .get(energy_supply)
+                        .ok_or_else(|| {
+                            anyhow!(
                         "Heat battery references an undeclared energy supply '{energy_supply}'."
                     )
-                    })?
-                    .clone();
-                let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
+                        })?
+                        .clone();
+                    let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
-                WetHeatSource::HeatBattery(HeatBattery::Pcm(Arc::new(RwLock::new(HeatBatteryPcm::new(
-                    &input,
-                    controls
-                        .get_with_string(control_charge)
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "expected a control to be registered with the name '{control_charge}'"
-                            )
-                        })
-                        .clone(),
+                    WetHeatSource::HeatBattery(HeatBattery::Pcm(Arc::new(RwLock::new(HeatBatteryPcm::new(
+                        &input,
+                        controls
+                            .get_with_string(control_charge)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "expected a control to be registered with the name '{control_charge}'"
+                                )
+                            })
+                            .clone(),
+                        energy_supply,
+                        energy_supply_conn,
+                        simulation_time.step_in_hours(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(detailed_output_heating_cooling),
+                    )))))
+                }
+                HeatBatteryInput::DryCore {
+                    control_charge,
                     energy_supply,
-                    energy_supply_conn,
-                    simulation_time.step_in_hours(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    Some(detailed_output_heating_cooling),
-                )))))
-            }
-            HeatBatteryInput::DryCore {
-                control_charge,
-                energy_supply,
-                number_of_units,
-                ..
-            } => {
-                let energy_supply = energy_supplies
-                    .get(energy_supply)
-                    .ok_or_else(|| {
-                        anyhow!(
+                    number_of_units,
+                    ..
+                } => {
+                    let energy_supply = energy_supplies
+                        .get(energy_supply)
+                        .ok_or_else(|| {
+                            anyhow!(
                         "Heat battery references an undeclared energy supply '{energy_supply}'."
                     )
-                    })?
-                    .clone();
-                let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
+                        })?
+                        .clone();
+                    let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
-                WetHeatSource::HeatBattery(HeatBattery::DryCore(HeatBatteryDryCore::new(
-                    battery,
-                    controls
-                        .get_with_string(control_charge)
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "expected a control to be registered with the name '{control_charge}'"
-                            )
-                        })
-                        .clone(),
-                    energy_supply,
-                    energy_supply_conn,
-                    Some(*number_of_units as u32),
-                    simulation_time.step_in_hours(),
-                    detailed_output_heating_cooling.into(),
-                )?))
-            }
-        },
+                    WetHeatSource::HeatBattery(HeatBattery::DryCore(HeatBatteryDryCore::new(
+                        battery,
+                        controls
+                            .get_with_string(control_charge)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "expected a control to be registered with the name '{control_charge}'"
+                                )
+                            })
+                            .clone(),
+                        energy_supply,
+                        energy_supply_conn,
+                        Some(*number_of_units as u32),
+                        simulation_time.step_in_hours(),
+                        detailed_output_heating_cooling.into(),
+                    )?))
+                }
+            };
+
+            timestep_end_calcs.push(heat_source.clone());
+
+            heat_source
+        }
     };
 
-    Ok((wet_heat_source, internal_gains_from_heat_source_wet))
+    Ok((
+        wet_heat_source,
+        internal_gains_from_heat_source_wet,
+        timestep_end_calcs,
+    ))
 }
 
 struct HeatSourceFromInput {
