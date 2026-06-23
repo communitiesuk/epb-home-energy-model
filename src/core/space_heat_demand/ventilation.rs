@@ -2218,17 +2218,31 @@ impl InfiltrationVentilation {
         let mut qm_in_effective_heat_recovery_saving_total = 0.0;
 
         for window in &self.windows {
-            let (qm_in, qm_out) = window.calculate_flow_from_internal_p(
-                wind_direction,
-                u_site,
-                t_e,
-                t_z,
-                p_z_ref,
-                self.f_cross,
-                self.shield_class,
-                r_w_arg_min_max,
-                simtime,
-            )?;
+            let (qm_in, qm_out) = if reporting_flag == Some(ReportingFlag::Max) {
+                window.calculate_flow_from_internal_p(
+                    wind_direction,
+                    u_site,
+                    t_e,
+                    t_z,
+                    p_z_ref,
+                    self.f_cross,
+                    self.shield_class,
+                    r_w_arg_min_max,
+                    simtime,
+                )?
+            } else {
+                window.calculate_flow_from_internal_p(
+                    wind_direction,
+                    u_site,
+                    t_e,
+                    t_z,
+                    p_z_ref,
+                    self.f_cross,
+                    self.shield_class,
+                    r_w_arg_min_max,
+                    simtime,
+                )?
+            };
             qm_in_through_window_opening += qm_in;
             qm_out_through_window_opening += qm_out;
         }
