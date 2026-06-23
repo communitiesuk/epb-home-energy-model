@@ -1742,13 +1742,14 @@ impl HeatBatteryDryCore {
             .demand_energy(energy_aux, simtime.index)?;
 
         let (energy_charged, final_losses) = if time_remaining > 0. {
-            let (_, _, energy_charged, _, final_losses) =
+            let (_, _, energy_charged, final_soc, final_losses) =
                 self.storage.read().energy_output_with_losses(
                     OutputMode::Min,
                     time_remaining.into(),
                     None,
                     &simtime,
                 )?;
+            self.set_state_of_charge(final_soc);
             (energy_charged, final_losses)
         } else {
             (0., 0.)
