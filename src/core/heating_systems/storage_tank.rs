@@ -694,7 +694,9 @@ impl StorageTank {
 
                 let temp_cold_feed = sum_t_by_v / sum_v;
                 volume_weighted_temperature += needed_volume * temp_cold_feed;
-                flag_rearrange_layers = temp_cold_feed > temp_layer_min;
+                if temp_cold_feed > temp_layer_min {
+                    flag_rearrange_layers = true;
+                }
             }
 
             new_temps[i] = volume_weighted_temperature / total_volume;
