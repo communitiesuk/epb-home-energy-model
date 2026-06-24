@@ -80,6 +80,7 @@ const PASSING_FILES_IN_USE_PYTHON_ONLY: &[&str] = &[
     "demo_hp_bypass.json",
     "demo_eahp_mixed.json",
     "demo_hp_with_advancedstart.json",
+    "demo_heat_network.json",
     "demo_heat_network_5G.json",
     "demo_eahp_single_zone.json",
     "demo_eahp.json",
@@ -104,6 +105,7 @@ const PASSING_FILES_IN_USE_PYTHON_ONLY: &[&str] = &[
     "demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry.json",
     "demo_heat_network_storage_tank.json",
     "demo_hp_hybrid_combiboiler.json",
+    "demo_3tanks_3hps.json",
 ];
 
 #[fixture]
