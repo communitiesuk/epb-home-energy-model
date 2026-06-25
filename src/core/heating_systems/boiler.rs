@@ -1085,7 +1085,7 @@ impl Boiler {
             .read()
             .iter()
             .filter_map(|x| (x.service_type == ServiceType::Space).then_some(x.time_available))
-            .sum::<f64>();
+            .max_by(|a, b| a.total_cmp(b));
 
         for service_data in self.service_results.read().iter() {
             let service_name = service_data.service_name.as_str();
@@ -1101,18 +1101,19 @@ impl Boiler {
             //                    removed as it will not be necessary. At that point, the other
             //                    contents of this function could also be moved back to their
             //                    original locations
-            let (combined_energy_output_required, time_available) =
-                if service_type == ServiceType::Space {
-                    (
+            let (combined_energy_output_required, time_available) = if service_type
+                == ServiceType::Space
+            {
+                (
                         self.sum_space_heating_service_results_energy_output_required(),
-                        max_time_available,
-                    )
-                } else {
-                    (
-                        service_data.energy_output_required,
-                        service_data.time_available,
-                    )
-                };
+                        max_time_available.expect("max_time_available was expected to be some value as there is at least one space service"),
+                )
+            } else {
+                (
+                    service_data.energy_output_required,
+                    service_data.time_available,
+                )
+            };
 
             let fuel_demand = if let Some(temp_return_feed) = temp_return_feed {
                 let blr_eff_final = self.calc_boiler_eff_internal(
