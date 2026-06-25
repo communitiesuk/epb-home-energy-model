@@ -45,6 +45,16 @@ pub mod aws_step_functions {
         _key: PhantomData<T>,
     }
 
+    impl<'a, T> AwsStepFunctionHemRunner<'a, T> {
+        pub fn new(state_machine_arn: String, client: &'a Client) -> Self {
+            Self {
+                state_machine_arn,
+                client,
+                _key: PhantomData,
+            }
+        }
+    }
+
     impl<'a, T: Hash + Eq + Send + Sync + Clone> RunsBatchedHemAsync
         for AwsStepFunctionHemRunner<'a, T>
     {
