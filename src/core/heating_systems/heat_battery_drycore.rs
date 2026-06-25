@@ -1686,6 +1686,8 @@ impl HeatBatteryDryCore {
                     None,
                     &simtime,
                 )?;
+            self.energy_supply_connection
+                .demand_energy(energy_charged * self.n_units() as f64, simtime.index)?;
             self.set_state_of_charge(final_soc);
             (energy_charged, final_losses)
         } else {
