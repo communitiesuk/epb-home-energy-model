@@ -1439,10 +1439,10 @@ impl HeatBatteryDryCore {
                     energy_delivered_backup: 0.0,
                     energy_delivered_total: 0.0,
                     energy_charged_during_service: 0.0,
-                    energy_for_fans: ResultParamValue::Empty,
+                    energy_for_fans: ResultParamValue::Number(0.0),
                     dry_core_soc: self.storage.read().state_of_charge(),
                     current_hb_power: ResultParamValue::Empty,
-                    energy_lost: ResultParamValue::Empty,
+                    energy_lost: ResultParamValue::Number(0.0),
                 });
             }
             return Ok(0.0);
