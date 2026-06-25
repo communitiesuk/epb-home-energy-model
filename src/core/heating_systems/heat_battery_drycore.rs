@@ -2024,14 +2024,14 @@ const OUTPUT_PARAMETERS: [(&str, Option<&str>, bool); 16] = [
     ("temp_output", Some("degC"), false),
     ("temp_inlet", Some("degC"), false),
     ("time_running", Some("secs"), true),
-    ("unmet_demand", Some("kWh"), false),
+    ("unmet_demand", Some("kWh"), true),
     ("energy_delivered_HB", Some("kWh"), true),
     ("energy_delivered_backup", Some("kWh"), true),
     ("energy_delivered_total", Some("kWh"), true),
     ("energy_charged_during_service", Some("kWh"), true),
     ("energy_for_fans", Some("kWh"), true),
-    ("dry_core_soc", Some("ratio"), true),
-    ("current_hb_power", Some("kW"), true),
+    ("dry_core_soc", Some("ratio"), false),
+    ("current_hb_power", Some("kW"), false),
     ("energy_lost", Some("kWh"), true),
 ];
 
