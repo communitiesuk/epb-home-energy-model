@@ -2913,10 +2913,17 @@ mod tests {
             }
         }
 
-        #[ignore = "this test is set up incongruously in Python so we have decided to skip it for now"]
         #[test]
         fn test_energy_to_store_no_energy() {
             let simulation_time = simulation_time_48_hours();
+
+            let mut external_conditions = external_conditions_48_hours();
+
+            // because in the Python the external conditions (unlike in a non-test scenario) does not
+            // have a reference to the same simulation time, we need to override the external_conditions here
+            // to give it the same external temperature for all iterations as its first
+            external_conditions.air_temps =
+                vec![external_conditions.air_temps[0]; simulation_time.total_steps()];
 
             let mut charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
@@ -2927,7 +2934,7 @@ mod tests {
                 vec![Some(1.0), Some(0.8)],
                 Some(15.5),
                 None,
-                Some(Arc::new(external_conditions_48_hours())),
+                Some(Arc::new(external_conditions)),
                 Some(external_sensor()),
                 None,
             )
