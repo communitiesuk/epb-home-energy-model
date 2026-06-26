@@ -2913,10 +2913,17 @@ mod tests {
             }
         }
 
-        #[ignore = "this test is set up incongruously in Python so we have decided to skip it for now"]
         #[test]
         fn test_energy_to_store_no_energy() {
             let simulation_time = simulation_time_48_hours();
+
+            let mut external_conditions = external_conditions_48_hours();
+
+            // because in the Python the external conditions (unlike in a non-test scenario) does not
+            // have a reference to the same simulation time, we need to override the external_conditions here
+            // to give it the same external temperature for all iterations as its first
+            external_conditions.air_temps =
+                vec![external_conditions.air_temps[0]; simulation_time.total_steps()];
 
             let mut charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
@@ -2927,27 +2934,22 @@ mod tests {
                 vec![Some(1.0), Some(0.8)],
                 Some(15.5),
                 None,
-                Some(Arc::new(external_conditions_48_hours())),
+                Some(Arc::new(external_conditions)),
                 Some(external_sensor()),
                 None,
             )
             .unwrap();
 
-            let past_ext_temp = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
-                repeat(Some(19.0)),
-                24,
-            )));
-
-            let heat_retention_data = &charge_control.heat_retention_data.unwrap();
-            charge_control.heat_retention_data = Some(ChargeControlHeatRetentionFields {
-                steps_day: heat_retention_data.steps_day,
-                demand: heat_retention_data.demand.clone(),
-                past_ext_temp,
-                future_ext_temp: heat_retention_data.future_ext_temp.clone(),
-                energy_to_store: Arc::new(RwLock::new(
-                    heat_retention_data.energy_to_store.read().as_ref().copied(),
-                )),
-            });
+            {
+                let new_past_ext_temp = BoundedVecDeque::from_iter(repeat(Some(19.0)), 24);
+                if let Some(mut past_ext_temp) = charge_control
+                    .heat_retention_data
+                    .as_mut()
+                    .map(|data| data.past_ext_temp.write())
+                {
+                    *past_ext_temp = new_past_ext_temp;
+                }
+            }
 
             for t_it in simulation_time.iter() {
                 let actual = charge_control.energy_to_store(100., 19., t_it);
