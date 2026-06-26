@@ -1056,6 +1056,16 @@ impl Zone {
             )
         }
 
+        // NB. additional check in Rust that is not in Python:
+        // in cases where temp_setpnt and temp_free have very close floating-point representations but are not equal,
+        // the heat_cool_demand gets calculated as being a tiny fraction rather than zero, and this causes incorrect state
+        // elsewhere where, for example, this tiny fraction is emitted for both heating and cooling, and heating / cooling
+        // is therefore 1 rather than something representing a division by zero error.
+        // Put in a closeness check here so that heat_cool_demand can be correctly recognised as zero.
+        if is_close!(temp_setpnt, temp_free, rel_tol = 1e-9, abs_tol = 1e-10) {
+            return Ok(0.);
+        }
+
         let heat_cool_load_unrestricted =
             heat_cool_load_upper * (temp_setpnt - temp_free) / (temp_upper - temp_free);
 
