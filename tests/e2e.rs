@@ -211,7 +211,6 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             if is_tabular(file_name) {
                 let file_differences = compare::compare_tabular_records_within_threshold(&mut python_reader, &mut rust_reader, difference_kind);
                 if let Err(comparison_error) = file_differences {
-                    println!("file differences: {comparison_error:#?}");
                     let file_difference_count = comparison_error.differences.len();
                     println!("❌ Tabular records differ for file: {} - difference count is {}", file_name, file_difference_count);
                     difference_count += file_difference_count;
