@@ -2933,21 +2933,16 @@ mod tests {
             )
             .unwrap();
 
-            let past_ext_temp = Arc::new(RwLock::new(BoundedVecDeque::from_iter(
-                repeat(Some(19.0)),
-                24,
-            )));
-
-            let heat_retention_data = &charge_control.heat_retention_data.unwrap();
-            charge_control.heat_retention_data = Some(ChargeControlHeatRetentionFields {
-                steps_day: heat_retention_data.steps_day,
-                demand: heat_retention_data.demand.clone(),
-                past_ext_temp,
-                future_ext_temp: heat_retention_data.future_ext_temp.clone(),
-                energy_to_store: Arc::new(RwLock::new(
-                    heat_retention_data.energy_to_store.read().as_ref().copied(),
-                )),
-            });
+            {
+                let new_past_ext_temp = BoundedVecDeque::from_iter(repeat(Some(19.0)), 24);
+                if let Some(mut past_ext_temp) = charge_control
+                    .heat_retention_data
+                    .as_mut()
+                    .map(|data| data.past_ext_temp.write())
+                {
+                    *past_ext_temp = new_past_ext_temp;
+                }
+            }
 
             for t_it in simulation_time.iter() {
                 let actual = charge_control.energy_to_store(100., 19., t_it);
