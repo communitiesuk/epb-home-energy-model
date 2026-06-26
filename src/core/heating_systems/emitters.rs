@@ -347,7 +347,7 @@ impl Emitters {
             {
                 let test_data = Self::add_temperature_diff_zero(fancoil_test_data);
                 let (temperature_data, fan_power_data) =
-                    Self::format_fancoil_manufacturer_data(fancoil_test_data)?;
+                    Self::format_fancoil_manufacturer_data(&test_data)?;
 
                 let emitter = Arc::new(WetEmitter::Fancoil {
                     n_units: *n_units,
