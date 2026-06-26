@@ -513,16 +513,21 @@ mod compare {
             }
             match self {
                 OutputCellValue::Number(float) => {
+                    let float = *float;
                     let other_float = match other {
                         OutputCellValue::Number(other_float) => *other_float,
                         _ => unreachable!(),
                     };
-                    let numerical_difference = (*float - other_float).abs();
-                    if numerical_difference < FLOAT_THRESHOLD {
+                    let non_fractional_decimal_places = float.log10().floor().max(0.) as i32;
+                    // allow for a lesser fractional threshold for numbers where the integer part is higher than powers of 10
+                    let difference_threshold =
+                        FLOAT_THRESHOLD * 10f64.powi(non_fractional_decimal_places);
+                    let numerical_difference = (float - other_float).abs();
+                    if numerical_difference < difference_threshold {
                         Ok(())
                     } else {
                         Err(Difference::Number {
-                            left: *float,
+                            left: float,
                             right: other_float,
                             numerical_difference,
                             field_index,
