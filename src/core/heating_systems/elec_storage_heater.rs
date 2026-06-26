@@ -1915,7 +1915,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_elec_storage_energy_output_modes(
         elec_storage_heater: Arc<ElecStorageHeater>,
         simulation_time: SimulationTime,
@@ -1930,7 +1929,7 @@ mod tests {
                 &simulation_time.iter().current_iteration(),
             )
             .unwrap();
-        assert_eq!(energy_min.0, 0.);
+        assert!(energy_min.0 > 0.);
 
         let energy_max = elec_storage_heater
             .storage
@@ -1942,7 +1941,7 @@ mod tests {
                 &simulation_time.iter().current_iteration(),
             )
             .unwrap();
-        assert_eq!(energy_max.0, energy_min.0);
+        assert!(energy_max.0 > energy_min.0);
     }
 
     #[rstest]
