@@ -904,11 +904,11 @@ impl Corpus {
             .unwrap_or_default()
             .iter()
             .map(|(name, heat_source_wet_details)| {
-                let (
+                let HeatSourceWetDataFromInput {
                     heat_source,
                     internal_gains_from_heat_source_wet,
-                    timestep_end_calcs_from_heat_source_wet,
-                ) = heat_source_wet_from_input(
+                    timestep_end_calcs_from_heat_sources,
+                } = heat_source_wet_from_input(
                     name,
                     (*heat_source_wet_details).clone(),
                     external_conditions.clone(),
@@ -926,7 +926,7 @@ impl Corpus {
                 for (name, internal_gains_item) in internal_gains_from_heat_source_wet {
                     internal_gains.insert(name, Gains::Internal(internal_gains_item));
                 }
-                for timestep_end_calc_heat_source in timestep_end_calcs_from_heat_source_wet {
+                for timestep_end_calc_heat_source in timestep_end_calcs_from_heat_sources {
                     timestep_end_calcs
                         .write()
                         .push(HeatSystem::WetSystem(timestep_end_calc_heat_source));
@@ -4547,6 +4547,12 @@ impl Serialize for ResultParamValue {
     }
 }
 
+struct HeatSourceWetDataFromInput {
+    heat_source: WetHeatSource,
+    internal_gains_from_heat_source_wet: Vec<(Arc<str>, InternalGains)>,
+    timestep_end_calcs_from_heat_sources: Vec<WetHeatSource>,
+}
+
 fn heat_source_wet_from_input(
     name: &str,
     input: HeatSourceWetDetails,
@@ -4560,11 +4566,7 @@ fn heat_source_wet_from_input(
     total_floor_area: f64,
     existing_internal_gains_names: &[Arc<str>],
     detailed_output_heating_cooling: bool,
-) -> anyhow::Result<(
-    WetHeatSource,
-    Vec<(Arc<str>, InternalGains)>,
-    Vec<WetHeatSource>,
-)> {
+) -> anyhow::Result<HeatSourceWetDataFromInput> {
     let mut internal_gains_from_heat_source_wet = vec![];
     let mut timestep_end_calcs = vec![];
     let wet_heat_source = match &input {
@@ -4845,11 +4847,11 @@ fn heat_source_wet_from_input(
         }
     };
 
-    Ok((
-        wet_heat_source,
-        internal_gains_from_heat_source_wet,
-        timestep_end_calcs,
-    ))
+    Ok(HeatSourceWetDataFromInput {
+        heat_source: wet_heat_source,
+        internal_gains_from_heat_source_wet: internal_gains_from_heat_source_wet,
+        timestep_end_calcs_from_heat_sources: timestep_end_calcs,
+    })
 }
 
 struct HeatSourceFromInput {
