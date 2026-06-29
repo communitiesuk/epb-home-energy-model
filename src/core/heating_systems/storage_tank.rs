@@ -3289,9 +3289,7 @@ impl HotWaterSourceBehaviour for HotWaterStorageTank {
                 .read()
                 .demand_hot_water(usage_events.into(), simtime),
             #[cfg(test)]
-            HotWaterStorageTank::Mock(source) => {
-                source.demand_hot_water(usage_events.into(), simtime)
-            }
+            HotWaterStorageTank::Mock(source) => source.demand_hot_water(usage_events, simtime),
         }
     }
 

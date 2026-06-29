@@ -2009,7 +2009,7 @@ mod tests {
 
     #[fixture]
     fn simulation_time_iterator(simulation_time: SimulationTime) -> SimulationTimeIterator {
-        simulation_time.iter().into()
+        simulation_time.iter()
     }
 
     #[fixture]
