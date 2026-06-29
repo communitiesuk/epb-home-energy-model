@@ -4849,7 +4849,7 @@ fn heat_source_wet_from_input(
 
     Ok(HeatSourceWetDataFromInput {
         heat_source: wet_heat_source,
-        internal_gains_from_heat_source_wet: internal_gains_from_heat_source_wet,
+        internal_gains_from_heat_source_wet,
         timestep_end_calcs_from_heat_sources: timestep_end_calcs,
     })
 }
