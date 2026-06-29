@@ -112,10 +112,10 @@ impl ApplianceGains {
 
         Ok(Self {
             total_energy_supply,
+            energy_supply_connection,
             gains_fraction,
             start_day,
             time_series_step,
-            energy_supply_connection,
         })
     }
 
@@ -1218,7 +1218,7 @@ mod tests {
             }
         }
         #[rstest]
-        /// Test that smartcontrol.add_appliance_demand is called with the load
+        /// Test that `smartcontrol.add_appliance_demand` is called with the load
         /// Note that in Python a Spy is used, instead we assert on the result of
         /// `total_internal_gain_in_w`. This means the two tests are not equivalent.
         fn test_smart_control_called(mut appliance_data: ApplianceGainsDetails) {
@@ -1405,7 +1405,7 @@ mod tests {
         }
 
         #[rstest]
-        /// Test that appliances aren't shifted with a max_shift_hrs of 0
+        /// Test that appliances aren't shifted with a `max_shift_hrs` of 0
         fn test_two_appliances_not_loadshifted(mut appliance_data: ApplianceGainsDetails) {
             let zone_area = 10.;
             let standby = 0.;
@@ -1449,7 +1449,7 @@ mod tests {
         }
 
         #[rstest]
-        /// Test that appliances are shifted with a max_shift_hrs of 1
+        /// Test that appliances are shifted with a `max_shift_hrs` of 1
         fn test_two_appliances_loadshifted_one_hour(mut appliance_data: ApplianceGainsDetails) {
             let zone_area = 10.;
             let standby = 0.;
@@ -1493,7 +1493,7 @@ mod tests {
         }
 
         #[rstest]
-        /// Test that appliances are shifted with a max_shift_hrs of 2
+        /// Test that appliances are shifted with a `max_shift_hrs` of 2
         fn test_two_appliances_loadshifted_two_hours(mut appliance_data: ApplianceGainsDetails) {
             let zone_area = 10.;
             let standby = 0.;
@@ -1616,7 +1616,7 @@ mod tests {
         }
 
         #[rstest]
-        /// Test that load shifting occurs with a demand_limit_weighted set
+        /// Test that load shifting occurs with a `demand_limit_weighted` set
         fn test_demand_limit(mut appliance_data: ApplianceGainsDetails) {
             let zone_area = 10.;
             let standby = 0.;
@@ -1751,7 +1751,7 @@ mod tests {
         }
 
         #[rstest]
-        /// Test that the load shifting does not occur with a large demand_limit_weighted
+        /// Test that the load shifting does not occur with a large `demand_limit_weighted`
         fn test_large_demand_limit(mut appliance_data: ApplianceGainsDetails) {
             let zone_area = 10.;
             let standby = 0.;

@@ -6328,7 +6328,7 @@ mod tests {
         assert!(pre_heated_sources.contains_key("tank2"));
     }
 
-    ///  Test that circular references between PreHeatedWaterSource objects are detected and raise an appropriate error.
+    ///  Test that circular references between `PreHeatedWaterSource` objects are detected and raise an appropriate error.
     #[rstest]
     fn test_preheated_water_source_circular_reference_detection(mut minimal_input: Input) {
         let tank1 = create_preheated_water_source_storage_tank("tank1", "tank2");

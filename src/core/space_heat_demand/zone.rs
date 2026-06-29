@@ -1839,7 +1839,7 @@ mod tests {
             air_temps.extend_from_slice(
                 temps
                     .iter()
-                    .cloned()
+                    .copied()
                     .cycle()
                     .take((days_in_month * HOURS_IN_DAY) as usize)
                     .collect::<Vec<f64>>()
@@ -1878,7 +1878,7 @@ mod tests {
             wind_speeds.extend_from_slice(
                 speeds
                     .iter()
-                    .cloned()
+                    .copied()
                     .cycle()
                     .take((days_in_month * HOURS_IN_DAY) as usize)
                     .collect::<Vec<f64>>()
@@ -1917,7 +1917,7 @@ mod tests {
             wind_directions.extend_from_slice(
                 directions
                     .iter()
-                    .cloned()
+                    .copied()
                     .cycle()
                     .take((days_in_month * HOURS_IN_DAY) as usize)
                     .collect::<Vec<f64>>()
@@ -2024,7 +2024,7 @@ mod tests {
         ))
     }
 
-    fn be_ztc(external_conditions: Arc<ExternalConditions>) -> BuildingElement {
+    fn be_ztc(external_conditions: &Arc<ExternalConditions>) -> BuildingElement {
         BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
             22.5,
             135.,
@@ -2044,7 +2044,7 @@ mod tests {
         // Create objects for the different building elements in the zone
         let be_opaque_i = be_opaque_i(external_conditions.clone());
         let be_opaque_d = be_opaque_d(external_conditions.clone());
-        let be_ztc = be_ztc(external_conditions.clone());
+        let be_ztc = be_ztc(&external_conditions);
         let be_ground_floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,
             thermal_transmission_walls: 0.5,
@@ -2312,7 +2312,7 @@ mod tests {
         let result = &zone.fast_solver(coeffs, rhs).unwrap();
 
         for (i, expected_temp) in expected.data.as_vec().iter().enumerate() {
-            assert_relative_eq!(result[i], expected_temp)
+            assert_relative_eq!(result[i], expected_temp);
         }
     }
 
@@ -2325,21 +2325,18 @@ mod tests {
             return false;
         }
 
-        for (key, &expected_value) in expected.iter() {
-            match actual.get(key) {
-                Some(&actual_value) => {
-                    if (expected_value - actual_value).abs() > tol {
-                        eprintln!(
-                            "Field '{}' differs. Expected {}, got {}",
-                            key, expected_value, actual_value
-                        );
-                        return false;
-                    }
-                }
-                None => {
-                    eprintln!("Could not find expected key '{}'", key);
+        for (key, &expected_value) in expected {
+            if let Some(actual_value) = actual.get(key) {
+                if (expected_value - actual_value).abs() > tol {
+                    eprintln!(
+                        "Field '{}' differs. Expected {}, got {}",
+                        key, expected_value, actual_value
+                    );
                     return false;
                 }
+            } else {
+                eprintln!("Could not find expected key '{key}'");
+                return false;
             }
         }
 
@@ -2978,7 +2975,7 @@ mod tests {
                 "be_opaque_d".into(),
                 be_opaque_d(external_conditions.clone()).into(),
             ),
-            ("be_ztc".into(), be_ztc(external_conditions.clone()).into()),
+            ("be_ztc".into(), be_ztc(&external_conditions).into()),
         ]);
 
         // Create a zone WITHOUT the party wall first to get baseline values

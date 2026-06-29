@@ -1052,10 +1052,6 @@ impl Leaks {
     }
 
     fn calculate_flow_coeff_for_leak(&self) -> f64 {
-        //  c_leak - Leakage coefficient of ventilation zone
-
-        let c_leak = self.qv_delta_p_leak_ref * self.a_leak / (self.delta_p_leak_ref).powf(N_LEAK);
-
         // Leakage coefficient of roof, estimated to be proportional to ratio
         // of surface area of the facades to that of the facades plus the roof.
         fn is_wind_segment(facade_direction: FacadeDirection) -> bool {
@@ -1068,6 +1064,10 @@ impl Leaks {
                     | FacadeDirection::WindSeg5
             )
         }
+
+        //  c_leak - Leakage coefficient of ventilation zone
+        let c_leak = self.qv_delta_p_leak_ref * self.a_leak / (self.delta_p_leak_ref).powf(N_LEAK);
+
         if !is_wind_segment(self.facade_direction) {
             // leak in roof
             let c_leak_roof = c_leak * self.a_roof / (self.a_facades + self.a_roof);
@@ -3797,11 +3797,11 @@ mod tests {
         assert_eq!(infiltration_ventilation.leaks.len(), 5);
         assert_eq!(infiltration_ventilation.mech_vents.len(), 2);
 
-        for leak in infiltration_ventilation.leaks.iter() {
+        for leak in &infiltration_ventilation.leaks {
             assert_eq!(leak.a_roof, 45.);
         }
 
-        for leak in infiltration_ventilation.leaks.iter() {
+        for leak in &infiltration_ventilation.leaks {
             assert_eq!(leak.a_facades, 25.);
         }
 
@@ -3983,7 +3983,7 @@ mod tests {
         )
     }
 
-    pub fn ctrl_that_is_on(simulation_time_iterator: SimulationTimeIterator) -> Control {
+    fn ctrl_that_is_on(simulation_time_iterator: &SimulationTimeIterator) -> Control {
         Control::OnOffTime(OnOffTimeControl::new(
             vec![Some(true)],
             simulation_time_iterator.current_day(),
@@ -3991,7 +3991,7 @@ mod tests {
         ))
     }
 
-    pub fn ctrl_that_is_off(simulation_time_iterator: SimulationTimeIterator) -> Control {
+    fn ctrl_that_is_off(simulation_time_iterator: &SimulationTimeIterator) -> Control {
         Control::OnOffTime(OnOffTimeControl::new(
             vec![Some(false)],
             simulation_time_iterator.current_day(),
@@ -4017,7 +4017,7 @@ mod tests {
     fn test_calculate_window_opening_free_area_ctrl_off(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
+        let ctrl = ctrl_that_is_off(&simulation_time_iterator);
         let window = create_window(Some(ctrl), 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
@@ -4032,7 +4032,7 @@ mod tests {
     fn test_calculate_window_opening_free_area_ctrl_on(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
+        let ctrl = ctrl_that_is_on(&simulation_time_iterator);
         let window = create_window(Some(ctrl), 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
@@ -4059,7 +4059,7 @@ mod tests {
     fn test_calculate_flow_coeff_for_window_ctrl_off(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
+        let ctrl = ctrl_that_is_off(&simulation_time_iterator);
         let window = create_window(Some(ctrl), 0.);
         assert_relative_eq!(
             window
@@ -4072,7 +4072,7 @@ mod tests {
     fn test_calculate_flow_coeff_for_window_ctrl_on(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
+        let ctrl = ctrl_that_is_on(&simulation_time_iterator);
         let window = create_window(Some(ctrl), 0.);
         let expected_a_w = 1.5;
         let expected_flow_coeff =
@@ -4096,7 +4096,7 @@ mod tests {
         let f_cross = true;
         let shield_class = VentilationShieldClass::Open;
         let r_w_arg = 0.5;
-        let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
+        let ctrl = ctrl_that_is_on(&simulation_time_iterator);
         let window = create_window(Some(ctrl), 0.);
 
         let (qm_in, qm_out) = window
@@ -4165,7 +4165,7 @@ mod tests {
         let f_cross = true;
         let shield_class = VentilationShieldClass::Open;
         let r_w_arg = 1.;
-        let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
+        let ctrl = ctrl_that_is_off(&simulation_time_iterator);
         let window = create_window(Some(ctrl), 0.);
 
         let (qm_in, qm_out) = window
@@ -4559,15 +4559,12 @@ mod tests {
 
     #[rstest]
     fn test_mvhr_positions(mechanical_ventilation: MechanicalVentilation) {
-        let (orientation_intake, pitch_intake, h_path_intake) = if let MechVentData::Mvhr {
+        let MechVentData::Mvhr {
             orientation_intake,
             pitch_intake,
             h_path_intake,
-        } =
-            mechanical_ventilation.vent_data
-        {
-            (orientation_intake, pitch_intake, h_path_intake)
-        } else {
+        } = mechanical_ventilation.vent_data
+        else {
             panic!("MVHR type was picked in fixture but not found in test");
         };
         assert_eq!(orientation_intake.angle(), 180.);
@@ -4624,7 +4621,7 @@ mod tests {
         mechanical_ventilation: MechanicalVentilation,
     ) {
         let expected_result = 0.55;
-        assert_relative_eq!(mechanical_ventilation.qv_oda_req_design, expected_result)
+        assert_relative_eq!(mechanical_ventilation.qv_oda_req_design, expected_result);
     }
 
     #[rstest]
@@ -5001,7 +4998,7 @@ mod tests {
             combustion_appliances: CombustionAppliances,
             energy_supply: EnergySupply,
         ) -> InfiltrationVentilation {
-            let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
+            let ctrl = ctrl_that_is_on(&simulation_time_iterator);
             let windows = vec![create_window(Some(ctrl), 30.)];
             let vents = vec![Vent::new(1.5, 100., 20., 0.0.into(), 90., 30., 2.5)];
             let leaks = CompletedVentilationLeaks {

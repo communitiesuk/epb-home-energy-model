@@ -1358,7 +1358,7 @@ pub mod tests {
         simulation_time: SimulationTime,
         hot_water_sources: IndexMap<Arc<str>, HotWaterSource>,
         pre_heated_water_sources: IndexMap<String, HotWaterStorageTank>,
-        cold_water_source: Arc<ColdWaterSource>,
+        cold_water_source: &Arc<ColdWaterSource>,
         event_schedules: Vec<Option<Vec<TypedScheduleEvent>>>,
     ) -> DomesticHotWaterDemand {
         let flow_rates = vec![5., 7., 9., 11., 13.];
@@ -1514,7 +1514,7 @@ pub mod tests {
             simulation_time,
             hot_water_sources,
             pre_heated_water_sources,
-            cold_water_source,
+            &cold_water_source,
             event_schedules,
         );
 
@@ -1992,7 +1992,7 @@ pub mod tests {
             simulation_time,
             hot_water_sources,
             pre_heated_water_sources,
-            cold_water_source,
+            &cold_water_source,
             event_schedules_modified,
         );
 
@@ -2078,7 +2078,7 @@ pub mod tests {
             simulation_time,
             hot_water_sources,
             pre_heated_water_sources,
-            cold_water_source,
+            &cold_water_source,
             event_schedules,
         );
 
@@ -2460,7 +2460,7 @@ pub mod tests {
                 // don't check for _electric_showers entry for the below
                 if key.as_ref() == "_electric_showers" {
                     continue;
-                };
+                }
                 assert_eq!(
                     *hw_energy_demand_incl_pipework_loss.get(&key).unwrap(),
                     hw_energy_demand_incl_pipework_loss_expected
@@ -2507,7 +2507,7 @@ pub mod tests {
             simulation_time,
             hot_water_sources,
             pre_heated_water_sources,
-            cold_water_source,
+            &cold_water_source,
             event_schedules,
         );
 
@@ -2933,7 +2933,7 @@ pub mod tests {
             simulation_time,
             hot_water_sources,
             pre_heated_water_sources,
-            cold_water_source,
+            &cold_water_source,
             event_schedules,
         );
 
@@ -3004,7 +3004,7 @@ pub mod tests {
             simulation_time,
             hot_water_sources,
             pre_heated_water_sources,
-            cold_water_source,
+            &cold_water_source,
             event_schedules,
         );
 
@@ -3066,7 +3066,7 @@ pub mod tests {
             simulation_time,
             hot_water_sources,
             pre_heated_water_sources,
-            cold_water_source,
+            &cold_water_source,
             event_schedules,
         );
 
@@ -3151,7 +3151,7 @@ pub mod tests {
             simulation_time,
             hot_water_sources,
             pre_heated_water_sources,
-            cold_water_source,
+            &cold_water_source,
             event_schedules,
         );
 
@@ -3248,7 +3248,7 @@ pub mod tests {
             simulation_time,
             hot_water_sources,
             pre_heated_water_sources,
-            cold_water_source,
+            &cold_water_source,
             event_schedules,
         );
 

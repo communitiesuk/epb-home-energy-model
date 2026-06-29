@@ -2547,7 +2547,7 @@ mod tests {
                 temps_fn()
                     .to_vec()
                     .iter()
-                    .cloned()
+                    .copied()
                     .cycle()
                     .take((month_days_count * HOURS_IN_DAY) as usize)
                     .collect::<Vec<f64>>()
@@ -2645,7 +2645,7 @@ mod tests {
                 speeds_fn()
                     .to_vec()
                     .iter()
-                    .cloned()
+                    .copied()
                     .cycle()
                     .take((month_days_count * HOURS_IN_DAY) as usize)
                     .collect::<Vec<f64>>()
@@ -2694,7 +2694,7 @@ mod tests {
             wind_directions.extend_from_slice(
                 directions
                     .iter()
-                    .cloned()
+                    .copied()
                     .cycle()
                     .take((days_in_month * HOURS_IN_DAY) as usize)
                     .collect::<Vec<f64>>()

@@ -3467,7 +3467,7 @@ impl BuildingElement {
             ..
         } = self
         {
-            *window_openable_control = None
+            *window_openable_control = None;
         }
     }
 }
@@ -5651,13 +5651,13 @@ mod tests {
         serde_json::from_reader(file).unwrap()
     }
 
-    fn merge_json_onto_base(base: JsonValue, add: JsonValue) -> JsonValue {
+    fn merge_json_onto_base(base: JsonValue, add: &JsonValue) -> JsonValue {
         let mut merged = base;
         for (key, value) in add.as_object().unwrap() {
             merged
                 .as_object_mut()
                 .unwrap()
-                .insert(key.to_string(), value.clone());
+                .insert(key.clone(), value.clone());
         }
         merged
     }
@@ -5669,7 +5669,7 @@ mod tests {
     ) {
         let modified_input = merge_json_onto_base(
             baseline_demo_file_json,
-            json!({
+            &json!({
                 "WWHRS": null,
                 "HotWaterDemand": {}
             }),
@@ -5685,7 +5685,7 @@ mod tests {
     ) {
         let modified_input = merge_json_onto_base(
             baseline_demo_file_json,
-            json!({
+            &json!({
                 "WWHRS": {
                     "WWHRS1": {
                         "ColdWaterSource": "mains water",
@@ -5745,7 +5745,7 @@ mod tests {
         assert!(input.validate().is_err());
     }
 
-    fn create_heat_pump_config(source_type: &HeatPumpSourceType) -> JsonValue {
+    fn create_heat_pump_config(source_type: HeatPumpSourceType) -> JsonValue {
         json!({
             "hp": {
                 "type": "HeatPump",
@@ -5774,8 +5774,8 @@ mod tests {
         })
     }
 
-    fn create_ventilation_config(vent_type: &MechVentType) -> JsonValue {
-        if *vent_type == MechVentType::Mvhr {
+    fn create_ventilation_config(vent_type: MechVentType) -> JsonValue {
+        if vent_type == MechVentType::Mvhr {
             json!({
                 "sup_air_flw_ctrl": "ODA",
                 "sup_air_temp_ctrl": "NO_CTRL",
@@ -5865,22 +5865,19 @@ mod tests {
 
     /// Helper method to create complete exhaust air heat pump configuration.
     fn create_exhaust_air_heat_pump_config(
-        base_input: JsonValue,
+        base_input: &JsonValue,
         source_type: HeatPumpSourceType,
         vent_type: MechVentType,
     ) -> JsonValue {
         let mut modified_input = base_input.clone();
         let modified_input_obj = modified_input.as_object_mut().unwrap();
 
-        modified_input_obj.insert(
-            "HeatSourceWet".into(),
-            create_heat_pump_config(&source_type),
-        );
+        modified_input_obj.insert("HeatSourceWet".into(), create_heat_pump_config(source_type));
         let mut cloned_infiltration_ventilation = base_input["InfiltrationVentilation"].clone();
         let new_infiltration_ventilation = cloned_infiltration_ventilation.as_object_mut().unwrap();
         new_infiltration_ventilation.insert(
             "MechanicalVentilation".into(),
-            json!({"mechvent1": create_ventilation_config(&vent_type)}),
+            json!({"mechvent1": create_ventilation_config(vent_type)}),
         );
         modified_input_obj.insert(
             "InfiltrationVentilation".into(),
@@ -5907,7 +5904,7 @@ mod tests {
 
         for (source_type, vent_type) in valid_combinations {
             let mut modified_input = create_exhaust_air_heat_pump_config(
-                baseline_demo_file_json.clone(),
+                &baseline_demo_file_json,
                 source_type,
                 vent_type,
             );
@@ -5958,7 +5955,7 @@ mod tests {
 
         for (source_type, vent_type) in invalid_combinations {
             let mut modified_input = create_exhaust_air_heat_pump_config(
-                baseline_demo_file_json.clone(),
+                &baseline_demo_file_json,
                 source_type,
                 vent_type,
             );
@@ -5993,7 +5990,7 @@ mod tests {
         modified_input_infiltration_ventilation.insert(
             "MechanicalVentilation".into(),
             json!({
-                "mechvent1": create_ventilation_config(&MechVentType::IntermittentMev)
+                "mechvent1": create_ventilation_config(MechVentType::IntermittentMev)
             }),
         );
         let modified_input_control_node = modified_input
@@ -6013,7 +6010,7 @@ mod tests {
         let modified_input_obj = modified_input.as_object_mut().unwrap();
         modified_input_obj.insert(
             "HeatSourceWet".into(),
-            create_heat_pump_config(&HeatPumpSourceType::ExhaustAirMEV),
+            create_heat_pump_config(HeatPumpSourceType::ExhaustAirMEV),
         );
         let infiltration_ventilation_node = modified_input
             .get_mut("InfiltrationVentilation")
@@ -6023,7 +6020,7 @@ mod tests {
         infiltration_ventilation_node.insert(
             "MechanicalVentilation".into(),
             json!({
-                "mechvent1": create_ventilation_config(&MechVentType::CentralisedContinuousMev)
+                "mechvent1": create_ventilation_config(MechVentType::CentralisedContinuousMev)
             }),
         );
         let modified_input_control_node = modified_input
@@ -6045,7 +6042,7 @@ mod tests {
     where
         T: DeserializeOwned + Validate,
     {
-        let input_under_test = merge_json_onto_base(valid_example, inputs);
+        let input_under_test = merge_json_onto_base(valid_example, &inputs);
         let input: Result<T, _> = serde_json::from_value(input_under_test);
         assert!(match input {
             Ok(input) => input.validate().is_err(),
@@ -7993,8 +7990,10 @@ mod tests {
 
             #[rstest]
             fn test_validate_dry_core_output_when_no_input(valid_example: JsonValue) {
-                let modified_input =
-                    merge_json_onto_base(valid_example.clone(), json!({"dry_core_max_output": []}));
+                let modified_input = merge_json_onto_base(
+                    valid_example.clone(),
+                    &json!({"dry_core_max_output": []}),
+                );
                 let space_heat_system: SpaceHeatSystemDetails =
                     serde_json::from_value(modified_input).unwrap();
                 if let SpaceHeatSystemDetails::ElectricStorageHeater {
@@ -8008,7 +8007,7 @@ mod tests {
                 }
 
                 let modified_input =
-                    merge_json_onto_base(valid_example, json!({"dry_core_min_output": []}));
+                    merge_json_onto_base(valid_example, &json!({"dry_core_min_output": []}));
                 let space_heat_system: SpaceHeatSystemDetails =
                     serde_json::from_value(modified_input).unwrap();
                 if let SpaceHeatSystemDetails::ElectricStorageHeater {
@@ -8082,7 +8081,7 @@ mod tests {
             fn test_valid_setpoint_bounds(base_data: JsonValue) {
                 let data = merge_json_onto_base(
                     base_data,
-                    json!({"setpoint_min": 18.0, "setpoint_max": 25.0, "default_to_max": false}),
+                    &json!({"setpoint_min": 18.0, "setpoint_max": 25.0, "default_to_max": false}),
                 );
 
                 let control: ControlDetails = serde_json::from_value(data).unwrap();
@@ -8111,7 +8110,7 @@ mod tests {
             fn test_invalid_setpoint_bounds(base_data: JsonValue) {
                 let data = merge_json_onto_base(
                     base_data,
-                    json!({
+                    &json!({
                         "setpoint_min": 18.0,
                         "setpoint_max": 18.0,  // Equal to min - should fail
                         "default_to_max": false, // need to specify default_to_max when min and max present
