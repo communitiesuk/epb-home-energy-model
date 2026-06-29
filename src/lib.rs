@@ -3,7 +3,6 @@
     clippy::doc_overindented_list_items,
     dead_code
 )]
-#![warn(clippy::pedantic)]
 
 #[macro_use]
 extern crate is_close;
