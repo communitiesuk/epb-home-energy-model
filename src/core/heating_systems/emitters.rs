@@ -37,7 +37,6 @@ use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-
 type State = Vector1<f64>;
 type Time = f64;
 
@@ -3324,7 +3323,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "blocked by temp_emitters issue"]
+    #[ignore = "out by about 0.00001 (maybe this is good enough!)"]
     fn test_energy_required_from_heat_source(
         simulation_time_iterator: SimulationTimeIterator,
         emitters: Emitters,
@@ -3406,7 +3405,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "blocked by temp_emitters issue"]
+    #[ignore = "out by about 0.00001 (maybe this is good enough!)"]
     fn test_energy_required_from_heat_source_with_buffer_tank(
         simulation_time_iterator: SimulationTimeIterator,
         emitters_with_buffer_tank: Emitters,
@@ -3483,7 +3482,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_required_from_heat_source_with_buffer_tank_no_time_remaining(
         simulation_time_iterator: SimulationTimeIterator,
         emitters_with_buffer_tank: Emitters,
@@ -3584,7 +3582,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_output_min(
         mut emitters_for_energy_output_min: Emitters,
         zone_for_energy_output_min: Arc<dyn SimpleZone>,
@@ -3633,7 +3630,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "fails due to slight differences in solver logic"]
     fn test_return_temp_from_flow_rate_above_max(
         emitters_with_flow_rate_above_max: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
@@ -3680,7 +3676,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "fails due to slight differences in solver logic"]
     fn test_return_temp_from_flow_rate_non_variable_flow(
         emitters_with_non_variable_flow: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
@@ -3747,7 +3742,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "presumed blocked by temp_emitters issue"]
     fn test_return_temp_from_flow_rate_recirculated(
         emitters_with_flow_rate_recirculated: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
