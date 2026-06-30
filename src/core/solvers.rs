@@ -1,5 +1,5 @@
 use eqsolver::single_variable::FDNewton;
-use roots::{find_root_brent, SimpleConvergency};
+use roots::{find_root_brent, find_root_secant, SimpleConvergency};
 
 pub(crate) fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
     let solver = FDNewton::new(func);
@@ -180,25 +180,26 @@ pub(crate) fn bisect(
     .map_err(|e| anyhow::anyhow!(e))
 }
 
-// An viable equivalent of scipy.optimize.root
+// A viable equivalent of scipy.optimize.root
 pub(crate) fn root<const ARGCOUNT: usize>(
     fun: impl Fn(f64, [f64; ARGCOUNT]) -> f64,
     x0: f64,
     args: [f64; ARGCOUNT],
     tol: Option<f64>,
 ) -> anyhow::Result<f64> {
-    let mut convergency = SimpleConvergency {
-        eps: tol.unwrap_or(1e-8),
-        max_iter: 40, // picked intended as reasonably conservative default
-    };
-    let guess_interval = 5.; // initial guess for guess interval
+    let tol = tol.unwrap_or(1e-9);
 
-    // TODO can we use BrentRoot in argmin for this?
-    find_root_brent::<f64, _>(
-        (x0 - guess_interval).max(0.), // ensure first bracket is at least zero
-        x0 + guess_interval,
-        |f| fun(f, args),
-        &mut convergency,
-    )
-    .map_err(|e| anyhow::anyhow!(e))
+    let mut convergency = SimpleConvergency {
+        eps: tol,
+        max_iter: 100,
+    };
+
+    let x1 = x0 + 5.0;
+
+    let mut wrapper = |x: f64| -> f64 { fun(x, args) };
+
+    let found_root = find_root_secant(x0, x1, &mut wrapper, &mut convergency)
+        .map_err(|e| anyhow::anyhow!("Root optimisation failed: {:?}", e))?;
+
+    Ok(found_root)
 }

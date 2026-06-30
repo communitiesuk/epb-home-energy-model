@@ -37,6 +37,7 @@ use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+
 type State = Vector1<f64>;
 type Time = f64;
 
@@ -939,7 +940,7 @@ impl Emitters {
                 let current_y = stepper.y_out().last().expect("y_out was empty")[0];
                 let previous_y = stepper
                     .y_out()
-                    .get(y_count - 2)
+                    .get(y_count.saturating_sub(2))
                     .ok_or_else(|| anyhow!("Error while using Dopri stepper."))?[0];
 
                 let current_temp_diff = current_y - temp_diff_max;
@@ -970,7 +971,8 @@ impl Emitters {
                 max_temp: temp_diff_max.unwrap(),
             };
 
-            let previous_step_x = *stepper.x_out().get(stepper.x_out().len() - 2).unwrap();
+            let x_out_len = stepper.x_out().len();
+            let previous_step_x = *stepper.x_out().get(x_out_len.saturating_sub(2)).unwrap();
             let current_step_x = *stepper.x_out().last().unwrap();
 
             let eps = (2.0_f64).powf(-52.0_f64);
@@ -1376,7 +1378,7 @@ impl Emitters {
                 },
                 timestep,
                 [timestep, energy_demand, temp_rm_prev],
-                Some(1e-8),
+                Some(1e-9),
             )?;
 
             // Limit cooldown time to be within timestep
