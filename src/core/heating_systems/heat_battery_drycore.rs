@@ -17,7 +17,7 @@ use crate::core::water_heat_demand::misc::{
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{ControlLogicType, HeatBattery};
-use crate::statistics::{np_interp};
+use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use fsum::FSum;
@@ -869,7 +869,6 @@ pub(crate) fn clip(n: f64, min: f64, max: f64) -> f64 {
         n
     }
 }
-
 
 /// A trait that will need to be implemented by any type that uses HeatBatteryDryCore in
 /// every case. This is written as the equivalent of the mechanism in the upstream Python
