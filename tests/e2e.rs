@@ -64,6 +64,7 @@ const PASSING_FILES: &[&str] = &[
     "demo_24hrs_August_SolarThermal_to_preheat.json",
     "demo_hp_fancoils_pipework.json",
     "demo_hp_fancoils.json",
+    "demo_168hrs_heat_battery.json",
     "demo_168hrs_heat_battery_charge_calc_time_3.json",
     "demo_168hrs_heat_battery_charge_calc_time_18.json",
     "demo_emitter_pipework.json",
