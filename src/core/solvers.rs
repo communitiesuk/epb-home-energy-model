@@ -6,7 +6,8 @@ use numpy::PyReadonlyArrayDyn;
 use parking_lot::Mutex;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyDict};
+use pyo3::types::PyDict;
+use roots::{find_root_secant, SimpleConvergency};
 use std::sync::Arc;
 
 pub fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
@@ -185,33 +186,28 @@ impl FallibleRootRustCallback {
     }
 }
 
-// An viable equivalent of scipy.optimize.root
+// A viable equivalent of scipy.optimize.root
 pub fn root(
     fun: Box<dyn Fn(f64, [f64; 3]) -> anyhow::Result<f64> + Send + Sync>,
     x0: f64,
     args: [f64; 3],
     tol: Option<f64>,
 ) -> anyhow::Result<f64> {
-    let rust_callback = FallibleRootRustCallback {
-        inner: fun,
-        last_error: Arc::new(Mutex::new(None)),
+    let tol = tol.unwrap_or(1e-9);
+
+    let mut convergency = SimpleConvergency {
+        eps: tol,
+        max_iter: 100,
     };
 
-    let result = Python::attach(move |py| {
-        let optimize = py.import("scipy.optimize")?;
-        let root = optimize.getattr("root")?;
+    let x1 = x0 + 5.0;
 
-        let kwargs = [("tol", tol)].into_py_dict(py)?;
+    let mut wrapper = |x: f64| -> f64 { fun(x, args).unwrap_or(f64::NAN) };
 
-        Ok(root
-            .call((rust_callback, x0, args), Some(&kwargs))?
-            .extract::<RootResult>()?)
-    })
-    .map_err(move |e: PyErr| anyhow::anyhow!(e))?;
+    let found_root = find_root_secant(x0, x1, &mut wrapper, &mut convergency)
+        .map_err(|e| anyhow!("Root optimisation failed: {:?}", e))?;
 
-    let RootResult { x } = result;
-
-    Ok(x[0])
+    Ok(found_root)
 }
 
 #[derive(Debug)]

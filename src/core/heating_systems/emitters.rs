@@ -1278,7 +1278,7 @@ impl Emitters {
                 root_func,
                 timestep,
                 [timestep, energy_demand, temp_rm_prev],
-                Some(1e-8),
+                Some(1e-9),
             )?;
 
             // Limit cooldown time to be within timestep
