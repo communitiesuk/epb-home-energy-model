@@ -210,22 +210,6 @@ pub fn root(
     Ok(found_root)
 }
 
-#[derive(Debug)]
-struct RootResult {
-    x: ArrayD<f64>,
-}
-
-impl<'a, 'py> FromPyObject<'a, 'py> for RootResult {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        let x: PyReadonlyArrayDyn<'py, f64> = ob.getattr("x")?.extract()?;
-        let x = x.as_array().to_owned();
-
-        Ok(Self { x })
-    }
-}
-
 pub fn solve_ivp<const ARGCOUNT: usize>(
     func: Box<dyn Fn(f64, &[f64]) -> PyResult<Vec<f64>> + Send + Sync>,
     t_span: (f64, f64),
