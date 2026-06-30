@@ -19,7 +19,7 @@ use crate::core::water_heat_demand::misc::{
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{ControlLogicType, HeatBattery};
-use crate::statistics::np_interp;
+use crate::statistics::{linspace, np_interp};
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use fsum::FSum;
@@ -128,11 +128,8 @@ impl HeatStorageDryCore {
         // Validate that for any SOC, power_max >= power_min
         // Sample a fine grid of SOCs and ensure power_max >= power_min
         {
-            let all_correct: bool = Python::attach(|py| {
-                let np = py.import("numpy")?;
-                let linspace = np.getattr("linspace")?;
-
-                let fine_soc = linspace.call1((0.0, 1.0, 100))?.extract::<Vec<f64>>()?;
+            let all_correct: bool = {
+                let fine_soc = linspace(0.0, 1.0, 100);
 
                 let power_max_fine = interp1d(
                     soc_max_array.clone(),
@@ -146,12 +143,11 @@ impl HeatStorageDryCore {
                     Interp1dFillValue::FillValues((0., 0.)),
                 )(&fine_soc);
 
-                Ok(power_max_fine
+                power_max_fine
                     .into_iter()
                     .zip(power_min_fine.into_iter())
-                    .all(|(x, y)| x >= y))
-            })
-            .map_err(|e: PyErr| anyhow!(e))?;
+                    .all(|(x, y)| x >= y)
+            };
 
             if !all_correct {
                 bail!("At all SOC levels, dry_core_max_output must be >= dry_core_min_output.");
