@@ -1,5 +1,5 @@
 use eqsolver::single_variable::FDNewton;
-use roots::{find_root_brent, find_root_secant, SimpleConvergency};
+use roots::{find_root_secant, SimpleConvergency};
 
 pub(crate) fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
     let solver = FDNewton::new(func);
@@ -150,34 +150,6 @@ pub mod bisect {
     }
 
     impl std::error::Error for BisectError {}
-}
-
-// TODO this is from scipy
-// Find equivalent function in a Rust library or implement
-pub(crate) fn bisect(
-    func: impl Fn(f64) -> anyhow::Result<f64>,
-    a: f64,
-    b: f64,
-    xtol: f64,
-) -> anyhow::Result<f64> {
-    let func_modified = |x| {
-        // TODO handle errors here
-        func(x).unwrap()
-    };
-
-    let mut convergency = SimpleConvergency {
-        eps: xtol,
-        max_iter: 100, // default for bisect in scipy
-    };
-
-    // For the time being we use the brent root solver
-    find_root_brent::<f64, _>(
-        a.max(0.), // ensure first bracket is at least zero
-        b,
-        func_modified,
-        &mut convergency,
-    )
-    .map_err(|e| anyhow::anyhow!(e))
 }
 
 // A viable equivalent of scipy.optimize.root
