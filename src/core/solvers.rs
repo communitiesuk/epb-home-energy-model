@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use eqsolver::single_variable::FDNewton;
+use interp::{interp_slice, InterpMode};
 use itertools::Itertools;
 use numpy::ndarray::ArrayD;
 use numpy::PyReadonlyArrayDyn;
@@ -333,29 +334,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for OdeResult {
     }
 }
 
-pub fn interp1d(x: &[f64], y: &[f64], fill_value: Interp1dFillValue) -> Py<PyAny> {
-    Python::attach(|py| {
-        let interpolate = py.import("scipy.interpolate")?;
-        let interp1d = interpolate.getattr("interp1d")?;
+pub fn interp1d<'a>(
+    x: Vec<f64>,
+    y: Vec<f64>,
+    fill_value: Interp1dFillValue,
+) -> Arc<dyn Fn(&[f64]) -> Vec<f64> + Send + Sync> {
+    let interp_mode = match fill_value {
+        Interp1dFillValue::Extrapolate => InterpMode::Extrapolate,
+        Interp1dFillValue::FillValues(values) => InterpMode::Constant(values.0),
+    };
 
-        let kwargs = PyDict::new(py);
-        kwargs.set_item("kind", "linear")?;
-        match fill_value {
-            Interp1dFillValue::Extrapolate => {
-                kwargs.set_item("fill_value", "extrapolate")?;
-            }
-            Interp1dFillValue::FillValues(values) => {
-                kwargs.set_item("fill_value", values)?;
-            }
-        }
-        kwargs.set_item("bounds_error", false)?;
-        kwargs.set_item("assume_sorted", true)?;
+    let func =
+        move |x_new: &[f64]| interp_slice(&x, &y, x_new.try_into().unwrap(), &interp_mode).to_vec();
 
-        interp1d
-            .call((x, y), Some(&kwargs))
-            .map(|func| func.unbind())
-    })
-    .unwrap()
+    Arc::new(func)
 }
 
 pub enum Interp1dFillValue {

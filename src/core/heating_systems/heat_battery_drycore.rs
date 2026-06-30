@@ -7,7 +7,9 @@ use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
-use crate::core::solvers::{interp1d, solve_ivp, Interp1dFillValue, OdeResult, TerminalFunction};
+use crate::core::solvers::{
+    interp1d, solve_ivp, Interp1dFillValue, OdeResult, TerminalFunction,
+};
 use crate::core::units::{
     HOURS_PER_DAY, KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
@@ -25,10 +27,10 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 use smartstring::alias::String;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
+use derivative::Derivative;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum OutputMode {
@@ -36,7 +38,8 @@ pub(crate) enum OutputMode {
     Max,
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub(crate) struct HeatStorageDryCore {
     pwr_in: f64,
     storage_capacity: f64,
@@ -52,8 +55,10 @@ pub(crate) struct HeatStorageDryCore {
     power_max_array: Vec<f64>,
     soc_min_array: Vec<f64>,
     power_min_array: Vec<f64>,
-    power_max_func: Arc<Py<PyAny>>, // unbound Python function
-    power_min_func: Arc<Py<PyAny>>, // unbound Python function
+    #[derivative(Debug = "ignore")]
+    power_max_func: Arc<dyn Fn(&[f64]) -> Vec<f64> + Send + Sync>,
+    #[derivative(Debug = "ignore")]
+    power_min_func: Arc<dyn Fn(&[f64]) -> Vec<f64> + Send + Sync>,
     heat_retention_ratio: f64,
     // weak reference back to value that is composing this struct, as we need two-way references
     owner: Option<Weak<dyn HeatBatteryDryCoreCommonBehaviour>>,
@@ -127,37 +132,26 @@ impl HeatStorageDryCore {
                 let np = py.import("numpy")?;
                 let linspace = np.getattr("linspace")?;
 
-                let fine_soc = linspace.call1((0.0, 1.0, 100))?;
+                let fine_soc = linspace.call1((0.0, 1.0, 100))?.extract::<Vec<f64>>()?;
 
-                let interpolate = py.import("scipy.interpolate")?;
-                let interp1d = interpolate.getattr("interp1d")?;
+                let power_max_fine = interp1d(
+                    soc_max_array.clone(),
+                    power_max_array.clone(),
+                    Interp1dFillValue::Extrapolate,
+                )(&fine_soc);
 
-                let max_kwargs = PyDict::new(py);
-                max_kwargs.set_item("kind", "linear")?;
-                max_kwargs.set_item("fill_value", "extrapolate")?;
-                max_kwargs.set_item("bounds_error", false)?;
-                max_kwargs.set_item("assume_sorted", true)?;
+                let power_min_fine = interp1d(
+                    soc_min_array.clone(),
+                    power_min_array.clone(),
+                    Interp1dFillValue::FillValues((0., 0.)),
+                )(&fine_soc);
 
-                let power_max_fine = interp1d
-                    .call((&soc_max_array, &power_max_array), Some(&max_kwargs))?
-                    .call1((&fine_soc,))?;
-
-                let min_kwargs = PyDict::new(py);
-                min_kwargs.set_item("kind", "linear")?;
-                min_kwargs.set_item("fill_value", (0., 0.))?;
-                min_kwargs.set_item("bounds_error", false)?;
-                min_kwargs.set_item("assume_sorted", true)?;
-
-                let power_min_fine = interp1d
-                    .call((&soc_min_array, &power_min_array), Some(&min_kwargs))?
-                    .call1((&fine_soc,))?;
-
-                let numpy_all = np.getattr("all")?;
-                numpy_all
-                    .call1((power_max_fine.getattr("__ge__")?.call1((power_min_fine,))?,))?
-                    .extract::<bool>()
+                Ok(power_max_fine
+                    .into_iter()
+                    .zip(power_min_fine.into_iter())
+                    .all(|(x, y)| x >= y))
             })
-            .map_err(|e| anyhow!(e))?;
+            .map_err(|e: PyErr| anyhow!(e))?;
 
             if !all_correct {
                 bail!("At all SOC levels, dry_core_max_output must be >= dry_core_min_output.");
@@ -173,11 +167,11 @@ impl HeatStorageDryCore {
                 bail!("power_max_array must not be empty for dry core heat battery.");
             };
 
-        let power_max_func = Arc::new(interp1d(
-            &soc_max_array,
-            &power_max_array,
+        let power_max_func = interp1d(
+            soc_max_array.clone(),
+            power_max_array.clone(),
             Interp1dFillValue::FillValues((start_power_max_array, end_power_max_array)),
-        ));
+        );
 
         let (start_power_min_array, end_power_min_array) =
             if let (Some(start_power_min_array), Some(end_power_min_array)) =
@@ -188,11 +182,11 @@ impl HeatStorageDryCore {
                 bail!("power_min_array must not be empty for dry core heat battery.");
             };
 
-        let power_min_func = Arc::new(interp1d(
-            &soc_min_array,
-            &power_min_array,
+        let power_min_func = interp1d(
+            soc_min_array.clone(),
+            power_min_array.clone(),
             Interp1dFillValue::FillValues((start_power_min_array, end_power_min_array)),
-        ));
+        );
 
         let heat_retention_ratio = Self::heat_retention_output(
             &soc_min_array,
@@ -224,7 +218,7 @@ impl HeatStorageDryCore {
 
     pub(super) fn heat_retention_output(
         soc_array: &[f64],
-        power_min_func: Arc<Py<PyAny>>,
+        power_min_func: Arc<dyn Fn(&[f64]) -> Vec<f64> + Send + Sync>,
         storage_capacity: f64,
     ) -> anyhow::Result<f64> {
         // Simulates the heat retention over 16 hours in OutputMode.MIN.
@@ -240,19 +234,9 @@ impl HeatStorageDryCore {
         // Total time for the simulation (16 hours)
         let total_time = 16.0; // This is the value from BS EN 60531 for determining heat retention ability
 
-        let power_values: Vec<f64> = Python::attach(|py| {
-            let power_min_func = power_min_func.bind(py);
-            power_min_func.call1((soc_array,))?.extract::<Vec<f64>>()
-        })
-        .map_err(|e| anyhow!(e))?;
+        let power_values = power_min_func(soc_array);
 
-        let power_interp = Arc::new(interp1d(
-            soc_array,
-            &power_values,
-            Interp1dFillValue::Extrapolate,
-        ));
-
-        let power_interp = Arc::clone(&power_interp);
+        let power_interp = interp1d(soc_array.to_vec(), power_values.clone(), Interp1dFillValue::Extrapolate);
 
         // Define the ODE for SOC and energy delivered (no charging, only discharging)
         let soc_ode = Box::new(move |_t: f64, y: &[f64]| -> PyResult<Vec<f64>> {
@@ -264,10 +248,7 @@ impl HeatStorageDryCore {
             let power_interp = power_interp.clone();
 
             // Discharging: calculate power used based on SOC
-            let discharge_rate: f64 = Python::attach(move |py| {
-                let power_interp = power_interp.bind(py);
-                power_interp.call1((soc,))?.extract::<f64>().map(|x| -x)
-            })?;
+            let discharge_rate: f64 = power_interp(&soc)[0] * -1.;
 
             // Track the total energy delivered (discharged energy)
             let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
@@ -310,19 +291,10 @@ impl HeatStorageDryCore {
             OutputMode::Max => (&self.soc_max_array, Arc::clone(&self.power_max_func)),
         };
 
-        let power_values: Vec<f64> = Python::attach(|py| {
-            let power_func = power_func.clone();
-            let power_func = power_func.bind(py);
-            power_func.call1((soc_array,))?.extract::<Vec<f64>>()
-        })
-        .map_err(|e| anyhow!(e))?;
+        let power_values = power_func(soc_array);
 
         // Set up interpolation function for Power vs SOC
-        let power_interp = Arc::new(interp1d(
-            soc_array,
-            &power_values,
-            Interp1dFillValue::Extrapolate,
-        ));
+        let power_interp = interp1d(soc_array.to_vec(), power_values.clone(), Interp1dFillValue::Extrapolate);
 
         // Charging: determine the maximum power available for charging
         let target_charge = self.target_electric_charge(*simtime)?;
@@ -357,10 +329,7 @@ impl HeatStorageDryCore {
             let power_interp = Arc::clone(&power_interp);
 
             // Discharging: calculate power used based on SOC
-            let discharging_rate: f64 = Python::attach(move |py| {
-                let power_interp = power_interp.bind(py);
-                power_interp.call1((soc,))?.extract::<f64>().map(|x| -x)
-            })?;
+            let discharging_rate = power_interp(&[soc])[0] * -1.;
 
             // Track the total energy delivered (discharged energy)
             let ddelivered_dt = -discharging_rate;
@@ -478,18 +447,13 @@ impl HeatStorageDryCore {
         };
 
         let power_interp = {
-            let power_values: Vec<f64> = Python::attach(|py| {
-                let power_func = power_func.clone();
-                let power_func = power_func.bind(py);
-                power_func.call1((soc_array,))?.extract::<Vec<f64>>()
-            })
-            .map_err(|e| anyhow!(e))?;
+            let power_values = power_func(soc_array);
 
-            Arc::new(interp1d(
-                soc_array,
-                &power_values,
+            interp1d(
+                soc_array.to_vec(),
+                power_values.to_vec(),
                 Interp1dFillValue::Extrapolate,
-            ))
+            )
         };
 
         let power_min_interp = {
@@ -497,18 +461,13 @@ impl HeatStorageDryCore {
 
             let power_func = Arc::clone(&self.power_min_func);
 
-            let power_values: Vec<f64> = Python::attach(|py| {
-                let power_func = power_func.clone();
-                let power_func = power_func.bind(py);
-                power_func.call1((&soc_min_array,))?.extract::<Vec<f64>>()
-            })
-            .map_err(|e| anyhow!(e))?;
+            let power_values = power_func(&soc_array);
 
-            Arc::new(interp1d(
-                &soc_min_array,
-                &power_values,
+            interp1d(
+                soc_min_array,
+                power_values,
                 Interp1dFillValue::Extrapolate,
-            ))
+            )
         };
 
         // Charging: determine the maximum power available for charging
@@ -538,18 +497,13 @@ impl HeatStorageDryCore {
             let (ddelivered_dt, dlost_dt) = match mode {
                 OutputMode::Max => {
                     // Total power output when actively delivering
-                    let total_discharge_rate: f64 = Python::attach(|py| {
-                        let power_interp = power_interp.bind(py);
-                        power_interp.call1((soc,))?.extract()
-                    })?;
+                    let total_discharge_rate: f64 = power_interp(&[soc])[0];
 
                     // Calculate the instantaneous loss rate (always based on MIN output)
                     let loss_rate = {
                         let power_min_interp = Arc::clone(&power_min_interp);
-                        Python::attach(|py| {
-                            let power_min_interp = power_min_interp.bind(py);
-                            power_min_interp.call1((soc,))?.extract::<f64>()
-                        })?
+
+                        power_min_interp(&[soc])[0]
                     };
 
                     // The useful energy delivered is the difference between MAX and MIN
@@ -559,10 +513,7 @@ impl HeatStorageDryCore {
                 }
                 OutputMode::Min => (
                     0.0,
-                    Python::attach(|py| {
-                        let power_interp = power_interp.bind(py);
-                        power_interp.call1((soc,))?.extract::<f64>()
-                    })?,
+                    power_interp(&[soc])[0],
                 ),
             };
 
