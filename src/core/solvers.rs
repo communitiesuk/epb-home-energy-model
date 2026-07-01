@@ -4,8 +4,6 @@ use interp::{interp_slice, InterpMode};
 use itertools::Itertools;
 use numpy::ndarray::ArrayD;
 use numpy::PyReadonlyArrayDyn;
-use parking_lot::Mutex;
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use roots::{find_root_secant, SimpleConvergency};
@@ -160,31 +158,6 @@ pub mod bisect {
     }
 
     impl std::error::Error for BisectError {}
-}
-
-#[pyclass]
-struct FallibleRootRustCallback {
-    // We use Box<dyn Fn> to store the closure.
-    // Note: It needs to be Send + Sync because it will need to be passed to a Python thread.
-    inner: Box<dyn Fn(f64, [f64; 3]) -> anyhow::Result<f64> + Send + Sync>,
-    last_error: Arc<Mutex<Option<anyhow::Error>>>,
-}
-
-#[pymethods]
-impl FallibleRootRustCallback {
-    // The `__call__` method makes the object act like a function in Python.
-    #[pyo3(signature = (x0, args, /))]
-    fn __call__(&self, x0: f64, args: [f64; 3]) -> PyResult<f64> {
-        // Execute the boxed closure
-        match (self.inner)(x0, args) {
-            Ok(result) => Ok(result),
-            Err(e) => {
-                let msg = format!("{e:#}");
-                *self.last_error.lock() = Some(e);
-                Err(PyRuntimeError::new_err(msg))
-            }
-        }
-    }
 }
 
 // A viable equivalent of scipy.optimize.root
