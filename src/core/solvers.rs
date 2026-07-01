@@ -1,3 +1,4 @@
+use crate::core::schedule::input::ScheduleEntry::Null;
 use anyhow::anyhow;
 use differential_equations::prelude::*;
 use eqsolver::single_variable::FDNewton;
@@ -186,17 +187,123 @@ pub fn root(
 }
 
 pub fn solve_ivp_new(
-    func: Box<dyn Fn(f64, &[f64]) -> Vec<f64> + Send + Sync>,
+    func: Arc<dyn Fn(f64, &[f64]) -> Vec<f64> + Send + Sync>,
     t_span: (f64, f64),
     y0: &[f64],
-    events: Option<Vec<()>>,
+    events: Option<TerminatingEvents>,
     rtol: Option<f64>,
     atol: Option<f64>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<RustOdeResult> {
     let rtol = rtol.unwrap_or(1e-3);
     let atol = atol.unwrap_or(1e-6);
 
-    todo!()
+    let system = OdeConfiguration { func: func.clone() };
+
+    let solver = ExplicitRungeKutta::dop853().rtol(rtol).atol(atol);
+
+    let (t0, tf) = t_span;
+
+    let event_configurator: Box<dyn Event<OdeRealNumber, RealGrouping>> =
+        if let Some(events) = events {
+            Box::new(OdeEventConfigurator {
+                direction: events.direction.unwrap_or_default().into(),
+            })
+        } else {
+            Box::new(NoopEvent)
+        };
+
+    let solution = IVP::ode(&system, t0, tf, y0.to_vec())
+        .method(solver)
+        .event(&*event_configurator)
+        .solve()
+        .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?;
+
+    Ok(RustOdeResult {
+        y: solution.y,
+        t_events: Default::default(), // TODO: hook into equiv of Python t_events (or something that gives the information the calling code needs)
+        t: solution.t,
+    })
+}
+
+struct OdeConfiguration {
+    func: Arc<dyn Fn(f64, &[f64]) -> Vec<f64> + Send + Sync>,
+}
+
+type OdeRealNumber = f64;
+type RealGrouping = Vec<OdeRealNumber>;
+
+impl ODE<OdeRealNumber, RealGrouping> for OdeConfiguration {
+    fn diff(&self, t: f64, y: &Vec<f64>, dydt: &mut Vec<f64>) {
+        let _ = std::mem::replace(dydt, (self.func)(t, y));
+    }
+}
+
+struct OdeEventConfigurator {
+    direction: CrossingDirection,
+}
+
+impl Event<OdeRealNumber, RealGrouping> for OdeEventConfigurator {
+    fn config(&self) -> EventConfig {
+        EventConfig::new(self.direction, None)
+    }
+
+    fn event(&self, t: OdeRealNumber, y: &RealGrouping) -> OdeRealNumber {
+        todo!()
+    }
+}
+
+struct NoopEvent;
+
+impl Event<OdeRealNumber, RealGrouping> for NoopEvent {
+    fn config(&self) -> EventConfig {
+        EventConfig::new(CrossingDirection::Both, Some(Self::BIG_NUMBER))
+    }
+
+    fn event(&self, _t: OdeRealNumber, _y: &RealGrouping) -> OdeRealNumber {
+        Self::BIG_NUMBER as f64
+    }
+}
+
+impl NoopEvent {
+    const BIG_NUMBER: u32 = 1_000_000;
+}
+
+pub struct RustOdeResult {
+    pub y: Vec<Vec<f64>>,
+    pub t_events: Vec<Vec<f64>>,
+    pub t: Vec<f64>,
+}
+
+pub struct TerminatingEvents {
+    funcs: Vec<Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>>,
+    direction: Option<TerminateDirection>,
+}
+
+impl TerminatingEvents {
+    pub fn new(
+        funcs: Vec<Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>>,
+        direction: Option<TerminateDirection>,
+    ) -> Self {
+        Self { funcs, direction }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub enum TerminateDirection {
+    #[default]
+    Both,
+    Positive,
+    Negative,
+}
+
+impl From<TerminateDirection> for CrossingDirection {
+    fn from(direction: TerminateDirection) -> Self {
+        match direction {
+            TerminateDirection::Both => CrossingDirection::Both,
+            TerminateDirection::Positive => CrossingDirection::Positive,
+            TerminateDirection::Negative => CrossingDirection::Negative,
+        }
+    }
 }
 
 pub fn solve_ivp<const ARGCOUNT: usize>(
