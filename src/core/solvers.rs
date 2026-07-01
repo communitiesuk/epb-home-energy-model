@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use differential_equations::prelude::*;
 use eqsolver::single_variable::FDNewton;
 use interp::{interp_slice, InterpMode};
 use itertools::Itertools;
@@ -182,6 +183,20 @@ pub fn root(
         .map_err(|e| anyhow!("Root optimisation failed: {:?}", e))?;
 
     Ok(found_root)
+}
+
+pub fn solve_ivp_new(
+    func: Box<dyn Fn(f64, &[f64]) -> Vec<f64> + Send + Sync>,
+    t_span: (f64, f64),
+    y0: &[f64],
+    events: Option<Vec<()>>,
+    rtol: Option<f64>,
+    atol: Option<f64>,
+) -> anyhow::Result<()> {
+    let rtol = rtol.unwrap_or(1e-3);
+    let atol = atol.unwrap_or(1e-6);
+
+    todo!()
 }
 
 pub fn solve_ivp<const ARGCOUNT: usize>(
