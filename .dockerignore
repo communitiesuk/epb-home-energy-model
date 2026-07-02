@@ -1,0 +1,8 @@
+fuzz/
+target/
+.git/
+.vscode/
+.idea/
+.DS_Store
+.github
+justfile

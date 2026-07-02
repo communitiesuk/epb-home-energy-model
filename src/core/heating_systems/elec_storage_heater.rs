@@ -817,7 +817,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_output_min(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -864,7 +863,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_output_max(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1233,7 +1231,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_demand_energy_no_demand(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1627,7 +1624,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
+    #[ignore = "numbers are close after ODE solve but still to work out acceptable precision for assertions here"]
     fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1671,7 +1668,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_instant(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1715,7 +1711,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_charged(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
@@ -1759,7 +1754,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "known issue (energy_output in hb drycore, ode/root solver)"]
     fn test_energy_stored_delivered(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,

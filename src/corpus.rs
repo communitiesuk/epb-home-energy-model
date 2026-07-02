@@ -5923,7 +5923,7 @@ fn space_heat_systems_from_input(
                             detailed_output_heating_cooling.into(),
                             with_buffer_tank.into(),
                         )?;
-                        SpaceHeatSystem::WetDistribution(space_heater)
+                        SpaceHeatSystem::WetDistribution(space_heater.into())
                     }
                     SpaceHeatSystemDetails::WarmAir {
                         frac_convective,

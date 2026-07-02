@@ -592,6 +592,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
 
 [[package]]
+name = "differential-equations"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d59c6f4160bf75916dd69b58f6323171dd22e2e4a68cf7e31b1b2bf54b7433a"
+dependencies = [
+ "differential-equations-derive",
+ "simba 0.9.1",
+]
+
+[[package]]
+name = "differential-equations-derive"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68a7fe2019075c678918caa15cc0be080f0c4400ae58256aaf31ab7059b4920b"
+dependencies = [
+ "proc-macro2 1.0.106",
+ "quote 1.0.45",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1128,6 +1149,7 @@ dependencies = [
  "convert_case",
  "csv",
  "derivative",
+ "differential-equations",
  "eqsolver",
  "erased-serde",
  "field_types",
@@ -1141,7 +1163,6 @@ dependencies = [
  "jsonschema",
  "monostate",
  "nalgebra 0.33.3",
- "ode_solvers",
  "ordered-float",
  "parking_lot",
  "petgraph",
@@ -1977,17 +1998,6 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
  "libm",
-]
-
-[[package]]
-name = "ode_solvers"
-version = "0.5.0"
-source = "git+https://github.com/russ-madetech/ode-solvers?branch=events#e27a4af3cb662b67946f34d7c6e11f0093cbb2da"
-dependencies = [
- "nalgebra 0.33.3",
- "num-traits",
- "simba 0.9.1",
- "thiserror 1.0.69",
 ]
 
 [[package]]

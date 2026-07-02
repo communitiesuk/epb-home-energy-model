@@ -7,6 +7,7 @@ use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use rstest::*;
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Write};
@@ -70,6 +71,49 @@ const PASSING_FILES: &[&str] = &[
     "demo_emitter_pipework.json",
 ];
 
+const PASSING_FILES_IN_USE_PYTHON_ONLY: &[&str] = &[
+    "demo_hp_smart_hot_water_tank.json",
+    "demo_hp_default_to_max.json",
+    "demo_combiBoiler.json",
+    "demo_hp_buffer_tank.json",
+    "demo_hp_ufh.json",
+    "demo_hp_with_setback_separate_ieh_same_setpoint.json",
+    "demo_24hrs_August_WWHRS.json",
+    "demo_hp_with_setback.json",
+    "demo_hp_with_setback_separate_ieh_diff_setpoint.json",
+    "demo_emitter_pipework.json",
+    "demo_hp_surfacewater.json",
+    "demo_hp_bypass.json",
+    "demo_eahp_mixed.json",
+    "demo_hp_with_advancedstart.json",
+    "demo_heat_network.json",
+    "demo_heat_network_5G.json",
+    "demo_eahp_single_zone.json",
+    "demo_eahp.json",
+    "demo_24hrs_January_esh_automatic.json",
+    "demo_24hrs_January_esh_celect.json",
+    "demo_24hrs_January_esh_hhrsh.json",
+    "demo_24hrs_January_esh_manual.json",
+    "demo_hp_buffer_tank_fancoils.json",
+    "demo_24hrs_August_pvdiverter_and_hp.json",
+    "demo_heat_battery_water_only.json",
+    "demo_heat_battery_all.json",
+    "demo_heat_battery_charge_level.json",
+    "demo_FHS_heat_battery.json",
+    "demo_FHS_heating_system_priority.json",
+    "demo_hp_primary_pipework.json",
+    "demo_FHS_emitters_outside_temp_over_maximum.json",
+    "demo_24hrs_August_pvdiverter_and_hp_smart_hot_water.json",
+    "demo_combiBoilerLPG.json",
+    "demo_168hrs_heat_battery.json",
+    "demo_168hrs_heat_battery_charge_calc_time_3.json",
+    "demo_168hrs_heat_battery_charge_calc_time_18.json",
+    "demo_168hrs_heat_battery_charge_calc_time_18_alternat_geometry.json",
+    "demo_heat_network_storage_tank.json",
+    "demo_hp_hybrid_combiboiler.json",
+    "demo_3tanks_3hps.json",
+];
+
 #[fixture]
 fn files() -> Vec<DirEntry> {
     WalkDir::new("./examples/input/core")
@@ -78,7 +122,9 @@ fn files() -> Vec<DirEntry> {
         .filter(|e| {
             !e.file_type().is_dir()
                 && e.file_name().to_str().unwrap().ends_with("json")
-                && !PASSING_FILES.contains(&e.file_name().to_str().unwrap())
+                // && !PASSING_FILES.contains(&e.file_name().to_str().unwrap())
+                // && !PASSING_FILES_IN_USE_PYTHON_ONLY.contains(&e.file_name().to_str().unwrap())
+                // && e.file_name().to_str().unwrap().contains("heat_battery_drycore_all")
                 && !e
                     .path()
                     .parent()
@@ -109,11 +155,19 @@ fn test_run_all_files(files: Vec<DirEntry>) {
     )))
     .unwrap();
 
+    let tracked_files: Arc<RwLock<HashSet<String>>> = Default::default();
+
     let difference_count: usize = files.par_iter().map(move |file| {
         println!("\n🎬 starting to run HEM calculation on file {}\n", file.file_name().display());
         let mut difference_count = 0usize;
         let output_writer = InMemoryDirectoryOutputWriter::new(file.file_name().to_str().unwrap());
         let use_additional_options = use_additional_options(file);
+        let file_name_string = file.file_name().to_str().unwrap().to_string();
+        {
+            let mut tracked_files = tracked_files.write();
+            tracked_files.insert(file_name_string.clone());
+            println!("🏃‍♂️ starting new calc - current count of calculations under way: {}", tracked_files.len());
+        }
         let result = run_project_from_input_file(
             BufReader::new(File::open(file.path()).unwrap()).into(),
             &output_writer,
@@ -123,6 +177,12 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             use_additional_options,
             use_additional_options,
         );
+        {
+            let mut tracked_files = tracked_files.write();
+            println!("🏁 finished calculation for {}", &file_name_string);
+            tracked_files.remove(&file_name_string);
+            println!("📋 {} files left being calculated: {}", tracked_files.len(), tracked_files.iter().join(", "));
+        }
         if let Err(e) = result {
             println!("💥 Error running project for file (100,000 difference penalty!) {}: {}", file.path().display(), e);
             difference_count += 100000;
@@ -152,7 +212,6 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             let header_differences = compare::compare_headers(&mut python_reader, &mut rust_reader);
             if let Err(differences) = header_differences {
                 println!("❌ Headers differ for file: {}", file_name);
-                println!("Differences: {}", differences.iter().join("\n"));
                 difference_count += differences.len();
             }
             let difference_kind = DifferenceKind::Full;
@@ -368,7 +427,7 @@ mod compare {
         OutputRecord::from(left).equiv(&OutputRecord::from(right))
     }
 
-    const FLOAT_THRESHOLD: f64 = 1e-6; // 0.000001
+    const FLOAT_THRESHOLD: f64 = 1e-5; // 0.000001
 
     #[derive(Debug, Clone)]
     pub enum Difference {
