@@ -1,13 +1,9 @@
-use crate::core::schedule::input::ScheduleEntry::Null;
 use anyhow::anyhow;
+use argmin::core::CostFunction;
 use differential_equations::prelude::*;
 use eqsolver::single_variable::FDNewton;
 use interp::{interp_slice, InterpMode};
 use itertools::Itertools;
-use numpy::ndarray::ArrayD;
-use numpy::PyReadonlyArrayDyn;
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
 use roots::{find_root_secant, SimpleConvergency};
 use std::sync::Arc;
 
@@ -186,7 +182,7 @@ pub fn root(
     Ok(found_root)
 }
 
-pub fn solve_ivp_new(
+pub fn solve_ivp(
     func: Arc<dyn Fn(f64, &[f64]) -> Vec<f64> + Send + Sync>,
     t_span: (f64, f64),
     y0: &[f64],
@@ -199,30 +195,59 @@ pub fn solve_ivp_new(
 
     let system = OdeConfiguration { func: func.clone() };
 
-    let solver = ExplicitRungeKutta::dop853().rtol(rtol).atol(atol);
+    let solver = ExplicitRungeKutta::dopri5().rtol(rtol).atol(atol);
 
     let (t0, tf) = t_span;
 
-    let event_configurator: Box<dyn Event<OdeRealNumber, RealGrouping>> =
-        if let Some(events) = events {
-            Box::new(OdeEventConfigurator {
-                direction: events.direction.unwrap_or_default().into(),
-            })
-        } else {
-            Box::new(NoopEvent)
-        };
+    let ode_events: Vec<OdeEvent> = events
+        .map(|events| {
+            events
+                .funcs
+                .iter()
+                .map(|func| OdeEvent {
+                    func: func.clone(),
+                    direction: events.direction.unwrap_or_default().into(),
+                })
+                .collect_vec()
+        })
+        .unwrap_or_default();
 
-    let solution = IVP::ode(&system, t0, tf, y0.to_vec())
-        .method(solver)
-        .event(&*event_configurator)
-        .solve()
-        .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?;
+    let solution = match &ode_events.as_slice() {
+        &[] => IVP::ode(&system, t0, tf, y0.to_vec())
+            .method(solver)
+            .solve()
+            .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?,
+        &[event1, event2] => IVP::ode(&system, t0, tf, y0.to_vec())
+            .method(solver)
+            .event(event1)
+            .event(event2)
+            .solve()
+            .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?,
+        &[event] => IVP::ode(&system, t0, tf, y0.to_vec())
+            .method(solver)
+            .event(event)
+            .solve()
+            .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?,
+        _ => unimplemented!("The solve_ivp function does not support more than two events at the same time (though could be extended if needed)"),
+    };
 
     Ok(RustOdeResult {
-        y: solution.y,
+        y: transpose(solution.y),
         t_events: Default::default(), // TODO: hook into equiv of Python t_events (or something that gives the information the calling code needs)
         t: solution.t,
     })
+}
+
+fn transpose(matrix: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+    if matrix.is_empty() || matrix[0].is_empty() {
+        return Vec::new();
+    }
+
+    let num_columns = matrix[0].len();
+
+    (0..num_columns)
+        .map(|col_idx| matrix.iter().map(|row| row[col_idx]).collect::<Vec<f64>>())
+        .collect()
 }
 
 struct OdeConfiguration {
@@ -238,34 +263,33 @@ impl ODE<OdeRealNumber, RealGrouping> for OdeConfiguration {
     }
 }
 
-struct OdeEventConfigurator {
+struct OdeEvent {
     direction: CrossingDirection,
+    func: Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
 }
 
-impl Event<OdeRealNumber, RealGrouping> for OdeEventConfigurator {
+impl Event<OdeRealNumber, RealGrouping> for OdeEvent {
     fn config(&self) -> EventConfig {
-        EventConfig::new(self.direction, None)
+        EventConfig::new(self.direction, None).terminal()
     }
 
     fn event(&self, t: OdeRealNumber, y: &RealGrouping) -> OdeRealNumber {
-        todo!()
+        // calculate time event may have occurred
+        //
+
+        (self.func)(t, y)
     }
 }
 
-struct NoopEvent;
+struct EventTimeProblem(Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>);
 
-impl Event<OdeRealNumber, RealGrouping> for NoopEvent {
-    fn config(&self) -> EventConfig {
-        EventConfig::new(CrossingDirection::Both, Some(Self::BIG_NUMBER))
+impl CostFunction for EventTimeProblem {
+    type Param = f64;
+    type Output = f64;
+
+    fn cost(&self, param: &Self::Param) -> Result<Self::Output, anyhow::Error> {
+        Ok((self.0)(*param, &[]))
     }
-
-    fn event(&self, _t: OdeRealNumber, _y: &RealGrouping) -> OdeRealNumber {
-        Self::BIG_NUMBER as f64
-    }
-}
-
-impl NoopEvent {
-    const BIG_NUMBER: u32 = 1_000_000;
 }
 
 pub struct RustOdeResult {
@@ -275,13 +299,13 @@ pub struct RustOdeResult {
 }
 
 pub struct TerminatingEvents {
-    funcs: Vec<Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>>,
+    funcs: Vec<Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>>,
     direction: Option<TerminateDirection>,
 }
 
 impl TerminatingEvents {
     pub fn new(
-        funcs: Vec<Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>>,
+        funcs: Vec<Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>>,
         direction: Option<TerminateDirection>,
     ) -> Self {
         Self { funcs, direction }
@@ -303,129 +327,6 @@ impl From<TerminateDirection> for CrossingDirection {
             TerminateDirection::Positive => CrossingDirection::Positive,
             TerminateDirection::Negative => CrossingDirection::Negative,
         }
-    }
-}
-
-pub fn solve_ivp<const ARGCOUNT: usize>(
-    func: Box<dyn Fn(f64, &[f64]) -> PyResult<Vec<f64>> + Send + Sync>,
-    t_span: (f64, f64),
-    y0: [f64; ARGCOUNT],
-    events: Option<Vec<TerminalFunction>>,
-    method: Option<&'static str>,
-    rtol: Option<f64>,
-    atol: Option<f64>,
-) -> anyhow::Result<OdeResult> {
-    Python::attach(move |py| -> PyResult<OdeResult> {
-        let callback = OdeSolverCallback { inner: func };
-        let integrate = py.import("scipy.integrate")?;
-        let solve_ivp = integrate.getattr("solve_ivp")?;
-        let kwargs = PyDict::new(py);
-        kwargs.set_item("events", events)?;
-        kwargs.set_item("method", method.unwrap_or("RK45"))?;
-        kwargs.set_item("rtol", rtol.unwrap_or(1e-3))?;
-        kwargs.set_item("atol", atol.unwrap_or(1e-6))?;
-        solve_ivp
-            .call((callback, t_span, y0), Some(&kwargs))?
-            .extract::<OdeResult>()
-    })
-    .map_err(|e| anyhow!(e))
-}
-
-#[pyclass]
-pub struct TerminalFunction {
-    pub inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
-    is_terminal: Option<bool>,
-    direction: Option<f64>,
-}
-
-impl TerminalFunction {
-    pub fn new(
-        inner: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
-        is_terminal: Option<bool>,
-        direction: Option<f64>,
-    ) -> Self {
-        Self {
-            inner,
-            is_terminal,
-            direction,
-        }
-    }
-
-    fn is_terminal(&self) -> bool {
-        self.is_terminal.unwrap_or(false)
-    }
-
-    fn direction(&self) -> f64 {
-        self.direction.unwrap_or(0.)
-    }
-}
-
-#[pymethods]
-impl TerminalFunction {
-    #[pyo3(signature = (t, y, /))]
-    fn __call__(&self, t: f64, y: Vec<f64>) -> PyResult<f64> {
-        // Execute the boxed closure
-        let result = (self.inner)(t, &y);
-        Ok(result)
-    }
-
-    fn __getattribute__(&self, name: String) -> PyResult<Option<f64>> {
-        Ok(match name.as_str() {
-            "terminal" => Some(if self.is_terminal() { 1.0 } else { 0.0 }), // a float value that Python would consider truthy
-            "direction" => Some(self.direction()),
-            _ => None,
-        })
-    }
-}
-
-#[pyclass]
-struct OdeSolverCallback {
-    // We use Box<dyn Fn> to store the closure.
-    // Note: It needs to be Send + Sync because it will need to be passed to a Python thread.
-    inner: Box<dyn Fn(f64, &[f64]) -> PyResult<Vec<f64>> + Send + Sync>,
-}
-
-#[pymethods]
-impl OdeSolverCallback {
-    // The `__call__` method makes the object act like a function in Python.
-    #[pyo3(signature = (arg1, arg2, /))]
-    fn __call__(&self, arg1: f64, arg2: Vec<f64>) -> PyResult<Vec<f64>> {
-        // Execute the boxed closure
-        (self.inner)(arg1, &arg2)
-    }
-}
-
-#[derive(Debug)]
-pub struct OdeResult {
-    pub y: Vec<ArrayD<f64>>,
-    pub t_events: Vec<ArrayD<f64>>,
-    pub t: ArrayD<f64>,
-}
-
-impl<'a, 'py> FromPyObject<'a, 'py> for OdeResult {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        let y: Vec<PyReadonlyArrayDyn<'py, f64>> = ob.getattr("y")?.extract()?;
-        let t_events: Option<Vec<PyReadonlyArrayDyn<'py, f64>>> =
-            ob.getattr("t_events")?.extract()?;
-
-        let y = y.into_iter().map(|y| y.as_array().to_owned()).collect_vec();
-        let t_events = t_events.map(|t_events| {
-            t_events
-                .into_iter()
-                .map(|row| row.as_array().to_owned())
-                .collect()
-        });
-
-        let t: PyReadonlyArrayDyn<'py, f64> = ob.getattr("t")?.extract()?;
-        let t = t.as_array().to_owned();
-
-        Ok(Self {
-            y,
-            t_events: t_events.unwrap_or_default(),
-            t,
-        })
     }
 }
 

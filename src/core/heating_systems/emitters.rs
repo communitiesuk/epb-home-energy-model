@@ -8,7 +8,7 @@ use crate::core::heating_systems::heat_pump::{
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
 use crate::core::solvers::bisect::bisect;
-use crate::core::solvers::{fsolve, root, solve_ivp, OdeResult, TerminalFunction};
+use crate::core::solvers::{fsolve, root, solve_ivp, RustOdeResult, TerminatingEvents};
 use crate::core::space_heat_demand::zone::SimpleZone;
 use crate::core::units::{
     JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE,
@@ -30,7 +30,6 @@ use fsum::FSum;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
-use pyo3::PyResult;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
@@ -724,7 +723,7 @@ impl Emitters {
     pub(crate) fn func_temp_emitter_change_rate(
         &self,
         power_input: f64,
-    ) -> impl Fn(f64, &[f64]) -> PyResult<Vec<f64>> {
+    ) -> impl Fn(f64, &[f64]) -> Vec<f64> {
         /*
             Differential eqn for change rate of emitter temperature, to be solved iteratively
 
@@ -771,14 +770,14 @@ impl Emitters {
         c_n_pairs: Vec<(f64, f64)>,
         thermal_mass: Option<f64>,
         power_input: f64,
-    ) -> impl Fn(f64, &[f64]) -> PyResult<Vec<f64>> {
-        move |_t, temp_diff: &[f64]| -> PyResult<Vec<f64>> {
-            Ok(vec![(power_input
+    ) -> impl Fn(f64, &[f64]) -> Vec<f64> {
+        move |_t, temp_diff: &[f64]| -> Vec<f64> {
+            vec![(power_input
                 - c_n_pairs
                 .iter()
                 .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
                 .sum::<f64>())
-                / thermal_mass.expect("thermal_mass is expected to be set when func_temp_emitter_change_rate is called")])
+                / thermal_mass.expect("thermal_mass is expected to be set when func_temp_emitter_change_rate is called")]
         }
     }
 
@@ -820,21 +819,23 @@ impl Emitters {
         // Calculate emitter temp at start of timestep
         let temp_diff_start = temp_emitter_start - temp_rm;
 
-        let events = if let Some(temp_emitter_max) = temp_emitter_max {
-            let temp_diff_max = temp_emitter_max - temp_rm;
+        let events: Option<Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>> =
+            if let Some(temp_emitter_max) = temp_emitter_max {
+                let temp_diff_max = temp_emitter_max - temp_rm;
 
-            // Define event where emitter reaches max. temp (event occurs when func returns zero)
-            let func: Box<dyn Fn(f64, &[f64]) -> f64 + Send + Sync> =
-                Box::new(move |_t: f64, y: &[f64]| -> f64 { y[0] - temp_diff_max });
-            let temp_diff_max_reached = TerminalFunction::new(func, true.into(), None);
+                // Define event where emitter reaches max. temp (event occurs when func returns zero)
+                let temp_diff_max_reached: Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync> =
+                    Arc::new(move |_t: f64, y: &[f64]| -> f64 { y[0] - temp_diff_max });
 
-            Some(vec![temp_diff_max_reached])
-        } else {
-            None
-        };
+                Some(temp_diff_max_reached)
+            } else {
+                None
+            };
+
+        let terminating_events = TerminatingEvents::new(events.iter().cloned().collect_vec(), None);
 
         // Get function representing change rate equation and solve iteratively
-        let func_temp_emitter_change_rate = Box::new(Self::func_temp_emitter_change_rate_pure(
+        let func_temp_emitter_change_rate = Arc::new(Self::func_temp_emitter_change_rate_pure(
             c_n_pairs,
             thermal_mass,
             power_input,
@@ -843,15 +844,14 @@ impl Emitters {
         let temp_diff_emitter_rm_results = solve_ivp(
             func_temp_emitter_change_rate,
             (time_start, time_end),
-            [temp_diff_start],
-            events,
-            None,
+            &[temp_diff_start],
+            terminating_events.into(),
             None,
             None,
         )?;
 
         // Get time at which emitters reach max. temp
-        let OdeResult { y, t_events, .. } = temp_diff_emitter_rm_results;
+        let RustOdeResult { y, t_events, .. } = temp_diff_emitter_rm_results;
 
         let time_temp_diff_max_reached = if !t_events.is_empty() {
             let t_events = &t_events[0];

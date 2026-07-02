@@ -30,12 +30,10 @@ itertools = "0.15.0"
 jsonschema = "0.46.5"
 monostate = "1.0.2"
 nalgebra = "0.33.3"
-numpy = "0.28.0"
 ordered-float = "5.3.0"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 petgraph = "0.8.3"
 polyfit-rs = "0.2.2"
-pyo3 = { version = "0.28.3", features = ["auto-initialize"] }
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde-enum-str = "0.5.0"
 serde_json = { version = "1.0.150", features = ["preserve_order"] }
