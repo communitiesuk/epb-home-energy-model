@@ -8,8 +8,7 @@ use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnec
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
 use crate::core::solvers::{
-    interp1d, solve_ivp, Interp1dFillValue, RustOdeResult, TerminateDirection,
-    TerminatingEvents,
+    interp1d, solve_ivp, Interp1dFillValue, OdeResult, TerminateDirection, TerminatingEvents,
 };
 use crate::core::units::{
     HOURS_PER_DAY, KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -267,7 +266,7 @@ impl HeatStorageDryCore {
             1e-3.into(),
         )?;
 
-        let RustOdeResult { y, .. } = sol;
+        let OdeResult { y, .. } = sol;
 
         // Final state of charge after 16 hours
         let final_soc = *y[0]
@@ -398,7 +397,7 @@ impl HeatStorageDryCore {
             1e-6.into(),
         )?;
 
-        let RustOdeResult { y, t_events, t } = sol;
+        let OdeResult { y, t_events, t } = sol;
 
         let final_soc = *y[0]
             .last()
@@ -561,7 +560,7 @@ impl HeatStorageDryCore {
             1e-6.into(),
         )?;
 
-        let RustOdeResult { y, t_events, t } = sol;
+        let OdeResult { y, t_events, t } = sol;
 
         let final_soc = *y[0]
             .last()

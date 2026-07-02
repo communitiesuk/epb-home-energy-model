@@ -8,7 +8,7 @@ use crate::core::heating_systems::heat_pump::{
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
 use crate::core::solvers::bisect::bisect;
-use crate::core::solvers::{fsolve, root, solve_ivp, RustOdeResult, TerminatingEvents};
+use crate::core::solvers::{fsolve, root, solve_ivp, OdeResult, TerminatingEvents};
 use crate::core::space_heat_demand::zone::SimpleZone;
 use crate::core::units::{
     JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE,
@@ -851,7 +851,7 @@ impl Emitters {
         )?;
 
         // Get time at which emitters reach max. temp
-        let RustOdeResult { y, t_events, .. } = temp_diff_emitter_rm_results;
+        let OdeResult { y, t_events, .. } = temp_diff_emitter_rm_results;
 
         let time_temp_diff_max_reached = if !t_events.is_empty() {
             let t_events = &t_events[0];

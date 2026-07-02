@@ -189,7 +189,7 @@ pub fn solve_ivp(
     events: Option<TerminatingEvents>,
     rtol: Option<f64>,
     atol: Option<f64>,
-) -> anyhow::Result<RustOdeResult> {
+) -> anyhow::Result<OdeResult> {
     let rtol = rtol.unwrap_or(1e-3);
     let atol = atol.unwrap_or(1e-6);
 
@@ -231,7 +231,7 @@ pub fn solve_ivp(
         _ => unimplemented!("The solve_ivp function does not support more than two events at the same time (though could be extended if needed)"),
     };
 
-    Ok(RustOdeResult {
+    Ok(OdeResult {
         y: transpose(solution.y),
         t_events: Default::default(), // TODO: hook into equiv of Python t_events (or something that gives the information the calling code needs)
         t: solution.t,
@@ -292,7 +292,7 @@ impl CostFunction for EventTimeProblem {
     }
 }
 
-pub struct RustOdeResult {
+pub struct OdeResult {
     pub y: Vec<Vec<f64>>,
     pub t_events: Vec<Vec<f64>>,
     pub t: Vec<f64>,
