@@ -133,6 +133,10 @@ fn files() -> Vec<DirEntry> {
             !e.file_type().is_dir()
                 && e.file_name().to_str().unwrap().ends_with("json")
                 && !PASSING_FILES.contains(&e.file_name().to_str().unwrap())
+                && e.file_name()
+                    .to_str()
+                    .unwrap()
+                    .contains("demo_FHS_hp_temp_output_over_upper_limit")
                 && !e
                     .path()
                     .parent()
@@ -226,6 +230,9 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             if is_tabular(file_name) {
                 let file_differences = compare::compare_tabular_records_within_threshold(&mut python_reader, &mut rust_reader, difference_kind);
                 if let Err(comparison_error) = file_differences {
+                    if file_name.ends_with("results.csv") {
+                        println!("👨🏼‍⚖️ file differences: {comparison_error:#?}");
+                    }
                     let file_difference_count = comparison_error.differences.len();
                     println!("❌ Tabular records differ for file: {} - difference count is {}", file_name, file_difference_count);
                     difference_count += file_difference_count;

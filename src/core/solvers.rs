@@ -1,9 +1,7 @@
 use anyhow::anyhow;
-use argmin::core::CostFunction;
-use differential_equations::prelude::*;
 use eqsolver::single_variable::FDNewton;
 use interp::{interp_slice, InterpMode};
-use itertools::Itertools;
+use ivp::prelude::*;
 use roots::{find_root_secant, SimpleConvergency};
 use std::sync::Arc;
 
@@ -193,51 +191,25 @@ pub fn solve_ivp(
     let rtol = rtol.unwrap_or(1e-3);
     let atol = atol.unwrap_or(1e-6);
 
-    let system = OdeConfiguration { func: func.clone() };
-
-    let solver = ExplicitRungeKutta::dopri5().rtol(rtol).atol(atol);
+    let system = IvpConfig {
+        func: func.clone(),
+        events,
+    };
 
     let (t0, tf) = t_span;
 
-    let ode_events: Vec<OdeEvent> = events
-        .map(|events| {
-            events
-                .funcs
-                .iter()
-                .map(|func| OdeEvent {
-                    func: func.clone(),
-                    direction: events.direction.unwrap_or_default().into(),
-                })
-                .collect_vec()
-        })
-        .unwrap_or_default();
+    let ivp_solver = Ivp::first_order(&system, t0, tf, y0)
+        .method(Method::DOPRI5)
+        .rtol(rtol)
+        .atol(atol);
 
-    let solution = match &ode_events.as_slice() {
-        &[] => IVP::ode(&system, t0, tf, y0.to_vec())
-            .method(solver)
-            .solve()
-            .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?,
-        &[event1, event2] => IVP::ode(&system, t0, tf, y0.to_vec())
-            .method(solver)
-            .event(event1)
-            .event(event2)
-            .solve()
-            .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?,
-        &[event] => IVP::ode(&system, t0, tf, y0.to_vec())
-            .method(solver)
-            .event(event)
-            .solve()
-            .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?,
-        _ => unimplemented!("The solve_ivp function does not support more than two events at the same time (though could be extended if needed)"),
-    };
-
-    // t_event is equivalent digest of the scipy.optimize.t_events array but with just the final value, and only provided if there was a termination i.e. the solution was interrupted
-    let t_event: Option<f64> = (solution.status == Status::Interrupted && solution.t.len() > 0)
-        .then(|| solution.t.last().copied().unwrap());
+    let solution = ivp_solver
+        .solve()
+        .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?;
 
     Ok(OdeResult {
         y: transpose(solution.y),
-        t_event,
+        t_events: transpose(solution.t_events),
         t: solution.t,
     })
 }
@@ -254,51 +226,49 @@ fn transpose(matrix: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
         .collect()
 }
 
-struct OdeConfiguration {
+struct IvpConfig {
     func: Arc<dyn Fn(f64, &[f64]) -> Vec<f64> + Send + Sync>,
+    events: Option<TerminatingEvents>,
 }
 
-type OdeRealNumber = f64;
-type RealGrouping = Vec<OdeRealNumber>;
-
-impl ODE<OdeRealNumber, RealGrouping> for OdeConfiguration {
-    fn diff(&self, t: f64, y: &Vec<f64>, dydt: &mut Vec<f64>) {
-        let _ = std::mem::replace(dydt, (self.func)(t, y));
-    }
-}
-
-struct OdeEvent {
-    direction: CrossingDirection,
-    func: Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
-}
-
-impl Event<OdeRealNumber, RealGrouping> for OdeEvent {
-    fn config(&self) -> EventConfig {
-        EventConfig::new(self.direction, None).terminal()
+impl FirstOrderSystem for IvpConfig {
+    fn derivative(&self, x: f64, y: &[f64], dydx: &mut [f64]) {
+        let derived = (self.func)(x, y);
+        dydx.clone_from_slice(&derived);
     }
 
-    fn event(&self, t: OdeRealNumber, y: &RealGrouping) -> OdeRealNumber {
-        // calculate time event may have occurred
-        //
-
-        (self.func)(t, y)
+    fn events(&self, x: f64, y: &[f64], out: &mut [f64]) {
+        if let Some(events) = &self.events {
+            for (i, event_func) in events.funcs.iter().enumerate() {
+                let result = event_func(x, y);
+                out[i] = result;
+            }
+        }
     }
-}
 
-struct EventTimeProblem(Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>);
+    fn n_events(&self) -> usize {
+        self.events
+            .as_ref()
+            .map(|events| events.funcs.len())
+            .unwrap_or(0)
+    }
 
-impl CostFunction for EventTimeProblem {
-    type Param = f64;
-    type Output = f64;
+    fn event_config(&self, _event_index: usize) -> EventConfig {
+        let events = self.events.as_ref().expect(
+            "Expected event_config only to have been passed if there are events to look up.",
+        );
 
-    fn cost(&self, param: &Self::Param) -> Result<Self::Output, anyhow::Error> {
-        Ok((self.0)(*param, &[]))
+        let mut event_config = EventConfig::new();
+        event_config.terminal();
+        event_config.direction(events.direction.unwrap_or_default().into());
+
+        event_config
     }
 }
 
 pub struct OdeResult {
     pub y: Vec<Vec<f64>>,
-    pub t_event: Option<f64>,
+    pub t_events: Vec<Vec<f64>>,
     pub t: Vec<f64>,
 }
 
@@ -324,12 +294,12 @@ pub enum TerminateDirection {
     Negative,
 }
 
-impl From<TerminateDirection> for CrossingDirection {
+impl From<TerminateDirection> for Direction {
     fn from(direction: TerminateDirection) -> Self {
         match direction {
-            TerminateDirection::Both => CrossingDirection::Both,
-            TerminateDirection::Positive => CrossingDirection::Positive,
-            TerminateDirection::Negative => CrossingDirection::Negative,
+            TerminateDirection::Both => Direction::All,
+            TerminateDirection::Positive => Direction::Positive,
+            TerminateDirection::Negative => Direction::Negative,
         }
     }
 }
