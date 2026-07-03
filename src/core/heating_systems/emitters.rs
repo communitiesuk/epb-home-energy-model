@@ -850,14 +850,9 @@ impl Emitters {
         )?;
 
         // Get time at which emitters reach max. temp
-        let OdeResult { y, t_events, .. } = temp_diff_emitter_rm_results;
+        let OdeResult { y, t_event, .. } = temp_diff_emitter_rm_results;
 
-        let time_temp_diff_max_reached = if !t_events.is_empty() {
-            let t_events = &t_events[0];
-            t_events.iter().copied().last()
-        } else {
-            None
-        };
+        let time_temp_diff_max_reached = t_event;
 
         let temp_diff_emitter_rm_final = *y[0].iter().last().ok_or_else(|| {
             anyhow!("y ndarray field of solve_ivp result was empty when this was not expected")

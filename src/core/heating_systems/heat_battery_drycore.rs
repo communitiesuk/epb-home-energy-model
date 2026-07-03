@@ -397,7 +397,7 @@ impl HeatStorageDryCore {
             1e-6.into(),
         )?;
 
-        let OdeResult { y, t_events, t } = sol;
+        let OdeResult { y, t_event, t } = sol;
 
         let final_soc = *y[0]
             .last()
@@ -413,17 +413,11 @@ impl HeatStorageDryCore {
             anyhow!("ODE solving result was unexpectedly empty for total_energy_delivered")
         })?;
 
-        // Determine actual time used
-        let time_used: f64 = if t_events
-            .get(0)
-            .is_some_and(|first_t_event| !first_t_event.is_empty())
-        {
-            t_events[0][0]
-        } else if target_energy.is_some() && t_events.len() > 1 && !t_events[1].is_empty() {
-            t_events[1][0]
+        let time_used = if let Some(t_event) = t_event {
+            t_event
         } else {
             *t.last()
-                .ok_or_else(|| anyhow!("t_events is empty for energy_output ode results"))?
+                .ok_or_else(|| anyhow!("t is empty for energy_output ode results"))?
         };
 
         Ok((
@@ -560,7 +554,7 @@ impl HeatStorageDryCore {
             1e-6.into(),
         )?;
 
-        let OdeResult { y, t_events, t } = sol;
+        let OdeResult { y, t_event, t } = sol;
 
         let final_soc = *y[0]
             .last()
@@ -580,17 +574,11 @@ impl HeatStorageDryCore {
             anyhow!("ODE solving result was unexpectedly empty for total_energy_lost")
         })?;
 
-        // Determine actual time used
-        let time_used: f64 = if t_events
-            .get(0)
-            .is_some_and(|first_t_event| !first_t_event.is_empty())
-        {
-            t_events[0][0]
-        } else if target_energy.is_some() && t_events.len() > 1 && !t_events[1].is_empty() {
-            t_events[1][0]
+        let time_used = if let Some(t_event) = t_event {
+            t_event
         } else {
             *t.last()
-                .ok_or_else(|| anyhow!("t_events is empty for energy_output ode results"))?
+                .ok_or_else(|| anyhow!("t is empty for energy_output ode results"))?
         };
 
         Ok((

@@ -231,9 +231,13 @@ pub fn solve_ivp(
         _ => unimplemented!("The solve_ivp function does not support more than two events at the same time (though could be extended if needed)"),
     };
 
+    // t_event is equivalent digest of the scipy.optimize.t_events array but with just the final value, and only provided if there was a termination i.e. the solution was interrupted
+    let t_event: Option<f64> = (solution.status == Status::Interrupted && solution.t.len() > 0)
+        .then(|| solution.t.last().copied().unwrap());
+
     Ok(OdeResult {
         y: transpose(solution.y),
-        t_events: Default::default(), // TODO: hook into equiv of Python t_events (or something that gives the information the calling code needs)
+        t_event,
         t: solution.t,
     })
 }
@@ -294,7 +298,7 @@ impl CostFunction for EventTimeProblem {
 
 pub struct OdeResult {
     pub y: Vec<Vec<f64>>,
-    pub t_events: Vec<Vec<f64>>,
+    pub t_event: Option<f64>,
     pub t: Vec<f64>,
 }
 
