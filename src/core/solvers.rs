@@ -373,7 +373,7 @@ mod solve_ivp {
     /// module to do with the RK45 method for scipy
     mod rk45 {
         use crate::core::solvers::solve_ivp::select_initial_step;
-        use ndarray::{array, Array1, Array2};
+        use ndarray::{array, Array1, Array2, Zip};
         use std::sync::{Arc, LazyLock};
         use thiserror::Error;
 
@@ -387,7 +387,7 @@ mod solve_ivp {
             b: &Array1<f64>,
             c: &Array1<f64>,
             k: &mut Array2<f64>,
-        ) -> (Array2<f64>, Array2<f64>) {
+        ) -> (Array1<f64>, Array1<f64>) {
             // what's the Rust equiv here???
             // k[0] = f.clone();
 
@@ -652,6 +652,13 @@ mod solve_ivp {
 
                     let (y_new, f_new) =
                         rk_step(&self.fun, t, y, &self.f, h, &A, &B, &C, &mut self.k);
+
+                    let mut scale = Array1::<f64>::zeros(y_new.dim());
+                    Zip::from(&mut scale).and(y).and(&y_new).for_each(
+                        |scale_val, y_val, y_new_val| {
+                            *scale_val = atol + y_val.abs().max(y_new_val.abs()) * rtol;
+                        },
+                    );
 
                     // implement rk_step
                 }
