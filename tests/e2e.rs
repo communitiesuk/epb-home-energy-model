@@ -132,7 +132,7 @@ fn files() -> Vec<DirEntry> {
         .filter(|e| {
             !e.file_type().is_dir()
                 && e.file_name().to_str().unwrap().ends_with("json")
-                && !PASSING_FILES.contains(&e.file_name().to_str().unwrap())
+                // && !PASSING_FILES.contains(&e.file_name().to_str().unwrap())
                 && !e
                     .path()
                     .parent()
@@ -165,7 +165,8 @@ fn test_run_all_files(files: Vec<DirEntry>) {
 
     let tracked_files: Arc<RwLock<HashSet<String>>> = Default::default();
 
-    let difference_count: usize = files.par_iter().map(move |file| {
+    let (difference_count, field_count): (usize, usize) = files.par_iter().map(move |file| {
+        let mut field_count: usize = 0;
         println!("\n🎬 starting to run HEM calculation on file {}\n", file.file_name().display());
         let mut difference_count = 0usize;
         let output_writer = InMemoryDirectoryOutputWriter::new(file.file_name().to_str().unwrap());
@@ -194,7 +195,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
         if let Err(e) = result {
             println!("💥 Error running project for file (100,000 difference penalty!) {}: {}", file.path().display(), e);
             difference_count += 100000;
-            return difference_count;
+            return (difference_count, field_count);
         }
         let output_files = output_writer.files();
         let actual_file_count = output_files.len();
@@ -223,8 +224,8 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                 difference_count += differences.len();
             }
             let difference_kind = DifferenceKind::Full;
-            if is_tabular(file_name) {
-                let file_differences = compare::compare_tabular_records_within_threshold(&mut python_reader, &mut rust_reader, difference_kind);
+            field_count += if is_tabular(file_name) {
+                let (file_differences, file_field_count) = compare::compare_tabular_records_within_threshold(&mut python_reader, &mut rust_reader, difference_kind);
                 if let Err(comparison_error) = file_differences {
                     let file_difference_count = comparison_error.differences.len();
                     println!("❌ Tabular records differ for file: {} - difference count is {}", file_name, file_difference_count);
@@ -232,8 +233,9 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                 } else {
                     println!("✅ Tabular records match for file: {}", file_name);
                 }
+                file_field_count
             } else {
-                let file_differences = compare::compare_non_tabular_files(&mut python_reader, &mut rust_reader, difference_kind);
+                let (file_differences, file_field_count) = compare::compare_non_tabular_files(&mut python_reader, &mut rust_reader, difference_kind);
                 if let Err(comparison_error) = file_differences {
                     let file_difference_count = comparison_error.differences.len();
                     println!("❌ Non-tabular records differ for file: {} - difference count is {}", file_name, file_difference_count);
@@ -241,7 +243,8 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                 } else {
                     println!("✅ Non-tabular records match for file: {}", file_name);
                 }
-            }
+                file_field_count
+            };
         }
         println!(
             "Successfully processed file: {}\n{} {} captured output files compared to expected {}{}\n\n",
@@ -260,13 +263,14 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             },
         );
 
-        difference_count
-    }).sum();
+        (difference_count, field_count)
+    })
+        .fold(|| (0usize, 0usize), |(acc_a, acc_b), (a, b)| (acc_a + a, acc_b + b))
+        .reduce(|| (0usize, 0usize), |(acc_a, acc_b), (a, b)| (acc_a + a, acc_b + b));
 
     assert_eq!(
         difference_count, 0,
-        "Total difference count: {}",
-        difference_count
+        "Total difference count: {difference_count} out of total {field_count} fields compared",
     );
 
     fn use_additional_options(file: &DirEntry) -> bool {
@@ -668,12 +672,13 @@ mod compare {
         py_reader: &mut Reader<T>,
         rust_reader: &mut Reader<U>,
         difference_kind: DifferenceKind,
-    ) -> FileComparisonResult
+    ) -> (FileComparisonResult, usize)
     where
         T: Read,
         U: Read,
     {
         let headers;
+        let mut field_count = usize::default();
         {
             // read headers in own scope so we can re-use py_reader later
             let python_headers = py_reader.headers().expect("Failed to read Python headers");
@@ -719,6 +724,8 @@ mod compare {
                     continue;
                 };
 
+            field_count += rust_record.len();
+
             // hack to handle python blank lines (no data at all) being ignored
             // but rust blank lines (double quotes) being included
             // skip over rust records with just "" on them
@@ -753,21 +760,24 @@ mod compare {
             }
         }
 
-        if match difference_kind {
-            DifferenceKind::Full => file_differences.is_empty(),
-            DifferenceKind::CountOnly => difference_count == 0,
-        } {
-            Ok(())
-        } else {
-            Err(FileComparisonError {
-                differences: if difference_kind == DifferenceKind::CountOnly {
-                    difference_count.into()
-                } else {
-                    file_differences.into()
-                },
-                warnings,
-            })
-        }
+        (
+            if match difference_kind {
+                DifferenceKind::Full => file_differences.is_empty(),
+                DifferenceKind::CountOnly => difference_count == 0,
+            } {
+                Ok(())
+            } else {
+                Err(FileComparisonError {
+                    differences: if difference_kind == DifferenceKind::CountOnly {
+                        difference_count.into()
+                    } else {
+                        file_differences.into()
+                    },
+                    warnings,
+                })
+            },
+            field_count,
+        )
     }
 
     #[derive(Debug, Error)]
@@ -815,11 +825,13 @@ mod compare {
         py_reader: &mut Reader<T>,
         rust_reader: &mut Reader<U>,
         difference_kind: DifferenceKind,
-    ) -> FileComparisonResult
+    ) -> (FileComparisonResult, usize)
     where
         T: Read,
         U: Read,
     {
+        let mut field_count = usize::default();
+
         let mut rust_records = rust_reader.records();
         let python_records = py_reader.records();
 
@@ -852,6 +864,8 @@ mod compare {
                 break;
             };
 
+            field_count += rust_record.len();
+
             // hack to handle python blank lines (no data at all) being ignored
             // but rust blank lines (double quotes) being included
             //
@@ -879,20 +893,23 @@ mod compare {
             }
         }
 
-        if match difference_kind {
-            DifferenceKind::Full => file_differences.is_empty(),
-            DifferenceKind::CountOnly => difference_count == 0,
-        } {
-            Ok(())
-        } else {
-            Err(FileComparisonError {
-                differences: if difference_kind == DifferenceKind::CountOnly {
-                    difference_count.into()
-                } else {
-                    file_differences.into()
-                },
-                warnings: vec![],
-            })
-        }
+        (
+            if match difference_kind {
+                DifferenceKind::Full => file_differences.is_empty(),
+                DifferenceKind::CountOnly => difference_count == 0,
+            } {
+                Ok(())
+            } else {
+                Err(FileComparisonError {
+                    differences: if difference_kind == DifferenceKind::CountOnly {
+                        difference_count.into()
+                    } else {
+                        file_differences.into()
+                    },
+                    warnings: vec![],
+                })
+            },
+            field_count,
+        )
     }
 }
