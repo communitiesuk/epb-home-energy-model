@@ -3946,16 +3946,18 @@ fn building_element_from_input(
                 height,
                 width,
                 Some(shading.clone()),
-                treatment
-                    .iter()
-                    .map(|t| {
-                        WindowTreatment::from_input(
-                            t,
-                            controls,
-                            simulation_time_iterator.current_hour(),
-                        )
-                    })
-                    .collect_vec(),
+                treatment.as_ref().map(|treatments| {
+                    treatments
+                        .iter()
+                        .map(|t| {
+                            WindowTreatment::from_input(
+                                t,
+                                controls,
+                                simulation_time_iterator.current_hour(),
+                            )
+                        })
+                        .collect_vec()
+                }),
                 external_conditions,
             ))
         }

@@ -3101,9 +3101,9 @@ pub enum BuildingElement {
         #[validate]
         shading: Vec<WindowShadingObject>,
 
-        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate]
-        treatment: Vec<WindowTreatment>,
+        treatment: Option<Vec<WindowTreatment>>,
     },
 
     #[serde(rename = "BuildingElementGround")]
@@ -8463,7 +8463,7 @@ mod tests {
                     window_part_list: vec![],
                     shading: vec![],
                     control_window_openable: None,
-                    treatment: vec![],
+                    treatment: None,
                 })
                 .unwrap()
             }

@@ -2943,7 +2943,7 @@ pub(crate) struct BuildingElementTransparent {
     f_sky: f64,
     therm_rad_to_sky: f64,
     shading: Vec<WindowShadingObject>,
-    treatment: Vec<WindowTreatment>,
+    treatment: Option<Vec<WindowTreatment>>,
 }
 
 impl BuildingElementTransparent {
@@ -2974,7 +2974,7 @@ impl BuildingElementTransparent {
         height: f64,
         width: f64,
         shading: Option<Vec<WindowShadingObject>>,
-        treatment: Vec<WindowTreatment>,
+        treatment: Option<Vec<WindowTreatment>>,
         external_conditions: Arc<ExternalConditions>,
     ) -> Self {
         let mut new_trans = Self {
@@ -3038,7 +3038,7 @@ impl BuildingElementTransparent {
         // 'Manual' modes for curtains/shutters also requires occupancy driver, however
         // only time and solar based controls for now.
         // 'trans_red' specific to selected treatment as per BS EN 13125:2001.
-        if !self.treatment.is_empty() {
+        if let Some(treatments) = &self.treatment {
             let surf_irrad = self.external_conditions.surface_irradiance(
                 self.base_height,
                 self.projected_height,
@@ -3051,7 +3051,7 @@ impl BuildingElementTransparent {
                 simtime,
             )?;
             let time_current = simtime.time;
-            for treatment in self.treatment.iter() {
+            for treatment in treatments.iter() {
                 let ctrl_open: Option<bool> = treatment
                     .open_control
                     .as_ref()
@@ -3098,9 +3098,9 @@ impl BuildingElementTransparent {
     pub(crate) fn solar_gains(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
         let mut solar_gains = SolarRadiationInteractionTransmitted::solar_gains(self, simtime)?;
 
-        if !self.treatment.is_empty() {
+        if let Some(treatments) = &self.treatment {
             self.adjust_treatment(simtime)?;
-            for treatment in self.treatment.iter() {
+            for treatment in treatments.iter() {
                 if !treatment.is_open.load(Ordering::SeqCst) {
                     solar_gains -= solar_gains * treatment.trans_red;
                 }
@@ -3131,10 +3131,12 @@ impl BuildingElementTransparent {
             / self.h_pli.get(idx).ok_or_else(|| {
                 anyhow!("Could not get h_pli value in transparent building element for index {idx}")
             })?;
-        for treatment in self.treatment.iter() {
-            self.adjust_treatment(simtime)?;
-            if !treatment.is_open.load(Ordering::SeqCst) {
-                thermal_resistance_construction += treatment.delta_r;
+        if let Some(treatments) = &self.treatment {
+            for treatment in treatments.iter() {
+                self.adjust_treatment(simtime)?;
+                if !treatment.is_open.load(Ordering::SeqCst) {
+                    thermal_resistance_construction += treatment.delta_r;
+                }
             }
         }
 
@@ -4786,7 +4788,7 @@ mod tests {
             1.25,
             4.,
             None,
-            vec![],
+            None,
             external_conditions,
         )
     }
@@ -4916,7 +4918,7 @@ mod tests {
             opening_delay_hrs: 0.0,
             time_last_adjusted: AtomicF64::default(),
         };
-        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.treatment = Some(vec![window_treatment]);
 
         assert_eq!(
             transparent_building_element
@@ -5056,7 +5058,7 @@ mod tests {
             opening_delay_hrs: 0.0,
             time_last_adjusted: AtomicF64::default(),
         };
-        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.treatment = Some(vec![window_treatment]);
         transparent_building_element.external_conditions = external_conditions_surface_irradiance(
             simulation_time.clone(),
             vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
@@ -5070,7 +5072,8 @@ mod tests {
             max_relative = 1e-6,
         );
 
-        transparent_building_element.treatment[0].is_open = AtomicBool::from(true);
+        transparent_building_element.treatment.as_mut().unwrap()[0].is_open =
+            AtomicBool::from(true);
 
         assert_relative_eq!(
             transparent_building_element
@@ -5116,7 +5119,7 @@ mod tests {
             opening_delay_hrs: 0.0,
             time_last_adjusted: AtomicF64::default(),
         };
-        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.treatment = Some(vec![window_treatment]);
         transparent_building_element.external_conditions = external_conditions_surface_irradiance(
             simulation_time.clone(),
             vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
@@ -5126,7 +5129,7 @@ mod tests {
             .adjust_treatment(simulation_time.current_iteration())
             .unwrap();
 
-        assert!(transparent_building_element.treatment[0]
+        assert!(transparent_building_element.treatment.unwrap()[0]
             .is_open
             .load(Ordering::SeqCst));
     }
@@ -5155,7 +5158,7 @@ mod tests {
             opening_delay_hrs: 0.0,
             time_last_adjusted: AtomicF64::default(),
         };
-        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.treatment = Some(vec![window_treatment]);
         transparent_building_element.external_conditions = external_conditions_surface_irradiance(
             simulation_time.clone(),
             vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
@@ -5165,7 +5168,7 @@ mod tests {
             .adjust_treatment(simulation_time.current_iteration())
             .unwrap();
 
-        assert!(!transparent_building_element.treatment[0]
+        assert!(!transparent_building_element.treatment.unwrap()[0]
             .is_open
             .load(Ordering::SeqCst));
     }
@@ -5194,7 +5197,7 @@ mod tests {
             opening_delay_hrs: 0.0,
             time_last_adjusted: AtomicF64::default(),
         };
-        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.treatment = Some(vec![window_treatment]);
         transparent_building_element.external_conditions = external_conditions_surface_irradiance(
             simulation_time.clone(),
             vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
@@ -5204,7 +5207,7 @@ mod tests {
             .adjust_treatment(simulation_time.current_iteration())
             .unwrap();
 
-        assert!(!transparent_building_element.treatment[0]
+        assert!(!transparent_building_element.treatment.unwrap()[0]
             .is_open
             .load(Ordering::SeqCst))
     }
@@ -5237,14 +5240,14 @@ mod tests {
             opening_delay_hrs: 0.0,
             time_last_adjusted: AtomicF64::default(),
         };
-        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.treatment = Some(vec![window_treatment]);
         transparent_building_element.external_conditions = external_conditions;
 
         transparent_building_element
             .adjust_treatment(simulation_time.current_iteration())
             .unwrap();
 
-        assert!(transparent_building_element.treatment[0]
+        assert!(transparent_building_element.treatment.unwrap()[0]
             .is_open
             .load(Ordering::SeqCst))
     }
@@ -5269,7 +5272,7 @@ mod tests {
             time_last_adjusted: AtomicF64::default(),
         };
 
-        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.treatment = Some(vec![window_treatment]);
         // The Python test sets the surface irradiance return value to 30, our building element gets
         // 29.99986997757254 for surface irradiance. The same conditions are triggered in both tests
         // because surface_irradiance < control.setpnt()
@@ -5282,7 +5285,7 @@ mod tests {
             .adjust_treatment(simulation_time.current_iteration())
             .unwrap();
 
-        assert!(transparent_building_element.treatment[0]
+        assert!(transparent_building_element.treatment.unwrap()[0]
             .is_open
             .load(Ordering::SeqCst));
     }
@@ -5306,7 +5309,7 @@ mod tests {
             opening_delay_hrs: 0.0,
             time_last_adjusted: AtomicF64::default(),
         };
-        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.treatment = Some(vec![window_treatment]);
         // The Python test sets the surface irradiance return value to 30, our building element gets
         // 29.99986997757254 for surface irradiance. The same conditions are triggered in both tests
         // because surface_irradiance > control.setpnt()
@@ -5319,7 +5322,7 @@ mod tests {
             .adjust_treatment(simulation_time.current_iteration())
             .unwrap();
 
-        assert!(!transparent_building_element.treatment[0]
+        assert!(!transparent_building_element.treatment.unwrap()[0]
             .is_open
             .load(Ordering::SeqCst))
     }
