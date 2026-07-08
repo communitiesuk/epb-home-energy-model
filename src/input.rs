@@ -3052,11 +3052,6 @@ pub enum BuildingElement {
         #[validate]
         u_value_input: UValueInput,
 
-        /// Areal heat capacity (J/m².K)
-        #[validate(exclusive_minimum = 0.)]
-        #[serde(default = "default_areal_heat_capacity_for_windows")]
-        areal_heat_capacity: f64,
-
         #[serde(
             rename = "Control_WindowOpenable",
             skip_serializing_if = "Option::is_none"
@@ -3240,11 +3235,6 @@ pub enum BuildingElement {
         #[validate]
         u_value_input: UValueInput,
     },
-}
-
-const fn default_areal_heat_capacity_for_windows() -> f64 {
-    // Windows have much lower thermal mass than walls
-    1_000. // J/m².K for typical glazing
 }
 
 /// Enum to encapsulate when either u_value or thermal_resistance_construction should be provided, but not both
@@ -8460,7 +8450,7 @@ mod tests {
                     },
                     pitch: 45.,
                     orientation360: 180.0.into(),
-                    g_value: 10.,
+                    g_value: 1.,
                     frame_area_fraction: 0.25,
                     base_height: 10.,
                     area_input: BuildingElementHeightWidthInput {
@@ -8472,7 +8462,6 @@ mod tests {
                     max_window_open_area: 3.,
                     window_part_list: vec![],
                     shading: vec![],
-                    areal_heat_capacity: default_areal_heat_capacity_for_windows(),
                     control_window_openable: None,
                     treatment: vec![],
                 })
@@ -8505,7 +8494,7 @@ mod tests {
                     solar_absorption_coeff: 0.8,
                     u_value_input: UValueInput::UValue { u_value: 1.2 },
                     pitch: 1.2,
-                    orientation360: Some(0.0.into()),
+                    orientation360: Some(180.0.into()),
                     base_height: 10.,
                     area_input: BuildingElementAreaOrHeightWidthInput {
                         area: Some(24.0),
@@ -8515,7 +8504,7 @@ mod tests {
                         }
                         .into(),
                     },
-                    areal_heat_capacity: default_areal_heat_capacity_for_windows(),
+                    areal_heat_capacity: 15000.,
                     mass_distribution_class: MassDistributionClass::I,
                 })
                 .unwrap()
