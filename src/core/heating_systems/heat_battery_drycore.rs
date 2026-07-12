@@ -8,7 +8,9 @@ use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnec
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
 use crate::core::solvers::{
-    interp1d, solve_ivp, Interp1dFillValue, OdeResult, TerminateDirection, TerminatingEvents,
+    interp1d, solve_ivp, solve_ivp::solve_ivp as solve_ivp_new,
+    solve_ivp::OdeResult as OdeResultNew, Interp1dFillValue, OdeResult, TerminateDirection,
+    TerminatingEvents,
 };
 use crate::core::units::{
     HOURS_PER_DAY, KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -26,6 +28,7 @@ use derivative::Derivative;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use ndarray::{array, Array1};
 use parking_lot::RwLock;
 use smartstring::alias::String;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -224,7 +227,7 @@ impl HeatStorageDryCore {
         // :return: Final SOC after 16 hours.
 
         // Set initial state of charge to 1.0 (fully charged)
-        let initial_soc = 1.0;
+        let initial_soc = array![1.0];
 
         // Total time for the simulation (16 hours)
         let total_time = 16.0; // This is the value from BS EN 60531 for determining heat retention ability
@@ -238,35 +241,35 @@ impl HeatStorageDryCore {
         );
 
         // Define the ODE for SOC and energy delivered (no charging, only discharging)
-        let soc_ode = Arc::new(move |_t: f64, y: &[f64]| -> Vec<f64> {
-            let soc = y; // y[0] is SOC, y[1] is total energy delivered
+        let soc_ode: Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync> =
+            Arc::new(move |_t: f64, y: &Array1<f64>| -> Array1<f64> {
+                let soc = y; // y[0] is SOC, y[1] is total energy delivered
 
-            // Ensure SOC stays within bounds
-            let soc = soc.iter().map(|x| clip(*x, 0., 1.)).collect_vec();
+                // Ensure SOC stays within bounds
+                let soc = soc.iter().map(|x| clip(*x, 0., 1.)).collect_vec();
 
-            let power_interp = power_interp.clone();
+                let power_interp = power_interp.clone();
 
-            // Discharging: calculate power used based on SOC
-            let discharge_rate: f64 = power_interp(&soc)[0] * -1.;
+                // Discharging: calculate power used based on SOC
+                let discharge_rate: f64 = power_interp(&soc)[0] * -1.;
 
-            // Track the total energy delivered (discharged energy)
-            let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
+                // Track the total energy delivered (discharged energy)
+                let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
 
-            // SOC rate of change (discharging), divided by storage capacity
-            vec![-ddelivered_dt / storage_capacity]
-        });
+                // SOC rate of change (discharging), divided by storage capacity
+                array![-ddelivered_dt / storage_capacity]
+            });
 
-        // Solve the ODE for SOC and cumulative energy delivered
-        let sol = solve_ivp(
-            soc_ode,
+        let sol = solve_ivp_new(
+            &soc_ode,
             (0., total_time),
-            &[initial_soc],
+            &initial_soc,
             None,
             1e-1.into(),
             1e-3.into(),
         )?;
 
-        let OdeResult { y, .. } = sol;
+        let OdeResultNew { y, .. } = sol;
 
         // Final state of charge after 16 hours
         let final_soc = *y[0]

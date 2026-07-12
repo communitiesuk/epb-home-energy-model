@@ -183,10 +183,9 @@ pub(crate) fn root<const ARGCOUNT: usize>(
 }
 
 /// direct port of scipy.integrate.solve_ivp but only including areas used in this library
-mod solve_ivp {
+pub mod solve_ivp {
     use crate::core::solvers::solve_ivp::base_solver::{DenseOutput, Status};
-    use ndarray::{s, Array1, Axis, Zip};
-    use ndarray_linalg::Norm;
+    use ndarray::{s, Array, Array1, Axis, Dimension, Zip};
     use roots::{find_root_brent, SimpleConvergency};
     use std::cmp::Ordering;
     use std::sync::Arc;
@@ -531,7 +530,6 @@ mod solve_ivp {
         use crate::core::solvers::solve_ivp::base_solver::{DefaultDenseOutput, DenseOutput};
         use crate::core::solvers::solve_ivp::select_initial_step;
         use ndarray::{array, concatenate, s, Array1, Array2, Axis, Zip};
-        use ndarray_linalg::Norm;
         use std::sync::{Arc, LazyLock};
         use thiserror::Error;
 
@@ -909,7 +907,7 @@ mod solve_ivp {
             }
 
             fn estimate_error_norm(&self, k: &Array2<f64>, h: f64, scale: &Array1<f64>) -> f64 {
-                (self.estimate_error(k, h) / scale).norm()
+                super::norm(&(self.estimate_error(k, h) / scale))
             }
 
             fn dense_output_impl(&self) -> impl super::base_solver::DenseOutput {
@@ -1032,8 +1030,8 @@ mod solve_ivp {
 
         let scale: Array1<f64> = y0.iter().map(|&y| (y.abs() * rtol) + atol).collect();
 
-        let d0 = (y0 / &scale).norm();
-        let d1 = (f0 / &scale).norm();
+        let d0 = norm(&(y0 / &scale));
+        let d1 = norm(&(f0 / &scale));
 
         let h0 = if d0 < 1e-5 || d1 < 1e-5 {
             1e-6
@@ -1045,7 +1043,7 @@ mod solve_ivp {
         let h0 = h0.min(interval_length);
         let y1 = y0 + h0 * direction * f0;
         let f1 = fun(t0 + h0 * direction, &y1);
-        let d2 = ((f1 - f0) / &scale).norm() / h0;
+        let d2 = norm(&((f1 - f0) / &scale)) / h0;
 
         let h1 = if d1 <= 1e-15 && d2 <= 1e-15 {
             1e-6_f64.max(h0 * 1e-3)
@@ -1057,6 +1055,15 @@ mod solve_ivp {
             .into_iter()
             .min_by(|a, b| a.total_cmp(b))
             .unwrap()
+    }
+
+    // functional equivalent of the common norm function inside scipy.integrate ivp library
+    fn norm<D: Dimension>(arr: &Array<f64, D>) -> f64 {
+        numpy_linalg_norm_equivalent(arr) / (arr.len() as f64).powf(0.5)
+    }
+
+    fn numpy_linalg_norm_equivalent<D: Dimension>(arr: &Array<f64, D>) -> f64 {
+        arr.iter().map(|&x| x * x).sum::<f64>().sqrt()
     }
 
     mod base_solver {
