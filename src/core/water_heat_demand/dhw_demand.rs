@@ -609,7 +609,9 @@ impl DomesticHotWaterDemand {
                     .unwrap()
                     .push(event_result);
 
-                if event_result.volume_hot.abs() > 1e-10 && volume_hot_water_left > 0. {
+                if !is_close!(event_result.volume_hot, 0., abs_tol = 1e-10, rel_tol = 1e-9)
+                    && volume_hot_water_left > 0.
+                {
                     if let Some(hot_water_source) = hot_water_source {
                         let volume_required_already =
                             *hw_demand_volume.get(&hot_water_source_name).unwrap();

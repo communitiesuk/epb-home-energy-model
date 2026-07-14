@@ -1477,7 +1477,7 @@ impl StorageTank {
         volume: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64)> {
-        if volume.abs() <= 1e-10 {
+        if is_close!(volume, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
             return Ok((None, volume));
         }
 

@@ -803,14 +803,24 @@ impl Boiler {
     ) -> f64 {
         // If boiler location is not colder than return feed, no location adjustment needed
         if temperature_return_feed < temperature_boiler_loc
-            || (temperature_return_feed - temperature_boiler_loc).abs() < 1e-10
+            || is_close!(
+                temperature_return_feed,
+                temperature_boiler_loc,
+                abs_tol = 1e-10,
+                rel_tol = 1e-9
+            )
         {
             return 0.;
         }
 
         // If return feed is not above room temperature, no location adjustment needed
         if temperature_return_feed < self.room_temperature
-            || (temperature_return_feed - self.room_temperature).abs() < 1e-10
+            || is_close!(
+                temperature_return_feed,
+                self.room_temperature,
+                abs_tol = 1e-10,
+                rel_tol = 1e-9
+            )
         {
             return 0.;
         }
