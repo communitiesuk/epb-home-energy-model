@@ -1,9 +1,5 @@
-use anyhow::anyhow;
-use argmin::core::CostFunction;
-use differential_equations::prelude::*;
 use eqsolver::single_variable::FDNewton;
 use interp::{interp_slice, InterpMode};
-use itertools::Itertools;
 use roots::{find_root_secant, SimpleConvergency};
 use std::sync::Arc;
 
@@ -217,7 +213,6 @@ pub mod solve_ivp {
                 event_dir,
                 event_count: Array1::zeros(events.len()),
                 g: events.iter().map(|event| (event.func)(t0, y0)).collect(),
-                sol: solver.dense_output().into(),
             }
         });
 
@@ -241,6 +236,8 @@ pub mod solve_ivp {
             let mut t = solver.t;
             let mut y = solver.y.clone();
 
+            let mut sol: Option<Arc<dyn DenseOutput>> = None;
+
             if let Some(EventData {
                 events,
                 ref event_dir,
@@ -249,18 +246,23 @@ pub mod solve_ivp {
                 ref max_events,
                 ref mut t_events,
                 ref mut y_events,
-                ref sol,
                 ..
             }) = event_data
             {
                 let g_new: Array1<f64> = events.iter().map(|event| (event.func)(t, &y)).collect();
                 let active_events = find_active_events(g, &g_new, event_dir);
                 if active_events.len() > 0 {
+                    if sol.is_none() {
+                        sol = solver.dense_output().into();
+                    }
+
+                    let sol = &sol.unwrap();
+
                     for active_event in active_events.iter() {
                         event_count[*active_event] += 1;
                     }
                     let (root_indices, roots, terminate) = handle_events(
-                        &sol,
+                        sol,
                         events,
                         active_events,
                         event_count,
@@ -350,7 +352,6 @@ pub mod solve_ivp {
         event_dir: Array1<TerminateDirection>,
         event_count: Array1<usize>,
         g: Array1<f64>,
-        sol: Arc<dyn DenseOutput>,
     }
 
     fn prepare_events(events: &[TerminatingEvent]) -> (Array1<f64>, Array1<TerminateDirection>) {
@@ -358,7 +359,11 @@ pub mod solve_ivp {
         let mut event_dir = Array1::from_elem(events.len(), TerminateDirection::Both);
 
         for (i, event) in events.iter().enumerate() {
-            max_events[i] = if event.terminal { 1.0 } else { f64::INFINITY };
+            max_events[i] = if event.is_terminal() {
+                1.0
+            } else {
+                f64::INFINITY
+            };
             event_dir[i] = event.direction;
         }
 
@@ -398,7 +403,7 @@ pub mod solve_ivp {
                 .iter()
                 .find(|&&idx| event_count[idx] as f64 >= max_events[idx])
                 .copied()
-                .unwrap_or(Err(SolverError::TerminationError)?);
+                .ok_or_else(|| SolverError::TerminationError)?;
             active_events = active_events.slice(s![..t + 1]).to_owned();
             roots = roots.slice(s![..t + 1]).to_owned();
         }
@@ -478,21 +483,22 @@ pub mod solve_ivp {
 
     pub struct TerminatingEvent {
         func: Arc<dyn Fn(f64, &Array1<f64>) -> f64 + Send + Sync>,
-        terminal: bool,
         direction: TerminateDirection,
     }
 
     impl TerminatingEvent {
         pub fn new(
             func: Arc<dyn Fn(f64, &Array1<f64>) -> f64 + Send + Sync>,
-            terminal: bool,
             direction: Option<TerminateDirection>,
         ) -> Self {
             Self {
                 func,
-                terminal,
                 direction: direction.unwrap_or_default(),
             }
+        }
+
+        pub fn is_terminal(&self) -> bool {
+            true
         }
     }
 
@@ -733,7 +739,7 @@ pub mod solve_ivp {
                     max_step,
                     &f,
                     direction as f64,
-                    ORDER,
+                    ERROR_ESTIMATOR_ORDER,
                     rtol,
                     atol,
                 );
@@ -770,7 +776,7 @@ pub mod solve_ivp {
             }
 
             pub(crate) fn step(&mut self) -> Result<(), Rk45SolverError> {
-                if self.status != crate::core::solvers::solve_ivp::base_solver::Status::Running {
+                if self.status != super::base_solver::Status::Running {
                     panic!("Attempt to step on a failed or finished solver.");
                 }
 
@@ -778,7 +784,7 @@ pub mod solve_ivp {
                     // Handle corner cases of empty solver or no integration.
                     self.t_old = self.t.into();
                     self.t = self.t_bound;
-                    self.status = crate::core::solvers::solve_ivp::base_solver::Status::Finished;
+                    self.status = super::base_solver::Status::Finished;
 
                     Ok(())
                 } else {
@@ -885,9 +891,9 @@ pub mod solve_ivp {
                 Ok(())
             }
 
-            pub(crate) fn dense_output(&self) -> Box<dyn DenseOutput> {
+            pub(crate) fn dense_output(&self) -> Arc<dyn DenseOutput> {
                 if self.n == 0 || self.t_old.is_some_and(|t_old| self.t == t_old) {
-                    Box::new(
+                    Arc::new(
                         crate::core::solvers::solve_ivp::base_solver::ConstantDenseOutput::new(
                             self.t_old
                                 .expect("Expected to be past the first step with t_old set"),
@@ -896,7 +902,7 @@ pub mod solve_ivp {
                         ),
                     )
                 } else {
-                    Box::new(self.dense_output_impl())
+                    Arc::new(self.dense_output_impl())
                 }
             }
 
@@ -1115,158 +1121,6 @@ pub mod solve_ivp {
             fn call_impl(&self, t: f64) -> Array1<f64> {
                 array![t]
             }
-        }
-    }
-}
-
-pub fn solve_ivp(
-    func: Arc<dyn Fn(f64, &[f64]) -> Vec<f64> + Send + Sync>,
-    t_span: (f64, f64),
-    y0: &[f64],
-    events: Option<TerminatingEvents>,
-    rtol: Option<f64>,
-    atol: Option<f64>,
-) -> anyhow::Result<OdeResult> {
-    let rtol = rtol.unwrap_or(1e-3);
-    let atol = atol.unwrap_or(1e-6);
-
-    let system = OdeConfiguration { func: func.clone() };
-
-    let solver = ExplicitRungeKutta::dopri5().rtol(rtol).atol(atol);
-
-    let (t0, tf) = t_span;
-
-    let ode_events: Vec<OdeEvent> = events
-        .map(|events| {
-            events
-                .funcs
-                .iter()
-                .map(|func| OdeEvent {
-                    func: func.clone(),
-                    direction: events.direction.unwrap_or_default().into(),
-                })
-                .collect_vec()
-        })
-        .unwrap_or_default();
-
-    let solution = match &ode_events.as_slice() {
-        &[] => IVP::ode(&system, t0, tf, y0.to_vec())
-            .method(solver)
-            .solve()
-            .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?,
-        &[event1, event2] => IVP::ode(&system, t0, tf, y0.to_vec())
-            .method(solver)
-            .event(event1)
-            .event(event2)
-            .solve()
-            .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?,
-        &[event] => IVP::ode(&system, t0, tf, y0.to_vec())
-            .method(solver)
-            .event(event)
-            .solve()
-            .map_err(|e| anyhow!("IVP solver failed: {:?}", e))?,
-        _ => unimplemented!("The solve_ivp function does not support more than two events at the same time (though could be extended if needed)"),
-    };
-
-    // t_event is equivalent digest of the scipy.optimize.t_events array but with just the final value, and only provided if there was a termination i.e. the solution was interrupted
-    let t_event: Option<f64> = (solution.status == Status::Interrupted && solution.t.len() > 0)
-        .then(|| solution.t.last().copied().unwrap());
-
-    Ok(OdeResult {
-        y: transpose(solution.y),
-        t_event,
-        t: solution.t,
-    })
-}
-
-fn transpose(matrix: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-    if matrix.is_empty() || matrix[0].is_empty() {
-        return Vec::new();
-    }
-
-    let num_columns = matrix[0].len();
-
-    (0..num_columns)
-        .map(|col_idx| matrix.iter().map(|row| row[col_idx]).collect::<Vec<f64>>())
-        .collect()
-}
-
-struct OdeConfiguration {
-    func: Arc<dyn Fn(f64, &[f64]) -> Vec<f64> + Send + Sync>,
-}
-
-type OdeRealNumber = f64;
-type RealGrouping = Vec<OdeRealNumber>;
-
-impl ODE<OdeRealNumber, RealGrouping> for OdeConfiguration {
-    fn diff(&self, t: f64, y: &Vec<f64>, dydt: &mut Vec<f64>) {
-        let _ = std::mem::replace(dydt, (self.func)(t, y));
-    }
-}
-
-struct OdeEvent {
-    direction: CrossingDirection,
-    func: Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>,
-}
-
-impl Event<OdeRealNumber, RealGrouping> for OdeEvent {
-    fn config(&self) -> EventConfig {
-        EventConfig::new(self.direction, None).terminal()
-    }
-
-    fn event(&self, t: OdeRealNumber, y: &RealGrouping) -> OdeRealNumber {
-        // calculate time event may have occurred
-        //
-
-        (self.func)(t, y)
-    }
-}
-
-struct EventTimeProblem(Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>);
-
-impl CostFunction for EventTimeProblem {
-    type Param = f64;
-    type Output = f64;
-
-    fn cost(&self, param: &Self::Param) -> Result<Self::Output, anyhow::Error> {
-        Ok((self.0)(*param, &[]))
-    }
-}
-
-pub struct OdeResult {
-    pub y: Vec<Vec<f64>>,
-    pub t_event: Option<f64>,
-    pub t: Vec<f64>,
-}
-
-pub struct TerminatingEvents {
-    funcs: Vec<Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>>,
-    direction: Option<TerminateDirection>,
-}
-
-impl TerminatingEvents {
-    pub fn new(
-        funcs: Vec<Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>>,
-        direction: Option<TerminateDirection>,
-    ) -> Self {
-        Self { funcs, direction }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub enum TerminateDirection {
-    #[default]
-    Both,
-    Positive,
-    Negative,
-}
-
-impl From<TerminateDirection> for CrossingDirection {
-    fn from(direction: TerminateDirection) -> Self {
-        match direction {
-            TerminateDirection::Both => CrossingDirection::Both,
-            TerminateDirection::Positive => CrossingDirection::Positive,
-            TerminateDirection::Negative => CrossingDirection::Negative,
         }
     }
 }

@@ -36,6 +36,7 @@ ordered-float = "5.3.0"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 petgraph = "0.8.3"
 polyfit-rs = "0.2.2"
+roots = "0.0.8"
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde-enum-str = "0.5.0"
 serde_json = { version = "1.0.150", features = ["preserve_order"] }
@@ -46,8 +47,6 @@ smartstring = { version = "1.0.1", features = ["arbitrary", "serde"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
-roots = "0.0.8"
-differential-equations = "0.6.1"
 
 [dev-dependencies]
 approx = "0.5.1"

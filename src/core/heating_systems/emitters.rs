@@ -7,7 +7,10 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
-use crate::core::solvers::{bisect::bisect, fsolve, root, solve_ivp, OdeResult, TerminatingEvents};
+use crate::core::solvers::solve_ivp::TerminatingEvent;
+use crate::core::solvers::{
+    bisect::bisect, fsolve, root, solve_ivp::solve_ivp, solve_ivp::OdeResult,
+};
 use crate::core::space_heat_demand::zone::SimpleZone;
 use crate::core::units::{
     JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE,
@@ -27,6 +30,7 @@ use atomic_float::AtomicF64;
 use derivative::Derivative;
 use fsum::FSum;
 use itertools::Itertools;
+use ndarray::{array, Array1};
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
 use std::fmt::Debug;
@@ -722,7 +726,7 @@ impl Emitters {
     pub(crate) fn func_temp_emitter_change_rate(
         &self,
         power_input: f64,
-    ) -> impl Fn(f64, &[f64]) -> Vec<f64> {
+    ) -> impl Fn(f64, &Array1<f64>) -> Array1<f64> {
         /*
             Differential eqn for change rate of emitter temperature, to be solved iteratively
 
@@ -769,9 +773,9 @@ impl Emitters {
         c_n_pairs: Vec<(f64, f64)>,
         thermal_mass: Option<f64>,
         power_input: f64,
-    ) -> impl Fn(f64, &[f64]) -> Vec<f64> {
-        move |_t, temp_diff: &[f64]| -> Vec<f64> {
-            vec![(power_input
+    ) -> impl Fn(f64, &Array1<f64>) -> Array1<f64> {
+        move |_t, temp_diff: &Array1<f64>| -> Array1<f64> {
+            array![(power_input
                 - c_n_pairs
                 .iter()
                 .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
@@ -818,41 +822,44 @@ impl Emitters {
         // Calculate emitter temp at start of timestep
         let temp_diff_start = temp_emitter_start - temp_rm;
 
-        let events: Option<Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>> =
-            if let Some(temp_emitter_max) = temp_emitter_max {
-                let temp_diff_max = temp_emitter_max - temp_rm;
+        let events: Option<TerminatingEvent> = temp_emitter_max.map(|temp_emitter_max| {
+            let temp_diff_max = temp_emitter_max - temp_rm;
 
-                // Define event where emitter reaches max. temp (event occurs when func returns zero)
-                let temp_diff_max_reached: Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync> =
-                    Arc::new(move |_t: f64, y: &[f64]| -> f64 { y[0] - temp_diff_max });
+            TerminatingEvent::new(
+                Arc::new(move |_t: f64, y: &Array1<f64>| -> f64 { y[0] - temp_diff_max }),
+                None,
+            )
+        });
 
-                Some(temp_diff_max_reached)
-            } else {
-                None
-            };
-
-        let terminating_events = TerminatingEvents::new(events.iter().cloned().collect_vec(), None);
+        let terminating_events = events.into_iter().collect_vec();
 
         // Get function representing change rate equation and solve iteratively
-        let func_temp_emitter_change_rate = Arc::new(Self::func_temp_emitter_change_rate_pure(
+        let func_temp_emitter_change_rate: Arc<
+            dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync,
+        > = Arc::new(Self::func_temp_emitter_change_rate_pure(
             c_n_pairs,
             thermal_mass,
             power_input,
         ));
 
         let temp_diff_emitter_rm_results = solve_ivp(
-            func_temp_emitter_change_rate,
+            &func_temp_emitter_change_rate,
             (time_start, time_end),
-            &[temp_diff_start],
-            terminating_events.into(),
+            &array![temp_diff_start],
+            Some(&terminating_events),
             None,
             None,
         )?;
 
         // Get time at which emitters reach max. temp
-        let OdeResult { y, t_event, .. } = temp_diff_emitter_rm_results;
+        let OdeResult { y, t_events, .. } = temp_diff_emitter_rm_results;
 
-        let time_temp_diff_max_reached = t_event;
+        let time_temp_diff_max_reached: Option<f64> = if let Some(ref t_events) = t_events {
+            let t_events = &t_events[0];
+            t_events.iter().copied().last()
+        } else {
+            None
+        };
 
         let temp_diff_emitter_rm_final = *y[0].iter().last().ok_or_else(|| {
             anyhow!("y ndarray field of solve_ivp result was empty when this was not expected")

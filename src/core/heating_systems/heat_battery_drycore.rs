@@ -7,10 +7,10 @@ use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
+use crate::core::solvers::solve_ivp::TerminatingEvent;
 use crate::core::solvers::{
-    interp1d, solve_ivp, solve_ivp::solve_ivp as solve_ivp_new,
-    solve_ivp::OdeResult as OdeResultNew, Interp1dFillValue, OdeResult, TerminateDirection,
-    TerminatingEvents,
+    interp1d, solve_ivp::solve_ivp, solve_ivp::OdeResult, solve_ivp::TerminateDirection,
+    Interp1dFillValue,
 };
 use crate::core::units::{
     HOURS_PER_DAY, KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -260,7 +260,7 @@ impl HeatStorageDryCore {
                 array![-ddelivered_dt / storage_capacity]
             });
 
-        let sol = solve_ivp_new(
+        let sol = solve_ivp(
             &soc_ode,
             (0., total_time),
             &initial_soc,
@@ -269,12 +269,12 @@ impl HeatStorageDryCore {
             1e-3.into(),
         )?;
 
-        let OdeResultNew { y, .. } = sol;
+        let OdeResult { y, .. } = sol;
 
         // Final state of charge after 16 hours
-        let final_soc = *y[0]
+        let final_soc = y
             .last()
-            .ok_or_else(|| anyhow!("no soc values found in heat_retention_output"))?;
+            .ok_or_else(|| anyhow!("no soc values found in heat_retention_output"))?[0];
 
         // Clip the final SOC to ensure it's between 0 and 1
 
@@ -313,72 +313,76 @@ impl HeatStorageDryCore {
         let storage_capacity = self.storage_capacity;
 
         // Define the ODE for SOC, total energy charged, and total energy delivered
-        let soc_ode = Arc::new(move |_t: f64, y: &[f64]| -> Vec<f64> {
-            let soc = y[0];
-            let _energy_charged = y[1];
-            let _energy_delivered = y[2];
+        let soc_ode: Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync> =
+            Arc::new(move |_t: f64, y: &Array1<f64>| -> Array1<f64> {
+                let soc = y[0];
+                let _energy_charged = y[1];
+                let _energy_delivered = y[2];
 
-            // Ensure soc stays within bounds
-            let soc = clip(soc, 0., soc_max);
+                // Ensure soc stays within bounds
+                let soc = clip(soc, 0., soc_max);
 
-            let soc = if is_close!(soc, 0.0, rel_tol = 1e-9, abs_tol = 1e-10) {
-                0.0
-            } else {
-                soc
-            };
-            let soc = if is_close!(soc, soc_max, rel_tol = 1e-9, abs_tol = 1e-10) {
-                soc_max
-            } else {
-                soc
-            };
+                let soc = if is_close!(soc, 0.0, rel_tol = 1e-9, abs_tol = 1e-10) {
+                    0.0
+                } else {
+                    soc
+                };
+                let soc = if is_close!(soc, soc_max, rel_tol = 1e-9, abs_tol = 1e-10) {
+                    soc_max
+                } else {
+                    soc
+                };
 
-            let power_interp = Arc::clone(&power_interp);
+                let power_interp = Arc::clone(&power_interp);
 
-            // Discharging: calculate power used based on SOC
-            let discharging_rate = power_interp(&[soc])[0] * -1.;
+                // Discharging: calculate power used based on SOC
+                let discharging_rate = power_interp(&[soc])[0] * -1.;
 
-            // Track the total energy delivered (discharged energy)
-            let ddelivered_dt = -discharging_rate;
+                // Track the total energy delivered (discharged energy)
+                let ddelivered_dt = -discharging_rate;
 
-            // Track the total energy charged
-            let dcharged_dt = if soc < soc_max {
-                charge_rate
-            } else if target_charge > 0.
-                && !is_close!(target_charge, 0.0, rel_tol = 1e-9, abs_tol = 1e-10)
-            {
-                ddelivered_dt.min(charge_rate)
-            } else {
-                0.0
-            };
+                // Track the total energy charged
+                let dcharged_dt = if soc < soc_max {
+                    charge_rate
+                } else if target_charge > 0.
+                    && !is_close!(target_charge, 0.0, rel_tol = 1e-9, abs_tol = 1e-10)
+                {
+                    ddelivered_dt.min(charge_rate)
+                } else {
+                    0.0
+                };
 
-            // Net SOC rate of change (discharge + charge), divided by storage capacity
-            let dsoc_dt = (-ddelivered_dt + dcharged_dt) / storage_capacity;
+                // Net SOC rate of change (discharge + charge), divided by storage capacity
+                let dsoc_dt = (-ddelivered_dt + dcharged_dt) / storage_capacity;
 
-            vec![dsoc_dt, dcharged_dt, ddelivered_dt]
-        });
+                array![dsoc_dt, dcharged_dt, ddelivered_dt]
+            });
 
         // Event function to stop the solver when SOC reaches 0
-        let soc_zero_event = Arc::new(move |_t: f64, y: &[f64]| -> f64 { y[0] });
+        let soc_zero_event = TerminatingEvent::new(
+            Arc::new(move |_t: f64, y: &Array1<f64>| -> f64 { y[0] }),
+            Some(TerminateDirection::Negative),
+        );
 
         // Event function to stop when target energy is delivered
-        let target_energy_event = Arc::new(move |_t: f64, y: &[f64]| -> f64 {
-            let energy_delivered = y[2];
-            if let Some(target_energy) = target_energy {
-                target_energy - energy_delivered
-            } else {
-                1.0
-            }
-        });
+        let target_energy_event = TerminatingEvent::new(
+            Arc::new(move |_t: f64, y: &Array1<f64>| -> f64 {
+                let energy_delivered = y[2];
+                if let Some(target_energy) = target_energy {
+                    target_energy - energy_delivered
+                } else {
+                    1.0
+                }
+            }),
+            Some(TerminateDirection::Negative),
+        );
 
-        let mut events: Vec<Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>> = vec![soc_zero_event];
+        let mut events: Vec<TerminatingEvent> = vec![soc_zero_event];
         if target_energy.is_some_and(|target_energy| {
             target_energy > 0.0 && !is_close!(target_energy, 0.0, rel_tol = 1e-9, abs_tol = 1e-10)
         }) {
             events.push(target_energy_event);
         }
-
-        let terminating_events =
-            TerminatingEvents::new(events, TerminateDirection::Negative.into());
 
         // Set initial conditions
         let current_soc = self.state_of_charge.load(Ordering::SeqCst);
@@ -388,39 +392,43 @@ impl HeatStorageDryCore {
 
         // Solve the ODE for SOC, cumulative energy charged, and cumulative energy delivered
         let sol = solve_ivp(
-            soc_ode,
+            &soc_ode,
             (0., time_remaining),
-            &[
+            &array![
                 current_soc,
                 initial_energy_charged,
                 initial_energy_delivered,
             ],
-            terminating_events.into(),
+            Some(&events),
             1e-4.into(),
             1e-6.into(),
         )?;
 
-        let OdeResult { y, t_event, t } = sol;
+        let OdeResult { y, t_events, t, .. } = sol;
 
-        let final_soc = *y[0]
+        let y_final = y
             .last()
             .ok_or_else(|| anyhow!("ODE solving result was unexpectedly empty for final_soc"))?;
 
+        let final_soc = y_final[0];
+
         // Total energy charged during the timestep
-        let total_energy_charged = *y[1].last().ok_or_else(|| {
-            anyhow!("ODE solving result was unexpectedly empty for total_energy_charged")
-        })?;
+        let total_energy_charged = y_final[1];
 
         // Total energy delivered during the timestep
-        let total_energy_delivered = *y[2].last().ok_or_else(|| {
-            anyhow!("ODE solving result was unexpectedly empty for total_energy_delivered")
-        })?;
+        let total_energy_delivered = y_final[2];
 
-        let time_used = if let Some(t_event) = t_event {
-            t_event
-        } else {
-            *t.last()
-                .ok_or_else(|| anyhow!("t is empty for energy_output ode results"))?
+        // Determine actual time used
+        let time_used = match t_events {
+            Some(t_events) if !t_events[0].is_empty() => t_events[0][0],
+            Some(t_events)
+                if target_energy.is_some() && t_events.len() > 1 && !t_events[1].is_empty() =>
+            {
+                t_events[1][0]
+            }
+            _ => *t
+                .last()
+                .ok_or_else(|| anyhow!("t_events is empty for energy_output ode results"))?,
         };
 
         Ok((
@@ -476,88 +484,92 @@ impl HeatStorageDryCore {
         let storage_capacity = self.storage_capacity;
 
         // Define the ODE for SOC, total energy charged, and total energy delivered
-        let soc_ode = Arc::new(move |_t: f64, y: &[f64]| -> Vec<f64> {
-            let soc = y[0];
-            let _energy_charged = y[1];
-            let _energy_delivered = y[2];
-            let _energy_lost = y[3];
+        let soc_ode: Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync> =
+            Arc::new(move |_t: f64, y: &Array1<f64>| -> Array1<f64> {
+                let soc = y[0];
+                let _energy_charged = y[1];
+                let _energy_delivered = y[2];
+                let _energy_lost = y[3];
 
-            // Ensure soc stays within bounds
-            let soc = clip(soc, 0., soc_max);
+                // Ensure soc stays within bounds
+                let soc = clip(soc, 0., soc_max);
 
-            let power_interp = Arc::clone(&power_interp);
+                let power_interp = Arc::clone(&power_interp);
 
-            let (ddelivered_dt, dlost_dt) = match mode {
-                OutputMode::Max => {
-                    // Total power output when actively delivering
-                    let total_discharge_rate: f64 = power_interp(&[soc])[0];
+                let (ddelivered_dt, dlost_dt) = match mode {
+                    OutputMode::Max => {
+                        // Total power output when actively delivering
+                        let total_discharge_rate: f64 = power_interp(&[soc])[0];
 
-                    // Calculate the instantaneous loss rate (always based on MIN output)
-                    let loss_rate = {
-                        let power_min_interp = Arc::clone(&power_min_interp);
+                        // Calculate the instantaneous loss rate (always based on MIN output)
+                        let loss_rate = {
+                            let power_min_interp = Arc::clone(&power_min_interp);
 
-                        power_min_interp(&[soc])[0]
-                    };
+                            power_min_interp(&[soc])[0]
+                        };
 
-                    // The useful energy delivered is the difference between MAX and MIN
-                    // (since MIN represents the losses that happen anyway)
-                    let useful_discharge_rate = total_discharge_rate - loss_rate;
-                    (useful_discharge_rate, loss_rate)
-                }
-                OutputMode::Min => (0.0, power_interp(&[soc])[0]),
-            };
+                        // The useful energy delivered is the difference between MAX and MIN
+                        // (since MIN represents the losses that happen anyway)
+                        let useful_discharge_rate = total_discharge_rate - loss_rate;
+                        (useful_discharge_rate, loss_rate)
+                    }
+                    OutputMode::Min => (0.0, power_interp(&[soc])[0]),
+                };
 
-            let dcharged_dt = if soc < soc_max {
-                charge_rate
-            } else if target_charge > 0. {
-                (ddelivered_dt + dlost_dt).min(charge_rate)
-            } else {
-                0.0
-            };
+                let dcharged_dt = if soc < soc_max {
+                    charge_rate
+                } else if target_charge > 0. {
+                    (ddelivered_dt + dlost_dt).min(charge_rate)
+                } else {
+                    0.0
+                };
 
-            // Net SOC rate of change
-            let dsoc_dt = (-ddelivered_dt - dlost_dt + dcharged_dt) / storage_capacity;
+                // Net SOC rate of change
+                let dsoc_dt = (-ddelivered_dt - dlost_dt + dcharged_dt) / storage_capacity;
 
-            vec![dsoc_dt, dcharged_dt, ddelivered_dt, dlost_dt]
-        });
+                array![dsoc_dt, dcharged_dt, ddelivered_dt, dlost_dt]
+            });
 
         // Event function to stop the solver when SOC reaches 0
-        let soc_zero_event = Arc::new(move |_t: f64, y: &[f64]| -> f64 { y[0] });
+        let soc_zero_event = TerminatingEvent::new(
+            Arc::new(move |_t: f64, y: &Array1<f64>| -> f64 { y[0] }),
+            TerminateDirection::Negative.into(),
+        );
 
         // Event function to stop when target energy is delivered
-        let target_energy_event = Arc::new(move |_t: f64, y: &[f64]| -> f64 {
-            let energy_delivered = y[2];
-            if let Some(target_energy) = target_energy {
-                target_energy - energy_delivered
-            } else {
-                1.0
-            }
-        });
+        let target_energy_event = TerminatingEvent::new(
+            Arc::new(move |_t: f64, y: &Array1<f64>| -> f64 {
+                let energy_delivered = y[2];
+                if let Some(target_energy) = target_energy {
+                    target_energy - energy_delivered
+                } else {
+                    1.0
+                }
+            }),
+            TerminateDirection::Negative.into(),
+        );
 
-        let mut events: Vec<Arc<dyn Fn(f64, &[f64]) -> f64 + Send + Sync>> = vec![soc_zero_event];
+        let mut events = vec![soc_zero_event];
         if target_energy.is_some_and(|target_energy| target_energy > 0.0) {
             events.push(target_energy_event);
         }
 
-        let terminating_events =
-            TerminatingEvents::new(events, TerminateDirection::Negative.into());
-
         // Initial conditions
         let current_soc = self.state_of_charge.load(Ordering::SeqCst);
-        let initial_conditions = [current_soc, 0.0, 0.0, 0.0];
+        let initial_conditions = array![current_soc, 0.0, 0.0, 0.0];
         let time_remaining = time_remaining.unwrap_or(simtime.timestep);
 
         // Solve the ODE for SOC, cumulative energy charged, and cumulative energy delivered
         let sol = solve_ivp(
-            soc_ode,
+            &soc_ode,
             (0., time_remaining),
             &initial_conditions,
-            Some(terminating_events),
+            Some(&events),
             1e-4.into(),
             1e-6.into(),
         )?;
 
-        let OdeResult { y, t_event, t } = sol;
+        let OdeResult { y, t_events, t, .. } = sol;
 
         let final_soc = *y[0]
             .last()
@@ -577,11 +589,17 @@ impl HeatStorageDryCore {
             anyhow!("ODE solving result was unexpectedly empty for total_energy_lost")
         })?;
 
-        let time_used = if let Some(t_event) = t_event {
-            t_event
-        } else {
-            *t.last()
-                .ok_or_else(|| anyhow!("t is empty for energy_output ode results"))?
+        // Determine actual time used
+        let time_used = match t_events {
+            Some(ref t_events) if !t_events[0].is_empty() => t_events[0][0],
+            Some(ref t_events)
+                if target_energy.is_some() && t_events.len() > 1 && !t_events[1].is_empty() =>
+            {
+                t_events[1][0]
+            }
+            _ => *t
+                .last()
+                .ok_or_else(|| anyhow!("t_events is empty for energy_output ode results"))?,
         };
 
         Ok((
