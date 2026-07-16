@@ -183,7 +183,6 @@ pub mod solve_ivp {
     use crate::core::solvers::solve_ivp::base_solver::{DenseOutput, Status};
     use ndarray::{s, Array, Array1, Axis, Dimension, Zip};
     use roots::{find_root_brent, SimpleConvergency};
-    use std::cmp::Ordering;
     use std::sync::Arc;
     use thiserror::Error;
 
@@ -399,11 +398,22 @@ pub mod solve_ivp {
             let order = argsort(&roots, !(t > t_old));
             active_events = order.iter().map(|&i| active_events[i]).collect();
             roots = order.iter().map(|&i| roots[i]).collect();
-            let t = active_events
-                .iter()
-                .find(|&&idx| event_count[idx] as f64 >= max_events[idx])
-                .copied()
-                .ok_or_else(|| SolverError::TerminationError)?;
+
+            let count_view = event_count.select(Axis(0), active_events.as_slice().unwrap());
+            let max_view = max_events.select(Axis(0), active_events.as_slice().unwrap());
+            let t = Zip::indexed(&count_view)
+                .and(&max_view)
+                .fold(None, |acc, idx, &count, &max| {
+                    if acc.is_some() {
+                        acc
+                    } else if count as f64 >= max {
+                        Some(idx)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap();
+
             active_events = active_events.slice(s![..t + 1]).to_owned();
             roots = roots.slice(s![..t + 1]).to_owned();
         }
@@ -505,23 +515,9 @@ pub mod solve_ivp {
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, PartialOrd)]
     pub enum TerminateDirection {
         #[default]
-        Both,
-        Positive,
-        Negative,
-    }
-
-    impl Ord for TerminateDirection {
-        fn cmp(&self, other: &Self) -> Ordering {
-            match (self, other) {
-                (TerminateDirection::Both, TerminateDirection::Both) => Ordering::Equal,
-                (TerminateDirection::Positive, TerminateDirection::Positive) => Ordering::Equal,
-                (TerminateDirection::Negative, TerminateDirection::Negative) => Ordering::Equal,
-                (TerminateDirection::Both, TerminateDirection::Positive) => Ordering::Less,
-                (TerminateDirection::Both, TerminateDirection::Negative) => Ordering::Greater,
-                (TerminateDirection::Positive, _) => Ordering::Greater,
-                (TerminateDirection::Negative, _) => Ordering::Less,
-            }
-        }
+        Both = 0,
+        Positive = 1,
+        Negative = -1,
     }
 
     pub struct OdeResult {

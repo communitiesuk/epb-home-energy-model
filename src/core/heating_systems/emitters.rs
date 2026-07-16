@@ -855,15 +855,16 @@ impl Emitters {
         let OdeResult { y, t_events, .. } = temp_diff_emitter_rm_results;
 
         let time_temp_diff_max_reached: Option<f64> = if let Some(ref t_events) = t_events {
-            let t_events = &t_events[0];
-            t_events.iter().copied().last()
+            t_events
+                .get(0)
+                .and_then(|t_events| t_events.iter().copied().last())
         } else {
             None
         };
 
-        let temp_diff_emitter_rm_final = *y[0].iter().last().ok_or_else(|| {
+        let temp_diff_emitter_rm_final = y.last().ok_or_else(|| {
             anyhow!("y ndarray field of solve_ivp result was empty when this was not expected")
-        })?;
+        })?[0];
         let temp_emitter = temp_rm + temp_diff_emitter_rm_final;
 
         Ok((temp_emitter, time_temp_diff_max_reached))

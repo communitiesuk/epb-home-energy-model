@@ -571,23 +571,19 @@ impl HeatStorageDryCore {
 
         let OdeResult { y, t_events, t, .. } = sol;
 
-        let final_soc = *y[0]
+        let last_y = y
             .last()
-            .ok_or_else(|| anyhow!("ODE solving result was unexpectedly empty for final_soc"))?;
+            .ok_or_else(|| anyhow!("ODE solving result was unexpectedly empty in y field"))?;
+
+        let final_soc = last_y[0];
 
         // Total energy charged during the timestep
-        let total_energy_charged = *y[1].last().ok_or_else(|| {
-            anyhow!("ODE solving result was unexpectedly empty for total_energy_charged")
-        })?;
+        let total_energy_charged = last_y[1];
 
         // Total energy delivered during the timestep
-        let total_energy_delivered = *y[2].last().ok_or_else(|| {
-            anyhow!("ODE solving result was unexpectedly empty for total_energy_delivered")
-        })?;
+        let total_energy_delivered = last_y[2];
 
-        let total_energy_lost = *y[3].last().ok_or_else(|| {
-            anyhow!("ODE solving result was unexpectedly empty for total_energy_lost")
-        })?;
+        let total_energy_lost = last_y[3];
 
         // Determine actual time used
         let time_used = match t_events {
