@@ -387,8 +387,7 @@ pub mod solve_ivp {
                     .is_some_and(|slice| slice.contains(i))
             })
             .map(|(_i, event)| solve_event_equation(&event.func, sol, t_old, t))
-            .collect::<Result<_, _>>()
-            .map_err(|e| SolverError::EventError(e.into()))?;
+            .collect::<Result<_, _>>()?;
 
         let terminate = active_events
             .iter()
