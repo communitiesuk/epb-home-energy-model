@@ -786,12 +786,11 @@ pub mod solve_ivp {
                     let t = self.t;
                     let result = self.step_impl();
                     if result.is_err() {
-                        self.status = crate::core::solvers::solve_ivp::base_solver::Status::Failed;
+                        self.status = super::base_solver::Status::Failed;
                     } else {
                         self.t_old = t.into();
                         if self.direction as f64 * (self.t - self.t_bound) >= 0. {
-                            self.status =
-                                crate::core::solvers::solve_ivp::base_solver::Status::Finished;
+                            self.status = super::base_solver::Status::Finished;
                         }
                     }
 
