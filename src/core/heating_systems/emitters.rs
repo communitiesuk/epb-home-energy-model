@@ -3394,7 +3394,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "bad IVP solver case happens here with bounds passed in that are both zero"]
     fn test_energy_required_from_heat_source_with_buffer_tank_no_time_remaining(
         simulation_time_iterator: SimulationTimeIterator,
         emitters_with_buffer_tank: Emitters,
