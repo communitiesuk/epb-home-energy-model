@@ -1624,7 +1624,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "numbers are close after ODE solve but still to work out acceptable precision for assertions here"]
     fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,

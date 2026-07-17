@@ -3372,7 +3372,6 @@ mod tests {
 
     /// Test DHW service with cold water temperature that varies with volume demanded
     #[rstest]
-    #[ignore = "ODE solve emits very similar numbers but need to determine appropriate level of precision for assertions here"]
     fn test_demand_hot_water_with_varying_cold_temperatures(
         heat_battery: Arc<HeatBatteryDryCore>,
         simulation_time: SimulationTime,

@@ -3133,7 +3133,6 @@ mod tests {
     // Python test_func_temp_emitter_change_rate is unnecessary
 
     #[rstest]
-    #[ignore = "time_temp_diff_max_reached on second call should be some"]
     fn test_temp_emitter(emitters: Emitters) {
         // Test function calculates emitter temperature after specified time with specified power input
         // Check None conditions  are invoked
@@ -3238,7 +3237,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "out by about 0.00001 (maybe this is good enough!)"]
     fn test_energy_required_from_heat_source(
         simulation_time_iterator: SimulationTimeIterator,
         emitters: Emitters,
@@ -3320,7 +3318,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "out by about 0.00001 (maybe this is good enough!)"]
     fn test_energy_required_from_heat_source_with_buffer_tank(
         simulation_time_iterator: SimulationTimeIterator,
         emitters_with_buffer_tank: Emitters,
