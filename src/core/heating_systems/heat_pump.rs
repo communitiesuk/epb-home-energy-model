@@ -291,12 +291,14 @@ pub struct BufferTankEmittersDataWithResult {
     pub result: BufferTankServiceResult,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BufferTankServiceResult {
-    _service_name: String,
-    _power_req_from_buffer_tank: f64,
-    _temp_emitter_req: f64,
-    _buffer_emitter_circ_flow_rate: f64,
+    #[cfg(test)]
+    power_req_from_buffer_tank: f64,
+    #[cfg(test)]
+    temp_emitter_req: f64,
+    #[cfg(test)]
+    buffer_emitter_circ_flow_rate: f64,
     flow_temp_increase_due_to_buffer: f64,
     pump_power_at_flow_rate: f64,
     heat_loss_buffer_kwh: f64,
@@ -397,12 +399,10 @@ impl BufferTank {
 
     pub fn calc_buffer_tank(
         &mut self,
-        service_name: &str,
+        _service_name: &str,
         emitters_data_for_buffer_tank: BufferTankEmittersData,
     ) -> anyhow::Result<&[BufferTankServiceResult]> {
         let temp_rm_prev = emitters_data_for_buffer_tank.temp_rm_prev;
-
-        let result_service_name = String::from([service_name, "_buffer_tank"].concat());
 
         if emitters_data_for_buffer_tank.power_req_from_buffer_tank > 0.0 {
             let temp_emitter_req = emitters_data_for_buffer_tank.temp_emitter_req;
@@ -478,11 +478,13 @@ impl BufferTank {
 
             // If detailed results are to be output, save the results from the current timestep
             self.service_results.push(BufferTankServiceResult {
-                _service_name: result_service_name,
-                _power_req_from_buffer_tank: emitters_data_for_buffer_tank
+                #[cfg(test)]
+                power_req_from_buffer_tank: emitters_data_for_buffer_tank
                     .power_req_from_buffer_tank,
-                _temp_emitter_req: temp_emitter_req,
-                _buffer_emitter_circ_flow_rate: self.pump_fixed_flow_rate,
+                #[cfg(test)]
+                temp_emitter_req: temp_emitter_req,
+                #[cfg(test)]
+                buffer_emitter_circ_flow_rate: self.pump_fixed_flow_rate,
                 flow_temp_increase_due_to_buffer,
                 pump_power_at_flow_rate: self.pump_power_at_flow_rate,
                 heat_loss_buffer_kwh,
@@ -503,10 +505,12 @@ impl BufferTank {
             self.temp_average_buffer = new_temp_average_buffer;
 
             self.service_results.push(BufferTankServiceResult {
-                _service_name: result_service_name,
-                _power_req_from_buffer_tank: 0.0,
-                _temp_emitter_req: emitters_data_for_buffer_tank.temp_emitter_req,
-                _buffer_emitter_circ_flow_rate: self.pump_fixed_flow_rate,
+                #[cfg(test)]
+                power_req_from_buffer_tank: 0.0,
+                #[cfg(test)]
+                temp_emitter_req: emitters_data_for_buffer_tank.temp_emitter_req,
+                #[cfg(test)]
+                buffer_emitter_circ_flow_rate: self.pump_fixed_flow_rate,
                 flow_temp_increase_due_to_buffer: 0.0,
                 pump_power_at_flow_rate: 0.0,
                 heat_loss_buffer_kwh,
@@ -4865,10 +4869,9 @@ mod tests {
         data.max_flow_rate = 0.1;
 
         let expected = &BufferTankServiceResult {
-            _service_name: "new_service_buffer_tank".into(),
-            _power_req_from_buffer_tank: 6.325422354229758,
-            _temp_emitter_req: 43.32561228292832,
-            _buffer_emitter_circ_flow_rate: 15.,
+            power_req_from_buffer_tank: 6.325422354229758,
+            temp_emitter_req: 43.32561228292832,
+            buffer_emitter_circ_flow_rate: 15.,
             flow_temp_increase_due_to_buffer: 9.109608401991274,
             pump_power_at_flow_rate: 0.04,
             heat_loss_buffer_kwh: 0.01620674285529469,
@@ -4885,10 +4888,9 @@ mod tests {
         data.variable_flow = false;
 
         let expected = &BufferTankServiceResult {
-            _service_name: "new_service_buffer_tank".into(),
-            _power_req_from_buffer_tank: 6.325422354229758,
-            _temp_emitter_req: 43.32561228292832,
-            _buffer_emitter_circ_flow_rate: 15.,
+            power_req_from_buffer_tank: 6.325422354229758,
+            temp_emitter_req: 43.32561228292832,
+            buffer_emitter_circ_flow_rate: 15.,
             flow_temp_increase_due_to_buffer: 24.26646570859991,
             pump_power_at_flow_rate: 0.04,
             heat_loss_buffer_kwh: 0.01620674285529469,
@@ -4906,10 +4908,9 @@ mod tests {
         data.power_req_from_buffer_tank = 0.;
 
         let expected = &BufferTankServiceResult {
-            _service_name: "new_service_buffer_tank".into(),
-            _power_req_from_buffer_tank: 0.,
-            _temp_emitter_req: 43.32561228292832,
-            _buffer_emitter_circ_flow_rate: 15.,
+            power_req_from_buffer_tank: 0.,
+            temp_emitter_req: 43.32561228292832,
+            buffer_emitter_circ_flow_rate: 15.,
             flow_temp_increase_due_to_buffer: 0.,
             pump_power_at_flow_rate: 0.,
             heat_loss_buffer_kwh: -0.0019354000314273378,
@@ -4944,10 +4945,9 @@ mod tests {
         assert_eq!(results[0].len(), 1);
 
         let expected = &BufferTankServiceResult {
-            _service_name: "new_service_buffer_tank".into(),
-            _power_req_from_buffer_tank: 6.325422354229758,
-            _temp_emitter_req: 43.32561228292832,
-            _buffer_emitter_circ_flow_rate: 15.,
+            power_req_from_buffer_tank: 6.325422354229758,
+            temp_emitter_req: 43.32561228292832,
+            buffer_emitter_circ_flow_rate: 15.,
             flow_temp_increase_due_to_buffer: 3.952751095382638,
             pump_power_at_flow_rate: 0.04,
             heat_loss_buffer_kwh: 0.01620674285529469,
@@ -10091,10 +10091,9 @@ mod tests {
             },
             result: {
                 BufferTankServiceResult {
-                    _service_name: Default::default(),
-                    _power_req_from_buffer_tank: Default::default(),
-                    _temp_emitter_req: Default::default(),
-                    _buffer_emitter_circ_flow_rate: Default::default(),
+                    power_req_from_buffer_tank: Default::default(),
+                    temp_emitter_req: Default::default(),
+                    buffer_emitter_circ_flow_rate: Default::default(),
                     flow_temp_increase_due_to_buffer: 10.,
                     pump_power_at_flow_rate: 20.,
                     heat_loss_buffer_kwh: 30.,
