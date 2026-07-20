@@ -1136,7 +1136,7 @@ impl Emitters {
                 let (temp_emitter, time_temp_emitter_max_reached) = self.temp_emitter(
                     time_heating_start,
                     timestep,
-                    self.temp_emitter_prev(),
+                    temp_emitter_heating_start,
                     temp_rm_prev,
                     power_output_max_min,
                     Some(temp_emitter_max),
