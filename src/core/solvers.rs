@@ -1,6 +1,5 @@
 use eqsolver::single_variable::FDNewton;
 use interp::{interp_slice, InterpMode};
-use roots::{find_root_secant, SimpleConvergency};
 use std::sync::Arc;
 
 pub fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
@@ -159,23 +158,10 @@ pub(crate) fn root<const ARGCOUNT: usize>(
     fun: impl Fn(f64, [f64; ARGCOUNT]) -> f64,
     x0: f64,
     args: [f64; ARGCOUNT],
-    tol: Option<f64>,
 ) -> anyhow::Result<f64> {
-    let tol = tol.unwrap_or(1e-9);
+    let f = |x: f64| -> f64 { fun(x, args) };
 
-    let mut convergency = SimpleConvergency {
-        eps: tol,
-        max_iter: 100,
-    };
-
-    let x1 = x0 + 5.0;
-
-    let mut wrapper = |x: f64| -> f64 { fun(x, args) };
-
-    let found_root = find_root_secant(x0, x1, &mut wrapper, &mut convergency)
-        .map_err(|e| anyhow::anyhow!("Root optimisation failed: {:?}", e))?;
-
-    Ok(found_root)
+    fsolve(f, x0)
 }
 
 /// direct port of scipy.integrate.solve_ivp but only including areas used in this library

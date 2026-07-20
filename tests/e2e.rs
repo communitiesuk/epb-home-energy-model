@@ -139,7 +139,7 @@ fn files() -> Vec<DirEntry> {
         .filter(|e| {
             !e.file_type().is_dir()
                 && e.file_name().to_str().unwrap().ends_with("json")
-                && !PASSING_FILES.contains(&e.file_name().to_str().unwrap())
+                // && !PASSING_FILES.contains(&e.file_name().to_str().unwrap())
                 && !e
                     .path()
                     .parent()

@@ -1277,12 +1277,7 @@ impl Emitters {
                 .expect("energy_surplus_during_cooldown failed to complete")
             });
 
-            let time_cooldown = root(
-                root_func,
-                timestep,
-                [timestep, energy_demand, temp_rm_prev],
-                Some(1e-9),
-            )?;
+            let time_cooldown = root(root_func, timestep, [timestep, energy_demand, temp_rm_prev])?;
 
             // Limit cooldown time to be within timestep
             let time_heating_start = 0f64.max(time_cooldown.min(timestep));
@@ -2822,7 +2817,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "numbers out due to IVP solving being a bit out"]
     fn test_demand_energy(simulation_time_iterator: SimulationTimeIterator, emitters: Emitters) {
         let emitters = Arc::new(emitters);
         let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
