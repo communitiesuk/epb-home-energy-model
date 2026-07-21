@@ -4,6 +4,7 @@ version = "1.0.0-alpha-7"
 edition = "2021"
 rust-version = "1.85.0"
 resolver = "3"
+license-file = "LICENSE.md"
 description = "An engine written in Rust implementing the Home Energy Model (HEM), an energy performance of buildings model"
 
 [dependencies]
