@@ -38,6 +38,7 @@ pub mod aws_step_functions {
     use std::hash::Hash;
     use std::marker::PhantomData;
     use std::sync::Arc;
+    use tracing::info;
 
     pub struct AwsStepFunctionHemRunner<'a, T> {
         state_machine_arn: String,
@@ -64,6 +65,7 @@ pub mod aws_step_functions {
             &self,
             inputs: &HashMap<Self::Key, RunInput<'_>>,
         ) -> Result<HashMap<Self::Key, CalculationResult>, BatchError> {
+            info!("in run_batched_hem in AwsStepFunctionHemRunner!");
             let (keys, payloads): (Vec<Self::Key>, Vec<_>) = inputs
                 .iter()
                 .map(|(key, payload)| (key.clone(), payload))

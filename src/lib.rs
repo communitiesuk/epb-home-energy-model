@@ -56,7 +56,7 @@ use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use thiserror::Error;
-use tracing::{debug, instrument};
+use tracing::{debug, info, instrument};
 
 pub const HEM_VERSION: &str = "1.0.0a9";
 pub const HEM_VERSION_DATE: &str = "2026-07-29";
@@ -317,6 +317,8 @@ pub fn run_project(
             Ok(input)
         }
 
+        info!("we're in run_project!");
+
         let input: Arc<Input> = merge_external_conditions_data(input, external_conditions_data
             .as_ref()
             .map(ExternalConditionsInput::from))?
@@ -353,6 +355,8 @@ pub fn run_project(
                 capture_specific_error_case(&e).unwrap_or_else(|| HemError::InvalidRequest(e))
             })?
         };
+
+        info!("we have a corpus!");
 
         // 3. Run HEM calculation.
         #[instrument(skip_all)]
