@@ -167,8 +167,10 @@ pub(crate) fn root<const ARGCOUNT: usize>(
 /// direct port of scipy.integrate.solve_ivp but only including areas used in this library
 pub mod solve_ivp {
     use crate::core::solvers::solve_ivp::base_solver::{DenseOutput, Status};
+    use anyhow::Error;
+    use argmin::core::{CostFunction, Executor};
+    use argmin::solver::brent::BrentRoot;
     use ndarray::{s, Array, Array1, Axis, Dimension, Zip};
-    use roots::{find_root_brent, SimpleConvergency};
     use std::sync::Arc;
     use thiserror::Error;
 
@@ -455,15 +457,40 @@ pub mod solve_ivp {
         t_old: f64,
         t: f64,
     ) -> Result<f64, SolverError> {
-        let f = move |t| event(t, &sol.call_impl(t));
-
-        let mut convergency = SimpleConvergency {
-            eps: f64::EPSILON,
-            max_iter: 1000,
+        let problem = EventRootFunction {
+            event: Arc::clone(event),
+            sol: Arc::clone(sol),
         };
 
-        find_root_brent(t_old, t, f, &mut convergency)
-            .map_err(|err| SolverError::EventError(err.into()))
+        let solver = BrentRoot::new(t_old, t, 1e-8);
+
+        let executor = Executor::new(problem, solver);
+
+        let result = executor.run();
+
+        match result.map(|r| r.state().best_param) {
+            Ok(Some(t)) => Ok(t),
+            Ok(None) => Err(SolverError::EventError(Box::new(NoRootFoundError))),
+            Err(err) => Err(SolverError::EventError(err.into())),
+        }
+    }
+
+    struct EventRootFunction {
+        event: Arc<dyn Fn(f64, &Array1<f64>) -> f64 + Send + Sync>,
+        sol: Arc<dyn DenseOutput>,
+    }
+
+    #[derive(Debug, Error)]
+    #[error("No root found for IVP solving event equation")]
+    struct NoRootFoundError;
+
+    impl CostFunction for EventRootFunction {
+        type Param = f64;
+        type Output = f64;
+
+        fn cost(&self, t: &Self::Param) -> Result<Self::Output, Error> {
+            Ok((self.event)(*t, &(self.sol).call_impl(*t)))
+        }
     }
 
     #[derive(Debug, Error)]
