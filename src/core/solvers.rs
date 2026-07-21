@@ -1098,8 +1098,8 @@ pub mod solve_ivp {
         }
 
         impl DenseOutput for ConstantDenseOutput {
-            fn call_impl(&self, t: f64) -> Array1<f64> {
-                array![t]
+            fn call_impl(&self, _t: f64) -> Array1<f64> {
+                self.value.clone()
             }
         }
     }
