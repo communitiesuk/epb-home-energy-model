@@ -79,7 +79,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
         );
         {
             let mut tracked_files = tracked_files.write();
-            println!("🏁 finished calculation for {}", &file_name_string);
+            println!("🏁 finished calculation for {}", file_name_string);
             tracked_files.remove(&file_name_string);
             println!("📋 {} files left being calculated: {}", tracked_files.len(), tracked_files.iter().join(", "));
         }

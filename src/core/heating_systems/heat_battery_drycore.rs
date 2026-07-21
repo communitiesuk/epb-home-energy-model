@@ -7,10 +7,10 @@ use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
-use crate::core::solvers::solve_ivp::TerminatingEvent;
+use crate::core::solvers::solve_ivp::{SharedIvpSolveFunction, TerminatingEvent};
 use crate::core::solvers::{
     interp1d, solve_ivp::solve_ivp, solve_ivp::OdeResult, solve_ivp::TerminateDirection,
-    Interp1dFillValue,
+    Interp1dFillValue, SharedInterpolationFunction,
 };
 use crate::core::units::{
     HOURS_PER_DAY, KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -40,6 +40,8 @@ pub(crate) enum OutputMode {
     Max,
 }
 
+type SharedPowerFunction = SharedInterpolationFunction;
+
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub(crate) struct HeatStorageDryCore {
@@ -58,9 +60,9 @@ pub(crate) struct HeatStorageDryCore {
     soc_min_array: Vec<f64>,
     power_min_array: Vec<f64>,
     #[derivative(Debug = "ignore")]
-    power_max_func: Arc<dyn Fn(&[f64]) -> Vec<f64> + Send + Sync>,
+    power_max_func: SharedPowerFunction,
     #[derivative(Debug = "ignore")]
-    power_min_func: Arc<dyn Fn(&[f64]) -> Vec<f64> + Send + Sync>,
+    power_min_func: SharedPowerFunction,
     heat_retention_ratio: f64,
     // weak reference back to value that is composing this struct, as we need two-way references
     owner: Option<Weak<dyn HeatBatteryDryCoreCommonBehaviour>>,
@@ -147,7 +149,7 @@ impl HeatStorageDryCore {
 
                 power_max_fine
                     .into_iter()
-                    .zip(power_min_fine.into_iter())
+                    .zip(power_min_fine)
                     .all(|(x, y)| x >= y)
             };
 
@@ -216,7 +218,7 @@ impl HeatStorageDryCore {
 
     pub(super) fn heat_retention_output(
         soc_array: &[f64],
-        power_min_func: Arc<dyn Fn(&[f64]) -> Vec<f64> + Send + Sync>,
+        power_min_func: SharedPowerFunction,
         storage_capacity: f64,
     ) -> anyhow::Result<f64> {
         // Simulates the heat retention over 16 hours in OutputMode.MIN.
@@ -241,7 +243,7 @@ impl HeatStorageDryCore {
         );
 
         // Define the ODE for SOC and energy delivered (no charging, only discharging)
-        let soc_ode: Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync> =
+        let soc_ode: SharedIvpSolveFunction =
             Arc::new(move |_t: f64, y: &Array1<f64>| -> Array1<f64> {
                 let soc = y; // y[0] is SOC, y[1] is total energy delivered
 
@@ -251,7 +253,7 @@ impl HeatStorageDryCore {
                 let power_interp = power_interp.clone();
 
                 // Discharging: calculate power used based on SOC
-                let discharge_rate: f64 = power_interp(&soc)[0] * -1.;
+                let discharge_rate: f64 = -power_interp(&soc)[0];
 
                 // Track the total energy delivered (discharged energy)
                 let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
@@ -313,7 +315,7 @@ impl HeatStorageDryCore {
         let storage_capacity = self.storage_capacity;
 
         // Define the ODE for SOC, total energy charged, and total energy delivered
-        let soc_ode: Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync> =
+        let soc_ode: SharedIvpSolveFunction =
             Arc::new(move |_t: f64, y: &Array1<f64>| -> Array1<f64> {
                 let soc = y[0];
                 let _energy_charged = y[1];
@@ -336,7 +338,7 @@ impl HeatStorageDryCore {
                 let power_interp = Arc::clone(&power_interp);
 
                 // Discharging: calculate power used based on SOC
-                let discharging_rate = power_interp(&[soc])[0] * -1.;
+                let discharging_rate = -power_interp(&[soc])[0];
 
                 // Track the total energy delivered (discharged energy)
                 let ddelivered_dt = -discharging_rate;
@@ -466,7 +468,7 @@ impl HeatStorageDryCore {
 
             let power_func = Arc::clone(&self.power_min_func);
 
-            let power_values = power_func(&soc_array);
+            let power_values = power_func(soc_array);
 
             interp1d(soc_min_array, power_values, Interp1dFillValue::Extrapolate)
         };
@@ -484,7 +486,7 @@ impl HeatStorageDryCore {
         let storage_capacity = self.storage_capacity;
 
         // Define the ODE for SOC, total energy charged, and total energy delivered
-        let soc_ode: Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync> =
+        let soc_ode: SharedIvpSolveFunction =
             Arc::new(move |_t: f64, y: &Array1<f64>| -> Array1<f64> {
                 let soc = y[0];
                 let _energy_charged = y[1];

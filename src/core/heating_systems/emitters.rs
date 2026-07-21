@@ -7,7 +7,7 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
-use crate::core::solvers::solve_ivp::TerminatingEvent;
+use crate::core::solvers::solve_ivp::{SharedIvpSolveFunction, TerminatingEvent};
 use crate::core::solvers::{
     bisect::bisect, fsolve, root, solve_ivp::solve_ivp, solve_ivp::OdeResult,
 };
@@ -834,13 +834,9 @@ impl Emitters {
         let terminating_events = events.into_iter().collect_vec();
 
         // Get function representing change rate equation and solve iteratively
-        let func_temp_emitter_change_rate: Arc<
-            dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync,
-        > = Arc::new(Self::func_temp_emitter_change_rate_pure(
-            c_n_pairs,
-            thermal_mass,
-            power_input,
-        ));
+        let func_temp_emitter_change_rate: SharedIvpSolveFunction = Arc::new(
+            Self::func_temp_emitter_change_rate_pure(c_n_pairs, thermal_mass, power_input),
+        );
 
         let temp_diff_emitter_rm_results = solve_ivp(
             &func_temp_emitter_change_rate,
@@ -856,7 +852,7 @@ impl Emitters {
 
         let time_temp_diff_max_reached: Option<f64> = if let Some(ref t_events) = t_events {
             t_events
-                .get(0)
+                .first()
                 .and_then(|t_events| t_events.iter().copied().last())
         } else {
             None

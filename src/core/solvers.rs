@@ -32,7 +32,7 @@ pub mod bisect {
 
         // 2. Initial bracket validation
         if fa * fb > 0.0 {
-            return Err(BisectError::SignError(
+            return Err(BisectError::Sign(
                 "f(a) and f(b) must have different signs".to_string(),
             ));
         }
@@ -112,7 +112,7 @@ pub mod bisect {
         };
 
         if !converged {
-            Err(BisectError::ConvergenceError(results))
+            Err(BisectError::Convergence(results))
         } else {
             Ok((mid, results))
         }
@@ -129,23 +129,23 @@ pub mod bisect {
 
     #[derive(Debug)]
     pub enum BisectError {
-        SignError(String),
-        ConvergenceError(RootResults),
-        FuncError(anyhow::Error),
+        Sign(String),
+        Convergence(RootResults),
+        Function(anyhow::Error),
     }
 
     impl From<anyhow::Error> for BisectError {
         fn from(err: anyhow::Error) -> Self {
-            BisectError::FuncError(err)
+            BisectError::Function(err)
         }
     }
 
     impl fmt::Display for BisectError {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                BisectError::SignError(msg) => write!(f, "ValueError: {}", msg),
-                BisectError::ConvergenceError(res) => write!(f, "RuntimeError: {}", res.flag),
-                BisectError::FuncError(err) => write!(f, "Error in passed-in function: {}", err),
+                BisectError::Sign(msg) => write!(f, "ValueError: {}", msg),
+                BisectError::Convergence(res) => write!(f, "RuntimeError: {}", res.flag),
+                BisectError::Function(err) => write!(f, "Error in passed-in function: {}", err),
             }
         }
     }
@@ -171,11 +171,15 @@ pub mod solve_ivp {
     use argmin::core::{CostFunction, Executor};
     use argmin::solver::brent::BrentRoot;
     use ndarray::{s, Array, Array1, Axis, Dimension, Zip};
+    use std::cmp::Ordering;
     use std::sync::Arc;
     use thiserror::Error;
 
+    pub type SharedIvpSolveFunction = Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync>;
+    pub type SharedIvpEventFunction = Arc<dyn Fn(f64, &Array1<f64>) -> f64 + Send + Sync>;
+
     pub fn solve_ivp(
-        func: &Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync>,
+        func: &SharedIvpSolveFunction,
         t_span: (f64, f64),
         y0: &Array1<f64>,
         events: Option<&[TerminatingEvent]>,
@@ -206,9 +210,9 @@ pub mod solve_ivp {
         let mut _status: Option<i8> = None;
 
         while _status.is_none() {
-            let _result = solver
+            solver
                 .step()
-                .map_err(|e| SolverError::MainSolverError(e.into()))?;
+                .map_err(|e| SolverError::MainSolver(e.into()))?;
 
             if solver.status == Status::Finished {
                 _status = Some(0);
@@ -238,7 +242,7 @@ pub mod solve_ivp {
             {
                 let g_new: Array1<f64> = events.iter().map(|event| (event.func)(t, &y)).collect();
                 let active_events = find_active_events(g, &g_new, event_dir);
-                if active_events.len() > 0 {
+                if !active_events.is_empty() {
                     if sol.is_none() {
                         sol = solver.dense_output().into();
                     }
@@ -276,30 +280,29 @@ pub mod solve_ivp {
             ys.push(y);
         }
 
-        let (t_events, _y_events): (Option<Vec<Array1<f64>>>, Option<Vec<Array1<Array1<f64>>>>) =
-            if let Some(EventData {
-                ref t_events,
-                ref y_events,
-                ..
-            }) = event_data
-            {
-                (
-                    Some(
-                        t_events
-                            .iter()
-                            .map(|te| te.iter().map(|&te| te.into()).collect())
-                            .collect(),
-                    ),
-                    Some(
-                        y_events
-                            .iter()
-                            .map(|ye| ye.iter().map(|ye| ye.to_owned().into()).collect())
-                            .collect(),
-                    ),
-                )
-            } else {
-                (None, None)
-            };
+        let (t_events, _y_events): (Option<TEvents>, Option<YEvents>) = if let Some(EventData {
+            ref t_events,
+            ref y_events,
+            ..
+        }) = event_data
+        {
+            (
+                Some(
+                    t_events
+                        .iter()
+                        .map(|te| te.iter().copied().collect())
+                        .collect(),
+                ),
+                Some(
+                    y_events
+                        .iter()
+                        .map(|ye| ye.iter().map(|ye| ye.to_owned()).collect())
+                        .collect(),
+                ),
+            )
+        } else {
+            (None, None)
+        };
 
         let ts = Array1::from_vec(ts);
         let (ys, _) = Array1::from_vec(ys)
@@ -314,32 +317,18 @@ pub mod solve_ivp {
         })
     }
 
-    //
-    //     if dense_output:
-    //         if t_eval is None:
-    //             sol = OdeSolution(
-    //                 ts, interpolants, alt_segment=True if method in [BDF, LSODA] else False
-    //             )
-    //         else:
-    //             sol = OdeSolution(
-    //                 ti, interpolants, alt_segment=True if method in [BDF, LSODA] else False
-    //             )
-    //     else:
-    //         sol = None
-    //
-    //     return OdeResult(t=ts, y=ys, sol=sol, t_events=t_events, y_events=y_events,
-    //                      nfev=solver.nfev, njev=solver.njev, nlu=solver.nlu,
-    //                      status=status, message=message, success=status >= 0)
-
     struct EventData<'a> {
         t_events: Vec<Vec<f64>>,
-        y_events: Vec<Vec<Array1<f64>>>,
+        y_events: YEvents,
         events: &'a [TerminatingEvent],
         max_events: Array1<f64>,
         event_dir: Array1<TerminateDirection>,
         event_count: Array1<usize>,
         g: Array1<f64>,
     }
+
+    type TEvents = Vec<Array1<f64>>;
+    type YEvents = Vec<Vec<Array1<f64>>>;
 
     fn prepare_events(events: &[TerminatingEvent]) -> (Array1<f64>, Array1<TerminateDirection>) {
         let mut max_events = Array1::zeros(events.len());
@@ -382,7 +371,12 @@ pub mod solve_ivp {
             .any(|active_event| event_count[*active_event] >= max_events[*active_event] as usize);
 
         if terminate {
-            let order = argsort(&roots, !(t > t_old));
+            let order = argsort(
+                &roots,
+                t.partial_cmp(&t_old).ok_or_else(|| {
+                    SolverError::Event(NotANumberEncounteredDuringEventHandling.into())
+                })? != Ordering::Greater,
+            );
             active_events = order.iter().map(|&i| active_events[i]).collect();
             roots = order.iter().map(|&i| roots[i]).collect();
 
@@ -407,6 +401,10 @@ pub mod solve_ivp {
 
         Ok((active_events, roots, terminate))
     }
+
+    #[derive(Debug, Error)]
+    #[error("A NaN value was encountered during event handling for either t or t_old")]
+    struct NotANumberEncounteredDuringEventHandling;
 
     /// Perform equivalent of `np.argsort`. NB. will panic if passed an empty array.
     fn argsort<T>(arr: &Array1<T>, reverse: bool) -> Array1<usize>
@@ -452,7 +450,7 @@ pub mod solve_ivp {
     }
 
     fn solve_event_equation(
-        event: &Arc<dyn Fn(f64, &Array1<f64>) -> f64 + Send + Sync>,
+        event: &SharedIvpEventFunction,
         sol: &Arc<dyn DenseOutput>,
         t_old: f64,
         t: f64,
@@ -470,13 +468,13 @@ pub mod solve_ivp {
 
         match result.map(|r| r.state().best_param) {
             Ok(Some(t)) => Ok(t),
-            Ok(None) => Err(SolverError::EventError(Box::new(NoRootFoundError))),
-            Err(err) => Err(SolverError::EventError(err.into())),
+            Ok(None) => Err(SolverError::Event(Box::new(NoRootFoundError))),
+            Err(err) => Err(SolverError::Event(err.into())),
         }
     }
 
     struct EventRootFunction {
-        event: Arc<dyn Fn(f64, &Array1<f64>) -> f64 + Send + Sync>,
+        event: SharedIvpEventFunction,
         sol: Arc<dyn DenseOutput>,
     }
 
@@ -496,23 +494,20 @@ pub mod solve_ivp {
     #[derive(Debug, Error)]
     pub enum SolverError {
         #[error("Error when solving events: {0}")]
-        EventError(Box<dyn std::error::Error + Send + Sync>),
+        Event(Box<dyn std::error::Error + Send + Sync>),
         #[error("Error in main IVP solver: {0}")]
-        MainSolverError(Box<dyn std::error::Error + Send + Sync>),
+        MainSolver(Box<dyn std::error::Error + Send + Sync>),
         #[error("Error happened during event termination")]
-        TerminationError,
+        Termination,
     }
 
     pub struct TerminatingEvent {
-        func: Arc<dyn Fn(f64, &Array1<f64>) -> f64 + Send + Sync>,
+        func: SharedIvpEventFunction,
         direction: TerminateDirection,
     }
 
     impl TerminatingEvent {
-        pub fn new(
-            func: Arc<dyn Fn(f64, &Array1<f64>) -> f64 + Send + Sync>,
-            direction: Option<TerminateDirection>,
-        ) -> Self {
+        pub fn new(func: SharedIvpEventFunction, direction: Option<TerminateDirection>) -> Self {
             Self {
                 func,
                 direction: direction.unwrap_or_default(),
@@ -542,13 +537,13 @@ pub mod solve_ivp {
     /// module to do with the RK45 method for scipy
     mod rk45 {
         use crate::core::solvers::solve_ivp::base_solver::{DefaultDenseOutput, DenseOutput};
-        use crate::core::solvers::solve_ivp::select_initial_step;
+        use crate::core::solvers::solve_ivp::{select_initial_step, SharedIvpSolveFunction};
         use ndarray::{array, concatenate, s, Array1, Array2, Axis, Zip};
         use std::sync::{Arc, LazyLock};
         use thiserror::Error;
 
         fn rk_step(
-            fun: &Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync>,
+            fun: &SharedIvpSolveFunction,
             t: f64,
             y: &Array1<f64>,
             f: &Array1<f64>,
@@ -612,7 +607,7 @@ pub mod solve_ivp {
             pub(crate) t_old: Option<f64>,
             step_size: Option<f64>,
             nfev: usize,
-            fun: Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync>,
+            fun: SharedIvpSolveFunction,
             y_old: Option<Array1<f64>>,
             max_step: f64,
             rtol: f64,
@@ -725,7 +720,7 @@ pub mod solve_ivp {
 
         impl Rk45Solver {
             pub(super) fn new(
-                fun: &Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync>,
+                fun: &SharedIvpSolveFunction,
                 t0: f64,
                 y0: &Array1<f64>,
                 t_bound: f64,
@@ -776,11 +771,7 @@ pub mod solve_ivp {
             }
 
             fn step_size(&self) -> Option<f64> {
-                if self.t_old.is_none() {
-                    None
-                } else {
-                    Some((self.t - self.t_old.unwrap()).abs())
-                }
+                self.t_old.map(|t_old| (self.t - t_old).abs())
             }
 
             pub(crate) fn step(&mut self) -> Result<(), Rk45SolverError> {
@@ -1021,7 +1012,7 @@ pub mod solve_ivp {
     }
 
     fn select_initial_step(
-        fun: &Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync>,
+        fun: &SharedIvpSolveFunction,
         t0: f64,
         y0: &Array1<f64>,
         t_bound: f64,
@@ -1032,7 +1023,7 @@ pub mod solve_ivp {
         rtol: f64,
         atol: f64,
     ) -> f64 {
-        if y0.len() == 0 {
+        if y0.is_empty() {
             return f64::INFINITY;
         }
 
@@ -1132,18 +1123,19 @@ pub mod solve_ivp {
     }
 }
 
-pub fn interp1d<'a>(
+pub type SharedInterpolationFunction = Arc<dyn Fn(&[f64]) -> Vec<f64> + Send + Sync>;
+
+pub fn interp1d(
     x: Vec<f64>,
     y: Vec<f64>,
     fill_value: Interp1dFillValue,
-) -> Arc<dyn Fn(&[f64]) -> Vec<f64> + Send + Sync> {
+) -> SharedInterpolationFunction {
     let interp_mode = match fill_value {
         Interp1dFillValue::Extrapolate => InterpMode::Extrapolate,
         Interp1dFillValue::FillValues(values) => InterpMode::Constant(values.0),
     };
 
-    let func =
-        move |x_new: &[f64]| interp_slice(&x, &y, x_new.try_into().unwrap(), &interp_mode).to_vec();
+    let func = move |x_new: &[f64]| interp_slice(&x, &y, x_new, &interp_mode).to_vec();
 
     Arc::new(func)
 }

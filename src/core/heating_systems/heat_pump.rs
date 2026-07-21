@@ -280,7 +280,7 @@ impl BufferTankEmittersData {
     fn merge_result(self, result: &BufferTankServiceResult) -> BufferTankEmittersDataWithResult {
         BufferTankEmittersDataWithResult {
             data: self,
-            result: result.clone(),
+            result: *result,
         }
     }
 }
@@ -482,7 +482,7 @@ impl BufferTank {
                 power_req_from_buffer_tank: emitters_data_for_buffer_tank
                     .power_req_from_buffer_tank,
                 #[cfg(test)]
-                temp_emitter_req: temp_emitter_req,
+                temp_emitter_req,
                 #[cfg(test)]
                 buffer_emitter_circ_flow_rate: self.pump_fixed_flow_rate,
                 flow_temp_increase_due_to_buffer,
