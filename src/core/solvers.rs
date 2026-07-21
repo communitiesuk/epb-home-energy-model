@@ -1053,7 +1053,7 @@ pub mod solve_ivp {
     }
 
     mod base_solver {
-        use ndarray::{array, Array1};
+        use ndarray::Array1;
 
         #[derive(Clone, Copy, Debug, Default, PartialEq)]
         pub enum Status {
