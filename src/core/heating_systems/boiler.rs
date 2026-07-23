@@ -277,6 +277,7 @@ impl BoilerServiceWaterCombi {
             .map(|res| res.0)
     }
 
+    #[allow(clippy::similar_names)]
     fn get_daily_vol_factor(daily_hw_usage: f64, separate_dhw_tests: &BoilerHotWaterTest) -> f64 {
         // The daily volume factor (DVF) is used in loss factor adjustments for combi boilers tested to two tapping profiles.
 
@@ -651,6 +652,7 @@ impl Boiler {
 
     /// Return boiler efficiency at different return temperatures
     /// In Python this is effvsreturntemp
+    #[allow(clippy::unreadable_literal)]
     fn efficiency_over_return_temperatures(
         fuel_code: &FuelType,
         return_temp: f64,

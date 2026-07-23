@@ -1694,9 +1694,8 @@ impl Emitters {
                     )
                 {
                     return Ok((temp_flow_target, temp_flow_target, 0.0));
-                } else {
-                    design_flow_rate / LITRES_PER_CUBIC_METRE as f64
                 }
+                design_flow_rate / LITRES_PER_CUBIC_METRE as f64
             }
         };
 

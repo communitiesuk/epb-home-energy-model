@@ -662,6 +662,7 @@ const TEST_LETTERS_NON_BIVALENT: [char; 4] = ['A', 'B', 'C', 'D'];
 const TEST_LETTERS_ALL: [char; 5] = ['A', 'B', 'C', 'D', 'F'];
 
 impl HeatPumpTestData {
+    #[allow(clippy::unreadable_literal)]
     pub(crate) fn new(data: Vec<HeatPumpTestDatum>) -> anyhow::Result<Self> {
         // keyed by design flow temp
         let mut test_data: IndexMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>> = Default::default();

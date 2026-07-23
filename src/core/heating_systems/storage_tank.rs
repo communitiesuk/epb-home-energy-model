@@ -2888,11 +2888,10 @@ impl SmartHotWaterTank {
             if temp_factors[current_layer] < 1. {
                 // If we don't need to pump the entire layer, stop iteration
                 break;
-            } else {
-                // If entire layer needs to be pumped, set factor to 1
-                // and continue to next layer
-                temp_factors[current_layer] = 1.0;
             }
+            // If entire layer needs to be pumped, set factor to 1
+            // and continue to next layer
+            temp_factors[current_layer] = 1.0;
         }
 
         // Calculate volume to be pumped (only from layers below heater_layer)

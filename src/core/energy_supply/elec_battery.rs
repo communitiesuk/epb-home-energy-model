@@ -138,6 +138,7 @@ impl ElectricBattery {
     /// Equation for battery capacity as function of external air temperature (only used if battery is outside)
     /// Based on manufacturer data (graph): https://www.bonnenbatteries.com/the-effect-of-low-temperature-on-lithium-batteries/
     /// TODO (from Python) Revisit available research to improve capacity temperature dependency
+    #[allow(clippy::unreadable_literal)]
     fn capacity_temp_equ(air_temp: f64) -> f64 {
         if air_temp > 20. {
             1.

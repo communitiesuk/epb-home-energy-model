@@ -829,6 +829,7 @@ impl HeatBatteryPcm {
     ///       typical temperature ranges (e.g., 0–100 °C).
     ///     - The coefficients are fixed constants based on empirical data and are not
     ///       variables in this implementation.
+    #[allow(clippy::unreadable_literal)]
     fn calculate_water_kinematic_viscosity_m2_per_s(inlet_temp_c: f64, outlet_temp_c: f64) -> f64 {
         let average_temp = (inlet_temp_c + outlet_temp_c) / 2.;
 

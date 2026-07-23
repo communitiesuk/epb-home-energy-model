@@ -1236,9 +1236,9 @@ impl CombinationTimeControl {
     ) -> bool {
         let control = self.controls[control_name].as_ref();
         match control {
-            c @ Control::OnOffTime(_)
-            | c @ Control::Charge(_)
-            | c @ Control::OnOffMinimisingTime(_) => c.is_on(&simtime),
+            c @ (Control::OnOffTime(_)
+            | Control::Charge(_)
+            | Control::OnOffMinimisingTime(_)) => c.is_on(&simtime),
             Control::SetpointTime(c) => c
                 .in_required_period(&simtime)
                 .expect("SetpointTimeControl in_required_period() method will always return Some"),
@@ -1341,9 +1341,9 @@ impl CombinationTimeControl {
     ) -> SetpointOrBoolean {
         let control = self.controls[control_name].as_ref();
         match control {
-            c @ Control::OnOffTime(_)
-            | c @ Control::Charge(_)
-            | c @ Control::OnOffMinimisingTime(_) => SetpointOrBoolean::Boolean(c.is_on(&simtime)),
+            c @ (Control::OnOffTime(_)
+            | Control::Charge(_)
+            | Control::OnOffMinimisingTime(_)) => SetpointOrBoolean::Boolean(c.is_on(&simtime)),
             Control::SetpointTime(c) => SetpointOrBoolean::Setpoint(c.setpnt(&simtime)),
             _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
         }

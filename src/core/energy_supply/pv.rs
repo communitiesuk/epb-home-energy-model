@@ -142,6 +142,7 @@ impl PhotovoltaicPanel {
 
     /// Produce electrical energy (in kWh) from the PV system
     /// according to BS EN 15316-4-3:2017
+    #[allow(clippy::similar_names)]
     pub fn produce_energy(
         &self,
         photovoltaic_system: PhotovoltaicSystem,
@@ -261,6 +262,7 @@ impl PhotovoltaicSystem {
     ///    2nd order polynomial curves were fitted through the resulting inverter efficiency factors (as a function of the direct
     ///    factor f_sh_dir, resulting in the equations used below). A two stage polynomial is needed for each inverter type
     ///    because of the step change in behaviour when the 'lower limit' referred to in the source is reached.
+    #[allow(clippy::many_single_char_names)]
     pub(crate) fn inverter_efficiency_lookup(&self, f_sh_dir: f64) -> f64 {
         // Calculate inverter efficiency based on direct shading factor and inverter type
         let x = f_sh_dir;

@@ -5,6 +5,7 @@ use crate::input::InverterType;
 
 /// An object to represent an inverter.  Although primarily for PV systems this may have other uses e.g. wind turbine
 #[derive(Debug, Clone)]
+#[allow(clippy::similar_names)]
 pub(crate) struct Inverter {
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
@@ -23,6 +24,7 @@ impl Inverter {
     /// * `inverter_is_inside`     -- tells us that the inverter is considered inside the building
     /// * `inverter_peak_power_ac` -- Peak power in kW; represents the peak electrical AC power output from the inverter
     /// * `inverter_type`          -- type of inverter to help with calculation of efficiency of inverter when overshading
+    #[allow(clippy::similar_names)]
     pub(crate) fn new(
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,

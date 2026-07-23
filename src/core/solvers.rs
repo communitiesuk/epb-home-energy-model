@@ -536,12 +536,15 @@ pub mod solve_ivp {
 
     /// module to do with the RK45 method for scipy
     mod rk45 {
+        #![allow(clippy::unreadable_literal)]
+
         use crate::core::solvers::solve_ivp::base_solver::{DefaultDenseOutput, DenseOutput};
         use crate::core::solvers::solve_ivp::{select_initial_step, SharedIvpSolveFunction};
         use ndarray::{array, concatenate, s, Array1, Array2, Axis, Zip};
         use std::sync::{Arc, LazyLock};
         use thiserror::Error;
 
+        #[allow(clippy::many_single_char_names)]
         fn rk_step(
             fun: &SharedIvpSolveFunction,
             t: f64,
