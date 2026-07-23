@@ -39,7 +39,7 @@ petgraph = "0.8.3"
 polyfit-rs = "0.2.2"
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde-enum-str = "0.5.0"
-serde_json = "1.0.150"
+serde_json = { version = "1.0.150", features = ["preserve_order"] }
 serde_repr = "0.1.20"
 serde_with = { version = "3.21.0", features = ["json", "macros"] }
 serde_valid = "2.0.1"
