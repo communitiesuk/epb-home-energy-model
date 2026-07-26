@@ -69,5 +69,9 @@ required-features = ["clap"]
 opt-level = 3
 lto = true
 
+[profile.profiling]
+inherits = "release"
+debug = true
+
 [workspace]
 members = ["hem-lambda"]
