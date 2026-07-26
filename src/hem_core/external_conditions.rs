@@ -9,10 +9,12 @@ use anyhow::{anyhow, bail};
 use approx::{AbsDiffEq, RelativeEq};
 use fsum::FSum;
 use itertools::Itertools;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
+use std::collections::HashMap;
 use std::f64::consts::PI;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -124,6 +126,7 @@ pub(crate) enum ShadingObjectType {
 pub struct ExternalConditions {
     pub(crate) air_temps: Vec<f64>,
     air_temp_annual: OnceLock<Option<f64>>,
+    air_temps_monthly: Arc<Mutex<HashMap<(u32, u32), f64>>>,
     wind_speeds: Vec<f64>,
     wind_directions: Vec<Orientation360>,
     diffuse_horizontal_radiations: Vec<f64>,
@@ -328,6 +331,7 @@ impl ExternalConditions {
         Self {
             air_temps,
             air_temp_annual: OnceLock::new(),
+            air_temps_monthly: Default::default(),
             wind_speeds,
             wind_directions,
             diffuse_horizontal_radiations,
@@ -384,13 +388,20 @@ impl ExternalConditions {
 
     /// Return the average air temperature for the current month
     pub(crate) fn air_temp_monthly(&self, current_month_start_end_hours: (u32, u32)) -> f64 {
-        // Get start and end hours for current month
-        let (idx_start, idx_end) = current_month_start_end_hours;
-        let (idx_start, idx_end) = (idx_start as usize, idx_end as usize);
-        // Get air temperatures for the current month
-        let air_temps_month = &self.air_temps[idx_start..idx_end];
-        let sum: f64 = FSum::with_all(air_temps_month.iter()).value();
-        sum / air_temps_month.len() as f64
+        // use memoisation to ensure we don't need to sum for the same month periods repeatedly (fsum is quite slow)
+        *self
+            .air_temps_monthly
+            .lock()
+            .entry(current_month_start_end_hours)
+            .or_insert_with(|| {
+                // Get start and end hours for current month
+                let (idx_start, idx_end) = current_month_start_end_hours;
+                let (idx_start, idx_end) = (idx_start as usize, idx_end as usize);
+                // Get air temperatures for the current month
+                let air_temps_month = &self.air_temps[idx_start..idx_end];
+                let sum: f64 = FSum::with_all(air_temps_month.iter()).value();
+                sum / air_temps_month.len() as f64
+            })
     }
 
     /// Return the minimum daily average air temperature for the whole year
