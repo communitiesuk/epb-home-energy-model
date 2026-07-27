@@ -323,7 +323,7 @@ pub struct OutputSummaryEnergySupply {
     /// Total energy discharged from storage to consumption (unit: kWh)
     pub storage_to_consumption: f64,
     /// Storage round-trip efficiency: total energy discharged from storage divided by total energy put into storage from both grid and on-site generation (unit: kWh)
-    pub storage_efficiency: f64,
+    pub storage_efficiency: Option<f64>,
     /// Net import: total gross import minus total gross export (unit: kWh)
     pub net_import: f64,
     /// Total energy imported from the grid, including both direct consumption and battery charging (unit: kWh)
@@ -333,20 +333,20 @@ pub struct OutputSummaryEnergySupply {
 }
 
 impl OutputSummaryEnergySupply {
-    pub(crate) fn field(&self, key: &EnergySupplyStatKey) -> f64 {
+    pub(crate) fn field(&self, key: &EnergySupplyStatKey) -> Option<f64> {
         match key {
-            EnergySupplyStatKey::Generation => self.generation,
-            EnergySupplyStatKey::Consumption => self.consumption,
-            EnergySupplyStatKey::GenerationToConsumption => self.generation_to_consumption,
-            EnergySupplyStatKey::GridToConsumption => self.grid_to_consumption,
-            EnergySupplyStatKey::TotalGrossImport => self.total_gross_import,
-            EnergySupplyStatKey::TotalGrossExport => self.total_gross_export,
-            EnergySupplyStatKey::GenerationToGrid => self.generation_to_grid,
-            EnergySupplyStatKey::NetImport => self.net_import,
-            EnergySupplyStatKey::GenerationToStorage => self.generation_to_storage,
-            EnergySupplyStatKey::StorageToConsumption => self.storage_to_consumption,
-            EnergySupplyStatKey::StorageFromGrid => self.grid_to_storage,
-            EnergySupplyStatKey::GenerationToDiverter => self.generation_to_diverter,
+            EnergySupplyStatKey::Generation => self.generation.into(),
+            EnergySupplyStatKey::Consumption => self.consumption.into(),
+            EnergySupplyStatKey::GenerationToConsumption => self.generation_to_consumption.into(),
+            EnergySupplyStatKey::GridToConsumption => self.grid_to_consumption.into(),
+            EnergySupplyStatKey::TotalGrossImport => self.total_gross_import.into(),
+            EnergySupplyStatKey::TotalGrossExport => self.total_gross_export.into(),
+            EnergySupplyStatKey::GenerationToGrid => self.generation_to_grid.into(),
+            EnergySupplyStatKey::NetImport => self.net_import.into(),
+            EnergySupplyStatKey::GenerationToStorage => self.generation_to_storage.into(),
+            EnergySupplyStatKey::StorageToConsumption => self.storage_to_consumption.into(),
+            EnergySupplyStatKey::StorageFromGrid => self.grid_to_storage.into(),
+            EnergySupplyStatKey::GenerationToDiverter => self.generation_to_diverter.into(),
             EnergySupplyStatKey::StorageEfficiency => self.storage_efficiency,
         }
     }

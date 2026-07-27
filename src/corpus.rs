@@ -2922,7 +2922,7 @@ impl Corpus {
                         .value()
                         .abs(),
                     generation_to_diverter: gen_to_diverter,
-                    storage_efficiency: storage_eff,
+                    storage_efficiency: Some(storage_eff),
                     total_gross_import,
                     total_gross_export,
                 },

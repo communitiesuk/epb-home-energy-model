@@ -416,10 +416,12 @@ impl From<ExternalConditionsFromFile> for ExternalConditionsInput {
             diffuse_horizontal_radiation: weather_file_conditions
                 .diffuse_horizontal_radiation
                 .into(),
-            direct_beam_conversion_needed: None,
+            direct_beam_conversion_needed: Some(
+                weather_file_conditions.direct_beam_conversion_needed,
+            ),
             direct_beam_radiation: weather_file_conditions.direct_beam_radiation.into(),
-            latitude: None,
-            longitude: None,
+            latitude: weather_file_conditions.latitude.into(),
+            longitude: weather_file_conditions.longitude.into(),
             shading_segments: None,
             solar_reflectivity_of_ground: weather_file_conditions
                 .solar_reflectivity_of_ground

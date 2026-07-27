@@ -862,12 +862,16 @@ fn write_core_output_file_summary(
         let mut row: Vec<std::string::String> = vec![label.into(), unit.into()];
         for stat in output.summary.energy_supply.values() {
             let value = stat.field(&field);
-            let value = if field == EnergySupplyStatKey::StorageEfficiency && value.is_nan() {
-                "DIV/0".into()
+            let value = if value.is_some_and(|value| field == EnergySupplyStatKey::StorageEfficiency && value.is_nan()) {
+                StringOrNumber::String("DIV/0".into())
             } else {
-                format_value(&value.into())?
+                if let Some(value) = value {
+                    StringOrNumber::from(value)
+                } else {
+                    StringOrNumber::String("N/A".into())
+                }
             };
-            row.push(value);
+            row.push(value.to_string());
         }
         writer.write_record(&row)?;
     }
