@@ -640,9 +640,9 @@ dependencies = [
 
 [[package]]
 name = "eqsolver"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "282ac36d076314487550d67a431cdff433148265d4179ca744b2da3b15082a27"
+checksum = "79f363ded9d9bc562fcccc0ecbf0ce5637b556c9290b318050a03fd1a4c2f8ec"
 dependencies = [
  "nalgebra 0.35.0",
  "num-traits",
