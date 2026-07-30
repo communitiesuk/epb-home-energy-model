@@ -18,6 +18,7 @@ use serde_json::{json, Map, Value as JsonValue};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_valid::validation::error::{Format, Message};
 use serde_valid::{MinimumError, Validate};
+use serde_with::skip_serializing_none;
 use smartstring::alias::String;
 use std::fmt::{Display, Formatter};
 use std::ops::Index;
@@ -26,6 +27,7 @@ use std::sync::LazyLock;
 
 const HOURS_IN_YEAR: usize = 8760;
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
@@ -35,7 +37,7 @@ const HOURS_IN_YEAR: usize = 8760;
 #[validate(custom = validate_time_series)]
 pub struct Input {
     /// Metadata for the input file
-    #[serde(rename = "metadata", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "metadata")]
     #[validate]
     metadata: Option<InputMetadata>,
 
@@ -60,7 +62,6 @@ pub struct Input {
     pub(crate) external_conditions: Arc<ExternalConditionsInput>,
 
     /// Dictionary of available wet heat sources, keyed by user-defined names (e.g., 'boiler', 'hp', 'HeatNetwork', 'hb1'). Other models reference these keys via their heat_source_wet fields.
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate]
     pub(crate) heat_source_wet: Option<HeatSourceWet>,
 
@@ -76,7 +77,6 @@ pub struct Input {
     #[validate]
     pub(crate) internal_gains: InternalGains,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate]
     pub(crate) on_site_generation: Option<OnSiteGeneration>,
 
@@ -93,15 +93,13 @@ pub struct Input {
     pub(crate) smart_appliance_controls:
         IndexMap<std::string::String, SmartApplianceControlDetails>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate]
     pub(crate) space_cool_system: Option<SpaceCoolSystem>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate]
     pub(crate) space_heat_system: Option<SpaceHeatSystem>,
 
-    #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "WWHRS")]
     #[validate]
     pub(crate) waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
 
@@ -268,60 +266,51 @@ fn validate_time_series(input: &Input) -> Result<(), serde_valid::validation::Er
     Ok(())
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct ExternalConditionsInput {
     /// List of external air temperatures, one entry per hour (unit: ˚C)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(custom = validate_air_temperatures)]
     pub(crate) air_temperatures: Option<Vec<f64>>,
 
     /// List of diffuse horizontal radiation values, one entry per hour (unit: W/m²)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(custom = validate_all_items_in_option_non_negative)]
     pub(crate) diffuse_horizontal_radiation: Option<Vec<f64>>,
 
     /// A flag to indicate whether direct beam radiation from climate data needs to be converted from horizontal to normal incidence; if normal direct beam radiation values are provided then no conversion is needed
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) direct_beam_conversion_needed: Option<bool>,
 
     /// List of direct beam radiation values, one entry per hour (unit: W/m²)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(custom = validate_all_items_in_option_non_negative)]
     pub(crate) direct_beam_radiation: Option<Vec<f64>>,
 
     /// Latitude of weather station, angle from south (unit: ˚)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(minimum = -90.)]
     #[validate(maximum = 90.)]
     pub(crate) latitude: Option<f64>,
 
     /// Longitude of weather station, easterly +ve westerly -ve (unit: ˚)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(minimum = -180.)]
     #[validate(maximum = 180.)]
     pub(crate) longitude: Option<f64>,
 
     /// Data splitting the ground plane into segments (8-36) and giving height and distance to shading objects surrounding the building
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate]
     pub(crate) shading_segments: Option<Vec<ShadingSegment>>,
 
     /// List of ground reflectivity values, 0 to 1, one entry per hour
     /// Each item represents the fraction of solar radiation incident on the ground that is reflected. Also called the albedo.
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(custom = validate_all_items_in_option_non_negative)]
     #[validate(custom = |v| validate_all_items_in_option_at_most_n(v, 1.))]
     pub(crate) solar_reflectivity_of_ground: Option<Vec<f64>>,
 
     /// List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: ˚)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(custom = validate_all_items_in_option)]
     pub(crate) wind_directions: Option<Vec<Orientation360>>,
 
     /// List of wind speeds, one entry per hour (unit: m/s)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(custom = validate_all_items_in_option_non_negative)]
     pub(crate) wind_speeds: Option<Vec<f64>>,
 }
@@ -444,30 +433,27 @@ fn validate_air_temperatures(
     }
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 pub(crate) struct InternalGains {
-    #[serde(
-        alias = "total internal gains",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(alias = "total internal gains")]
     #[validate]
     pub(crate) total_internal_gains: Option<InternalGainsDetails>,
 
-    #[serde(rename = "metabolic gains", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "metabolic gains")]
     #[validate]
     pub(crate) metabolic_gains: Option<InternalGainsDetails>,
 
-    #[serde(rename = "EvaporativeLosses", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "EvaporativeLosses")]
     #[validate]
     pub(crate) evaporative_losses: Option<InternalGainsDetails>,
 
-    #[serde(rename = "ColdWaterLosses", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "ColdWaterLosses")]
     #[validate]
     pub(crate) cold_water_losses: Option<InternalGainsDetails>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate]
     pub(crate) other: Option<InternalGainsDetails>,
 }
@@ -488,18 +474,19 @@ pub(crate) struct InternalGainsDetails {
 
 pub(crate) type ApplianceGains = IndexMap<std::string::String, ApplianceGainsDetails>;
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ApplianceGainsDetails {
     /// List of appliance usage events
-    #[serde(rename = "Events", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "Events")]
     #[validate]
     pub(crate) events: Option<Vec<ApplianceGainsEvent>>,
 
     /// Appliance power consumption when not in use (unit: W)
-    #[serde(rename = "Standby", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "Standby")]
     #[validate(minimum = 0.)]
     pub(crate) standby: Option<f64>,
 
@@ -512,16 +499,14 @@ pub(crate) struct ApplianceGainsDetails {
     pub(crate) gains_fraction: f64,
 
     /// Load shifting configuration for smart appliance control
-    #[serde(rename = "loadshifting", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "loadshifting")]
     #[validate]
     pub(crate) load_shifting: Option<ApplianceLoadShifting>,
 
     /// Priority level for load shifting (lower numbers = higher priority)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) priority: Option<isize>,
 
     /// Power consumption schedule (one entry per hour)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) schedule: Option<NumericSchedule>,
 
     /// First day of the time series, day of the year, 0 to 365
@@ -555,6 +540,7 @@ pub struct ApplianceGainsEvent {
 
 pub type EnergySupplyInput = IndexMap<std::string::String, EnergySupplyDetails>;
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
@@ -562,33 +548,27 @@ pub struct EnergySupplyDetails {
     /// Type of fuel
     pub fuel: FuelType,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) diverter: Option<EnergyDiverter>,
 
     /// Indicates that an electric battery is present
-    #[serde(rename = "ElectricBattery", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "ElectricBattery")]
     pub(crate) electric_battery: Option<ElectricBattery>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub factor: Option<CustomEnergySourceFactor>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) priority: Option<Vec<EnergySupplyPriorityEntry>>,
 
     /// Denotes that this energy supply can export its surplus supply
     pub(crate) is_export_capable: bool,
 
     /// Level of battery charge above which grid prohibited from charging battery (monthly values) (0 - 1)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(custom = validate_threshold_value_fractions)]
     pub(crate) threshold_charges: Option<[f64; 12]>,
 
     /// Grid price below which battery is permitted to charge from grid (monthly values) (unit: p/kWh)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(custom = validate_threshold_value_fractions)]
     pub(crate) threshold_prices: Option<[f64; 12]>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tariff: Option<EnergySupplyTariff>,
 }
 
@@ -904,14 +884,15 @@ fn validate_running_water_temperatures(
 pub(crate) type ExtraControls = IndexMap<std::string::String, ControlDetails>;
 
 /// Control schedule configuration for heating and energy systems.
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Control {
-    #[serde(skip_serializing_if = "Option::is_none", rename = "hw timer")]
+    #[serde(rename = "hw timer")]
     #[validate]
     pub(crate) hot_water_timer: Option<ControlDetails>,
 
-    #[serde(skip_serializing_if = "Option::is_none", rename = "window opening")]
+    #[serde(rename = "window opening")]
     #[validate]
     pub(crate) window_opening: Option<ControlDetails>,
 
@@ -930,6 +911,7 @@ impl Control {
     }
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
@@ -937,7 +919,6 @@ impl Control {
 pub(crate) enum ControlDetails {
     #[serde(rename = "OnOffTimeControl")]
     OnOffTimer {
-        #[serde(skip_serializing_if = "Option::is_none")]
         allow_null: Option<bool>,
 
         /// First day of the time series, day of the year, 0 to 365
@@ -985,7 +966,6 @@ pub(crate) enum ControlDetails {
         time_series_step: f64,
 
         /// How long before heating period the system should switch on (unit: hours)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         advanced_start: Option<f64>,
 
@@ -999,26 +979,21 @@ pub(crate) enum ControlDetails {
     #[serde(rename = "ChargeControl")]
     ChargeTarget {
         /// Proportion of the charge targeted for each day
-        #[serde(skip_serializing_if = "Option::is_none")]
         charge_level: Option<ChargeLevel>,
 
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate]
         external_sensor: Option<ExternalSensor>,
 
-        #[serde(skip_serializing_if = "Option::is_none")]
         logic_type: Option<ControlLogicType>,
 
         /// List of boolean values where true means 'on' (one entry per hour)
         schedule: BooleanSchedule,
 
         /// Temperature at which charging should stop
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = -273.15)]
         temp_charge_cut: Option<f64>,
 
         /// Temperature delta schedule for charge cut-off adjustment (unit: ˚C)
-        #[serde(skip_serializing_if = "Option::is_none")]
         temp_charge_cut_delta: Option<Box<NumericSchedule>>,
 
         /// Indicates from which hour of the day the system starts to target the charge level for the next day rather than the current day
@@ -1365,6 +1340,7 @@ pub enum BoilerHotWaterTest {
     NoAdditionalTests,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -1384,7 +1360,6 @@ pub enum HotWaterSourceDetails {
         daily_losses: f64,
 
         /// Surface area of the heat exchanger within the storage tank (unit: m²)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(exclusive_minimum = 0.)]
         heat_exchanger_surface_area: Option<f64>,
 
@@ -1394,7 +1369,6 @@ pub enum HotWaterSourceDetails {
         init_temp: f64,
 
         /// List of primary pipework components connected to the storage tank
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate]
         primary_pipework: Option<Vec<WaterPipework>>,
 
@@ -1414,26 +1388,21 @@ pub enum HotWaterSourceDetails {
         separate_dhw_tests: BoilerHotWaterTest,
 
         /// Rejected energy factor 1 for combi boiler efficiency calculations (unit: kWh)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         rejected_energy_1: Option<f64>,
 
         /// Storage loss factor 1 for combi boiler efficiency calculations (unit: kWh/day)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         storage_loss_factor_1: Option<f64>,
 
         /// Storage loss factor 2 for combi boiler efficiency calculations (unit: kWh/day)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         storage_loss_factor_2: Option<f64>,
 
         /// Rejected energy factor 3 for combi boiler efficiency calculations (dimensionless)
-        #[serde(skip_serializing_if = "Option::is_none")]
         rejected_factor_3: Option<f64>,
 
         /// Temperature setpoint for the combi boiler hot water output (unit: ˚C)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(maximum = 100.)]
         setpoint_temp: Option<f64>,
@@ -1452,7 +1421,6 @@ pub enum HotWaterSourceDetails {
         heat_source_wet: String,
 
         /// Temperature setpoint for the HIU hot water output (unit: ˚C)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(maximum = 100.)]
         setpoint_temp: Option<f64>,
@@ -1517,7 +1485,6 @@ pub enum HotWaterSourceDetails {
         heat_source: IndexMap<std::string::String, HeatSource>,
 
         /// List of primary pipework components connected to the smart hot water tank
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate]
         primary_pipework: Option<Vec<WaterPipeworkSimple>>,
     },
@@ -1710,6 +1677,7 @@ pub(crate) enum HeatSourceControlType {
     WindowOpening,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -1723,11 +1691,11 @@ pub enum HeatSource {
         energy_supply: String,
 
         /// Reference to a control schedule of minimum temperature setpoints
-        #[serde(rename = "Controlmin", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "Controlmin")]
         control_min: Option<String>,
 
         /// Reference to a control schedule of maximum temperature setpoints
-        #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "Controlmax")]
         control_max: Option<String>,
 
         /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.
@@ -1736,7 +1704,6 @@ pub enum HeatSource {
         heater_position: f64,
 
         /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         thermostat_position: Option<f64>,
@@ -1809,7 +1776,6 @@ pub enum HeatSource {
         /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
-        #[serde(skip_serializing_if = "Option::is_none")]
         thermostat_position: Option<f64>,
 
         /// Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.
@@ -1822,16 +1788,15 @@ pub enum HeatSource {
         name: String,
 
         /// Upper operating limit for flow temperature (unit: °C). Optional.
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(exclusive_minimum = 0.)]
         temp_flow_limit_upper: Option<f64>,
 
         /// Reference to a control schedule of minimum temperature setpoints
-        #[serde(rename = "Controlmin", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "Controlmin")]
         control_min: Option<String>,
 
         /// Reference to a control schedule of maximum temperature setpoints
-        #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "Controlmax")]
         control_max: Option<String>,
 
         /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless
@@ -1840,7 +1805,6 @@ pub enum HeatSource {
         heater_position: f64,
 
         /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         thermostat_position: Option<f64>,
@@ -1860,7 +1824,6 @@ pub enum HeatSource {
         tank_volume_declared: f64,
 
         /// Surface area of heat exchanger stored in the database (unit: m2)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(exclusive_minimum = 0.)]
         heat_exchanger_surface_area_declared: Option<f64>,
 
@@ -1892,7 +1855,6 @@ pub enum HeatSource {
         heater_position: f64,
 
         /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         thermostat_position: Option<f64>,
@@ -1966,11 +1928,12 @@ pub enum SolarCollectorLoopLocation {
     Nhs,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpHotWaterTestData {
-    #[serde(rename = "L", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "L")]
     pub(crate) l: Option<HeatPumpHotWaterOnlyTestDatum>,
 
     #[serde(rename = "M")]
@@ -2006,6 +1969,7 @@ pub(crate) struct HeatPumpHotWaterOnlyTestDatum {
     pub(crate) hw_vessel_loss_daily: f64,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2021,19 +1985,14 @@ pub struct WaterPipeworkSimple {
     pub length: f64,
 
     // remainder of fields are not in the input definition for Python HEM 0.36 but storage tank logic seems to need them for now
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub external_diameter_mm: Option<f64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub insulation_thermal_conductivity: Option<f64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub insulation_thickness_mm: Option<f64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub surface_reflectivity: Option<bool>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub pipe_contents: Option<PipeworkContents>,
 }
 
@@ -2157,6 +2116,7 @@ impl Showers {
     }
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, tag = "type")]
@@ -2170,10 +2130,10 @@ pub enum Shower {
         cold_water_source: String,
 
         /// Reference to HotWaterSource object that provides hot water to this shower. If only one HotWaterSource is defined, then this will be assumed by default
-        #[serde(rename = "HotWaterSource", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "HotWaterSource")]
         hot_water_source: Option<String>,
 
-        #[serde(flatten, skip_serializing_if = "Option::is_none")]
+        #[serde(flatten)]
         wwhrs_config: Option<MixerShowerWwhrsConfiguration>,
     },
     #[serde(rename = "InstantElecShower")]
@@ -2190,6 +2150,7 @@ pub enum Shower {
     },
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MixerShowerWwhrsConfiguration {
@@ -2198,10 +2159,7 @@ pub struct MixerShowerWwhrsConfiguration {
     pub(crate) waste_water_heat_recovery_system: String,
 
     /// WWHRS system configuration for this shower connection
-    #[serde(
-        rename = "WWHRS_configuration",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "WWHRS_configuration")]
     pub(crate) wwhrs_configuration: Option<WwhrsConfiguration>,
 }
 
@@ -2228,6 +2186,7 @@ pub(crate) enum WwhrsConfiguration {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Baths(#[validate] pub IndexMap<std::string::String, BathDetails>);
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2240,7 +2199,7 @@ pub struct BathDetails {
     pub(crate) cold_water_source: String,
 
     /// Reference to HotWaterSource object that provides hot water to this bath. If only one HotWaterSource is defined, then this will be assumed by default
-    #[serde(rename = "HotWaterSource", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "HotWaterSource")]
     pub(crate) hot_water_source: Option<String>,
 
     /// Tap/outlet flow rate (unit: litre/minute)
@@ -2253,6 +2212,7 @@ pub struct BathDetails {
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterUses(#[validate] pub IndexMap<std::string::String, OtherWaterUse>);
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2265,7 +2225,7 @@ pub struct OtherWaterUse {
     pub(crate) cold_water_source: String,
 
     /// Reference to HotWaterSource object that provides hot water to this tapping point. If only one HotWaterSource is defined, then this will be assumed by default
-    #[serde(rename = "HotWaterSource", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "HotWaterSource")]
     pub(crate) hot_water_source: Option<String>,
 }
 
@@ -2313,6 +2273,7 @@ pub(crate) struct WaterHeatingEvents {
     pub(crate) other: IndexMap<std::string::String, Vec<WaterHeatingEvent>>,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2322,12 +2283,10 @@ pub struct WaterHeatingEvent {
     pub start: f64,
 
     /// Duration of the water heating event (unit: minutes)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     pub duration: Option<f64>,
 
     /// Volume of water for the event (unit: litre)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     pub volume: Option<f64>,
 
@@ -2347,6 +2306,7 @@ pub enum WaterHeatingEventType {
 
 pub type SpaceHeatSystem = IndexMap<std::string::String, SpaceHeatSystemDetails>;
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
@@ -2433,7 +2393,6 @@ pub enum SpaceHeatSystemDetails {
         heat_source: SpaceHeatSystemHeatSource,
 
         /// Fraction of return back into flow water
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(exclusive_maximum = 1.)]
         bypass_fraction_recirculated: Option<f64>,
@@ -2458,7 +2417,6 @@ pub enum SpaceHeatSystemDetails {
         #[validate(exclusive_minimum = 0.)]
         temp_diff_emit_dsgn: f64,
 
-        #[serde(skip_serializing_if = "Option::is_none")]
         /// Thermal mass of the emitters. (Unit: kWh/K)
         #[validate(exclusive_minimum = 0.)]
         thermal_mass: Option<f64>,
@@ -2466,7 +2424,7 @@ pub enum SpaceHeatSystemDetails {
         #[serde(rename = "Control")]
         control: String,
 
-        #[serde(rename = "EnergySupply", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "EnergySupply")]
         energy_supply: Option<String>,
 
         /// Zone in which the emitters are located. References a key in $.Zone
@@ -2769,6 +2727,7 @@ fn validate_all_items_in_option<T: Validate>(
     }
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2776,12 +2735,11 @@ pub struct SpaceHeatSystemHeatSource {
     pub(crate) name: String,
 
     /// Upper operating limit for temperature (unit: deg C)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     pub(crate) temp_flow_limit_upper: Option<f64>,
 }
 
-// it is unclear whether this struct should be used - see reference to the struct above
+#[skip_serializing_none]
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(dead_code)]
@@ -2790,17 +2748,14 @@ pub struct EcoDesignController {
     pub(crate) ecodesign_control_class: EcoDesignControllerClass,
 
     /// Minimum outdoor temperature (unit: Celsius)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(minimum = -273.15)]
     pub(crate) min_outdoor_temp: Option<f64>,
 
     /// Maximum outdoor temperature (unit: Celsius)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(minimum = -273.15)]
     pub(crate) max_outdoor_temp: Option<f64>,
 
     /// Minimum flow temperature (unit: Celsius)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     pub(crate) min_flow_temp: Option<f64>,
 }
@@ -2852,6 +2807,7 @@ pub enum ElectricStorageHeaterAirFlowType {
 
 pub type ZoneDictionary = IndexMap<std::string::String, ZoneInput>;
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2890,7 +2846,7 @@ pub struct ZoneInput {
     pub area: f64,
 
     /// Basis for zone temperature control.
-    #[serde(rename = "temp_setpnt_basis", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "temp_setpnt_basis")]
     pub(crate) temp_setpnt_basis: Option<ZoneTemperatureControlBasis>,
 
     /// Setpoint temperature to use during initialisation (unit: ˚C)
@@ -2969,6 +2925,7 @@ pub enum SpaceHeatControlType {
     RestOfDwelling,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2976,7 +2933,6 @@ pub struct ZoneLighting {
     #[serde(rename = "efficacy")]
     efficacy: f64,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     bulbs: Option<IndexMap<String, ZoneLightingBulbs>>,
 }
 
@@ -3004,6 +2960,7 @@ pub enum ZoneTemperatureControlBasis {
 pub(crate) const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
 pub(crate) const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
@@ -3012,7 +2969,6 @@ pub(crate) const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 pub enum BuildingElement {
     #[serde(rename = "BuildingElementOpaque")]
     Opaque {
-        #[serde(skip_serializing_if = "Option::is_none")]
         is_unheated_pitched_roof: Option<bool>,
 
         /// Solar absorption coefficient at the external surface (dimensionless)
@@ -3054,10 +3010,7 @@ pub enum BuildingElement {
         #[validate]
         u_value_input: UValueInput,
 
-        #[serde(
-            rename = "Control_WindowOpenable",
-            skip_serializing_if = "Option::is_none"
-        )]
+        #[serde(rename = "Control_WindowOpenable")]
         control_window_openable: Option<String>,
 
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
@@ -3103,7 +3056,6 @@ pub enum BuildingElement {
         #[validate]
         shading: Vec<WindowShadingObject>,
 
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate]
         treatment: Option<Vec<WindowTreatment>>,
     },
@@ -3610,6 +3562,7 @@ pub struct WindowPart {
     pub(crate) mid_height_air_flow_path: f64,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -3629,25 +3582,19 @@ pub struct WindowTreatment {
     pub(crate) trans_red: f64,
 
     /// Irradiation level above which the window treatment is assumed to be closed (unit: W/m²). References a key in $.Control.
-    #[serde(
-        rename = "Control_closing_irrad",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "Control_closing_irrad")]
     pub(crate) control_closing_irrad: Option<String>,
 
     /// Irradiation level below which a window treatment is assumed to be open (unit: W/m²). References a key in $.Control.
-    #[serde(
-        rename = "Control_opening_irrad",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "Control_opening_irrad")]
     pub(crate) control_opening_irrad: Option<String>,
 
     /// Reference to a time control object containing a schedule of booleans describing when a window treatment is open. References a key in $.Control.
-    #[serde(rename = "Control_open", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "Control_open")]
     pub(crate) control_open: Option<String>,
 
     /// A boolean describing the state of the window treatment
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(default)]
     pub(crate) is_open: Option<bool>,
 
     /// Time delay enforced before a window treatment may be opened after the conditions for its opening are met (unit: hours)
@@ -3876,6 +3823,7 @@ pub enum WaterHeatingSchedule {
 
 pub type HeatSourceWet = IndexMap<std::string::String, HeatSourceWetDetails>;
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(clippy::large_enum_variant)]
@@ -3884,7 +3832,7 @@ pub type HeatSourceWet = IndexMap<std::string::String, HeatSourceWetDetails>;
 pub enum HeatSourceWetDetails {
     HeatPump {
         /// Optional buffer tank configuration for the heat pump system
-        #[serde(rename = "BufferTank", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "BufferTank")]
         #[validate(custom = validate_boxed_in_option)]
         buffer_tank: Option<Box<HeatPumpBufferTank>>,
 
@@ -3892,17 +3840,11 @@ pub enum HeatSourceWetDetails {
         energy_supply: String,
 
         /// References a key in $.EnergySupply for heat network energy supply
-        #[serde(
-            rename = "EnergySupply_heat_network",
-            skip_serializing_if = "Option::is_none"
-        )]
+        #[serde(rename = "EnergySupply_heat_network")]
         energy_supply_heat_network: Option<String>,
 
         /// References a key in $.MechanicalVentilation
-        #[serde(
-            rename = "MechanicalVentilation",
-            skip_serializing_if = "Option::is_none"
-        )]
+        #[serde(rename = "MechanicalVentilation")]
         mechanical_ventilation: Option<String>,
 
         /// Type of backup control for the heat pump system
@@ -3910,34 +3852,28 @@ pub enum HeatSourceWetDetails {
         backup_control_type: HeatPumpBackupControlType,
 
         /// Optional boiler configuration used as backup for the heat pump
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(custom = validate_boxed_in_option)]
         boiler: Option<Box<HeatPumpBoiler>>,
 
         /// Maximum temperature for exhaust air heat pump mixed operation (unit: ˚C)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = -273.15)]
         eahp_mixed_max_temp: Option<f64>,
 
         /// Minimum temperature for exhaust air heat pump mixed operation (unit: ˚C)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = -273.15)]
         eahp_mixed_min_temp: Option<f64>,
 
         /// Minimum modulation rate at 20°C flow temperature (dimensionless, 0-1)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         min_modulation_rate_20: Option<f64>,
 
         /// Minimum modulation rate at 35°C flow temperature (dimensionless, 0-1)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         min_modulation_rate_35: Option<f64>,
 
         /// Minimum modulation rate at 55°C flow temperature (dimensionless, 0-1)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         min_modulation_rate_55: Option<f64>,
@@ -3959,12 +3895,10 @@ pub enum HeatSourceWetDetails {
         power_heating_circ_pump: f64,
 
         /// Power consumption of warm air fan (unit: kW)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         power_heating_warm_air_fan: Option<f64>,
 
         /// Maximum backup power (unit: kW)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(exclusive_minimum = 0.)]
         power_max_backup: Option<f64>,
 
@@ -3987,7 +3921,6 @@ pub enum HeatSourceWetDetails {
         source_type: HeatPumpSourceType,
 
         /// Distribution temperature for heat network (unit: ˚C)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(exclusive_minimum = 0.)]
         temp_distribution_heat_network: Option<f64>,
 
@@ -3996,7 +3929,6 @@ pub enum HeatSourceWetDetails {
         temp_lower_operating_limit: f64,
 
         /// Maximum return feed temperature (unit: ˚C)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(exclusive_minimum = 0.)]
         temp_return_feed_max: Option<f64>,
 
@@ -4009,7 +3941,6 @@ pub enum HeatSourceWetDetails {
         time_constant_onoff_operation: f64,
 
         /// Time delay before backup operation (unit: hours)
-        #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         time_delay_backup: Option<f64>,
 
@@ -4178,12 +4109,12 @@ pub struct HeatPumpBufferTank {
     pub pump_power_at_flow_rate: f64,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Validate, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpTestDatum {
     /// Air flow rate through the heat pump for the test condition (unit: m³/h)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     pub(crate) air_flow_rate: Option<f64>,
 
@@ -4200,7 +4131,6 @@ pub struct HeatPumpTestDatum {
     pub(crate) design_flow_temp: f64,
 
     /// Ratio of external air to recirculated air for exhaust air heat pumps (dimensionless)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(minimum = 0.)]
     #[validate(maximum = 1.)]
     pub(crate) eahp_mixed_ext_air_ratio: Option<f64>,
@@ -4220,6 +4150,7 @@ pub struct HeatPumpTestDatum {
     pub(crate) test_letter: TestLetter,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -4269,7 +4200,6 @@ pub struct HeatPumpBoiler {
     #[validate(minimum = 0.)]
     electricity_standby: f64,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate]
     pub(crate) cost_schedule_hybrid: Option<BoilerCostScheduleHybrid>,
 }
@@ -4489,6 +4419,7 @@ fn validate_backup_configuration(
 
 pub type WasteWaterHeatRecovery = IndexMap<std::string::String, WasteWaterHeatRecoveryDetails>;
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -4511,7 +4442,6 @@ pub struct WasteWaterHeatRecoveryDetails {
     pub system_a_efficiencies: Option<Vec<f64>>,
 
     /// Utilisation factor for System A
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     #[validate(maximum = 1.)]
     pub system_a_utilisation_factor: Option<f64>,
@@ -4521,7 +4451,6 @@ pub struct WasteWaterHeatRecoveryDetails {
     pub system_b_efficiencies: Option<Vec<f64>>,
 
     /// Utilisation factor for System B. Required when using either system_b_efficiencies (pre-corrected data) or when converting system_a_efficiencies to System B (used with system_b_efficiency_factor).
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     #[validate(maximum = 1.)]
     pub system_b_utilisation_factor: Option<f64>,
@@ -4531,7 +4460,6 @@ pub struct WasteWaterHeatRecoveryDetails {
     pub system_c_efficiencies: Option<Vec<f64>>,
 
     /// Utilisation factor for System C. Required when using either system_c_efficiencies (pre-corrected data) or when converting system_a_efficiencies to System C (used with system_c_efficiency_factor).
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(minimum = 0.)]
     #[validate(maximum = 1.)]
     pub system_c_utilisation_factor: Option<f64>,
@@ -4786,6 +4714,7 @@ pub struct WindowOpeningForCooling {
     pub equivalent_area: f64,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
@@ -4793,7 +4722,6 @@ pub struct WindowOpeningForCooling {
 pub struct General {
     pub storeys_in_building: usize,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub storey_of_dwelling: Option<usize>,
 
     pub build_type: BuildType,
@@ -4809,26 +4737,18 @@ pub enum BuildType {
     Flat,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct InfiltrationVentilation {
-    #[serde(
-        rename = "Control_VentAdjustMax",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "Control_VentAdjustMax")]
     pub(crate) control_vent_adjust_max: Option<String>,
 
-    #[serde(
-        rename = "Control_VentAdjustMin",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "Control_VentAdjustMin")]
     pub(crate) control_vent_adjust_min: Option<String>,
 
-    #[serde(
-        rename = "Control_WindowAdjust",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "Control_WindowAdjust")]
     pub(crate) control_window_adjust: Option<String>,
 
     /// List of the required inputs for Leaks
@@ -4846,12 +4766,10 @@ pub struct InfiltrationVentilation {
     pub(crate) vents: IndexMap<std::string::String, Vent>,
 
     /// Maximum ACH (Air Changes per Hour) limit
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(minimum = 0.)]
     pub(crate) ach_max_static_calcs: Option<f64>,
 
     /// Minimum ACH (Air Changes per Hour) limit
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(minimum = 0.)]
     pub(crate) ach_min_static_calcs: Option<f64>,
 
@@ -4869,7 +4787,6 @@ pub struct InfiltrationVentilation {
     pub(crate) ventilation_zone_base_height: f64,
 
     /// Initial vent position, 0 = vents closed and 1 = vents fully open
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(minimum = 0.)]
     #[validate(maximum = 1.)]
     pub(crate) vent_opening_ratio_init: Option<f64>,
@@ -4944,6 +4861,7 @@ pub(crate) struct VentilationLeaks {
     pub(crate) env_area: f64,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MechanicalVentilation {
@@ -4956,16 +4874,15 @@ pub struct MechanicalVentilation {
     pub(crate) supply_air_temperature_control_type: SupplyAirTemperatureControlType,
 
     /// MVHR efficiency
-    #[serde(rename = "mvhr_eff", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "mvhr_eff")]
     #[validate(minimum = 0.)]
     #[validate(maximum = 1.)]
     pub(crate) mvhr_efficiency: Option<f64>,
 
     /// Location of the MVHR unit (inside or outside the thermal envelope)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) mvhr_location: Option<MVHRLocation>,
 
-    #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "Control")]
     pub(crate) control: Option<String>,
 
     /// Specific fan power, inclusive of any in use factors (unit: W/l/s)
@@ -5212,6 +5129,7 @@ pub(crate) enum SupplyAirTemperatureControlType {
     // LoadCom,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -5219,17 +5137,14 @@ pub struct MechanicalVentilationDuctwork {
     /// Whether the cross-section of duct is circular or rectangular (square)
     pub(crate) cross_section_shape: DuctShape,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     /// Cross-sectional perimeter length of rectangular ductwork (unit: mm)
     #[validate(exclusive_minimum = 0.)]
     pub(crate) duct_perimeter_mm: Option<f64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     pub(crate) internal_diameter_mm: Option<f64>,
 
     /// (unit: mm)
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(exclusive_minimum = 0.)]
     pub(crate) external_diameter_mm: Option<f64>,
 
@@ -5413,42 +5328,41 @@ pub enum ApplianceEntry {
     Reference(ApplianceReference),
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub struct Appliance {
-    #[serde(rename = "kWh_per_100cycle", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "kWh_per_100cycle")]
     pub(crate) kwh_per_100_cycle: Option<f64>,
 
-    #[serde(rename = "loadshifting", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "loadshifting")]
     pub(crate) load_shifting: Option<ApplianceLoadShifting>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) kg_load: Option<f64>,
 
-    #[serde(rename = "kWh_per_annum", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "kWh_per_annum")]
     pub(crate) kwh_per_annum: Option<f64>,
 
-    #[serde(rename = "Energysupply", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "Energysupply")]
     pub(crate) energy_supply: Option<EnergySupplyType>,
 
-    #[serde(rename = "kWh_per_cycle", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "kWh_per_cycle")]
     pub(crate) kwh_per_cycle: Option<f64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) standard_use: Option<f64>,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ApplianceLoadShifting {
-    #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "Control")]
     pub(crate) control: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) priority: Option<isize>,
 
     /// Maximum time that an event may be shifted away from when it was originally intended to occur. This may be up to 24 hours. (unit: hours)
