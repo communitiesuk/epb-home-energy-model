@@ -73,5 +73,8 @@ lto = true
 inherits = "release"
 debug = true
 
+[profile.samply]
+inherits = "profiling"
+
 [workspace]
 members = ["hem-lambda"]
