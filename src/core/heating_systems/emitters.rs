@@ -277,7 +277,7 @@ impl Emitters {
 
                 // we should have either constant or constant_per_m with a length
                 let constant = match constant_per_m {
-                    Some(consant_per_m) => consant_per_m * length.unwrap(),
+                    Some(constant_per_m) => constant_per_m * length.unwrap(),
                     None => constant.unwrap(),
                 };
 
