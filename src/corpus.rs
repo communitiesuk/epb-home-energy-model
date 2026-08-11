@@ -5668,30 +5668,26 @@ fn hot_water_source_from_input(
         }
         HotWaterSourceDetails::Hiu {
             cold_water_source: cold_water_source_type,
-            heat_source_wet: heat_source_wet_type,
+            heat_source_wet: heat_source_wet_name,
             setpoint_temp,
             ..
         } => {
             let energy_supply_conn_name =
-                String::from([heat_source_wet_type, "_water_heating"].concat());
+                String::from([heat_source_wet_name, "_water_heating"].concat());
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
-            let heat_source_wet = match heat_source_wet_type.as_str() {
-                "HeatNetwork" => {
-                    match wet_heat_sources
-                        .get("HeatNetwork")
-                        .expect("expected a heat network in this context")
-                    {
-                        WetHeatSource::Hiu(heat_network) => heat_network.clone(),
-                        _ => panic!("expected a heat network in this context"),
-                    }
-                }
-                _ => panic!("expected a heat network in this context"),
+            let heat_source_wet = wet_heat_sources.get_mut(heat_source_wet_name).ok_or_else(|| {
+                anyhow!("Expected '{heat_source_wet_name}' to have been defined as a wet heat source")
+            })?;
+            let heat_network = match heat_source_wet {
+                WetHeatSource::Hiu(heat_network) => heat_network.clone(),
+                _ => bail!("Expected '{heat_source_wet_name}' to be a heat network"),
             };
+
             HotWaterSource::HeatNetwork(
                 HeatNetwork::create_service_hot_water_direct(
-                    heat_source_wet.clone(),
+                    heat_network.clone(),
                     &energy_supply_conn_name,
                     (*setpoint_temp).ok_or_else(|| {
                         anyhow!(
