@@ -325,12 +325,7 @@ fn get_pressure_coefficient_from_pitch_and_orientation(
     pitch: f64,
 ) -> anyhow::Result<f64> {
     let facade_direction = get_facade_direction(f_cross, orientation, pitch, wind_direction)?;
-    Ok(get_pressure_coefficient(
-        f_cross,
-        shield_class,
-        z,
-        facade_direction,
-    ))
+    get_pressure_coefficient(f_cross, shield_class, z, facade_direction)
 }
 
 /// wind pressure coefficients are based on AIVC Technical Note 44
@@ -347,8 +342,8 @@ fn get_pressure_coefficient(
     shield_class: VentilationShieldClass,
     z: f64,
     facade_direction: FacadeDirection,
-) -> f64 {
-    if f_cross {
+) -> anyhow::Result<f64> {
+    Ok(if f_cross {
         if z < 15. {
             match shield_class {
                 VentilationShieldClass::Open => match facade_direction {
@@ -360,7 +355,7 @@ fn get_pressure_coefficient(
                     FacadeDirection::Roof10 => -0.60,
                     FacadeDirection::Roof10_30 => -0.50,
                     FacadeDirection::Roof30 => -0.38,
-                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                    _ => bail!("Invalid combination of shield_class and facade_direction"),
                 },
                 VentilationShieldClass::Normal => match facade_direction {
                     FacadeDirection::WindSeg1 => 0.4,
@@ -371,7 +366,7 @@ fn get_pressure_coefficient(
                     FacadeDirection::Roof10 => -0.50,
                     FacadeDirection::Roof10_30 => -0.45,
                     FacadeDirection::Roof30 => -0.43,
-                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                    _ => bail!("Invalid combination of shield_class and facade_direction"),
                 },
                 VentilationShieldClass::Shielded => match facade_direction {
                     FacadeDirection::WindSeg1 => 0.2,
@@ -382,7 +377,7 @@ fn get_pressure_coefficient(
                     FacadeDirection::Roof10 => -0.48,
                     FacadeDirection::Roof10_30 => -0.40,
                     FacadeDirection::Roof30 => -0.3,
-                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                    _ => bail!("Invalid combination of shield_class and facade_direction"),
                 },
             }
         // Above 15m we currently only have a single set of coefficients.
@@ -400,7 +395,7 @@ fn get_pressure_coefficient(
                     FacadeDirection::Roof10 => -0.61,
                     FacadeDirection::Roof10_30 => -0.61,
                     FacadeDirection::Roof30 => -0.61,
-                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                    _ => bail!("Invalid combination of shield_class and facade_direction"),
                 },
                 VentilationShieldClass::Normal => match facade_direction {
                     FacadeDirection::WindSeg1 => 0.49,
@@ -411,7 +406,7 @@ fn get_pressure_coefficient(
                     FacadeDirection::Roof10 => -0.61,
                     FacadeDirection::Roof10_30 => -0.61,
                     FacadeDirection::Roof30 => -0.61,
-                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                    _ => bail!("Invalid combination of shield_class and facade_direction"),
                 },
                 VentilationShieldClass::Shielded => match facade_direction {
                     FacadeDirection::WindSeg1 => 0.49,
@@ -422,7 +417,7 @@ fn get_pressure_coefficient(
                     FacadeDirection::Roof10 => -0.61,
                     FacadeDirection::Roof10_30 => -0.61,
                     FacadeDirection::Roof30 => -0.61,
-                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                    _ => bail!("Invalid combination of shield_class and facade_direction"),
                 },
             }
         } else {
@@ -437,9 +432,9 @@ fn get_pressure_coefficient(
                     FacadeDirection::Roof10 => -0.61,
                     FacadeDirection::Roof10_30 => -0.61,
                     FacadeDirection::Roof30 => -0.61,
-                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                    _ => bail!("Invalid combination of shield_class and facade_direction"),
                 },
-                _ => panic!("Invalid combination of shield_class and facade_direction"),
+                _ => bail!("Invalid combination of shield_class and facade_direction"),
             }
         }
     } else {
@@ -450,9 +445,9 @@ fn get_pressure_coefficient(
             FacadeDirection::WindSeg4 => -0.05,
             FacadeDirection::WindSeg5 => -0.05,
             FacadeDirection::Roof => 0.,
-            _ => panic!("Invalid combination of shield_class and facade_direction"),
+            _ => bail!("Invalid combination of shield_class and facade_direction"),
         }
-    }
+    })
 }
 
 /// this is our implementation of the numpy sign function
@@ -1120,10 +1115,10 @@ impl Leaks {
         p_z_ref: f64,
         f_cross: bool,
         shield_class: VentilationShieldClass,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         // Wind pressure coefficient for the air flow path
         let pressure_coefficient_path =
-            get_pressure_coefficient(f_cross, shield_class, self.z, self.facade_direction); // #TABLE from annex B
+            get_pressure_coefficient(f_cross, shield_class, self.z, self.facade_direction)?; // #TABLE from annex B
 
         // Calculate airflow through each leak
         let mut qv_in_through_leak = 0.;
@@ -1152,7 +1147,7 @@ impl Leaks {
             self.p_a_alt,
         );
 
-        (qm_in_through_leak, qm_out_through_leak)
+        Ok((qm_in_through_leak, qm_out_through_leak))
     }
 }
 
@@ -2256,7 +2251,7 @@ impl InfiltrationVentilation {
                 p_z_ref,
                 self.f_cross,
                 self.shield_class,
-            );
+            )?;
             qm_in_through_leaks += qm_in;
             qm_out_through_leaks += qm_out;
         }
@@ -4352,14 +4347,16 @@ mod tests {
         let f_cross = true;
         let shield_class = VentilationShieldClass::Open;
 
-        let (qm_in_through_leaks, qm_out_through_leaks) = leaks.calculate_flow_from_internal_p(
-            u_site,
-            celsius_to_kelvin(air_temps[0]).unwrap(),
-            t_z,
-            p_z_ref,
-            f_cross,
-            shield_class,
-        );
+        let (qm_in_through_leaks, qm_out_through_leaks) = leaks
+            .calculate_flow_from_internal_p(
+                u_site,
+                celsius_to_kelvin(air_temps[0]).unwrap(),
+                t_z,
+                p_z_ref,
+                f_cross,
+                shield_class,
+            )
+            .unwrap();
 
         assert_relative_eq!(qm_in_through_leaks, 0.);
         assert_relative_eq!(qm_out_through_leaks, -9.825840128169913);
