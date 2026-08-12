@@ -135,18 +135,18 @@ impl DomesticHotWaterDemand {
         let baths: IndexMap<String, Bath> = bath_input
             .0
             .iter()
-            .map(|(name, bath)| (name.into(), input_to_bath(bath, cold_water_sources)))
-            .collect();
+            .map(|(name, bath)| {
+                input_to_bath(bath, cold_water_sources).map(|bath| (name.into(), bath))
+            })
+            .collect::<Result<_, _>>()?;
         let other: IndexMap<String, OtherHotWater> = other_hot_water_input
             .0
             .iter()
             .map(|(name, other)| {
-                (
-                    name.into(),
-                    input_to_other_water_events(other, cold_water_sources),
-                )
+                input_to_other_water_events(other, cold_water_sources)
+                    .map(|other_water_events| (name.into(), other_water_events))
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
         let mixer_shower_count = showers
             .iter()
             .filter(|(_, shower)| !matches!(shower, Shower::InstantElectricShower(_)))
@@ -903,7 +903,9 @@ fn shower_from_input(
         } => {
             let cold_water_source = cold_water_sources
                 .get(cold_water_source.as_str())
-                .unwrap()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Cold water source {} not found", cold_water_source)
+                })?
                 .clone();
             let wwhrs_instance: Option<Arc<Mutex<WwhrsInstantaneous>>> = wwhrs_config
                 .as_ref()
@@ -932,7 +934,9 @@ fn shower_from_input(
         } => {
             let cold_water_source = cold_water_sources
                 .get(cold_water_source.as_str())
-                .unwrap()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Cold water source {} not found", cold_water_source)
+                })?
                 .clone();
 
             let energy_supply = energy_supplies
@@ -952,25 +956,28 @@ fn shower_from_input(
     })
 }
 
-fn input_to_bath(input: &BathDetails, cold_water_sources: &ColdWaterSources) -> Bath {
+fn input_to_bath(
+    input: &BathDetails,
+    cold_water_sources: &ColdWaterSources,
+) -> anyhow::Result<Bath> {
     let cold_water_source = cold_water_sources
         .get(input.cold_water_source.as_str())
-        .unwrap()
+        .ok_or_else(|| anyhow::anyhow!("Cold water source {} not found", input.cold_water_source))?
         .clone();
 
-    Bath::new(input.size, cold_water_source, input.flowrate)
+    Ok(Bath::new(input.size, cold_water_source, input.flowrate))
 }
 
 fn input_to_other_water_events(
     input: &OtherWaterUse,
     cold_water_sources: &ColdWaterSources,
-) -> OtherHotWater {
+) -> anyhow::Result<OtherHotWater> {
     let cold_water_source = cold_water_sources
         .get(input.cold_water_source.as_str())
-        .unwrap()
+        .ok_or_else(|| anyhow::anyhow!("Cold water source {} not found", input.cold_water_source))?
         .clone();
 
-    OtherHotWater::new(input.flowrate, cold_water_source)
+    Ok(OtherHotWater::new(input.flowrate, cold_water_source))
 }
 
 fn input_to_water_distribution_pipework(
