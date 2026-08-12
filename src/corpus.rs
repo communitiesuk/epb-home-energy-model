@@ -5941,7 +5941,7 @@ fn space_heat_systems_from_input(
                                     heat_system_names_requiring_overvent.push(system_name.clone());
                                 }
                                 let volume_heated = total_volume_heated_by_system(zones, heat_system_name_for_zone, &system_name);
-                                SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), &energy_supply_conn_name, control, *frac_convective, volume_heated).unwrap())
+                                SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), &energy_supply_conn_name, control, *frac_convective, volume_heated)?)
                             }
                             _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
                         }
