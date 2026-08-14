@@ -1500,7 +1500,7 @@ impl HeatBatteryDryCore {
                     storage.set_state_of_charge(final_soc);
 
                     // Update demand tracking
-                    storage.set_demand_met(energy_delivered_hb - energy_instant);
+                    storage.set_demand_met(energy_delivered_hb + energy_instant);
                     storage.set_demand_unmet(
                         0.0f64.max(energy_output_required - energy_delivered_hb - energy_instant),
                     );
