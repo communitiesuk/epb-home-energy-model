@@ -5,7 +5,9 @@ use std::sync::Arc;
 pub fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
     let solver = FDNewton::new(func);
 
-    solver.solve(x0).map_err(|e| anyhow::anyhow!(e))
+    solver.solve(x0).map_err(|e| {
+        anyhow::anyhow!(e).context("Errored while using eqsolver crate in fsolve implementation")
+    })
 }
 
 pub mod bisect {
