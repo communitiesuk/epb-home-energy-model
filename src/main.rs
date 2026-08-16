@@ -13,6 +13,10 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use tracing_subscriber::fmt::format::FmtSpan;
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 #[derive(Parser, Default, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct SapArgs {
@@ -59,6 +63,9 @@ struct WeatherFileType {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
+
     let args = SapArgs::parse();
 
     // set up basic tracing

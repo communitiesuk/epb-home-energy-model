@@ -20,6 +20,7 @@ chrono = "0.4.45"
 clap = { version = "4.6.1", features = ["derive"], optional = true }
 convert_case = "0.12.0"
 csv = "1.4.0"
+dhat = "0.3.3"
 educe = { version = "0.6.0", default-features = false, features = ["Debug", "PartialEq"] }
 eqsolver = "0.4.0"
 erased-serde = "0.4.10"
@@ -68,6 +69,10 @@ required-features = ["clap"]
 [profile.release]
 opt-level = 3
 lto = true
+debug = 1
+
+[features]
+dhat-heap = []
 
 [profile.profiling]
 inherits = "release"
