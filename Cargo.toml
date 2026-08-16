@@ -47,6 +47,7 @@ smartstring = { version = "1.0.1", features = ["arbitrary", "serde"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
+dhat = "0.3.3"
 
 [dev-dependencies]
 approx = "0.5.1"
@@ -68,6 +69,10 @@ required-features = ["clap"]
 [profile.release]
 opt-level = 3
 lto = true
+debug = 1
+
+[features]
+dhat-heap = []
 
 [profile.profiling]
 inherits = "release"
