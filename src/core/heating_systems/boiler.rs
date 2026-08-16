@@ -12,6 +12,7 @@ use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::bail;
+use approx::relative_eq;
 use atomic_float::AtomicF64;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -222,7 +223,7 @@ impl BoilerServiceWaterCombi {
         self.combi_loss.read().store(0., Ordering::SeqCst);
 
         for event in usage_events {
-            if is_close!(event.volume_hot, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+            if relative_eq!(event.volume_hot, 0.0, epsilon = 1e-10, max_relative = 1e-9) {
                 continue;
             }
             let list_temp_vol = self
@@ -404,7 +405,9 @@ impl BoilerServiceWaterRegular {
             energy_demand = 0.;
         }
 
-        if temp_return.is_none() && !is_close!(energy_demand, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+        if temp_return.is_none()
+            && !relative_eq!(energy_demand, 0., epsilon = 1e-10, max_relative = 1e-9)
+        {
             bail!("temp_return is None and energy_demand is not 0.0");
         }
 
@@ -805,11 +808,11 @@ impl Boiler {
     ) -> f64 {
         // If boiler location is not colder than return feed, no location adjustment needed
         if temperature_return_feed < temperature_boiler_loc
-            || is_close!(
+            || relative_eq!(
                 temperature_return_feed,
                 temperature_boiler_loc,
-                abs_tol = 1e-10,
-                rel_tol = 1e-9
+                epsilon = 1e-10,
+                max_relative = 1e-9
             )
         {
             return 0.;
@@ -817,11 +820,11 @@ impl Boiler {
 
         // If return feed is not above room temperature, no location adjustment needed
         if temperature_return_feed < self.room_temperature
-            || is_close!(
+            || relative_eq!(
                 temperature_return_feed,
                 self.room_temperature,
-                abs_tol = 1e-10,
-                rel_tol = 1e-9
+                epsilon = 1e-10,
+                max_relative = 1e-9
             )
         {
             return 0.;
@@ -900,8 +903,12 @@ impl Boiler {
         // Equation 5 in EN15316-4-1
         // fgen = (c5*(Pn)^c6)/100
         // where c5 = 4.0, c6 = -0.4 and Pn is the current boiler power
-        let standing_loss = if is_close!(current_boiler_power, 0.0, abs_tol = 1e-10, rel_tol = 1e-9)
-        {
+        let standing_loss = if relative_eq!(
+            current_boiler_power,
+            0.0,
+            epsilon = 1e-10,
+            max_relative = 1e-9
+        ) {
             0.0
         } else {
             (4.0 * current_boiler_power.powf(-0.4)) / 100.0

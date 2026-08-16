@@ -7,6 +7,7 @@ use crate::external_conditions::{
 };
 use crate::input::{InverterType, PhotovoltaicVentilationStrategy};
 use crate::simulation_time::SimulationTimeIteration;
+use approx::relative_eq;
 use std::sync::Arc;
 
 const F_PERF_LOOKUP_UNVENTILATED: f64 = 0.81;
@@ -328,11 +329,11 @@ impl OnSiteGeneration for PhotovoltaicSystem {
         }
 
         if total_unshaded_energy_produced < 0.
-            || is_close!(
+            || relative_eq!(
                 total_unshaded_energy_produced,
                 0.,
-                abs_tol = 1e-10,
-                rel_tol = 1e-9
+                epsilon = 1e-10,
+                max_relative = 1e-9
             )
         {
             weighted_f_sh_dir = 1.;

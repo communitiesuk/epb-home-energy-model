@@ -4,8 +4,6 @@
     dead_code
 )]
 
-#[macro_use]
-extern crate is_close;
 pub mod compare_floats;
 pub mod core;
 pub mod corpus;
@@ -35,6 +33,7 @@ use crate::read_weather_file::{
 };
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use convert_case::{Case, Casing};
 use csv::WriterBuilder;
 use erased_serde::Serialize as ErasedSerialize;
@@ -68,7 +67,7 @@ pub enum OutputFormat {
 fn format_value(value: &StringOrNumber) -> anyhow::Result<std::string::String> {
     Ok(match value {
         StringOrNumber::Float(f) => {
-            if is_close!(*f, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+            if relative_eq!(*f, 0., epsilon = 1e-10, max_relative = 1e-9) {
                 "0.0".to_string()
             } else {
                 // Round any floating point numbers to 10 significant figures, like the Python does
@@ -862,7 +861,9 @@ fn write_core_output_file_summary(
         let mut row: Vec<std::string::String> = vec![label.into(), unit.into()];
         for stat in output.summary.energy_supply.values() {
             let value = stat.field(&field);
-            let value = if value.is_some_and(|value| field == EnergySupplyStatKey::StorageEfficiency && value.is_nan()) {
+            let value = if value.is_some_and(|value| {
+                field == EnergySupplyStatKey::StorageEfficiency && value.is_nan()
+            }) {
                 StringOrNumber::String("DIV/0".into())
             } else {
                 if let Some(value) = value {

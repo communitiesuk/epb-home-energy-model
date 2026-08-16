@@ -16,6 +16,7 @@ use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
 use crate::input::{HeatBattery as HeatBatteryInput, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use atomic_float::AtomicF64;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -185,7 +186,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         let volume_req_already = volume_req_already.unwrap_or(0.);
 
-        if is_close!(volume_req, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
+        if relative_eq!(volume_req, 0., max_relative = 1e-09, epsilon = 1e-10) {
             bail!("volume_req must be non-zero");
         }
 
@@ -195,17 +196,21 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
 
         // Base temperature on the part of the draw-off for volume_req, and
         // ignore any volume previously considered
-        let temp_hot_water_req =
-            if is_close!(volume_req_already, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
-                temp_hot_water_cumulative
-            } else {
-                let temp_hot_water_req_already =
-                    self.temp_hot_water(volume_req_already, simulation_time_iteration)?;
+        let temp_hot_water_req = if relative_eq!(
+            volume_req_already,
+            0.,
+            max_relative = 1e-09,
+            epsilon = 1e-10
+        ) {
+            temp_hot_water_cumulative
+        } else {
+            let temp_hot_water_req_already =
+                self.temp_hot_water(volume_req_already, simulation_time_iteration)?;
 
-                (temp_hot_water_cumulative * volume_req_cumulative
-                    - temp_hot_water_req_already * volume_req_already)
-                    / volume_req
-            };
+            (temp_hot_water_cumulative * volume_req_cumulative
+                - temp_hot_water_req_already * volume_req_already)
+                / volume_req
+        };
 
         Ok(vec![(temp_hot_water_req, volume_req)])
     }
@@ -221,7 +226,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
 
         if let Some(events) = usage_events {
             for event in events {
-                if is_close!(event.volume_hot, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
+                if relative_eq!(event.volume_hot, 0., max_relative = 1e-09, epsilon = 1e-10) {
                     continue;
                 }
                 // Skip this event if no temperature available
@@ -1518,7 +1523,12 @@ impl HeatBatteryPcm {
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
 
         if energy_output_required < 0.
-            || is_close!(energy_output_required, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+            || relative_eq!(
+                energy_output_required,
+                0.,
+                max_relative = 1e-09,
+                epsilon = 1e-10
+            )
         {
             if update_heat_source_state {
                 self.service_results.write().push(HeatBatteryResult {
@@ -1616,11 +1626,11 @@ impl HeatBatteryPcm {
                 time_step_s = self.hb_time_step;
             }
 
-            if is_close!(
+            if relative_eq!(
                 energy_demand,
                 energy_delivered_hb,
-                rel_tol = 1e-09,
-                abs_tol = 1e-10
+                max_relative = 1e-09,
+                epsilon = 1e-10
             ) || energy_delivered_hb > energy_demand
             {
                 break;

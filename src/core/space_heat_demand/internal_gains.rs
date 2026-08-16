@@ -6,6 +6,7 @@ use crate::core::units::WATTS_PER_KILOWATT;
 use crate::input::{ApplianceGainsDetails, ApplianceGainsEvent, ApplianceLoadShifting};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use atomic_float::AtomicF64;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -344,11 +345,11 @@ impl EventApplianceGains {
                 let timestep_total_power_supply =
                     self.total_power_supply[t_idx].load(Ordering::SeqCst);
                 if timestep_total_power_supply > event.demand_w
-                    || is_close!(
+                    || relative_eq!(
                         timestep_total_power_supply,
                         event.demand_w,
-                        rel_tol = 1e-9,
-                        abs_tol = 0.0
+                        max_relative = 1e-9,
+                        epsilon = 0.0
                     )
                 {
                     // the appliance is already turned on for the entire timestep

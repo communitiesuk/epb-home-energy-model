@@ -21,6 +21,7 @@ use crate::input::{
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -609,8 +610,12 @@ impl DomesticHotWaterDemand {
                     .unwrap()
                     .push(event_result);
 
-                if !is_close!(event_result.volume_hot, 0., abs_tol = 1e-10, rel_tol = 1e-9)
-                    && volume_hot_water_left > 0.
+                if !relative_eq!(
+                    event_result.volume_hot,
+                    0.,
+                    epsilon = 1e-10,
+                    max_relative = 1e-9
+                ) && volume_hot_water_left > 0.
                 {
                     if let Some(hot_water_source) = hot_water_source {
                         let volume_required_already =
@@ -727,7 +732,9 @@ impl DomesticHotWaterDemand {
                 .get(hws_name)
                 .unwrap()
                 .iter()
-                .filter(|event| !is_close!(event.volume_hot, 0., abs_tol = 1e-10, rel_tol = 1e-9))
+                .filter(|event| {
+                    !relative_eq!(event.volume_hot, 0., epsilon = 1e-10, max_relative = 1e-9)
+                })
                 .copied()
                 .collect();
 

@@ -10,6 +10,7 @@ use crate::input::{
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use atomic_float::AtomicF64;
 use bounded_vec_deque::BoundedVecDeque;
 use fsum::FSum;
@@ -366,7 +367,12 @@ impl ChargeControl {
                 if temp_charge_cut.is_some_and(|temp_charge_cut| {
                     temp_air.is_some_and(|temp_air| {
                         temp_air > temp_charge_cut
-                            || is_close!(temp_air, temp_charge_cut, abs_tol = 1e-10, rel_tol = 1e-9)
+                            || relative_eq!(
+                                temp_air,
+                                temp_charge_cut,
+                                epsilon = 1e-10,
+                                max_relative = 1e-9
+                            )
                     })
                 }) {
                     // Control logic cut when temp_air is over temp_charge cut
@@ -536,20 +542,20 @@ impl ChargeControl {
             .last()
             .expect("External sensor correlation was not expected to be empty.");
         if external_temperature < first_correlation.temperature
-            || is_close!(
+            || relative_eq!(
                 external_temperature,
                 first_correlation.temperature,
-                abs_tol = 1e-10,
-                rel_tol = 1e-9
+                epsilon = 1e-10,
+                max_relative = 1e-9
             )
         {
             return Ok(first_correlation.max_charge);
         } else if external_temperature > last_correlation.temperature
-            || is_close!(
+            || relative_eq!(
                 external_temperature,
                 last_correlation.temperature,
-                abs_tol = 1e-10,
-                rel_tol = 1e-9
+                epsilon = 1e-10,
+                max_relative = 1e-9
             )
         {
             return Ok(last_correlation.max_charge);
@@ -566,20 +572,20 @@ impl ChargeControl {
                 max_charge: max_charge_2,
             } = correlation[i];
 
-            if !is_close!(temp_1, temp_2)
+            if !relative_eq!(temp_1, temp_2)
                 && (temp_1 < external_temperature
-                    || is_close!(
+                    || relative_eq!(
                         temp_1,
                         external_temperature,
-                        abs_tol = 1e-10,
-                        rel_tol = 1e-9
+                        epsilon = 1e-10,
+                        max_relative = 1e-9
                     ))
                 && (external_temperature < temp_2
-                    || is_close!(
+                    || relative_eq!(
                         temp_2,
                         external_temperature,
-                        abs_tol = 1e-10,
-                        rel_tol = 1e-9
+                        epsilon = 1e-10,
+                        max_relative = 1e-9
                     ))
             {
                 // perform linear interpolation

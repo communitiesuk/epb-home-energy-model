@@ -17,6 +17,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use crate::StringOrNumber;
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use arc_swap::ArcSwapOption;
 use atomic_float::AtomicF64;
 use derivative::Derivative;
@@ -351,7 +352,7 @@ impl StorageTank {
 
         self.temp_average_drawoff.store(
             match self.total_volume_drawoff.load(Ordering::SeqCst) {
-                value if !is_close!(value, 0., abs_tol = 1e-10, rel_tol = 1e-9) => {
+                value if !relative_eq!(value, 0., epsilon = 1e-10, max_relative = 1e-9) => {
                     let temp_average_drawoff_volweighted =
                         self.temp_average_drawoff_volweighted.load(Ordering::SeqCst);
                     temp_average_drawoff_volweighted / value
@@ -508,11 +509,11 @@ impl StorageTank {
             let layer_vol = remaining_vols[layer_index];
 
             if remaining_demanded_volume < 0.
-                || is_close!(
+                || relative_eq!(
                     remaining_demanded_volume,
                     0.,
-                    rel_tol = 1e-09,
-                    abs_tol = 1e-10
+                    max_relative = 1e-09,
+                    epsilon = 1e-10
                 )
             {
                 break;
@@ -520,11 +521,11 @@ impl StorageTank {
 
             // Skip this layer if its remaining volume is already zero
             if remaining_vols[layer_index] < 0.
-                || is_close!(
+                || relative_eq!(
                     remaining_vols[layer_index],
                     0.,
-                    rel_tol = 1e-09,
-                    abs_tol = 1e-10
+                    max_relative = 1e-09,
+                    epsilon = 1e-10
                 )
             {
                 continue;
@@ -533,7 +534,7 @@ impl StorageTank {
             let required_vol: f64;
             // Volume of hot water required at this layer
             if layer_vol < remaining_demanded_volume
-                || is_close!(layer_vol, remaining_demanded_volume, rel_tol = 1e-09)
+                || relative_eq!(layer_vol, remaining_demanded_volume, max_relative = 1e-09)
             {
                 // This is the case where layer cannot meet all remaining demand for this event
                 required_vol = layer_vol;
@@ -633,7 +634,8 @@ impl StorageTank {
             // Determine how much volume needs to be added to this layer
             let mut needed_volume = self.vol_n[i] - remaining_vols[i];
             // If this layer is already full, continue to the next
-            if needed_volume < 0. || is_close!(needed_volume, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+            if needed_volume < 0.
+                || relative_eq!(needed_volume, 0., max_relative = 1e-09, epsilon = 1e-10)
             {
                 break;
             }
@@ -669,7 +671,7 @@ impl StorageTank {
                     // Decrease the amount of volume needed for the current layer
                     needed_volume -= move_volume;
                     if needed_volume < 0.
-                        || is_close!(needed_volume, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+                        || relative_eq!(needed_volume, 0., max_relative = 1e-09, epsilon = 1e-10)
                     {
                         break;
                     }
@@ -720,7 +722,7 @@ impl StorageTank {
             // this is because the top layer has no upper layer to compare to
             for i in 0..self.vol_n.len() - 1 {
                 if temp_s7_n[i] > temp_s7_n[i + 1]
-                    || is_close!(temp_s7_n[i], temp_s7_n[i + 1], rel_tol = 1e-09)
+                    || relative_eq!(temp_s7_n[i], temp_s7_n[i + 1], max_relative = 1e-09)
                 {
                     // set layers to mix
                     mix_layer_n[i] = 1;
@@ -1170,7 +1172,7 @@ impl StorageTank {
         let (setpntmin, _) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
         if setpntmin.is_some_and(|setpntmin| {
             temp_s3_n[thermostat_layer] < setpntmin
-                || is_close!(temp_s3_n[thermostat_layer], setpntmin, rel_tol = 1e-09)
+                || relative_eq!(temp_s3_n[thermostat_layer], setpntmin, max_relative = 1e-09)
         }) {
             self.heating_active[heat_source_name].store(true, Ordering::SeqCst);
         };
@@ -1192,7 +1194,7 @@ impl StorageTank {
 
         if setpntmax.is_none_or(|setpntmax| {
             temp_s8_n[thermostat_layer] > setpntmax
-                || is_close!(temp_s8_n[thermostat_layer], setpntmax, rel_tol = 1e-09)
+                || relative_eq!(temp_s8_n[thermostat_layer], setpntmax, max_relative = 1e-09)
         }) {
             self.heating_active[heat_source_name].store(false, Ordering::SeqCst);
         };
@@ -1258,7 +1260,12 @@ impl StorageTank {
             volume_req_cumulative -= volume_from_current_layer;
 
             if volume_req_cumulative < 0.
-                || is_close!(volume_req_cumulative, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+                || relative_eq!(
+                    volume_req_cumulative,
+                    0.,
+                    max_relative = 1e-09,
+                    epsilon = 1e-10
+                )
             {
                 break;
             }
@@ -1282,11 +1289,11 @@ impl StorageTank {
             volume_still_to_satisfy -= volume_from_current_layer;
 
             if volume_still_to_satisfy < 0.
-                || is_close!(
+                || relative_eq!(
                     volume_still_to_satisfy,
                     0.,
-                    rel_tol = 1e-09,
-                    abs_tol = 1e-10
+                    max_relative = 1e-09,
+                    epsilon = 1e-10
                 )
             {
                 break;
@@ -1431,7 +1438,7 @@ impl StorageTank {
         }
 
         let temp_cold_water: StringOrNumber =
-            if is_close!(volume_extracted, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+            if relative_eq!(volume_extracted, 0.0, epsilon = 1e-10, max_relative = 1e-9) {
                 "".into() // using empty string to represent None
             } else {
                 let list_temp_vol = self
@@ -1477,7 +1484,7 @@ impl StorageTank {
         volume: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, f64)> {
-        if is_close!(volume, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+        if relative_eq!(volume, 0., epsilon = 1e-10, max_relative = 1e-9) {
             return Ok((None, volume));
         }
 
@@ -1517,11 +1524,11 @@ impl StorageTank {
 
             let required_vol;
             if layer_vol < remaining_demanded_volume
-                || is_close!(
+                || relative_eq!(
                     layer_vol,
                     remaining_demanded_volume,
-                    rel_tol = 1e-09,
-                    abs_tol = 1e-10
+                    max_relative = 1e-09,
+                    epsilon = 1e-10
                 )
             {
                 // This is the case where layer cannot meet all remaining demanded volume
@@ -1559,11 +1566,11 @@ impl StorageTank {
                     * (layer_temp - temp_cold_water);
 
             if remaining_demanded_volume < 0.
-                || is_close!(
+                || relative_eq!(
                     remaining_demanded_volume,
                     0.,
-                    rel_tol = 1e-09,
-                    abs_tol = 1e-10
+                    max_relative = 1e-09,
+                    epsilon = 1e-10
                 )
             {
                 break;
@@ -1616,7 +1623,7 @@ impl StorageTank {
         control_max_diverter: Option<&Control>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        if is_close!(energy_input, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+        if relative_eq!(energy_input, 0., epsilon = 1e-10, max_relative = 1e-9) {
             return Ok(0.);
         }
 
@@ -1681,11 +1688,11 @@ impl StorageTank {
         if let Some(primary_pipework) = self.primary_pipework.as_ref() {
             // start of heating event
             if input_energy_adj > 0.
-                && is_close!(
+                && relative_eq!(
                     self.input_energy_adj_prev_timestep.load(Ordering::SeqCst),
                     0.,
-                    abs_tol = 1e-10,
-                    rel_tol = 1e-9
+                    epsilon = 1e-10,
+                    max_relative = 1e-9
                 )
             {
                 for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
@@ -1745,7 +1752,7 @@ impl StorageTank {
             }
 
             // end of heating event
-            if is_close!(input_energy_adj, 0., abs_tol = 1e-10, rel_tol = 1e-9)
+            if relative_eq!(input_energy_adj, 0., epsilon = 1e-10, max_relative = 1e-9)
                 && self.input_energy_adj_prev_timestep.load(Ordering::SeqCst) > 0.
             {
                 for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
@@ -2261,7 +2268,7 @@ impl SmartHotWaterTank {
     ) -> anyhow::Result<f64> {
         // N.B. implementation from StorageTank but calling SmartHotWaterTank specific methods further down
 
-        if is_close!(energy_input, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+        if relative_eq!(energy_input, 0., epsilon = 1e-10, max_relative = 1e-9) {
             return Ok(0.);
         }
 
@@ -2351,7 +2358,8 @@ impl SmartHotWaterTank {
 
         // Turn heater off if max temp is None or state of charge has reached maximum state of charge
         if setpntmax.is_none_or(|setpntmax| {
-            state_of_charge > setpntmax || is_close!(state_of_charge, setpntmax, rel_tol = 1e-09)
+            state_of_charge > setpntmax
+                || relative_eq!(state_of_charge, setpntmax, max_relative = 1e-09)
         }) {
             self.storage_tank.heating_active[heat_source_name].store(false, Ordering::SeqCst);
         }
@@ -2397,7 +2405,7 @@ impl SmartHotWaterTank {
         // Calculate state of charge
         let mut soc_numerator_total = 0.0;
         for &t_h_i in t_h {
-            if t_h_i > t_u || is_close!(t_h_i, t_u, rel_tol = 1e-09) {
+            if t_h_i > t_u || relative_eq!(t_h_i, t_u, max_relative = 1e-09) {
                 soc_numerator_total += (1. + (t_h_i - t_u) / (t_u - t_c)) * height_of_layer;
             }
         }
@@ -2476,7 +2484,12 @@ impl SmartHotWaterTank {
         for _ in 0..self.storage_tank.vol_n.len() {
             let sum_energy_available = FSum::with_all(&energy_available).value();
             if sum_energy_available < 0.
-                || is_close!(sum_energy_available, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+                || relative_eq!(
+                    sum_energy_available,
+                    0.,
+                    max_relative = 1e-09,
+                    epsilon = 1e-10
+                )
             {
                 break;
             }
@@ -2508,7 +2521,8 @@ impl SmartHotWaterTank {
 
             let soc_temp_max = self.calc_state_of_charge(&temp_simulation_max, simtime)?;
             if let Some(soc_max) = soc_max {
-                if soc_temp_usable > soc_max || is_close!(soc_temp_usable, soc_max, rel_tol = 1e-09)
+                if soc_temp_usable > soc_max
+                    || relative_eq!(soc_temp_usable, soc_max, max_relative = 1e-09)
                 {
                     q_in_h_w[heater_layer] += energy_req_usable;
                     break;
@@ -2538,10 +2552,10 @@ impl SmartHotWaterTank {
                 * temp_layers[0];
             let sum_energy_available = FSum::with_all(&energy_available).value();
             if sum_energy_available < energy_req_bottom_layer_to_setpnt
-                || is_close!(
+                || relative_eq!(
                     sum_energy_available,
                     energy_req_bottom_layer_to_setpnt,
-                    rel_tol = 1e-09
+                    max_relative = 1e-09
                 )
             {
                 // Pump partial layer to the top
@@ -2709,7 +2723,12 @@ impl SmartHotWaterTank {
             let mut volume_pumped_remaining = volume_pumped;
             for remaining_vol in remaining_vols.iter_mut() {
                 if volume_pumped_remaining < 0.
-                    || is_close!(volume_pumped_remaining, 0., abs_tol = 1e-10, rel_tol = 1e-9)
+                    || relative_eq!(
+                        volume_pumped_remaining,
+                        0.,
+                        epsilon = 1e-10,
+                        max_relative = 1e-9
+                    )
                 {
                     break;
                 }
@@ -2728,7 +2747,7 @@ impl SmartHotWaterTank {
 
                 // If this layer is already full, continue to the next
                 if needed_volume < 0.
-                    || is_close!(needed_volume, 0., abs_tol = 1e-10, rel_tol = 1e-9)
+                    || relative_eq!(needed_volume, 0., epsilon = 1e-10, max_relative = 1e-9)
                 {
                     continue;
                 }
@@ -2762,7 +2781,12 @@ impl SmartHotWaterTank {
                         // Decrease the amount of volume needed for the current layer
                         needed_volume -= move_volume;
                         if needed_volume < 0.
-                            || is_close!(needed_volume, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+                            || relative_eq!(
+                                needed_volume,
+                                0.,
+                                max_relative = 1e-09,
+                                epsilon = 1e-10
+                            )
                         {
                             break;
                         }
@@ -2842,9 +2866,9 @@ impl SmartHotWaterTank {
         let temp_target = setpnt + temp_diff_losses;
 
         if top_layer_temp < temp_target
-            || is_close!(top_layer_temp, temp_target, rel_tol = 1e-09)
+            || relative_eq!(top_layer_temp, temp_target, max_relative = 1e-09)
             || qin < 0.
-            || is_close!(qin, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+            || relative_eq!(qin, 0., max_relative = 1e-09, epsilon = 1e-10)
         {
             // No pumping needed if top layer is below setpoint or no energy available
             return Ok(0.);
@@ -2876,7 +2900,7 @@ impl SmartHotWaterTank {
                 - temp_target * FSum::with_all(temp_factors.iter().copied()).value();
             let denominator = temp_target - temp_s7_n[current_layer];
             temp_factors[current_layer] = if denominator < 0.
-                || is_close!(denominator, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+                || relative_eq!(denominator, 0., max_relative = 1e-09, epsilon = 1e-10)
             {
                 // If the current layer is at or above target temperature, pump all of it
                 1.0
@@ -3057,7 +3081,7 @@ impl SmartHotWaterTank {
         }
 
         let temp_cold_water: StringOrNumber =
-            if is_close!(volume_extracted, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+            if relative_eq!(volume_extracted, 0.0, epsilon = 1e-10, max_relative = 1e-9) {
                 "".into()
             } else {
                 let list_temp_vol = self

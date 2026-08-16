@@ -7,6 +7,7 @@ use crate::core::water_heat_demand::misc::volume_hot_water_required;
 use crate::input::WaterHeatingEvent;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
+use approx::relative_eq;
 use fsum::FSum;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -235,11 +236,11 @@ impl InstantElectricShower {
         let mut volume_warm_water = total_shower_duration * 6.0;
         let mut volume_warm_water_prev = 0.0;
 
-        while !is_close!(
+        while !relative_eq!(
             volume_warm_water,
             volume_warm_water_prev,
-            abs_tol = 1e-10,
-            rel_tol = 1e-9
+            epsilon = 1e-10,
+            max_relative = 1e-9
         ) {
             let list_temperature_volume = self
                 .cold_water_source

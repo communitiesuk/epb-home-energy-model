@@ -23,6 +23,7 @@ use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{ControlLogicType, HeatBattery};
 use crate::statistics::{linspace, np_interp};
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use atomic_float::AtomicF64;
 use derivative::Derivative;
 use fsum::FSum;
@@ -113,19 +114,19 @@ impl HeatStorageDryCore {
         }
 
         // Validate that both SOC arrays start at 0.0 and end at 1.0
-        if !is_close!(*soc_max_array.first().unwrap(), 0., rel_tol = 1e-9) {
+        if !relative_eq!(*soc_max_array.first().unwrap(), 0., max_relative = 1e-9) {
             bail!("The first SOC value in dry_core_max_output must be 0.0 (fully discharged).");
         }
 
-        if !is_close!(*soc_max_array.last().unwrap(), 1., rel_tol = 1e-9) {
+        if !relative_eq!(*soc_max_array.last().unwrap(), 1., max_relative = 1e-9) {
             bail!("The last SOC value in dry_core_max_output must be 1.0 (fully charged).");
         }
 
-        if !is_close!(*soc_min_array.first().unwrap(), 0., rel_tol = 1e-9) {
+        if !relative_eq!(*soc_min_array.first().unwrap(), 0., max_relative = 1e-9) {
             bail!("The first SOC value in dry_core_min_output must be 0.0 (fully discharged).");
         }
 
-        if !is_close!(*soc_min_array.last().unwrap(), 1., rel_tol = 1e-9) {
+        if !relative_eq!(*soc_min_array.last().unwrap(), 1., max_relative = 1e-9) {
             bail!("The last SOC value in dry_core_min_output must be 1.0 (fully charged).");
         }
 
@@ -324,12 +325,12 @@ impl HeatStorageDryCore {
                 // Ensure soc stays within bounds
                 let soc = clip(soc, 0., soc_max);
 
-                let soc = if is_close!(soc, 0.0, rel_tol = 1e-9, abs_tol = 1e-10) {
+                let soc = if relative_eq!(soc, 0.0, max_relative = 1e-9, epsilon = 1e-10) {
                     0.0
                 } else {
                     soc
                 };
-                let soc = if is_close!(soc, soc_max, rel_tol = 1e-9, abs_tol = 1e-10) {
+                let soc = if relative_eq!(soc, soc_max, max_relative = 1e-9, epsilon = 1e-10) {
                     soc_max
                 } else {
                     soc
@@ -347,7 +348,7 @@ impl HeatStorageDryCore {
                 let dcharged_dt = if soc < soc_max {
                     charge_rate
                 } else if target_charge > 0.
-                    && !is_close!(target_charge, 0.0, rel_tol = 1e-9, abs_tol = 1e-10)
+                    && !relative_eq!(target_charge, 0.0, max_relative = 1e-9, epsilon = 1e-10)
                 {
                     ddelivered_dt.min(charge_rate)
                 } else {
@@ -381,7 +382,8 @@ impl HeatStorageDryCore {
 
         let mut events: Vec<TerminatingEvent> = vec![soc_zero_event];
         if target_energy.is_some_and(|target_energy| {
-            target_energy > 0.0 && !is_close!(target_energy, 0.0, rel_tol = 1e-9, abs_tol = 1e-10)
+            target_energy > 0.0
+                && !relative_eq!(target_energy, 0.0, max_relative = 1e-9, epsilon = 1e-10)
         }) {
             events.push(target_energy_event);
         }
@@ -476,7 +478,7 @@ impl HeatStorageDryCore {
         // Charging: determine the maximum power available for charging
         let target_charge = self.target_electric_charge(*simtime)?;
         let (charge_rate, soc_max) = if target_charge > 0.
-            && !is_close!(target_charge, 0.0, rel_tol = 1e-9, abs_tol = 1e-10)
+            && !relative_eq!(target_charge, 0.0, max_relative = 1e-9, epsilon = 1e-10)
         {
             (self.pwr_in, target_charge)
         } else {
@@ -755,7 +757,7 @@ impl HeatStorageDryCore {
     }
 
     pub(super) fn set_state_of_charge(&self, mut soc: f64) {
-        if is_close!(soc, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
+        if relative_eq!(soc, 0., max_relative = 1e-09, epsilon = 1e-10) {
             soc = 0.;
         }
 
@@ -971,7 +973,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
     ) -> anyhow::Result<Vec<(f64, f64)>> {
         let volume_req_already = volume_req_already.unwrap_or(0.0);
 
-        if is_close!(volume_req, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+        if relative_eq!(volume_req, 0.0, epsilon = 1e-10, max_relative = 1e-9) {
             bail!("volume_req must be non-zero");
         }
 
@@ -990,15 +992,19 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
 
         // Base temperature on the part of the draw-off for volume_req, and
         // ignore any volume previously considered
-        let temp_hot_water_req =
-            if is_close!(volume_req_already, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
-                temp_hot_water_cumulative
-            } else {
-                let temp_hot_water_req_already = temp_hot_water(volume_req_already)?;
-                (temp_hot_water_cumulative * volume_req_cumulative
-                    - temp_hot_water_req_already * volume_req_already)
-                    / volume_req
-            };
+        let temp_hot_water_req = if relative_eq!(
+            volume_req_already,
+            0.0,
+            epsilon = 1e-10,
+            max_relative = 1e-9
+        ) {
+            temp_hot_water_cumulative
+        } else {
+            let temp_hot_water_req_already = temp_hot_water(volume_req_already)?;
+            (temp_hot_water_cumulative * volume_req_cumulative
+                - temp_hot_water_req_already * volume_req_already)
+                / volume_req
+        };
 
         Ok(vec![(temp_hot_water_req, volume_req)])
     }
@@ -1015,7 +1021,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
 
         if let Some(usage_events) = usage_events {
             for event in usage_events {
-                if is_close!(event.volume_hot, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+                if relative_eq!(event.volume_hot, 0.0, epsilon = 1e-10, max_relative = 1e-9) {
                     continue;
                 }
 
@@ -1370,7 +1376,12 @@ impl HeatBatteryDryCore {
         // Process energy demand from a specific service
         if !service_on
             || energy_output_required < 0.
-            || is_close!(energy_output_required, 0.0, abs_tol = 1e-10, rel_tol = 1e-9)
+            || relative_eq!(
+                energy_output_required,
+                0.0,
+                epsilon = 1e-10,
+                max_relative = 1e-9
+            )
         {
             if update_heat_source_state {
                 self.service_results.write().push(ServiceResult {
@@ -1397,7 +1408,7 @@ impl HeatBatteryDryCore {
 
         let (energy_delivered_hb, energy_lost, energy_charged, time_running_current_service) =
             if time_remaining < 0.
-                || is_close!(time_remaining, 0.0, abs_tol = 1e-10, rel_tol = 1e-9)
+                || relative_eq!(time_remaining, 0.0, epsilon = 1e-10, max_relative = 1e-9)
             {
                 // No time left to run this service
                 let energy_delivered_hb = 0.0;
@@ -1438,11 +1449,11 @@ impl HeatBatteryDryCore {
                     final_soc,
                     energy_lost,
                 ) = if q_released_max > energy_output_required
-                    || is_close!(
+                    || relative_eq!(
                         q_released_max,
                         energy_output_required,
-                        abs_tol = 1e-10,
-                        rel_tol = 1e-9
+                        epsilon = 1e-10,
+                        max_relative = 1e-9
                     ) {
                     let (
                         energy_delivered_hb,

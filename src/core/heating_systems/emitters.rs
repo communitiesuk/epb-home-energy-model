@@ -26,6 +26,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use crate::StringOrNumber;
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use atomic_float::AtomicF64;
 use derivative::Derivative;
 use fsum::FSum;
@@ -389,7 +390,11 @@ impl Emitters {
                     pipework_list.push(pipework_emitter);
                 } else {
                     // Currently only uninsulated pipework are considered for distribution losses when combined with radiators
-                    if is_close!(pipework_input.insulation_thickness_mm, 0., rel_tol = 1e-9) {
+                    if relative_eq!(
+                        pipework_input.insulation_thickness_mm,
+                        0.,
+                        max_relative = 1e-9
+                    ) {
                         let (pw_c, pw_n, pw_thermal_mass) = pipework_emitter.c_n_equivalence();
 
                         // create a new radiator entry
@@ -600,7 +605,7 @@ impl Emitters {
             .round()
             / six_dec_places_divisor;
         debug_assert!(
-            is_close!(weight_sum, 1.0, abs_tol = 1e-6, rel_tol = 1e-9),
+            relative_eq!(weight_sum, 1.0, epsilon = 1e-6, max_relative = 1e-9),
             "ERROR: Sum of emitter weightings should equal 1.0, not {}",
             weight_sum
         );
@@ -653,7 +658,8 @@ impl Emitters {
         };
 
         // NOTE Python uses math.isclose here with a relative tolerance which will be slightly different
-        let return_temp = if flow_temp > 70.0 || is_close!(flow_temp, 70.0, rel_tol = 1e-9) {
+        let return_temp = if flow_temp > 70.0 || relative_eq!(flow_temp, 70.0, max_relative = 1e-9)
+        {
             60.0
         } else {
             flow_temp * 6.0 / 7.0
@@ -993,7 +999,7 @@ impl Emitters {
         };
 
         let fan_power_value = if actual_output < 0.
-            || is_close!(actual_output, 0., abs_tol = 1e-10, rel_tol = 1e-9)
+            || relative_eq!(actual_output, 0., epsilon = 1e-10, max_relative = 1e-9)
         {
             actual_output = 0.;
             0.
@@ -1076,11 +1082,11 @@ impl Emitters {
         let (energy_provided_by_heat_source_max_min, emitters_data_for_buffer_tank_with_result) =
             if self.fancoil.is_some()
                 || temp_emitter_heating_start < temp_emitter_max
-                || is_close!(
+                || relative_eq!(
                     temp_emitter_heating_start,
                     temp_emitter_max,
-                    abs_tol = 1e-10,
-                    rel_tol = 1e-9
+                    epsilon = 1e-10,
+                    max_relative = 1e-9
                 )
             {
                 // If emitters are below max. temp for this timestep, then max energy
@@ -1088,7 +1094,7 @@ impl Emitters {
                 // which depends on the maximum energy output from the heat source
                 let emitters_data_for_buffer_tank = self.with_buffer_tank.then(|| {
                     let power_req_from_buffer_tank = if (timestep - time_heating_start) < 0.0
-                        || is_close!(timestep, time_heating_start, rel_tol = 1e-9)
+                        || relative_eq!(timestep, time_heating_start, max_relative = 1e-9)
                     {
                         // If there is no time remaining in the timestep, then there
                         // is no power requirement (and we need to avoid div-by-zero)
@@ -1348,7 +1354,9 @@ impl Emitters {
             energy_req_from_heat_source,
             temp_emitter_max_is_final_temp,
             fan_energy_kwh,
-        ) = if energy_demand < 0. || is_close!(energy_demand, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+        ) = if energy_demand < 0.
+            || relative_eq!(energy_demand, 0., epsilon = 1e-10, max_relative = 1e-9)
+        {
             (0.0, self.temp_emitter_prev(), 0.0, false, 0.0)
         } else {
             let (time_heating_start, temp_emitter_heating_start, fan_energy_kwh) =
@@ -1632,11 +1640,11 @@ impl Emitters {
 
                 if energy_released_from_emitters < 0.
                     || energy_required_from_heat_source < 0.
-                    || is_close!(
+                    || relative_eq!(
                         energy_required_from_heat_source,
                         0.,
-                        abs_tol = 1e-10,
-                        rel_tol = 1e-9
+                        epsilon = 1e-10,
+                        max_relative = 1e-9
                     )
                 {
                     return Ok((temp_flow_target, temp_flow_target, 0.0));
@@ -1686,11 +1694,11 @@ impl Emitters {
                 )?;
 
                 if energy_required_from_heat_source < 0.
-                    || is_close!(
+                    || relative_eq!(
                         energy_required_from_heat_source,
                         0.,
-                        abs_tol = 1e-10,
-                        rel_tol = 1e-9
+                        epsilon = 1e-10,
+                        max_relative = 1e-9
                     )
                 {
                     return Ok((temp_flow_target, temp_flow_target, 0.0));
@@ -1795,7 +1803,7 @@ impl Emitters {
             // Should be zero at the correct temp_return
             let diff = power_released_from_emitters - calculated_power;
 
-            if is_close!(diff, 0., abs_tol = 1e-6, rel_tol = 1e-9) {
+            if relative_eq!(diff, 0., epsilon = 1e-6, max_relative = 1e-9) {
                 Ok(0.0)
             } else {
                 Ok(diff)

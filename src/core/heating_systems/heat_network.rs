@@ -7,6 +7,7 @@ use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
+use approx::relative_eq;
 use fsum::FSum;
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
@@ -68,7 +69,7 @@ impl HeatNetworkServiceWaterDirect {
         let mut energy_demand = 0.;
 
         for event in usage_events {
-            if is_close!(event.volume_hot, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
+            if relative_eq!(event.volume_hot, 0., max_relative = 1e-09, epsilon = 1e-10) {
                 continue;
             }
             let list_temp_volume = self.cold_feed.draw_off_water(event.volume_hot, simtime)?;
@@ -410,7 +411,7 @@ impl HeatNetwork {
         let time_start = time_start.unwrap_or(0.);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let energy_output_max = self.energy_output_max(None);
-        if is_close!(energy_output_max, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+        if relative_eq!(energy_output_max, 0., epsilon = 1e-10, max_relative = 1e-9) {
             return Ok(0.0);
         }
         let energy_output_provided =

@@ -23,6 +23,7 @@ use crate::input::{
 use crate::simulation_time::SimulationTimeIteration;
 use crate::StringOrNumber;
 use anyhow::{anyhow, bail, Error};
+use approx::relative_eq;
 use argmin::{
     core::{CostFunction, Executor},
     solver::brent::BrentRoot,
@@ -86,7 +87,7 @@ fn calculate_pressure_difference_at_an_airflow_path(
 
     // TODO (from Python): Investigate why, due to differences in internal temperature, these values are different in
     // Windows implementation when compared to Linux
-    let delta_p_path = if is_close!(p_e_path, p_z_path, abs_tol = 1e-12, rel_tol = 1e-9) {
+    let delta_p_path = if relative_eq!(p_e_path, p_z_path, epsilon = 1e-12, max_relative = 1e-9) {
         0.
     } else {
         p_e_path - p_z_path // (4)

@@ -12,6 +12,7 @@ use crate::corpus::TempInternalAirFn;
 use crate::input::ZoneTemperatureControlBasis;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
+use approx::relative_eq;
 use field_types::FieldName;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -1047,7 +1048,12 @@ impl Zone {
         temp_free: f64,
         temp_upper: f64,
     ) -> anyhow::Result<f64> {
-        if is_close!(temp_upper - temp_free, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+        if relative_eq!(
+            temp_upper - temp_free,
+            0.0,
+            epsilon = 1e-10,
+            max_relative = 1e-9
+        ) {
             bail!(
                 "Divide-by-zero in calculation of heating/cooling demand.
             This may be caused by the specification of very low overall
@@ -1062,7 +1068,7 @@ impl Zone {
         // elsewhere where, for example, this tiny fraction is emitted for both heating and cooling, and heating / cooling
         // is therefore 1 rather than something representing a division by zero error.
         // Put in a closeness check here so that heat_cool_demand can be correctly recognised as zero.
-        if is_close!(temp_setpnt, temp_free, rel_tol = 1e-9, abs_tol = 1e-10) {
+        if relative_eq!(temp_setpnt, temp_free, max_relative = 1e-9, epsilon = 1e-10) {
             return Ok(0.);
         }
 
@@ -1136,7 +1142,7 @@ impl Zone {
         // For calculation of demand, set heating/cooling gains to zero
         let gains_heat_cool = gains_heat_cool_convective + gains_heat_cool_radiative;
         let frac_conv_gains_heat_cool =
-            if is_close!(gains_heat_cool, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+            if relative_eq!(gains_heat_cool, 0.0, epsilon = 1e-10, max_relative = 1e-9) {
                 0.0
             } else {
                 gains_heat_cool_convective / gains_heat_cool
@@ -1191,14 +1197,14 @@ impl Zone {
         // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
         // Determine maximum heating/cooling
         let (temp_setpnt, heat_cool_load_upper, frac_convective) = if temp_free > temp_setpnt_cool
-            && !is_close!(temp_free, temp_setpnt_cool, rel_tol = 1e-10)
+            && !relative_eq!(temp_free, temp_setpnt_cool, max_relative = 1e-10)
         {
             // Cooling
             // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
             //      Could max. power be available at this point for all heating/cooling systems?
             (temp_setpnt_cool, -10. * self.area(), frac_convective_cool)
         } else if temp_free < temp_setpnt_heat
-            && !is_close!(temp_free, temp_setpnt_cool, rel_tol = 1e-10)
+            && !relative_eq!(temp_free, temp_setpnt_cool, max_relative = 1e-10)
         {
             // Heating
             // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
@@ -1384,16 +1390,12 @@ const FRAC_CONVECTIVE: f64 = 0.4;
 /// Returns a single boolean where two arrays are element-wise all equal within a tolerance.
 ///
 /// See [docs for numpy.isclose](https://docs.rs/is_close/latest/is_close/)
-fn isclose(a: &Vec<f64>, b: &Vec<f64>, rtol: Option<f64>, atol: Option<f64>) -> bool {
+fn isclose(a: &[f64], b: &[f64], rtol: Option<f64>, atol: Option<f64>) -> bool {
     let rtol = rtol.unwrap_or(1e-5);
     let atol = atol.unwrap_or(1e-8);
-    all_close!(
-        (*a).clone(),
-        (*b).clone(),
-        rel_tol = rtol,
-        abs_tol = atol,
-        method = is_close::ASYMMETRIC
-    )
+    a.iter()
+        .zip(b)
+        .all(|(a, b)| relative_eq!(a, b, max_relative = rtol, epsilon = atol))
 }
 
 #[derive(Debug, Error)]

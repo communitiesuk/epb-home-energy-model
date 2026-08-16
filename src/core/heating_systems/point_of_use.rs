@@ -2,6 +2,7 @@ use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult};
 use crate::simulation_time::SimulationTimeIteration;
+use approx::relative_eq;
 use fsum::FSum;
 
 #[derive(Debug, Clone)]
@@ -48,7 +49,7 @@ impl PointOfUse {
         let mut water_energy_demand = 0.;
 
         for event in usage_events {
-            if is_close!(event.volume_hot, 0., rel_tol = 1e-09, abs_tol = 1e-10) {
+            if relative_eq!(event.volume_hot, 0., max_relative = 1e-09, epsilon = 1e-10) {
                 continue;
             }
             let list_temp_volume = self

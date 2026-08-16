@@ -2,6 +2,7 @@ use crate::core::material_properties::WATER;
 use crate::core::schedule::WaterScheduleEventType;
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
+use approx::relative_eq;
 use fsum::FSum;
 use itertools::Itertools;
 use smartstring::alias::String;
@@ -113,8 +114,8 @@ pub fn calc_fraction_hot_water(
     temperature_cold: f64,
 ) -> Result<f64, UnachievableTemperatureByMixingError> {
     let fraction = (temperature_target - temperature_cold) / (temperature_hot - temperature_cold);
-    if (fraction < 0.0 && !is_close!(fraction, 0.0, abs_tol = 1e-10, rel_tol = 1e-9))
-        || (fraction > 1.0 && !is_close!(fraction, 1.0, abs_tol = 1e-10, rel_tol = 1e-9))
+    if (fraction < 0.0 && !relative_eq!(fraction, 0.0, epsilon = 1e-10, max_relative = 1e-9))
+        || (fraction > 1.0 && !relative_eq!(fraction, 1.0, epsilon = 1e-10, max_relative = 1e-9))
     {
         return Err(UnachievableTemperatureByMixingError {
             temperature_target,
@@ -161,11 +162,11 @@ pub(crate) fn volume_hot_water_required<
     let mut volume_hot_water: f64 = Default::default();
     let mut was_in_loop = false;
 
-    while !is_close!(
+    while !relative_eq!(
         temperature_warm_water,
         temperature_target,
-        abs_tol = 1e-10,
-        rel_tol = 1e-9
+        epsilon = 1e-10,
+        max_relative = 1e-9
     ) {
         was_in_loop = true;
         // Calculate the volume of hot/cold water needed if heating from cold water source
@@ -231,13 +232,13 @@ pub(crate) fn calculate_volume_weighted_average_temperature(
     let weighted_temp_sum = FSum::with_all(&temp_volume_products).value();
     let total_volume = FSum::with_all(&volumes).value();
 
-    if is_close!(total_volume, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+    if relative_eq!(total_volume, 0., epsilon = 1e-10, max_relative = 1e-9) {
         bail!("Cannot calculate weighted average: total volume is zero");
     }
 
     // Validate expected volume if provided
     if let Some(expected_volume) = expected_volume {
-        if !is_close!(total_volume, expected_volume, rel_tol = tolerance) {
+        if !relative_eq!(total_volume, expected_volume, max_relative = tolerance) {
             bail!("Volume mismatch: expected {expected_volume}, got {total_volume}");
         }
     }
@@ -286,7 +287,7 @@ mod tests {
         let result =
             calculate_volume_weighted_average_temperature(temp_vol_pairs, None, None).unwrap();
 
-        assert!(is_close!(result, expected_temp, rel_tol = 1e-10));
+        assert!(relative_eq!(result, expected_temp, max_relative = 1e-10));
     }
 
     #[test]
@@ -302,7 +303,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(is_close!(result, 22., rel_tol = 1e-10));
+        assert!(relative_eq!(result, 22., max_relative = 1e-10));
     }
 
     #[test]

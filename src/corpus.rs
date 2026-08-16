@@ -107,6 +107,7 @@ use crate::statistics::percentile;
 use crate::StringOrNumber;
 use crate::{convert_profile_to_daily, HEM_VERSION};
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use atomic_float::AtomicF64;
 use chrono::{prelude::*, TimeDelta};
 use erased_serde::__private::serde::Serializer;
@@ -1838,16 +1839,16 @@ impl Corpus {
                 // lower-priority systems).
                 let (gains_heat_cool_convective, gains_heat_cool_radiative) =
                     self.gains_heat_cool(delta_t_h, &hc_output_convective, &hc_output_radiative);
-                if is_close!(
+                if relative_eq!(
                     gains_heat_cool_convective,
                     0.0,
-                    abs_tol = 1e-10,
-                    rel_tol = 1e-9
-                ) && is_close!(
+                    epsilon = 1e-10,
+                    max_relative = 1e-9
+                ) && relative_eq!(
                     gains_heat_cool_radiative,
                     0.0,
-                    abs_tol = 1e-10,
-                    rel_tol = 1e-9
+                    epsilon = 1e-10,
+                    max_relative = 1e-9
                 ) {
                     // If there is no output from any systems, then don't need to
                     // calculate demand again
@@ -2021,7 +2022,7 @@ impl Corpus {
                 * WATTS_PER_KILOWATT as f64
                 / delta_t_h;
             let frac_convective =
-                if !is_close!(gains_heat_cool, 0.0, abs_tol = 1e-10, rel_tol = 1e-9) {
+                if !relative_eq!(gains_heat_cool, 0.0, epsilon = 1e-10, max_relative = 1e-9) {
                     hc_output_convective_total
                         / (hc_output_convective_total + hc_output_radiative_total)
                 } else {
@@ -2944,7 +2945,12 @@ impl Corpus {
                 for (end_use, delivered_energy) in end_uses {
                     let sum_delivered_energy = FSum::with_all(delivered_energy).value();
                     if sum_delivered_energy > 0.
-                        || is_close!(sum_delivered_energy, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+                        || relative_eq!(
+                            sum_delivered_energy,
+                            0.,
+                            max_relative = 1e-09,
+                            epsilon = 1e-10
+                        )
                     {
                         delivered_energy_dict[fuel].insert(end_use.clone(), sum_delivered_energy);
                         delivered_energy_dict[fuel]["total"] += sum_delivered_energy;

@@ -3,6 +3,7 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::BatteryLocation;
 use crate::input::ElectricBattery as ElectricBatteryInput;
 use crate::simulation_time::SimulationTimeIteration;
+use approx::relative_eq;
 use atomic_float::AtomicF64;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -201,10 +202,10 @@ impl ElectricBattery {
             .load(Ordering::SeqCst);
 
         if (timestep < total_time_charging_current_timestep
-            || is_close!(
+            || relative_eq!(
                 timestep,
                 total_time_charging_current_timestep,
-                rel_tol = 1e-09
+                max_relative = 1e-09
             ))
             && energy_flow < 0.
         {

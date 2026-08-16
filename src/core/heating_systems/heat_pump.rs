@@ -26,6 +26,7 @@ use crate::input::{
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use derivative::Derivative;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -1460,7 +1461,7 @@ impl HeatPumpServiceWater {
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
         if (temp_flow.is_none() || temp_return.is_none())
-            && !is_close!(energy_demand, 0., abs_tol = 1e-10, rel_tol = 1e-9)
+            && !relative_eq!(energy_demand, 0., epsilon = 1e-10, max_relative = 1e-9)
         {
             bail!("temp_flow is None and energy_demand is not 0");
         };
@@ -2779,7 +2780,11 @@ impl HeatPump {
                 let flow_temp = temp_limit_upper - temp_used_for_scaling;
 
                 if flow_temp > self.temp_diff_flow_return_min
-                    || is_close!(flow_temp, self.temp_diff_flow_return_min, rel_tol = 1e-09)
+                    || relative_eq!(
+                        flow_temp,
+                        self.temp_diff_flow_return_min,
+                        max_relative = 1e-09
+                    )
                 {
                     energy_output_required * flow_temp / (temp_output - temp_used_for_scaling)
                 } else {
@@ -2819,11 +2824,11 @@ impl HeatPump {
     ) -> bool {
         let temp_source = self.get_temp_source(simulation_time_iteration);
         let below_min_ext_temp = temp_source < self.temp_lower_op_limit
-            || is_close!(
+            || relative_eq!(
                 temp_source,
                 self.temp_lower_op_limit,
-                rel_tol = 1e-09,
-                abs_tol = 1e-10
+                max_relative = 1e-09,
+                epsilon = 1e-10
             );
 
         let above_temp_return_feed_max = match self.sink_type {
@@ -2901,11 +2906,11 @@ impl HeatPump {
         let cost_boiler_eff = cost_boiler / boiler_eff;
 
         cost_hp_cop_op_cond < cost_boiler_eff
-            || is_close!(
+            || relative_eq!(
                 cost_hp_cop_op_cond,
                 cost_boiler_eff,
-                rel_tol = 1e-09,
-                abs_tol = 1e-10
+                max_relative = 1e-09,
+                epsilon = 1e-10
             )
     }
 
@@ -3246,11 +3251,11 @@ impl HeatPump {
 
         if let Some(buffer_tank) = self.buffer_tank.as_mut() {
             if energy_delivered_total > heat_loss_buffer_kwh
-                || is_close!(
+                || relative_eq!(
                     energy_delivered_total,
                     heat_loss_buffer_kwh,
-                    rel_tol = 1e-09,
-                    abs_tol = 1e-10
+                    max_relative = 1e-09,
+                    epsilon = 1e-10
                 )
             {
                 energy_delivered_total -= heat_loss_buffer_kwh;
@@ -3302,17 +3307,17 @@ impl HeatPump {
         temp_output: f64,
     ) -> anyhow::Result<(f64, f64, bool)> {
         // Calculate load ratio
-        let load_ratio = if is_close!(
+        let load_ratio = if relative_eq!(
             time_available_for_current_service,
             0.,
-            rel_tol = 1e-09,
-            abs_tol = 1e-10
+            max_relative = 1e-09,
+            epsilon = 1e-10
         ) {
-            if !is_close!(
+            if !relative_eq!(
                 time_running_current_service,
                 0.,
-                rel_tol = 1e-09,
-                abs_tol = 1e-10
+                max_relative = 1e-09,
+                epsilon = 1e-10
             ) {
                 bail!("Calculated time running is not zero despite no time being available")
             }
@@ -3354,7 +3359,7 @@ impl HeatPump {
         };
         // Determine whether HP is operating in on/off mode
         let hp_operating_in_onoff_mode = load_ratio > 0.
-            && !is_close!(load_ratio, 0., rel_tol = 1e-09, abs_tol = 1e-10)
+            && !relative_eq!(load_ratio, 0., max_relative = 1e-09, epsilon = 1e-10)
             && load_ratio < load_ratio_continuous_min;
 
         Ok((
@@ -3848,11 +3853,11 @@ impl HeatPump {
             .value();
         let time_remaining_current_timestep_part_load = timestep - part_load_sum;
 
-        if is_close!(
+        if relative_eq!(
             time_remaining_current_timestep_full_load,
             0.,
-            rel_tol = 1e-09,
-            abs_tol = 1e-10
+            max_relative = 1e-09,
+            epsilon = 1e-10
         ) {
             self.time_running_continuous += self.total_time_running_current_timestep_full_load;
         } else {
@@ -4162,11 +4167,11 @@ impl HeatPump {
 
         results_totals.insert(
             ("CoP (H1)".into(), None),
-            if is_close!(
+            if relative_eq!(
                 cop_h1_denominator.as_f64(),
                 0.0,
-                abs_tol = 1e-10,
-                rel_tol = 1e-9
+                epsilon = 1e-10,
+                max_relative = 1e-9
             ) {
                 0.0.into()
             } else {
@@ -4175,11 +4180,11 @@ impl HeatPump {
         );
         results_totals.insert(
             ("CoP (H2)".into(), None),
-            if is_close!(
+            if relative_eq!(
                 cop_h2_denominator.as_f64(),
                 0.0,
-                abs_tol = 1e-10,
-                rel_tol = 1e-9
+                epsilon = 1e-10,
+                max_relative = 1e-9
             ) {
                 0.0.into()
             } else {
@@ -4188,11 +4193,11 @@ impl HeatPump {
         );
         results_totals.insert(
             ("CoP (H3)".into(), None),
-            if is_close!(
+            if relative_eq!(
                 cop_h3_denominator.as_f64(),
                 0.0,
-                abs_tol = 1e-10,
-                rel_tol = 1e-9
+                epsilon = 1e-10,
+                max_relative = 1e-9
             ) {
                 0.0.into()
             } else {
@@ -4201,11 +4206,11 @@ impl HeatPump {
         );
         results_totals.insert(
             ("CoP (H4)".into(), None),
-            if is_close!(
+            if relative_eq!(
                 cop_h4_denominator.as_f64(),
                 0.0,
-                abs_tol = 1e-10,
-                rel_tol = 1e-9
+                epsilon = 1e-10,
+                max_relative = 1e-9
             ) {
                 0.0.into()
             } else {
@@ -4213,11 +4218,11 @@ impl HeatPump {
             },
         );
 
-        let (subkey, value) = if is_close!(
+        let (subkey, value) = if relative_eq!(
             cop_h5_denominator.as_f64(),
             0.,
-            abs_tol = 1e-10,
-            rel_tol = 1e-9
+            epsilon = 1e-10,
+            max_relative = 1e-9
         ) {
             (None, ResultParamValue::from(0.))
         } else if cop_h5_numerator == ResultParamValue::Empty {
@@ -4529,11 +4534,19 @@ impl HeatPumpHotWaterOnly {
                 let vol_daily_limit_upper = 199.8;
 
                 if vol_daily_average < vol_daily_limit_lower
-                    || is_close!(vol_daily_average, vol_daily_limit_lower, rel_tol = 1e-09)
+                    || relative_eq!(
+                        vol_daily_average,
+                        vol_daily_limit_lower,
+                        max_relative = 1e-09
+                    )
                 {
                     eff_m
                 } else if vol_daily_average > vol_daily_limit_upper
-                    || is_close!(vol_daily_average, vol_daily_limit_upper, rel_tol = 1e-09)
+                    || relative_eq!(
+                        vol_daily_average,
+                        vol_daily_limit_upper,
+                        max_relative = 1e-09
+                    )
                 {
                     eff_l
                 } else {

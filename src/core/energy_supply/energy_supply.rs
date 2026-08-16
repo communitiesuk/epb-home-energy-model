@@ -6,6 +6,7 @@ use crate::errors::NotImplementedError;
 use crate::input::{EnergySupplyPriorityEntry, EnergySupplyTariff, FuelType};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
+use approx::relative_eq;
 use atomic_float::AtomicF64;
 use derivative::Derivative;
 use fsum::FSum;
@@ -730,10 +731,10 @@ impl EnergySupply {
         demand: f64,
         beta_factor_function: BetaFactorFunction,
     ) -> Result<f64, NotImplementedError> {
-        if is_close!(supply, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+        if relative_eq!(supply, 0., epsilon = 1e-10, max_relative = 1e-9) {
             return Ok(1.);
         }
-        if is_close!(demand, 0., abs_tol = 1e-10, rel_tol = 1e-9) {
+        if relative_eq!(demand, 0., epsilon = 1e-10, max_relative = 1e-9) {
             return Ok(0.);
         }
 
