@@ -1,13 +1,79 @@
+use argmin::core::{CostFunction, Executor};
+use argmin::solver::brent::BrentRoot;
 use eqsolver::single_variable::FDNewton;
 use interp::{interp_slice, InterpMode};
 use std::sync::Arc;
 
 pub fn fsolve(func: impl Fn(f64) -> f64 + Copy, x0: f64) -> anyhow::Result<f64> {
-    let solver = FDNewton::new(func);
+    let f0 = func(x0);
+    if f0.abs() < 1e-12 {
+        return Ok(x0);
+    }
 
-    solver.solve(x0).map_err(|e| {
-        anyhow::anyhow!(e).context("Errored while using eqsolver crate in fsolve implementation")
-    })
+    if let Ok(result) = FDNewton::new(func).solve(x0) {
+        return Ok(result);
+    }
+
+    fn bracket_root(func: impl Fn(f64) -> f64, x0: f64, f0: f64) -> anyhow::Result<(f64, f64)> {
+        let sign0 = f0.signum();
+
+        // Start with a fine initial step to catch roots very close to x0, then
+        // expand geometrically. Starting at 1e-4 rather than 1.0 avoids jumping
+        // over narrow roots near the initial guess.
+        let mut step = 1e-4_f64;
+        let max_step = 1e10_f64;
+
+        while step <= max_step {
+            let lo = x0 - step;
+            let hi = x0 + step;
+
+            let f_lo = func(lo);
+            if f_lo == 0.0 || f_lo.signum() != sign0 {
+                return Ok((lo, x0));
+            }
+
+            let f_hi = func(hi);
+            if f_hi == 0.0 || f_hi.signum() != sign0 {
+                return Ok((x0, hi));
+            }
+
+            // Also check if lo and hi bracket each other directly (catches cases
+            // where the root is symmetric around x0 but x0 itself is not near it).
+            if f_lo.signum() != f_hi.signum() {
+                return Ok((lo, hi));
+            }
+
+            step *= 2.0;
+        }
+
+        anyhow::bail!(
+            "fsolve: could not bracket a root near x0={x0} after Newton's method failed \
+         (f(x0)={f0:.3e}, searched radius up to {max_step:.3e})"
+        )
+    }
+
+    // Fallback as FDNewton solution can, rarely, fail to converge:
+    // expand outward from x0 until we find a sign change bracket,
+    // then use Brent's method (superlinear convergence, bisection reliability).
+    let (a, b) = bracket_root(func, x0, f0)?;
+
+    struct F<G>(G);
+    impl<G: Fn(f64) -> f64> CostFunction for F<G> {
+        type Param = f64;
+        type Output = f64;
+        fn cost(&self, x: &f64) -> Result<f64, argmin::core::Error> {
+            Ok(self.0(*x))
+        }
+    }
+
+    let solver = BrentRoot::new(a, b, 1e-8);
+    let executor = Executor::new(F(func), solver);
+    executor
+        .run()
+        .map_err(|e| anyhow::anyhow!("fsolve Brent fallback failed: {e}"))?
+        .state()
+        .best_param
+        .ok_or_else(|| anyhow::anyhow!("fsolve Brent fallback: no root found"))
 }
 
 pub mod bisect {
