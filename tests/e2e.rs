@@ -337,7 +337,7 @@ mod compare {
         OutputRecord::new(left, float_threshold).equiv(&OutputRecord::new(right, float_threshold))
     }
 
-    pub(crate) const FLOAT_THRESHOLD: f64 = 1e-5; // 0.000001
+    pub(crate) const FLOAT_THRESHOLD: f64 = 1e-5; // 0.00001
 
     #[derive(Debug, Clone)]
     pub enum Difference {
