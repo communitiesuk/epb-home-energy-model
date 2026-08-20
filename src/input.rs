@@ -1359,7 +1359,7 @@ pub enum BoilerHotWaterTest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate, PartialEq)]
-pub struct StorageTankData {
+pub struct StorageTankDetails {
     #[serde(rename = "ColdWaterSource")]
     pub(crate) cold_water_source: String,
 
@@ -1390,14 +1390,14 @@ pub struct StorageTankData {
     pub(crate) volume: f64,
 }
 
-impl StorageTankData {
+impl StorageTankDetails {
     pub(crate) fn cold_water_source(&self) -> &str {
         &self.cold_water_source
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate, PartialEq)]
-pub struct SmartHotWaterTankData {
+pub struct SmartHotWaterTankDetails {
     /// Total volume of tank (unit: litre)
     #[validate(exclusive_minimum = 0.)]
     pub(crate) volume: f64,
@@ -1447,7 +1447,7 @@ pub struct SmartHotWaterTankData {
     pub(crate) primary_pipework: Option<Vec<WaterPipeworkSimple>>,
 }
 
-impl SmartHotWaterTankData {
+impl SmartHotWaterTankDetails {
     pub fn cold_water_source(&self) -> &str {
         &self.cold_water_source
     }
@@ -1461,8 +1461,8 @@ impl SmartHotWaterTankData {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum PreHeatedWaterSourceDetails {
-    StorageTank(StorageTankData),
-    SmartHotWaterTank(SmartHotWaterTankData),
+    StorageTank(StorageTankDetails),
+    SmartHotWaterTank(SmartHotWaterTankDetails),
 }
 
 impl PreHeatedWaterSourceDetails {
@@ -1483,12 +1483,12 @@ pub enum HotWaterSourceDetails {
     StorageTank {
         #[serde(flatten)]
         #[validate]
-        inner: StorageTankData,
+        details: StorageTankDetails,
     },
     SmartHotWaterTank {
         #[serde(flatten)]
         #[validate]
-        inner: SmartHotWaterTankData,
+        details: SmartHotWaterTankDetails,
     },
     CombiBoiler {
         #[serde(rename = "ColdWaterSource")]
@@ -1573,11 +1573,11 @@ pub enum HotWaterSourceDetails {
 impl From<PreHeatedWaterSourceDetails> for HotWaterSourceDetails {
     fn from(hws: PreHeatedWaterSourceDetails) -> Self {
         match hws {
-            PreHeatedWaterSourceDetails::StorageTank(inner) => {
-                HotWaterSourceDetails::StorageTank { inner }
+            PreHeatedWaterSourceDetails::StorageTank(details) => {
+                HotWaterSourceDetails::StorageTank { details }
             }
-            PreHeatedWaterSourceDetails::SmartHotWaterTank(inner) => {
-                HotWaterSourceDetails::SmartHotWaterTank { inner }
+            PreHeatedWaterSourceDetails::SmartHotWaterTank(details) => {
+                HotWaterSourceDetails::SmartHotWaterTank { details }
             }
         }
     }
@@ -6670,7 +6670,7 @@ mod tests {
             #[fixture]
             fn valid_example() -> JsonValue {
                 serde_json::to_value(HotWaterSourceDetails::StorageTank {
-                    inner: StorageTankData {
+                    details: StorageTankDetails {
                         cold_water_source: "cold water source".into(),
                         heat_source: IndexMap::from([(
                             "hp".into(),
@@ -7482,7 +7482,7 @@ mod tests {
         #[fixture]
         fn valid_example() -> JsonValue {
             serde_json::to_value(HotWaterSourceDetails::SmartHotWaterTank {
-                inner: SmartHotWaterTankData {
+                details: SmartHotWaterTankDetails {
                     volume: 10.,
                     power_pump_kw: 5.,
                     max_flow_rate_pump_l_per_min: 10.,

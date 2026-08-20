@@ -5490,26 +5490,26 @@ fn hot_water_source_from_input(
     };
 
     let hot_water_source = match &input {
-        HotWaterSourceDetails::StorageTank { inner } => {
+        HotWaterSourceDetails::StorageTank { details } => {
             let cold_water_source = cold_water_source_for_hot_water_tank(
-                inner.cold_water_source(),
+                details.cold_water_source(),
                 cold_water_sources_already_allocated,
             )?;
             // At this point in the Python, the internal_diameter and external_diameter fields on
             // primary_pipework are updated, this is done in Pipework.rs in the Rust
-            let primary_pipework_lst = inner.primary_pipework.as_ref();
+            let primary_pipework_lst = details.primary_pipework.as_ref();
             let heat_sources = heat_sources_for_hot_water_tank(
                 cold_water_source.clone(),
-                &inner.heat_exchanger_surface_area,
-                &inner.heat_source,
-                &inner.volume,
-                &inner.daily_losses,
+                &details.heat_exchanger_surface_area,
+                &details.heat_source,
+                &details.volume,
+                &details.daily_losses,
             )?;
 
             let storage_tank = Arc::new(RwLock::new(StorageTank::new(
-                inner.volume,
-                inner.daily_losses,
-                inner.init_temp,
+                details.volume,
+                details.daily_losses,
+                details.init_temp,
                 cold_water_source,
                 &simulation_time.current_iteration(),
                 heat_sources.clone(),
@@ -5526,15 +5526,15 @@ fn hot_water_source_from_input(
 
             connect_diverter_for_hot_water_tank(
                 energy_supplies.clone(),
-                &inner.heat_source,
+                &details.heat_source,
                 &heat_sources,
                 HotWaterStorageTank::StorageTank(storage_tank.clone()),
             )?;
 
             HotWaterSource::PreHeated(HotWaterStorageTank::StorageTank(storage_tank))
         }
-        HotWaterSourceDetails::SmartHotWaterTank { inner } => {
-            let cold_water_source_type = &inner.cold_water_source;
+        HotWaterSourceDetails::SmartHotWaterTank { details } => {
+            let cold_water_source_type = &details.cold_water_source;
             let cold_water_source = cold_water_source_for_hot_water_tank(
                 cold_water_source_type,
                 cold_water_sources_already_allocated,
@@ -5542,13 +5542,13 @@ fn hot_water_source_from_input(
 
             // At this point in the Python, the internal_diameter and external_diameter fields on
             // primary_pipework are updated, this is done in Pipework.rs in the Rust
-            let primary_pipework_lst = inner.primary_pipework.as_ref();
+            let primary_pipework_lst = details.primary_pipework.as_ref();
             let heat_sources = heat_sources_for_hot_water_tank(
                 cold_water_source.clone(),
                 &None,
-                &inner.heat_source,
-                &inner.volume,
-                &inner.daily_losses,
+                &details.heat_source,
+                &details.volume,
+                &details.daily_losses,
             )?;
 
             if !heat_sources
@@ -5561,18 +5561,18 @@ fn hot_water_source_from_input(
                 ));
             }
 
-            let energy_supply_pump = energy_supplies[&inner.energy_supply_pump].clone();
+            let energy_supply_pump = energy_supplies[&details.energy_supply_pump].clone();
             let pump_source_name = format!("Smart_hot_water_tank_pump: {name}");
             let energy_supply_conn_pump =
                 EnergySupply::connection(energy_supply_pump, &pump_source_name)?;
             let smart_hot_water_tank = Arc::new(RwLock::new(SmartHotWaterTank::new(
-                inner.volume,
-                inner.daily_losses,
-                inner.init_temp,
-                inner.power_pump_kw,
-                inner.max_flow_rate_pump_l_per_min,
-                inner.temp_usable,
-                controls.get_with_string(&*inner.temp_setpnt_max).ok_or_else(|| anyhow!("A control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object."))?,
+                details.volume,
+                details.daily_losses,
+                details.init_temp,
+                details.power_pump_kw,
+                details.max_flow_rate_pump_l_per_min,
+                details.temp_usable,
+                controls.get_with_string(&*details.temp_setpnt_max).ok_or_else(|| anyhow!("A control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object."))?,
                 cold_water_source.clone(),
                 &simulation_time.current_iteration(),
                 heat_sources.clone(),
@@ -5598,7 +5598,7 @@ fn hot_water_source_from_input(
 
             connect_diverter_for_hot_water_tank(
                 energy_supplies.clone(),
-                &inner.heat_source,
+                &details.heat_source,
                 &heat_sources,
                 HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank.clone()),
             )?;

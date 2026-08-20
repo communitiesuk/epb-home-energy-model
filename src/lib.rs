@@ -903,14 +903,14 @@ fn write_core_output_file_summary(
             ));
 
             row.push({
-                if let HotWaterSourceDetails::StorageTank { inner } = input
+                if let HotWaterSourceDetails::StorageTank { details } = input
                     .hot_water_source
                     .get(&hws_name.to_string())
                     .ok_or_else(|| {
                         anyhow!("Could not find hot water source with name '{hws_name}'")
                     })?
                 {
-                    inner.volume.into()
+                    details.volume.into()
                 } else {
                     StringOrNumber::String("N/A".into())
                 }
