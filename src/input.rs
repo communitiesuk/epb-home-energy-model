@@ -1697,11 +1697,30 @@ pub(crate) enum HeatSourceControlType {
     WindowOpening,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+pub(crate) enum ControlReferences {
+    Unified {
+        /// Reference to a control schedule with lower and upper temperature setpoints.
+        #[serde(rename = "Control")]
+        control: String,
+    },
+    Bounded {
+        /// Reference to a control schedule of minimum temperature setpoints
+        #[serde(rename = "Controlmin")]
+        control_min: String,
+
+        /// Reference to a control schedule of maximum temperature setpoints
+        #[serde(rename = "Controlmax")]
+        control_max: String,
+    },
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(tag = "type", deny_unknown_fields)]
-pub enum HeatSource {
+#[serde(tag = "type")]
+pub(crate) enum HeatSource {
     ImmersionHeater {
         /// (unit: kW)
         #[validate(exclusive_minimum = 0.)]
@@ -1709,14 +1728,6 @@ pub enum HeatSource {
 
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
-
-        /// Reference to a control schedule of minimum temperature setpoints
-        #[serde(rename = "Controlmin")]
-        control_min: Option<String>,
-
-        /// Reference to a control schedule of maximum temperature setpoints
-        #[serde(rename = "Controlmax")]
-        control_max: Option<String>,
 
         /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.
         #[validate(minimum = 0.)]
@@ -1727,6 +1738,9 @@ pub enum HeatSource {
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         thermostat_position: Option<f64>,
+
+        #[serde(flatten)]
+        controls: ControlReferences,
     },
     SolarThermalSystem {
         /// Location of the main part of the collector loop piping
@@ -7317,8 +7331,10 @@ mod tests {
                 serde_json::to_value(HeatSource::ImmersionHeater {
                     power: 12.,
                     energy_supply: "mains elec".into(),
-                    control_min: Some("control min".into()),
-                    control_max: Some("control max".into()),
+                    controls: ControlReferences::Bounded {
+                        control_min: "control min".into(),
+                        control_max: "control max".into(),
+                    },
                     heater_position: 0.7,
                     thermostat_position: None,
                 })
