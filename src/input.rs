@@ -34,6 +34,7 @@ const HOURS_IN_YEAR: usize = 8760;
 #[validate(custom = validate_shower_waste_water_heat_recovery_systems)]
 #[validate(custom = validate_exhaust_air_heat_pump_ventilation_compatibility)]
 #[validate(custom = validate_time_series)]
+#[validate(custom = validate_smart_appliance_control_names)]
 pub struct Input {
     /// Metadata for the input file
     #[serde(rename = "metadata")]
@@ -249,6 +250,34 @@ fn validate_time_series(input: &Input) -> Result<(), serde_valid::validation::Er
             / cold_water_source.time_series_step;
         if (cold_water_source.temperatures.len() as f64) < total_steps {
             return custom_validation_error("ColdWaterSource.temperatures does not contain enough values to cover the simulation.".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_smart_appliance_control_names(
+    input: &Input,
+) -> Result<(), serde_valid::validation::Error> {
+    let appliance_gains_load_shifting_control_names: Vec<String> = input
+        .appliance_gains
+        .iter()
+        .filter_map(|(_, gains)| {
+            gains
+                .load_shifting
+                .as_ref()
+                .and_then(|ls| ls.control.clone())
+        })
+        .collect();
+
+    for control_name in appliance_gains_load_shifting_control_names {
+        if !input
+            .smart_appliance_controls
+            .contains_key(control_name.as_str())
+        {
+            return custom_validation_error(
+                format!("Provided appliance gains loadshifting control name '{control_name}' does not exist in Input.SmartApplianceControls")
+            );
         }
     }
 
@@ -5611,6 +5640,78 @@ mod tests {
 
     // there is a test in the Python here that checks for invalid references - not bringing this over because
     // we will detect bad references while building the corpus
+
+    mod test_validate_multiple_cross_references {
+        use crate::input::tests::{baseline_demo_file_json, merge_json_onto_base};
+        use crate::input::{ApplianceLoadShifting, Input};
+        use rstest::rstest;
+        use serde_json::{json, Value as JsonValue};
+        use serde_valid::Validate;
+
+        #[rstest]
+        fn test_validate_smart_appliance_control_name_not_found(
+            baseline_demo_file_json: JsonValue,
+        ) {
+            let mut modified_input = baseline_demo_file_json;
+            let load_shifting = serde_json::to_value(ApplianceLoadShifting {
+                control: Some("incorrect".into()),
+                priority: None,
+                max_shift_hrs: 0.0,
+                demand_limit_weighted: 0.0,
+                weight_timeseries: vec![],
+            })
+            .unwrap();
+
+            modified_input["ApplianceGains"]["lighting"]["loadshifting"] = load_shifting;
+
+            let input = serde_json::from_value::<Input>(modified_input).unwrap();
+
+            if let Err(e) = input.validate() {
+                assert!(e.to_string().contains("Provided appliance gains loadshifting control name 'incorrect' does not exist in Input.SmartApplianceControls"));
+            } else {
+                panic!("Expected validation error");
+            }
+        }
+
+        #[rstest]
+        fn test_validate_smart_appliance_control_names_found(baseline_demo_file_json: JsonValue) {
+            let mut modified_input = merge_json_onto_base(
+                baseline_demo_file_json,
+                &json!({
+                    "SmartApplianceControls":{
+                        "SmartApplianceControl": {
+                            "Appliances": [],
+                            "battery24hr": {
+                                "battery_state_of_charge": { "": [0.] },
+                                "energy_into_battery_from_generation": { "": [0.] },
+                                "energy_into_battery_from_grid": { "": [0.] },
+                                "energy_out_of_battery": { "": [0.] }
+                            },
+                            "non_appliance_demand_24hr": {},
+                            "power_timeseries": { "": [0.] },
+                            "time_series_step": 1
+                        }
+                    }
+                }),
+            );
+
+            let control_name: smartstring::alias::String = "SmartApplianceControl".into();
+
+            let load_shifting = serde_json::to_value(ApplianceLoadShifting {
+                control: Some(control_name),
+                priority: None,
+                max_shift_hrs: 0.0,
+                demand_limit_weighted: 0.0,
+                weight_timeseries: vec![],
+            })
+            .unwrap();
+
+            modified_input["ApplianceGains"]["lighting"]["loadshifting"] = load_shifting;
+
+            let input = serde_json::from_value::<Input>(modified_input).unwrap();
+            assert!(input.validate().is_ok());
+        }
+    }
 
     static MINIMAL_TEST_DATA: LazyLock<JsonValue> = LazyLock::new(|| {
         json!({
