@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-
 use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::core::schedule::{BooleanSchedule, NumericSchedule};
 use crate::core::units::{calculate_thermal_resistance_of_virtual_layer, Orientation360};
@@ -222,7 +220,7 @@ fn validate_exhaust_air_heat_pump_ventilation_compatibility(
         if !incompatible_vents.is_empty() {
             let mut incompatibilities: Vec<String> = Default::default();
             for (vent_name, vent_type) in incompatible_vents.iter() {
-                for (heat_source_name, heat_source_type) in exhaust_air_heat_pumps.iter() {
+                for (heat_source_name, _heat_source_type) in exhaust_air_heat_pumps.iter() {
                     incompatibilities
                         .push(format!("Exhaust air heat pump '{heat_source_name}' is incompatible with ventilation system '{vent_name}' (vent type: {vent_type})").into());
                 }
@@ -2594,9 +2592,9 @@ fn validate_radiator_required_fields(
 ) -> Result<(), serde_valid::validation::Error> {
     match data {
         WetEmitter::Radiator {
-            exponent,
-            frac_convective,
-            thermal_mass,
+            exponent: _exponent,
+            frac_convective: _frac_convective,
+            thermal_mass: _thermal_mass,
             thermal_mass_per_m,
             constant,
             constant_per_m,
@@ -2743,7 +2741,6 @@ pub struct SpaceHeatSystemHeatSource {
 #[skip_serializing_none]
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[allow(dead_code)]
 #[serde(deny_unknown_fields)]
 pub struct EcoDesignController {
     pub(crate) ecodesign_control_class: EcoDesignControllerClass,
