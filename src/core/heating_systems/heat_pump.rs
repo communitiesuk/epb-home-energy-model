@@ -4647,7 +4647,9 @@ mod tests {
     use crate::core::units::Orientation360;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::DaylightSavingsConfig;
-    use crate::input::{BoilerHotWaterTest, FuelType, HeatPumpBufferTank, HeatSourceLocation};
+    use crate::input::{
+        BoilerHotWaterTest, BoilerType, FuelType, HeatPumpBufferTank, HeatSourceLocation,
+    };
     use crate::simulation_time::SimulationTime;
     use crate::{core::material_properties::WATER, external_conditions::ShadingSegment, input};
     use approx::{assert_relative_eq, assert_ulps_eq};
@@ -6446,6 +6448,8 @@ mod tests {
             electricity_part_load: 0.0131,
             electricity_full_load: 0.0388,
             electricity_standby: 0.0244,
+            boiler_type: BoilerType::default(),
+            pilot_light: None,
         };
 
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::from(RwLock::from(energy_supply));

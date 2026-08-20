@@ -843,6 +843,10 @@ pub struct ElectricBattery {
 
     /// Is charging from the grid possible?
     pub grid_charging_possible: bool,
+
+    /// Is exporting to the grid possible?
+    #[serde(default)]
+    pub grid_exporting_possible: bool,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -4024,6 +4028,13 @@ pub enum HeatSourceWetDetails {
         /// Electrical power consumption in standby mode (unit: kW)
         #[validate(minimum = 0.)]
         electricity_standby: f64,
+
+        /// The boiler type, either condensing or non-condensing
+        #[serde(default)]
+        boiler_type: BoilerType,
+
+        /// The pilot light properties of the boiler, if any is modelled
+        pilot_light: Option<BoilerPilotLight>,
     },
     HeatBattery {
         #[serde(flatten)]
@@ -4074,6 +4085,26 @@ fn validate_boxed_in_option<T: Validate>(
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
+pub struct BoilerPilotLight {
+    /// Power consumption of the pilot light (unit: kW)
+    #[validate(minimum = 0.)]
+    power: f64,
+
+    /// Proportion of pilot light demand turned into heat gains (dimensionless, 0-1)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
+    gains_fraction: Option<f64>,
+}
+
+#[derive(Copy, Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BoilerType {
+    #[default]
+    Condensing,
+    NonCondensing,
+}
+
 impl From<&HeatPumpBoiler> for HeatSourceWetDetails {
     fn from(value: &HeatPumpBoiler) -> Self {
         HeatSourceWetDetails::Boiler {
@@ -4088,6 +4119,8 @@ impl From<&HeatPumpBoiler> for HeatSourceWetDetails {
             electricity_part_load: value.electricity_part_load,
             electricity_full_load: value.electricity_full_load,
             electricity_standby: value.electricity_standby,
+            boiler_type: value.boiler_type,
+            pilot_light: value.pilot_light,
         }
     }
 }
@@ -4188,6 +4221,13 @@ pub struct HeatPumpTestDatum {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpBoiler {
+    /// The boiler type, either condensing or non-condensing
+    #[serde(default)]
+    pub(crate) boiler_type: BoilerType,
+
+    /// The pilot light properties of the boiler, if any is modelled
+    pub(crate) pilot_light: Option<BoilerPilotLight>,
+
     #[serde(rename = "EnergySupply")]
     pub(crate) energy_supply: String,
 
@@ -6186,6 +6226,7 @@ mod tests {
                 maximum_discharge_rate_one_way_trip: 1.25,
                 battery_location: BatteryLocation::Outside,
                 grid_charging_possible: true,
+                grid_exporting_possible: false,
             })
             .unwrap()
         }
@@ -6270,6 +6311,8 @@ mod tests {
                 electricity_full_load: 1.,
                 electricity_standby: 10.,
                 cost_schedule_hybrid: None,
+                boiler_type: BoilerType::default(),
+                pilot_light: None,
             })
             .unwrap()
         }
@@ -6447,6 +6490,8 @@ mod tests {
                     electricity_full_load: 0.2,
                     electricity_standby: 0.01,
                     cost_schedule_hybrid: None,
+                    boiler_type: BoilerType::default(),
+                    pilot_light: None,
                 }
             }
 

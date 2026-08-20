@@ -578,6 +578,7 @@ impl Boiler {
                 electricity_part_load: power_part_load,
                 electricity_full_load: power_full_load,
                 electricity_standby: power_standby,
+                ..
             } => {
                 let total_time_running_current_timestep = 0.;
                 let pump_running_time_current_timestep = 0.;
@@ -1371,7 +1372,7 @@ mod tests {
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{
-            BoilerHotWaterTest, FuelType, HeatSourceLocation, HeatSourceWetDetails,
+            BoilerHotWaterTest, BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails,
             HotWaterSourceDetails,
         };
         use approx::assert_relative_eq;
@@ -1393,6 +1394,8 @@ mod tests {
                 electricity_part_load: 0.0131,
                 electricity_full_load: 0.0388,
                 electricity_standby: 0.0244,
+                boiler_type: BoilerType::default(),
+                pilot_light: None,
             }
         }
 
@@ -1722,7 +1725,7 @@ mod tests {
         use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterRegular};
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIteration};
-        use crate::input::{FuelType, HeatSourceLocation, HeatSourceWetDetails};
+        use crate::input::{BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails};
         use approx::assert_relative_eq;
         use parking_lot::RwLock;
         use rstest::{fixture, rstest};
@@ -1742,6 +1745,8 @@ mod tests {
                 electricity_part_load: 0.0131,
                 electricity_full_load: 0.0388,
                 electricity_standby: 0.0244,
+                boiler_type: BoilerType::default(),
+                pilot_light: None,
             }
         }
         #[fixture]
@@ -1962,7 +1967,7 @@ mod tests {
         use crate::core::heating_systems::boiler::{Boiler, BoilerServiceSpace};
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIteration};
-        use crate::input::{FuelType, HeatSourceLocation, HeatSourceWetDetails};
+        use crate::input::{BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails};
         use approx::assert_ulps_eq;
         use parking_lot::RwLock;
         use rstest::{fixture, rstest};
@@ -1987,6 +1992,8 @@ mod tests {
                 electricity_part_load: 0.0131,
                 electricity_full_load: 0.0388,
                 electricity_standby: 0.0244,
+                boiler_type: BoilerType::default(),
+                pilot_light: None,
             }
         }
 
@@ -2143,7 +2150,7 @@ mod tests {
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{
-            FuelType, HeatSourceLocation, HeatSourceWetDetails, HotWaterSourceDetails,
+            BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails, HotWaterSourceDetails,
         };
         use approx::assert_relative_eq;
         use itertools::Itertools;
@@ -2168,6 +2175,8 @@ mod tests {
                 electricity_part_load: 0.0131,
                 electricity_full_load: 0.0388,
                 electricity_standby: 0.0244,
+                boiler_type: BoilerType::default(),
+                pilot_light: None,
             }
         }
 
