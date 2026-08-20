@@ -11,5 +11,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: extractions/setup-just@v4
-      - run: cargo test
+      - run: just unit
       - run: cargo rustc --no-default-features -- -Awarnings
