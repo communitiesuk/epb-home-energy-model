@@ -1,4 +1,4 @@
-use crate::input::HotWaterSourceDetails;
+use crate::input::PreHeatedWaterSourceDetails;
 use indexmap::IndexMap;
 use petgraph::algo::toposort;
 use petgraph::Graph;
@@ -6,7 +6,7 @@ use thiserror::Error;
 
 /// Build a dependency graph for PreHeatedWaterSource objects.
 pub(crate) fn build_preheated_water_source_dependency_graph(
-    preheated_sources_input: &IndexMap<String, HotWaterSourceDetails>,
+    preheated_sources_input: &IndexMap<String, PreHeatedWaterSourceDetails>,
 ) -> Graph<String, String> {
     let mut graph = Graph::<String, String>::new();
     let mut nodes: IndexMap<String, _> = IndexMap::new();
@@ -53,7 +53,7 @@ mod tests {
 
     #[test]
     fn test_preheated_water_sources_are_reordered() {
-        let hot_water_source_details: HotWaterSourceDetails = serde_json::from_value(json!(
+        let hot_water_source_details: PreHeatedWaterSourceDetails = serde_json::from_value(json!(
         {"type": "StorageTank",
         "volume": 24.0,
         "daily_losses": 1.55,
@@ -70,27 +70,29 @@ mod tests {
                 "thermostat_position": 0.33}}
             }))
         .unwrap();
-        let hot_water_source_details_2: HotWaterSourceDetails = serde_json::from_value(json!(
-        {"type": "StorageTank",
-        "volume": 24.0,
-        "daily_losses": 1.55,
-        "init_temp": 48.0,
-        "ColdWaterSource": "mains water",
-        "HeatSource": {
-            "{name}_immersion": {
-                "type": "ImmersionHeater",
-                "power": 3.0,
-                "EnergySupply": "mains elec",
-                "Controlmin": "min_temp",
-                "Controlmax": "setpoint_temp_max",
-                "heater_position": 0.3,
-                "thermostat_position": 0.33}}
-            }))
-        .unwrap();
-        let preheated_sources_input: IndexMap<String, HotWaterSourceDetails> = IndexMap::from([
-            ("storagetank1".into(), hot_water_source_details),
-            ("storagetank2".into(), hot_water_source_details_2),
-        ]);
+        let hot_water_source_details_2: PreHeatedWaterSourceDetails =
+            serde_json::from_value(json!(
+            {"type": "StorageTank",
+            "volume": 24.0,
+            "daily_losses": 1.55,
+            "init_temp": 48.0,
+            "ColdWaterSource": "mains water",
+            "HeatSource": {
+                "{name}_immersion": {
+                    "type": "ImmersionHeater",
+                    "power": 3.0,
+                    "EnergySupply": "mains elec",
+                    "Controlmin": "min_temp",
+                    "Controlmax": "setpoint_temp_max",
+                    "heater_position": 0.3,
+                    "thermostat_position": 0.33}}
+                }))
+            .unwrap();
+        let preheated_sources_input: IndexMap<String, PreHeatedWaterSourceDetails> =
+            IndexMap::from([
+                ("storagetank1".into(), hot_water_source_details),
+                ("storagetank2".into(), hot_water_source_details_2),
+            ]);
 
         let graph = build_preheated_water_source_dependency_graph(&preheated_sources_input);
         let result = topological_sort_preheated_water_sources(&graph).unwrap();
@@ -100,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_preheated_water_sources_with_circular_dependency_produces_error() {
-        let hot_water_source_details: HotWaterSourceDetails = serde_json::from_value(json!(
+        let hot_water_source_details: PreHeatedWaterSourceDetails = serde_json::from_value(json!(
         {"type": "StorageTank",
         "volume": 24.0,
         "daily_losses": 1.55,
@@ -117,27 +119,29 @@ mod tests {
                 "thermostat_position": 0.33}}
             }))
         .unwrap();
-        let hot_water_source_details_2: HotWaterSourceDetails = serde_json::from_value(json!(
-        {"type": "StorageTank",
-        "volume": 24.0,
-        "daily_losses": 1.55,
-        "init_temp": 48.0,
-        "ColdWaterSource": "storagetank1",
-        "HeatSource": {
-            "{name}_immersion": {
-                "type": "ImmersionHeater",
-                "power": 3.0,
-                "EnergySupply": "mains elec",
-                "Controlmin": "min_temp",
-                "Controlmax": "setpoint_temp_max",
-                "heater_position": 0.3,
-                "thermostat_position": 0.33}}
-            }))
-        .unwrap();
-        let preheated_sources_input: IndexMap<String, HotWaterSourceDetails> = IndexMap::from([
-            ("storagetank1".into(), hot_water_source_details),
-            ("storagetank2".into(), hot_water_source_details_2),
-        ]);
+        let hot_water_source_details_2: PreHeatedWaterSourceDetails =
+            serde_json::from_value(json!(
+            {"type": "StorageTank",
+            "volume": 24.0,
+            "daily_losses": 1.55,
+            "init_temp": 48.0,
+            "ColdWaterSource": "storagetank1",
+            "HeatSource": {
+                "{name}_immersion": {
+                    "type": "ImmersionHeater",
+                    "power": 3.0,
+                    "EnergySupply": "mains elec",
+                    "Controlmin": "min_temp",
+                    "Controlmax": "setpoint_temp_max",
+                    "heater_position": 0.3,
+                    "thermostat_position": 0.33}}
+                }))
+            .unwrap();
+        let preheated_sources_input: IndexMap<String, PreHeatedWaterSourceDetails> =
+            IndexMap::from([
+                ("storagetank1".into(), hot_water_source_details),
+                ("storagetank2".into(), hot_water_source_details_2),
+            ]);
 
         let graph = build_preheated_water_source_dependency_graph(&preheated_sources_input);
         let result = topological_sort_preheated_water_sources(&graph);

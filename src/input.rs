@@ -82,9 +82,8 @@ pub struct Input {
     pub(crate) on_site_generation: Option<OnSiteGeneration>,
 
     #[serde(default)]
-    #[validate(custom = validate_only_storage_tanks)]
     #[validate]
-    pub(crate) pre_heated_water_source: IndexMap<std::string::String, HotWaterSourceDetails>,
+    pub(crate) pre_heated_water_source: IndexMap<std::string::String, PreHeatedWaterSourceDetails>,
 
     #[validate]
     pub simulation_time: SimulationTime,
@@ -238,15 +237,6 @@ fn validate_exhaust_air_heat_pump_ventilation_compatibility(
     }
 
     Ok(())
-}
-
-fn validate_only_storage_tanks(
-    sources: &IndexMap<std::string::String, HotWaterSourceDetails>,
-) -> Result<(), serde_valid::validation::Error> {
-    sources.values()
-        .all(|details| matches!(details, HotWaterSourceDetails::StorageTank { .. }))
-        .then_some(())
-        .ok_or_else(|| serde_valid::validation::Error::Custom("PreHeatedWaterSource input can only contain HotWaterSource data of the type StorageTank".to_owned()))
 }
 
 fn validate_time_series(input: &Input) -> Result<(), serde_valid::validation::Error> {
@@ -1341,6 +1331,122 @@ pub enum BoilerHotWaterTest {
     NoAdditionalTests,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, Validate, PartialEq)]
+pub struct StorageTankData {
+    #[serde(rename = "ColdWaterSource")]
+    pub(crate) cold_water_source: String,
+
+    /// Map of heating systems connected to the storage tank
+    #[serde(rename = "HeatSource")]
+    #[validate]
+    pub(crate) heat_source: IndexMap<std::string::String, HeatSource>,
+
+    /// Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) daily_losses: f64,
+
+    /// Surface area of the heat exchanger within the storage tank (unit: m²)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) heat_exchanger_surface_area: Option<f64>,
+
+    /// Initial temperature of the storage tank at the start of simulation (unit: ˚C)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 100.)]
+    pub(crate) init_temp: f64,
+
+    /// List of primary pipework components connected to the storage tank
+    #[validate]
+    pub(crate) primary_pipework: Option<Vec<WaterPipework>>,
+
+    /// Total volume of tank (unit: litre)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) volume: f64,
+}
+
+impl StorageTankData {
+    pub(crate) fn cold_water_source(&self) -> &str {
+        &self.cold_water_source
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Validate, PartialEq)]
+pub struct SmartHotWaterTankData {
+    /// Total volume of tank (unit: litre)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) volume: f64,
+
+    /// Electrical power consumption of the pump (unit: kW)
+    #[serde(rename = "power_pump_kW")]
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) power_pump_kw: f64,
+
+    /// Maximum flow rate of the pump (unit: litre/minute)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) max_flow_rate_pump_l_per_min: f64,
+
+    /// Temperature below which water is considered unusable (unit: ˚C)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 100.)]
+    pub(crate) temp_usable: f64,
+
+    /// Reference to a control schedule of maximum state of charge values
+    pub(crate) temp_setpnt_max: String,
+
+    /// Daily standby losses due to tank insulation at standardised conditions (unit: kWh/24h)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) daily_losses: f64,
+
+    // /// Surface area of the heat exchanger within the smart hot water tank (unit: m²)
+    // #[validate(exclusive_minimum = 0.)]
+    // pub(crate) heat_exchanger_surface_area: Option<f64>,
+    /// Initial temperature of the smart hot water tank at the start of simulation (unit: ˚C)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 100.)]
+    pub(crate) init_temp: f64,
+
+    #[serde(rename = "ColdWaterSource")]
+    pub(crate) cold_water_source: String,
+
+    #[serde(rename = "EnergySupply_pump")]
+    pub(crate) energy_supply_pump: String,
+
+    /// Dictionary of heating systems connected to the smart hot water tank
+    #[serde(rename = "HeatSource")]
+    #[validate]
+    pub(crate) heat_source: IndexMap<std::string::String, HeatSource>,
+
+    /// List of primary pipework components connected to the smart hot water tank
+    #[validate]
+    pub(crate) primary_pipework: Option<Vec<WaterPipeworkSimple>>,
+}
+
+impl SmartHotWaterTankData {
+    pub fn cold_water_source(&self) -> &str {
+        &self.cold_water_source
+    }
+}
+
+/// A pre-heated water source is a tank whose stored water feeds another hot water
+/// source as its cold-water input. Either tank type is permitted: the engine builds
+/// both via the same tank handling as HotWaterSource.
+#[skip_serializing_none]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum PreHeatedWaterSourceDetails {
+    StorageTank(StorageTankData),
+    SmartHotWaterTank(SmartHotWaterTankData),
+}
+
+impl PreHeatedWaterSourceDetails {
+    pub fn cold_water_source(&self) -> &str {
+        match self {
+            PreHeatedWaterSourceDetails::StorageTank(tank) => tank.cold_water_source(),
+            PreHeatedWaterSourceDetails::SmartHotWaterTank(tank) => tank.cold_water_source(),
+        }
+    }
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -1348,34 +1454,14 @@ pub enum BoilerHotWaterTest {
 #[validate(custom = validate_dhw_tests_inputs)]
 pub enum HotWaterSourceDetails {
     StorageTank {
-        #[serde(rename = "ColdWaterSource")]
-        cold_water_source: String,
-
-        /// Map of heating systems connected to the storage tank
-        #[serde(rename = "HeatSource")]
+        #[serde(flatten)]
         #[validate]
-        heat_source: IndexMap<std::string::String, HeatSource>,
-
-        /// Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)
-        #[validate(exclusive_minimum = 0.)]
-        daily_losses: f64,
-
-        /// Surface area of the heat exchanger within the storage tank (unit: m²)
-        #[validate(exclusive_minimum = 0.)]
-        heat_exchanger_surface_area: Option<f64>,
-
-        /// Initial temperature of the storage tank at the start of simulation (unit: ˚C)
-        #[validate(minimum = 0.)]
-        #[validate(maximum = 100.)]
-        init_temp: f64,
-
-        /// List of primary pipework components connected to the storage tank
+        inner: StorageTankData,
+    },
+    SmartHotWaterTank {
+        #[serde(flatten)]
         #[validate]
-        primary_pipework: Option<Vec<WaterPipework>>,
-
-        /// Total volume of tank (unit: litre)
-        #[validate(exclusive_minimum = 0.)]
-        volume: f64,
+        inner: SmartHotWaterTankData,
     },
     CombiBoiler {
         #[serde(rename = "ColdWaterSource")]
@@ -1443,52 +1529,6 @@ pub enum HotWaterSourceDetails {
         #[validate(maximum = 100.)]
         setpoint_temp: f64,
     },
-    SmartHotWaterTank {
-        /// Total volume of tank (unit: litre)
-        #[validate(exclusive_minimum = 0.)]
-        volume: f64,
-
-        /// Electrical power consumption of the pump (unit: kW)
-        #[serde(rename = "power_pump_kW")]
-        #[validate(exclusive_minimum = 0.)]
-        power_pump_kw: f64,
-
-        /// Maximum flow rate of the pump (unit: litre/minute)
-        #[validate(exclusive_minimum = 0.)]
-        max_flow_rate_pump_l_per_min: f64,
-
-        /// Temperature below which water is considered unusable (unit: ˚C)
-        #[validate(minimum = 0.)]
-        #[validate(maximum = 100.)]
-        temp_usable: f64,
-
-        /// Reference to a control schedule of maximum state of charge values
-        temp_setpnt_max: String,
-
-        /// Daily standby losses due to tank insulation at standardised conditions (unit: kWh/24h)
-        #[validate(exclusive_minimum = 0.)]
-        daily_losses: f64,
-
-        /// Initial temperature of the smart hot water tank at the start of simulation (unit: ˚C)
-        #[validate(minimum = 0.)]
-        #[validate(maximum = 100.)]
-        init_temp: f64,
-
-        #[serde(rename = "ColdWaterSource")]
-        cold_water_source: String,
-
-        #[serde(rename = "EnergySupply_pump")]
-        energy_supply_pump: String,
-
-        /// Dictionary of heating systems connected to the smart hot water tank
-        #[serde(rename = "HeatSource")]
-        #[validate]
-        heat_source: IndexMap<std::string::String, HeatSource>,
-
-        /// List of primary pipework components connected to the smart hot water tank
-        #[validate]
-        primary_pipework: Option<Vec<WaterPipeworkSimple>>,
-    },
     HeatBattery {
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: String,
@@ -1503,63 +1543,15 @@ pub enum HotWaterSourceDetails {
     },
 }
 
-impl HotWaterSourceDetails {
-    pub fn volume(&self) -> Option<f64> {
-        if let Self::StorageTank { volume, .. } = self {
-            Some(*volume)
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn cold_water_source(&self) -> &str {
-        match self {
-            HotWaterSourceDetails::StorageTank {
-                cold_water_source, ..
+impl From<PreHeatedWaterSourceDetails> for HotWaterSourceDetails {
+    fn from(hws: PreHeatedWaterSourceDetails) -> Self {
+        match hws {
+            PreHeatedWaterSourceDetails::StorageTank(inner) => {
+                HotWaterSourceDetails::StorageTank { inner }
             }
-            | HotWaterSourceDetails::CombiBoiler {
-                cold_water_source, ..
+            PreHeatedWaterSourceDetails::SmartHotWaterTank(inner) => {
+                HotWaterSourceDetails::SmartHotWaterTank { inner }
             }
-            | HotWaterSourceDetails::Hiu {
-                cold_water_source, ..
-            }
-            | HotWaterSourceDetails::PointOfUse {
-                cold_water_source, ..
-            }
-            | HotWaterSourceDetails::SmartHotWaterTank {
-                cold_water_source, ..
-            }
-            | HotWaterSourceDetails::HeatBattery {
-                cold_water_source, ..
-            } => cold_water_source,
-        }
-    }
-
-    pub fn contains_heat_source(&self, source_key: &str) -> bool {
-        match self {
-            HotWaterSourceDetails::StorageTank { heat_source, .. } => {
-                heat_source.contains_key(source_key)
-            }
-            HotWaterSourceDetails::SmartHotWaterTank { heat_source, .. } => {
-                heat_source.contains_key(source_key)
-            }
-            _ => false,
-        }
-    }
-
-    /// Provides access to check if provided string can be found within the name of a heat source wet, if applicable
-    pub fn contains_heat_source_wet_reference(&self, source_key_part: &str) -> bool {
-        match self {
-            HotWaterSourceDetails::CombiBoiler {
-                heat_source_wet, ..
-            } => heat_source_wet.contains(source_key_part),
-            HotWaterSourceDetails::Hiu {
-                heat_source_wet, ..
-            } => heat_source_wet.contains(source_key_part),
-            HotWaterSourceDetails::HeatBattery {
-                heat_source_wet, ..
-            } => heat_source_wet.contains(source_key_part),
-            _ => false,
         }
     }
 }
@@ -6580,23 +6572,25 @@ mod tests {
             #[fixture]
             fn valid_example() -> JsonValue {
                 serde_json::to_value(HotWaterSourceDetails::StorageTank {
-                    cold_water_source: "cold water source".into(),
-                    heat_source: IndexMap::from([(
-                        "hp".into(),
-                        HeatSource::ServiceWaterRegular {
-                            name: "hp".into(),
-                            temp_flow_limit_upper: Some(65.),
-                            control_min: Some("min_temp".into()),
-                            control_max: Some("setpoint_temp_max".into()),
-                            heater_position: 0.1,
-                            thermostat_position: Some(0.33),
-                        },
-                    )]),
-                    daily_losses: 10.,
-                    heat_exchanger_surface_area: None,
-                    init_temp: 10.,
-                    primary_pipework: None,
-                    volume: 100.,
+                    inner: StorageTankData {
+                        cold_water_source: "cold water source".into(),
+                        heat_source: IndexMap::from([(
+                            "hp".into(),
+                            HeatSource::ServiceWaterRegular {
+                                name: "hp".into(),
+                                temp_flow_limit_upper: Some(65.),
+                                control_min: Some("min_temp".into()),
+                                control_max: Some("setpoint_temp_max".into()),
+                                heater_position: 0.1,
+                                thermostat_position: Some(0.33),
+                            },
+                        )]),
+                        daily_losses: 10.,
+                        heat_exchanger_surface_area: None,
+                        init_temp: 10.,
+                        primary_pipework: None,
+                        volume: 100.,
+                    },
                 })
                 .unwrap()
             }
@@ -7390,17 +7384,19 @@ mod tests {
         #[fixture]
         fn valid_example() -> JsonValue {
             serde_json::to_value(HotWaterSourceDetails::SmartHotWaterTank {
-                volume: 10.,
-                power_pump_kw: 5.,
-                max_flow_rate_pump_l_per_min: 10.,
-                temp_usable: 40.,
-                temp_setpnt_max: "test".into(),
-                daily_losses: 2.3,
-                init_temp: 15.,
-                cold_water_source: "cold water source".into(),
-                energy_supply_pump: "mains elec".into(),
-                heat_source: IndexMap::default(),
-                primary_pipework: None,
+                inner: SmartHotWaterTankData {
+                    volume: 10.,
+                    power_pump_kw: 5.,
+                    max_flow_rate_pump_l_per_min: 10.,
+                    temp_usable: 40.,
+                    temp_setpnt_max: "test".into(),
+                    daily_losses: 2.3,
+                    init_temp: 15.,
+                    cold_water_source: "cold water source".into(),
+                    energy_supply_pump: "mains elec".into(),
+                    heat_source: IndexMap::default(),
+                    primary_pipework: None,
+                },
             })
             .unwrap()
         }
