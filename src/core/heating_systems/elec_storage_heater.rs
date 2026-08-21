@@ -10,7 +10,7 @@ use crate::{
     simulation_time::{SimulationTimeIteration, SimulationTimeIterator},
 };
 use anyhow::bail;
-use derivative::Derivative;
+use educe::Educe;
 use nalgebra::{Vector1, Vector3};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -20,8 +20,8 @@ type Time = f64;
 
 type EnergyOutputState = Vector3<f64>;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Educe)]
+#[educe(Debug)]
 pub(crate) struct ElecStorageHeater {
     storage: Arc<RwLock<HeatStorageDryCore>>,
     pwr_instant: f64,
@@ -33,7 +33,7 @@ pub(crate) struct ElecStorageHeater {
     external_conditions: Arc<ExternalConditions>,
     temp_air: f64,
     zone_setpoint_init: f64,
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     zone_internal_air_func: Arc<dyn Fn() -> f64 + Send + Sync>,
     current_energy_profile: RwLock<CurrentEnergyProfile>,
     esh_detailed_results: Option<Arc<RwLock<Vec<StorageHeaterDetailedResult>>>>,
