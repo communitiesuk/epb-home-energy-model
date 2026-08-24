@@ -1402,39 +1402,6 @@ impl StorageTankDetails {
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate, PartialEq)]
 pub struct SmartHotWaterTankDetails {
-    /// Total volume of tank (unit: litre)
-    #[validate(exclusive_minimum = 0.)]
-    pub(crate) volume: f64,
-
-    /// Electrical power consumption of the pump (unit: kW)
-    #[serde(rename = "power_pump_kW")]
-    #[validate(exclusive_minimum = 0.)]
-    pub(crate) power_pump_kw: f64,
-
-    /// Maximum flow rate of the pump (unit: litre/minute)
-    #[validate(exclusive_minimum = 0.)]
-    pub(crate) max_flow_rate_pump_l_per_min: f64,
-
-    /// Temperature below which water is considered unusable (unit: ˚C)
-    #[validate(minimum = 0.)]
-    #[validate(maximum = 100.)]
-    pub(crate) temp_usable: f64,
-
-    /// Reference to a control schedule of maximum state of charge values
-    pub(crate) temp_setpnt_max: String,
-
-    /// Daily standby losses due to tank insulation at standardised conditions (unit: kWh/24h)
-    #[validate(exclusive_minimum = 0.)]
-    pub(crate) daily_losses: f64,
-
-    // /// Surface area of the heat exchanger within the smart hot water tank (unit: m²)
-    // #[validate(exclusive_minimum = 0.)]
-    // pub(crate) heat_exchanger_surface_area: Option<f64>,
-    /// Initial temperature of the smart hot water tank at the start of simulation (unit: ˚C)
-    #[validate(minimum = 0.)]
-    #[validate(maximum = 100.)]
-    pub(crate) init_temp: f64,
-
     #[serde(rename = "ColdWaterSource")]
     pub(crate) cold_water_source: String,
 
@@ -1446,9 +1413,39 @@ pub struct SmartHotWaterTankDetails {
     #[validate]
     pub(crate) heat_source: IndexMap<std::string::String, HeatSource>,
 
+    /// Daily standby losses due to tank insulation at standardised conditions (unit: kWh/24h)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) daily_losses: f64,
+
+    /// Initial temperature of the smart hot water tank at the start of simulation (unit: ˚C)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 100.)]
+    pub(crate) init_temp: f64,
+
+    /// Maximum flow rate of the pump (unit: litre/minute)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) max_flow_rate_pump_l_per_min: f64,
+
+    /// Electrical power consumption of the pump (unit: kW)
+    #[serde(rename = "power_pump_kW")]
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) power_pump_kw: f64,
+
     /// List of primary pipework components connected to the smart hot water tank
     #[validate]
     pub(crate) primary_pipework: Option<Vec<WaterPipeworkSimple>>,
+
+    /// Reference to a control schedule of maximum state of charge values
+    pub(crate) temp_setpnt_max: String,
+
+    /// Temperature below which water is considered unusable (unit: ˚C)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 100.)]
+    pub(crate) temp_usable: f64,
+
+    /// Total volume of tank (unit: litre)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) volume: f64,
 }
 
 impl SmartHotWaterTankDetails {
