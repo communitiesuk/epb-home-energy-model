@@ -1417,6 +1417,10 @@ pub struct SmartHotWaterTankDetails {
     #[validate(exclusive_minimum = 0.)]
     pub(crate) daily_losses: f64,
 
+    /// Surface area of the heat exchanger within the smart hot water tank (unit: m²)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) heat_exchanger_surface_area: Option<f64>,
+
     /// Initial temperature of the smart hot water tank at the start of simulation (unit: ˚C)
     #[validate(minimum = 0.)]
     #[validate(maximum = 100.)]
@@ -7576,6 +7580,7 @@ mod tests {
                     temp_usable: 40.,
                     temp_setpnt_max: "test".into(),
                     daily_losses: 2.3,
+                    heat_exchanger_surface_area: None,
                     init_temp: 15.,
                     cold_water_source: "cold water source".into(),
                     energy_supply_pump: "mains elec".into(),
