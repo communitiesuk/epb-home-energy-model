@@ -4889,30 +4889,49 @@ fn heat_source_from_input(
 ) -> anyhow::Result<HeatSourceFromInput> {
     match input {
         HeatSourceInput::ImmersionHeater {
-            // power,
-            // controls,
-            // energy_supply,
+            power,
+            controls: control_refs,
+            energy_supply,
             ..
         } => {
-            todo!()
-            // let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Immersion heater references an undeclared energy supply '{energy_supply}'."))?.clone();
-            // let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
-            // let control_min = controls.get_with_string(control_min).ok_or_else(|| anyhow!("No control found for reference '{control_min}'"))?;
-            // let control_max = controls.get_with_string(control_max).ok_or_else(|| anyhow!("No control found for reference '{control_max}'"))?;
-            //
-            // Ok(HeatSourceFromInput {
-            //     heat_source: HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(
-            //         Mutex::new(ImmersionHeater::new(
-            //             *power,
-            //             energy_supply_conn,
-            //             simulation_time.step_in_hours(),
-            //             Some(control_min),
-            //             Some(control_max),
-            //         )),
-            //     ))),
-            //     energy_supply_conn_name: name.into(),
-            //     heat_source_name_pair: None,
-            // })
+            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Immersion heater references an undeclared energy supply '{energy_supply}'."))?.clone();
+            let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
+
+            let (control_min, control_max, _control) = match control_refs {
+                ControlReferences::Unified { control } => {
+                    let control = controls
+                        .get_with_string(control)
+                        .ok_or_else(|| anyhow!("No control found for reference '{control}'"))?;
+                    (None, None, Some(control))
+                }
+                ControlReferences::Bounded {
+                    control_min,
+                    control_max,
+                } => {
+                    let min = controls
+                        .get_with_string(control_min)
+                        .ok_or_else(|| anyhow!("No control found for reference '{control_min}'"))?;
+                    let max = controls
+                        .get_with_string(control_max)
+                        .ok_or_else(|| anyhow!("No control found for reference '{control_max}'"))?;
+                    (Some(min), Some(max), None)
+                }
+            };
+
+            Ok(HeatSourceFromInput {
+                heat_source: HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(
+                    Mutex::new(ImmersionHeater::new(
+                        *power,
+                        energy_supply_conn,
+                        simulation_time.step_in_hours(),
+                        control_min,
+                        control_max,
+                        // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
+                    )),
+                ))),
+                energy_supply_conn_name: name.into(),
+                heat_source_name_pair: None,
+            })
         }
         HeatSourceInput::SolarThermalSystem {
             solar_cell_location,
