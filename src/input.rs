@@ -4067,6 +4067,23 @@ pub enum HeatSourceWetDetails {
         #[validate(exclusive_minimum = 0.)]
         power_aux: Option<f64>,
     },
+    DirectElectricBoiler {
+        /// References a key (e.g., 'mains elec') in $.EnergySupply
+        #[serde(rename = "EnergySupply")]
+        energy_supply: String,
+
+        /// Electrical power consumption of circulation pump (unit: kW)
+        #[validate(minimum = 0.)]
+        electricity_circ_pump: f64,
+
+        /// Electrical power consumption in standby mode (unit: kW)
+        #[validate(minimum = 0.)]
+        electricity_standby: f64,
+
+        /// Rated power output of the boiler (unit: kW)
+        #[validate(exclusive_minimum = 0.)]
+        rated_power: f64,
+    },
 }
 
 const fn default_power_heating_circ_pump() -> f64 {
