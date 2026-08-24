@@ -20,7 +20,7 @@ use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arc_swap::ArcSwapOption;
 use atomic_float::AtomicF64;
-use derivative::Derivative;
+use educe::Educe;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -95,8 +95,8 @@ pub enum HeatSourceWithStorageTank {
 ///
 /// Implements function demand_hot_water(volume_demanded) which all hot water
 /// source objects must implement.
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Educe)]
+#[educe(Debug)]
 pub struct StorageTank {
     initial_temperature: f64,
     q_std_ls_ref: f64, // measured standby losses due to cylinder insulation at standardised conditions, in kWh/24h
@@ -104,7 +104,7 @@ pub struct StorageTank {
     simulation_timestep: f64,
     number_of_volumes: usize,
     temp_flow_prev: Arc<RwLock<Option<f64>>>,
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
     volume_total_in_litres: f64,
@@ -3508,8 +3508,8 @@ impl SurplusDiverting for PVDiverter {
 /// The following code contains objects that represent solar thermal systems.
 /// Method 3 in BS EN 15316-4-3:2017.
 /// An object to represent a solar thermal system
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Educe)]
+#[educe(Debug)]
 pub struct SolarThermalSystem {
     sol_loc: SolarCollectorLoopLocation,
     area: f64,
@@ -3526,7 +3526,7 @@ pub struct SolarThermalSystem {
     solar_loop_piping_hlc: f64,
     external_conditions: Arc<ExternalConditions>,
     simulation_timestep: f64,
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     temp_internal_air_fn: TempInternalAirFn,
     heat_output_collector_loop: AtomicF64,
     energy_supplied: AtomicF64,

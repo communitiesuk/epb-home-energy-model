@@ -27,7 +27,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
-use derivative::Derivative;
+use educe::Educe;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -562,10 +562,10 @@ impl TestLetter {
     }
 }
 
-#[derive(Derivative)]
-#[derivative(PartialEq, Debug)]
+#[derive(Educe)]
+#[educe(PartialEq, Debug)]
 pub struct TestDatumTempsAndTestLetters {
-    #[derivative(PartialEq = "ignore")]
+    #[educe(PartialEq(ignore))]
     // we need to ignore air flow rate when performing comparisons
     pub air_flow_rate: f64,
     pub design_flow_temp: f64,
@@ -1847,8 +1847,8 @@ const HEAT_PUMP_TEMP_DIFF_LIMIT_LOW: f64 = 6.0; // Kelvin
 const HEAT_PUMP_F_AUX: f64 = 0.0;
 
 /// A type to represent an electric heat pump
-#[derive(Clone, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, Educe)]
+#[educe(Debug)]
 pub struct HeatPump {
     // energy supply
     pub(crate) energy_supply: Arc<RwLock<EnergySupply>>,
@@ -1888,7 +1888,7 @@ pub struct HeatPump {
     eahp_mixed_min_temp: Option<f64>,
     ext_air_ratio: Option<f64>,
     buffer_tank: Option<BufferTank>,
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     temp_internal_air_fn: TempInternalAirFn,
     energy_supply_heat_source_connections: IndexMap<String, Arc<EnergySupplyConnection>>,
     overvent_ratio: f64,

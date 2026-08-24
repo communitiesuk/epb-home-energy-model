@@ -8,7 +8,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use atomic_float::AtomicF64;
-use derivative::Derivative;
+use educe::Educe;
 use fsum::FSum;
 use indexmap::{indexmap, IndexMap};
 use parking_lot::RwLock;
@@ -122,14 +122,14 @@ impl TryFrom<EnergySupplyTariffInput> for EnergySupplyTariffInfo {
     }
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Educe)]
+#[educe(Debug)]
 pub struct EnergySupply {
     fuel_type: FuelType,
     tariff_info: Option<EnergySupplyTariffInfo>,
     simulation_timesteps: usize,
     electric_battery: Option<ElectricBattery>,
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     diverter: Option<Arc<RwLock<dyn SurplusDiverting>>>,
     priority: Option<Vec<EnergySupplyPriorityEntry>>,
     is_export_capable: bool,

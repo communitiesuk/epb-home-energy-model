@@ -28,7 +28,7 @@ use crate::StringOrNumber;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use atomic_float::AtomicF64;
-use derivative::Derivative;
+use educe::Educe;
 use fsum::FSum;
 use itertools::Itertools;
 use ndarray::{array, Array1};
@@ -50,15 +50,15 @@ pub fn convert_flow_to_return_temp(flow_temp_celsius: f64) -> f64 {
     (6.0 / 7.0) * flow_temp_celsius
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Educe)]
+#[educe(Debug)]
 pub(crate) struct Emitters {
     thermal_mass: Option<f64>,
     emitters: Vec<Arc<WetEmitter>>,
     pipework_list: Vec<Pipework>,
     temp_diff_emit_dsgn: f64,
     heat_source: Arc<RwLock<SpaceHeatingService>>,
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     zone: Arc<dyn SimpleZone>,
     external_conditions: Arc<ExternalConditions>,
     with_buffer_tank: bool,

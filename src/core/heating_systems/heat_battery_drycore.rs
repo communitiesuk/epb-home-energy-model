@@ -25,7 +25,7 @@ use crate::statistics::{linspace, np_interp};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use atomic_float::AtomicF64;
-use derivative::Derivative;
+use educe::Educe;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -43,8 +43,8 @@ pub(crate) enum OutputMode {
 
 type SharedPowerFunction = SharedInterpolationFunction;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Educe)]
+#[educe(Debug)]
 pub(crate) struct HeatStorageDryCore {
     pwr_in: f64,
     storage_capacity: f64,
@@ -60,9 +60,9 @@ pub(crate) struct HeatStorageDryCore {
     power_max_array: Vec<f64>,
     soc_min_array: Vec<f64>,
     power_min_array: Vec<f64>,
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     power_max_func: SharedPowerFunction,
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     power_min_func: SharedPowerFunction,
     heat_retention_ratio: f64,
     // weak reference back to value that is composing this struct, as we need two-way references
