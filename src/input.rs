@@ -4832,11 +4832,23 @@ pub enum BuildType {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct InfiltrationVentilation {
+    // todo (migration to 1.0.0a9) review delete deprecated control fields
+    // (why did the python keep them around?)
+    #[deprecated(
+        since = "1.0.0a9",
+        note = "Deprecated: Use 'Control_VentAdjust' field with a reference to a ControlRangeTimer"
+    )]
     #[serde(rename = "Control_VentAdjustMax")]
     pub(crate) control_vent_adjust_max: Option<String>,
 
+    #[deprecated(
+        since = "1.0.0a9",
+        note = "Deprecated: Use 'Control_VentAdjust' field with a reference to a ControlRangeTimer"
+    )]
     #[serde(rename = "Control_VentAdjustMin")]
     pub(crate) control_vent_adjust_min: Option<String>,
+    #[serde(rename = "Control_VentAdjust")]
+    pub(crate) control_vent_adjust: Option<String>,
 
     #[serde(rename = "Control_WindowAdjust")]
     pub(crate) control_window_adjust: Option<String>,
@@ -9116,6 +9128,7 @@ mod tests {
             serde_json::to_value(InfiltrationVentilation {
                 control_vent_adjust_max: None,
                 control_vent_adjust_min: None,
+                control_vent_adjust: None,
                 control_window_adjust: None,
                 leaks: VentilationLeaks {
                     ventilation_zone_height: 6.,
