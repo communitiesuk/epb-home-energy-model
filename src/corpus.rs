@@ -4856,8 +4856,8 @@ fn heat_source_wet_from_input(
             timestep_end_calcs.push(heat_source.clone());
 
             heat_source
-        },
-        HeatSourceWetDetails::DirectElectricBoiler { .. } => todo!("As part of 1.0.0a9 migration")
+        }
+        HeatSourceWetDetails::DirectElectricBoiler { .. } => todo!("As part of 1.0.0a9 migration"),
     };
 
     Ok(HeatSourceWetDataFromInput {
