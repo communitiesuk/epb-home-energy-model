@@ -1401,6 +1401,7 @@ impl StorageTankDetails {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate, PartialEq)]
+#[validate(custom = check_integral_heat_exchanger)]
 pub struct SmartHotWaterTankDetails {
     #[serde(rename = "ColdWaterSource")]
     pub(crate) cold_water_source: String,
@@ -1458,6 +1459,59 @@ impl SmartHotWaterTankDetails {
     }
 }
 
+/// Check the heat-exchanger area against whether the tank is integral.
+fn check_integral_heat_exchanger(
+    smart_hot_water_tank_details: &SmartHotWaterTankDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    validate_heat_exchanger_area_against_integral(
+        &smart_hot_water_tank_details.heat_source,
+        smart_hot_water_tank_details.heat_exchanger_surface_area,
+    )
+}
+
+/// Check the tank heat-exchanger surface area against each hot-water-only heat pump.
+///
+/// A hot-water-only heat pump de-rates its efficiency by comparing the installed
+/// heat-exchanger surface area against the value held in the database. That comparison
+/// only applies where the tank is separate from the heat pump; a tank integral to the
+/// heat pump is tested as a single unit to EN 16147, so no de-rating applies. To keep the
+/// two cases unambiguous, a separately-installed tank (tank_is_integral False) serving a
+/// HeatPump_HWOnly must declare its heat-exchanger surface area, and an integral tank
+/// (tank_is_integral True) must not.
+///
+/// Args:
+///     heat_source: Heat sources connected to the tank, keyed by name.
+///     heat_exchanger_surface_area: Installed heat-exchanger surface area in m², or None
+///                                  when not declared.
+///
+///    Errors if an integral tank declares a heat-exchanger surface area, or a
+///    separately-installed tank serving a HeatPump_HWOnly omits it.
+fn validate_heat_exchanger_area_against_integral(
+    heat_source: &IndexMap<std::string::String, HeatSource>,
+    heat_exchanger_surface_area: Option<f64>,
+) -> Result<(), serde_valid::validation::Error> {
+    for source in heat_source.values() {
+        match source {
+            HeatSource::HeatPumpHotWaterOnly {
+                tank_is_integral, ..
+            } => return match (tank_is_integral, heat_exchanger_surface_area) {
+                (true, Some(_)) => {
+                    custom_validation_error(
+                        "heat_exchanger_surface_area must not be set when the tank is integral to the hot-water-only heat pump (tank_is_integral is true)"
+                            .into())
+                }
+                (false, None) => {
+                    custom_validation_error("heat_exchanger_surface_area is required for a separately-installed tank serving a HeatPump_HWOnly heat source (tank_is_integral is false)"
+                        .into())
+                }
+                _ => Ok(()),
+            },
+            _ => continue,
+        };
+    }
+    Ok(())
+}
+
 /// A pre-heated water source is a tank whose stored water feeds another hot water
 /// source as its cold-water input. Either tank type is permitted: the engine builds
 /// both via the same tank handling as HotWaterSource.
@@ -1467,6 +1521,7 @@ impl SmartHotWaterTankDetails {
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum PreHeatedWaterSourceDetails {
     StorageTank(StorageTankDetails),
+    #[validate]
     SmartHotWaterTank(SmartHotWaterTankDetails),
 }
 
@@ -1865,6 +1920,10 @@ pub(crate) enum HeatSource {
         /// Surface area of heat exchanger stored in the database (unit: m2)
         #[validate(exclusive_minimum = 0.)]
         heat_exchanger_surface_area_declared: Option<f64>,
+
+        /// Whether the heat pump and tank form a single unit that is always installed together (True), rather than the heat pump being installable with a separately-supplied store (False). When True no heat-exchanger de-rating is applied and the tank must omit heat_exchanger_surface_area; when False the tank must declare heat_exchanger_surface_area so the installed exchanger can be compared against the database value.
+        #[serde(default)]
+        tank_is_integral: bool,
 
         /// Standing heat loss (unit: kWh/day)
         #[validate(exclusive_minimum = 0.)]
@@ -7526,6 +7585,7 @@ mod tests {
                     vol_hw_daily_average: 10.,
                     tank_volume_declared: 10.,
                     heat_exchanger_surface_area_declared: Some(1.3),
+                    tank_is_integral: false,
                     daily_losses_declared: 2.3,
                     in_use_factor_mismatch: 0.4,
                     test_data: HeatPumpHotWaterTestData {
