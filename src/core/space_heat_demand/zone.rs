@@ -1197,14 +1197,23 @@ impl Zone {
         // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
         // Determine maximum heating/cooling
         let (temp_setpnt, heat_cool_load_upper, frac_convective) = if temp_free > temp_setpnt_cool
-            && !relative_eq!(temp_free, temp_setpnt_cool, max_relative = 1e-10)
-        {
+            && !relative_eq!(
+                temp_free,
+                temp_setpnt_cool,
+                epsilon = 1e-10,
+                max_relative = 1e-9
+            ) {
             // Cooling
             // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
             //      Could max. power be available at this point for all heating/cooling systems?
             (temp_setpnt_cool, -10. * self.area(), frac_convective_cool)
         } else if temp_free < temp_setpnt_heat
-            && !relative_eq!(temp_free, temp_setpnt_cool, max_relative = 1e-10)
+            && !relative_eq!(
+                temp_free,
+                temp_setpnt_cool,
+                epsilon = 1e-10,
+                max_relative = 1e-9
+            )
         {
             // Heating
             // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
