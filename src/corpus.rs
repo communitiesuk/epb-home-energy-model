@@ -4999,8 +4999,7 @@ fn heat_source_from_input(
         }
         HeatSourceInput::ServiceWaterRegular {
             name,
-            control_min,
-            control_max,
+            controls: control_refs,
             temp_flow_limit_upper,
             ..
         } => {
@@ -5012,12 +5011,30 @@ fn heat_source_from_input(
                     anyhow!("Expected a wet heat source registered with the name '{name}'.")
                 })?
                 .clone();
-            let control_min = control_min
-                .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl)).ok_or_else(|| anyhow!("A control indicated by `control_min` is needed for wet heat source with the name '{name}'"))?;
-            let control_max = control_max
-                .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl)).ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for wet heat source with the name '{name}'"))?;
+            let (control_min, control_max, _control) = match control_refs {
+                None => (None, None, None),
+                Some(control_refs) => match control_refs {
+                    ControlReferences::Unified { control } => {
+                        let control = controls
+                            .get_with_string(control)
+                            .ok_or_else(|| anyhow!("No control found for reference '{control}'"))?;
+                        (None, None, Some(control))
+                    }
+                    ControlReferences::Bounded {
+                        control_min,
+                        control_max,
+                    } => {
+                        let min = controls.get_with_string(control_min).ok_or_else(|| {
+                            anyhow!("No control found for reference '{control_min}'")
+                        })?;
+                        let max = controls.get_with_string(control_max).ok_or_else(|| {
+                            anyhow!("No control found for reference '{control_max}'")
+                        })?;
+                        (Some(min), Some(max), None)
+                    }
+                },
+            };
+
             let mut heat_source_wet_clone = heat_source_wet.clone();
 
             Ok(HeatSourceFromInput {
@@ -5028,16 +5045,18 @@ fn heat_source_from_input(
                             &energy_supply_conn_name,
                             temp_flow_limit_upper.ok_or_else(|| anyhow!("A temp_flow_limit_upper is needed for heat pump with the name '{name}'"))?,
                             Arc::new(cold_water_source.clone()),
-                            control_min,
-                            control_max,
+                            control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                            control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                            // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                         )?),
                     )),
                     WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
                         HeatSourceWet::WaterRegular(Boiler::create_service_hot_water_regular(
                             boiler.clone(),
                             energy_supply_conn_name.as_str(),
-                            control_min,
-                            control_max,
+                            control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                            control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                            // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                         )?),
                     )),
                     WetHeatSource::Hiu(heat_network) => {
@@ -5045,8 +5064,9 @@ fn heat_source_from_input(
                             HeatNetwork::create_service_hot_water_storage(
                                 heat_network,
                                 &energy_supply_conn_name,
-                                control_min,
-                                control_max,
+                                control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                             ),
                         )))
                     }
@@ -5057,8 +5077,9 @@ fn heat_source_from_input(
                                     dry_core,
                                     &energy_supply_conn_name,
                                     cold_water_source.clone(),
-                                    control_min,
-                                    control_max,
+                                    control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                    control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                    // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                                 )?,
                             ),
                             HeatBattery::Pcm(pcm) => HeatBatteryWaterService::Pcm(
@@ -5066,8 +5087,9 @@ fn heat_source_from_input(
                                     pcm,
                                     &energy_supply_conn_name,
                                     cold_water_source.clone(),
-                                    control_min,
-                                    control_max,
+                                    control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                    control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                    // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                                 )?,
                             ),
                         }),

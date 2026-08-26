@@ -1896,12 +1896,8 @@ pub(crate) enum HeatSource {
         thermostat_position: Option<f64>,
 
         /// Reference to a control schedule of minimum temperature setpoints
-        #[serde(rename = "Controlmin")]
-        control_min: Option<String>,
-
-        /// Reference to a control schedule of maximum temperature setpoints
-        #[serde(rename = "Controlmax")]
-        control_max: Option<String>,
+        #[serde(flatten)]
+        controls: Option<ControlReferences>,
     },
     #[serde(rename = "HeatPump_HWOnly")]
     HeatPumpHotWaterOnly {
@@ -6821,8 +6817,11 @@ mod tests {
                             HeatSource::ServiceWaterRegular {
                                 name: "hp".into(),
                                 temp_flow_limit_upper: Some(65.),
-                                control_min: Some("min_temp".into()),
-                                control_max: Some("setpoint_temp_max".into()),
+                                controls: ControlReferences::Bounded {
+                                    control_min: "min_temp".into(),
+                                    control_max: "setpoint_temp_max".into(),
+                                }
+                                .into(),
                                 heater_position: 0.1,
                                 thermostat_position: Some(0.33),
                             },
@@ -7553,8 +7552,11 @@ mod tests {
                     temp_flow_limit_upper: None,
                     heater_position: 0.8,
                     thermostat_position: None,
-                    control_max: Some("control max".into()),
-                    control_min: None,
+                    controls: ControlReferences::Bounded {
+                        control_max: "control max".into(),
+                        control_min: "control min".into(),
+                    }
+                    .into(),
                 })
                 .unwrap()
             }
