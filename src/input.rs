@@ -1880,7 +1880,7 @@ pub(crate) enum HeatSource {
     ServiceWaterRegular {
         /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless
         #[validate(minimum = 0.)]
-        #[validate(maximum = 1.)]
+        #[validate(exclusive_maximum = 1.)]
         heater_position: f64,
 
         /// User-defined name for this heat source.
