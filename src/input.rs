@@ -1800,7 +1800,7 @@ pub(crate) enum HeatSource {
         thermostat_position: Option<f64>,
 
         #[serde(flatten)]
-        controls: ControlReferences,
+        controls: Option<ControlReferences>,
     },
     SolarThermalSystem {
         /// Location of the main part of the collector loop piping
@@ -1951,7 +1951,7 @@ pub(crate) enum HeatSource {
 
         /// Reference to a control schedule of minimum temperature setpoints. References a key in $.Control.
         #[serde(flatten)]
-        controls: ControlReferences,
+        controls: Option<ControlReferences>,
     },
 }
 
@@ -7464,7 +7464,8 @@ mod tests {
                     controls: ControlReferences::Bounded {
                         control_min: "control min".into(),
                         control_max: "control max".into(),
-                    },
+                    }
+                    .into(),
                     heater_position: 0.7,
                     thermostat_position: None,
                 })
@@ -7598,7 +7599,8 @@ mod tests {
                     controls: ControlReferences::Bounded {
                         control_min: "control min".into(),
                         control_max: "control max".into(),
-                    },
+                    }
+                    .into(),
                     heater_position: 1.,
                     thermostat_position: None,
                 })
