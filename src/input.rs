@@ -1905,17 +1905,12 @@ pub(crate) enum HeatSource {
     },
     #[serde(rename = "HeatPump_HWOnly")]
     HeatPumpHotWaterOnly {
-        /// (unit: kW)
-        #[validate(exclusive_minimum = 0.)]
-        power_max: f64,
+        #[serde(rename = "EnergySupply")]
+        energy_supply: String,
 
-        /// Annual average hot water use for the dwelling (unit: litres/day)
+        /// Standing heat loss (unit: kWh/day)
         #[validate(exclusive_minimum = 0.)]
-        vol_hw_daily_average: f64,
-
-        /// Tank volume stored in the database (unit: litres)
-        #[validate(exclusive_minimum = 0.)]
-        tank_volume_declared: f64,
+        daily_losses_declared: f64,
 
         /// Surface area of heat exchanger stored in the database (unit: m2)
         #[validate(exclusive_minimum = 0.)]
@@ -1925,19 +1920,34 @@ pub(crate) enum HeatSource {
         #[serde(default)]
         tank_is_integral: bool,
 
-        /// Standing heat loss (unit: kWh/day)
-        #[validate(exclusive_minimum = 0.)]
-        daily_losses_declared: f64,
+        /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        heater_position: f64,
 
         /// In use factor to be applied to heat pump efficiency
         #[validate(exclusive_minimum = 0.)]
         in_use_factor_mismatch: f64,
 
+        /// (unit: kW)
+        #[validate(exclusive_minimum = 0.)]
+        power_max: f64,
+
+        /// Tank volume stored in the database (unit: litres)
+        #[validate(exclusive_minimum = 0.)]
+        tank_volume_declared: f64,
+
         /// Dictionary with keys denoting tapping profile letter (M or L)
         test_data: HeatPumpHotWaterTestData,
 
-        #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        thermostat_position: Option<f64>,
+
+        /// Annual average hot water use for the dwelling (unit: litres/day)
+        #[validate(exclusive_minimum = 0.)]
+        vol_hw_daily_average: f64,
 
         /// Reference to a control schedule of minimum temperature setpoints. References a key in $.Control.
         #[serde(rename = "Controlmin")]
@@ -1946,16 +1956,6 @@ pub(crate) enum HeatSource {
         /// Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.
         #[serde(rename = "Controlmax")]
         control_max: String,
-
-        /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.
-        #[validate(minimum = 0.)]
-        #[validate(maximum = 1.)]
-        heater_position: f64,
-
-        /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
-        #[validate(minimum = 0.)]
-        #[validate(maximum = 1.)]
-        thermostat_position: Option<f64>,
     },
 }
 
