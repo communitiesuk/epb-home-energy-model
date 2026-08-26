@@ -1878,12 +1878,22 @@ pub(crate) enum HeatSource {
     },
     #[serde(rename = "HeatSourceWet")]
     ServiceWaterRegular {
+        /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        heater_position: f64,
+
         /// User-defined name for this heat source.
         name: String,
 
         /// Upper operating limit for flow temperature (unit: °C). Optional.
         #[validate(exclusive_minimum = 0.)]
         temp_flow_limit_upper: Option<f64>,
+
+        /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        thermostat_position: Option<f64>,
 
         /// Reference to a control schedule of minimum temperature setpoints
         #[serde(rename = "Controlmin")]
@@ -1892,16 +1902,6 @@ pub(crate) enum HeatSource {
         /// Reference to a control schedule of maximum temperature setpoints
         #[serde(rename = "Controlmax")]
         control_max: Option<String>,
-
-        /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless
-        #[validate(minimum = 0.)]
-        #[validate(maximum = 1.)]
-        heater_position: f64,
-
-        /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
-        #[validate(minimum = 0.)]
-        #[validate(maximum = 1.)]
-        thermostat_position: Option<f64>,
     },
     #[serde(rename = "HeatPump_HWOnly")]
     HeatPumpHotWaterOnly {
