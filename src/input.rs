@@ -1950,12 +1950,8 @@ pub(crate) enum HeatSource {
         vol_hw_daily_average: f64,
 
         /// Reference to a control schedule of minimum temperature setpoints. References a key in $.Control.
-        #[serde(rename = "Controlmin")]
-        control_min: String,
-
-        /// Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.
-        #[serde(rename = "Controlmax")]
-        control_max: String,
+        #[serde(flatten)]
+        controls: ControlReferences,
     },
 }
 
@@ -7599,8 +7595,10 @@ mod tests {
                         },
                     },
                     energy_supply: "mains elec".into(),
-                    control_min: "control min".into(),
-                    control_max: "control max".into(),
+                    controls: ControlReferences::Bounded {
+                        control_min: "control min".into(),
+                        control_max: "control max".into(),
+                    },
                     heater_position: 1.,
                     thermostat_position: None,
                 })

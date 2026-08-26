@@ -5083,8 +5083,7 @@ fn heat_source_from_input(
             daily_losses_declared,
             ref test_data,
             energy_supply,
-            control_min,
-            control_max,
+            controls: control_refs,
             in_use_factor_mismatch,
             ..
         } => {
@@ -5092,12 +5091,26 @@ fn heat_source_from_input(
             let energy_supply_conn_name = name;
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name)?;
-            let control_min = controls
-                .get_with_string(control_min)
-                .ok_or_else(|| anyhow!("A control indicated by `control_min` is needed for a HeatPumpHotWaterOnly object."))?;
-            let control_max = controls
-                .get_with_string(control_max)
-                .ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a HeatPumpHotWaterOnly object."))?;
+            let (control_min, control_max, _control) = match control_refs {
+                ControlReferences::Unified { control } => {
+                    let control = controls
+                        .get_with_string(control)
+                        .ok_or_else(|| anyhow!("No control found for reference '{control}'"))?;
+                    (None, None, Some(control))
+                }
+                ControlReferences::Bounded {
+                    control_min,
+                    control_max,
+                } => {
+                    let min = controls
+                        .get_with_string(control_min)
+                        .ok_or_else(|| anyhow!("No control found for reference '{control_min}'"))?;
+                    let max = controls
+                        .get_with_string(control_max)
+                        .ok_or_else(|| anyhow!("No control found for reference '{control_max}'"))?;
+                    (Some(min), Some(max), None)
+                }
+            };
 
             Ok(HeatSourceFromInput {
                 heat_source: HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
@@ -5114,8 +5127,9 @@ fn heat_source_from_input(
                         *heat_exchanger_surface_area_declared,
                         *daily_losses_declared,
                         simulation_time.step_in_hours(),
-                        control_min,
-                        control_max,
+                        control_min.unwrap(), // TODO: update as part of alpha9 migration 
+                        control_max.unwrap(), // TODO: update as part of alpha9 migration
+                        // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                     ),
                 ))),
                 energy_supply_conn_name: energy_supply_conn_name.into(),
