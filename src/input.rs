@@ -4502,7 +4502,8 @@ pub enum PCMBatteryChargingConfiguration {
 
         /// Primary pipework between hydronic heat source and the heat battery.
         /// Used to calculate pipework heat losses during hydronic charging.
-        primary_pipework: Vec<WaterPipework>,
+        #[validate]
+        primary_pipework: Option<Vec<WaterPipework>>,
     },
 }
 
