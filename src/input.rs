@@ -4377,6 +4377,99 @@ pub enum HeatSourceLocation {
     External,
 }
 
+/// Unit for interpreting control schedule setpoints on a heat battery.
+#[derive(Clone, Debug, PartialEq, Validate, Serialize, Deserialize, Default)]
+pub enum ScheduleUnit {
+    #[default]
+    Soc,
+    Temperature,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Validate)]
+#[serde(tag = "type")]
+pub enum HeatBatteryPCMChargingSource {
+    /// Electric charging source for a PCM heat battery.
+    /// Represents a direct electric element that charges the battery at a fixed
+    /// rated power, controlled by a RangeTimeControl with hysteresis thresholds.
+    #[serde(rename = "DirectElectric")]
+    HeatBatteryPCMElectricSource {
+        /// Rated charging power (kW)
+        #[validate(exclusive_minimum = 0.)]
+        rated_charge_power: f64,
+
+        /// Reference to RangeTimeControl for hysteresis and time scheduling.
+        /// The lower setpoint triggers charging start, the upper setpoint triggers
+        /// stop. Setpoint units are determined by the schedule_unit field.
+        #[serde(rename = "Control")]
+        control: String,
+
+        /// Unit for the control schedule setpoints.
+        /// `soc`: values are state-of-charge fractions (0–1).
+        /// `temperature`: values are temperatures in °C, converted to SOC
+        /// internally using the battery's energy calculation.
+        schedule_unit: ScheduleUnit,
+    },
+    /// Hydronic (wet heat source) charging source for a PCM heat battery.
+    ///
+    /// Represents a wet heat source (e.g. heat pump, solar thermal) that charges the
+    /// battery via a heat exchanger, controlled by a RangeTimeControl with hysteresis.
+    #[serde(rename = "HeatSourceWet")]
+    HeatBatteryPCMHydronicSource {
+        /// Reference to a HeatSourceWet object (e.g. heat pump) in $.HeatSourceWet
+        /// that provides heat for charging
+        name: String,
+
+        /// Maximum flow temperature the heat source should provide when charging (°C).
+        /// This limits the request temperature to the heat source, reflecting the
+        /// operating constraints of the charging circuit (pipe ratings, heat
+        /// exchanger design limits).
+        temp_flow_limit_upper: f64,
+
+        /// Reference to RangeTimeControl for hysteresis and time scheduling.
+        /// The lower setpoint triggers charging start, the upper setpoint triggers
+        /// stop. Setpoint units are determined by the schedule_unit field.
+        #[serde(rename = "Control")]
+        control: String,
+
+        /// Flow rate through the heat battery heat exchanger during hydronic
+        /// charging (unit: litre/minute). May differ from the battery's main
+        /// flow_rate_l_per_min if the charging and discharging circuits have
+        /// different pipework or pump characteristics.
+        #[validate(exclusive_minimum = 0.)]
+        flow_rate_charging_l_per_min: f64,
+
+        /// Heat exchanger coefficient A for the hydronic charging circuit.
+        /// May differ from the battery's main A if charging and discharging
+        /// use different heat exchangers.
+        #[serde(rename = "A")]
+        a: f64,
+
+        /// Heat exchanger coefficient B for the hydronic charging circuit.
+        /// May differ from the battery's main B if charging and discharging
+        /// use different heat exchangers.
+        #[serde(rename = "B")]
+        b: f64,
+
+        /// Velocity in heat exchanger tube at 1 litre/minute for the
+        /// hydronic charging circuit (unit: m/s).
+        #[validate(exclusive_minimum = 0.)]
+        velocity_in_hex_tube_at_1_l_per_min_m_per_s: f64,
+
+        /// Inlet diameter of the heat exchanger tubes for the hydronic
+        /// charging circuit (unit: mm).
+        #[validate(exclusive_minimum = 0.)]
+        inlet_diameter_mm: f64,
+
+        /// Unit for the control schedule setpoints.
+        /// 'soc': values are state-of-charge fractions (0–1).
+        /// 'temperature': values are temperatures in °C, converted to SOC
+        /// internally using the battery's energy calculation.
+        /// When 'temperature' is used, setpoints generally should not exceed
+        /// the flow temperature of the hydronic system.
+        schedule_unit: ScheduleUnit,
+    },
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Validate)]
 #[serde(untagged)]
 pub enum PCMBatteryChargingConfiguration {
@@ -4392,7 +4485,24 @@ pub enum PCMBatteryChargingConfiguration {
         rated_charge_power: f64,
     },
     /// HeatSource charging fields (mutually exclusive with ControlCharge)
-    HeatSource, // todo!("as part of migration to alpha9")
+    HeatSource {
+        /// Dict of named charging sources (electric and/or hydronic).
+        /// Each source has its own RangeTimeControl for hysteresis,
+        /// with setpoint units determined by the source's schedule_unit field.
+        /// Mutually exclusive with ControlCharge/rated_charge_power.
+        #[serde(rename = "HeatSource")]
+        heat_source: IndexMap<std::string::String, HeatBatteryPCMChargingSource>,
+
+        /// Minimum useful temperature (°C) used as the SOC=0 reference.
+        /// This is the temperature at which the battery is considered fully
+        /// discharged for SOC calculation purposes. Required when using
+        /// the HeatSource dict configuration.
+        temp_min_useful: f64,
+
+        /// Primary pipework between hydronic heat source and the heat battery.
+        /// Used to calculate pipework heat losses during hydronic charging.
+        primary_pipework: Vec<WaterPipework>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
