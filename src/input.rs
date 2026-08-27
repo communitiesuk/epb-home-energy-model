@@ -4381,14 +4381,27 @@ pub enum HeatSourceLocation {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "battery_type")]
 pub enum HeatBattery {
+    /// PCM (Phase Change Material) Heat Battery.
+    ///
+    /// Charging can be configured in two mutually exclusive ways:
+    /// - ControlCharge + rated_charge_power: temperature-based charge control
+    /// - HeatSource dict: per-source charging with individual RangeTimeControl hysteresis
     #[serde(rename = "pcm")]
     Pcm {
+        /// Heat battery parameter A (dimensionless)
+        #[serde(rename = "A")]
+        a: f64,
+
+        /// Heat battery parameter B (dimensionless)
+        #[serde(rename = "B")]
+        b: f64,
+
+        /// Inlet diameter of capillary tubes (unit: mm)
+        #[validate(exclusive_minimum = 0.)]
+        inlet_diameter_mm: f64,
+
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
-
-        /// Initial temperature of the PCM heat battery at the start of simulation (unit: ˚C)
-        #[validate(minimum = -273.15)]
-        temp_init: f64,
 
         /// Electrical power consumption of circulation pump (unit: kW)
         #[validate(minimum = 0.)]
@@ -4398,23 +4411,9 @@ pub enum HeatBattery {
         #[validate(exclusive_minimum = 0.)]
         electricity_standby: f64,
 
-        /// Rated charging power (unit: kW)
+        /// Flow rate through the heat battery (unit: litre/minute)
         #[validate(exclusive_minimum = 0.)]
-        rated_charge_power: f64,
-
-        /// Maximum rated heat losses (unit: kW)
-        #[validate(exclusive_minimum = 0.)]
-        max_rated_losses: f64,
-
-        /// Number of heat battery units
-        #[validate(minimum = 1)]
-        number_of_units: usize,
-
-        /// Whether the heat battery can charge and discharge simultaneously
-        simultaneous_charging_and_discharging: bool,
-
-        #[serde(rename = "ControlCharge")]
-        control_charge: String,
+        flow_rate_l_per_min: f64,
 
         /// Heat capacity of storage above phase transition (unit: kJ/K)
         #[serde(rename = "heat_storage_kJ_per_K_above_Phase_transition")]
@@ -4431,6 +4430,18 @@ pub enum HeatBattery {
         #[validate(exclusive_minimum = 0.)]
         heat_storage_k_j_per_k_during_phase_transition: f64,
 
+        /// Maximum rated heat losses (unit: kW)
+        #[validate(exclusive_minimum = 0.)]
+        max_rated_losses: f64,
+
+        /// Maximum operating temperature (unit: ˚C)
+        #[validate(minimum = -273.15)]
+        max_temperature: f64,
+
+        /// Number of heat battery units
+        #[validate(minimum = 1)]
+        number_of_units: usize,
+
         /// Upper temperature limit for phase transition (unit: ˚C)
         #[validate(minimum = -273.15)]
         phase_transition_temperature_upper: f64,
@@ -4439,30 +4450,27 @@ pub enum HeatBattery {
         #[validate(minimum = -273.15)]
         phase_transition_temperature_lower: f64,
 
-        /// Maximum operating temperature (unit: ˚C)
-        #[validate(minimum = -273.15)]
-        max_temperature: f64,
+        /// Whether the heat battery can charge and discharge simultaneously
+        simultaneous_charging_and_discharging: bool,
 
         /// Velocity in heat exchanger tube at 1 litre/minute flow rate (unit: m/s)
         #[serde(rename = "velocity_in_HEX_tube_at_1_l_per_min_m_per_s")]
         #[validate(exclusive_minimum = 0.)]
         velocity_in_hex_tube_at_1_l_per_min_m_per_s: f64,
 
-        /// Inlet diameter of capillary tubes (unit: mm)
+        /// Initial temperature of the PCM heat battery at the start of simulation (unit: ˚C)
+        #[validate(minimum = -273.15)]
+        temp_init: f64,
+
+        /// ControlCharge charging fields (mutually exclusive with HeatSource)
+        /// Reference to a ControlCharge target in $.Control for temperature-based charge control.
+        /// Required when HeatSource is absent.
+        #[serde(rename = "ControlCharge")]
+        control_charge: String,
+
+        /// Rated charging power (unit: kW). Required when HeatSource is absent.
         #[validate(exclusive_minimum = 0.)]
-        inlet_diameter_mm: f64,
-
-        /// Heat battery parameter A (dimensionless)
-        #[serde(rename = "A")]
-        a: f64,
-
-        /// Heat battery parameter B (dimensionless)
-        #[serde(rename = "B")]
-        b: f64,
-
-        /// Flow rate through the heat battery (unit: litre/minute)
-        #[validate(exclusive_minimum = 0.)]
-        flow_rate_l_per_min: f64,
+        rated_charge_power: f64,
     },
     #[serde(rename = "dry_core")]
     DryCore {
