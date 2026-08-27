@@ -5514,6 +5514,10 @@ pub struct Appliance {
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ApplianceLoadShifting {
+    /// Resolved only against $.SmartApplianceControls: this names the load-shifting
+    /// strategy governing when the appliance's demand may be shifted in time. A
+    /// SmartApplianceControl is not a setpoint/on-off control, so $.Control keys are
+    /// not valid here.
     #[serde(rename = "Control")]
     pub(crate) control: Option<String>,
 
