@@ -580,10 +580,10 @@ impl HeatBatteryPcm {
         } = heat_battery_details
         {
             let pwr_in = match charging_config {
-                PCMBatteryChargingConfiguration::ControlCharge {
+                PCMBatteryChargingConfiguration::ChargeControl {
                     rated_charge_power, ..
                 } => rated_charge_power,
-                PCMBatteryChargingConfiguration::HeatSource { .. } => {
+                PCMBatteryChargingConfiguration::RangeControl { .. } => {
                     todo!("as part of migration to alpha9")
                 }
             };
@@ -2148,7 +2148,7 @@ mod tests {
                 electricity_standby: 0.0244,
                 max_rated_losses: 0.1,
                 number_of_units: 1,
-                charging_config: PCMBatteryChargingConfiguration::ControlCharge {
+                charging_config: PCMBatteryChargingConfiguration::ChargeControl {
                     control_charge: "hb_charge_control".into(),
                     rated_charge_power: 20.0,
                 },
@@ -3413,7 +3413,7 @@ mod tests {
                 electricity_standby: 0.0244,
                 max_rated_losses: 0.1,
                 number_of_units: 1,
-                charging_config: PCMBatteryChargingConfiguration::ControlCharge {
+                charging_config: PCMBatteryChargingConfiguration::ChargeControl {
                     control_charge: "hb_charge_control".into(),
                     rated_charge_power: 20.0,
                 },

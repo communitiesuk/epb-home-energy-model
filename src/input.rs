@@ -4472,9 +4472,10 @@ pub enum HeatBatteryPCMChargingSource {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Validate)]
 #[serde(untagged)]
+#[skip_serializing_none]
 pub enum PCMBatteryChargingConfiguration {
     /// ControlCharge charging fields (mutually exclusive with HeatSource)
-    ControlCharge {
+    ChargeControl {
         /// Reference to a ControlCharge target in $.Control for temperature-based charge control.
         /// Required when HeatSource is absent.
         #[serde(rename = "ControlCharge")]
@@ -4485,7 +4486,7 @@ pub enum PCMBatteryChargingConfiguration {
         rated_charge_power: f64,
     },
     /// HeatSource charging fields (mutually exclusive with ControlCharge)
-    HeatSource {
+    RangeControl {
         /// Dict of named charging sources (electric and/or hydronic).
         /// Each source has its own RangeTimeControl for hysteresis,
         /// with setpoint units determined by the source's schedule_unit field.
@@ -6571,7 +6572,7 @@ mod tests {
                     temp_init: 25.,
                     electricity_circ_pump: 0.0600,
                     electricity_standby: 0.0244,
-                    charging_config: PCMBatteryChargingConfiguration::ControlCharge {
+                    charging_config: PCMBatteryChargingConfiguration::ChargeControl {
                         rated_charge_power: 10.,
                         control_charge: "control".into(),
                     },

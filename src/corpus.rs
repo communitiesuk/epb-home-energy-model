@@ -4799,10 +4799,10 @@ fn heat_source_wet_from_input(
                     let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
                     let control_charge = match charging_config {
-                        PCMBatteryChargingConfiguration::ControlCharge {
+                        PCMBatteryChargingConfiguration::ChargeControl {
                             control_charge, ..
                         } => control_charge,
-                        PCMBatteryChargingConfiguration::HeatSource { .. } => {
+                        PCMBatteryChargingConfiguration::RangeControl { .. } => {
                             todo!("as part of migration to alpha9")
                         }
                     };
