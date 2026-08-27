@@ -13,7 +13,9 @@ use crate::core::water_heat_demand::misc::{
     calculate_volume_weighted_average_temperature, water_demand_to_kwh, WaterEventResult,
 };
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
-use crate::input::{HeatBattery as HeatBatteryInput, HeatSourceWetDetails};
+use crate::input::{
+    HeatBattery as HeatBatteryInput, HeatSourceWetDetails, PCMBatteryChargingConfiguration,
+};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
@@ -555,7 +557,7 @@ impl HeatBatteryPcm {
         ) = if let HeatSourceWetDetails::HeatBattery {
             battery:
                 HeatBatteryInput::Pcm {
-                    rated_charge_power: pwr_in,
+                    charging_config,
                     max_rated_losses,
                     electricity_circ_pump: power_circ_pump,
                     electricity_standby: power_standby,
@@ -577,6 +579,15 @@ impl HeatBatteryPcm {
                 },
         } = heat_battery_details
         {
+            let pwr_in = match charging_config {
+                PCMBatteryChargingConfiguration::ControlCharge {
+                    rated_charge_power, ..
+                } => rated_charge_power,
+                PCMBatteryChargingConfiguration::HeatSource { .. } => {
+                    todo!("as part of migration to alpha9")
+                }
+            };
+
             (
                 *pwr_in,
                 *max_rated_losses,
@@ -1998,7 +2009,7 @@ mod tests {
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
         ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,
-        HeatSourceWetDetails,
+        HeatSourceWetDetails, PCMBatteryChargingConfiguration,
     };
     use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
     use approx::assert_relative_eq;
@@ -2135,10 +2146,12 @@ mod tests {
                 energy_supply: "mains elec".into(),
                 electricity_circ_pump: 0.06,
                 electricity_standby: 0.0244,
-                rated_charge_power: 20.0,
                 max_rated_losses: 0.1,
                 number_of_units: 1,
-                control_charge: "hb_charge_control".into(),
+                charging_config: PCMBatteryChargingConfiguration::ControlCharge {
+                    control_charge: "hb_charge_control".into(),
+                    rated_charge_power: 20.0,
+                },
                 simultaneous_charging_and_discharging: false,
                 heat_storage_k_j_per_k_above_phase_transition: 381.5,
                 heat_storage_k_j_per_k_below_phase_transition: 305.2,
@@ -3398,10 +3411,12 @@ mod tests {
                 energy_supply: "mains elec".into(),
                 electricity_circ_pump: 0.06,
                 electricity_standby: 0.0244,
-                rated_charge_power: 20.0,
                 max_rated_losses: 0.1,
                 number_of_units: 1,
-                control_charge: "hb_charge_control".into(),
+                charging_config: PCMBatteryChargingConfiguration::ControlCharge {
+                    control_charge: "hb_charge_control".into(),
+                    rated_charge_power: 20.0,
+                },
                 simultaneous_charging_and_discharging: false,
                 heat_storage_k_j_per_k_above_phase_transition: 381.5,
                 heat_storage_k_j_per_k_below_phase_transition: 305.2,

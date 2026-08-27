@@ -4377,6 +4377,24 @@ pub enum HeatSourceLocation {
     External,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Validate)]
+#[serde(untagged)]
+pub enum PCMBatteryChargingConfiguration {
+    /// ControlCharge charging fields (mutually exclusive with HeatSource)
+    ControlCharge {
+        /// Reference to a ControlCharge target in $.Control for temperature-based charge control.
+        /// Required when HeatSource is absent.
+        #[serde(rename = "ControlCharge")]
+        control_charge: String,
+
+        /// Rated charging power (unit: kW). Required when HeatSource is absent.
+        #[validate(exclusive_minimum = 0.)]
+        rated_charge_power: f64,
+    },
+    /// HeatSource charging fields (mutually exclusive with ControlCharge)
+    HeatSource, // todo!("as part of migration to alpha9")
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "battery_type")]
@@ -4462,15 +4480,9 @@ pub enum HeatBattery {
         #[validate(minimum = -273.15)]
         temp_init: f64,
 
-        /// ControlCharge charging fields (mutually exclusive with HeatSource)
-        /// Reference to a ControlCharge target in $.Control for temperature-based charge control.
-        /// Required when HeatSource is absent.
-        #[serde(rename = "ControlCharge")]
-        control_charge: String,
-
-        /// Rated charging power (unit: kW). Required when HeatSource is absent.
-        #[validate(exclusive_minimum = 0.)]
-        rated_charge_power: f64,
+        #[serde(flatten)]
+        #[validate]
+        charging_config: PCMBatteryChargingConfiguration,
     },
     #[serde(rename = "dry_core")]
     DryCore {
@@ -6449,11 +6461,13 @@ mod tests {
                     temp_init: 25.,
                     electricity_circ_pump: 0.0600,
                     electricity_standby: 0.0244,
-                    rated_charge_power: 10.,
+                    charging_config: PCMBatteryChargingConfiguration::ControlCharge {
+                        rated_charge_power: 10.,
+                        control_charge: "control".into(),
+                    },
                     max_rated_losses: 0.22,
                     number_of_units: 1,
                     simultaneous_charging_and_discharging: true,
-                    control_charge: "control".into(),
                     heat_storage_k_j_per_k_above_phase_transition: 381.5,
                     heat_storage_k_j_per_k_below_phase_transition: 305.2,
                     heat_storage_k_j_per_k_during_phase_transition: 12317.,

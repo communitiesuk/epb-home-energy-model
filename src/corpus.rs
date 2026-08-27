@@ -83,8 +83,8 @@ use crate::input::{
     HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
     HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
     InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails,
-    OnSiteGeneration as OnSiteGenerationInput, PartyWallCavityType, PhotovoltaicInputs,
-    PhotovoltaicSystem as PhotovoltaicSystemInput,
+    OnSiteGeneration as OnSiteGenerationInput, PCMBatteryChargingConfiguration,
+    PartyWallCavityType, PhotovoltaicInputs, PhotovoltaicSystem as PhotovoltaicSystemInput,
     PhotovoltaicSystemWithPanels as PhotovoltaicSystemWithPanelsInput, PreHeatedWaterSourceDetails,
     SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
@@ -4784,7 +4784,7 @@ fn heat_source_wet_from_input(
         HeatSourceWetDetails::HeatBattery { battery } => {
             let heat_source = match battery {
                 HeatBatteryInput::Pcm {
-                    control_charge,
+                    charging_config,
                     energy_supply,
                     ..
                 } => {
@@ -4797,6 +4797,15 @@ fn heat_source_wet_from_input(
                         })?
                         .clone();
                     let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
+
+                    let control_charge = match charging_config {
+                        PCMBatteryChargingConfiguration::ControlCharge {
+                            control_charge, ..
+                        } => control_charge,
+                        PCMBatteryChargingConfiguration::HeatSource { .. } => {
+                            todo!("as part of migration to alpha9")
+                        }
+                    };
 
                     WetHeatSource::HeatBattery(HeatBattery::Pcm(Arc::new(RwLock::new(HeatBatteryPcm::new(
                         &input,
