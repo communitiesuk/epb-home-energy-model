@@ -2486,6 +2486,11 @@ impl WaterDistribution {
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct WaterHeatingEvents {
+    /// First day of the events list, day of the year, 0 to 365. If set, event start times will be interpreted as relative to the start of the start day indicated. If not set, event start times will be interpreted as relative to the start of the simulation
+    #[serde(default)]
+    #[validate(minimum = 0)]
+    #[validate(maximum = 365)]
+    pub(crate) start_day: Option<u32>,
     /// Dictionary of shower water heating events, where keys are shower names and values are lists of events
     #[serde(default)]
     #[validate]
