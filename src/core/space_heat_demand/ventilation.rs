@@ -575,31 +575,29 @@ impl From<input::MechVentData> for MechVentType {
 
 #[derive(Debug)]
 pub(crate) struct Window {
-    a_w_max: f64,
-    c_d_w: f64,
-    n_w: f64,
     orientation: Orientation360,
     pitch: f64,
     on_off_ctrl_obj: Option<Arc<Control>>,
     _altitude: f64,
     p_a_alt: f64,
-    z: f64,
     window_parts: Vec<WindowPart>,
 }
 
 impl Window {
     /// Construct a Window object
+    /// Construct a Window unit.
+
     /// Arguments:
-    ///     free_area_height -- The free area height of the window
-    ///     midheight -- The midheight of the window.
-    ///     max_opening_area -- The maximum window opening area.
-    ///     window_part_list -- The list of window parts.
-    ///     orientation -- The orientation of the window.
-    ///     pitch -- The pitch of the window.
-    ///     altitude -- altitude of dwelling above sea level (m)
-    ///     on_off_ctrl_obj -
-    /// Method
-    ///     - Based on Section 6.4.3.5 Airflow due to windows opening section.
+    ///     window_part_list -- list of openable-section input dicts, each with
+    ///        keys `free_area_height`, `mid_height`, `max_window_open_area`.
+    ///     orientation -- orientation of the window element itself (the plane the
+    ///        openable sections lie in), used to select the wind pressure coefficient.
+    ///     pitch -- pitch of the window element itself (the plane the openable
+    ///        sections lie in), used to select the wind pressure coefficient.
+    ///     altitude -- altitude of dwelling above sea level (m).
+    ///     on_off_ctrl_obj -- control determining whether the openable sections
+    ///       are available to open (None ⇒ shut).
+    ///     ventilation_zone_base_height -- base height of the ventilation zone.
     pub(crate) fn new(
         window_part_list: Vec<WindowPartInput>,
         orientation: Orientation360,
@@ -610,22 +608,18 @@ impl Window {
     ) -> Self {
         let n_w_div = max_of_2(window_part_list.len() as f64 - 1., 0f64);
         Self {
-            a_w_max: max_opening_area,
-            c_d_w: 0.67,
-            n_w: 0.5,
             orientation,
             pitch,
             on_off_ctrl_obj,
             _altitude: altitude,
             p_a_alt: adjust_air_density_for_altitude(altitude),
-            z: midheight + ventilation_zone_base_height,
             window_parts: window_part_list
                 .iter()
                 .enumerate()
                 .map(|(window_part_number, window_part_input)| {
                     WindowPart::new(
+                        window_part_input.free_area_height,
                         window_part_input.mid_height,
-                        free_area_height,
                         n_w_div,
                         window_part_number + 1,
                         ventilation_zone_base_height,
@@ -633,6 +627,103 @@ impl Window {
                 })
                 .collect(),
         }
+    }
+
+    /// Return R_w_arg with the unit's open/shut control applied: a missing
+    fn r_w_arg_effective(&self, r_w_arg: f64, simtime: SimulationTimeIteration) -> f64 {
+        match &self.on_off_ctrl_obj {
+            None => 0.,
+            Some(control) => {
+                if !control.is_on(&simtime) {
+                    0.
+                } else {
+                    r_w_arg
+                }
+            }
+        }
+    }
+
+    //
+    //        r = self._R_w_arg_effective(R_w_arg)
+    //        qv_in_through_window_opening = 0.0
+    // +        qv_out_through_window_opening = 0.0
+    // +        for part in self.__window_parts:
+    // +            qv_in_part, qv_out_part = part.calculate_flow_from_internal_p(
+    // +                wind_direction=wind_direction,
+    // +                u_site=u_site,
+    // +                T_e=T_e,
+    // +                T_z=T_z,
+    // +                p_z_ref=p_z_ref,
+    // +                f_cross=f_cross,
+    // +                shield_class=shield_class,
+    // +                R_w_arg=r,
+    // +                orientation=self.__orientation,
+    // +                pitch=self.__pitch,
+    // +            )
+    // +            qv_in_through_window_opening += qv_in_part
+    // +            qv_out_through_window_opening += qv_out_part
+    // +
+    // +        qm_in_through_window_opening, qm_out_through_window_opening = convert_to_mass_air_flow_rate(
+    // +            qv_in=qv_in_through_window_opening,
+    // +            qv_out=qv_out_through_window_opening,
+    // +            T_e=T_e,
+    // +            T_z=T_z,
+    // +            p_a_alt=self.__p_a_alt,
+    // +        )
+    // +        return qm_in_through_window_opening, qm_out_through_window_opening
+
+    ///       Sum airflow entering and leaving across all openable sections of the
+    ///      window unit (equations 56 and 57 of BS EN 16798-7).
+    ///        Arguments:
+    ///          wind_direction -- direction wind is blowing from, clockwise from North.
+    ///            u_site -- wind velocity at zone level (m/s).
+    ///           T_e -- external air temperature (K).
+    ///           T_z -- thermal zone air temperature (K).
+    ///           p_z_ref -- internal reference pressure (Pa).
+    ///           f_cross -- whether cross ventilation is possible.
+    ///           shield_class -- indicates exposure to wind.
+    ///           R_w_arg -- ratio of window opening (0-1).
+    fn calculate_flow_from_internal_p(
+        &self,
+        wind_direction: Orientation360,
+        u_site: f64,
+        t_e: f64,
+        t_z: f64,
+        p_z_ref: f64,
+        f_cross: bool,
+        shield_class: VentilationShieldClass,
+        r_w_arg: f64,
+        simtime: SimulationTimeIteration,
+    ) -> (f64, f64) {
+        let r = self.r_w_arg_effective(r_w_arg, simtime);
+        let mut qv_in_through_window_opening = 0.0;
+        let mut qv_out_through_window_opening = 0.0;
+        self.window_parts.iter().for_each(|part| {
+            let (qv_in_part, qv_out_part) = part.calculate_flow_from_internal_p(
+                wind_direction,
+                u_site,
+                t_e,
+                t_z,
+                p_z_ref,
+                f_cross,
+                shield_class,
+                r,
+                orientation: self.orientation,
+                pitch: self.pitch,
+                simtime,
+            );
+            qv_in_through_window_opening += qv_in_part;
+            qv_out_through_window_opening += qv_out_part;
+        });
+        let (qm_in_through_window_opening, qm_out_through_window_opening) =
+            convert_to_mass_air_flow_rate(
+                qv_in_through_window_opening,
+                qv_out_through_window_opening,
+                t_e,
+                t_z,
+                self.p_a_alt,
+            );
+        (qm_in_through_window_opening, qm_out_through_window_opening)
     }
 
     /// The window opening free area A_w for a window
@@ -664,86 +755,10 @@ impl Window {
         match &self.on_off_ctrl_obj {
             Some(ctrl) if ctrl.is_on(&simtime) => {
                 let a_w = self.calculate_window_opening_free_area(r_w_arg, simtime);
-                3600. * self.c_d_w * a_w * (2. / p_a_ref()).powf(self.n_w)
+                3600. * _C_D_WINDOW * a_w * (2. / p_a_ref()).powf(self.n_w)
             }
             _ => 0.,
         }
-    }
-
-    /// Calculate the airflow through window opening based on how open the window is and internal pressure
-    /// Arguments:
-    /// * `wind_direction` - direction wind is blowing from, in clockwise degrees from North
-    /// * `u_site` - wind velocity at zone level (m/s)
-    /// * `t_e` - external air temperature (K)
-    /// * `t_z` - thermal zone air temperature (K)
-    /// * `p_z_ref` - internal reference pressure (Pa)
-    /// * `f_cross` - boolean, dependent on if cross ventilation is possible or not
-    /// * `shield_class` - indicates exposure to wind
-    /// * `r_w_arg` - ratio of window opening (0-1)
-    /// * `simulation_time`
-    fn calculate_flow_from_internal_p(
-        &self,
-        wind_direction: Orientation360,
-        u_site: f64,
-        t_e: f64,
-        t_z: f64,
-        p_z_ref: f64,
-        f_cross: bool,
-        shield_class: VentilationShieldClass,
-        r_w_arg: Option<f64>,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
-        // Assume windows are shut if the control object is empty
-        let r_w_arg = match &self.on_off_ctrl_obj {
-            None => 0.,
-            Some(control) => {
-                if !control.is_on(&simtime) {
-                    0.
-                } else {
-                    r_w_arg.expect("r_w_arg was None")
-                }
-            }
-        };
-        // Wind pressure coefficient for the window
-        let pressure_coefficient_path = get_pressure_coefficient_from_pitch_and_orientation(
-            f_cross,
-            shield_class,
-            self.z,
-            wind_direction,
-            self.orientation,
-            self.pitch,
-        )?;
-
-        // Airflow coefficient of the window
-        let c_w_path = self.calculate_flow_coeff_for_window(r_w_arg, simtime);
-
-        //  Sum airflow through each window part entering and leaving - based on Equation 56 and 57
-        let mut qv_in_through_window_opening = 0.;
-        let mut qv_out_through_window_opening = 0.;
-        for window_part in &self.window_parts {
-            let air_flow = window_part.calculate_ventilation_through_windows_using_internal_p(
-                u_site,
-                t_e,
-                t_z,
-                c_w_path,
-                p_z_ref,
-                pressure_coefficient_path,
-            );
-            if air_flow >= 0. {
-                qv_in_through_window_opening += air_flow;
-            } else {
-                qv_out_through_window_opening += air_flow;
-            }
-        }
-
-        //  Convert volume air flow rate to mass air flow rate
-        Ok(convert_to_mass_air_flow_rate(
-            qv_in_through_window_opening,
-            qv_out_through_window_opening,
-            t_e,
-            t_z,
-            self.p_a_alt,
-        ))
     }
 }
 
@@ -763,8 +778,8 @@ impl WindowPart {
     ///     number_window_divisions -- number of window divisions
     ///     window_part_number -- The identifying number of the window part
     fn new(
-        midheight: f64,
         free_area_height: f64,
+        midheight: f64,
         number_window_divisions: f64,
         window_part_number: usize,
         ventilation_zone_base_height: f64,
