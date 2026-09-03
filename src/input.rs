@@ -3793,14 +3793,17 @@ pub enum MassDistributionClass {
 pub struct WindowPart {
     /// (unit m)
     /// "Vertical extent of this openable sections free area"
+    #[validate(minimum = 0.)]
     pub free_area_height: f64,
 
     /// (unit m²)
     /// "Openable area of this section ignoring the obstructing effect of the frame of the openable part"
+    #[validate(minimum = 0.)]
     pub max_window_open_area: f64,
 
     /// (unit m)
     /// "Height of the mid-point of this openable section, relative to the base of the ventilation zone"
+    #[validate(exclusive_minimum = 0.)]
     pub mid_height: f64,
 }
 
@@ -9667,9 +9670,9 @@ mod tests {
         #[rstest(inputs,
             case::mid_height_greater_than_zero(json!({"mid_height": 0})
             ),
-            case::free_area_height_greater_than_zero(json!({"free_area_height": 0})
+            case::free_area_height_at_least_zero(json!({"free_area_height": -1})
             ),
-            case::max_window_open_area_greater_than_zero(json!({"max_window_open_area": 0})
+            case::max_window_open_area_at_least_zero(json!({"max_window_open_area": -1})
             ),
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {

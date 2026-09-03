@@ -2159,7 +2159,9 @@ mod tests {
 
     fn infiltration_ventilation() -> InfiltrationVentilation {
         let window_part_list = vec![WindowPart {
-            mid_height_air_flow_path: 1.5,
+            mid_height: 1.5,
+            free_area_height: 1.0,
+            max_window_open_area: 1.0,
         }];
         let window = Window::new(
             1.6,
