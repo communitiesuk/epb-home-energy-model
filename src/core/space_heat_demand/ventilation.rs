@@ -614,7 +614,7 @@ impl Window {
                 .enumerate()
                 .map(|(window_part_number, window_part_input)| {
                     WindowPart::new(
-                        window_part_input.mid_height_air_flow_path,
+                        window_part_input.mid_height,
                         free_area_height,
                         n_w_div,
                         window_part_number + 1,
@@ -3969,7 +3969,9 @@ mod tests {
             1.5,
             3.,
             vec![WindowPartInput {
-                mid_height_air_flow_path: 1.5,
+                mid_height: 1.5,
+                free_area_height: 1.0,
+                max_window_open_area: 1.0,
             }],
             0.0.into(),
             90.,

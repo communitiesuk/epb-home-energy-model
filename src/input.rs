@@ -3785,14 +3785,23 @@ pub enum MassDistributionClass {
     IE,
     M,
 }
-
+/// A real openable section of a window unit (e.g. an opening sash, a casement,
+/// or a top-light), described by its openable area, free area height and mid-height.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WindowPart {
-    /// (unit: m)
-    #[validate(exclusive_minimum = 0.)]
-    pub(crate) mid_height_air_flow_path: f64,
+    /// (unit m)
+    /// "Vertical extent of this openable sections free area"
+    pub free_area_height: f64,
+
+    /// (unit m²)
+    /// "Openable area of this section ignoring the obstructing effect of the frame of the openable part"
+    pub max_window_open_area: f64,
+
+    /// (unit m)
+    /// "Height of the mid-point of this openable section, relative to the base of the ventilation zone"
+    pub mid_height: f64,
 }
 
 #[skip_serializing_none]
@@ -9648,13 +9657,19 @@ mod tests {
         #[fixture]
         fn valid_example() -> JsonValue {
             serde_json::to_value(WindowPart {
-                mid_height_air_flow_path: 1.5,
+                mid_height: 1.5,
+                free_area_height: 1.0,
+                max_window_open_area: 1.0,
             })
             .unwrap()
         }
 
         #[rstest(inputs,
-            case::mid_height_air_flow_path_greater_than_zero(json!({"mid_height_air_flow_path": 0})
+            case::mid_height_greater_than_zero(json!({"mid_height": 0})
+            ),
+            case::free_area_height_greater_than_zero(json!({"free_area_height": 0})
+            ),
+            case::max_window_open_area_greater_than_zero(json!({"max_window_open_area": 0})
             ),
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
