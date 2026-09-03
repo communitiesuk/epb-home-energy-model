@@ -1372,8 +1372,8 @@ mod tests {
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{
-            BoilerHotWaterTest, BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails,
-            HotWaterSourceDetails,
+            BoilerHotWaterTest, BoilerType, CombiBoilerType, FuelType, HeatSourceLocation,
+            HeatSourceWetDetails, HotWaterSourceDetails,
         };
         use approx::assert_relative_eq;
         use parking_lot::RwLock;
@@ -1402,6 +1402,12 @@ mod tests {
         #[fixture]
         fn boiler_service_water_combi_data() -> HotWaterSourceDetails {
             HotWaterSourceDetails::CombiBoiler {
+                combi_boiler_type: CombiBoilerType::Instantaneous,
+                combi_keep_hot_fuel: None,
+                combi_storage_loss_in_test: None,
+                keep_hot_test_hours: None,
+                store_volume: None,
+                control_keep_hot: None,
                 separate_dhw_tests: BoilerHotWaterTest::ML,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test fixture
                 rejected_energy_1: Some(0.0004),
@@ -1480,6 +1486,12 @@ mod tests {
         #[rstest]
         fn test_init_separate_dhw_tests_ms(boiler: Boiler, simulation_time: SimulationTime) {
             let boiler_service_data = HotWaterSourceDetails::CombiBoiler {
+                combi_boiler_type: CombiBoilerType::Instantaneous,
+                combi_keep_hot_fuel: None,
+                combi_storage_loss_in_test: None,
+                keep_hot_test_hours: None,
+                store_volume: None,
+                control_keep_hot: None,
                 separate_dhw_tests: BoilerHotWaterTest::MS,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test data
                 rejected_energy_1: Some(0.0004),
@@ -1515,6 +1527,12 @@ mod tests {
         #[rstest]
         fn test_init_separate_dhw_tests_ml(boiler: Boiler, simulation_time: SimulationTime) {
             let boiler_service_data = HotWaterSourceDetails::CombiBoiler {
+                combi_boiler_type: CombiBoilerType::Instantaneous,
+                combi_keep_hot_fuel: None,
+                combi_storage_loss_in_test: None,
+                keep_hot_test_hours: None,
+                store_volume: None,
+                control_keep_hot: None,
                 separate_dhw_tests: BoilerHotWaterTest::ML,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test data
                 rejected_energy_1: Some(0.0004),
@@ -1550,6 +1568,12 @@ mod tests {
         #[rstest]
         fn test_init_separate_dhw_tests_m_only(boiler: Boiler, simulation_time: SimulationTime) {
             let boiler_service_data = HotWaterSourceDetails::CombiBoiler {
+                combi_boiler_type: CombiBoilerType::Instantaneous,
+                combi_keep_hot_fuel: None,
+                combi_storage_loss_in_test: None,
+                keep_hot_test_hours: None,
+                store_volume: None,
+                control_keep_hot: None,
                 separate_dhw_tests: BoilerHotWaterTest::MOnly,
                 // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test data
                 rejected_energy_1: Some(0.0004),

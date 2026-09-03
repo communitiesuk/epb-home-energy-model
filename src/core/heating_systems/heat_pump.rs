@@ -4648,7 +4648,8 @@ mod tests {
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
-        BoilerHotWaterTest, BoilerType, FuelType, HeatPumpBufferTank, HeatSourceLocation,
+        BoilerHotWaterTest, BoilerType, CombiBoilerType, FuelType, HeatPumpBufferTank,
+        HeatSourceLocation,
     };
     use crate::simulation_time::SimulationTime;
     use crate::{core::material_properties::WATER, external_conditions::ShadingSegment, input};
@@ -7457,6 +7458,12 @@ mod tests {
         let boiler_data: HotWaterSourceDetails = HotWaterSourceDetails::CombiBoiler {
             cold_water_source: "mains water".into(),
             heat_source_wet: "hp".into(),
+            combi_boiler_type: CombiBoilerType::Instantaneous,
+            combi_keep_hot_fuel: None,
+            combi_storage_loss_in_test: None,
+            keep_hot_test_hours: None,
+            store_volume: None,
+            control_keep_hot: None,
             separate_dhw_tests: BoilerHotWaterTest::ML,
             rejected_energy_1: Some(0.0004),
             storage_loss_factor_1: None,
