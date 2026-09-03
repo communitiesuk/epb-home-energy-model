@@ -62,6 +62,17 @@ const T_E_REF: f64 = 293.15;
 #[allow(dead_code)]
 const T_0_ABS: f64 = 273.15;
 
+/// Discharge coefficient for windows (BS EN 16798-7:2017 Section B.3.2.1).
+const _C_D_WINDOW: f64 = 0.67;
+/// Flow exponent for windows (BS EN 16798-7:2017 Section B.3.2.2).
+const _N_W_WINDOW: f64 = 0.5;
+/// Number of divisions applied to each openable section of a window
+/// (BS EN 16798-7:2017 Annex B.3.3.10). Each section is internally split into
+/// _N_W_DIV + 1 equal-height divisions for the bidirectional flow calculation
+/// (equation 55). The standard treats this as a nationally-set value; the UK
+/// methodology uses the Annex B recommended value of 1.
+const _N_W_DIV: usize = 1;
+
 // In Python this is defined in InfiltrationVentilation.calculate_internal_reference_pressure
 const INTERVAL_EXPANSION_LIST: [f64; 9] = [1., 5., 10., 15., 20., 40., 50., 100., 200.];
 
@@ -533,11 +544,13 @@ impl MechVentType {
         matches!(self, Self::IntermittentMev { .. })
     }
 
-    // Flow change coefficients for different mechanical ventilation types
-    // From "Sensitivity of fans to back pressure – generic values for HEM - Technical Note"
+    /// Flow change coefficients for different mechanical ventilation types, giving each
+    /// type's fan flow sensitivity to back pressure (l/s per Pa). Values other than MVHR
+    /// are generic defaults representative of each ventilation type.
     fn flow_change_coefficients(&self) -> f64 {
         match self {
-            Self::Mvhr => 0.5,
+            // Mean flow sensitivity to back pressure measured across UK-market MVHR products (l/s per Pa)
+            Self::Mvhr => 0.27,
             Self::CentralisedContinuousMev => 0.5,
             Self::DecentralisedContinuousMev => 0.1,
             Self::IntermittentMev => 0.5,
@@ -588,9 +601,6 @@ impl Window {
     /// Method
     ///     - Based on Section 6.4.3.5 Airflow due to windows opening section.
     pub(crate) fn new(
-        free_area_height: f64,
-        midheight: f64,
-        max_opening_area: f64,
         window_part_list: Vec<WindowPartInput>,
         orientation: Orientation360,
         pitch: f64,
@@ -2642,9 +2652,6 @@ impl InfiltrationVentilation {
                 anyhow::Ok(
                     if let BuildingElement::Transparent {
                         control_window_openable: window_openable_control,
-                        free_area_height,
-                        mid_height,
-                        max_window_open_area,
                         window_part_list,
                         orientation360,
                         pitch,
@@ -2659,9 +2666,6 @@ impl InfiltrationVentilation {
                                 })
                                 .filter(|ctrl| matches!(&**ctrl, Control::OnOffTime(_)));
                             anyhow::Ok(Window::new(
-                                *free_area_height,
-                                *mid_height,
-                                *max_window_open_area,
                                 window_part_list.clone(),
                                 *orientation360,
                                 *pitch,
@@ -3965,9 +3969,6 @@ mod tests {
 
     fn create_window(ctrl: Option<Control>, altitude: f64) -> Window {
         Window::new(
-            1.6,
-            1.5,
-            3.,
             vec![WindowPartInput {
                 mid_height: 1.5,
                 free_area_height: 1.0,
