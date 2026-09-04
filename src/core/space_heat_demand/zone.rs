@@ -2164,9 +2164,6 @@ mod tests {
             max_window_open_area: 1.0,
         }];
         let window = Window::new(
-            1.6,
-            1.,
-            3.,
             window_part_list,
             0.0.into(),
             0.,
