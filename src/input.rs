@@ -558,19 +558,35 @@ pub struct ApplianceGainsEvent {
 
 pub type EnergySupplyInput = IndexMap<std::string::String, EnergySupplyDetails>;
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(untagged)]
+pub enum ElectricBatteryType {
+    SingleBattery(#[validate] ElectricBattery),
+    Map(#[validate] IndexMap<std::string::String, ElectricBattery>),
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(untagged)]
+pub(crate) enum EnergyDiverterType {
+    SingleDiverter(EnergyDiverter),
+    Map(IndexMap<std::string::String, EnergyDiverter>),
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct EnergySupplyDetails {
     /// Type of fuel
-    pub fuel: FuelType,
+    pub(crate) fuel: FuelType,
 
-    pub(crate) diverter: Option<EnergyDiverter>,
+    pub(crate) diverter: Option<EnergyDiverterType>,
 
     /// Indicates that an electric battery is present
     #[serde(rename = "ElectricBattery")]
-    pub(crate) electric_battery: Option<ElectricBattery>,
+    pub(crate) electric_battery: Option<ElectricBatteryType>,
 
     pub factor: Option<CustomEnergySourceFactor>,
 
@@ -583,11 +599,27 @@ pub struct EnergySupplyDetails {
     #[validate(custom = validate_threshold_value_fractions)]
     pub(crate) threshold_charges: Option<[f64; 12]>,
 
+    /// Level of battery charge below which battery prohibited from exporting to grid (monthly values) (0 - 1)
+    #[validate(custom = validate_threshold_value_fractions)]
+    pub(crate) threshold_charges_export: Option<[f64; 12]>,
+
+    ///Grid price above which battery is permitted to export to grid (monthly values) (unit: p/kWh)
+    pub(crate) threshold_prices_export: Option<[f64; 12]>,
+
     /// Grid price below which battery is permitted to charge from grid (monthly values) (unit: p/kWh)
     #[validate(custom = validate_threshold_value_fractions)]
     pub(crate) threshold_prices: Option<[f64; 12]>,
 
+    /// Maximum power limit for importing from the grid to charge batteries,
+    /// shared across all batteries on this energy supply connection (unit: kW).
+    /// Caps the rate at which batteries draw from the grid during scheduled
+    /// charging. When not specified, each battery is limited only by its own
+    /// maximum_charge_rate_one_way_trip.
+    pub(crate) power_limit_battery_import: Option<f64>,
+
     pub(crate) tariff: Option<EnergySupplyTariff>,
+
+    pub(crate) tariff_export: Option<String>,
 }
 
 impl EnergySupplyDetails {
@@ -602,6 +634,10 @@ impl EnergySupplyDetails {
             threshold_charges: None,
             threshold_prices: None,
             tariff: None,
+            threshold_charges_export: None,
+            threshold_prices_export: None,
+            power_limit_battery_import: None,
+            tariff_export: None,
         }
     }
 }
@@ -712,6 +748,16 @@ impl TryFrom<EnergySupplyType> for FuelType {
                 bail!("No fuel type defined to map the energy supply type {value:?}")
             }
         })
+    }
+}
+
+impl FuelType {
+    /// Fuel-type compatibility set used by the validators that check system-to-EnergySupply
+    /// pairings. FuelType.CUSTOM is permitted so users can define a fuel outside
+    /// the built-in enum without being blocked here — they remain responsible for ensuring the
+    /// CUSTOM fuel's physical properties match the system it is assigned to.
+    pub fn is_electric_fuel(&self) -> bool {
+        return matches!(self, FuelType::Electricity | FuelType::Custom);
     }
 }
 
@@ -7809,7 +7855,11 @@ mod tests {
                 priority: None,
                 is_export_capable: true,
                 threshold_charges: None,
+                threshold_charges_export: None,
+                tariff_export: None,
                 threshold_prices: None,
+                threshold_prices_export: None,
+                power_limit_battery_import: None,
                 tariff: None,
             })
             .unwrap()

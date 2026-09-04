@@ -78,9 +78,9 @@ use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, BuildingElementHeightWidthInput, ChargeLevel,
     ColdWaterSourceDetails, ColdWaterSourceInput, Control as ControlInput, ControlCombinations,
-    ControlDetails, ControlReferences, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput,
-    FlowData, FuelType, HeatBattery as HeatBatteryInput, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
+    ControlDetails, ControlReferences, ElectricBatteryType, EnergyDiverterType,
+    EnergySupplyDetails, EnergySupplyInput, FlowData, FuelType, HeatBattery as HeatBatteryInput,
+    HeatPumpSourceType, HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
     HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
     InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails,
     OnSiteGeneration as OnSiteGenerationInput, PCMBatteryChargingConfiguration,
@@ -3246,7 +3246,9 @@ fn energy_supply_from_input(
     Ok(Arc::new(RwLock::new({
         let mut builder =
             EnergySupplyBuilder::new(input.fuel, simulation_time_iterator.total_steps());
-        if let Some(battery) = input.electric_battery.as_ref() {
+
+        // Just handling the single battery as a stop gap in the 1.0.0a9 migration
+        if let Some(ElectricBatteryType::SingleBattery(battery)) = input.electric_battery.as_ref() {
             builder = builder.with_electric_battery(ElectricBattery::from_input(
                 battery,
                 simulation_time_iterator.step_in_hours(),
@@ -3257,12 +3259,13 @@ fn energy_supply_from_input(
             builder = builder.with_priority(priority.clone());
         }
         builder = builder.with_export_capable(input.is_export_capable);
-
-        if input
-            .electric_battery
-            .as_ref()
-            .is_some_and(|battery| battery.grid_charging_possible)
-        {
+        // Just handling the single diverter as a stop gap in the 1.0.0a9 migration
+        if input.electric_battery.as_ref().is_some_and(|battery| {
+            matches!(
+                battery,
+                ElectricBatteryType::SingleBattery(battery) if battery.grid_charging_possible
+            )
+        }) {
             let tariff_data: Box<dyn Read> = match tariff_file_path {
                 // fall back to using tariff data for entire year for now
                 None => Box::new(Cursor::new(include_str!(
@@ -3285,7 +3288,7 @@ fn energy_supply_from_input(
     })))
 }
 
-type DiverterTypes = IndexMap<String, EnergyDiverter>;
+type DiverterTypes = IndexMap<String, EnergyDiverterType>;
 
 // struct DiverterTypes {
 //     pub mains_electricity: Option<EnergyDiverter>,
@@ -3319,7 +3322,7 @@ type DiverterTypes = IndexMap<String, EnergyDiverter>;
 //     }
 // }
 
-fn diverter_from_energy_supply(supply: &EnergySupplyDetails) -> Option<EnergyDiverter> {
+fn diverter_from_energy_supply(supply: &EnergySupplyDetails) -> Option<EnergyDiverterType> {
     supply.diverter.clone()
 }
 
@@ -5525,7 +5528,10 @@ fn hot_water_source_from_input(
                 // it was a HeatSourceWet type - anything else would have returned its energy supply name
                 continue;
             };
-            if let Some(diverter) = diverter_types.get(energy_supply_name) {
+            // Just handling the single diverter as a stop gap in the 1.0.0a9 migration
+            if let Some(EnergyDiverterType::SingleDiverter(diverter)) =
+                diverter_types.get(energy_supply_name)
+            {
                 if diverter.heat_source.matches(&heat_source_name) {
                     let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();
 
