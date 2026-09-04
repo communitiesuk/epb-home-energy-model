@@ -578,6 +578,7 @@ pub(crate) enum EnergyDiverterType {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
+#[validate(custom = validate_priority_for_energy_supply)]
 pub struct EnergySupplyDetails {
     /// Type of fuel
     pub(crate) fuel: FuelType,
@@ -654,6 +655,57 @@ fn validate_threshold_value_fractions(
     Ok(())
 }
 
+// This needs looking at as part of the 1.0.0a9 migration, python check is more comprehensive
+// and may include additional validation logic that is unecessary due to our typesystem.
+// Either priority needs loosening or we are just checking 2 things and this can be simplified
+pub(crate) fn validate_priority_for_energy_supply(
+    energy_supply: &EnergySupplyDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    if energy_supply.priority.is_none() {
+        return Ok(());
+    }
+    let priority_set: std::collections::HashSet<_> = energy_supply
+        .priority
+        .clone()
+        .unwrap()
+        .into_iter()
+        .collect();
+
+    let mut electric_battery_keys = std::collections::HashSet::new();
+    if let Some(_electric_battery) = &energy_supply.electric_battery {
+        electric_battery_keys.insert(EnergySupplyPriorityEntry::ElectricBattery);
+    }
+
+    let mut diverter_keys = std::collections::HashSet::new();
+    if let Some(_diverter) = &energy_supply.diverter {
+        diverter_keys.insert(EnergySupplyPriorityEntry::Diverter);
+    }
+
+    if !priority_set.is_superset(&electric_battery_keys) {
+        return custom_validation_error(
+            "All ElectricBattery keys must all be in priority list.".to_string(),
+        );
+    }
+    if !priority_set.is_superset(&diverter_keys) {
+        return custom_validation_error(
+            "All diverter keys must all be in priority list.".to_string(),
+        );
+    }
+
+    if priority_set
+        != electric_battery_keys
+            .union(&diverter_keys)
+            .copied()
+            .collect()
+    {
+        return custom_validation_error(
+            "Priority list must only contain keys in either 'ElectricBattery' or 'diverter'."
+                .to_string(),
+        );
+    }
+
+    Ok(())
+}
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum EnergySupplyTariff {
@@ -670,7 +722,7 @@ pub(crate) enum EnergySupplyTariff {
     VariableTimeOfDay,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Eq, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum EnergySupplyPriorityEntry {
     ElectricBattery,
