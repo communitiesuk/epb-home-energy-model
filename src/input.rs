@@ -579,6 +579,7 @@ pub(crate) enum EnergyDiverterType {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 #[validate(custom = validate_priority_for_energy_supply)]
+#[validate(custom = validate_battery_and_diverter_require_electricity)]
 pub struct EnergySupplyDetails {
     /// Type of fuel
     pub(crate) fuel: FuelType,
@@ -706,6 +707,30 @@ pub(crate) fn validate_priority_for_energy_supply(
 
     Ok(())
 }
+
+pub(crate) fn validate_battery_and_diverter_require_electricity(
+    energy_supply: &EnergySupplyDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    if energy_supply.fuel.is_electric_fuel() {
+        return Ok(());
+    }
+    let mut attachments = Vec::new();
+    if energy_supply.electric_battery.is_some() {
+        attachments.push("ElectricBattery");
+    }
+    if energy_supply.diverter.is_some() {
+        attachments.push("diverter");
+    }
+    if !attachments.is_empty() {
+        return custom_validation_error(format!(
+            "EnergySupply has fuel '{}' but defines {}, which require an electric supply.",
+            energy_supply.fuel,
+            attachments.join(" and ")
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum EnergySupplyTariff {
