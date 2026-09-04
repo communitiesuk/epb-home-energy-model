@@ -580,6 +580,7 @@ pub(crate) enum EnergyDiverterType {
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 #[validate(custom = validate_priority_for_energy_supply)]
 #[validate(custom = validate_battery_and_diverter_require_electricity)]
+#[validate(custom = validate_power_limit_export_requires_export_capable)]
 pub struct EnergySupplyDetails {
     /// Type of fuel
     pub(crate) fuel: FuelType,
@@ -619,6 +620,13 @@ pub struct EnergySupplyDetails {
     /// maximum_charge_rate_one_way_trip.
     pub(crate) power_limit_battery_import: Option<f64>,
 
+    /// Maximum AC power that can be exported to the grid, e.g. a Distribution
+    /// Network Operator (DNO) export limit. Applies to the whole supply: generation surplus
+    /// and battery discharge share this limit. Generation surplus above the limit is
+    /// curtailed; battery discharge is throttled so unexported energy is retained as charge.
+    /// Omit for no limit (unit: kW)
+    pub(crate) power_limit_export: Option<f64>,
+
     pub(crate) tariff: Option<EnergySupplyTariff>,
 
     pub(crate) tariff_export: Option<String>,
@@ -639,6 +647,7 @@ impl EnergySupplyDetails {
             threshold_charges_export: None,
             threshold_prices_export: None,
             power_limit_battery_import: None,
+            power_limit_export: None,
             tariff_export: None,
         }
     }
@@ -727,6 +736,21 @@ pub(crate) fn validate_battery_and_diverter_require_electricity(
             energy_supply.fuel,
             attachments.join(" and ")
         ));
+    }
+    Ok(())
+}
+
+/// Reject an export power limit on a supply that cannot export.
+///
+/// An export power limit only constrains surplus sent to the grid, so it is
+/// meaningful only when the supply is export-capable.
+pub(crate) fn validate_power_limit_export_requires_export_capable(
+    energy_supply: &EnergySupplyDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    if energy_supply.power_limit_export.is_some() && !energy_supply.is_export_capable {
+        return custom_validation_error(
+            "EnergySupply defines 'power_limit_export' but 'is_export_capable' is false; an export power limit requires an export-capable supply.".to_string(),
+        );
     }
     Ok(())
 }
@@ -7937,6 +7961,7 @@ mod tests {
                 threshold_prices: None,
                 threshold_prices_export: None,
                 power_limit_battery_import: None,
+                power_limit_export: None,
                 tariff: None,
             })
             .unwrap()
