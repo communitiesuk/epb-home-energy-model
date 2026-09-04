@@ -3271,19 +3271,11 @@ pub enum BuildingElement {
         #[validate]
         area_input: BuildingElementHeightWidthInput,
 
-        /// Height of the openable area, corrected for obstruction due to the window frame of the openable section (unit: m)
-        #[validate(minimum = 0.)]
-        free_area_height: f64,
-
-        /// Height of the mid-point of the window, relative to its base (unit: m)
-        #[validate(exclusive_minimum = 0.)]
-        mid_height: f64,
-
-        /// Openable area of the window ignoring the obstructing affect of the frame of the openable part
-        #[validate(minimum = 0.)]
-        max_window_open_area: f64,
-
+        /// Real openable sections of the window unit, each carrying its own
+        /// openable area, free area height and mid-height. A window with no
+        /// openable sections (a fixed pane) has an empty list.
         #[validate]
+        #[serde(default)]
         window_part_list: Vec<WindowPart>,
 
         #[validate]
@@ -3550,23 +3542,72 @@ fn validate_u_value_and_thermal_resistance_floor_construction(
 fn validate_max_window_open_area_for_transparent(
     element: &BuildingElement,
 ) -> Result<(), serde_valid::validation::Error> {
-    let (area, max_window_open_area) = if let BuildingElement::Transparent {
+    let (area, total_open_area) = if let BuildingElement::Transparent {
         area_input,
-        max_window_open_area,
+        window_part_list,
         ..
     } = element
     {
-        (area_input.area(), *max_window_open_area)
+        (
+            area_input.area(),
+            window_part_list
+                .iter()
+                .map(|part| part.max_window_open_area)
+                .sum::<f64>(),
+        )
     } else {
         return Ok(());
     };
 
-    if max_window_open_area > area {
+    if total_open_area > area {
         return custom_validation_error(
-            "max_window_open_area must be less than or equal to the area".to_string(),
+            "Sum of max_window_open_area across window_part_list must be less than or equal to the glazed area (height × width)".to_string(),
         );
     }
+    Ok(())
+}
 
+/// Check that no openable section's free area height exceeds the element height.
+/// A section is an opening within the window, so the vertical extent of its free
+/// area cannon be taller than the winder it sits in
+fn validate_free_area_height_for_transparent(
+    element: &BuildingElement,
+) -> Result<(), serde_valid::validation::Error> {
+    if let BuildingElement::Transparent {
+        area_input,
+        window_part_list,
+        ..
+    } = element
+    {
+        for part in window_part_list {
+            if part.free_area_height > area_input.height {
+                return custom_validation_error(
+                    "free_area_height of each window part must be less than or equal to the element height".to_string(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Check that a window with no openable sections has no window opening control.
+/// A fixed pane (empty window_part_list) cannot be opened, so attaching a
+/// Control_WindowOpenable to it has no meaning and signals a malformed input.
+fn validate_openable_control_for_transparent(
+    element: &BuildingElement,
+) -> Result<(), serde_valid::validation::Error> {
+    if let BuildingElement::Transparent {
+        window_part_list,
+        control_window_openable,
+        ..
+    } = element
+    {
+        if window_part_list.is_empty() && control_window_openable.is_some() {
+            return custom_validation_error(
+                "Control_WindowOpenable cannot be set on a window with no openable sections (empty window_part_list)".to_string(),
+            );
+        }
+    }
     Ok(())
 }
 
@@ -3882,6 +3923,7 @@ impl WindowTreatmentControl {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "floor_type")]
+#[validate(custom = validate_smart_air_brick_inputs)]
 pub enum FloorData {
     #[serde(rename = "Slab_no_edge_insulation")]
     SlabNoEdgeInsulation,
@@ -3892,7 +3934,6 @@ pub enum FloorData {
         #[validate]
         edge_insulation: Vec<EdgeInsulation>,
     },
-
     // (non-optional fields in the schema for SuspendedFloor, but values do seem expected)
     #[serde(rename = "Suspended_floor")]
     SuspendedFloor {
@@ -3908,12 +3949,23 @@ pub enum FloorData {
         #[validate(exclusive_minimum = 0.)]
         area_per_perimeter_vent: f64,
 
-        /// Wind shielding factor
+        // Needs attention: Shows as optional in python as part of 1.0.0a9 migration
+        /// Wind shielding factor. If omitted, inferred from InfiltrationVentilation.shield_class.
         shield_fact_location: WindShieldLocation,
 
-        /// Thermal resistance of insulation on base of underfloor space, excluding surface resistances (unit: m².K/W)
+        /// Reference to a SetpointTimeControl for smart air brick opening ratios (0-1)
+        /// Name of a SetpointTimeControl defining smart air brick opening ratios (0 = fully closed, 1 = fully open)
+        #[serde(default)]
+        control_smart_air_brick: Option<String>,
+
+        /// Status of underfloor vents during airtightness test
+        /// Whether underfloor vents were open (true) or closed (false) during the dwelling airtightness pressurisation test. Required when Control_smart_air_brick is specified.
+        #[serde(default)]
+        vents_open_during_airtightness_test: Option<bool>,
+
+        /// Thermal resistance of insulation on base of underfloor space, excluding surface resistances (unit: m².K/W), Zero when no insulation is present.
         #[serde(rename = "thermal_resist_insul")]
-        #[validate(exclusive_minimum = 0.)]
+        #[validate(minimum = 0.)]
         thermal_resistance_of_insulation: f64,
     },
 
@@ -3954,6 +4006,25 @@ pub enum FloorData {
         #[validate(exclusive_minimum = 0.)]
         thermal_resistance_of_basement_walls: f64,
     },
+}
+
+fn validate_smart_air_brick_inputs(
+    floor_data: &FloorData,
+) -> Result<(), serde_valid::validation::Error> {
+    if let FloorData::SuspendedFloor {
+        control_smart_air_brick,
+        vents_open_during_airtightness_test,
+        ..
+    } = floor_data
+    {
+        if control_smart_air_brick.is_some() && vents_open_during_airtightness_test.is_none() {
+            return custom_validation_error(
+                "vents_open_during_airtightness_test must be specified when Control_smart_air_brick is provided".to_string(),
+            );
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -8922,9 +8993,6 @@ mod tests {
                         height: 10.,
                         width: 5.,
                     },
-                    free_area_height: 1.6,
-                    mid_height: 40.,
-                    max_window_open_area: 3.,
                     window_part_list: vec![],
                     shading: vec![],
                     control_window_openable: None,
@@ -9094,6 +9162,8 @@ mod tests {
                             area_per_perimeter_vent: 0.0015,
                             shield_fact_location: WindShieldLocation::Average,
                             thermal_resistance_of_insulation: 0.5,
+                            control_smart_air_brick: None,
+                            vents_open_during_airtightness_test: None,
                         },
                     })
                     .unwrap()
