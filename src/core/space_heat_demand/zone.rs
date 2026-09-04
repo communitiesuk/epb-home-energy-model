@@ -2062,6 +2062,9 @@ mod tests {
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered,
             thermal_resistance_of_insulation: 7.,
+            // ADDED to compile during 1.0.0a9 migration
+            control_smart_air_brick: None,
+            vents_open_during_airtightness_test: None,
         };
         let be_ground = BuildingElement::Ground(
             BuildingElementGround::new(
@@ -2163,14 +2166,7 @@ mod tests {
             free_area_height: 1.0,
             max_window_open_area: 1.0,
         }];
-        let window = Window::new(
-            window_part_list,
-            0.0.into(),
-            0.,
-            30.,
-            None,
-            2.5,
-        );
+        let window = Window::new(window_part_list, 0.0.into(), 0., 30., None, 2.5);
         let windows = IndexMap::from([("window 0".to_string(), window)]);
 
         let vent = Vent::new(1.5, 100.0, 20.0, 180.0.into(), 60.0, 30.0, 2.5);
