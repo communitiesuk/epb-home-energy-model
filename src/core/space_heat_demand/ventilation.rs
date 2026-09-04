@@ -797,8 +797,8 @@ impl WindowPart {
         &self,
         wind_direction: Orientation360,
         u_site: f64,
-        T_e: f64,
-        T_z: f64,
+        t_e: f64,
+        t_z: f64,
         p_z_ref: f64,
         f_cross: bool,
         shield_class: VentilationShieldClass,
@@ -823,8 +823,8 @@ impl WindowPart {
             let air_flow = division
                 .calculate_ventilation_through_windows_using_internal_for_window_division(
                     u_site,
-                    T_e,
-                    T_z,
+                    t_e,
+                    t_z,
                     c_w_path,
                     p_z_ref,
                     pressure_coefficient_path,
@@ -888,8 +888,8 @@ impl WindowDivision {
     fn calculate_ventilation_through_windows_using_internal_for_window_division(
         &self,
         u_site: f64,
-        T_e: f64,
-        T_z: f64,
+        t_e: f64,
+        t_z: f64,
         c_w_path: f64,
         p_z_ref: f64,
         c_p_path: f64,
@@ -898,8 +898,8 @@ impl WindowDivision {
             self._h_w_div_path,
             c_p_path,
             u_site,
-            T_e,
-            T_z,
+            t_e,
+            t_z,
             p_z_ref,
         );
         let qv_w_div_path = c_w_path / (_N_W_DIV + 1) as f64
