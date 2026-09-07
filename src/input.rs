@@ -3917,18 +3917,15 @@ pub enum MassDistributionClass {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WindowPart {
-    /// (unit m)
-    /// "Vertical extent of this openable sections free area"
+    /// Vertical extent of this openable sections free area (unit m)
     #[validate(minimum = 0.)]
     pub free_area_height: f64,
 
-    /// (unit m²)
-    /// "Openable area of this section ignoring the obstructing effect of the frame of the openable part"
+    /// Openable area of this section ignoring the obstructing effect of the frame of the openable part (unit m²)
     #[validate(minimum = 0.)]
     pub max_window_open_area: f64,
 
-    /// (unit m)
-    /// "Height of the mid-point of this openable section, relative to the base of the ventilation zone"
+    /// Height of the mid-point of this openable section, relative to the base of the ventilation zone (unit m)
     #[validate(exclusive_minimum = 0.)]
     pub mid_height: f64,
 }
