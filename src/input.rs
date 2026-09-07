@@ -1701,9 +1701,8 @@ impl PreHeatedWaterSourceDetails {
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(tag = "type", deny_unknown_fields)]
+#[serde(tag = "type")]
 #[validate(custom = validate_dhw_tests_inputs)]
-#[validate(custom = validate_combi_type_inputs)]
 pub enum HotWaterSourceDetails {
     StorageTank {
         #[serde(flatten)]
@@ -1759,28 +1758,12 @@ pub enum HotWaterSourceDetails {
         #[validate(exclusive_minimum = 0.)]
         daily_hw_usage: f64,
 
-        /// Type of combi boiler (instantaneous, with keep-hot facility, or a storage combi)
-        #[serde(default)]
-        combi_boiler_type: CombiBoilerType,
-
-        /// For combi boilers with keep hot facility, the fuel that maintains the keep hot temperature.
-        combi_keep_hot_fuel: Option<CombiKeepHotFuel>,
-
-        /// For storage combis, whether losses from the store are included in test data.
-        combi_storage_loss_in_test: Option<bool>,
-
-        /// Number of hours the timed keep-hot facility was active during testing (unit: hours)
-        #[validate(exclusive_minimum = 0.)]
-        #[validate(maximum = 24.)]
-        keep_hot_test_hours: Option<f64>,
-
-        /// If storage combi, volume of the internal hot water store (unit: litres)
-        #[validate(exclusive_minimum = 0.)]
-        store_volume: Option<f64>,
-
         /// Reference to a time control object containing a schedule of booleans describing when a combi boiler keep-hot facility is on.
         #[serde(rename = "Control_keep_hot")]
         control_keep_hot: Option<String>,
+
+        #[serde(default)]
+        combi_type_specific_details: CombiTypeSpecificDetails,
     },
     #[serde(rename = "HIU")]
     Hiu {
@@ -1826,88 +1809,23 @@ pub enum HotWaterSourceDetails {
     },
 }
 
-fn validate_combi_type_inputs(
-    hw_source_details: &HotWaterSourceDetails,
-) -> Result<(), serde_valid::validation::Error> {
-    let (
-        combi_boiler_type,
-        combi_keep_hot_fuel,
-        combi_storage_loss_in_test,
-        keep_hot_test_hours,
-        store_volume,
-        control_keep_hot,
-    ) = if let HotWaterSourceDetails::CombiBoiler {
-        combi_boiler_type,
-        combi_keep_hot_fuel,
-        combi_storage_loss_in_test,
-        keep_hot_test_hours,
-        store_volume,
-        control_keep_hot,
-        ..
-    } = hw_source_details
-    {
-        (
-            combi_boiler_type,
-            combi_keep_hot_fuel,
-            combi_storage_loss_in_test,
-            keep_hot_test_hours,
-            store_volume,
-            control_keep_hot,
-        )
-    } else {
-        return Ok(());
-    };
-
-    match combi_boiler_type {
-        CombiBoilerType::KeepHot => {
-            if combi_keep_hot_fuel.is_none() || keep_hot_test_hours.is_none() {
-                return custom_validation_error(
-                    "Keep-hot fuel and test hours must be provided if combi boiler type is KeepHot.".into(),
-                );
-            }
-        }
-        CombiBoilerType::Storage => {
-            if combi_storage_loss_in_test.is_none() || store_volume.is_none() {
-                return custom_validation_error(
-                    "Storage volume and whether heat loss is included in test data must be provided if combi boiler type is Storage.".into(),
-                );
-            }
-            if control_keep_hot.is_some() {
-                return custom_validation_error(
-                    "Control_keep_hot invalid input for storage combi type.".into(),
-                );
-            }
-        }
-        CombiBoilerType::Instantaneous => {
-            if combi_keep_hot_fuel.is_some() {
-                return custom_validation_error(
-                    "combi_keep_hot_fuel invalid input for instantaneous combi type.".into(),
-                );
-            }
-            if keep_hot_test_hours.is_some() {
-                return custom_validation_error(
-                    "keep_hot_test_hours invalid input for instantaneous combi type.".into(),
-                );
-            }
-            if combi_storage_loss_in_test.is_some() {
-                return custom_validation_error(
-                    "combi_storage_loss_in_test invalid input for instantaneous combi type.".into(),
-                );
-            }
-            if store_volume.is_some() {
-                return custom_validation_error(
-                    "store_volume invalid input for instantaneous combi type.".into(),
-                );
-            }
-            if control_keep_hot.is_some() {
-                return custom_validation_error(
-                    "Control_keep_hot invalid input for instantaneous combi type.".into(),
-                );
-            }
-        }
-    }
-
-    Ok(())
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "combi_boiler_type")]
+pub enum CombiTypeSpecificDetails {
+    #[default]
+    Instantaneous,
+    KeepHot {
+        /// For combi boilers with keep hot facility, the fuel that maintains the keep hot temperature.
+        combi_keep_hot_fuel: CombiKeepHotFuel,
+        /// Number of hours the timed keep-hot facility was active during testing (unit: hours)
+        keep_hot_test_hours: f64,
+    },
+    Storage {
+        /// For storage combis, whether losses from the store are included in test data.
+        combi_storage_loss_in_test: f64,
+        /// Volume of the internal hot water store (unit: litres)
+        store_volume: f64,
+    },
 }
 
 impl From<PreHeatedWaterSourceDetails> for HotWaterSourceDetails {
@@ -7240,11 +7158,7 @@ mod tests {
                 serde_json::to_value(HotWaterSourceDetails::CombiBoiler {
                     cold_water_source: "cold water source".into(),
                     heat_source_wet: "heat source wet".into(),
-                    combi_boiler_type: CombiBoilerType::Instantaneous,
-                    combi_keep_hot_fuel: None,
-                    combi_storage_loss_in_test: None,
-                    keep_hot_test_hours: None,
-                    store_volume: None,
+                    combi_type_specific_details: CombiTypeSpecificDetails::Instantaneous,
                     control_keep_hot: None,
                     separate_dhw_tests: BoilerHotWaterTest::MOnly,
                     rejected_energy_1: Some(0.0004),
