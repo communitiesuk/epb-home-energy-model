@@ -4783,12 +4783,12 @@ pub enum ScheduleUnit {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Validate)]
 #[serde(tag = "type")]
-pub enum HeatBatteryPCMChargingSource {
+pub enum HeatBatteryPcmChargingSource {
     /// Electric charging source for a PCM heat battery.
     /// Represents a direct electric element that charges the battery at a fixed
     /// rated power, controlled by a RangeTimeControl with hysteresis thresholds.
     #[serde(rename = "DirectElectric")]
-    HeatBatteryPCMElectricSource {
+    Electric {
         /// Rated charging power (kW)
         #[validate(exclusive_minimum = 0.)]
         rated_charge_power: f64,
@@ -4810,7 +4810,7 @@ pub enum HeatBatteryPCMChargingSource {
     /// Represents a wet heat source (e.g. heat pump, solar thermal) that charges the
     /// battery via a heat exchanger, controlled by a RangeTimeControl with hysteresis.
     #[serde(rename = "HeatSourceWet")]
-    HeatBatteryPCMHydronicSource {
+    Hydronic {
         /// Reference to a HeatSourceWet object (e.g. heat pump) in $.HeatSourceWet
         /// that provides heat for charging
         name: String,
@@ -4869,7 +4869,7 @@ pub enum HeatBatteryPCMChargingSource {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Validate)]
 #[serde(untagged)]
 #[skip_serializing_none]
-pub enum PCMBatteryChargingConfiguration {
+pub enum PcmBatteryChargingConfiguration {
     /// ControlCharge charging fields (mutually exclusive with HeatSource)
     ChargeControl {
         /// Reference to a ControlCharge target in $.Control for temperature-based charge control.
@@ -4888,7 +4888,7 @@ pub enum PCMBatteryChargingConfiguration {
         /// with setpoint units determined by the source's schedule_unit field.
         /// Mutually exclusive with ControlCharge/rated_charge_power.
         #[serde(rename = "HeatSource")]
-        heat_source: IndexMap<std::string::String, HeatBatteryPCMChargingSource>,
+        heat_source: IndexMap<std::string::String, HeatBatteryPcmChargingSource>,
 
         /// Minimum useful temperature (°C) used as the SOC=0 reference.
         /// This is the temperature at which the battery is considered fully
@@ -4990,7 +4990,7 @@ pub enum HeatBattery {
 
         #[serde(flatten)]
         #[validate]
-        charging_config: PCMBatteryChargingConfiguration,
+        charging_config: PcmBatteryChargingConfiguration,
     },
     #[serde(rename = "dry_core")]
     DryCore {
@@ -6966,7 +6966,7 @@ mod tests {
                     temp_init: 25.,
                     electricity_circ_pump: 0.0600,
                     electricity_standby: 0.0244,
-                    charging_config: PCMBatteryChargingConfiguration::ChargeControl {
+                    charging_config: PcmBatteryChargingConfiguration::ChargeControl {
                         rated_charge_power: 10.,
                         control_charge: "control".into(),
                     },

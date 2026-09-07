@@ -83,8 +83,9 @@ use crate::input::{
     HeatPumpSourceType, HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
     HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
     InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails,
-    OnSiteGeneration as OnSiteGenerationInput, PCMBatteryChargingConfiguration,
-    PartyWallCavityType, PhotovoltaicInputs, PhotovoltaicSystem as PhotovoltaicSystemInput,
+    OnSiteGeneration as OnSiteGenerationInput, PartyWallCavityType,
+    PcmBatteryChargingConfiguration, PhotovoltaicInputs,
+    PhotovoltaicSystem as PhotovoltaicSystemInput,
     PhotovoltaicSystemWithPanels as PhotovoltaicSystemWithPanelsInput, PreHeatedWaterSourceDetails,
     SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
@@ -4815,10 +4816,10 @@ fn heat_source_wet_from_input(
                     let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
                     let control_charge = match charging_config {
-                        PCMBatteryChargingConfiguration::ChargeControl {
+                        PcmBatteryChargingConfiguration::ChargeControl {
                             control_charge, ..
                         } => control_charge,
-                        PCMBatteryChargingConfiguration::RangeControl { .. } => {
+                        PcmBatteryChargingConfiguration::RangeControl { .. } => {
                             todo!("as part of migration to alpha9")
                         }
                     };
