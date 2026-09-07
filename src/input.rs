@@ -1513,11 +1513,8 @@ pub enum BoilerHotWaterTest {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum CombiBoilerType {
     #[default]
-    #[serde(rename = "Instantaneous")]
     Instantaneous,
-    #[serde(rename = "KeepHot")]
     KeepHot,
-    #[serde(rename = "Storage")]
     Storage,
 }
 
