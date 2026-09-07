@@ -88,10 +88,11 @@ use crate::input::{
     PhotovoltaicSystemWithPanels as PhotovoltaicSystemWithPanelsInput, PreHeatedWaterSourceDetails,
     SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput, VentilationLeaks,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
-    WaterPipework, WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
-    MAIN_REFERENCE, PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
+    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput,
+    VentAdjustControlReferences, VentilationLeaks, WasteWaterHeatRecovery,
+    WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents, WaterPipework,
+    WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis, MAIN_REFERENCE,
+    PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
 };
 use crate::input_dependency_resolvers::{
     build_preheated_water_source_dependency_graph, topological_sort_preheated_water_sources,
@@ -3828,14 +3829,26 @@ fn infiltration_ventilation_from_input(
         .as_ref()
         .and_then(|ctrl_name| controls.get_with_string(ctrl_name))
         .map(|ctrl| ctrl.clone() as Arc<dyn ControlBehaviour>);
-    let vent_adjust_min_control = input
-        .control_vent_adjust_min
-        .as_ref()
-        .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
-    let vent_adjust_max_control = input
-        .control_vent_adjust_max
-        .as_ref()
-        .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
+    let (vent_adjust_min_control, vent_adjust_max_control) = if let InfiltrationVentilationInput {
+        vent_adjust_controls:
+            VentAdjustControlReferences::Bounded {
+                control_vent_adjust_min,
+                control_vent_adjust_max,
+            },
+        ..
+    } = input
+    {
+        (
+            control_vent_adjust_min
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(ctrl)),
+            control_vent_adjust_max
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(ctrl)),
+        )
+    } else {
+        unimplemented!() // TODO during 1.0.0a9 migration: handle variant with unified control_vent_adjust
+    };
 
     let ventilation = InfiltrationVentilation::create(
         input,

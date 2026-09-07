@@ -2062,6 +2062,28 @@ pub(crate) enum ControlReferences {
     },
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+pub(crate) enum VentAdjustControlReferences {
+    Unified {
+        /// Reference to a control schedule with lower and upper temperature setpoints
+        #[serde(rename = "Control_VentAdjust")]
+        control_vent_adjust: String,
+    },
+    /// N.B. this option is marked as deprecated as of 1.0.0-alpha9 in the Python
+    /// though it is not clear why this deprecation notice is retained there given no benefit in
+    /// retaining backwards compatibility in a pre-release version. Given that the job of
+    /// the Rust port is to process inputs passed to it at runtime, and this remains a valid option,
+    /// it does not make sense to use a `deprecated` Rust attribute here, but it may be that we
+    /// can emit a note of the deprecated form of input to consumers of this library.
+    Bounded {
+        #[serde(rename = "Control_VentAdjustMin")]
+        control_vent_adjust_min: Option<String>,
+        #[serde(rename = "Control_VentAdjustMax")]
+        control_vent_adjust_max: Option<String>,
+    },
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -5390,24 +5412,6 @@ pub enum BuildType {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct InfiltrationVentilation {
-    // todo (migration to 1.0.0a9) review delete deprecated control fields
-    // (why did the python keep them around?)
-    #[deprecated(
-        since = "1.0.0a9",
-        note = "Deprecated: Use 'Control_VentAdjust' field with a reference to a ControlRangeTimer"
-    )]
-    #[serde(rename = "Control_VentAdjustMax")]
-    pub(crate) control_vent_adjust_max: Option<String>,
-
-    #[deprecated(
-        since = "1.0.0a9",
-        note = "Deprecated: Use 'Control_VentAdjust' field with a reference to a ControlRangeTimer"
-    )]
-    #[serde(rename = "Control_VentAdjustMin")]
-    pub(crate) control_vent_adjust_min: Option<String>,
-    #[serde(rename = "Control_VentAdjust")]
-    pub(crate) control_vent_adjust: Option<String>,
-
     #[serde(rename = "Control_WindowAdjust")]
     pub(crate) control_window_adjust: Option<String>,
 
@@ -5450,6 +5454,9 @@ pub struct InfiltrationVentilation {
     #[validate(minimum = 0.)]
     #[validate(maximum = 1.)]
     pub(crate) vent_opening_ratio_init: Option<f64>,
+
+    #[serde(flatten)]
+    pub(crate) vent_adjust_controls: VentAdjustControlReferences,
 }
 
 impl InfiltrationVentilation {
@@ -9729,9 +9736,10 @@ mod tests {
         #[fixture]
         fn valid_example() -> JsonValue {
             serde_json::to_value(InfiltrationVentilation {
-                control_vent_adjust_max: None,
-                control_vent_adjust_min: None,
-                control_vent_adjust: None,
+                vent_adjust_controls: VentAdjustControlReferences::Bounded {
+                    control_vent_adjust_max: None,
+                    control_vent_adjust_min: None,
+                },
                 control_window_adjust: None,
                 leaks: VentilationLeaks {
                     ventilation_zone_height: 6.,
