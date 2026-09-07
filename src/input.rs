@@ -4777,7 +4777,9 @@ pub enum HeatSourceLocation {
 #[derive(Clone, Debug, PartialEq, Validate, Serialize, Deserialize, Default)]
 pub enum ScheduleUnit {
     #[default]
-    Soc,
+    #[serde(rename = "soc")]
+    StateOfCharge,
+    #[serde(rename = "temperature")]
     Temperature,
 }
 
