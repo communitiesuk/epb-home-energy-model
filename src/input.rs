@@ -3284,6 +3284,7 @@ pub(crate) const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 #[serde(tag = "type")]
 #[validate(custom = validate_u_value_and_thermal_resistance_floor_construction)]
 #[validate(custom = validate_max_window_open_area_for_transparent)]
+#[validate(custom = validate_free_area_height_for_transparent)]
 pub enum BuildingElement {
     #[serde(rename = "BuildingElementOpaque")]
     Opaque {
@@ -3659,19 +3660,20 @@ fn validate_free_area_height_for_transparent(
     element: &BuildingElement,
 ) -> Result<(), serde_valid::validation::Error> {
     if let BuildingElement::Transparent {
-        area_input,
+        area_input: BuildingElementHeightWidthInput { height, .. },
         window_part_list,
         ..
     } = element
     {
         for part in window_part_list {
-            if part.free_area_height > area_input.height {
+            if part.free_area_height > *height {
                 return custom_validation_error(
                     "free_area_height of each window part must be less than or equal to the element height".to_string(),
                 );
             }
         }
     }
+
     Ok(())
 }
 
