@@ -4805,6 +4805,7 @@ pub enum HeatBatteryPcmChargingSource {
         /// `soc`: values are state-of-charge fractions (0–1).
         /// `temperature`: values are temperatures in °C, converted to SOC
         /// internally using the battery's energy calculation.
+        #[serde(default)]
         schedule_unit: ScheduleUnit,
     },
     /// Hydronic (wet heat source) charging source for a PCM heat battery.
@@ -4864,6 +4865,7 @@ pub enum HeatBatteryPcmChargingSource {
         /// internally using the battery's energy calculation.
         /// When 'temperature' is used, setpoints generally should not exceed
         /// the flow temperature of the hydronic system.
+        #[serde(default)]
         schedule_unit: ScheduleUnit,
     },
 }
