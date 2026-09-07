@@ -5734,12 +5734,15 @@ fn hot_water_source_from_input(
                 EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name)?;
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
-            HotWaterSource::PointOfUse(PointOfUse::new(
-                efficiency.ok_or_else(|| anyhow!("An efficiency value was expected on a point of use hot water source input."))?,
-                energy_supply_conn,
-                cold_water_source,
-                *setpoint_temp,
-            ).into())
+            HotWaterSource::PointOfUse(
+                PointOfUse::new(
+                    *efficiency,
+                    energy_supply_conn,
+                    cold_water_source,
+                    *setpoint_temp,
+                )
+                .into(),
+            )
         }
         HotWaterSourceDetails::Hiu {
             cold_water_source: cold_water_source_type,

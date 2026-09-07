@@ -7,6 +7,7 @@ use crate::simulation_time::SimulationTime;
 use crate::HEM_VERSION;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
+use educe::Educe;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use jsonschema::Validator;
@@ -1699,7 +1700,8 @@ impl PreHeatedWaterSourceDetails {
 }
 
 #[skip_serializing_none]
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, Educe, PartialEq, Serialize, Validate)]
+#[educe(Default)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
 #[validate(custom = validate_dhw_tests_inputs)]
@@ -1778,11 +1780,13 @@ pub enum HotWaterSourceDetails {
         #[validate(maximum = 100.)]
         setpoint_temp: Option<f64>,
     },
+    #[educe(Default)]
     PointOfUse {
-        /// Thermal efficiency of the point-of-use water heater (dimensionless, 0-1)
-        #[validate(exclusive_minimum = 0.)]
+        /// Thermal efficiency of the point-of-use water heater (dimensionless, fixed at 1)
+        #[educe(Default = 1.)]
+        #[validate(minimum = 1.)]
         #[validate(maximum = 1.)]
-        efficiency: Option<f64>,
+        efficiency: f64,
 
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
@@ -7234,7 +7238,7 @@ mod tests {
             #[fixture]
             fn valid_example() -> JsonValue {
                 serde_json::to_value(HotWaterSourceDetails::PointOfUse {
-                    efficiency: Some(0.7),
+                    efficiency: 1.,
                     energy_supply: "mains elec".into(),
                     cold_water_source: "cold water source".into(),
                     setpoint_temp: 25.,
