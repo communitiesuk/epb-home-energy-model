@@ -560,19 +560,19 @@ pub struct ApplianceGainsEvent {
 
 pub type EnergySupplyInput = IndexMap<std::string::String, EnergySupplyDetails>;
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum SingleOrMap<T>
 where
-    T: Clone + Debug + DeserializeOwned + Serialize + PartialEq,
+    T: Clone + Debug + DeserializeOwned + Serialize + PartialEq + Validate,
 {
-    Single(T),
-    Map(IndexMap<std::string::String, T>),
+    Single(#[validate] T),
+    Map(#[validate] IndexMap<std::string::String, T>),
 }
 
 impl<'de, T> Deserialize<'de> for SingleOrMap<T>
 where
-    T: Clone + Debug + DeserializeOwned + Serialize + PartialEq,
+    T: Clone + Debug + DeserializeOwned + Serialize + PartialEq + Validate,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -929,7 +929,7 @@ impl From<EnergySupplyType> for String {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "PascalCase")]
 #[serde(deny_unknown_fields)]
