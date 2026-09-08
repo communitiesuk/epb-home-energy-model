@@ -21,6 +21,7 @@ use serde_valid::validation::error::{Format, Message};
 use serde_valid::{MinimumError, Validate};
 use serde_with::skip_serializing_none;
 use smartstring::alias::String;
+use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Index;
 use std::sync::Arc;
@@ -634,6 +635,7 @@ pub struct EnergySupplyDetails {
     /// Caps the rate at which batteries draw from the grid during scheduled
     /// charging. When not specified, each battery is limited only by its own
     /// maximum_charge_rate_one_way_trip.
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) power_limit_battery_import: Option<f64>,
 
     /// Maximum AC power that can be exported to the grid, e.g. a Distribution
@@ -641,6 +643,7 @@ pub struct EnergySupplyDetails {
     /// and battery discharge share this limit. Generation surplus above the limit is
     /// curtailed; battery discharge is throttled so unexported energy is retained as charge.
     /// Omit for no limit (unit: kW)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) power_limit_export: Option<f64>,
 
     pub(crate) tariff: Option<EnergySupplyTariff>,
@@ -687,25 +690,31 @@ fn validate_threshold_value_fractions(
 pub(crate) fn validate_priority_for_energy_supply(
     energy_supply: &EnergySupplyDetails,
 ) -> Result<(), serde_valid::validation::Error> {
-    if energy_supply.priority.is_none() {
+    let priority = if let Some(priority) = energy_supply.priority.as_ref() {
+        priority
+    } else {
         return Ok(());
-    }
-    let priority_set: std::collections::HashSet<_> = energy_supply
-        .priority
-        .clone()
-        .unwrap()
-        .into_iter()
-        .collect();
+    };
 
-    let mut electric_battery_keys = std::collections::HashSet::new();
-    if let Some(_electric_battery) = &energy_supply.electric_battery {
-        electric_battery_keys.insert(EnergySupplyPriorityEntry::ElectricBattery);
-    }
+    let priority_set: std::collections::HashSet<std::string::String> =
+        priority.iter().map(|s| s.to_string()).collect();
 
-    let mut diverter_keys = std::collections::HashSet::new();
-    if let Some(_diverter) = &energy_supply.diverter {
-        diverter_keys.insert(EnergySupplyPriorityEntry::Diverter);
-    }
+    let electric_battery_keys: HashSet<std::string::String> =
+        match energy_supply.electric_battery.as_ref() {
+            Some(SingleOrMap::Single(_)) => {
+                HashSet::from([EnergySupplyPriorityEntry::ElectricBattery.to_string()])
+            }
+            Some(SingleOrMap::Map(batteries)) => HashSet::from_iter(batteries.keys().cloned()),
+            None => HashSet::new(),
+        };
+
+    let diverter_keys: HashSet<std::string::String> = match energy_supply.diverter.as_ref() {
+        Some(SingleOrMap::Single(_)) => {
+            HashSet::from([EnergySupplyPriorityEntry::Diverter.to_string()])
+        }
+        Some(SingleOrMap::Map(diverters)) => HashSet::from_iter(diverters.keys().cloned()),
+        None => HashSet::new(),
+    };
 
     if !priority_set.is_superset(&electric_battery_keys) {
         return custom_validation_error(
@@ -721,7 +730,7 @@ pub(crate) fn validate_priority_for_energy_supply(
     if priority_set
         != electric_battery_keys
             .union(&diverter_keys)
-            .copied()
+            .cloned()
             .collect()
     {
         return custom_validation_error(
@@ -787,7 +796,7 @@ pub(crate) enum EnergySupplyTariff {
     VariableTimeOfDay,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str, Eq, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum EnergySupplyPriorityEntry {
     ElectricBattery,
