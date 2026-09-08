@@ -4097,16 +4097,14 @@ fn validate_smart_air_brick_inputs(
     floor_data: &FloorData,
 ) -> Result<(), serde_valid::validation::Error> {
     if let FloorData::SuspendedFloor {
-        control_smart_air_brick,
-        vents_open_during_airtightness_test,
+        control_smart_air_brick: Some(_),
+        vents_open_during_airtightness_test: None,
         ..
     } = floor_data
     {
-        if control_smart_air_brick.is_some() && vents_open_during_airtightness_test.is_none() {
-            return custom_validation_error(
-                "vents_open_during_airtightness_test must be specified when Control_smart_air_brick is provided".to_string(),
-            );
-        }
+        return custom_validation_error(
+            "vents_open_during_airtightness_test must be specified when Control_smart_air_brick is provided".to_string(),
+        );
     }
 
     Ok(())
