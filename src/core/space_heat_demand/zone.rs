@@ -2060,7 +2060,7 @@ mod tests {
             height_upper_surface: 0.5,
             thermal_transmission_walls: 0.5,
             area_per_perimeter_vent: 0.01,
-            shield_fact_location: WindShieldLocation::Sheltered,
+            shield_fact_location: WindShieldLocation::Sheltered.into(),
             thermal_resistance_of_insulation: 7.,
             // ADDED to compile during 1.0.0a9 migration
             control_smart_air_brick: None,
@@ -2080,6 +2080,7 @@ mod tests {
                 20.0,
                 0.7,
                 external_conditions.clone(),
+                WindShieldLocation::Average,
             )
             .unwrap(),
         );

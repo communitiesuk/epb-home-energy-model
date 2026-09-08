@@ -713,6 +713,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         perimeter: f64,
         u_value: f64,
         psi_wall_floor_junc: f64,
+        fallback_shield_fact_location: WindShieldLocation,
     ) -> anyhow::Result<()> {
         self.init_super(None);
         self.set_temp_int_annual(average_monthly_to_annual(
@@ -979,7 +980,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                         *height_upper_surface,
                         *thermal_transmission_walls,
                         *area_per_perimeter_vent,
-                        *shield_fact_location,
+                        shield_fact_location.unwrap_or(fallback_shield_fact_location),
                         *thermal_resistance_of_insulation,
                     )?,
                     FloorData::HeatedBasement {
@@ -2537,6 +2538,7 @@ impl BuildingElementGround {
         perimeter: f64,
         psi_wall_floor_junc: f64,
         external_conditions: Arc<ExternalConditions>,
+        fallback_shield_fact_location: WindShieldLocation,
     ) -> anyhow::Result<Self> {
         let mut new_ground = Self {
             total_area,
@@ -2605,6 +2607,7 @@ impl BuildingElementGround {
             perimeter,
             u_value,
             psi_wall_floor_junc,
+            fallback_shield_fact_location,
         )?;
         new_ground.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
 
@@ -4114,7 +4117,7 @@ mod tests {
             height_upper_surface: 0.5,
             thermal_transmission_walls: 0.5,
             area_per_perimeter_vent: 0.01,
-            shield_fact_location: WindShieldLocation::Sheltered,
+            shield_fact_location: WindShieldLocation::Sheltered.into(),
             thermal_resistance_of_insulation: 7.,
 
             control_smart_air_brick: None,
@@ -4133,6 +4136,7 @@ mod tests {
             18.0,
             0.5,
             external_conditions_for_ground.clone(),
+            WindShieldLocation::Average,
         )
         .unwrap();
         let be_e_floor_data = FloorData::SlabNoEdgeInsulation;
@@ -4149,6 +4153,7 @@ mod tests {
             19.0,
             0.6,
             external_conditions_for_ground.clone(),
+            WindShieldLocation::Average,
         )
         .unwrap();
         let edge_insulation_ie = vec![
@@ -4177,6 +4182,7 @@ mod tests {
             20.0,
             0.7,
             external_conditions_for_ground.clone(),
+            WindShieldLocation::Average,
         )
         .unwrap();
         let be_d_floor_data = FloorData::HeatedBasement {
@@ -4196,6 +4202,7 @@ mod tests {
             21.0,
             0.8,
             external_conditions_for_ground.clone(),
+            WindShieldLocation::Average,
         )
         .unwrap();
         let be_m_floor_data = FloorData::UnheatedBasement {
@@ -4218,6 +4225,7 @@ mod tests {
             22.0,
             0.9,
             external_conditions_for_ground,
+            WindShieldLocation::Average,
         )
         .unwrap();
         [be_i, be_e, be_ie, be_d, be_m]
@@ -4315,7 +4323,7 @@ mod tests {
             height_upper_surface: 1.,
             thermal_transmission_walls: 0.5,
             area_per_perimeter_vent: 1.,
-            shield_fact_location: wind_shield_location,
+            shield_fact_location: wind_shield_location.into(),
             thermal_resistance_of_insulation: 1.,
             // ADDED to compile during 1.0.0a9 migration
             control_smart_air_brick: None,
@@ -4361,6 +4369,7 @@ mod tests {
             22.0,
             0.9,
             external_conditions,
+            WindShieldLocation::Average,
         )
         .unwrap()
     }

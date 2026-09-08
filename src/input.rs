@@ -4036,7 +4036,7 @@ pub enum FloorData {
 
         // Needs attention: Shows as optional in python as part of 1.0.0a9 migration
         /// Wind shielding factor. If omitted, inferred from InfiltrationVentilation.shield_class.
-        shield_fact_location: WindShieldLocation,
+        shield_fact_location: Option<WindShieldLocation>,
 
         /// Reference to a SetpointTimeControl for smart air brick opening ratios (0-1)
         /// Name of a SetpointTimeControl defining smart air brick opening ratios (0 = fully closed, 1 = fully open)
@@ -9251,7 +9251,7 @@ mod tests {
                             height_upper_surface: 0.5,
                             thermal_transmission_walls: 1.5,
                             area_per_perimeter_vent: 0.0015,
-                            shield_fact_location: WindShieldLocation::Average,
+                            shield_fact_location: WindShieldLocation::Average.into(),
                             thermal_resistance_of_insulation: 0.5,
                             control_smart_air_brick: None,
                             vents_open_during_airtightness_test: None,

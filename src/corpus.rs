@@ -90,10 +90,10 @@ use crate::input::{
     SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
     ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput,
-    VentAdjustControlReferences, VentilationLeaks, WasteWaterHeatRecovery,
+    VentAdjustControlReferences, VentilationLeaks, VentilationShieldClass, WasteWaterHeatRecovery,
     WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents, WaterPipework,
-    WetEmitter, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis, MAIN_REFERENCE,
-    PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
+    WetEmitter, WindShieldLocation, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
+    MAIN_REFERENCE, PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
 };
 use crate::input_dependency_resolvers::{
     build_preheated_water_source_dependency_graph, topological_sort_preheated_water_sources,
@@ -820,6 +820,7 @@ impl Corpus {
                             infiltration_ventilation.clone(),
                             window_adjust_control.clone(),
                             &controls,
+                            &input.infiltration_ventilation.shield_class,
                             output_options.print_heat_balance,
                             simulation_time_iterator.clone().as_ref(),
                         )?;
@@ -3718,6 +3719,7 @@ fn zone_from_input(
     infiltration_ventilation: Arc<InfiltrationVentilation>,
     window_adjust_control: Option<Arc<dyn ControlBehaviour>>,
     controls: &Controls,
+    ventilation_shield_class: &VentilationShieldClass,
     print_heat_balance: bool,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<Zone> {
@@ -3796,6 +3798,7 @@ fn zone_from_input(
                         el,
                         external_conditions.clone(),
                         controls,
+                        ventilation_shield_class,
                         simulation_time_iterator,
                     )?,
                 ))
@@ -3907,6 +3910,7 @@ fn building_element_from_input(
     input: &BuildingElementInput,
     external_conditions: Arc<ExternalConditions>,
     controls: &Controls,
+    ventilation_shield_class: &VentilationShieldClass,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<Arc<BuildingElement>> {
     Ok(Arc::from(match input {
@@ -4014,6 +4018,11 @@ fn building_element_from_input(
             *perimeter,
             *psi_wall_floor_junc,
             external_conditions,
+            match ventilation_shield_class {
+                VentilationShieldClass::Open => WindShieldLocation::Exposed,
+                VentilationShieldClass::Normal => WindShieldLocation::Average,
+                VentilationShieldClass::Shielded => WindShieldLocation::Sheltered,
+            },
         )?),
         BuildingElementInput::AdjacentConditionedSpace {
             area,
