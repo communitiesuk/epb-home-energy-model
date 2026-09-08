@@ -898,6 +898,7 @@ mod tests {
             1.5,
             battery_location,
             grid_charging_possible,
+            false,
             simulation_time.step,
             Arc::new(external_conditions),
         )
@@ -1288,8 +1289,8 @@ mod tests {
             energy_supply
                 .get_battery_discharge_efficiency(simulation_time.iter().current_iteration())
                 .unwrap(),
-            1. / 0.8_f64.powf(0.5) * battery_state_of_health * 1.
-        ); // reverse one way efficiency * state of health * air_temp_capacity_factor
+            0.8_f64.powf(0.5) * battery_state_of_health * 1.
+        ); // one way efficiency * state of health * air_temp_capacity_factor
         assert_eq!(
             energy_supply.get_battery_max_discharge(0.7).unwrap(),
             -(1.5 * 1.)
@@ -1310,7 +1311,7 @@ mod tests {
         let expected_generated_energy_into_battery = vec![0.; 8];
         let expected_energy_out_of_battery = vec![0.; 8];
         let expected_battery_state_of_charge = vec![0.8; 8];
-        let expected_energy_import_from_grid = vec![1.5741918561598522, 0., 0., 0., 0., 0., 0., 0.];
+        let expected_energy_import_from_grid = vec![1.788854381999832, 0., 0., 0., 0., 0., 0., 0.];
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
@@ -1510,8 +1511,8 @@ mod tests {
                     .map(|x| x.load(Ordering::SeqCst))
                     .collect_vec(),
                 vec![
-                    15.138528000000004,
-                    34.37872423953049,
+                    15.256924949254948,
+                    34.59889302603037,
                     52.991809292243516,
                     63.07009986960006,
                     -2.842170943040401e-14,
@@ -1528,7 +1529,7 @@ mod tests {
                     .map(|x| x.load(Ordering::SeqCst))
                     .collect_vec(),
                 vec![
-                    -14.582949016875158,
+                    -14.016897653541719,
                     -24.59889302603037,
                     -32.991809292243516,
                     -73.07009986960004,
@@ -1556,8 +1557,8 @@ mod tests {
             assert_eq!(
                 energy_supply.get_grid_to_consumption(),
                 vec![
-                    15.138528000000004,
-                    34.37872423953049,
+                    15.256924949254948,
+                    34.59889302603037,
                     52.991809292243516,
                     63.07009986960006,
                     -2.842170943040401e-14,
@@ -1570,8 +1571,8 @@ mod tests {
             assert_eq!(
                 energy_supply.get_energy_to_from_battery(),
                 (
-                    vec![1.6770509831248424, -0., -0., -0., -0., -0., -0., -0.,],
-                    vec![-1.121472, -0.2201687864998738, -0., -0., 0., -0., -0., -0.,],
+                    vec![2.2431023464582824, 0., 0., 0., 0., 0., 0., 0.,],
+                    vec![-1.0030750507450579, -0., 0., 0., 0., 0., 0., 0.,],
                     vec![0.; 8],
                     vec![0.; 8]
                 )
@@ -1654,8 +1655,8 @@ mod tests {
                     .map(|x| x.load(Ordering::SeqCst))
                     .collect_vec(),
                 vec![
-                    47.65852800000002,
-                    103.57651029159123,
+                    47.77692494925496,
+                    103.7966790780911,
                     158.97542787673055,
                     189.21029960880017,
                     -8.526512829121202e-14,
@@ -1672,7 +1673,7 @@ mod tests {
                     .map(|x| x.load(Ordering::SeqCst))
                     .collect_vec(),
                 vec![
-                    -37.10294901687516,
+                    -36.53689765354172,
                     -63.79667907809112,
                     -88.97542787673055,
                     -209.21029960880014,

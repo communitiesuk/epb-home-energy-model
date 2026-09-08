@@ -2199,6 +2199,7 @@ mod tests {
                 -100., // significant for test_add_appliance_demand, in Python Magic Mock is used instead
                 BatteryLocation::Inside, // significant for test_add_appliance_demand, in Python Magic Mock is used instead
                 false,
+                false,
                 simulation_time_iterator.step_in_hours(),
                 Arc::new(external_conditions),
             );

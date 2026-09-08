@@ -20,6 +20,7 @@ pub struct ElectricBattery {
     maximum_discharge_rate: f64,
     battery_location: BatteryLocation,
     grid_charging_possible: bool,
+    grid_exporting_possible: bool,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
     /// the current energy stored in the battery at the
@@ -29,7 +30,6 @@ pub struct ElectricBattery {
     state_of_health: f64,
     max_capacity: f64,
     one_way_battery_efficiency: f64,
-    reverse_one_way_battery_efficiency: f64,
 }
 
 /// Arguments:
@@ -42,6 +42,7 @@ pub struct ElectricBattery {
 /// * `maximum_discharge_rate` - the maximum discharge rate one way trip the battery allows (kW)
 /// * `battery_location` - Location of battery (outside or inside)
 /// * `grid_charging_possible` - Is charging from the grid possible?
+/// * `grid_exporting_possible` - Is exporting to grid possible?
 /// * `simulation_timestep` - timestep of the simulation time
 /// * `external_conditions` - reference to ExternalConditions object
 impl ElectricBattery {
@@ -54,6 +55,7 @@ impl ElectricBattery {
         maximum_discharge_rate: f64,
         battery_location: BatteryLocation,
         grid_charging_possible: bool,
+        grid_exporting_possible: bool,
         simulation_timestep: f64,
         external_conditions: Arc<ExternalConditions>,
     ) -> Self {
@@ -62,7 +64,6 @@ impl ElectricBattery {
         // erroneous and leads to NaN error further on (upstream python throws a ZeroDivisionError
         // immediately), reported upstream
         let one_way_battery_efficiency = charge_discharge_efficiency.powf(0.5);
-        let reverse_one_way_battery_efficiency = 1. / one_way_battery_efficiency;
 
         Self {
             _capacity: capacity,
@@ -72,6 +73,7 @@ impl ElectricBattery {
             maximum_discharge_rate,
             battery_location,
             grid_charging_possible,
+            grid_exporting_possible,
             simulation_timestep,
             external_conditions,
             current_energy_stored: Default::default(),
@@ -80,7 +82,6 @@ impl ElectricBattery {
             // Calculate max capacity based on battery original capacity * state of health
             max_capacity: capacity * state_of_health,
             one_way_battery_efficiency,
-            reverse_one_way_battery_efficiency,
         }
     }
 
@@ -98,6 +99,7 @@ impl ElectricBattery {
             maximum_discharge_rate_one_way_trip,
             battery_location,
             grid_charging_possible,
+            grid_exporting_possible,
             ..
         } = input;
         Self::new(
@@ -109,6 +111,7 @@ impl ElectricBattery {
             *maximum_discharge_rate_one_way_trip,
             *battery_location,
             *grid_charging_possible,
+            *grid_exporting_possible,
             simulation_timestep,
             external_conditions,
         )
@@ -162,10 +165,18 @@ impl ElectricBattery {
         self.one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor
     }
 
+    /// Return the discharge efficiency of the battery.
+    /// The fraction of internal energy that becomes useful terminal output.
+    /// Mirrors get_charge_efficiency: worse SOH or cold temperature reduces
+    /// this value (less energy delivered per kWh of internal depletion).
     pub(crate) fn get_discharge_efficiency(&self, simtime: SimulationTimeIteration) -> f64 {
         let air_temp_capacity_factor = self.limit_capacity_due_to_temp(simtime);
 
-        self.reverse_one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor
+        self.one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor
+    }
+
+    pub(crate) fn is_grid_exporting_possible(&self) -> bool {
+        self.grid_exporting_possible
     }
 
     pub(crate) fn is_grid_charging_possible(&self) -> bool {
@@ -225,6 +236,7 @@ impl ElectricBattery {
         let state_of_charge = min_of_2(state_of_charge, 1.);
         let state_of_charge = max_of_2(state_of_charge, 0.);
 
+        // Convert energy_flow (in kWh) to a power (in kW) by dividing energy by timestep (in hours)
         let energy_available_to_charge_battery = if energy_flow < 0. {
             // Charging battery
             // Convert energy_flow (in kWh) to a power (in kW) by dividing energy by time available for charging (in hours)
@@ -256,9 +268,13 @@ impl ElectricBattery {
                 self.calculate_max_discharge(state_of_charge)
             };
 
-            max_of_2(-energy_flow, max_discharge) / self.one_way_battery_efficiency
-                * self.state_of_health
-                * air_temp_capacity_factor // reductions due to state of health (i.e age) and cold temperature applied here
+            // Internal energy depleted = terminal demand / full discharge chain.
+            // Worse SOH or cold temperature → more internal energy consumed per
+            // unit of terminal demand (the battery is less efficient).
+            max_of_2(-energy_flow, max_discharge)
+                / self.one_way_battery_efficiency
+                / self.state_of_health
+                / air_temp_capacity_factor
         };
 
         // Charge/discharge the battery by the amount available
@@ -300,10 +316,24 @@ impl ElectricBattery {
             self.total_time_charging_current_timestep
                 .fetch_add(time_charging_current_load, Ordering::SeqCst);
 
-            -energy_accepted_by_battery / self.one_way_battery_efficiency
+            // Convert internal energy to the energy supplied to the battery
+            // by dividing by the full charge efficiency chain, not just
+            // one_way_eff. This ensures callers receive the energy drawn from
+            // the supply (which may be the grid or on-site generation).
+            let charge_efficiency =
+                self.one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor;
+
+            -energy_accepted_by_battery / charge_efficiency
         } else {
             // Discharging battery
-            -energy_accepted_by_battery * self.one_way_battery_efficiency
+            // Convert internal energy released to terminal energy delivered.
+            // The full discharge chain mirrors the charge chain: worse SOH or
+            // cold temperature means less useful energy per unit of internal
+            // depletion (symmetric with charging losses).
+            let discharge_efficiency =
+                self.one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor;
+
+            -energy_accepted_by_battery * discharge_efficiency
         }
     }
 
@@ -467,6 +497,7 @@ mod tests {
             1.5,
             BatteryLocation::Outside,
             false,
+            false,
             simulation_time.step,
             Arc::new(external_conditions),
         )
@@ -494,7 +525,7 @@ mod tests {
 
         assert_relative_eq!(
             electric_battery.get_discharge_efficiency(simulation_time),
-            0.8358958756208815
+            0.6687167004967052
         );
     }
 
@@ -552,34 +583,36 @@ mod tests {
         assert_relative_eq!(ElectricBattery::capacity_temp_equ(30.), 1.);
     }
 
+    /// Test the charge_discharge_battery function including for overcharging and overdischarging.
     #[rstest]
     fn test_charge_discharge_battery(
         electric_battery: ElectricBattery,
         simulation_time: SimulationTime,
     ) {
         let simulation_time = simulation_time.iter().next().unwrap();
-        // supply to battery exceeds limit
+        // Supply to battery exceeds limit (return is energy consumed from supply)
         assert_relative_eq!(
             electric_battery.charge_discharge_battery(-1_000., false, simulation_time),
-            -1.6770509831248424,
+            -2.2431023464582824,
             max_relative = 1e-7
         );
-        // demand on battery exceeds limit
+        // Demand on battery exceeds limit — battery fully depleted, delivers
+        // less than demanded due to SOH and temperature losses.
         assert_relative_eq!(
             electric_battery.charge_discharge_battery(1_000., false, simulation_time),
-            1.121472,
+            1.0030750507450577,
             max_relative = 1e-7
         );
-        // normal charge
+        // Normal charge (no more charging time available in timestep)
         assert_relative_eq!(
             electric_battery.charge_discharge_battery(-0.2, false, simulation_time),
             0.,
             max_relative = 1e-7
         );
-        // normal discharge
+        // Discharge from empty battery — nothing to deliver
         assert_relative_eq!(
             electric_battery.charge_discharge_battery(0.1, false, simulation_time),
-            0.0747648,
+            0.,
             max_relative = 1e-7
         );
     }
@@ -625,7 +658,7 @@ mod tests {
 
         assert_relative_eq!(
             electric_battery.charge_discharge_battery(10., false, simulation_time),
-            1.121472,
+            1.0030750507450577,
         );
     }
 
