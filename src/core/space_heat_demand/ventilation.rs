@@ -98,13 +98,11 @@ fn calculate_pressure_difference_at_an_airflow_path(
 
     // TODO (from Python): Investigate why, due to differences in internal temperature, these values are different in
     // Windows implementation when compared to Linux
-    let delta_p_path = if relative_eq!(p_e_path, p_z_path, epsilon = 1e-12, max_relative = 1e-9) {
+    if relative_eq!(p_e_path, p_z_path, epsilon = 1e-12, max_relative = 1e-9) {
         0.
     } else {
         p_e_path - p_z_path // (4)
-    };
-
-    delta_p_path
+    }
 }
 
 /// Convert infiltration rate from ach to m^3/s

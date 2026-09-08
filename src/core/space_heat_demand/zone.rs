@@ -3095,35 +3095,15 @@ mod tests {
     #[test]
     pub fn should_replicate_numpy_isclose() {
         // test cases for python doctests
+        assert!(!isclose(&[1e10, 1e-7], &[1.00001e10, 1e-8], None, None,));
+        assert!(isclose(&[1e10, 1e-8], &[1.00001e10, 1e-9], None, None,));
+        assert!(!isclose(&[1e10, 1e-8], &[1.0001e10, 1e-9], None, None,));
+        assert!(!isclose(&[1e-8, 1e-7], &[0.0, 0.0], None, None),);
+        assert!(!isclose(&[1e-100, 1e-7], &[0.0, 0.0], None, Some(0.0),));
+        assert!(isclose(&[1e-10, 1e-10], &[1e-20, 0.0], None, None),);
         assert!(!isclose(
-            &vec![1e10, 1e-7],
-            &vec![1.00001e10, 1e-8],
-            None,
-            None,
-        ));
-        assert!(isclose(
-            &vec![1e10, 1e-8],
-            &vec![1.00001e10, 1e-9],
-            None,
-            None,
-        ));
-        assert!(!isclose(
-            &vec![1e10, 1e-8],
-            &vec![1.0001e10, 1e-9],
-            None,
-            None,
-        ));
-        assert!(!isclose(&vec![1e-8, 1e-7], &vec![0.0, 0.0], None, None),);
-        assert!(!isclose(
-            &vec![1e-100, 1e-7],
-            &vec![0.0, 0.0],
-            None,
-            Some(0.0),
-        ));
-        assert!(isclose(&vec![1e-10, 1e-10], &vec![1e-20, 0.0], None, None),);
-        assert!(!isclose(
-            &vec![1e-10, 1e-10],
-            &vec![1e-20, 0.999999e-10],
+            &[1e-10, 1e-10],
+            &[1e-20, 0.999999e-10],
             None,
             Some(0.0),
         ));
