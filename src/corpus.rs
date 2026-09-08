@@ -6033,6 +6033,7 @@ fn space_heat_systems_from_input(
                             _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
                         }
                     }
+                    SpaceHeatSystemDetails::DryElectricUnderfloorHeater { .. } => todo!("complete as part of 1.0.0a9 migration")
                 })),
             ))
         })

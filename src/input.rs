@@ -2653,13 +2653,10 @@ pub type SpaceHeatSystem = IndexMap<std::string::String, SpaceHeatSystemDetails>
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
+#[validate(custom = validate_thermal_mass_not_set_for_fancoil)]
 pub enum SpaceHeatSystemDetails {
     #[serde(rename = "InstantElecHeater")]
     InstantElectricHeater {
-        //// Rated power of the instant electric heater. (Unit: kW)
-        #[validate(exclusive_minimum = 0.)]
-        rated_power: f64,
-
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
 
@@ -2670,6 +2667,33 @@ pub enum SpaceHeatSystemDetails {
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         frac_convective: f64,
+
+        /// Rated power of the instant electric heater. (Unit: kW)
+        #[validate(exclusive_minimum = 0.)]
+        rated_power: f64,
+
+        /// Constant from characteristic equation of emitters (e.g. derived from BS EN 442 style tests)
+        #[serde(rename = "c")]
+        #[validate(exclusive_minimum = 0.)]
+        constant: Option<f64>,
+
+        /// Constant from characteristic equation of emitters (e.g. derived from BS EN 442 style tests) per kW of rated power
+        #[serde(rename = "c_per_kW")]
+        #[validate(exclusive_minimum = 0.)]
+        constant_per_kw: Option<f64>,
+
+        /// Exponent from characteristic equation of emitters (e.g. derived from BS EN 442 style tests)
+        #[serde(rename = "n")]
+        #[validate(exclusive_minimum = 0.)]
+        exponent: Option<f64>,
+
+        /// Thermal mass of the heater. (Unit: kWh/K)
+        #[validate(minimum = 0.)]
+        thermal_mass: Option<f64>,
+
+        /// Thermal mass of the heater. (Unit: kWh/K) per kW of rated power
+        #[validate(minimum = 0.)]
+        thermal_mass_per_kw: Option<f64>,
     },
     #[serde(rename = "ElecStorageHeater")]
     ElectricStorageHeater {
@@ -2751,6 +2775,7 @@ pub enum SpaceHeatSystemDetails {
 
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[validate]
+        #[validate(custom = reject_external_pipework)]
         pipework: Vec<WaterPipework>,
 
         #[validate]
@@ -2760,7 +2785,13 @@ pub enum SpaceHeatSystemDetails {
         #[validate(exclusive_minimum = 0.)]
         temp_diff_emit_dsgn: f64,
 
-        /// Thermal mass of the emitters. (Unit: kWh/K)
+        /// Thermal mass of the emitter system not already captured by individual
+        /// emitter entries (e.g. thermal mass of a 2-port buffer tank), and always excluding
+        /// pipework thermal mass.
+        /// This value is summed with the total thermal mass from all individual emitter entries.
+        /// Required for radiator systems unless all radiators specify their own thermal_mass or
+        /// thermal_mass_per_m.
+        /// Optional for UFH-only systems and must not be set when emitters are fancoils. (Unit: kWh/K)
         #[validate(exclusive_minimum = 0.)]
         thermal_mass: Option<f64>,
 
@@ -2791,6 +2822,110 @@ pub enum SpaceHeatSystemDetails {
         #[serde(rename = "Control")]
         control: String,
     },
+    #[serde(rename = "DryElectricUnderfloorHeating")]
+    DryElectricUnderfloorHeater {
+        #[serde(rename = "EnergySupply")]
+        energy_supply: String,
+
+        #[serde(rename = "Control")]
+        control: String,
+
+        /// Convective fraction for heating
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        frac_convective: f64,
+
+        /// Rated power of the underfloor heater. (Unit: kW)
+        #[validate(minimum = 0.)]
+        rated_power: f64,
+
+        /// The floor area of the emitter. (unit: m²)
+        #[validate(minimum = 0.)]
+        emitter_floor_area: f64,
+
+        /// Exponent from characteristic equation of emitters (e.g. derived from BS EN 442 style tests)
+        #[serde(rename = "n")]
+        #[validate(exclusive_minimum = 0.)]
+        exponent: f64,
+
+        #[serde(flatten)]
+        #[validate]
+        constant_fields: UnderfloorHeaterConstantFields,
+
+        #[serde(flatten)]
+        #[validate]
+        thermal_mass_fields: UnderfloorHeaterThermalMassFields,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[serde(untagged)]
+pub enum UnderfloorHeaterConstantFields {
+    Absolute {
+        /// Constant from characteristic equation of emitters (e.g. derived from BS EN 442 style tests)
+        #[serde(rename = "c")]
+        #[validate(exclusive_minimum = 0.)]
+        constant: f64,
+    },
+    PerArea {
+        /// Constant from characteristic equation of emitters (e.g. derived from BS EN 442 style tests) per square metre of floor area
+        #[serde(rename = "c_per_m2")]
+        #[validate(exclusive_minimum = 0.)]
+        constant_per_m2: f64,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[serde(untagged)]
+pub enum UnderfloorHeaterThermalMassFields {
+    Absolute {
+        /// Thermal mass of the heater. (Unit: kWh/K)
+        #[validate(minimum = 0.)]
+        thermal_mass: f64,
+    },
+    PerArea {
+        /// Thermal mass of the heater. (Unit: kWh/K) per square metre of floor area
+        #[validate(minimum = 0.)]
+        thermal_mass_per_m2: f64,
+    },
+}
+
+fn validate_thermal_mass_not_set_for_fancoil(
+    space_heat_system: &SpaceHeatSystemDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    if let SpaceHeatSystemDetails::WetDistribution {
+        thermal_mass: Some(_),
+        emitters,
+        ..
+    } = space_heat_system
+    {
+        if emitters
+            .iter()
+            .any(|emitter| matches!(emitter, WetEmitter::Fancoil { .. }))
+        {
+            return custom_validation_error(
+                "thermal_mass cannot be set when emitters are fancoils; thermal mass is not used in the fancoil calculation".to_string(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn reject_external_pipework(
+    pipework: &[WaterPipework],
+) -> Result<(), serde_valid::validation::Error> {
+    if pipework
+        .iter()
+        .any(|pipework| matches!(pipework.location, WaterPipeworkLocation::External { .. }))
+    {
+        return custom_validation_error(
+            "External space heating pipework is not supported; only internal pipework is modelled."
+                .to_string(),
+        );
+    }
+
+    Ok(())
 }
 
 fn validate_dry_core_output(
