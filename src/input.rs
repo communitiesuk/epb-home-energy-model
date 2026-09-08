@@ -3285,6 +3285,7 @@ pub(crate) const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 #[validate(custom = validate_u_value_and_thermal_resistance_floor_construction)]
 #[validate(custom = validate_max_window_open_area_for_transparent)]
 #[validate(custom = validate_free_area_height_for_transparent)]
+#[validate(custom = validate_openable_control_for_transparent)]
 pub enum BuildingElement {
     #[serde(rename = "BuildingElementOpaque")]
     Opaque {
