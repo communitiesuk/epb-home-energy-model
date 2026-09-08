@@ -584,7 +584,6 @@ pub(crate) struct Window {
 impl Window {
     /// Construct a Window object
     /// Construct a Window unit.
-
     /// Arguments:
     ///     window_part_list -- list of openable-section input dicts, each with
     ///        keys `free_area_height`, `mid_height`, `max_window_open_area`.
@@ -900,10 +899,10 @@ impl WindowDivision {
             t_z,
             p_z_ref,
         );
-        let qv_w_div_path = c_w_path / (_N_W_DIV + 1) as f64
+
+        c_w_path / (_N_W_DIV + 1) as f64
             * delta_p_path.signum()
-            * delta_p_path.abs().powf(_N_W_WINDOW);
-        qv_w_div_path
+            * delta_p_path.abs().powf(_N_W_WINDOW)
     }
 }
 

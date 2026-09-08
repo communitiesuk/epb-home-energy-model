@@ -859,7 +859,7 @@ impl FuelType {
     /// the built-in enum without being blocked here — they remain responsible for ensuring the
     /// CUSTOM fuel's physical properties match the system it is assigned to.
     pub fn is_electric_fuel(&self) -> bool {
-        return matches!(self, FuelType::Electricity | FuelType::Custom);
+        matches!(self, FuelType::Electricity | FuelType::Custom)
     }
 }
 

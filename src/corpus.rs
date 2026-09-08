@@ -5668,7 +5668,7 @@ fn hot_water_source_from_input(
                 details.power_pump_kw,
                 details.max_flow_rate_pump_l_per_min,
                 details.temp_usable,
-                controls.get_with_string(&*details.temp_setpnt_max).ok_or_else(|| anyhow!("A control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object."))?,
+                controls.get_with_string(&details.temp_setpnt_max).ok_or_else(|| anyhow!("A control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object."))?,
                 cold_water_source.clone(),
                 &simulation_time.current_iteration(),
                 heat_sources.clone(),
