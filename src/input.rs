@@ -12,6 +12,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use jsonschema::Validator;
 use monostate::MustBe;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Map, Value as JsonValue};
@@ -20,7 +21,7 @@ use serde_valid::validation::error::{Format, Message};
 use serde_valid::{MinimumError, Validate};
 use serde_with::skip_serializing_none;
 use smartstring::alias::String;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::Index;
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -559,20 +560,34 @@ pub struct ApplianceGainsEvent {
 
 pub type EnergySupplyInput = IndexMap<std::string::String, EnergySupplyDetails>;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(untagged)]
-pub enum ElectricBatteryType {
-    SingleBattery(#[validate] ElectricBattery),
-    Map(#[validate] IndexMap<std::string::String, ElectricBattery>),
+pub(crate) enum SingleOrMap<T>
+where
+    T: Clone + Debug + DeserializeOwned + Serialize + PartialEq,
+{
+    Single(T),
+    Map(IndexMap<std::string::String, T>),
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(untagged)]
-pub(crate) enum EnergyDiverterType {
-    SingleDiverter(EnergyDiverter),
-    Map(IndexMap<std::string::String, EnergyDiverter>),
+impl<'de, T> Deserialize<'de> for SingleOrMap<T>
+where
+    T: Clone + Debug + DeserializeOwned + Serialize + PartialEq,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        if let Ok(single) = serde_json::from_value::<T>(value.clone()) {
+            return Ok(SingleOrMap::Single(single));
+        }
+
+        serde_json::from_value::<IndexMap<std::string::String, T>>(value)
+            .map(SingleOrMap::Map)
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 #[skip_serializing_none]
@@ -586,11 +601,11 @@ pub struct EnergySupplyDetails {
     /// Type of fuel
     pub(crate) fuel: FuelType,
 
-    pub(crate) diverter: Option<EnergyDiverterType>,
+    pub(crate) diverter: Option<SingleOrMap<EnergyDiverter>>,
 
     /// Indicates that an electric battery is present
     #[serde(rename = "ElectricBattery")]
-    pub(crate) electric_battery: Option<ElectricBatteryType>,
+    pub(crate) electric_battery: Option<SingleOrMap<ElectricBattery>>,
 
     pub factor: Option<CustomEnergySourceFactor>,
 
