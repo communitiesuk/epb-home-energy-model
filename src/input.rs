@@ -2917,7 +2917,7 @@ fn reject_external_pipework(
 ) -> Result<(), serde_valid::validation::Error> {
     if pipework
         .iter()
-        .any(|pipework| matches!(pipework.location, WaterPipeworkLocation::External { .. }))
+        .any(|pipework| matches!(pipework.location, WaterPipeworkLocation::External))
     {
         return custom_validation_error(
             "External space heating pipework is not supported; only internal pipework is modelled."
