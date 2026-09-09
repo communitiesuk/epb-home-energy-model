@@ -582,7 +582,6 @@ pub(crate) struct Window {
 }
 
 impl Window {
-    /// Construct a Window object
     /// Construct a Window unit.
     /// Arguments:
     ///     window_part_list -- list of openable-section input dicts, each with
@@ -688,24 +687,6 @@ impl Window {
             );
         anyhow::Ok((qm_in_through_window_opening, qm_out_through_window_opening))
     }
-
-    // I CANT SEE WHERE THIS IS USED COMMENTED TO ALLOW COMPILATION
-
-    // The window opening free area A_w for a window
-    // Equation 40 in BS EN 16798-7.
-    //Arguments:
-    //     R_w_arg -- ratio of window opening (0-1)
-    // fn calculate_window_opening_free_area(
-    //     &self,
-    //     r_w_arg: f64,
-    //     simtime: SimulationTimeIteration,
-    // ) -> f64 {
-    //     // Assume windows are shut if the control object is empty
-    //     match &self.on_off_ctrl_obj {
-    //         Some(ctrl) if ctrl.is_on(&simtime) => r_w_arg * self.a_w_max,
-    //         _ => 0.,
-    //     }
-    // }
 }
 
 #[derive(Clone, Debug)]
