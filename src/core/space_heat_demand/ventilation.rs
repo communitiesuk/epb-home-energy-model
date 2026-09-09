@@ -603,7 +603,6 @@ impl Window {
         on_off_ctrl_obj: Option<Arc<Control>>,
         ventilation_zone_base_height: f64,
     ) -> Self {
-        let n_w_div = max_of_2(window_part_list.len() as f64 - 1., 0f64);
         Self {
             orientation,
             pitch,
@@ -616,7 +615,7 @@ impl Window {
                     WindowPart::new(
                         window_part_input.free_area_height,
                         window_part_input.mid_height,
-                        n_w_div,
+                        window_part_input.max_window_open_area,
                         ventilation_zone_base_height,
                     )
                 })
