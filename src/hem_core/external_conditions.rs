@@ -952,30 +952,57 @@ impl ExternalConditions {
         )
     }
 
-    /// calculates the shading factor of direct radiation due to external
-    /// shading objects
+    /// Calculates the shading factor of direct radiation due to external shading objects and self-shading from the
+    /// window position.
     ///
     /// Arguments:
     /// * `base_height` - is the base height of the shaded surface k, in m
     /// * `height` - is the height of the shaded surface (if surface is tilted then
     ///                   this must be the vertical projection of the height), in m
     /// * `width` - is the width of the shaded surface, in m
+    /// * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
+    ///            upwards facing, 0 to 180, in degrees;
     /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
     ///                   geographical azimuth angle of the horizontal projection of the
     ///                   inclined surface normal, 0 to 360, in degrees;
     ///                   It will be converted to the -180 to 180 range;
     ///                   Assumed N 180 or -180, E 90, S 0, W -90
-    /// * `window_shading` - data on overhangs and side fins associated to this building element
-    ///                   includes the shading object type, depth, anf distance from element
+    /// * `window_shading` - Data on overhangs and side fins associated to this building element
+    ///                      includes the shading object type, depth, and distance from element.
+    ///                      Window reveal is not a valid shading object type for this function,
+    ///                      so any reveals should be converted using window_shading_expand_reveals
+    ///                      before passing the argument.
     pub fn direct_shading_reduction_factor(
         &self,
         base_height: f64,
         height: f64,
         width: f64,
+        tilt: f64,
         orientation: Orientation360,
         window_shading: Option<&[WindowShadingObject]>,
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
+        // first check if the surface is outside the solar beam
+        // if so then direct shading is complete and we don't need to
+        // calculate shading from objects
+        // TODO (from Python) The outside solar beam condition is based on a vertical projection
+        //  of the surface and does not account for the condition where a
+        //  surface that is only slightly pitched is exposed to direct solar
+        //  radiation when the sun is high (e.g. a surface pitched slightly
+        //  to the north will be exposed to direct solar radiation when the
+        //  sun is high in the southern sky). As the solar radiation
+        //  calculation already accounts for the situation where the sun is
+        //  actually behind the surface (accounting for the combination of
+        //  orientation and pitch), there is no need to zero it using the
+        //  shading factor. For now, we set the shading factor to 1 and ignore
+        //  shading from objects on the other side of the building (which if
+        //  significantly pitched would have to be relatively tall and/or
+        //  very close to cast a shadow on the surface in question anyway),
+        //  so that results in the unshaded case will be correct.
+        if self.outside_solar_beam(tilt, orientation, &simulation_time) {
+            return Ok(1.0);
+        }
+
         let orientation180 = orientation.transform_to_180();
         // start with default assumption of no shading
         let mut hshade_obst = 0.0;
@@ -983,7 +1010,7 @@ impl ExternalConditions {
         let mut wfinr = 0.0;
         let mut wfinl = 0.0;
 
-        // #first process the distant (environment) shading for this building element
+        // first process the distant (environment) shading for this building element
         let segment = self.get_segment(&simulation_time)?;
 
         for shading_object in segment.shading_objects.iter() {
@@ -1788,6 +1815,7 @@ impl ExternalConditions {
                     base_height,
                     height,
                     width,
+                    tilt,
                     orientation,
                     Some(&window_shading_expanded),
                     simulation_time,
@@ -4751,16 +4779,18 @@ mod tests {
 
     #[rstest]
     fn test_direct_shading_reduction_factor(
-        external_conditions: ExternalConditions,
+        mut external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) {
         // obstacle shading defined in segment and empty window shading
         let base_height = 1.;
         let height = 1.25;
         let width = 4.;
-        let orientation = Orientation360::create_from_180(90.).unwrap();
+        let tilt = 90.;
+        let orientation = Orientation360::create_from_180(0.).unwrap();
         let window_shading = [];
 
+        // Test first without window shading to get binary results 0.0 or 1.0 for in/out of the solar beam.
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
                 external_conditions
@@ -4768,6 +4798,7 @@ mod tests {
                         base_height,
                         height,
                         width,
+                        tilt,
                         orientation,
                         Some(&window_shading),
                         t_it
@@ -4778,7 +4809,7 @@ mod tests {
         }
 
         // with window shading
-        let window_shading_val = vec![
+        let window_shading = vec![
             WindowShadingObject::Overhang {
                 depth: 0.5,
                 distance: 0.5,
@@ -4786,6 +4817,11 @@ mod tests {
             WindowShadingObject::SideFinLeft {
                 depth: 0.25,
                 distance: 0.1,
+            },
+            WindowShadingObject::Obstacle {
+                distance: 0.1,
+                height: 0.5,
+                transparency: 0.2,
             },
             WindowShadingObject::SideFinRight {
                 depth: 0.25,
@@ -4800,36 +4836,9 @@ mod tests {
                         base_height,
                         height,
                         width,
+                        tilt,
                         orientation,
-                        Some(&window_shading_val),
-                        t_it
-                    )
-                    .unwrap(),
-                [
-                    1.0,
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.4002331427001323,
-                    0.8511094450438235,
-                    0.9292880457188379
-                ][t_idx],
-                max_relative = 1e-8
-            );
-        }
-
-        // Test with zero orientation and with window shading
-        let orientation = Orientation360::create_from_180(0.).unwrap();
-        for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            assert_relative_eq!(
-                external_conditions
-                    .direct_shading_reduction_factor(
-                        base_height,
-                        height,
-                        width,
-                        orientation,
-                        Some(&window_shading_val),
+                        Some(&window_shading),
                         t_it
                     )
                     .unwrap(),
@@ -4841,14 +4850,14 @@ mod tests {
                     0.0,
                     1.0,
                     1.0,
-                    1.0
+                    1.0,
                 ][t_idx],
                 max_relative = 1e-8
             );
         }
 
-        // Test with negative orientation and with window shading
-        let orientation = Orientation360::create_from_180(-180.).unwrap();
+        // Test with -20 orientation and window shading
+        let orientation = Orientation360::create_from_180(-20.).unwrap();
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
                 external_conditions
@@ -4856,20 +4865,100 @@ mod tests {
                         base_height,
                         height,
                         width,
+                        tilt,
                         orientation,
-                        Some(&window_shading_val),
+                        Some(&window_shading),
                         t_it
                     )
                     .unwrap(),
                 [
-                    0.9201388647583035,
-                    0.9552620660549097,
+                    0.6972409598552184,
+                    0.8692679435098958,
                     0.0,
                     0.0,
                     0.0,
                     1.0,
                     1.0,
                     1.0
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        // Test with -90 orientation and with window shading
+        let orientation = Orientation360::create_from_180(-90.).unwrap();
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .direct_shading_reduction_factor(
+                        base_height,
+                        height,
+                        width,
+                        tilt,
+                        orientation,
+                        Some(&window_shading),
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.11953251895954449,
+                    0.8511094450438236,
+                    0.9292880457188379,
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        // Test obstacle shading type
+        let orientation = Orientation360::create_from_180(0.).unwrap();
+        external_conditions.shading_segments = Some(vec![
+            ShadingSegment {
+                start360: Orientation360::create_from_180(180.).unwrap(),
+                end360: Orientation360::create_from_180(135.).unwrap(),
+                shading_objects: vec![],
+            },
+            ShadingSegment {
+                start360: Orientation360::create_from_180(135.).unwrap(),
+                end360: Orientation360::create_from_180(0.).unwrap(),
+                shading_objects: vec![ShadingObject {
+                    object_type: ShadingObjectType::Overhang,
+                    height: 10.5,
+                    distance: 12.,
+                }],
+            },
+            ShadingSegment {
+                start360: Orientation360::create_from_180(0.).unwrap(),
+                end360: Orientation360::create_from_180(-180.).unwrap(),
+                shading_objects: vec![],
+            },
+        ]);
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .direct_shading_reduction_factor(
+                        base_height,
+                        height,
+                        width,
+                        tilt,
+                        orientation,
+                        Some(&window_shading),
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    0.9201388647583034,
+                    0.9552620660549097,
+                    0.9800248072840617,
+                    0.9990786752756693,
+                    1.,
+                    1.,
+                    1.,
+                    1.,
                 ][t_idx],
                 max_relative = 1e-8
             );
