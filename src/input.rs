@@ -8589,9 +8589,14 @@ mod tests {
             fn valid_example() -> JsonValue {
                 serde_json::to_value(SpaceHeatSystemDetails::InstantElectricHeater {
                     rated_power: 6.0,
+                    constant: None,
+                    constant_per_kw: None,
+                    exponent: None,
+                    thermal_mass: None,
                     frac_convective: 0.3,
                     energy_supply: "mains elec".into(),
                     control: "control".into(),
+                    thermal_mass_per_kw: None,
                 })
                 .unwrap()
             }
