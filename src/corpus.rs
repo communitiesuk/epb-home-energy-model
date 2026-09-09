@@ -531,13 +531,16 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
         external_conditions.clone(),
         &simtime.iter(),
     )?;
-
+    // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
     let ventilation = InfiltrationVentilation::create(
         input.infiltration_ventilation(),
         input.zone(),
         false,
         &energy_supplies,
         &controls,
+        None,
+        None,
+        None,
     )?;
 
     fn calc_heat_loss(data: &BuildingElementInput) -> anyhow::Result<f64> {
@@ -3864,13 +3867,16 @@ fn infiltration_ventilation_from_input(
     } else {
         unimplemented!() // TODO during 1.0.0a9 migration: handle variant with unified control_vent_adjust
     };
-
+    // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
     let ventilation = InfiltrationVentilation::create(
         input,
         zones,
         detailed_output_heating_cooling,
         energy_supplies,
         controls,
+        None,
+        None,
+        None,
     )?;
 
     Ok((

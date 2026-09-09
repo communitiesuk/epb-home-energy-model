@@ -2182,7 +2182,7 @@ mod tests {
             env_area: 220.,
             altitude: 30.,
         };
-
+        // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
         InfiltrationVentilation::new(
             true,
             VentilationShieldClass::Normal,
@@ -2198,6 +2198,9 @@ mod tests {
             30.0,
             250.0,
             2.5,
+            None,
+            None,
+            None,
         )
     }
 
