@@ -4263,10 +4263,15 @@ mod tests {
 
     #[test]
     fn test_calculate_height_for_delta_p_w_div_path() {
-        let expected_output = 1.;
+        let expected_output_first_unit = 1.275;
+        let expected_output_second_unit = 1.725;
         assert_relative_eq!(
-            WindowDivision::calculate_height_for_delta_p_w_div_path(1., 1.6, 1usize),
-            expected_output
+            WindowDivision::calculate_height_for_delta_p_w_div_path(1.5, 0.9, 1usize),
+            expected_output_first_unit
+        );
+        assert_relative_eq!(
+            WindowDivision::calculate_height_for_delta_p_w_div_path(1.5, 0.9, 2usize),
+            expected_output_second_unit
         );
     }
 
