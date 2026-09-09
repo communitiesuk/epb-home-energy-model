@@ -1180,9 +1180,6 @@ pub(crate) enum ControlDetails {
 
         logic_type: Option<ControlLogicType>,
 
-        /// List of boolean values where true means 'on' (one entry per hour)
-        schedule: BooleanSchedule,
-
         /// Temperature at which charging should stop
         #[validate(minimum = -273.15)]
         temp_charge_cut: Option<f64>,
@@ -1204,6 +1201,9 @@ pub(crate) enum ControlDetails {
         #[validate(minimum = 0.)]
         #[validate(maximum = 24.)]
         time_series_step: f64,
+
+        #[serde(flatten)]
+        charge_target_schedule_or_control: ChargeTargetScheduleOrControlReference,
     },
     #[serde(rename = "CombinationTimeControl")]
     CombinationTime { combination: ControlCombinations },
@@ -1406,6 +1406,21 @@ pub(crate) enum ControlCombinationOperation {
 pub(crate) enum NumericScheduleOrControlReference {
     Schedule(NumericSchedule),
     ControlReference(String),
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(untagged)]
+pub(crate) enum ChargeTargetScheduleOrControlReference {
+    /// NB. The `Schedule` variant here has been marked as being deprecated in the upstream Python as of 1.0.0-alpha9.
+    Schedule {
+        /// List of boolean values where true means 'on' (one entry per hour)
+        schedule: BooleanSchedule,
+    },
+    ControlReference {
+        /// The name of the control specifying when the charge control is active
+        charge_time_control: String,
+    },
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
@@ -8840,10 +8855,13 @@ mod tests {
                     charge_level: None,
                     external_sensor: None,
                     logic_type: None,
-                    schedule: Schedule {
-                        main: vec![],
-                        references: IndexMap::default(),
-                    },
+                    charge_target_schedule_or_control:
+                        ChargeTargetScheduleOrControlReference::Schedule {
+                            schedule: Schedule {
+                                main: vec![],
+                                references: IndexMap::default(),
+                            },
+                        },
                     temp_charge_cut: None,
                     temp_charge_cut_delta: None,
                     charge_calc_time: default_charge_calc_time(),

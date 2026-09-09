@@ -77,12 +77,13 @@ use crate::hem_core::simulation_time::SimulationTime;
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, BuildingElementHeightWidthInput, ChargeLevel,
-    ColdWaterSourceDetails, ColdWaterSourceInput, Control as ControlInput, ControlCombinations,
-    ControlDetails, ControlReferences, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput,
-    FlowData, FuelType, HeatBattery as HeatBatteryInput, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
-    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
-    InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails,
+    ChargeTargetScheduleOrControlReference, ColdWaterSourceDetails, ColdWaterSourceInput,
+    Control as ControlInput, ControlCombinations, ControlDetails, ControlReferences,
+    EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FlowData, FuelType,
+    HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
+    InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
+    InternalGains as InternalGainsInput, InternalGainsDetails,
     OnSiteGeneration as OnSiteGenerationInput, PartyWallCavityType,
     PcmBatteryChargingConfiguration, PhotovoltaicInputs,
     PhotovoltaicSystem as PhotovoltaicSystemInput,
@@ -237,7 +238,8 @@ fn single_control_from_details(
         ControlDetails::ChargeTarget {
             charge_level,
             external_sensor,
-            schedule,
+            charge_target_schedule_or_control:
+                ChargeTargetScheduleOrControlReference::Schedule { schedule },
             start_day,
             time_series_step,
             temp_charge_cut,
@@ -302,6 +304,12 @@ fn single_control_from_details(
             )?)
             .into()
         }
+        // temporary entry for ChargeTarget with charge target control reference until implemented for 1.0.0a9
+        ControlDetails::ChargeTarget {
+            charge_target_schedule_or_control:
+                ChargeTargetScheduleOrControlReference::ControlReference { .. },
+            ..
+        } => todo!(),
         ControlDetails::OnOffCostMinimising {
             start_day,
             time_series_step,
