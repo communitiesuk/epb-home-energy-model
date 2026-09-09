@@ -1207,6 +1207,27 @@ pub(crate) enum ControlDetails {
     },
     #[serde(rename = "CombinationTimeControl")]
     CombinationTime { combination: ControlCombinations },
+    #[serde(rename = "RangeTimeControl")]
+    RangeTimer {
+        /// First day of the time series, day of the year, 0 to 365
+        #[validate(minimum = 0)]
+        #[validate(maximum = 365)]
+        start_day: u32,
+
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 24.)]
+        time_series_step: f64,
+
+        /// How long before heating period the system should switch on (unit: hours)
+        #[validate(minimum = 0.)]
+        advanced_start: Option<f64>,
+
+        /// Setpoint schedule for lower values with one entry per timestep
+        schedule_lower: NumericScheduleOrControlReference,
+
+        /// Setpoint schedule for upper values with one entry per timestep
+        schedule_upper: NumericScheduleOrControlReference,
+    },
 }
 
 const fn default_charge_calc_time() -> f64 {
@@ -1377,6 +1398,14 @@ pub(crate) enum ControlCombinationOperation {
     Max,
     Min,
     Mean,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(untagged)]
+pub(crate) enum NumericScheduleOrControlReference {
+    Schedule(NumericSchedule),
+    ControlReference(String),
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]

@@ -408,6 +408,7 @@ fn single_control_from_details(
             )?)
             .into()
         }
+        ControlDetails::RangeTimer { .. } => todo!("complete as part of 1.0.0a9 migration"),
     })
 }
 
