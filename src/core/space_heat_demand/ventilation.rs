@@ -2278,6 +2278,52 @@ impl InfiltrationVentilation {
         ))
     }
 
+    ///    Calculate the infiltration adjustment for lower facade leaks.
+    ///
+    /// Returns a multiplier to apply to lower facade leak flows inside
+    /// the mass balance solver, so that the solver finds the correct
+    /// internal reference pressure accounting for the modified leakage.
+    ///
+    /// The adjustment is applied only to lower facade leaks (closest to
+    /// where the air bricks are physically located) rather than to all leaks.
+    /// The reduction factor is scaled so that the overall dwelling-wide
+    /// effect matches the target from the BRE Airex ECO4 trial.
+    ///
+    /// The subfloor void ventilation component of the floor U-value is
+    /// adjusted separately in building_element.py (equiv_therma_trans).
+    ///
+    /// Returns:
+    ///     1.0 = no adjustment (baseline matching airtightness test)
+    ///     < 1.0 = reduced infiltration (vents more closed than during test)
+    ///     > 1.0 = increased infiltration (vents more open than during test)
+    fn calculate_lower_facade_infiltration_adjustment(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
+        match (
+            self.smart_air_brick_control.as_ref(),
+            self.vents_open_during_airtightness_test,
+        ) {
+            (Some(smart_air_brick_control), Some(vents_open_during_airtightness_test)) => {
+                let Some(current_opening_ratio) = smart_air_brick_control.setpnt(&simtime) else {
+                    return 1.0;
+                };
+
+                if vents_open_during_airtightness_test {
+                    // Vents were OPEN during test.
+                    // Closing vents reduces lower facade leakage.
+                    1.0 - (self.infiltration_reduction_lower * (1.0 - current_opening_ratio))
+                } else {
+                    // Vents were CLOSED during test.
+                    // Opening vents increases lower facade leakage.
+                    let increase_factor = 1.0 / (1.0 - self.infiltration_reduction_lower) - 1.0;
+                    1.0 + increase_factor * current_opening_ratio
+                }
+            }
+            _ => 1.0,
+        }
+    }
+
     /// Implicit mass balance for calculation of the internal reference pressure
     /// Equation 67 from BS EN 16798-7.
     ///
