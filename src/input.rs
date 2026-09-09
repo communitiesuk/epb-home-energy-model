@@ -8,7 +8,7 @@ use crate::HEM_VERSION;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use educe::Educe;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use jsonschema::Validator;
 use monostate::MustBe;
@@ -21,7 +21,7 @@ use serde_valid::validation::error::{Format, Message};
 use serde_valid::{MinimumError, Validate};
 use serde_with::skip_serializing_none;
 use smartstring::alias::String;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Index;
 use std::sync::Arc;
@@ -38,6 +38,7 @@ const HOURS_IN_YEAR: usize = 8760;
 #[validate(custom = validate_exhaust_air_heat_pump_ventilation_compatibility)]
 #[validate(custom = validate_time_series)]
 #[validate(custom = validate_smart_appliance_control_names)]
+#[validate(custom = validate_zone_processing_order)]
 pub struct Input {
     /// Metadata for the input file
     #[serde(rename = "metadata")]
@@ -104,6 +105,9 @@ pub struct Input {
     #[validate]
     pub(crate) tariff_data: Option<TariffDataInput>,
 
+    #[serde(rename = "temp_internal_air_static_calcs")]
+    pub(crate) temp_internal_air_static_calcs: f64,
+
     #[serde(rename = "WWHRS")]
     #[validate]
     pub(crate) waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
@@ -111,8 +115,11 @@ pub struct Input {
     #[validate]
     pub(crate) zone: ZoneDictionary,
 
-    #[serde(rename = "temp_internal_air_static_calcs")]
-    pub(crate) temp_internal_air_static_calcs: f64,
+    /// Order in which zones are served by their heating and cooling systems. Required
+    /// when more than one zone is heated or cooled, so that the order in which zones
+    /// draw on a shared source is an explicit choice rather than a consequence of the
+    /// order zones appear in the input. Lists every zone name exactly once.
+    pub(crate) zone_processing_order: Option<IndexSet<std::string::String>>,
 }
 
 impl Input {
@@ -289,6 +296,70 @@ fn validate_smart_appliance_control_names(
 
     Ok(())
 }
+
+///  Require an explicit zone processing order when more than one zone is heated or cooled.
+///
+///  When more than one zone has a heating (or cooling) system, the order in which the zones
+///  are served can change results if they draw on a shared source that cannot meet their
+///  combined demand within a timestep. That order must be a declared input rather than an
+///  artefact of the order in which zones appear in the input, so results do not change when
+///  zones are reordered or renamed. With at most one heated zone and at most one cooled zone
+///  there is no such order to declare, so the field may be omitted.
+fn validate_zone_processing_order(input: &Input) -> Result<(), serde_valid::validation::Error> {
+    let zone_names = input.zone.keys().cloned().collect::<IndexSet<_>>();
+
+    // A declared order, if present, must be a permutation of the zones.
+    if let Some(declared) = input.zone_processing_order.as_ref() {
+        let unknown = declared.difference(&zone_names);
+        if unknown.clone().count() > 0 {
+            return custom_validation_error(format!(
+                "ZoneProcessingOrder references zones that do not exist: {}",
+                unknown.sorted().join(", "),
+            ));
+        }
+        let missing = zone_names.difference(&declared);
+        if missing.clone().count() > 0 {
+            return custom_validation_error(format!(
+                "ZoneProcessingOrder must list every zone exactly once; these zones are missing: {}",
+                missing.sorted().join(", "),
+            ));
+        }
+    } else {
+        let heated_zones = input
+            .zone
+            .iter()
+            .filter_map(|(name, zone)| (!zone.space_heat_system.is_none()).then_some(name))
+            .collect::<BTreeSet<_>>();
+        let cooled_zones = input
+            .zone
+            .iter()
+            .filter_map(|(name, zone)| (!zone.space_cool_system.is_none()).then_some(name))
+            .collect::<BTreeSet<_>>();
+
+        if heated_zones.len() > 1 || cooled_zones.len() > 1 {
+            return custom_validation_error(format!(
+                "ZoneProcessingOrder is required when more than one zone is heated or cooled, so the order in which the zones are served is explicit and not dependent on input ordering (heated zones: {}; cooled zones: {})",
+                heated_zones.iter().join(", "),
+                cooled_zones.iter().join(", "),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+//         zone_names = set(self.zone)
+//
+//         heated_zones = [name for name, zone in self.zone.items() if zone.space_heat_system]
+//         cooled_zones = [name for name, zone in self.zone.items() if zone.space_cool_system]
+//         if (len(heated_zones) > 1 or len(cooled_zones) > 1) and self.zone_processing_order is None:
+//             raise ValueError(
+//                 "ZoneProcessingOrder is required when more than one zone is heated or cooled, so "
+//                 "the order in which the zones are served is explicit and not dependent on input "
+//                 f"ordering (heated zones: {sorted(heated_zones)}; cooled zones: {sorted(cooled_zones)})"
+//             )
+//
+//         return self
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
