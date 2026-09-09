@@ -1770,57 +1770,17 @@ impl ExternalConditions {
             return Ok((0.0, 0.0));
         }
 
-        let mut window_shading_expanded: Vec<WindowShadingObject> = vec![];
-        for shading in window_shading {
-            if let WindowShadingObject::Reveal { depth, distance } = shading {
-                window_shading_expanded.push(WindowShadingObject::Overhang {
-                    depth: *depth,
-                    distance: *distance,
-                });
-                window_shading_expanded.push(WindowShadingObject::SideFinLeft {
-                    depth: *depth,
-                    distance: *distance,
-                });
-                window_shading_expanded.push(WindowShadingObject::SideFinRight {
-                    depth: *depth,
-                    distance: *distance,
-                });
-            } else {
-                window_shading_expanded.push(*shading);
-            }
-        }
+        let window_shading_expanded = Self::window_shading_expand_reveals(window_shading);
 
-        // # first check if the surface is outside the solar beam
-        // # if so then direct shading is complete and we don't need to
-        // # calculate shading from objects
-        // # TODO (from Python): The outside solar beam condition is based on a vertical projection
-        //                       of the surface and does not account for the condition where a
-        //                       surface that is only slightly pitched is exposed to direct solar
-        //                       radiation when the sun is high (e.g. a surface pitched slightly
-        //                       to the north will be exposed to direct solar radiation when the
-        //                       sun is high in the southern sky). As the solar radiation
-        //                       calculation already accounts for the situation where the sun is
-        //                       actually behind the surface (accounting for the combination of
-        //                       orientation and pitch), there is no need to zero it using the
-        //                       shading factor. For now, we set the shading factor to 1 and ignore
-        //                       shading from objects on the other side of the building (which if
-        //                       significantly pitched would have to be relatively tall and/or
-        //                       very close to cast a shadow on the surface in question anyway),
-        //                       so that results in the unshaded case will be correct.
-        let direct_shading_reduction_factor =
-            if self.outside_solar_beam(tilt, orientation, &simulation_time) {
-                1.0
-            } else {
-                self.direct_shading_reduction_factor(
-                    base_height,
-                    height,
-                    width,
-                    tilt,
-                    orientation,
-                    Some(&window_shading_expanded),
-                    simulation_time,
-                )?
-            };
+        let direct_shading_reduction_factor = self.direct_shading_reduction_factor(
+            base_height,
+            height,
+            width,
+            tilt,
+            orientation,
+            Some(&window_shading_expanded),
+            simulation_time,
+        )?;
 
         let f_sky = Self::sky_view_factor(&tilt);
         let diffuse_shading_factor = self.diffuse_shading_reduction_factor(
@@ -1876,6 +1836,33 @@ impl ExternalConditions {
         let pitch_rads = pitch * PI / 180.0;
 
         0.5 * (1.0 + pitch_rads.cos())
+    }
+
+    /// Expands window shading reveals into more specific definitions for overhang and sides.
+    fn window_shading_expand_reveals(
+        window_shading: &[WindowShadingObject],
+    ) -> Vec<WindowShadingObject> {
+        let mut window_shading_expanded = vec![];
+
+        for shading in window_shading {
+            if let WindowShadingObject::Reveal { depth, distance } = shading {
+                window_shading_expanded.push(WindowShadingObject::Overhang {
+                    depth: *depth,
+                    distance: *distance,
+                });
+                window_shading_expanded.push(WindowShadingObject::SideFinLeft {
+                    depth: *depth,
+                    distance: *distance,
+                });
+                window_shading_expanded.push(WindowShadingObject::SideFinRight {
+                    depth: *depth,
+                    distance: *distance,
+                });
+            } else {
+                window_shading_expanded.push(*shading);
+            }
+        }
+        window_shading_expanded
     }
 }
 
