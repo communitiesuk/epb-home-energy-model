@@ -101,6 +101,9 @@ pub struct Input {
     #[validate]
     pub(crate) space_heat_system: Option<SpaceHeatSystem>,
 
+    #[validate]
+    pub(crate) tariff_data: Option<TariffDataInput>,
+
     #[serde(rename = "WWHRS")]
     #[validate]
     pub(crate) waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
@@ -6228,14 +6231,26 @@ pub enum ApplianceReference {
     NotInstalled,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(deny_unknown_fields)]
-pub struct Tariff {
-    #[serde(rename = "schedule")]
-    schedule: NumericSchedule,
+pub(crate) struct TariffDataInput {
+    /// First day of the time series, day of the year, 0 to 365.
+    /// If None, it defaults to the simulation start.
+    #[validate(minimum = 0)]
+    #[validate(maximum = 365)]
+    start_day: Option<i32>,
+
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 24.)]
+    time_series_step: f64,
+
+    prices: IndexMap<String, NumericSchedule>,
 }
+
+// class TariffDataInput(StrictBaseModel):
+//     time_series_step: HoursDuration24
+//     prices: Annotated[dict[str, ScheduleForDouble], Field(description="List of energy prices")]
 
 // The calc_htc_hlp function in the corpus module needs reduced access to an input
 // though this may be in the context of a wrapper which cannot guarantee that other data is in the
