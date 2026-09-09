@@ -1596,6 +1596,8 @@ pub enum CombiKeepHotFuel {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate, PartialEq)]
+#[validate(custom = check_integral_heat_exchanger_for_storage_tank)]
+#[validate(custom = validate_heatsource)]
 pub struct StorageTankDetails {
     #[serde(rename = "ColdWaterSource")]
     pub(crate) cold_water_source: String,
@@ -1634,7 +1636,7 @@ impl StorageTankDetails {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate, PartialEq)]
-#[validate(custom = check_integral_heat_exchanger)]
+#[validate(custom = check_integral_heat_exchanger_for_smart_hot_water_tank)]
 pub struct SmartHotWaterTankDetails {
     #[serde(rename = "ColdWaterSource")]
     pub(crate) cold_water_source: String,
@@ -1693,13 +1695,46 @@ impl SmartHotWaterTankDetails {
 }
 
 /// Check the heat-exchanger area against whether the tank is integral.
-fn check_integral_heat_exchanger(
-    smart_hot_water_tank_details: &SmartHotWaterTankDetails,
+fn check_integral_heat_exchanger_for_smart_hot_water_tank(
+    smart_hot_water_tank: &SmartHotWaterTankDetails,
 ) -> Result<(), serde_valid::validation::Error> {
     validate_heat_exchanger_area_against_integral(
-        &smart_hot_water_tank_details.heat_source,
-        smart_hot_water_tank_details.heat_exchanger_surface_area,
+        &smart_hot_water_tank.heat_source,
+        smart_hot_water_tank.heat_exchanger_surface_area,
     )
+}
+
+fn check_integral_heat_exchanger_for_storage_tank(
+    storage_tank: &StorageTankDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    validate_heat_exchanger_area_against_integral(
+        &storage_tank.heat_source,
+        storage_tank.heat_exchanger_surface_area,
+    )
+}
+
+/// Disallow multiple wet heat sources until per-heat-source pipework is modelled.
+fn validate_heatsource(
+    storage_tank: &StorageTankDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    let wet_heat_source_count = storage_tank
+        .heat_source
+        .values()
+        .filter(|heat_source| {
+            !matches!(
+                heat_source,
+                HeatSource::SolarThermalSystem { .. } | HeatSource::ImmersionHeater { .. }
+            )
+        })
+        .count();
+
+    if wet_heat_source_count > 1 {
+        return custom_validation_error(
+            "Only one wet heat source is allowed on a storage tank".to_string(),
+        );
+    }
+
+    Ok(())
 }
 
 /// Check the tank heat-exchanger surface area against each hot-water-only heat pump.
