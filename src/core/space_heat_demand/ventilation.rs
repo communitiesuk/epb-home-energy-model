@@ -662,7 +662,7 @@ impl Window {
         let mut qv_in_through_window_opening = 0.0;
         let mut qv_out_through_window_opening = 0.0;
         for part in &self.window_parts {
-            let (qv_in_part, qv_out_part) = part.calculate_flow_from_internal_p_for_window_part(
+            let (qv_in_part, qv_out_part) = part.calculate_flow_from_internal_p(
                 wind_direction,
                 u_site,
                 t_e,
@@ -741,19 +741,6 @@ impl WindowPart {
         3600. * _C_D_WINDOW * a_w * (2. / p_a_ref()).powf(_N_W_WINDOW)
     }
 
-    /// The height to be considered for delta_p_w_div_path
-    /// Equation 55 from BS EN 16798-7
-    fn calculate_height_for_delta_p_w_div_path(
-        h_w_path: f64,
-        h_w_fa: f64,
-        n_w_div: f64,
-        window_part_number: usize,
-    ) -> f64 {
-        h_w_path - h_w_fa / 2.
-            + h_w_fa / (2. * (n_w_div + 1.))
-            + (h_w_fa / (n_w_div + 1.)) * (window_part_number - 1) as f64
-    }
-
     /// Sum positive (entering) and negative (leaving) volume airflows across
     /// this section's virtual divisions, before mass conversion.
     /// Arguments:
@@ -770,7 +757,7 @@ impl WindowPart {
     ///     pitch -- pitch of the parent window element itself (the plane the openable
     ///         section lies in), used to select the wind pressure coefficient.
     ///
-    fn calculate_flow_from_internal_p_for_window_part(
+    fn calculate_flow_from_internal_p(
         &self,
         wind_direction: Orientation360,
         u_site: f64,
@@ -783,7 +770,6 @@ impl WindowPart {
         orientation: Orientation360,
         pitch: f64,
     ) -> anyhow::Result<(f64, f64)> {
-        // TODO: Implement the calculation based on the Python code
         let pressure_coefficient_path = get_pressure_coefficient_from_pitch_and_orientation(
             f_cross,
             shield_class,
@@ -797,15 +783,14 @@ impl WindowPart {
         let mut q_out = 0.0;
 
         for division in &self.divisions {
-            let air_flow = division
-                .calculate_ventilation_through_windows_using_internal_for_window_division(
-                    u_site,
-                    t_e,
-                    t_z,
-                    c_w_path,
-                    p_z_ref,
-                    pressure_coefficient_path,
-                );
+            let air_flow = division.calculate_ventilation_through_windows_using_internal_p(
+                u_site,
+                t_e,
+                t_z,
+                c_w_path,
+                p_z_ref,
+                pressure_coefficient_path,
+            );
             if air_flow >= 0.0 {
                 q_in += air_flow;
             } else {
@@ -823,18 +808,6 @@ struct WindowDivision {
     _h_w_div_path: f64,
     _z: f64,
 }
-// Mid-height of division j within its parent openable section (equation 55 of BS EN 16798-7).
-/// Arguments:
-///     j -- 1-based index of the division.
-fn calculate_height_for_delta_p_w_div_path(
-    midheight: f64,
-    free_area_height: f64,
-    division_number: usize,
-) -> f64 {
-    midheight - free_area_height / 2.0
-        + free_area_height / (2 * (_N_W_DIV + 1)) as f64
-        + free_area_height / ((_N_W_DIV + 1) * (division_number - 1)) as f64
-}
 
 impl WindowDivision {
     pub fn new(
@@ -843,14 +816,30 @@ impl WindowDivision {
         division_number: usize,
         ventilation_zone_base_height: f64,
     ) -> Self {
-        let h_w_div_path =
-            calculate_height_for_delta_p_w_div_path(midheight, free_area_height, division_number);
+        let h_w_div_path = WindowDivision::calculate_height_for_delta_p_w_div_path(
+            midheight,
+            free_area_height,
+            division_number,
+        );
         Self {
             _h_w_path: midheight,
             _h_w_fa: free_area_height,
             _h_w_div_path: h_w_div_path,
             _z: midheight + ventilation_zone_base_height,
         }
+    }
+
+    // Mid-height of division j within its parent openable section (equation 55 of BS EN 16798-7).
+    /// Arguments:
+    ///     j -- 1-based index of the division.
+    fn calculate_height_for_delta_p_w_div_path(
+        midheight: f64,
+        free_area_height: f64,
+        division_number: usize,
+    ) -> f64 {
+        midheight - free_area_height / 2.0
+            + free_area_height / (2 * (_N_W_DIV + 1)) as f64
+            + (free_area_height / (_N_W_DIV + 1) as f64) * (division_number - 1) as f64
     }
 
     ///Airflow through this division from the internal reference pressure (equation 53).
@@ -862,7 +851,7 @@ impl WindowDivision {
     ///    p_z_ref -- internal reference pressure (Pa).
     ///    C_p_path -- wind pressure coefficient at this division's height.
     ///     
-    fn calculate_ventilation_through_windows_using_internal_for_window_division(
+    fn calculate_ventilation_through_windows_using_internal_p(
         &self,
         u_site: f64,
         t_e: f64,
@@ -4276,7 +4265,7 @@ mod tests {
     fn test_calculate_height_for_delta_p_w_div_path() {
         let expected_output = 1.;
         assert_relative_eq!(
-            WindowPart::calculate_height_for_delta_p_w_div_path(1., 1.6, 0., 1usize),
+            WindowDivision::calculate_height_for_delta_p_w_div_path(1., 1.6, 1usize),
             expected_output
         );
     }
