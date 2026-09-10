@@ -12,6 +12,7 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use jsonschema::Validator;
 use monostate::MustBe;
+use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
@@ -39,6 +40,7 @@ const HOURS_IN_YEAR: usize = 8760;
 #[validate(custom = validate_time_series)]
 #[validate(custom = validate_smart_appliance_control_names)]
 #[validate(custom = validate_zone_processing_order)]
+#[validate(custom = validate_energy_supply_fuel_compatibility)]
 pub struct Input {
     /// Metadata for the input file
     #[serde(rename = "metadata")]
@@ -348,18 +350,468 @@ fn validate_zone_processing_order(input: &Input) -> Result<(), serde_valid::vali
     Ok(())
 }
 
-//         zone_names = set(self.zone)
-//
-//         heated_zones = [name for name, zone in self.zone.items() if zone.space_heat_system]
-//         cooled_zones = [name for name, zone in self.zone.items() if zone.space_cool_system]
-//         if (len(heated_zones) > 1 or len(cooled_zones) > 1) and self.zone_processing_order is None:
-//             raise ValueError(
-//                 "ZoneProcessingOrder is required when more than one zone is heated or cooled, so "
-//                 "the order in which the zones are served is explicit and not dependent on input "
-//                 f"ordering (heated zones: {sorted(heated_zones)}; cooled zones: {sorted(cooled_zones)})"
-//             )
-//
-//         return self
+/// Validate each system references an EnergySupply of a compatible fuel.
+///
+/// Walks every input model that references an EnergySupply by name, looks up
+/// the referenced supply's fuel, and checks it against the set of fuels that
+/// make physical sense for that system (e.g. heat pumps need electricity,
+/// combustion boilers need a combustible fuel, electric auxiliaries always
+/// need electricity). HeatSourceWetHIU (district-heat interface) and
+/// HeatSourceWetHeatPump's optional heat_network supply are both constrained
+/// to FuelType.CUSTOM because no built-in fuel enum member represents
+/// district heat; those imported-heat supplies are treated as opaque
+/// user-defined fuels. ApplianceGains (hobs and ovens may be gas-fuelled)
+/// and HotWaterSourceCombiBoiler / HotWaterSourceHUI /
+/// HotWaterSourceHeatBattery (which reference a HeatSourceWet by name and
+/// inherit its fuel constraint from the heat_source_wet walk) are skipped.
+/// Missing references are left to validate_cross_references to surface.
+/// All mismatches are gathered and raised as a single IncompatibleSystemError
+/// so the user sees them together.
+fn validate_energy_supply_fuel_compatibility(
+    input: &Input,
+) -> Result<(), serde_valid::validation::Error> {
+    let errors = {
+        let mut errors: Vec<std::string::String> = Vec::new();
+
+        let check = Mutex::new(
+            |container: &str,
+             key: &[&str],
+             class_name: &str,
+             field_alias: &str,
+             supply_name: &str,
+             allowed: &[FuelType],
+             allowed_categories: &[FuelCategory]|
+             -> Result<(), serde_valid::validation::Error> {
+                let supply = input.energy_supply.get(supply_name).ok_or_else(|| {
+                    custom_validation_error(format!(
+                        "Reference found to undeclared energy supply '{}'",
+                        supply_name
+                    ))
+                });
+                let supply = match supply {
+                    Ok(supply) => supply,
+                    Err(e) => return e,
+                };
+                let fuel_type = supply.fuel;
+                let fuel_category = fuel_type.category();
+                if !allowed.contains(&fuel_type) && !allowed_categories.contains(&fuel_category) {
+                    let allowed_values: BTreeSet<std::string::String> =
+                        allowed.iter().map(|fuel| fuel.to_string()).collect();
+                    let allowed_category_values: BTreeSet<std::string::String> = allowed_categories
+                        .iter()
+                        .map(|category| category.to_string())
+                        .collect();
+                    errors.push(format!(
+                        "{container}['{}'] ({class_name}.{field_alias}) EnergySupply '{supply_name}' has fuel '{}' but {class_name} requires one of {} or a fuel in one of the categories {}.",
+                        key.join(""),
+                        supply.fuel,
+                        allowed_values.iter().join(", "),
+                        allowed_category_values.iter().join(", "),
+                    ));
+                }
+
+                Ok(())
+            },
+        );
+
+        let check_tank_heat_sources = |container: &str,
+                                       tank_key: &str,
+                                       heat_sources: &IndexMap<std::string::String, HeatSource>|
+         -> Result<(), serde_valid::validation::Error> {
+            for (hs_key, hs) in heat_sources {
+                let path_key = &[tank_key, ".HeatSource.", hs_key];
+                let mut check = check.lock();
+                match hs {
+                    HeatSource::ImmersionHeater { energy_supply, .. } => check(
+                        container,
+                        path_key,
+                        "ImmersionHeater",
+                        "EnergySupply",
+                        energy_supply,
+                        &ELECTRIC_FUELS,
+                        &[],
+                    )?,
+                    HeatSource::SolarThermalSystem { energy_supply, .. } => check(
+                        container,
+                        path_key,
+                        "SolarThermalSystem",
+                        "EnergySupply",
+                        energy_supply,
+                        &ELECTRIC_FUELS,
+                        &[],
+                    )?,
+                    HeatSource::HeatPumpHotWaterOnly { energy_supply, .. } => check(
+                        container,
+                        path_key,
+                        "HeatPumpHotWaterOnly",
+                        "EnergySupply",
+                        energy_supply,
+                        &ELECTRIC_FUELS,
+                        &[],
+                    )?,
+                    // HeatSourceWetServiceWaterRegular references a HeatSourceWet by
+                    // name; its fuel is checked via the heat_source_wet walk below.
+                    _ => {}
+                }
+            }
+
+            Ok(())
+        };
+
+        {
+            let mut check = check.lock();
+
+            for (key, hs) in input.heat_source_wet.iter().flatten() {
+                match hs {
+                    HeatSourceWetDetails::HeatPump {
+                        energy_supply,
+                        energy_supply_heat_network,
+                        boiler,
+                        ..
+                    } => {
+                        check(
+                            "HeatSourceWet",
+                            &[key],
+                            "HeatSourceWetHeatPump",
+                            "EnergySupply",
+                            energy_supply,
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                        if let Some(energy_supply_heat_network) =
+                            energy_supply_heat_network.as_ref()
+                        {
+                            // The heat-network supply feeds imported heat from a
+                            // district-heat network. Same reasoning as HeatSourceWetHIU:
+                            // no built-in FuelType represents district heat, so it
+                            // must be declared as CUSTOM.
+                            check(
+                                "HeatSourceWet",
+                                &[key],
+                                "HeatSourceWetHeatPump",
+                                "EnergySupply_heat_network",
+                                energy_supply_heat_network,
+                                &[FuelType::Custom],
+                                &[],
+                            )?;
+                        }
+
+                        if let Some(boiler) = boiler.as_ref() {
+                            check(
+                                "HeatSourceWet",
+                                &[key, ".boiler"],
+                                "HeatPumpBoiler",
+                                "EnergySupply",
+                                boiler.energy_supply.as_str(),
+                                &[FuelType::Custom],
+                                &[FuelCategory::Gaseous, FuelCategory::Liquid],
+                            )?;
+                            check(
+                                "HeatSourceWet",
+                                &[key, ".boiler"],
+                                "HeatPumpBoiler",
+                                "EnergySupply_aux",
+                                boiler.energy_supply_aux.as_str(),
+                                &ELECTRIC_FUELS,
+                                &[],
+                            )?;
+                        }
+                    }
+                    HeatSourceWetDetails::Boiler {
+                        energy_supply,
+                        energy_supply_aux,
+                        ..
+                    } => {
+                        check(
+                            "HeatSourceWet",
+                            &[key],
+                            "HeatSourceWetBoiler",
+                            "EnergySupply",
+                            energy_supply.as_str(),
+                            &[FuelType::Custom],
+                            &[FuelCategory::Gaseous, FuelCategory::Liquid],
+                        )?;
+                        check(
+                            "HeatSourceWet",
+                            &[key],
+                            "HeatSourceWetBoiler",
+                            "EnergySupply_aux",
+                            energy_supply_aux.as_str(),
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                    }
+                    HeatSourceWetDetails::HeatBattery {
+                        battery: HeatBattery::Pcm { energy_supply, .. },
+                    } => {
+                        check(
+                            "HeatSourceWet",
+                            &[key],
+                            "HeatSourceWetHeatBatteryPCM",
+                            "EnergySupply",
+                            energy_supply.as_str(),
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                    }
+                    HeatSourceWetDetails::HeatBattery {
+                        battery: HeatBattery::DryCore { energy_supply, .. },
+                    } => {
+                        check(
+                            "HeatSourceWet",
+                            &[key],
+                            "HeatSourceWetHeatBatteryDryCore",
+                            "EnergySupply",
+                            energy_supply.as_str(),
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                    }
+                    HeatSourceWetDetails::DirectElectricBoiler { energy_supply, .. } => {
+                        check(
+                            "HeatSourceWet",
+                            &[key],
+                            "HeatSourceDirectElectricBoiler",
+                            "EnergySupply",
+                            energy_supply.as_str(),
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                    }
+                    HeatSourceWetDetails::Hiu { energy_supply, .. } => {
+                        // The HIU supply represents imported heat from a district-heat
+                        // network. There is no built-in FuelType for district heat, so
+                        // users must declare it as FuelType.CUSTOM; that category also
+                        // makes the user responsible for the supply's physical
+                        // properties (emissions factors, primary energy, etc.).
+                        check(
+                            "HeatSourceWet",
+                            &[key],
+                            "HeatSourceWetHIU",
+                            "EnergySupply",
+                            energy_supply,
+                            &[FuelType::Custom],
+                            &[],
+                        )?;
+                    }
+                }
+            }
+        }
+
+        for (tank_key, hw) in input.hot_water_source.iter() {
+            match hw {
+                HotWaterSourceDetails::StorageTank {
+                    details: StorageTankDetails { heat_source, .. },
+                } => check_tank_heat_sources("HotWaterSource", tank_key, heat_source)?,
+                HotWaterSourceDetails::SmartHotWaterTank {
+                    details:
+                        SmartHotWaterTankDetails {
+                            heat_source,
+                            energy_supply_pump,
+                            ..
+                        },
+                } => {
+                    check.lock()(
+                        "HotWaterSource",
+                        &[tank_key],
+                        "HotWaterSourceSmartHotWaterTank",
+                        "EnergySupply_pump",
+                        energy_supply_pump,
+                        &ELECTRIC_FUELS,
+                        &[],
+                    )?;
+                    check_tank_heat_sources("HotWaterSource", tank_key, heat_source)?;
+                }
+                HotWaterSourceDetails::PointOfUse { energy_supply, .. } => {
+                    // The PointOfUse model uses an efficiency of 1.0 and has
+                    // no combustion-specific behaviour (no flue losses, part-load
+                    // curve or standby losses), so it can only faithfully represent
+                    // an electric point-of-use heater. Widen this constraint if and
+                    // when a combustion variant is introduced.
+                    check.lock()(
+                        "HotWaterSource",
+                        &[tank_key],
+                        "HotWaterSourcePointOfUse",
+                        "EnergySupply",
+                        energy_supply.as_str(),
+                        &ELECTRIC_FUELS,
+                        &[],
+                    )?;
+                }
+                HotWaterSourceDetails::CombiBoiler { .. }
+                | HotWaterSourceDetails::Hiu { .. }
+                | HotWaterSourceDetails::HeatBattery { .. } => {
+                    // HotWaterSourceCombiBoiler, HotWaterSourceHUI and
+                    // HotWaterSourceHeatBattery reference a HeatSourceWet by name; their
+                    // fuel is checked in the heat_source_wet walk.
+                }
+            }
+        }
+
+        for (tank_key, tank) in input.pre_heated_water_source.iter() {
+            check_tank_heat_sources("PreHeatedWaterSource", tank_key, tank.heat_source())?;
+        }
+
+        {
+            let mut check = check.lock();
+
+            for (key, sh) in input.space_heat_system.iter().flatten() {
+                match sh {
+                    SpaceHeatSystemDetails::InstantElectricHeater { energy_supply, .. } => {
+                        check(
+                            "SpaceHeatSystem",
+                            &[key],
+                            "SpaceHeatSystemInstantElectricHeater",
+                            "EnergySupply",
+                            energy_supply.as_str(),
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                    }
+                    SpaceHeatSystemDetails::ElectricStorageHeater { energy_supply, .. } => {
+                        check(
+                            "SpaceHeatSystem",
+                            &[key],
+                            "SpaceHeatSystemElectricStorageHeater",
+                            "EnergySupply",
+                            energy_supply.as_str(),
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                    }
+                    SpaceHeatSystemDetails::WetDistribution { energy_supply, .. } => {
+                        if let Some(energy_supply) = energy_supply {
+                            check(
+                                "SpaceHeatSystem",
+                                &[key],
+                                "SpaceHeatSystemWetDistribution",
+                                "EnergySupply",
+                                energy_supply.as_str(),
+                                &ELECTRIC_FUELS,
+                                &[],
+                            )?;
+                        }
+                    }
+                    SpaceHeatSystemDetails::DryElectricUnderfloorHeater {
+                        energy_supply, ..
+                    } => {
+                        check(
+                            "SpaceHeatSystem",
+                            &[key],
+                            "SpaceHeatDryElectricUnderfloorHeater",
+                            "EnergySupply",
+                            energy_supply.as_str(),
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                    }
+                    SpaceHeatSystemDetails::WarmAir { .. } => {
+                        // SpaceHeatSystemWarmAir references a HeatSourceWet via HeatSource.
+                    }
+                }
+            }
+
+            for (key, sc) in input.space_cool_system.iter().flatten() {
+                match sc {
+                    SpaceCoolSystemDetails::AirConditioning { energy_supply, .. } => {
+                        check(
+                            "SpaceCoolSystem",
+                            &[key],
+                            "SpaceCoolSystemAirConditioning",
+                            "EnergySupply",
+                            energy_supply.as_str(),
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                    }
+                }
+            }
+
+            // ApplianceGains is intentionally unconstrained: household appliances (hobs,
+            // ovens, etc.) can be electric or gas, and gains_fraction already captures
+            // the share of the consumed fuel that ends up as heat in the zone.
+
+            for (key, osg) in input.on_site_generation.iter().flatten() {
+                match osg {
+                    PhotovoltaicInputs::WithPanels(PhotovoltaicSystemWithPanels {
+                        energy_supply,
+                        ..
+                    }) => {
+                        check(
+                            "OnSiteGeneration",
+                            &[key],
+                            "PhotovoltaicSystemWithPanels",
+                            "EnergySupply",
+                            energy_supply.as_str(),
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                    }
+                    PhotovoltaicInputs::DeprecatedStyle(PhotovoltaicSystem {
+                        energy_supply,
+                        ..
+                    }) => {
+                        check(
+                            "OnSiteGeneration",
+                            &[key],
+                            "PhotovoltaicSystem",
+                            "EnergySupply",
+                            energy_supply.as_str(),
+                            &ELECTRIC_FUELS,
+                            &[],
+                        )?;
+                    }
+                }
+            }
+
+            for (key, mv) in input.infiltration_ventilation.mechanical_ventilation.iter() {
+                check(
+                    "InfiltrationVentilation.MechanicalVentilation",
+                    &[key],
+                    "MechanicalVentilation",
+                    "EnergySupply",
+                    mv.energy_supply.as_str(),
+                    &ELECTRIC_FUELS,
+                    &[],
+                )?;
+            }
+
+            for (key, shower) in input.hot_water_demand.shower.0.iter() {
+                if let Shower::InstantElectricShower { energy_supply, .. } = shower {
+                    check(
+                        "HotWaterDemand.Shower",
+                        &[key],
+                        "ShowerInstantElectric",
+                        "EnergySupply",
+                        energy_supply.as_str(),
+                        &ELECTRIC_FUELS,
+                        &[],
+                    )?;
+                }
+            }
+        }
+
+        errors
+    };
+
+    if !errors.is_empty() {
+        return custom_validation_error(format!(
+            "Incompatible EnergySupply fuel types found:\n{}",
+            errors.join("\n"),
+        ));
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, Eq, Hash, PartialEq, Serialize_enum_str)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum FuelCategory {
+    Gaseous,
+    Liquid,
+    Other,
+    Virtual,
+}
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
@@ -903,9 +1355,29 @@ pub enum FuelType {
     #[serde(rename = "LPG_condition_11F")]
     LpgCondition11F,
 
+    HeatingOil,
+
     UnmetDemand,
 
     EnergyFromEnvironment,
+}
+
+impl FuelType {
+    /// Return the broad fuel category for this fuel type.
+    ///
+    /// Used by heat source constructors to validate that the energy supply
+    /// provides an appropriate fuel (e.g. gas/liquid for a combustion boiler,
+    /// electricity for a direct electric boiler).
+    pub(crate) fn category(&self) -> FuelCategory {
+        match self {
+            Self::MainsGas | Self::LpgBottled | Self::LpgBulk | Self::LpgCondition11F => {
+                FuelCategory::Gaseous
+            }
+            Self::HeatingOil => FuelCategory::Liquid,
+            Self::Electricity | Self::Custom => FuelCategory::Other,
+            Self::EnergyFromEnvironment | Self::UnmetDemand => FuelCategory::Virtual,
+        }
+    }
 }
 
 impl From<&EnergySupplyDetails> for FuelType {
@@ -957,9 +1429,11 @@ impl FuelType {
     /// the built-in enum without being blocked here — they remain responsible for ensuring the
     /// CUSTOM fuel's physical properties match the system it is assigned to.
     pub fn is_electric_fuel(&self) -> bool {
-        matches!(self, FuelType::Electricity | FuelType::Custom)
+        ELECTRIC_FUELS.contains(self)
     }
 }
+
+const ELECTRIC_FUELS: [FuelType; 2] = [FuelType::Electricity, FuelType::Custom];
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -1868,10 +2342,22 @@ pub enum PreHeatedWaterSourceDetails {
 }
 
 impl PreHeatedWaterSourceDetails {
-    pub fn cold_water_source(&self) -> &str {
+    pub(crate) fn cold_water_source(&self) -> &str {
         match self {
             PreHeatedWaterSourceDetails::StorageTank(tank) => tank.cold_water_source(),
             PreHeatedWaterSourceDetails::SmartHotWaterTank(tank) => tank.cold_water_source(),
+        }
+    }
+
+    pub(crate) fn heat_source(&self) -> &IndexMap<std::string::String, HeatSource> {
+        match self {
+            PreHeatedWaterSourceDetails::StorageTank(StorageTankDetails {
+                heat_source, ..
+            }) => heat_source,
+            PreHeatedWaterSourceDetails::SmartHotWaterTank(SmartHotWaterTankDetails {
+                heat_source,
+                ..
+            }) => heat_source,
         }
     }
 }
