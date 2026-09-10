@@ -3054,7 +3054,7 @@ impl InfiltrationVentilation {
                 } else {
                     None
                 };
-
+            // TODO as part of 1.0.0a9 migration Positive Input Ventilation support
             mechanical_ventilations.push(Arc::new(MechanicalVentilation::new(
                 mech_vents_data.supply_air_flow_rate_control,
                 mech_vents_data.supply_air_temperature_control_type,
@@ -3075,10 +3075,8 @@ impl InfiltrationVentilation {
                     input::MechVentData::Mvhr { .. } => mech_vents_data.mvhr_efficiency,
                     input::MechVentData::IntermittentMev { .. }
                     | input::MechVentData::CentralisedContinuousMev { .. }
-                    | input::MechVentData::DecentralisedContinuousMev { .. } => None,
-                    input::MechVentData::PositiveInputVentilation { .. } => {
-                        bail!("Positive input ventilation not yet fully supported in HEM")
-                    }
+                    | input::MechVentData::DecentralisedContinuousMev { .. }
+                    | input::MechVentData::PositiveInputVentilation { .. } => None,
                 },
                 None,
                 sfp_in_use_factor,
@@ -3737,7 +3735,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     fn test_create_infiltration_ventilation(
         energy_supply: EnergySupply,
         simulation_time_iterator: SimulationTimeIterator,
@@ -3846,6 +3843,17 @@ mod tests {
                             },
                         ],
                     },
+                    "mechvent3": {
+                        "sup_air_flw_ctrl": "ODA",
+                        "sup_air_temp_ctrl": "NO_CTRL",
+                        "vent_type": "Positive input ventilation",
+                        "SFP": 1.5,
+                        "EnergySupply": "mains elec",
+                        "design_outdoor_air_flow_rate": 80,
+                        "orientation360": 180,
+                        "pitch": 90,
+                        "mid_height_air_flow_path": 2,
+                    },
                 },
             }))
             .unwrap();
@@ -3907,10 +3915,11 @@ mod tests {
                         "base_height": 1,
                         "height": 1.25,
                         "width": 4,
-                        "free_area_height": 1.6,
-                        "mid_height": 1.5,
-                        "max_window_open_area": 3,
-                        "window_part_list": [{"mid_height_air_flow_path": 1.5}],
+                        "window_part_list": [{
+                            "free_area_height": 1.6,
+                            "mid_height": 1.5,
+                            "max_window_open_area": 3,
+                        }],
                         "shading": [
                             {"type": "overhang", "depth": 0.5, "distance": 0.5},
                             {"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
@@ -3931,7 +3940,13 @@ mod tests {
                         "free_area_height": 1.6,
                         "mid_height": 1.5,
                         "max_window_open_area": 3,
-                        "window_part_list": [{"mid_height_air_flow_path": 1.5}], // this is empty in the Python
+                        "window_part_list": [
+                            {
+                                "free_area_height": 1.6,
+                                "mid_height": 1.5,
+                                "max_window_open_area": 3,
+                            }
+                        ],
                         "shading": [],
                     },
                 },
@@ -3974,7 +3989,7 @@ mod tests {
         assert_eq!(infiltration_ventilation.windows.len(), 2);
         assert_eq!(infiltration_ventilation.vents.len(), 1);
         assert_eq!(infiltration_ventilation.leaks.len(), 5);
-        assert_eq!(infiltration_ventilation.mech_vents.len(), 2);
+        assert_eq!(infiltration_ventilation.mech_vents.len(), 3);
 
         for leak in &infiltration_ventilation.leaks {
             assert_eq!(leak.a_roof, 45.);
@@ -3988,6 +4003,9 @@ mod tests {
             .ctrl_intermittent_mev
             .is_some());
         assert!(infiltration_ventilation.mech_vents[1]
+            .ctrl_intermittent_mev
+            .is_none());
+        assert!(infiltration_ventilation.mech_vents[2]
             .ctrl_intermittent_mev
             .is_none());
 
@@ -4184,97 +4202,12 @@ mod tests {
         ))
     }
 
-    // TESTS SKIPPED TO ALLOW COMPILATION
-
-    // NOTE: I think if this is still used it would be part of window part with how things have moved about
-    // #[rstest]
-    // fn test_calculate_window_opening_free_area_no_ctrl(
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let window = create_window(None, 0.);
-    //     assert_eq!(
-    //         window.calculate_window_opening_free_area(
-    //             0.5,
-    //             simulation_time_iterator.current_iteration()
-    //         ),
-    //         0.
-    //     );
-    // }
-
-    // #[rstest]
-    // fn test_calculate_window_opening_free_area_ctrl_off(
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let ctrl = ctrl_that_is_off(&simulation_time_iterator);
-    //     let window = create_window(Some(ctrl), 0.);
-    //     assert_eq!(
-    //         window.calculate_window_opening_free_area(
-    //             0.5,
-    //             simulation_time_iterator.current_iteration()
-    //         ),
-    //         0.
-    //     );
-    // }
-
-    // #[rstest]
-    // fn test_calculate_window_opening_free_area_ctrl_on(
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let ctrl = ctrl_that_is_on(&simulation_time_iterator);
-    //     let window = create_window(Some(ctrl), 0.);
-    //     assert_eq!(
-    //         window.calculate_window_opening_free_area(
-    //             0.5,
-    //             simulation_time_iterator.current_iteration()
-    //         ),
-    //         1.5
-    //     );
-    // }
-
-    // #[rstest]
-    // fn test_calculate_flow_coeff_for_window_ctrl_no_ctrl(
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let window = create_window(None, 0.);
-    //     assert_relative_eq!(
-    //         window
-    //             .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
-    //         0.
-    //     );
-    // }
-
-    // #[rstest]
-    // fn test_calculate_flow_coeff_for_window_ctrl_off(
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let ctrl = ctrl_that_is_off(&simulation_time_iterator);
-    //     let window = create_window(Some(ctrl), 0.);
-    //     assert_relative_eq!(
-    //         window
-    //             .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
-    //         0.
-    //     );
-    // }
-
-    // #[rstest]
-    // fn test_calculate_flow_coeff_for_window_ctrl_on(
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let ctrl = ctrl_that_is_on(&simulation_time_iterator);
-    //     let window = create_window(Some(ctrl), 0.);
-    //     let expected_a_w = 1.5;
-    //     let expected_flow_coeff =
-    //         3600. * window.c_d_w * expected_a_w * (2. / p_a_ref()).powf(window.n_w);
-    //     assert_relative_eq!(
-    //         window
-    //             .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
-    //         expected_flow_coeff
-    //     );
-    // }
-
     #[rstest]
     #[ignore = "TODO as part of 1.0.0a9 migration"]
-    fn test_calculate_flow_from_internal_p(
+    /// A single openable section splits into two virtual divisions at
+    /// ±h_fa/4 around its mid-height. The mass flow sums their contributions
+    /// per equations 53, 54, 56 and 57 of BS EN 16798-7."""     
+    fn test_calculate_flow_from_internal_p_for_window(
         air_temps: Vec<f64>,
         wind_directions: Vec<f64>,
         simulation_time_iterator: SimulationTimeIterator,
@@ -4303,6 +4236,9 @@ mod tests {
             .unwrap();
 
         assert_relative_eq!(qm_in, 0.);
+        // Two divisions at section mid-height (1.5 m) ± h_fa/4 (0.4 m), summing
+        // equation-53 flows. Both divisions are outflow under these inputs.
+        // self.assertAlmostEqual(qm_out, -13193.282685996954)
         assert_relative_eq!(
             qm_out,
             -13199.752632683054,
@@ -4343,7 +4279,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_flow_from_internal_p_ctrl_off(
+    fn test_calculate_flow_from_internal_p_ctrl_off_for_window(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let wind_direction = 10.0.into();
@@ -4375,13 +4311,42 @@ mod tests {
         assert_relative_eq!(qm_out, 0.);
     }
 
+    #[rstest]
+    /// A fixed (non-openable) window has an empty window_part_list and
+    /// contributes no window-driven airflow, even with its control on.
+    fn test_no_openable_sections_contributes_no_flow(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let window = Window::new(vec![], Orientation360::new(0.).unwrap(), 90., 0., None, 0.);
+
+        let (qm_in, qm_out) = window
+            .calculate_flow_from_internal_p(
+                Orientation360::new(10.).unwrap(),
+                10.,
+                290.,
+                300.,
+                1.,
+                true,
+                VentilationShieldClass::Open,
+                Some(1.),
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
+
+        assert_relative_eq!(qm_in, 0.);
+        assert_relative_eq!(qm_out, 0.);
+    }
+
     #[fixture]
     fn window_part() -> WindowPart {
         WindowPart::new(1., 1.6, 0., 1.)
     }
 
+    fn window_division() -> WindowDivision {
+        WindowDivision::new(1., 1.6, 1, 1.)
+    }
     // #[rstest]
-    // fn test_calculate_ventilation_through_windows_using_internal_p(window_part: WindowPart) {
+    // fn test_calculate_ventilation_through_windows_using_internal_p(window_part: WindowDivision) {
     //     let u_site = 3.7;
     //     let t_e = 273.15;
     //     let t_z = 293.15;
@@ -4391,14 +4356,12 @@ mod tests {
     //     let expected_output = -13235.33116157;
 
     //     assert_relative_eq!(
-    //         window_part.calculate_ventilation_through_windows_using_internal_p(
-    //             u_site, t_e, t_z, c_w_path, p_z_ref, c_p_path
-    //         ),
+    //         window_part
+    //             .calculate_flow_from_internal_p(u_site, t_e, t_z, c_w_path, p_z_ref, c_p_path),
     //         expected_output,
     //         max_relative = EIGHT_DECIMAL_PLACES
     //     );
     // }
-
     #[test]
     #[ignore = "ignore while migrating to 1.0.0a9"]
     fn test_calculate_height_for_delta_p_w_div_path() {
