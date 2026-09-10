@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -151,16 +151,15 @@
         }
     },
     "HotWaterSource": {
-        "hw cylinder": {
+        "hw combi": {
             "type": "CombiBoiler",
             "ColdWaterSource": "mains water",
             "HeatSourceWet": "boiler",
-            "separate_DHW_tests": "M&L",
-            "rejected_energy_1": 0.0004,
-            "storage_loss_factor_2": 0.91574,
-            "rejected_factor_3": 0,
+            "separate_DHW_tests": "M_only",
+            "rejected_energy_1": 0.01,
+            "storage_loss_factor_1": 1.64,
             "setpoint_temp": 60.0,
-            "daily_HW_usage": 120
+            "daily_HW_usage": 72
         }
     },
     "HotWaterDemand": {
@@ -177,7 +176,13 @@
                 "EnergySupply": "mains elec1"
             }
         },
-        "Bath": {},
+        "Bath": {
+            "medium": {
+                "size": 100,
+                "ColdWaterSource": "mains water",
+                "flowrate": 8.0
+            }
+        },
         "Other": {},
         "Distribution": [
             {
@@ -203,28 +208,27 @@
         ]
     },
     "Events": {
+        "Bath": {
+            "medium": [
+                {
+                    "start": 6,
+                    "temperature": 41.0,
+                    "volume": 62
+                }
+            ]
+        },
         "Shower": {
             "IES": [
                 {
                     "start": 4.1,
-                    "duration": 6,
-                    "temperature": 41.0
-                },
-                {
-                    "start": 4.5,
-                    "duration": 6,
-                    "temperature": 41.0
-                },
-                {
-                    "start": 6,
-                    "duration": 6,
+                    "duration": 4,
                     "temperature": 41.0
                 }
             ],
             "mixer": [
                 {
-                    "start": 7,
-                    "duration": 6,
+                    "start": 2,
+                    "duration": 3,
                     "temperature": 41.0
                 }
             ]
@@ -401,12 +405,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []
@@ -421,12 +424,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []

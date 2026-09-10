@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "ApplianceGains": {
         "Clothes_drying": {
@@ -3726,6 +3726,7 @@
                 "capacity": 2,
                 "charge_discharge_efficiency_round_trip": 0.8,
                 "grid_charging_possible": false,
+                "grid_exporting_possible": false,
                 "maximum_charge_rate_one_way_trip": 1.5,
                 "maximum_discharge_rate_one_way_trip": 1.25,
                 "minimum_charge_rate_one_way_trip": 0.001
@@ -6529,6 +6530,10 @@
             "system_a_utilisation_factor": 0.972
         }
     },
+    "ZoneProcessingOrder": [
+        "zone1_livingroom",
+        "zone2_restofdwelling"
+    ],
     "Zone": {
         "zone1_livingroom": {
             "area": 27.01,
@@ -6600,12 +6605,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.19,
                     "u_value": 1.2,
-                    "free_area_height": 1.32,
-                    "mid_height": 1.32,
-                    "max_window_open_area": 0.091,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.32
+                            "free_area_height": 1.32,
+                            "mid_height": 1.32,
+                            "max_window_open_area": 0.091
                         }
                     ],
                     "shading": [
@@ -6636,12 +6640,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.19,
                     "u_value": 1.2,
-                    "free_area_height": 1.4,
-                    "mid_height": 1.4,
-                    "max_window_open_area": 0.126,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.4
+                            "free_area_height": 1.4,
+                            "mid_height": 1.4,
+                            "max_window_open_area": 0.126
                         }
                     ],
                     "shading": [
@@ -6840,12 +6843,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.34,
                     "u_value": 1.2,
-                    "free_area_height": 3.13,
-                    "mid_height": 3.13,
-                    "max_window_open_area": 0.216,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 3.13
+                            "free_area_height": 0.9,
+                            "mid_height": 3.13,
+                            "max_window_open_area": 0.216
                         }
                     ],
                     "shading": [
@@ -6876,12 +6878,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.23,
                     "u_value": 1.2,
-                    "free_area_height": 3.85,
-                    "mid_height": 3.85,
-                    "max_window_open_area": 0.561,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 3.85
+                            "free_area_height": 1.1,
+                            "mid_height": 3.85,
+                            "max_window_open_area": 0.561
                         }
                     ],
                     "shading": [
@@ -6912,12 +6913,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.29,
                     "u_value": 1.2,
-                    "free_area_height": 4.1,
-                    "mid_height": 4.1,
-                    "max_window_open_area": 0.324,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 4.1
+                            "free_area_height": 1.2,
+                            "mid_height": 4.1,
+                            "max_window_open_area": 0.324
                         }
                     ],
                     "shading": [
@@ -6948,12 +6948,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.19,
                     "u_value": 1.2,
-                    "free_area_height": 4,
-                    "mid_height": 4,
-                    "max_window_open_area": 0.756,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 4.0
+                            "free_area_height": 1.4,
+                            "mid_height": 4,
+                            "max_window_open_area": 0.756
                         }
                     ],
                     "shading": [
@@ -6984,12 +6983,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.34,
                     "u_value": 1.2,
-                    "free_area_height": 1.65,
-                    "mid_height": 1.65,
-                    "max_window_open_area": 0.036,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.65
+                            "free_area_height": 0.9,
+                            "mid_height": 1.65,
+                            "max_window_open_area": 0.036
                         }
                     ],
                     "shading": [
@@ -7020,12 +7018,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.24,
                     "u_value": 1.2,
-                    "free_area_height": 1.05,
-                    "mid_height": 1.05,
-                    "max_window_open_area": 0.0945,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.0945
                         }
                     ],
                     "shading": [
@@ -7056,12 +7053,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.21,
                     "u_value": 1.2,
-                    "free_area_height": 3.95,
-                    "mid_height": 3.95,
-                    "max_window_open_area": 0.762,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 3.95
+                            "free_area_height": 2.54,
+                            "mid_height": 3.95,
+                            "max_window_open_area": 0.762
                         }
                     ],
                     "shading": [

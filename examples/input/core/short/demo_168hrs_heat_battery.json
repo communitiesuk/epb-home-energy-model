@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "ApplianceGains": {
         "Clothes_drying": {
@@ -2191,27 +2191,11 @@
             "time_series_step": 0.5,
             "type": "SetpointTimeControl"
         },
-        "_HW_max_temp": {
-            "schedule": {
-                "day": [
-                    {
-                        "repeat": 48,
-                        "value": 60.0
-                    }
-                ],
-                "main": [
-                    {
-                        "repeat": 7,
-                        "value": "day"
-                    }
-                ]
-            },
+        "hot_water_range_timer": {
+            "type": "RangeTimeControl",
             "start_day": 0,
             "time_series_step": 0.5,
-            "type": "SetpointTimeControl"
-        },
-        "_HW_min_temp": {
-            "schedule": {
+            "schedule_lower": {
                 "day": [
                     {
                         "repeat": 4,
@@ -2229,9 +2213,20 @@
                     }
                 ]
             },
-            "start_day": 0,
-            "time_series_step": 0.5,
-            "type": "SetpointTimeControl"
+            "schedule_upper": {
+                "day": [
+                    {
+                        "repeat": 48,
+                        "value": 60.0
+                    }
+                ],
+                "main": [
+                    {
+                        "repeat": 7,
+                        "value": "day"
+                    }
+                ]
+            }
         },
         "_intermittent_MEV_control: mechvent1": {
             "schedule": {
@@ -2651,6 +2646,32 @@
             "time_series_step": 1,
             "logic_type": "heat_battery",
             "charge_level": 1.0,
+            "charge_time_control": "heat battery charge control_time_control"
+        },
+        "zone 1 radiators__space heat timer__converted_from_OnOffTimeControl": {
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    {
+                        "value": "day",
+                        "repeat": 7
+                    }
+                ],
+                "day": [
+                    15.0,
+                    15.0,
+                    15.0,
+                    {
+                        "value": 21.0,
+                        "repeat": 21
+                    }
+                ]
+            }
+        },
+        "heat battery charge control_time_control": {
+            "type": "OnOffTimeControl",
             "schedule": {
                 "main": [
                     {
@@ -2676,29 +2697,9 @@
                         "repeat": 7
                     }
                 ]
-            }
-        },
-        "zone 1 radiators__space heat timer__converted_from_OnOffTimeControl": {
-            "type": "SetpointTimeControl",
+            },
             "start_day": 0,
-            "time_series_step": 1,
-            "schedule": {
-                "main": [
-                    {
-                        "value": "day",
-                        "repeat": 7
-                    }
-                ],
-                "day": [
-                    15.0,
-                    15.0,
-                    15.0,
-                    {
-                        "value": 21.0,
-                        "repeat": 21
-                    }
-                ]
-            }
+            "time_series_step": 1
         }
     },
     "SmartApplianceControls": {
@@ -3783,10 +3784,12 @@
                 "capacity": 2,
                 "charge_discharge_efficiency_round_trip": 0.8,
                 "grid_charging_possible": false,
+                "grid_exporting_possible": false,
                 "maximum_charge_rate_one_way_trip": 1.5,
                 "maximum_discharge_rate_one_way_trip": 1.25,
                 "minimum_charge_rate_one_way_trip": 0.001
             },
+            "power_limit_export": 0.3,
             "fuel": "electricity",
             "is_export_capable": true
         },
@@ -5642,8 +5645,7 @@
             "ColdWaterSource": "header tank",
             "HeatSource": {
                 "immersion": {
-                    "Controlmax": "_HW_max_temp",
-                    "Controlmin": "_HW_min_temp",
+                    "Control": "hot_water_range_timer",
                     "EnergySupply": "mains elec",
                     "heater_position": 0.1,
                     "power": 3.0,
@@ -6567,6 +6569,7 @@
             "phase_transition_temperature_upper": 59,
             "phase_transition_temperature_lower": 57,
             "max_temperature": 80,
+            "temp_min_useful": 10.0,
             "temp_init": 80,
             "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": 0.035,
             "inlet_diameter_mm": 6.5,
@@ -6658,6 +6661,10 @@
             "system_a_utilisation_factor": 0.972
         }
     },
+    "ZoneProcessingOrder": [
+        "zone1_livingroom",
+        "zone2_restofdwelling"
+    ],
     "Zone": {
         "zone1_livingroom": {
             "area": 27.01,
@@ -6729,12 +6736,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.19,
                     "u_value": 1.2,
-                    "free_area_height": 1.32,
-                    "mid_height": 1.32,
-                    "max_window_open_area": 0.091,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.32
+                            "free_area_height": 1.32,
+                            "mid_height": 1.32,
+                            "max_window_open_area": 0.091
                         }
                     ],
                     "shading": [
@@ -6765,12 +6771,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.19,
                     "u_value": 1.2,
-                    "free_area_height": 1.4,
-                    "mid_height": 1.4,
-                    "max_window_open_area": 0.126,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.4
+                            "free_area_height": 1.4,
+                            "mid_height": 1.4,
+                            "max_window_open_area": 0.126
                         }
                     ],
                     "shading": [
@@ -6969,12 +6974,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.34,
                     "u_value": 1.2,
-                    "free_area_height": 3.13,
-                    "mid_height": 3.13,
-                    "max_window_open_area": 0.216,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 3.13
+                            "free_area_height": 0.9,
+                            "mid_height": 3.13,
+                            "max_window_open_area": 0.216
                         }
                     ],
                     "shading": [
@@ -7005,12 +7009,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.23,
                     "u_value": 1.2,
-                    "free_area_height": 3.85,
-                    "mid_height": 3.85,
-                    "max_window_open_area": 0.561,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 3.85
+                            "free_area_height": 1.1,
+                            "mid_height": 3.85,
+                            "max_window_open_area": 0.561
                         }
                     ],
                     "shading": [
@@ -7041,12 +7044,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.29,
                     "u_value": 1.2,
-                    "free_area_height": 4.1,
-                    "mid_height": 4.1,
-                    "max_window_open_area": 0.324,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 4.1
+                            "free_area_height": 1.2,
+                            "mid_height": 4.1,
+                            "max_window_open_area": 0.324
                         }
                     ],
                     "shading": [
@@ -7077,12 +7079,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.19,
                     "u_value": 1.2,
-                    "free_area_height": 4,
-                    "mid_height": 4,
-                    "max_window_open_area": 0.756,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 4.0
+                            "free_area_height": 1.4,
+                            "mid_height": 4,
+                            "max_window_open_area": 0.756
                         }
                     ],
                     "shading": [
@@ -7113,12 +7114,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.34,
                     "u_value": 1.2,
-                    "free_area_height": 1.65,
-                    "mid_height": 1.65,
-                    "max_window_open_area": 0.036,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.65
+                            "free_area_height": 0.9,
+                            "mid_height": 1.65,
+                            "max_window_open_area": 0.036
                         }
                     ],
                     "shading": [
@@ -7149,12 +7149,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.24,
                     "u_value": 1.2,
-                    "free_area_height": 1.05,
-                    "mid_height": 1.05,
-                    "max_window_open_area": 0.0945,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.0945
                         }
                     ],
                     "shading": [
@@ -7185,12 +7184,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.21,
                     "u_value": 1.2,
-                    "free_area_height": 3.95,
-                    "mid_height": 3.95,
-                    "max_window_open_area": 0.762,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 3.95
+                            "free_area_height": 2.54,
+                            "mid_height": 3.95,
+                            "max_window_open_area": 0.762
                         }
                     ],
                     "shading": [

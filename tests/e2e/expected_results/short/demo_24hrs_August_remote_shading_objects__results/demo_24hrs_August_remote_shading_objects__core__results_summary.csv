@@ -1,37 +1,39 @@
 Energy Demand Summary
 ,,Total
-Space heat demand,kWh/m2,0.007438668922
-Space cool demand,kWh/m2,-0.3629214596
+Space heat demand,kWh/m2,0.007234887922
+Space cool demand,kWh/m2,-0.3684744914
 
 Energy Supply Summary
 ,kWh,timestep,month,day,hour of day
-Peak consumption (electricity),3.723742897,6,AUG,1,6.0
+Peak consumption (electricity),3.726683065,6,AUG,1,6.0
 
 ,Total,_unmet_demand,_energy_from_environment,mains elec
-Consumption,kWh,0.0,0.0,23.31562975
+Consumption,kWh,0.0,0.0,23.2878356
 Generation,kWh,0.0,0.0,2.165879418
-Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,2.142785836
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,2.142890206
 Generation to storage,kWh,0.0,0.0,0.0
 Generation to diverter,kWh,0.0,0.0,0.0
-Generation to grid,kWh,0.0,0.0,0.02309358223
+Generation to grid,kWh,0.0,0.0,0.02298921153
+Generation curtailed (export limited),kWh,0.0,0.0,0.0
+Storage to grid,kWh,0.0,0.0,0.0
 Storage to consumption,kWh,0.0,0.0,0.0
 Grid to storage,kWh,0.0,0.0,0.0
-Grid to consumption,kWh,0.0,0.0,21.17284392
-Total gross import,kWh,0.0,0.0,21.17284392
-Total gross export,kWh,0.0,0.0,-0.02309358223
-Net import,kWh,0.0,0.0,21.14975033
+Grid to consumption,kWh,0.0,0.0,21.14494539
+Total gross import,kWh,0.0,0.0,21.14494539
+Total gross export,kWh,0.0,0.0,-0.02298921153
+Net import,kWh,0.0,0.0,21.12195618
 Storage round-trip efficiency,ratio,DIV/0,DIV/0,DIV/0
 
 Delivered Energy Summary
 Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec
-total,0.4857422865,0.0,0.4857422865
-mechvent1,0.01833333333,0,0.01833333333
+total,0.4851632416,0.0,0.4851632416
+mechvent1,0.01666666667,0,0.01666666667
 cooking,0.20375,0,0.20375
 lighting,0.0145,0,0.0145
 immersion,0.1010699448,0,0.1010699448
 IES,0.05625,0,0.05625
-main,0.007438668922,0,0.007438668922
-cooling system 1,0.08440033944,0,0.08440033944
+main,0.007234887922,0,0.007234887922
+cooling system 1,0.08569174219,0,0.08569174219
 
 Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
 hw cylinder,0.7937861207,3.850940131,80.0

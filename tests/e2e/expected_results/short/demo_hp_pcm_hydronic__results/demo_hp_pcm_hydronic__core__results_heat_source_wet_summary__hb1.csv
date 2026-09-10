@@ -1,0 +1,37 @@
+Overall
+energy_output_required,kWh,6.964163098
+time_running,secs,6488.589891
+energy_delivered_HB,kWh,6.964163096
+energy_delivered_backup,kWh,0.0
+energy_delivered_total,kWh,6.964163096
+energy_charged_during_service,kWh,0.0
+
+auxiliary
+energy_aux,kWh,1.299529889
+battery_losses,kWh,3.30415564
+total_charge,kWh,24.70762825
+end_of_timestep_charge,kWh,24.70762825
+
+hb1_water_heating: hw cylinder
+energy_output_required,kWh,5.215550231
+time_running,secs,5459.140468
+energy_delivered_HB,kWh,5.215550229
+energy_delivered_backup,kWh,0.0
+energy_delivered_total,kWh,5.215550229
+energy_charged_during_service,kWh,0.0
+
+hb1_space_heating: space_heat_system_livingroom
+energy_output_required,kWh,0.0
+time_running,secs,0.0
+energy_delivered_HB,kWh,0.0
+energy_delivered_backup,kWh,0.0
+energy_delivered_total,kWh,0.0
+energy_charged_during_service,kWh,0.0
+
+hb1_space_heating: space_heat_system_restofdwelling
+energy_output_required,kWh,1.748612867
+time_running,secs,1029.449423
+energy_delivered_HB,kWh,1.748612867
+energy_delivered_backup,kWh,0.0
+energy_delivered_total,kWh,1.748612867
+energy_charged_during_service,kWh,0.0

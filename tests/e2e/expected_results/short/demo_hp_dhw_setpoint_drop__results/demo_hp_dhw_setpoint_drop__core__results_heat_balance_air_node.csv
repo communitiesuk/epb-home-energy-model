@@ -1,0 +1,15 @@
+,zone1_livingroom: total solar gains,zone1_livingroom: total internal gains,zone1_livingroom: total heating or cooling system gains,zone1_livingroom: total energy to change internal temperature,zone1_livingroom: total thermal_bridges,zone1_livingroom: total infiltration_ventilation,zone1_livingroom: total fabric,zone2_restofdwelling: total solar gains,zone2_restofdwelling: total internal gains,zone2_restofdwelling: total heating or cooling system gains,zone2_restofdwelling: total energy to change internal temperature,zone2_restofdwelling: total thermal_bridges,zone2_restofdwelling: total infiltration_ventilation,zone2_restofdwelling: total fabric
+,[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh],[kWh]
+,0.0,1.145324235,0.2452468021,-0.0400238288,-0.3545946816,-1.097880115,0.1019275887,0.0,2.760043647,2.771044819,-0.3348318122,-0.8865689835,-2.593899956,-1.715787715
+""
+Timestep,zone1_livingroom: solar gains,zone1_livingroom: internal gains,zone1_livingroom: heating or cooling system gains,zone1_livingroom: energy to change internal temperature,zone1_livingroom: thermal_bridges,zone1_livingroom: infiltration_ventilation,zone1_livingroom: fabric,zone2_restofdwelling: solar gains,zone2_restofdwelling: internal gains,zone2_restofdwelling: heating or cooling system gains,zone2_restofdwelling: energy to change internal temperature,zone2_restofdwelling: thermal_bridges,zone2_restofdwelling: infiltration_ventilation,zone2_restofdwelling: fabric
+index,[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W],[W]
+
+0,0.0,66.26489957,112.1610461,11.55495283,-48.26633967,-136.9414754,-4.773083395,0.0,159.6875449,906.36389,-175.9661358,-117.8040331,-315.7036585,-456.5776075
+1,0.0,92.42120174,64.00085327,3.507178494,-46.3539505,-140.0337509,26.4584679,0.0,222.7199452,629.9649565,-47.28543116,-115.8641259,-330.615931,-358.9194136
+2,0.0,142.9798493,18.2426211,-4.120231389,-45.38697124,-137.0068167,25.29154893,0.0,344.5579975,420.8008425,-32.74465013,-114.6287478,-326.8385984,-291.1468437
+3,0.0,103.448489,37.53195391,5.292885886,-43.38943603,-142.0574014,39.17350868,0.0,249.2938997,283.5344543,25.36178314,-109.2443742,-337.8374264,-111.1083365
+4,0.0,200.2390614,24.39955203,-32.39129843,-44.35219686,-145.1483254,-2.74679273,0.0,482.5433118,228.8671185,-59.86317344,-110.6887431,-342.1599448,-198.698569
+5,0.0,110.7309513,0.5629003798,39.97578776,-42.15521266,-137.9702407,28.85581395,0.0,266.84344,125.7298258,50.11482169,-107.6156387,-332.6889245,-2.383524261
+6,0.0,210.7569873,24.16593801,-53.92949776,-42.9815172,-133.4536697,-4.558240606,0.0,507.889789,130.9271725,-75.0736921,-106.9932731,-313.7863667,-142.9636296
+7,0.0,218.482795,-35.81806271,-9.913606191,-41.70905745,-125.2684345,-5.773634067,0.0,526.507719,44.85655927,-19.37533439,-103.7300476,-294.2691058,-153.9897905

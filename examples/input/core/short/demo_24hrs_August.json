@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -403,6 +403,27 @@
                     }
                 ]
             }
+        },
+        "smart_air_brick_control": {
+            "type": "SetpointTimeControl",
+            "start_day": 212,
+            "time_series_step": 1,
+            "schedule": {
+                "main": [
+                    {
+                        "value": 1.0,
+                        "repeat": 12
+                    },
+                    {
+                        "value": 0.5,
+                        "repeat": 6
+                    },
+                    {
+                        "value": 0.0,
+                        "repeat": 6
+                    }
+                ]
+            }
         }
     },
     "HotWaterSource": {
@@ -476,6 +497,7 @@
         ]
     },
     "Events": {
+        "start_day": 212,
         "Shower": {
             "IES": [
                 {
@@ -660,12 +682,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []
@@ -680,12 +701,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []
@@ -695,14 +715,21 @@
                     "total_area": 48.0,
                     "area": 48.0,
                     "pitch": 180.0,
-                    "u_value": 0.0396,
-                    "thermal_resistance_floor_construction": 24.496,
+                    "u_value": 0.13,
+                    "thermal_resistance_floor_construction": 6.0,
                     "areal_heat_capacity": 19500,
                     "mass_distribution_class": "I",
-                    "floor_type": "Slab_no_edge_insulation",
-                    "thickness_walls": 0.087,
+                    "floor_type": "Suspended_floor",
+                    "height_upper_surface": 0.5,
+                    "thermal_transm_walls": 1.8,
+                    "area_per_perimeter_vent": 0.0015,
+                    "shield_fact_location": "Average",
+                    "thickness_walls": 0.22,
+                    "thermal_resist_insul": 0.001,
                     "perimeter": 28.0,
-                    "psi_wall_floor_junc": 0.0
+                    "psi_wall_floor_junc": 0.5,
+                    "Control_smart_air_brick": "smart_air_brick_control",
+                    "vents_open_during_airtightness_test": true
                 }
             },
             "ThermalBridging": {}

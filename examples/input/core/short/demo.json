@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -458,6 +458,9 @@
         "main": {
             "type": "InstantElecHeater",
             "rated_power": 6.0,
+            "c": 0.02,
+            "n": 1.2,
+            "thermal_mass": 0.1,
             "frac_convective": 0.4,
             "Control": "main__new_SetpointControl",
             "EnergySupply": "mains elec"
@@ -568,12 +571,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []
@@ -588,12 +590,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []

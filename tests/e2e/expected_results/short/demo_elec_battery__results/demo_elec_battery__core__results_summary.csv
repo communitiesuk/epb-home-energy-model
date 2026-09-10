@@ -1,37 +1,39 @@
 Energy Demand Summary
 ,,Total
-Space heat demand,kWh/m2,0.03567693923
-Space cool demand,kWh/m2,-0.07979553679
+Space heat demand,kWh/m2,0.03484612317
+Space cool demand,kWh/m2,-0.08435180995
 
 Energy Supply Summary
 ,kWh,timestep,month,day,hour of day
-Peak consumption (electricity),3.525830669,6,AUG,1,6.0
+Peak consumption (electricity),3.522497336,6,AUG,1,6.0
 
 ,Total,_unmet_demand,_energy_from_environment,mains elec
-Consumption,kWh,0.0,0.0,21.84299726
+Consumption,kWh,0.0,0.0,21.77397882
 Generation,kWh,0.0,0.0,2.793255888
-Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,2.604176037
-Generation to storage,kWh,0.0,0.0,0.1663902695
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,2.598197801
+Generation to storage,kWh,0.0,0.0,0.1950580874
 Generation to diverter,kWh,0.0,0.0,0.0
-Generation to grid,kWh,0.0,0.0,0.02268958221
-Storage to consumption,kWh,0.0,0.0,0.7627889581
-Grid to storage,kWh,0.0,0.0,0.7870959281
-Grid to consumption,kWh,0.0,0.0,18.47603227
-Total gross import,kWh,0.0,0.0,19.2631282
-Total gross export,kWh,0.0,0.0,-0.02268958221
-Net import,kWh,0.0,0.0,19.24043862
-Storage round-trip efficiency,ratio,DIV/0,DIV/0,0.8
+Generation to grid,kWh,0.0,0.0,0.0
+Generation curtailed (export limited),kWh,0.0,0.0,0.0
+Storage to grid,kWh,0.0,0.0,0.0
+Storage to consumption,kWh,0.0,0.0,0.6749579197
+Grid to storage,kWh,0.0,0.0,0.894427191
+Grid to consumption,kWh,0.0,0.0,18.5008231
+Total gross import,kWh,0.0,0.0,19.39525029
+Total gross export,kWh,0.0,0.0,0.0
+Net import,kWh,0.0,0.0,19.39525029
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,0.61952
 
 Delivered Energy Summary
 Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec
-total,0.455062443,0.0,0.455062443
-mechvent1,0.01833333333,0,0.01833333333
+total,0.4536245587,0.0,0.4536245587
+mechvent1,0.01666666667,0,0.01666666667
 cooking,0.20375,0,0.20375
 lighting,0.0145,0,0.0145
 immersion,0.1079950689,0,0.1079950689
 IES,0.05625,0,0.05625
-main,0.03567693923,0,0.03567693923
-cooling system 1,0.01855710158,0,0.01855710158
+main,0.03484612317,0,0.03484612317
+cooling system 1,0.01961669999,0,0.01961669999
 
 Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
 hw cylinder,0.8070079626,4.183338264,80.0

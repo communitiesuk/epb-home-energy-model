@@ -1,0 +1,40 @@
+Energy Demand Summary
+,,Total
+Space heat demand,kWh/m2,0.2275065465
+Space cool demand,kWh/m2,0.0
+
+Energy Supply Summary
+,kWh,timestep,month,day,hour of day
+Peak consumption (electricity),4.270672869,0,JAN,1,0.0
+
+,Total,_unmet_demand,_energy_from_environment,mains elec,mains elec1,mains gas
+Consumption,kWh,0.0,0.0,13.3556787,0.6,0.0
+Generation,kWh,0.0,0.0,0.0,0.0,0.0
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,0.0,0.0,0.0
+Generation to storage,kWh,0.0,0.0,0.0,0.0,0.0
+Generation to diverter,kWh,0.0,0.0,0.0,0.0,0.0
+Generation to grid,kWh,0.0,0.0,0.0,0.0,0.0
+Generation curtailed (export limited),kWh,0.0,0.0,0.0,0.0,0.0
+Storage to grid,kWh,0.0,0.0,0.0,0.0,0.0
+Storage to consumption,kWh,0.0,0.0,0.0,0.0,0.0
+Grid to storage,kWh,0.0,0.0,0.0,0.0,0.0
+Grid to consumption,kWh,0.0,0.0,13.3556787,0.6,0.0
+Total gross import,kWh,0.0,0.0,13.3556787,0.6,0.0
+Total gross export,kWh,0.0,0.0,0.0,0.0,0.0
+Net import,kWh,0.0,0.0,13.3556787,0.6,0.0
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,DIV/0,DIV/0,DIV/0
+
+Delivered Energy Summary
+Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec,mains elec1,mains gas
+total,0.2907433063,0.0,0.2782433063,0.0125,0.0
+mechvent1,0.005555555556,0,0.005555555556,0,0
+Boiler_auxiliary: boiler,0.002387467422,0,0.002387467422,0,0
+boiler_water_heating: hot water cylinder,0.001708894691,0,0.001708894691,0,0
+boiler_space_heating: main,0.2685913886,0,0.2685913886,0,0
+IES,0.0125,0,0,0.0125,0
+
+Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
+hot water cylinder,56.77452453,4.657040811,150.0
+
+Space heating system,Overall CoP
+main,0.9420327151

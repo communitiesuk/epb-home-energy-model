@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -215,24 +215,19 @@
                 ]
             }
         },
-        "min_temp": {
-            "type": "SetpointTimeControl",
+        "hp_hw_range_timer": {
+            "type": "RangeTimeControl",
             "start_day": 0,
             "time_series_step": 1,
-            "schedule": {
+            "schedule_lower": {
                 "main": [
                     {
                         "value": 52.0,
                         "repeat": 8
                     }
                 ]
-            }
-        },
-        "setpoint_temp_max": {
-            "type": "SetpointTimeControl",
-            "start_day": 0,
-            "time_series_step": 1,
-            "schedule": {
+            },
+            "schedule_upper": {
                 "main": [
                     {
                         "value": 55.0,
@@ -282,8 +277,7 @@
                         }
                     },
                     "EnergySupply": "mains elec",
-                    "Controlmin": "min_temp",
-                    "Controlmax": "setpoint_temp_max",
+                    "Control": "hp_hw_range_timer",
                     "heater_position": 0.1,
                     "thermostat_position": 0.33
                 }
@@ -510,12 +504,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []
@@ -530,12 +523,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []

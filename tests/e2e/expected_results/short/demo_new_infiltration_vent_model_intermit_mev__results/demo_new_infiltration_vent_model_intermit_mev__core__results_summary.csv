@@ -5,27 +5,29 @@ Space cool demand,kWh/m2,0.0
 
 Energy Supply Summary
 ,kWh,timestep,month,day,hour of day
-Peak consumption (electricity),4.003960956,6,JAN,1,6.0
+Peak consumption (electricity),4.003940123,6,JAN,1,6.0
 
 ,Total,_unmet_demand,_energy_from_environment,mains elec
-Consumption,kWh,0.0,0.0,15.12802621
+Consumption,kWh,0.0,0.0,15.12789079
 Generation,kWh,0.0,0.0,0.0
 Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,0.0
 Generation to storage,kWh,0.0,0.0,0.0
 Generation to diverter,kWh,0.0,0.0,0.0
 Generation to grid,kWh,0.0,0.0,0.0
+Generation curtailed (export limited),kWh,0.0,0.0,0.0
+Storage to grid,kWh,0.0,0.0,0.0
 Storage to consumption,kWh,0.0,0.0,0.0
 Grid to storage,kWh,0.0,0.0,0.0
-Grid to consumption,kWh,0.0,0.0,15.12802621
-Total gross import,kWh,0.0,0.0,15.12802621
+Grid to consumption,kWh,0.0,0.0,15.12789079
+Total gross import,kWh,0.0,0.0,15.12789079
 Total gross export,kWh,0.0,0.0,0.0
-Net import,kWh,0.0,0.0,15.12802621
+Net import,kWh,0.0,0.0,15.12789079
 Storage round-trip efficiency,ratio,DIV/0,DIV/0,DIV/0
 
 Delivered Energy Summary
 Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec
-total,0.3151672126,0.0,0.3151672126
-mechvent1,3.103298611e-05,0,3.103298611e-05
+total,0.3151643915,0.0,0.3151643915
+mechvent1,2.821180556e-05,0,2.821180556e-05
 cooking,0.06791666667,0,0.06791666667
 lighting,0.004833333333,0,0.004833333333
 immersion,0.1120037021,0,0.1120037021

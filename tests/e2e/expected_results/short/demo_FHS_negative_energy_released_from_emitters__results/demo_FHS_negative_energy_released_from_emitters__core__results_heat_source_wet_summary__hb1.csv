@@ -1,31 +1,31 @@
 Overall
-energy_output_required,kWh,27.80208482
-time_running,secs,29269.58578
-energy_delivered_HB,kWh,20.10589466
+energy_output_required,kWh,11.54327728
+time_running,secs,120412.3745
+energy_delivered_HB,kWh,11.54327728
 energy_delivered_backup,kWh,0.0
-energy_delivered_total,kWh,20.10589466
+energy_delivered_total,kWh,11.54327728
 energy_charged_during_service,kWh,0.0
 
 auxiliary
-energy_aux,kWh,1.460643682
-battery_losses,kWh,4.8
-total_charge,kWh,15.28500756
-end_of_timestep_charge,kWh,15.28500756
+energy_aux,kWh,2.361944593
+battery_losses,kWh,3.814972597
+total_charge,kWh,9.560879177
+end_of_timestep_charge,kWh,9.560879177
 
 hb1_water_heating: hw cylinder
-energy_output_required,kWh,11.63015641
-time_running,secs,7916.859616
-energy_delivered_HB,kWh,7.842779238
+energy_output_required,kWh,5.825373105
+time_running,secs,41825.62778
+energy_delivered_HB,kWh,5.825373105
 energy_delivered_backup,kWh,0.0
-energy_delivered_total,kWh,7.842779238
+energy_delivered_total,kWh,5.825373105
 energy_charged_during_service,kWh,0.0
 
 hb1_space_heating: zone 1 radiators
-energy_output_required,kWh,16.17192841
-time_running,secs,21352.72617
-energy_delivered_HB,kWh,12.26311542
+energy_output_required,kWh,5.717904179
+time_running,secs,78586.74676
+energy_delivered_HB,kWh,5.717904179
 energy_delivered_backup,kWh,0.0
-energy_delivered_total,kWh,12.26311542
+energy_delivered_total,kWh,5.717904179
 energy_charged_during_service,kWh,0.0
 
 hb1_space_heating: zone 2 radiators
@@ -35,4 +35,3 @@ energy_delivered_HB,kWh,0.0
 energy_delivered_backup,kWh,0.0
 energy_delivered_total,kWh,0.0
 energy_charged_during_service,kWh,0.0
-

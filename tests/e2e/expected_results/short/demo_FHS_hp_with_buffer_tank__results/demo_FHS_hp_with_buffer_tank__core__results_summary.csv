@@ -1,34 +1,36 @@
 Energy Demand Summary
 ,,Total
-Space heat demand,kWh/m2,0.4474613818
+Space heat demand,kWh/m2,0.4448654916
 Space cool demand,kWh/m2,0.0
 
 Energy Supply Summary
 ,kWh,timestep,month,day,hour of day
-Peak consumption (electricity),2.336067763,16,JAN,1,8.0
+Peak consumption (electricity),2.340074137,16,JAN,1,8.0
 
 ,Total,_unmet_demand,_energy_from_environment,mains elec,mains gas
-Consumption,kWh,7.095218236,45.0316449,24.4761452,2.290867702
+Consumption,kWh,7.019531295,44.83018179,24.3991236,2.290867702
 Generation,kWh,0.0,0.0,0.0,0.0
 Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,0.0,0.0
 Generation to storage,kWh,0.0,0.0,0.0,0.0
 Generation to diverter,kWh,0.0,0.0,0.0,0.0
 Generation to grid,kWh,0.0,0.0,0.0,0.0
+Generation curtailed (export limited),kWh,0.0,0.0,0.0,0.0
+Storage to grid,kWh,0.0,0.0,0.0,0.0
 Storage to consumption,kWh,0.0,0.0,0.0,0.0
 Grid to storage,kWh,0.0,0.0,0.0,0.0
-Grid to consumption,kWh,7.095218236,45.0316449,24.4761452,2.290867702
-Total gross import,kWh,7.095218236,45.0316449,24.4761452,2.290867702
+Grid to consumption,kWh,7.019531295,44.83018179,24.3991236,2.290867702
+Total gross import,kWh,7.019531295,44.83018179,24.3991236,2.290867702
 Total gross export,kWh,0.0,0.0,0.0,0.0
-Net import,kWh,7.095218236,45.0316449,24.4761452,2.290867702
+Net import,kWh,7.019531295,44.83018179,24.3991236,2.290867702
 Storage round-trip efficiency,ratio,DIV/0,DIV/0,DIV/0,DIV/0
 
 Delivered Energy Summary
 Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec,mains gas
-total,0.4487416112,0.2814477806,0.1529759075,0.01431792314
-hp_water_heating: hw cylinder,0.05414824598,0.03782086095,0.01632738503,0
-hp_space_heating: zone 1 radiators,0.1965047147,0.1464948423,0.05000987242,0
-hp_space_heating: zone 2 radiators,0.135325195,0.09713207737,0.03819311767,0
-mechvent1,0.001214954955,0,0.001214954955,0
+total,0.4470010818,0.2801886362,0.1524945225,0.01431792314
+hp_water_heating: hw cylinder,0.05414785716,0.03782058788,0.01632726928,0
+hp_space_heating: zone 1 radiators,0.1955629706,0.1457735474,0.04978942317,0
+hp_space_heating: zone 2 radiators,0.1346300402,0.09659450093,0.03803553923,0
+mechvent1,0.001104504505,0,0.001104504505,0
 topup,0.002228611971,0,0.002228611971,0
 Microwave,0.0005796723106,0,0.0005796723106,0
 Kettle,0.0006691405644,0,0.0006691405644,0
@@ -37,18 +39,18 @@ Clothes_washing,0.006664011265,0,0.006664011265,0
 Otherdevices,0.009183995134,0,0.009183995134,0
 Oven,0.02037560533,0,0.02037560533,0
 lighting,0.004694209842,0,0.004694209842,0
-HeatPump_auxiliary: hp,0.001521974829,0,0.001521974829,0
+HeatPump_auxiliary: hp,0.001529183712,0,0.001529183712,0
 IES,0.0,0,0.0,0
 cooling system 1,0.0,0,0.0,0
 cooling system 2,0.0,0,0.0,0
 Hobs,0.01431792314,0,0,0.01431792314
 
 Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
-hw cylinder,2.712672994,7.086537029,80.0
+hw cylinder,2.712692225,7.086537029,80.0
 
 Space heating system,Overall CoP
-zone 1 radiators,3.925348596
-zone 2 radiators,3.565262218
+zone 1 radiators,3.923694012
+zone 2 radiators,3.561555001
 
 Space cooling system,Overall CoP
 cooling system 1,DIV/0

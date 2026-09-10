@@ -1,31 +1,33 @@
 Energy Demand Summary
 ,,Total
-Space heat demand,kWh/m2,0.07206713135
+Space heat demand,kWh/m2,0.07206687451
 Space cool demand,kWh/m2,0.0
 
 Energy Supply Summary
 ,kWh,timestep,month,day,hour of day
-Peak consumption (electricity),4.115888372,15,JAN,1,7.5
+Peak consumption (electricity),4.115876867,15,JAN,1,7.5
 
 ,Total,_unmet_demand,_energy_from_environment,mains elec,mains gas
-Consumption,kWh,1.779264152,0.0,45.35487778,2.290867702
+Consumption,kWh,1.779263708,0.0,45.35466299,2.290867702
 Generation,kWh,0.0,0.0,0.2976101924,0.0
-Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,0.270461619,0.0
-Generation to storage,kWh,0.0,0.0,0.02714857347,0.0
+Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,0.2704595773,0.0
+Generation to storage,kWh,0.0,0.0,0.02715061516,0.0
 Generation to diverter,kWh,0.0,0.0,0.0,0.0
 Generation to grid,kWh,0.0,0.0,0.0,0.0
-Storage to consumption,kWh,0.0,0.0,4.927125108,0.0
-Grid to storage,kWh,0.0,0.0,7.817888069,0.0
-Grid to consumption,kWh,1.779264152,0.0,40.15729106,2.290867702
-Total gross import,kWh,1.779264152,0.0,47.97517912,2.290867702
+Generation curtailed (export limited),kWh,0.0,0.0,0.0,0.0
+Storage to grid,kWh,0.0,0.0,0.0,0.0
+Storage to consumption,kWh,0.0,0.0,4.927117537,0.0
+Grid to storage,kWh,0.0,0.0,7.81787944,0.0
+Grid to consumption,kWh,1.779263708,0.0,40.15708587,2.290867702
+Total gross import,kWh,1.779263708,0.0,47.97496531,2.290867702
 Total gross export,kWh,0.0,0.0,0.0,0.0
-Net import,kWh,1.779264152,0.0,47.97517912,2.290867702
-Storage round-trip efficiency,ratio,DIV/0,DIV/0,0.6280563537,DIV/0
+Net import,kWh,1.779263708,0.0,47.97496531,2.290867702
+Storage round-trip efficiency,ratio,DIV/0,DIV/0,0.628055916,DIV/0
 
 Delivered Energy Summary
 Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec,mains gas
-total,0.116778788,0.0,0.1111639161,0.00561487182
-mechvent1,2.977830772e-06,0,2.977830772e-06,0
+total,0.1167782615,0.0,0.1111633897,0.00561487182
+mechvent1,2.707118884e-06,0,2.707118884e-06,0
 topup,0.002461833258,0,0.002461833258,0
 Microwave,0.0002273224748,0,0.0002273224748,0
 Kettle,0.0002624080645,0,0.0002624080645,0
@@ -35,7 +37,7 @@ Otherdevices,0.005697655056,0,0.005697655056,0
 Oven,0.007990433461,0,0.007990433461,0
 lighting,0.002749012629,0,0.002749012629,0
 immersion,0.02093770418,0,0.02093770418,0
-main 1,0.06290103375,0,0.06290103375,0
+main 1,0.062900778,0,0.062900778,0
 main 2,0.00480515605,0,0.00480515605,0
 cooling system 1,0.0,0,0.0,0
 cooling system 2,0.0,0,0.0,0

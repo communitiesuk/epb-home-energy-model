@@ -1,0 +1,7 @@
+Heat transfer coefficient,W / K,299.2265164
+Heat loss parameter,W / m2.K,1.870165727
+Heat capacity parameter,kJ / m2.K,29.98125
+Heat loss form factor,,1.375
+Assumptions used for HTC/HLP calculation:
+Internal air temperature,Celsius,20.0
+External air temperature,Celsius,-1.191666667

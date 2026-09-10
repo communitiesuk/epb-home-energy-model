@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -91,8 +91,8 @@
             "fuel": "electricity",
             "is_export_capable": true
         },
-        "mains gas": {
-            "fuel": "mains_gas",
+        "oil": {
+            "fuel": "heating_oil",
             "is_export_capable": true
         }
     },
@@ -292,7 +292,7 @@
     "HeatSourceWet": {
         "regularBoiler": {
             "type": "Boiler",
-            "EnergySupply": "mains gas",
+            "EnergySupply": "oil",
             "EnergySupply_aux": "mains elec",
             "rated_power": 24.0,
             "efficiency_full_load": 0.891,
@@ -302,7 +302,11 @@
             "electricity_circ_pump": 0.06,
             "electricity_part_load": 0.0131,
             "electricity_full_load": 0.0388,
-            "electricity_standby": 0.0244
+            "electricity_standby": 0.0244,
+            "pilot_light": {
+                "power": 0.1,
+                "gains_fraction": 0.5
+            }
         }
     },
     "SpaceHeatSystem": {
@@ -409,6 +413,10 @@
             }
         }
     },
+    "ZoneProcessingOrder": [
+        "zone1_livingroom",
+        "zone2_restofdwelling"
+    ],
     "Zone": {
         "zone1_livingroom": {
             "area": 24.27,
@@ -479,12 +487,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.15,
                     "u_value": 1.2,
-                    "free_area_height": 1.05,
-                    "mid_height": 1.05,
-                    "max_window_open_area": 0.2142,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.2142
                         }
                     ],
                     "shading": [
@@ -515,12 +522,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.15,
                     "u_value": 1.2,
-                    "free_area_height": 1.05,
-                    "mid_height": 1.05,
-                    "max_window_open_area": 0.2142,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.2142
                         }
                     ],
                     "shading": [
@@ -551,12 +557,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.26,
                     "u_value": 1.2,
-                    "free_area_height": 1.05,
-                    "mid_height": 1.05,
-                    "max_window_open_area": 0.08505,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.08505
                         }
                     ],
                     "shading": [
@@ -709,12 +714,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.26,
                     "u_value": 1.2,
-                    "free_area_height": 1.05,
-                    "mid_height": 1.05,
-                    "max_window_open_area": 0.08505,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.08505
                         }
                     ],
                     "shading": [
@@ -745,12 +749,11 @@
                     "g_value": 0.7,
                     "frame_area_fraction": 0.23,
                     "u_value": 1.2,
-                    "free_area_height": 1.05,
-                    "mid_height": 1.05,
-                    "max_window_open_area": 0.10185,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.10185
                         }
                     ],
                     "shading": [

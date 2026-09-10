@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "SimulationTime": {
         "start": 0,
@@ -244,12 +244,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []
@@ -264,12 +263,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []
@@ -316,17 +314,10 @@
     },
     "HeatSourceWet": {
         "boiler": {
-            "type": "Boiler",
-            "EnergySupply": "mains gas",
-            "EnergySupply_aux": "mains elec",
-            "boiler_location": "internal",
-            "modulation_load": 0.3,
+            "type": "DirectElectricBoiler",
+            "EnergySupply": "mains elec",
             "rated_power": 15.0,
-            "efficiency_full_load": 0.9,
-            "efficiency_part_load": 0.85,
             "electricity_circ_pump": 0.05,
-            "electricity_part_load": 0.02,
-            "electricity_full_load": 0.03,
             "electricity_standby": 0.01
         }
     },
@@ -351,14 +342,17 @@
         },
         "combi boiler": {
             "type": "CombiBoiler",
+            "combi_boiler_type": "KeepHot",
+            "combi_keep_hot_fuel": "Electricity",
+            "keep_hot_test_hours": 24,
             "ColdWaterSource": "mains water",
             "HeatSourceWet": "boiler",
-            "separate_DHW_tests": "M&L",
-            "rejected_energy_1": 0.0004,
-            "storage_loss_factor_2": 0.91574,
-            "rejected_factor_3": 0,
+            "separate_DHW_tests": "M&S",
+            "rejected_energy_1": 0.009,
+            "storage_loss_factor_2": 2.47,
+            "rejected_factor_3": 0.0002,
             "setpoint_temp": 60.0,
-            "daily_HW_usage": 120
+            "daily_HW_usage": 65
         }
     },
     "HotWaterDemand": {
@@ -448,6 +442,9 @@
         "main": {
             "type": "InstantElecHeater",
             "rated_power": 6.0,
+            "c_per_kW": 0.003,
+            "n": 1.2,
+            "thermal_mass_per_kw": 0.016,
             "frac_convective": 0.4,
             "EnergySupply": "mains elec",
             "Control": "main__hw timer__converted_from_OnOffTimeControl"

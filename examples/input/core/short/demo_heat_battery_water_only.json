@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -155,6 +155,10 @@
             "time_series_step": 1,
             "logic_type": "heat_battery",
             "charge_level": 1.0,
+            "charge_time_control": "hb_charge_control_time_control"
+        },
+        "hb_charge_control_time_control": {
+            "type": "OnOffTimeControl",
             "schedule": {
                 "main": [
                     {
@@ -174,7 +178,9 @@
                         "repeat": 7
                     }
                 ]
-            }
+            },
+            "start_day": 0,
+            "time_series_step": 1
         }
     },
     "HotWaterSource": {
@@ -277,6 +283,7 @@
             "phase_transition_temperature_upper": 59,
             "phase_transition_temperature_lower": 57,
             "max_temperature": 80,
+            "temp_min_useful": 10.0,
             "temp_init": 80,
             "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": 0.035,
             "inlet_diameter_mm": 6.5,
@@ -440,12 +447,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []
@@ -460,12 +466,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []

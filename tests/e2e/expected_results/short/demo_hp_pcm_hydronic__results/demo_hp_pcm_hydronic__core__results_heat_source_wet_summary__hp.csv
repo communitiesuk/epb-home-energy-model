@@ -1,0 +1,46 @@
+Overall
+energy_output_required,kWh,25.05337465
+time_running_full_load,hours,3.027439418
+time_running_part_load,hours,3.027439418
+energy_delivered_HP,kWh,25.05337465
+energy_delivered_backup,kWh,0.0
+energy_delivered_total,kWh,25.05337465
+energy_input_HP,kWh,7.908113235
+energy_input_backup,kWh,0.0
+energy_heating_circ_pump,kWh,0.04541159127
+energy_source_circ_pump,kWh,0.03027439418
+energy_heating_warm_air_fan,kWh,0.0
+energy_input_total,kWh,7.98379922
+energy_output_delivered_boiler,kWh,0.0
+energy_delivered_H5,kWh,
+CoP (H1),,3.046854396
+CoP (H2),,3.035677619
+CoP (H3),,3.035677619
+CoP (H4),,3.019065361
+CoP (H5),Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank or PCM Heat Battery,
+
+auxiliary
+energy_standby,kWh,0.05958840873
+energy_crankcase_heater_mode,kWh,0.0
+energy_off_mode,kWh,0.255
+
+hp_pcm_charging: hb1
+energy_output_required,kWh,25.05337465
+time_running_full_load,hours,3.027439418
+time_running_part_load,hours,3.027439418
+energy_delivered_HP,kWh,25.05337465
+energy_delivered_backup,kWh,0.0
+energy_delivered_total,kWh,25.05337465
+energy_input_HP,kWh,7.908113235
+energy_input_backup,kWh,0.0
+energy_heating_circ_pump,kWh,0.04541159127
+energy_source_circ_pump,kWh,0.03027439418
+energy_heating_warm_air_fan,kWh,0.0
+energy_input_total,kWh,7.98379922
+energy_output_delivered_boiler,kWh,0.0
+energy_delivered_H5,kWh,
+CoP (H1),,3.168059675
+CoP (H2),,3.15597774
+CoP (H3),,3.15597774
+CoP (H4),,3.138026641
+CoP (H5),Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank or PCM Heat Battery,

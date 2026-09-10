@@ -1,40 +1,42 @@
 Energy Demand Summary
 ,,Total
-Space heat demand,kWh/m2,0.0292641359
+Space heat demand,kWh/m2,0.02816184867
 Space cool demand,kWh/m2,0.0
 
 Energy Supply Summary
 ,kWh,timestep,month,day,hour of day
-Peak consumption (electricity),1.861666667,4,JAN,1,4.0
+Peak consumption (electricity),1.858333333,4,JAN,1,4.0
 
 ,Total,_unmet_demand,_energy_from_environment,mains elec
-Consumption,kWh,0.0,6.973385264,5.851433372
+Consumption,kWh,0.0,6.830794336,5.771961078
 Generation,kWh,0.0,0.0,0.0
 Generation to consumption (immediate excl. diverter),kWh,0.0,0.0,0.0
 Generation to storage,kWh,0.0,0.0,0.0
 Generation to diverter,kWh,0.0,0.0,0.0
 Generation to grid,kWh,0.0,0.0,0.0
+Generation curtailed (export limited),kWh,0.0,0.0,0.0
+Storage to grid,kWh,0.0,0.0,0.0
 Storage to consumption,kWh,0.0,0.0,0.0
 Grid to storage,kWh,0.0,0.0,0.0
-Grid to consumption,kWh,0.0,6.973385264,5.851433372
-Total gross import,kWh,0.0,6.973385264,5.851433372
+Grid to consumption,kWh,0.0,6.830794336,5.771961078
+Total gross import,kWh,0.0,6.830794336,5.771961078
 Total gross export,kWh,0.0,0.0,0.0
-Net import,kWh,0.0,6.973385264,5.851433372
+Net import,kWh,0.0,6.830794336,5.771961078
 Storage round-trip efficiency,ratio,DIV/0,DIV/0,DIV/0
 
 Delivered Energy Summary
 Delivered energy by end-use (below) and fuel (right) [kWh/m2],total,_energy_from_environment,mains elec
-total,0.1868689878,0.1016084112,0.0852605766
-hp_water_heating: hw cylinder,0.05302763088,0.03737937048,0.0156482604
-hp_space_heating: space_heat_system_livingroom,0.02267322341,0.01654337257,0.006129850834
-hp_space_heating: space_heat_system_restofdwelling,0.06550511279,0.04768566819,0.0178194446
-mechvent1,0.004274126961,0,0.004274126961
-HeatPump_auxiliary: hp,0.002047497915,0,0.002047497915
+total,0.1836333296,0.09953073489,0.08410259475
+hp_water_heating: hw cylinder,0.05302368919,0.03737659341,0.01564709579
+hp_space_heating: space_heat_system_livingroom,0.02172311367,0.01584923833,0.005873875333
+hp_space_heating: space_heat_system_restofdwelling,0.06360837582,0.04630490315,0.01730347267
+mechvent1,0.003885569965,0,0.003885569965
+HeatPump_auxiliary: hp,0.002051185105,0,0.002051185105
 IES,0.03934139589,0,0.03934139589
 
 Hot water system,Overall CoP,Daily HW demand ([kWh] 75th percentile),HW cylinder volume (litres)
-hw cylinder,2.796746838,3.00353861,80.0
+hw cylinder,2.796955,3.00353861,80.0
 
 Space heating system,Overall CoP
-space_heat_system_livingroom,3.309899384
-space_heat_system_restofdwelling,1.715866222
+space_heat_system_livingroom,3.28798535
+space_heat_system_restofdwelling,1.62735349

@@ -17,7 +17,7 @@ CoP (H1),,2.833045211
 CoP (H2),,2.82420909
 CoP (H3),,2.82420909
 CoP (H4),,2.811057776
-CoP (H5),Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank,
+CoP (H5),Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank or PCM Heat Battery,
 
 auxiliary
 energy_standby,kWh,0.1162422133
@@ -43,5 +43,4 @@ CoP (H1),,3.314176273
 CoP (H2),,3.302090461
 CoP (H3),,3.302090461
 CoP (H4),,3.284126118
-CoP (H5),Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank,
-
+CoP (H5),Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank or PCM Heat Battery,

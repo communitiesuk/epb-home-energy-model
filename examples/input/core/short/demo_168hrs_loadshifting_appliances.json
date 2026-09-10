@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "ApplianceGains": {
         "Clothes_drying": {
@@ -1759,7 +1759,7 @@
         }
     },
     "Control": {
-        "required_vent": {
+        "_required_vent": {
             "type": "SetpointTimeControl",
             "start_day": 0,
             "time_series_step": 1,
@@ -3741,6 +3741,7 @@
                 "capacity": 2,
                 "charge_discharge_efficiency_round_trip": 0.8,
                 "grid_charging_possible": false,
+                "grid_exporting_possible": false,
                 "maximum_charge_rate_one_way_trip": 1.5,
                 "maximum_discharge_rate_one_way_trip": 1.25,
                 "minimum_charge_rate_one_way_trip": 0.001
@@ -6544,6 +6545,10 @@
             "system_a_utilisation_factor": 0.972
         }
     },
+    "ZoneProcessingOrder": [
+        "zone1_livingroom",
+        "zone2_restofdwelling"
+    ],
     "Zone": {
         "zone1_livingroom": {
             "BuildingElement": {
@@ -6631,11 +6636,8 @@
                     "Control_WindowOpenable": "_window_opening_closedsleeping",
                     "base_height": 0,
                     "frame_area_fraction": 0.15,
-                    "free_area_height": 1.05,
                     "g_value": 0.7,
                     "height": 2.1,
-                    "max_window_open_area": 0.2142,
-                    "mid_height": 1.05,
                     "orientation360": 0,
                     "pitch": 90,
                     "shading": [
@@ -6660,7 +6662,9 @@
                     "width": 2.04,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.2142
                         }
                     ]
                 },
@@ -6668,11 +6672,8 @@
                     "Control_WindowOpenable": "_window_opening_closedsleeping",
                     "base_height": 0,
                     "frame_area_fraction": 0.15,
-                    "free_area_height": 1.05,
                     "g_value": 0.7,
                     "height": 2.1,
-                    "max_window_open_area": 0.2142,
-                    "mid_height": 1.05,
                     "orientation360": 270,
                     "pitch": 90,
                     "shading": [
@@ -6697,7 +6698,9 @@
                     "width": 2.04,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.2142
                         }
                     ]
                 },
@@ -6705,11 +6708,8 @@
                     "Control_WindowOpenable": "_window_opening_closedsleeping",
                     "base_height": 0,
                     "frame_area_fraction": 0.26,
-                    "free_area_height": 1.05,
                     "g_value": 0.7,
                     "height": 2.1,
-                    "max_window_open_area": 0.08505,
-                    "mid_height": 1.05,
                     "orientation360": 270,
                     "pitch": 90,
                     "shading": [
@@ -6734,7 +6734,9 @@
                     "width": 0.81,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.08505
                         }
                     ]
                 }
@@ -6940,11 +6942,8 @@
                     "Control_WindowOpenable": "_window_opening_closedsleeping",
                     "base_height": 0,
                     "frame_area_fraction": 0.26,
-                    "free_area_height": 1.05,
                     "g_value": 0.7,
                     "height": 2.1,
-                    "max_window_open_area": 0.08505,
-                    "mid_height": 1.05,
                     "orientation360": 0,
                     "pitch": 90,
                     "shading": [
@@ -6969,7 +6968,9 @@
                     "width": 0.81,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.08505
                         }
                     ]
                 },
@@ -6977,11 +6978,8 @@
                     "Control_WindowOpenable": "_window_opening_closedsleeping",
                     "base_height": 0,
                     "frame_area_fraction": 0.23,
-                    "free_area_height": 1.05,
                     "g_value": 0.7,
                     "height": 2.1,
-                    "max_window_open_area": 0.10185,
-                    "mid_height": 1.05,
                     "orientation360": 0,
                     "pitch": 90,
                     "shading": [
@@ -7006,7 +7004,9 @@
                     "width": 0.97,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.05
+                            "free_area_height": 1.05,
+                            "mid_height": 1.05,
+                            "max_window_open_area": 0.10185
                         }
                     ]
                 }

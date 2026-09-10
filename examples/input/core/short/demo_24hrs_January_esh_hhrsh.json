@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "hem_core_version": "1.0.0a7"
+        "hem_core_version": "1.0.0a9"
     },
     "temp_internal_air_static_calcs": 20.0,
     "SimulationTime": {
@@ -443,26 +443,7 @@
                     }
                 ]
             },
-            "schedule": {
-                "main": [
-                    {
-                        "value": true,
-                        "repeat": 7
-                    },
-                    {
-                        "value": false,
-                        "repeat": 5
-                    },
-                    {
-                        "value": false,
-                        "repeat": 8
-                    },
-                    {
-                        "value": false,
-                        "repeat": 4
-                    }
-                ]
-            }
+            "charge_time_control": "esh_charge_control_time_control"
         },
         "main__hw timer__converted_from_OnOffTimeControl": {
             "type": "SetpointTimeControl",
@@ -484,6 +465,31 @@
                     }
                 ]
             }
+        },
+        "esh_charge_control_time_control": {
+            "type": "OnOffTimeControl",
+            "schedule": {
+                "main": [
+                    {
+                        "value": true,
+                        "repeat": 7
+                    },
+                    {
+                        "value": false,
+                        "repeat": 5
+                    },
+                    {
+                        "value": false,
+                        "repeat": 8
+                    },
+                    {
+                        "value": false,
+                        "repeat": 4
+                    }
+                ]
+            },
+            "start_day": 0,
+            "time_series_step": 1
         }
     },
     "HotWaterSource": {
@@ -905,12 +911,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []
@@ -925,12 +930,11 @@
                     "base_height": 0.2,
                     "height": 2,
                     "width": 3,
-                    "free_area_height": 0.2,
-                    "mid_height": 1.2,
-                    "max_window_open_area": 0,
                     "window_part_list": [
                         {
-                            "mid_height_air_flow_path": 1.2
+                            "free_area_height": 0.2,
+                            "mid_height": 1.2,
+                            "max_window_open_area": 0
                         }
                     ],
                     "shading": []
