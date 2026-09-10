@@ -41,6 +41,7 @@ const HOURS_IN_YEAR: usize = 8760;
 #[validate(custom = validate_smart_appliance_control_names)]
 #[validate(custom = validate_zone_processing_order)]
 #[validate(custom = validate_energy_supply_fuel_compatibility)]
+#[validate(custom = validate_tariff_data_time_series_step)]
 pub struct Input {
     /// Metadata for the input file
     #[serde(rename = "metadata")]
@@ -799,6 +800,20 @@ fn validate_energy_supply_fuel_compatibility(
             "Incompatible EnergySupply fuel types found:\n{}",
             errors.join("\n"),
         ));
+    }
+
+    Ok(())
+}
+
+fn validate_tariff_data_time_series_step(
+    input: &Input,
+) -> Result<(), serde_valid::validation::Error> {
+    if let Some(tariff_data) = input.tariff_data.as_ref() {
+        if tariff_data.time_series_step < input.simulation_time.step {
+            return custom_validation_error(
+                "Tariff data cannot have a smaller step than the simulation".to_string(),
+            );
+        }
     }
 
     Ok(())
