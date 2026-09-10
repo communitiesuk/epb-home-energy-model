@@ -54,8 +54,8 @@ use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use tracing::{debug, instrument};
 
-pub const HEM_VERSION: &str = "1.0.0a7";
-pub const HEM_VERSION_DATE: &str = "2026-02-27";
+pub const HEM_VERSION: &str = "1.0.0a9";
+pub const HEM_VERSION_DATE: &str = "2026-07-29";
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
