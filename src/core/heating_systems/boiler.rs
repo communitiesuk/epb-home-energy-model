@@ -1263,7 +1263,7 @@ impl Boiler {
 }
 
 #[derive(Clone, Debug)]
-struct ServiceResult {
+pub(crate) struct ServiceResult {
     service_name: String,
     service_type: ServiceType,
     temp_return_feed: Option<f64>,
