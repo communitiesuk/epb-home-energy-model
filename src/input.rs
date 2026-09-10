@@ -7229,6 +7229,142 @@ mod tests {
         })
     }
 
+    fn create_elec_storage_heater_config() -> JsonValue {
+        json!({
+            "type": "ElecStorageHeater",
+            "pwr_in": 3.7,
+            "rated_power_instant": 2.5,
+            "storage_capacity": 20,
+            "state_of_charge_init": 0,
+            "air_flow_type": "fan-assisted",
+            "frac_convective": 0.7,
+            "fan_pwr": 11.0,
+            "n_units": 1,
+            "EnergySupply": "mains elec",
+            "Control": "hw timer",
+            "ControlCharger": "hw timer",
+            "Zone": "zone 1",
+            "dry_core_min_output": [
+                [0, 0],
+                [0.001, 0.0000005],
+                [0.002, 0.000002],
+                [0.003, 0.0000045],
+                [0.005, 0.0000125],
+                [0.0075, 0.000028125],
+                [0.01, 0.00005],
+                [0.015, 0.0001125],
+                [0.02, 0.0002],
+                [0.03, 0.00045],
+                [0.05, 0.00125],
+                [0.1, 0.005],
+                [0.2, 0.02],
+                [0.3, 0.045],
+                [0.4, 0.08],
+                [0.5, 0.125],
+                [0.6, 0.18],
+                [0.7, 0.245],
+                [0.8, 0.32],
+                [0.9, 0.405],
+                [1, 0.5],
+            ],
+            "dry_core_max_output": [
+                [0, 0],
+                [0.001, 1.40420839159243],
+                [0.002, 1.66989461022824],
+                [0.003, 1.84804217294461],
+                [0.005, 2.09978130694835],
+                [0.0075, 2.32379000772445],
+                [0.01, 2.49707487017269],
+                [0.015, 2.76346761095814],
+                [0.02, 2.96953920230386],
+                [0.03, 3.286335345031],
+                [0.05, 3.73399786373087],
+                [0.1, 4.44049682695371],
+                [0.2, 5.28067042076036],
+                [0.3, 5.84402247855178],
+                [0.4, 6.27981083635263],
+                [0.5, 6.64009151820193],
+                [0.6, 6.94975311172961],
+                [0.7, 7.2228080610163],
+                [0.8, 7.46799572746174],
+                [0.9, 7.69116611513221],
+                [1, 7.89644407771495],
+            ],
+        })
+    }
+
+    fn create_heat_battery_config() -> JsonValue {
+        json!({
+            "hb1": {
+                "type": "HeatBattery",
+                "battery_type": "pcm",
+                "EnergySupply": "mains elec",
+                "ControlCharge": "hb_charge_control",
+                "A": 174.33952,
+                "B": -931.565,
+                "electricity_circ_pump": 0.06,
+                "electricity_standby": 0.0244,
+                "flow_rate_l_per_min": 10,
+                "heat_storage_kJ_per_K_above_Phase_transition": 381.5,
+                "heat_storage_kJ_per_K_below_Phase_transition": 305.2,
+                "heat_storage_kJ_per_K_during_Phase_transition": 12317,
+                "inlet_diameter_mm": 6.5,
+                "max_rated_losses": 0.1,
+                "max_temperature": 80,
+                "number_of_units": 1,
+                "phase_transition_temperature_lower": 57,
+                "phase_transition_temperature_upper": 59,
+                "rated_charge_power": 20.0,
+                "simultaneous_charging_and_discharging": false,
+                "temp_init": 80,
+                "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": 0.035,
+            }
+        })
+    }
+
+    fn create_heat_battery_charge_control_config(logic_type: &str) -> JsonValue {
+        json!({
+            "type": "ChargeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "logic_type": logic_type,
+            "charge_level": 1.0,
+            "schedule": {"main": [{"value": true, "repeat": 24}]},
+        })
+    }
+
+    fn create_storage_heater_charge_control_config(logic_type: &str) -> JsonValue {
+        let mut json = json!({
+            "type": "ChargeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "logic_type": logic_type,
+            "charge_level": 1.0,
+            "schedule": {"main": [{"value": true, "repeat": 24}]},
+        });
+        if ["automatic", "celect", "hhrsh"].contains(&logic_type) {
+            json["temp_charge_cut"] = json!(20.5);
+        }
+
+        json
+    }
+
+    //     @staticmethod
+    //     def _create_storage_heater_charge_control_config(logic_type: str) -> dict[str, Any]:
+    //         """Helper method to create a ChargeControl entry for an electric storage heater."""
+    //         config: dict[str, Any] = {
+    //             "type": "ChargeControl",
+    //             "start_day": 0,
+    //             "time_series_step": 1,
+    //             "logic_type": logic_type,
+    //             "charge_level": 1.0,
+    //             "schedule": {"main": [{"value": True, "repeat": 24}]},
+    //         }
+    //         # AUTOMATIC, CELECT and HHRSH require temp_charge_cut (see ControlChargeTarget.validate_logic_type)
+    //         if logic_type in ("automatic", "celect", "hhrsh"):
+    //             config["temp_charge_cut"] = 20.5
+    //         return config
+
     /// Helper method to create complete exhaust air heat pump configuration.
     fn create_exhaust_air_heat_pump_config(
         base_input: &JsonValue,
@@ -7404,6 +7540,77 @@ mod tests {
         let input: Result<Input, _> = serde_json::from_value(modified_input);
         let input = input.unwrap();
         assert!(input.validate().is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_tariff_data_time_series_step(mut baseline_demo_file_json: JsonValue) {
+        baseline_demo_file_json["TariffData"] = json!({
+            "start_day": 1,
+            "time_series_step": 0.1,
+            "prices": {},
+        });
+
+        let input: Result<Input, _> = serde_json::from_value(baseline_demo_file_json);
+        let input = input.unwrap();
+        assert!(input.validate().is_err());
+    }
+
+    #[rstest]
+    #[case("heat_battery")]
+    #[case("manual")]
+    fn test_validate_heat_battery_control_logic_type_valid(
+        baseline_demo_file_json: JsonValue,
+        #[case] logic_type: &str,
+    ) {
+        let mut modified_input = baseline_demo_file_json;
+        modified_input["HeatSourceWet"] = create_heat_battery_config();
+        modified_input["Control"]["hb_charge_control"] =
+            create_heat_battery_charge_control_config(logic_type);
+
+        // should be ok
+        let input: Result<Input, _> = serde_json::from_value(modified_input);
+        let input = input.unwrap();
+        input.validate().unwrap();
+    }
+
+    #[rstest]
+    #[case("automatic")]
+    #[case("celect")]
+    #[case("hhrsh")]
+    fn test_validate_heat_battery_control_logic_type_invalid(
+        baseline_demo_file_json: JsonValue,
+        #[case] logic_type: &str,
+    ) {
+        let mut modified_input = baseline_demo_file_json;
+        modified_input["HeatSourceWet"] = create_heat_battery_config();
+        modified_input["Control"]["hb_charge_control"] =
+            create_heat_battery_charge_control_config(logic_type);
+
+        let input: Result<Input, _> = serde_json::from_value(modified_input);
+        let input = input.unwrap();
+        assert!(input.validate().is_err());
+    }
+
+    #[rstest]
+    #[case("automatic")]
+    #[case("celect")]
+    #[case("hhrsh")]
+    #[case("manual")]
+    /// Storage heater logic types are not restricted by the heat battery validator.
+    fn test_validate_heat_battery_control_logic_type_storage_heater_unaffected(
+        baseline_demo_file_json: JsonValue,
+        #[case] logic_type: &str,
+    ) {
+        let mut modified_input = baseline_demo_file_json;
+        modified_input["SpaceHeatSystem"] = json!({"main": create_elec_storage_heater_config()});
+        modified_input["SpaceHeatSystem"]["main"]["ControlCharger"] = json!("esh_charge_control");
+        modified_input["Control"]["esh_charge_control"] =
+            create_storage_heater_charge_control_config(logic_type);
+
+        // should be ok
+        let input: Result<Input, _> = serde_json::from_value(modified_input);
+        let input = input.unwrap();
+        input.validate().unwrap();
     }
 
     fn assert_range_constraints<T>(valid_example: JsonValue, inputs: JsonValue)
