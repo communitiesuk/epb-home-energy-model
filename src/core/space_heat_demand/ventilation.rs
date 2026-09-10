@@ -1882,7 +1882,7 @@ pub(crate) struct InfiltrationVentilation {
     vents: Vec<Vent>,
     leaks: Vec<Leaks>,
     lower_facade_leaks: Vec<Leaks>,
-    upper_facade_leaks: Vec<Leaks>,
+    other_leaks: Vec<Leaks>,
     combustion_appliances: Vec<CombustionAppliances>,
     air_terminal_devices: Vec<AirTerminalDevices>,
     mech_vents: Vec<Arc<MechanicalVentilation>>,
@@ -1962,7 +1962,7 @@ impl InfiltrationVentilation {
         // other leaks (upper facade + roof). Smart air brick adjustment applies
         // only to the lower facade where the air bricks are located.
         let lower_facade_leaks = all_leaks.as_slice()[0..2].to_vec();
-        let upper_facade_leaks = all_leaks.as_slice()[2..].to_vec();
+        let other_leaks = all_leaks.as_slice()[2..].to_vec();
         let smart_air_brick_floor_area_fraction =
             if let Some(fraction) = smart_air_brick_floor_area_fraction {
                 fraction
@@ -2012,7 +2012,7 @@ impl InfiltrationVentilation {
             vents,
             leaks: all_leaks,
             lower_facade_leaks,
-            upper_facade_leaks,
+            other_leaks,
             combustion_appliances,
             air_terminal_devices,
             mech_vents,
@@ -2408,7 +2408,22 @@ impl InfiltrationVentilation {
             qm_out_through_vents += qm_out;
         }
 
-        for leak in &self.leaks {
+        let lower_facade_adjustment = self.calculate_lower_facade_infiltration_adjustment(simtime);
+
+        for leak in &self.lower_facade_leaks {
+            let (qm_in, qm_out) = leak.calculate_flow_from_internal_p(
+                u_site,
+                t_e,
+                t_z,
+                p_z_ref,
+                self.f_cross,
+                self.shield_class,
+            )?;
+            qm_in_through_leaks += qm_in * lower_facade_adjustment;
+            qm_out_through_leaks += qm_out * lower_facade_adjustment;
+        }
+
+        for leak in &self.other_leaks {
             let (qm_in, qm_out) = leak.calculate_flow_from_internal_p(
                 u_site,
                 t_e,
