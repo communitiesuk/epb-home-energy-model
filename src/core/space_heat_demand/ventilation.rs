@@ -4386,38 +4386,61 @@ mod tests {
         assert_eq!(window_part.divisions.len(), 2);
     }
 
+    #[fixture]
     fn window_division() -> WindowDivision {
-        WindowDivision::new(1., 1.6, 1, 1.)
+        WindowDivision::new(1., 1.6, 1, 0.)
     }
-    // #[rstest]
-    // fn test_calculate_ventilation_through_windows_using_internal_p(window_part: WindowDivision) {
-    //     let u_site = 3.7;
-    //     let t_e = 273.15;
-    //     let t_z = 293.15;
-    //     let c_w_path = 4663.05;
-    //     let c_p_path = -0.7;
-    //     let p_z_ref = 1.;
-    //     let expected_output = -13235.33116157;
 
-    //     assert_relative_eq!(
-    //         window_part
-    //             .calculate_flow_from_internal_p(u_site, t_e, t_z, c_w_path, p_z_ref, c_p_path),
-    //         expected_output,
-    //         max_relative = EIGHT_DECIMAL_PLACES
-    //     );
-    // }
-    #[test]
-    #[ignore = "ignore while migrating to 1.0.0a9"]
-    fn test_calculate_height_for_delta_p_w_div_path() {
-        let expected_output_first_unit = 1.275;
-        let expected_output_second_unit = 1.725;
+    //    Tests for the virtual-division class that runs BS EN 16798-7 equation 55.
+    //
+    //   `N_w;div` is hard-coded to the Annex B.3.3.10 value of 1 (two divisions per
+    //    openable section), so every WindowDivision constructed by the production code
+    //    is either the lower or upper strip of a section.
+
+    #[rstest]
+    /// For a section with free area height 0.9 m centred at 1.5 m, the two
+    /// divisions sit at 1.5 ∓ h_fa/4 = 1.275 m and 1.725 m.
+    fn test_equation_55_distribution() {
+        let section_mid_height = 1.5;
+        let free_area_height = 0.9;
+        // Section mid-height − h_fa/4 = 1.5 − 0.225 = 1.275
         assert_relative_eq!(
-            WindowDivision::calculate_height_for_delta_p_w_div_path(1.5, 0.9, 1usize),
-            expected_output_first_unit
+            WindowDivision::calculate_height_for_delta_p_w_div_path(
+                section_mid_height,
+                free_area_height,
+                1
+            ),
+            1.275
         );
+        // Section mid-height + h_fa/4 = 1.5 + 0.225 = 1.725
         assert_relative_eq!(
-            WindowDivision::calculate_height_for_delta_p_w_div_path(1.5, 0.9, 2usize),
-            expected_output_second_unit
+            WindowDivision::calculate_height_for_delta_p_w_div_path(
+                section_mid_height,
+                free_area_height,
+                2
+            ),
+            1.725
+        );
+    }
+
+    #[rstest]
+    /// Flow through one division: C_w_path / 2 · sign(Δp) · |Δp|^0.5.
+    ///
+    /// With C_w_path = 4663.05 split into two divisions, each carries half the
+    /// coefficient. The Δp at the division's airflow path height drives the
+    /// non-linear flow per equation 53.
+    fn test_calculate_ventilation_through_windows_using_internal_p(
+        window_division: WindowDivision,
+    ) {
+        // Division j=1 sits at mid_height − h_fa/4 = 1.0 − 0.4 = 0.6 m.
+        // The Δp at this height with the given wind/temperatures and C_w_path/2
+        // yields qv = -6474.027827494242 per equation 53.
+
+        assert_relative_eq!(
+            window_division.calculate_ventilation_through_windows_using_internal_p(
+                3.7, 273.15, 293.15, 4663.05, 1.0, -0.7,
+            ),
+            -6474.027827494242,
         );
     }
 
