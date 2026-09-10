@@ -1321,7 +1321,7 @@ pub(crate) fn validate_power_limit_export_requires_export_capable(
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str, Eq, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum EnergySupplyTariff {
     #[serde(rename = "Standard Tariff")]

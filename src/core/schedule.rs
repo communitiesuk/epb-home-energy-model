@@ -359,6 +359,15 @@ pub(crate) mod input {
     pub(crate) type BooleanSchedule = Schedule<bool>;
     pub type NumericSchedule = Schedule<f64>;
 
+    impl From<Vec<f64>> for NumericSchedule {
+        fn from(numbers: Vec<f64>) -> Self {
+            Self {
+                main: numbers.into_iter().map(ScheduleEntry::Value).collect(),
+                references: Default::default(),
+            }
+        }
+    }
+
     #[cfg(test)]
     mod schedule_test {
         use super::*;

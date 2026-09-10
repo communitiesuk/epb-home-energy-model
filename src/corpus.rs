@@ -7,8 +7,8 @@ use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::cooling_systems::space_cool_system_base::SpaceCoolSystem;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
-    EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, EnergySupplyTariffInput,
-    ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME, UNMET_DEMAND_SUPPLY_NAME,
+    EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME,
+    UNMET_DEMAND_SUPPLY_NAME,
 };
 use crate::core::energy_supply::inverter::Inverter;
 use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
@@ -3281,7 +3281,7 @@ fn energy_supply_from_input(
                 SingleOrMap::Single(battery) if battery.grid_charging_possible
             )
         }) {
-            let tariff_data: Box<dyn Read> = match tariff_file_path {
+            let _tariff_data: Box<dyn Read> = match tariff_file_path {
                 // fall back to using tariff data for entire year for now
                 None => Box::new(Cursor::new(include_str!(
                     "../examples/tariff_data/tariff_data_25-06-2024.csv"
@@ -3291,12 +3291,13 @@ fn energy_supply_from_input(
                         .expect("Provided tariff file at provided path was not found."),
                 )),
             };
-            builder = builder.with_tariff_input(EnergySupplyTariffInput::new(
-                input.tariff.ok_or_else(|| anyhow!("Energy supply with electric battery that allows grid charging expected tariff to be indicated"))?,
-                tariff_data,
-                input.threshold_charges.map(|threshold_charges| threshold_charges.to_vec()),
-                input.threshold_prices.map(|threshold_prices| threshold_prices.to_vec()),
-            ))?;
+            // builder = builder.with_tariff_input(EnergySupplyTariffInput::new(
+            //     input.tariff.ok_or_else(|| anyhow!("Energy supply with electric battery that allows grid charging expected tariff to be indicated"))?,
+            //     tariff_data,
+            //     input.threshold_charges.map(|threshold_charges| threshold_charges.to_vec()),
+            //     input.threshold_prices.map(|threshold_prices| threshold_prices.to_vec()),
+            // ))?;
+            builder = builder.with_tariff_input()?; // TODO 1.0.0a migration
         }
 
         builder.build()
