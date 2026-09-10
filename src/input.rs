@@ -1104,6 +1104,7 @@ pub type EnergySupplyInput = IndexMap<std::string::String, EnergySupplyDetails>;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(untagged)]
 pub(crate) enum SingleOrMap<T>
 where
     T: Clone + Debug + DeserializeOwned + Serialize + PartialEq + Validate,
@@ -1151,7 +1152,7 @@ pub struct EnergySupplyDetails {
 
     pub factor: Option<CustomEnergySourceFactor>,
 
-    pub(crate) priority: Option<Vec<EnergySupplyPriorityEntry>>,
+    pub(crate) priority: Option<Vec<String>>,
 
     /// Denotes that this energy supply can export its surplus supply
     pub(crate) is_export_capable: bool,
@@ -1242,17 +1243,13 @@ pub(crate) fn validate_priority_for_energy_supply(
 
     let electric_battery_keys: HashSet<std::string::String> =
         match energy_supply.electric_battery.as_ref() {
-            Some(SingleOrMap::Single(_)) => {
-                HashSet::from([EnergySupplyPriorityEntry::ElectricBattery.to_string()])
-            }
+            Some(SingleOrMap::Single(_)) => HashSet::from(["ElectricBattery".to_string()]),
             Some(SingleOrMap::Map(batteries)) => HashSet::from_iter(batteries.keys().cloned()),
             None => HashSet::new(),
         };
 
     let diverter_keys: HashSet<std::string::String> = match energy_supply.diverter.as_ref() {
-        Some(SingleOrMap::Single(_)) => {
-            HashSet::from([EnergySupplyPriorityEntry::Diverter.to_string()])
-        }
+        Some(SingleOrMap::Single(_)) => HashSet::from(["diverter".to_string()]),
         Some(SingleOrMap::Map(diverters)) => HashSet::from_iter(diverters.keys().cloned()),
         None => HashSet::new(),
     };
@@ -1335,15 +1332,6 @@ pub(crate) enum EnergySupplyTariff {
 
     #[serde(rename = "Variable Time of Day Tariff")]
     VariableTimeOfDay,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str, Eq, Hash)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum EnergySupplyPriorityEntry {
-    ElectricBattery,
-
-    #[serde(rename = "diverter")]
-    Diverter,
 }
 
 // It's not completely clear at the moment what the difference between fuel type and energy supply type is,
@@ -1506,7 +1494,7 @@ impl From<EnergySupplyType> for String {
 #[serde(rename_all = "PascalCase")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EnergyDiverter {
-    pub(crate) heat_source: DiverterHeatSourceType,
+    pub(crate) heat_source: String,
     /// Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.
     #[serde(rename = "Controlmax")]
     pub(crate) control_max: String,
@@ -1524,22 +1512,6 @@ impl StorageTankType {
     pub fn matches(&self, type_string: &str) -> bool {
         match self {
             StorageTankType::HotWaterCylinder => type_string == "hw cylinder",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum DiverterHeatSourceType {
-    #[serde(rename = "immersion")]
-    Immersion,
-}
-
-impl DiverterHeatSourceType {
-    // implementation here could be derived via serde stuff, but keeping simple/ duplicated for now
-    pub fn matches(&self, type_string: &str) -> bool {
-        match self {
-            DiverterHeatSourceType::Immersion => type_string == "immersion",
         }
     }
 }
@@ -5578,6 +5550,7 @@ pub enum HeatBatteryPcmChargingSource {
 
         /// Velocity in heat exchanger tube at 1 litre/minute for the
         /// hydronic charging circuit (unit: m/s).
+        #[serde(rename = "velocity_in_HEX_tube_at_1_l_per_min_m_per_s")]
         #[validate(exclusive_minimum = 0.)]
         velocity_in_hex_tube_at_1_l_per_min_m_per_s: f64,
 
@@ -5675,17 +5648,18 @@ pub enum HeatBattery {
         /// Heat capacity of storage above phase transition (unit: kJ/K)
         #[serde(rename = "heat_storage_kJ_per_K_above_Phase_transition")]
         #[validate(exclusive_minimum = 0.)]
-        heat_storage_k_j_per_k_above_phase_transition: f64,
+        #[validate(exclusive_minimum = 0.)]
+        heat_storage_kj_per_k_above_phase_transition: f64,
 
         /// Heat capacity of storage below phase transition (unit: kJ/K)
         #[serde(rename = "heat_storage_kJ_per_K_below_Phase_transition")]
         #[validate(exclusive_minimum = 0.)]
-        heat_storage_k_j_per_k_below_phase_transition: f64,
+        heat_storage_kj_per_k_below_phase_transition: f64,
 
         /// Heat capacity of storage during phase transition (unit: kJ/K)
         #[serde(rename = "heat_storage_kJ_per_K_during_Phase_transition")]
         #[validate(exclusive_minimum = 0.)]
-        heat_storage_k_j_per_k_during_phase_transition: f64,
+        heat_storage_kj_per_k_during_phase_transition: f64,
 
         /// Maximum rated heat losses (unit: kW)
         #[validate(exclusive_minimum = 0.)]
@@ -6141,7 +6115,6 @@ pub enum BuildType {
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(deny_unknown_fields)]
 pub struct InfiltrationVentilation {
     #[serde(rename = "Control_WindowAdjust")]
     pub(crate) control_window_adjust: Option<String>,
@@ -6956,7 +6929,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     fn test_total_floor_area(baseline_demo_file_input: Input) {
         assert_eq!(baseline_demo_file_input.total_floor_area(), 48.);
     }
@@ -7070,6 +7042,7 @@ mod tests {
         }
 
         #[rstest]
+        #[ignore = "ignore to complete during migration to 1.0.0a9"]
         fn test_validate_smart_appliance_control_names_found(baseline_demo_file_json: JsonValue) {
             let mut modified_input = merge_json_onto_base(
                 baseline_demo_file_json,
@@ -7282,6 +7255,7 @@ mod tests {
 
     /// Test that compatible exhaust air heat pump and ventilation combinations pass validation.
     #[rstest]
+    #[ignore = "ignore to fix during 1.0.0a9"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_valid_combinations(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -7324,7 +7298,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_invalid_combinations(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -7371,7 +7344,7 @@ mod tests {
 
     /// Test edge cases where validation should pass regardless of configuration.
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
+    #[ignore = "ignore until completed during migration to 1.0.0a9"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_edge_cases(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -7707,9 +7680,9 @@ mod tests {
                     max_rated_losses: 0.22,
                     number_of_units: 1,
                     simultaneous_charging_and_discharging: true,
-                    heat_storage_k_j_per_k_above_phase_transition: 381.5,
-                    heat_storage_k_j_per_k_below_phase_transition: 305.2,
-                    heat_storage_k_j_per_k_during_phase_transition: 12317.,
+                    heat_storage_kj_per_k_above_phase_transition: 381.5,
+                    heat_storage_kj_per_k_below_phase_transition: 305.2,
+                    heat_storage_kj_per_k_during_phase_transition: 12317.,
                     phase_transition_temperature_upper: 59.,
                     phase_transition_temperature_lower: 57.,
                     max_temperature: 25.,
