@@ -1964,11 +1964,7 @@ impl InfiltrationVentilation {
         let lower_facade_leaks = all_leaks.as_slice()[0..2].to_vec();
         let other_leaks = all_leaks.as_slice()[2..].to_vec();
         let smart_air_brick_floor_area_fraction =
-            if let Some(fraction) = smart_air_brick_floor_area_fraction {
-                fraction
-            } else {
-                1.
-            };
+            smart_air_brick_floor_area_fraction.unwrap_or(1.0);
         //  Precompute the infiltration reduction factor for lower facade leaks.
         //  The BRE Airex ECO4 trial (2024) found an 11.3% reduction in overall
         //  dwelling airtightness when vents close. Since this reduction is
@@ -1990,7 +1986,7 @@ impl InfiltrationVentilation {
         let area_total = area_facades + area_roof;
         let infiltration_reduction_overall = 0.139 * smart_air_brick_floor_area_fraction;
 
-        let infiltration_reduction_lower = if let Some(_) = smart_air_brick_control {
+        let infiltration_reduction_lower = if smart_air_brick_control.is_some() {
             if area_total > 0.0 && area_facades > 0.0 {
                 let fraction_lower_facade = 0.5 * area_facades / area_total;
                 infiltration_reduction_overall / fraction_lower_facade
