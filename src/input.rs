@@ -6911,7 +6911,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     fn should_successfully_parse_all_core_demo_files(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let parsed: Result<Input, _> =
@@ -6926,7 +6925,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     fn should_successfully_deserialise_all_core_demo_files(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Result<Input, _> =
@@ -6941,7 +6939,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     fn test_all_demo_files_deserialize_and_serialize(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Input =
@@ -6988,7 +6985,6 @@ mod tests {
 
     /// Test WWHRS validation with empty configuration.
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     fn test_validate_shower_waste_water_heat_recovery_systems_empty(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -7005,7 +7001,6 @@ mod tests {
 
     /// Test WWHRS validation with valid mixer shower configuration.
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     fn test_validate_shower_waste_water_heat_recovery_systems_valid_mixer_shower(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -7050,7 +7045,6 @@ mod tests {
         use serde_valid::Validate;
 
         #[rstest]
-        #[ignore = "TODO as part of 1.0.0a9 migration"]
         fn test_validate_smart_appliance_control_name_not_found(
             baseline_demo_file_json: JsonValue,
         ) {
@@ -7076,7 +7070,6 @@ mod tests {
         }
 
         #[rstest]
-        #[ignore = "TODO as part of 1.0.0a9 migration"]
         fn test_validate_smart_appliance_control_names_found(baseline_demo_file_json: JsonValue) {
             let mut modified_input = merge_json_onto_base(
                 baseline_demo_file_json,
@@ -7130,7 +7123,6 @@ mod tests {
     });
 
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     fn test_validate_time_series(baseline_demo_file_json: JsonValue) {
         let mut modified_input = baseline_demo_file_json.clone();
         modified_input["ColdWaterSource"]["mains water"]["temperatures"] = json!([0.0]);
@@ -7290,7 +7282,6 @@ mod tests {
 
     /// Test that compatible exhaust air heat pump and ventilation combinations pass validation.
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_valid_combinations(
         baseline_demo_file_json: JsonValue,
     ) {
