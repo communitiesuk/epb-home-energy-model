@@ -4339,7 +4339,51 @@ mod tests {
 
     #[fixture]
     fn window_part() -> WindowPart {
-        WindowPart::new(1., 1.6, 0., 1.)
+        WindowPart::new(0.9, 1.5, 2.0, 0.0)
+    }
+
+    // Test for the openable-section class introduced for BS EN 16798-7 Option 3.
+
+    #[rstest]
+    /// Open area = R_w_arg × max_opening_area (equation 40).
+    fn test_calculate_open_area(window_part: WindowPart) {
+        let r_w_arg = 0.5;
+
+        assert_relative_eq!(
+            window_part.calculate_open_area(r_w_arg),
+            1.0,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+        let r_w_arg = 1.0;
+        assert_relative_eq!(
+            window_part.calculate_open_area(r_w_arg),
+            2.0,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+        let r_w_arg = 0.0;
+        assert_relative_eq!(
+            window_part.calculate_open_area(r_w_arg),
+            0.0,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
+    #[rstest]
+    /// C_w_path = 3600·C_D·A_w·(2/p_a_ref)^n_w (equation 54).
+    fn test_calculate_flow_coeff(window_part: WindowPart) {
+        // 3600 · 0.67 · (0.5·2.0) · (2/1.204)^0.5 = 3108.7017512255966
+        let expected_output = 3108.7017512255966;
+        assert_relative_eq!(
+            window_part.calculate_flow_coeff(0.5),
+            expected_output,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
+    #[rstest]
+    /// Annex B default N_w;div=1 ⇒ 2 divisions are constructed for each
+    fn test_default_two_divisions_built(window_part: WindowPart) {
+        assert_eq!(window_part.divisions.len(), 2);
     }
 
     fn window_division() -> WindowDivision {
