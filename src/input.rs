@@ -8354,8 +8354,8 @@ mod tests {
             }
 
             #[rstest(inputs,
-                case::efficiency_greater_than_zero(json!({"efficiency": 0})),
-                case::efficiency_at_most_one(json!({"efficiency": 2})),
+                case::efficiency_should_not_be_less_than_one(json!({"efficiency": 0})),
+                case::efficiency_should_not_be_greater_than_one(json!({"efficiency": 2})),
                 case::setpoint_temp_at_least_zero(json!({"setpoint_temp": -9999})),
                 case::setpoint_temp_at_most_a_hundred(json!({"setpoint_temp": 101})),
             )]
@@ -9006,12 +9006,93 @@ mod tests {
             case::threshold_charges_item_at_least_zero(json!({"threshold_charges": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1]})
             ),
             case::threshold_prices_at_least_12_items(json!({"threshold_prices": [0, 1, 1]})),
-            case::threshold_prices_at_most_12_items(json!({"threshold_prices": [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]})
-            ),
+            case::threshold_prices_at_most_12_items(json!({"threshold_prices": [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]})),
+            case::power_limit_export_should_not_be_zero(json!({"power_limit_export": 0})),
+            case::power_limit_export_should_not_be_negative(json!({"power_limit_export": -1})),
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<EnergySupplyDetails>(valid_example, inputs);
         }
+
+        #[fixture]
+        fn energy_supply_input(mut baseline_demo_file_json: JsonValue) -> JsonValue {
+            let data = baseline_demo_file_json
+                .get_mut("EnergySupply")
+                .unwrap()
+                .get_mut("mains elec")
+                .unwrap();
+            data["ElectricBattery"] = json!({
+                "battery1": {
+                    "capacity": 2,
+                    "charge_discharge_efficiency_round_trip": 0.9,
+                    "battery_age": 5,
+                    "minimum_charge_rate_one_way_trip": 0.001,
+                    "maximum_charge_rate_one_way_trip": 2,
+                    "maximum_discharge_rate_one_way_trip": 2,
+                    "battery_location": "inside",
+                    "grid_charging_possible": true,
+                    "grid_exporting_possible": true,
+                },
+                "battery2": {
+                    "capacity": 10,
+                    "charge_discharge_efficiency_round_trip": 0.65,
+                    "battery_age": 10,
+                    "minimum_charge_rate_one_way_trip": 0.001,
+                    "maximum_charge_rate_one_way_trip": 1.0,
+                    "maximum_discharge_rate_one_way_trip": 1.0,
+                    "battery_location": "outside",
+                    "grid_charging_possible": true,
+                    "grid_exporting_possible": true,
+                },
+            });
+            data["diverter"] = json!({
+                "immersion_diverter": {
+                    "HeatSource": "immersion",
+                    "Controlmax": "controlmax_diverter",
+                },
+            });
+            data["priority"] = json!(["battery1", "immersion_diverter", "battery2",]);
+
+            data.clone()
+        }
+
+        #[rstest]
+        fn test_validate_priority(energy_supply_input: JsonValue) {
+            let input: EnergySupplyDetails = serde_json::from_value(energy_supply_input).unwrap();
+            assert!(input.validate().is_ok());
+        }
+
+        #[rstest]
+        #[case(&[], "Priority list must be either Null or populated with keys from 'ElectricBattery' and 'diverter' keys.")]
+        #[case(&["battery1", "immersion_diverter"], "All ElectricBattery keys must all be in priority list.")]
+        #[case(&["battery1", "battery2"], "All diverter keys must all be in priority list.")]
+        #[case(&["battery1", "immersion_diverter", "battery2", "not_a_battery_or_diverter"], "Priority list must only contain keys in either 'ElectricBattery' or 'diverter'.")]
+        fn test_validate_priority_invalid(
+            #[case] priority: &[&str],
+            #[case] expected_message: &str,
+            mut energy_supply_input: JsonValue,
+        ) {
+            energy_supply_input["priority"] = json!(priority);
+            let input: EnergySupplyDetails = serde_json::from_value(energy_supply_input).unwrap();
+            assert!(
+                input.validate().is_err(),
+                "Energy supply priority test failure: {}",
+                expected_message
+            );
+        }
+
+        #[rstest]
+        fn test_power_limit_export_rejected_without_export_capable() {
+            let energy_supply: EnergySupplyDetails = serde_json::from_value(json!({
+                "fuel": "energy_from_environment",
+                "is_export_capable": false,
+                "power_limit_export": 5.0,
+            }))
+            .unwrap();
+            assert!(energy_supply.validate().is_err());
+        }
+
+        // test_power_limit_export_accepted_when_export_capable is skipped as it doesn't really test anything
     }
 
     mod heat_source {
