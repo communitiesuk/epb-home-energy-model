@@ -9120,7 +9120,7 @@ mod tests {
             #[rstest(inputs,
                 case::power_greater_than_zero(json!({"power": 0})),
                 case::heater_position_at_least_zero(json!({"heater_position": -1})),
-                case::heater_position_at_most_one(json!({"heater_position": 2})),
+                case::heater_position_less_than_one(json!({"heater_position": 2})),
                 case::thermostat_position_at_least_zero(json!({"thermostat_position": -1})),
                 case::thermostat_position_at_most_one(json!({"thermostat_position": 2})),
             )]
@@ -9177,7 +9177,7 @@ mod tests {
                 case::orientation_at_most_180(json!({"orientation360": -1})),
                 case::orientation_at_least_minus_180(json!({"orientation360": 361})),
                 case::heater_position_at_least_zero(json!({"heater_position": -1})),
-                case::heater_position_at_most_one(json!({"heater_position": 2})),
+                case::heater_position_less_than_one(json!({"heater_position": 2})),
                 case::thermostat_position_at_least_zero(json!({"thermostat_position": -1})),
                 case::thermostat_position_at_most_one(json!({"thermostat_position": 2})),
                 case::tilt_at_least_zero(json!({"tilt": -1})),
@@ -9196,7 +9196,7 @@ mod tests {
                 serde_json::to_value(HeatSource::ServiceWaterRegular {
                     name: Default::default(),
                     temp_flow_limit_upper: None,
-                    heater_position: 0.8,
+                    heater_position: 0.5,
                     thermostat_position: None,
                     controls: ControlReferences::Bounded {
                         control_max: "control max".into(),
@@ -9209,7 +9209,7 @@ mod tests {
 
             #[rstest(inputs,
                 case::heater_position_at_least_zero(json!({"heater_position": -1})),
-                case::heater_position_at_most_one(json!({"heater_position": 2})),
+                case::heater_position_less_than_one(json!({"heater_position": 2})),
                 case::thermostat_position_at_least_zero(json!({"thermostat_position": -1})),
                 case::thermostat_position_at_most_one(json!({"thermostat_position": 2})),
                 case::temp_flow_limit_upper_greater_than_zero(json!({"temp_flow_limit_upper": 0})
@@ -9249,7 +9249,7 @@ mod tests {
                         control_max: "control max".into(),
                     }
                     .into(),
-                    heater_position: 1.,
+                    heater_position: 0.5,
                     thermostat_position: None,
                 })
                 .unwrap()
@@ -9273,6 +9273,73 @@ mod tests {
                 assert_range_constraints::<HeatSource>(valid_example, inputs);
             }
         }
+    }
+
+    // def _hw_only_heat_pump_source(tank_is_integral: bool = False) -> dict[str, Any]:
+    //     """Return input data for a tank HeatSource holding a hot-water-only heat pump.
+    //
+    //     Args:
+    //         tank_is_integral: Whether the heat pump and tank form a single integral unit.
+    //
+    //     Returns:
+    //         A mapping of heat-source name to HeatPump_HWOnly input fields, for use as a tank
+    //         HeatSource entry in the integral-tank validator tests.
+    //     """
+    //     return {
+    //         "heat pump": {
+    //             "type": "HeatPump_HWOnly",
+    //             "Controlmax": "control max",
+    //             "Controlmin": "control min",
+    //             "EnergySupply": "mains elec",
+    //             "heater_position": 0.5,
+    //             "daily_losses_declared": 2.3,
+    //             "heat_exchanger_surface_area_declared": 1.3,
+    //             "tank_is_integral": tank_is_integral,
+    //             "in_use_factor_mismatch": 0.4,
+    //             "power_max": 10,
+    //             "tank_volume_declared": 10,
+    //             "test_data": {
+    //                 "M": {
+    //                     "cop_dhw": 2.5,
+    //                     "hw_tapping_prof_daily_total": 5.845,
+    //                     "energy_input_measured": 2.338,
+    //                     "power_standby": 0.02,
+    //                     "hw_vessel_loss_daily": 2.0,
+    //                 }
+    //             },
+    //             "vol_hw_daily_average": 10,
+    //         }
+    //     }
+
+    /// Return input data for a tank HeatSource holding a hot-water-only heat pump.
+    fn hw_only_heat_pump_source(tank_is_integral: Option<bool>) -> JsonValue {
+        let tank_is_integral = tank_is_integral.unwrap_or(false);
+
+        json!({
+            "heat pump": {
+                "type": "HeatPump_HWOnly",
+                "Controlmax": "control max",
+                "Controlmin": "control min",
+                "EnergySupply": "mains elec",
+                "heater_position": 0.5,
+                "daily_losses_declared": 2.3,
+                "heat_exchanger_surface_area_declared": 1.3,
+                "tank_is_integral": tank_is_integral,
+                "in_use_factor_mismatch": 0.4,
+                "power_max": 10,
+                "tank_volume_declared": 10,
+                "test_data": {
+                    "M": {
+                        "cop_dhw": 2.5,
+                        "hw_tapping_prof_daily_total": 5.845,
+                        "energy_input_measured": 2.338,
+                        "power_standby": 0.02,
+                        "hw_vessel_loss_daily": 2.0,
+                    }
+                },
+                "vol_hw_daily_average": 10,
+            }
+        })
     }
 
     mod smart_hot_water_tank {
@@ -9310,6 +9377,48 @@ mod tests {
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<HotWaterSourceDetails>(valid_example, inputs);
+        }
+
+        #[rstest]
+        /// An integral tank must not declare a heat-exchanger surface area.
+        fn test_integral_tank_forbids_heat_exchanger_area(valid_example: JsonValue) {
+            let mut tank = valid_example;
+            tank["HeatSource"] = hw_only_heat_pump_source(true.into());
+            tank["heat_exchanger_surface_area"] = json!(1.2);
+
+            let hot_water_source: HotWaterSourceDetails = serde_json::from_value(tank).unwrap();
+            assert!(hot_water_source.validate().is_err());
+        }
+
+        #[rstest]
+        /// An integral tank with a HeatPump_HWOnly source may omit the exchanger area.
+        fn test_integral_tank_allows_omitted_heat_exchanger_area(valid_example: JsonValue) {
+            let mut tank = valid_example;
+            tank["HeatSource"] = hw_only_heat_pump_source(true.into());
+
+            let hot_water_source: HotWaterSourceDetails = serde_json::from_value(tank).unwrap();
+            assert!(hot_water_source.validate().is_ok());
+        }
+
+        #[rstest]
+        /// A separate tank with a HeatPump_HWOnly source must declare the exchanger area.
+        fn test_separate_tank_requires_heat_exchanger_area(valid_example: JsonValue) {
+            let mut tank = valid_example;
+            tank["HeatSource"] = hw_only_heat_pump_source(None);
+
+            let hot_water_source: HotWaterSourceDetails = serde_json::from_value(tank).unwrap();
+            assert!(hot_water_source.validate().is_err());
+        }
+
+        #[rstest]
+        /// A separate tank with a HeatPump_HWOnly source must declare the exchanger area.
+        fn test_separate_tank_accepts_heat_exchanger_area(valid_example: JsonValue) {
+            let mut tank = valid_example;
+            tank["HeatSource"] = hw_only_heat_pump_source(None);
+            tank["heat_exchanger_surface_area"] = json!(1.2);
+
+            let hot_water_source: HotWaterSourceDetails = serde_json::from_value(tank).unwrap();
+            assert!(hot_water_source.validate().is_ok());
         }
     }
 
