@@ -1,10 +1,9 @@
 // This module provides structs to model time controls
 
-use crate::core::schedule::input::ScheduleEntry;
 use crate::core::schedule::validate_schedule_length;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
-use crate::hem_core::simulation_time::{self, SimulationTime};
+use crate::hem_core::simulation_time::SimulationTime;
 use crate::input::{
     ControlCombination, ControlCombinationOperation, ControlCombinations, ControlLogicType,
     ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SetpointBoundsInput,
@@ -18,7 +17,6 @@ use bounded_vec_deque::BoundedVecDeque;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use jsonschema::canonical::OperandMismatch::PatternEngine;
 use parking_lot::RwLock;
 use smartstring::alias::String;
 use std::collections::VecDeque;
@@ -744,7 +742,6 @@ impl RangeTimeControl {
                     }
                 }
             }
-            _ => {}
         }
 
         let timesteps_advstart = (duration_advanced_start / simulation_time.step).round() as u32;
@@ -757,8 +754,11 @@ impl RangeTimeControl {
             timesteps_advstart,
         })
     }
-    
-    fn find_setpnt(simulation_time_iteration: &SimulationTimeIteration, schedule: &ScheduleOrControl) -> Option<f64> {
+
+    fn find_setpnt(
+        simulation_time_iteration: &SimulationTimeIteration,
+        schedule: &ScheduleOrControl,
+    ) -> Option<f64> {
         match schedule {
             ScheduleOrControl::Schedule(schedule) => schedule[simulation_time_iteration.index],
         }
@@ -775,7 +775,7 @@ impl ControlBehaviour for RangeTimeControl {
         let idx = simulation_time_iteration.index;
 
         let setpnt_lower_is_set = match &self.schedule_lower {
-            ScheduleOrControl::Schedule(schedule_lower) => schedule_lower[idx].is_some()
+            ScheduleOrControl::Schedule(schedule_lower) => schedule_lower[idx].is_some(),
         };
 
         let setpnt_upper_is_set = match &self.schedule_upper {
@@ -812,7 +812,6 @@ impl ControlBehaviour for RangeTimeControl {
         };
 
         return self.is_on(&previous_simulation_time_iteration);
-
     }
 }
 
