@@ -140,6 +140,16 @@ mod tests {
         TariffData::new(simulation_time, Some(0), 1., prices).unwrap()
     }
 
+    #[fixture]
+    fn tariff_data_no_start_day(
+        loaded_prices: IndexMap<EnergySupplyTariff, NumericSchedule>,
+        simulation_time: SimulationTimeIterator,
+    ) -> TariffData {
+        let prices = TariffData::expand_prices_schedule(loaded_prices).unwrap();
+
+        TariffData::new(simulation_time, None, 1., prices).unwrap()
+    }
+
     #[rstest]
     fn test_price(tariff_data: TariffData, simulation_time: SimulationTimeIterator) {
         for (t_idx, t_it) in simulation_time.enumerate() {
@@ -198,11 +208,66 @@ mod tests {
         }
     }
 
-    // TODO 1.0.0a migration
-    // #[rstest]
-    // fn test_price_out_of_range(tariff_data: TariffData) {
-    //     assert!(tariff_data
-    //         .price(&EnergySupplyTariff::Standard, 18000)
-    //         .is_err());
-    // }
+    #[rstest]
+    fn test_price_no_start_day(
+        tariff_data_no_start_day: TariffData,
+        simulation_time: SimulationTimeIterator,
+    ) {
+        for (t_idx, t_it) in simulation_time.enumerate() {
+            if t_idx == 0 {
+                assert_eq!(
+                    tariff_data_no_start_day
+                        .price(&EnergySupplyTariff::Standard, t_it)
+                        .unwrap(),
+                    25.16
+                );
+                assert_eq!(
+                    tariff_data_no_start_day
+                        .price(&EnergySupplyTariff::SevenHourOffPeak, t_it)
+                        .unwrap(),
+                    14.6
+                );
+                assert_eq!(
+                    tariff_data_no_start_day
+                        .price(&EnergySupplyTariff::TenHourOffPeak, t_it)
+                        .unwrap(),
+                    16.04
+                );
+                assert_eq!(
+                    tariff_data_no_start_day
+                        .price(&EnergySupplyTariff::VariableTimeOfDay, t_it)
+                        .unwrap(),
+                    10.87017271
+                );
+            }
+            if t_idx == 23 {
+                assert_eq!(
+                    tariff_data_no_start_day
+                        .price(&EnergySupplyTariff::Standard, t_it)
+                        .unwrap(),
+                    25.16
+                );
+                assert_eq!(
+                    tariff_data_no_start_day
+                        .price(&EnergySupplyTariff::SevenHourOffPeak, t_it)
+                        .unwrap(),
+                    29.8
+                );
+                assert_eq!(
+                    tariff_data_no_start_day
+                        .price(&EnergySupplyTariff::TenHourOffPeak, t_it)
+                        .unwrap(),
+                    35.01
+                );
+                assert_eq!(
+                    tariff_data_no_start_day
+                        .price(&EnergySupplyTariff::VariableTimeOfDay, t_it)
+                        .unwrap(),
+                    23.91911304
+                );
+            }
+        }
+    }
+
+    // skipping python's test_get_price_out_of_range as not possible to pass invalid tariff in rust
 }
