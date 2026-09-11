@@ -15,6 +15,7 @@ use monostate::MustBe;
 use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_aux::field_attributes::deserialize_default_from_empty_object;
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Map, Value as JsonValue};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -2410,11 +2411,7 @@ pub enum HotWaterSourceDetails {
         #[validate(exclusive_minimum = 0.)]
         daily_hw_usage: f64,
 
-        /// Reference to a time control object containing a schedule of booleans describing when a combi boiler keep-hot facility is on.
-        #[serde(rename = "Control_keep_hot")]
-        control_keep_hot: Option<String>,
-
-        #[serde(default)]
+        #[serde(flatten, deserialize_with = "deserialize_default_from_empty_object")]
         combi_type_specific_details: CombiTypeSpecificDetails,
     },
     #[serde(rename = "HIU")]
@@ -2471,12 +2468,18 @@ pub enum CombiTypeSpecificDetails {
     KeepHot {
         /// For combi boilers with keep hot facility, the fuel that maintains the keep hot temperature.
         combi_keep_hot_fuel: CombiKeepHotFuel,
+
         /// Number of hours the timed keep-hot facility was active during testing (unit: hours)
         keep_hot_test_hours: f64,
+
+        /// Reference to a time control object containing a schedule of booleans describing when a combi boiler keep-hot facility is on.
+        #[serde(rename = "Control_keep_hot")]
+        control_keep_hot: Option<String>,
     },
     Storage {
         /// For storage combis, whether losses from the store are included in test data.
-        combi_storage_loss_in_test: f64,
+        combi_storage_loss_in_test: bool,
+
         /// Volume of the internal hot water store (unit: litres)
         store_volume: f64,
     },
@@ -7914,7 +7917,8 @@ mod tests {
                 ),
                 case::heat_storage_kj_per_k_during_phase_transition_greater_than_zero(json!({"heat_storage_kJ_per_K_during_Phase_transition": 0})
                 ),
-                case::rated_charge_power_at_least_zero(json!({"temp_min_useful": null, "HeatSource": null, "primary_pipework": null, "ControlCharge": "control", "rated_charge_power": -1})), // NB. needed a field tweak here to use other PcmBatteryChargingConfiguration variant in order to test `rated_charge_power`
+                case::rated_charge_power_at_least_zero(json!({"temp_min_useful": null, "HeatSource": null, "primary_pipework": null, "ControlCharge": "control", "rated_charge_power": -1})
+                ), // NB. needed a field tweak here to use other PcmBatteryChargingConfiguration variant in order to test `rated_charge_power`
                 case::velocity_in_hex_tube_at_1_l_per_min_m_per_s_greater_than_zero(json!({"velocity_in_HEX_tube_at_1_l_per_min_m_per_s": 0})
                 ),
                 case::electricity_circ_pump_at_least_zero(json!({"electricity_circ_pump": -1})
@@ -8231,7 +8235,7 @@ mod tests {
     mod hot_water_source {
         use super::*;
 
-        mod combi_boiler {
+        mod combi_boiler_two_profiles {
             use super::*;
 
             #[fixture]
@@ -8240,10 +8244,9 @@ mod tests {
                     cold_water_source: "cold water source".into(),
                     heat_source_wet: "heat source wet".into(),
                     combi_type_specific_details: CombiTypeSpecificDetails::Instantaneous,
-                    control_keep_hot: None,
                     separate_dhw_tests: BoilerHotWaterTest::MOnly,
-                    rejected_energy_1: Some(0.0004),
-                    storage_loss_factor_1: Some(1.35),
+                    rejected_energy_1: Some(0.005),
+                    storage_loss_factor_1: Some(1.88),
                     storage_loss_factor_2: None,
                     rejected_factor_3: None,
                     setpoint_temp: Some(10.),
@@ -8253,6 +8256,17 @@ mod tests {
             }
 
             #[rstest(inputs,
+                case::storage_loss_factor_2_invalid_input_for_combis_tested_to_one_profile_or_not_tested(json!({"storage_loss_factor_2": 2.3})
+                ),
+                case::rejected_factor_3_invalid_input_for_combis_tested_to_one_profile_or_not_tested(json!({"rejected_factor_3": 0.0001})
+                ),
+                // case::combi_keep_hot_fuel_invalid_input_for_instantaneous_combi_type(json!({"combi_keep_hot_fuel": "Mixed"})), // these cases are fine to ignore - the existence of the field won't trigger an error but will be ignored by serde deserialization
+                // case::keep_hot_test_hours_invalid_input_for_instantaneous_combi_type(json!({"keep_hot_test_hours": "12"})), // as line above
+                // case::combi_storage_loss_in_test_invalid_input_for_instantaneous_combi_type(json!({"combi_storage_loss_in_test": true})), // as above
+                // case::store_volume_in_test_invalid_input_for_instantaneous_combi_type(json!({"store_volume": 25})), // as above
+                // case::control_keep_hot_in_test_invalid_input_for_instantaneous_combi_type(json!({"Control_keep_hot": "test"})), // as above
+                case::loss_factors_r1_and_f1_required_when_testing_to_profile_m_or_not_tested(json!({"storage_loss_factor_1": null})
+                ),
                 case::daily_hw_usage_greater_than_zero(json!({"daily_HW_usage": 0})),
                 case::rejected_energy_1_at_least_zero(json!({"rejected_energy_1": -0.1})),
                 case::storage_loss_factor_1_at_least_zero(json!({"storage_loss_factor_1": -0.1})),
@@ -8281,6 +8295,22 @@ mod tests {
                     "rejected_factor_3": 0.0002,
                     "storage_loss_factor_1": null,
                 })),
+                case::keep_hot_fuel_and_test_hours_required_for_keep_hot_combi(json!({
+                    "combi_boiler_type": "KeepHot",
+                    "combi_keep_hot_fuel": "Mixed",
+                    "keep_hot_test_hours": null,
+                })),
+                case::storage_volume_and_heat_loss_required_for_storage_combi(json!({
+                    "combi_boiler_type": "Storage",
+                    "combi_storage_loss_in_test": true,
+                    "store_volume": null,
+                })),
+                // case::control_keep_hot_invalid_input_for_storage_combi_type(json!({
+                //     "combi_boiler_type": "Storage",
+                //     "combi_storage_loss_in_test": true,
+                //     "store_volume": 23,
+                //     "Control_keep_hot": "test",
+                // })), // // this case is fine to ignore - the existence of the extra field won't trigger an error but will be ignored by serde deserialization
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<HotWaterSourceDetails>(valid_example, inputs);

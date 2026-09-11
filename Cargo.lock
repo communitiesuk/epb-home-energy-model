@@ -1185,7 +1185,7 @@ dependencies = [
  "monostate",
  "nalgebra 0.34.2",
  "ndarray",
- "ordered-float",
+ "ordered-float 5.3.0",
  "parking_lot",
  "petgraph",
  "polyfit-rs",
@@ -1193,6 +1193,7 @@ dependencies = [
  "rayon",
  "rstest",
  "serde",
+ "serde-aux",
  "serde-enum-str",
  "serde_json",
  "serde_repr",
@@ -2079,6 +2080,15 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "ordered-float"
+version = "2.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
+name = "ordered-float"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7d950ca161dc355eaf28f82b11345ed76c6e1f6eb1f4f4479e0323b9e2fbd0e"
@@ -2763,6 +2773,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-aux"
+version = "4.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "207f67b28fe90fb596503a9bf0bf1ea5e831e21307658e177c5dfcdfc3ab8a0a"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde-value",
+ "serde_json",
+]
+
+[[package]]
 name = "serde-enum-str"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2780,6 +2802,16 @@ name = "serde-rename-rule"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8a059d895f1a31dd928f40abbea4e7177e3d8ff3aa4152fdb7a396ae1ef63a3"
+
+[[package]]
+name = "serde-value"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
+dependencies = [
+ "ordered-float 2.10.1",
+ "serde",
+]
 
 [[package]]
 name = "serde_core"

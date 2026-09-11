@@ -7459,7 +7459,6 @@ mod tests {
             cold_water_source: "mains water".into(),
             heat_source_wet: "hp".into(),
             combi_type_specific_details: CombiTypeSpecificDetails::Instantaneous,
-            control_keep_hot: None,
             separate_dhw_tests: BoilerHotWaterTest::ML,
             rejected_energy_1: Some(0.0004),
             storage_loss_factor_1: None,
