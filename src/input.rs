@@ -3282,6 +3282,7 @@ pub type SpaceHeatSystem = IndexMap<std::string::String, SpaceHeatSystemDetails>
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
+#[validate(custom = validate_constants_for_instant_electric_heater)]
 #[validate(custom = validate_thermal_mass_not_set_for_fancoil)]
 pub enum SpaceHeatSystemDetails {
     #[serde(rename = "InstantElecHeater")]
@@ -3517,6 +3518,35 @@ pub enum UnderfloorHeaterThermalMassFields {
         #[validate(minimum = 0.)]
         thermal_mass_per_m2: f64,
     },
+}
+
+fn validate_constants_for_instant_electric_heater(
+    space_heat_system: &SpaceHeatSystemDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    if let SpaceHeatSystemDetails::InstantElectricHeater {
+        thermal_mass,
+        thermal_mass_per_kw,
+        constant,
+        constant_per_kw,
+        exponent,
+        ..
+    } = space_heat_system
+    {
+        if thermal_mass.is_some() || thermal_mass_per_kw.is_some() {
+            if constant.is_none() && constant_per_kw.is_none() {
+                return custom_validation_error(
+                    "Constant needed when thermal mass is given".to_string(),
+                );
+            }
+            if exponent.is_none() {
+                return custom_validation_error(
+                    "Exponent needed when thermal mass is given".to_string(),
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_thermal_mass_not_set_for_fancoil(
@@ -9745,6 +9775,9 @@ mod tests {
                 case::frac_convective_at_least_zero(json!({"frac_convective": -1})),
                 case::frac_convective_at_most_one(json!({"frac_convective": 2})),
                 case::rated_power_greater_than_zero(json!({"rated_power": 0})),
+                case::constant_needed_when_thermal_mass_given(json!({"thermal_mass": 100})),
+                case::constant_needed_when_thermal_mass_per_kw_given(json!({"thermal_mass_per_kw": 100})),
+                case::exponent_needed_when_thermal_mass_per_kw_given(json!({"thermal_mass_per_kw": 100, "c": 1.2})),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<SpaceHeatSystemDetails>(valid_example, inputs);
