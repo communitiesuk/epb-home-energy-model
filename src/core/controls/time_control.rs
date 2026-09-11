@@ -1,8 +1,10 @@
 // This module provides structs to model time controls
 
+use crate::core::schedule::input::ScheduleEntry;
 use crate::core::schedule::validate_schedule_length;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
+use crate::hem_core::simulation_time::{self, SimulationTime};
 use crate::input::{
     ControlCombination, ControlCombinationOperation, ControlCombinations, ControlLogicType,
     ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SetpointBoundsInput,
@@ -16,6 +18,7 @@ use bounded_vec_deque::BoundedVecDeque;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use jsonschema::canonical::OperandMismatch::PatternEngine;
 use parking_lot::RwLock;
 use smartstring::alias::String;
 use std::collections::VecDeque;
@@ -702,6 +705,114 @@ impl ControlBehaviour for OnOffCostMinimisingTimeControl {
     /// Return true if control will allow system to run
     fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.on_off_schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum ScheduleOrControl {
+    Schedule(Vec<Option<f64>>), // TODO add ControlSetPoint here 1.0.0a9
+}
+
+pub struct RangeTimeControl {
+    schedule_lower: ScheduleOrControl,
+    schedule_upper: ScheduleOrControl,
+    start_day: f64,
+    time_series_step: f64,
+    timesteps_advstart: u32,
+}
+
+impl RangeTimeControl {
+    pub fn new(
+        schedule_lower: ScheduleOrControl,
+        schedule_upper: ScheduleOrControl,
+        simulation_time: SimulationTime,
+        start_day: f64,
+        time_series_step: f64,
+        duration_advanced_start: Option<f64>,
+    ) -> anyhow::Result<Self> {
+        let duration_advanced_start = duration_advanced_start.unwrap_or(0.);
+
+        match (&schedule_lower, &schedule_upper) {
+            (ScheduleOrControl::Schedule(ref lower), ScheduleOrControl::Schedule(ref upper)) => {
+                if lower.len() != upper.len() {
+                    bail!("schedule_lower and schedule_upper must be of the same length")
+                }
+
+                for i in 0..lower.len() {
+                    if lower[i].is_some() && upper[i].is_some() && lower[i] > upper[i] {
+                        bail!("Entries in schedule_lower must be lower than or equal to the corresponding entry in schedule_upper")
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        let timesteps_advstart = (duration_advanced_start / simulation_time.step).round() as u32;
+
+        Ok(Self {
+            schedule_lower,
+            schedule_upper,
+            start_day,
+            time_series_step,
+            timesteps_advstart,
+        })
+    }
+    
+    fn find_setpnt(simulation_time_iteration: &SimulationTimeIteration, schedule: &ScheduleOrControl) -> Option<f64> {
+        match schedule {
+            ScheduleOrControl::Schedule(schedule) => schedule[simulation_time_iteration.index],
+        }
+        // TODO handle Control as well as Schedule
+    }
+}
+
+impl ControlBehaviour for RangeTimeControl {
+    fn in_required_period(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<bool> {
+        // Return true if current time is inside specified time for heating/cooling
+        let idx = simulation_time_iteration.index;
+
+        let setpnt_lower_is_set = match &self.schedule_lower {
+            ScheduleOrControl::Schedule(schedule_lower) => schedule_lower[idx].is_some()
+        };
+
+        let setpnt_upper_is_set = match &self.schedule_upper {
+            ScheduleOrControl::Schedule(schedule_upper) => schedule_upper[idx].is_some(),
+        };
+
+        Some(setpnt_lower_is_set && setpnt_upper_is_set)
+    }
+
+    fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+        // TODO this returns a tuple in Python which doesn't match our declaration
+        todo!("1.0.9a")
+    }
+
+    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
+        let setpnt_lower = Self::find_setpnt(simulation_time_iteration, &self.schedule_lower);
+        let setpnt_upper = Self::find_setpnt(simulation_time_iteration, &self.schedule_upper);
+
+        if setpnt_upper.is_none() {
+            return false;
+        }
+        if setpnt_lower.is_some() {
+            return true;
+        }
+
+        if simulation_time_iteration.index <= 0 {
+            return false;
+        }
+
+        let previous_simulation_time_iteration = SimulationTimeIteration {
+            index: simulation_time_iteration.index - 1,
+            time: simulation_time_iteration.time, // this is not used TODO check it is correct
+            timestep: simulation_time_iteration.timestep,
+        };
+
+        return self.is_on(&previous_simulation_time_iteration);
+
     }
 }
 
