@@ -109,7 +109,7 @@ struct EnergySupplyTariffInfo {
     threshold_prices: Option<Vec<f64>>,
 }
 
-// TODO 1.0.0a migration - delete or can this be used with new tariff structure?
+// TODO 1.0.0a9 migration - delete or can this be used with new tariff structure?
 // impl TryFrom<EnergySupplyTariffInput> for EnergySupplyTariffInfo {
 //     type Error = anyhow::Error;
 //

@@ -3297,7 +3297,7 @@ fn energy_supply_from_input(
             //     input.threshold_charges.map(|threshold_charges| threshold_charges.to_vec()),
             //     input.threshold_prices.map(|threshold_prices| threshold_prices.to_vec()),
             // ))?;
-            builder = builder.with_tariff_input()?; // TODO 1.0.0a migration
+            builder = builder.with_tariff_input()?; // TODO 1.0.0a9 migration
         }
 
         builder.build()
