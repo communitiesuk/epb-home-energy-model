@@ -7625,6 +7625,8 @@ mod tests {
         });
     }
 
+    // tests for ControlMinMaxBase are unnecessary as shape is guaranteed by Rust type system
+
     mod time_series {
         use super::*;
 
@@ -7750,7 +7752,7 @@ mod tests {
                 maximum_discharge_rate_one_way_trip: 1.25,
                 battery_location: BatteryLocation::Outside,
                 grid_charging_possible: true,
-                grid_exporting_possible: false,
+                grid_exporting_possible: true,
             })
             .unwrap()
         }
@@ -7880,9 +7882,10 @@ mod tests {
                     temp_init: 25.,
                     electricity_circ_pump: 0.0600,
                     electricity_standby: 0.0244,
-                    charging_config: PcmBatteryChargingConfiguration::ChargeControl {
-                        rated_charge_power: 10.,
-                        control_charge: "control".into(),
+                    charging_config: PcmBatteryChargingConfiguration::RangeControl {
+                        temp_min_useful: 0.,
+                        heat_source: IndexMap::default(),
+                        primary_pipework: None,
                     },
                     max_rated_losses: 0.22,
                     number_of_units: 1,
@@ -7911,7 +7914,7 @@ mod tests {
                 ),
                 case::heat_storage_kj_per_k_during_phase_transition_greater_than_zero(json!({"heat_storage_kJ_per_K_during_Phase_transition": 0})
                 ),
-                case::rated_charge_power_greater_than_zero(json!({"rated_charge_power": 0})),
+                case::rated_charge_power_at_least_zero(json!({"temp_min_useful": null, "HeatSource": null, "primary_pipework": null, "ControlCharge": "control", "rated_charge_power": -1})), // NB. needed a field tweak here to use other PcmBatteryChargingConfiguration variant in order to test `rated_charge_power`
                 case::velocity_in_hex_tube_at_1_l_per_min_m_per_s_greater_than_zero(json!({"velocity_in_HEX_tube_at_1_l_per_min_m_per_s": 0})
                 ),
                 case::electricity_circ_pump_at_least_zero(json!({"electricity_circ_pump": -1})
@@ -7930,6 +7933,86 @@ mod tests {
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<HeatBattery>(valid_example, inputs);
+            }
+
+            // NB. all test_valid_new_format_* in the upstream Python are redundant (they don't really test anything)
+
+            #[rstest]
+            /// Both legacy fields and HeatSource object should raise validation error.
+            fn test_invalid_both_legacy_and_new_format(mut valid_example: JsonValue) {
+                valid_example["HeatSource"] = json!({
+                    "electric": {
+                        "type": "DirectElectric",
+                        "rated_charge_power": 20.0,
+                        "Control": "ctrl",
+                    }
+                });
+
+                assert!(serde_json::from_value::<HeatSource>(valid_example).is_err());
+            }
+
+            #[rstest]
+            /// Having neither ControlCharge fields nor HeatSource dict should raise validation error.
+            fn test_invalid_neither_legacy_nor_new_format(mut valid_example: JsonValue) {
+                // unlike upstream Python which copies out fields, taking approach of modifying known-good example so we know failures have the intended cause
+
+                valid_example["HeatSource"] = json!(null);
+                valid_example["ControlCharge"] = json!(null);
+                valid_example["rated_charge_power"] = json!(null);
+                valid_example["temp_min_useful"] = json!(null);
+
+                assert!(serde_json::from_value::<HeatSource>(valid_example).is_err());
+            }
+
+            #[rstest]
+            /// ControlCharge mode with missing rated_charge_power should fail.
+            fn test_invalid_legacy_missing_rated_charge_power(mut valid_example: JsonValue) {
+                valid_example["rated_charge_power"] = json!(null);
+
+                assert!(serde_json::from_value::<HeatSource>(valid_example).is_err());
+            }
+
+            #[rstest]
+            /// ControlCharge mode with rated_charge_power but missing ControlCharge should fail.
+            fn test_invalid_missing_control_charge(mut valid_example: JsonValue) {
+                valid_example["ControlCharge"] = json!(null);
+
+                assert!(serde_json::from_value::<HeatSource>(valid_example).is_err());
+            }
+
+            #[rstest]
+            /// HeatSource mode with missing temp_min_useful should fail (field is required).
+            fn test_invalid_heat_source_missing_temp_min_useful(mut valid_example: JsonValue) {
+                valid_example["temp_min_useful"] = json!(null);
+                valid_example["HeatSource"] = json!({
+                    "electric": {
+                        "type": "DirectElectric",
+                        "rated_charge_power": 20.0,
+                        "Control": "ctrl",
+                    }
+                });
+
+                assert!(serde_json::from_value::<HeatSource>(valid_example).is_err());
+            }
+
+            #[rstest]
+            /// Setting primary_pipework without HeatSource should fail.
+            fn test_invalid_primary_pipework_without_heat_source(mut valid_example: JsonValue) {
+                valid_example["HeatSource"] = json!(null);
+                valid_example["primary_pipework"] = json!([
+                    {
+                        "external_diameter_mm": 22,
+                        "insulation_thermal_conductivity": 0.035,
+                        "insulation_thickness_mm": 25,
+                        "internal_diameter_mm": 20,
+                        "length": 5,
+                        "location": "internal",
+                        "pipe_contents": "water",
+                        "surface_reflectivity": false,
+                    }
+                ]);
+
+                assert!(serde_json::from_value::<HeatSource>(valid_example).is_err());
             }
         }
 
