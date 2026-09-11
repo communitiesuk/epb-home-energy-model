@@ -5,6 +5,7 @@ use crate::hem_core::simulation_time::{SimulationTimeIteration, SimulationTimeIt
 use crate::input::EnergySupplyTariff;
 use anyhow::anyhow;
 use indexmap::IndexMap;
+use smartstring::alias::String;
 use std::io::Read;
 
 /// This module contains data on the energy tariffs.
@@ -86,6 +87,22 @@ impl TariffData {
         Ok(electricity_price_schedules)
     }
 
+    /// Merge the prices from the CSV and the JSON files.
+    /// If the same tariff name is found, prices from the CSV will take precedence.
+    pub(super) fn merge_prices_from_files(
+        prices_from_csv: IndexMap<EnergySupplyTariff, NumericSchedule>, // TODO review tariff enum use, latest csv file has new tariff name
+        prices_from_json: IndexMap<String, NumericSchedule>,
+    ) -> IndexMap<String, NumericSchedule> {
+        let mut merged_prices = prices_from_json;
+        merged_prices.extend(
+            prices_from_csv
+                .into_iter()
+                .map(|(k, v)| (k.to_string().into(), v)),
+        );
+
+        merged_prices
+    }
+
     pub(super) fn price(
         &self,
         tariff: &EnergySupplyTariff,
@@ -114,6 +131,7 @@ mod tests {
     use super::*;
     use crate::hem_core::simulation_time::SimulationTime;
     use rstest::*;
+    use serde_json::json;
     use std::io::{BufReader, Cursor};
 
     #[fixture]
@@ -270,4 +288,17 @@ mod tests {
     }
 
     // skipping python's test_get_price_out_of_range as not possible to pass invalid tariff in rust
+
+    #[rstest]
+    /// Test merge_prices_from_files warns of overlaps and favours prices from CSV
+    fn test_merge_prices_from_files(loaded_prices: IndexMap<EnergySupplyTariff, NumericSchedule>) {
+        let prices_from_csv = loaded_prices;
+        let prices_from_json: IndexMap<String, NumericSchedule> = serde_json::from_value(json!({"Standard Tariff": {"main": [1.0, 2.0, 3.0]},"Other Tariff": {"main": [1.0, 2.0, 3.0]}})).unwrap();
+
+        let results = TariffData::merge_prices_from_files(prices_from_csv, prices_from_json);
+
+        assert!(results.contains_key("Other Tariff"));
+        assert!(results.contains_key("Standard Tariff"));
+        assert_eq!(results.get("Standard Tariff").unwrap().main.len(), 24);
+    }
 }
