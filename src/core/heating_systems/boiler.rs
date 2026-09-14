@@ -1,6 +1,6 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
-use crate::core::controls::time_control::{Control, ControlBehaviour};
+use crate::core::controls::time_control::{Control, ControlBehaviour, RangeTimeControl};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
 use crate::core::units::WATTS_PER_KILOWATT;
@@ -406,25 +406,32 @@ impl BoilerServiceWaterCombi {
 }
 
 #[derive(Debug)]
+/// An object to represent a water heating service provided by a regular boiler.
+///
+/// This object contains the parts of the boiler calculation that are
+/// specific to providing hot water.
 pub struct BoilerServiceWaterRegular {
-    boiler: Arc<RwLock<Boiler>>,
+    boiler: BoilerForBoilerService,
     service_name: String,
     control_min: Arc<Control>,
-    _control_max: Arc<Control>,
+    control_max: Arc<Control>,
+    control: Option<Arc<RangeTimeControl>>,
 }
 
 impl BoilerServiceWaterRegular {
     pub(crate) fn new(
-        boiler: Arc<RwLock<Boiler>>,
+        boiler: BoilerForBoilerService,
         service_name: String,
         control_min: Arc<Control>, // in Python this can be one of SetpointTimeControl or CombinationTimeControl
         control_max: Arc<Control>, // in Python this can be one of SetpointTimeControl or CombinationTimeControl
+        control: Option<Arc<RangeTimeControl>>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             boiler,
             service_name,
             control_min,
-            _control_max: control_max.clone(),
+            control_max,
+            control,
         })
     }
 
@@ -432,7 +439,7 @@ impl BoilerServiceWaterRegular {
     pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
         (
             self.control_min.setpnt(&simtime),
-            self._control_max.setpnt(&simtime),
+            self.control_max.setpnt(&simtime),
         )
     }
 
@@ -460,7 +467,7 @@ impl BoilerServiceWaterRegular {
             bail!("temp_return is None and energy_demand is not 0.0");
         }
 
-        self.boiler.write().demand_energy(
+        self.boiler.demand_energy(
             &self.service_name,
             ServiceType::WaterRegular,
             energy_demand,
@@ -483,7 +490,7 @@ impl BoilerServiceWaterRegular {
             return 0.;
         }
 
-        self.boiler.read().energy_output_max(None, time_elapsed_hp)
+        self.boiler.energy_output_max(None, time_elapsed_hp)
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
@@ -808,18 +815,30 @@ impl Boiler {
         )
     }
 
+    /// Return a BoilerServiceWaterRegular object and create an EnergySupplyConnection for it.
+    ///
+    /// Arguments:
+    /// * `service_name` - name of the service demanding energy from the boiler
+    /// * `controlmin` - reference to a control object which must select current
+    ///                  the minimum timestep temperature
+    /// * `controlmax` - reference to a control object which must select current
+    ///                  the maximum timestep temperature
+    /// * `control` - reference to a RangeTimeControl object, combining controlmax and controlmin.
+    ///               Takes precedence if set.
     pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
         control_min: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
         control_max: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control: Option<Arc<RangeTimeControl>>,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
         BoilerServiceWaterRegular::new(
-            boiler.clone(),
+            BoilerForBoilerService::Boiler(boiler.clone()),
             service_name.into(),
             control_min,
             control_max,
+            control,
         )
     }
 
@@ -1776,7 +1795,9 @@ mod tests {
         use crate::core::controls::time_control::{Control, SetpointTimeControl};
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
-        use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterRegular};
+        use crate::core::heating_systems::boiler::{
+            Boiler, BoilerForBoilerService, BoilerServiceWaterRegular,
+        };
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIteration};
         use crate::input::{BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails};
@@ -1862,10 +1883,11 @@ mod tests {
             control_max: Arc<Control>,
         ) -> BoilerServiceWaterRegular {
             BoilerServiceWaterRegular::new(
-                Arc::new(RwLock::new(boiler)),
+                BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 "boiler_test".into(),
                 control_min,
                 control_max,
+                None,
             )
             .unwrap()
         }
@@ -2339,6 +2361,7 @@ mod tests {
                 service_name,
                 control_min,
                 control_max,
+                None,
             );
             assert!(boiler_hotwater_regular_result.is_ok());
         }

@@ -39,7 +39,6 @@ use smartstring::alias::String;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
-
 const N_EXER: f64 = 3.0;
 
 impl HeatPumpSourceType {
@@ -2351,6 +2350,7 @@ impl HeatPump {
                         service_name,
                         control_min.clone(),
                         control_max.clone(),
+                        None, // TODO as part of migration to 1.0.0a9
                     )?,
                 )))
             })
@@ -8174,6 +8174,7 @@ mod tests {
             "service_boilerwater",
             control.clone(),
             control,
+            None,
         )
         .unwrap();
         let hybrid_boiler_service =
@@ -10674,6 +10675,7 @@ mod tests {
                 "service_water",
                 ctrl.clone(),
                 ctrl,
+                None,
             )
             .unwrap(),
         ));

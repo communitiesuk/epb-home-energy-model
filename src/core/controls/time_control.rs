@@ -711,6 +711,7 @@ pub enum ScheduleOrControl {
     Schedule(Vec<Option<f64>>), // TODO add ControlSetPoint here 1.0.0a9
 }
 
+#[derive(Debug)]
 pub struct RangeTimeControl {
     schedule_lower: ScheduleOrControl,
     schedule_upper: ScheduleOrControl,

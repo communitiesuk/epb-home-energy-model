@@ -1,7 +1,9 @@
 use crate::core::common::WaterSupply;
+use crate::core::controls::time_control::{Control, RangeTimeControl};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{
-    BoilerForBoilerService, BoilerServiceWaterCombi, IncorrectBoilerDataType,
+    BoilerForBoilerService, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
+    IncorrectBoilerDataType,
 };
 use crate::external_conditions::ExternalConditions;
 use crate::hem_core::simulation_time::SimulationTimeIteration;
@@ -108,8 +110,31 @@ impl DirectElectricBoiler {
         )
     }
 
-    fn create_service_hot_water_regular(&self) {
-        todo!()
+    /// Return a BoilerServiceWaterRegular object and create an EnergySupplyConnection for it.
+    ///
+    /// Arguments:
+    /// `service_name` - name of the service demanding energy from the boiler
+    /// `controlmin` - reference to a control object which must select current
+    ///                the minimum timestep temperature
+    /// `controlmax` - reference to a control object which must select current
+    ///                the maximum timestep temperature
+    /// `control` - reference to a RangeTimeControl object, combining controlmax and controlmin.
+    ///             Takes precedence if set.
+    fn create_service_hot_water_regular(
+        boiler: Arc<RwLock<Self>>,
+        service_name: &str,
+        control_min: Arc<Control>,
+        control_max: Arc<Control>,
+        control: Option<Arc<RangeTimeControl>>,
+    ) -> anyhow::Result<BoilerServiceWaterRegular> {
+        boiler.write().create_service_connection(service_name)?;
+        BoilerServiceWaterRegular::new(
+            BoilerForBoilerService::DirectElectricBoiler(boiler.clone()),
+            service_name.into(),
+            control_min,
+            control_max,
+            control,
+        )
     }
 
     fn create_service_space_heating(&self) {
@@ -156,6 +181,7 @@ impl DirectElectricBoiler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::units::Orientation360;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -314,6 +340,28 @@ mod tests {
             boiler_data,
             temp_hot_water,
             WaterSupply::ColdWaterSource(Arc::new(coldfeed)),
+        );
+        assert!(boiler_service_result.is_ok());
+    }
+
+    /// Check the function returns BoilerServiceWaterRegular object
+    #[rstest]
+    fn test_create_service_hot_water_regular(
+        boiler: DirectElectricBoiler,
+        simulation_time: SimulationTime,
+    ) {
+        let service_name = "service_hot_water_regular";
+        let control_min =
+            SetpointTimeControl::new(vec![None, None], 0, 1., None, None, simulation_time.step);
+        let control_max =
+            SetpointTimeControl::new(vec![None, None], 0, 1., None, None, simulation_time.step);
+
+        let boiler_service_result = DirectElectricBoiler::create_service_hot_water_regular(
+            Arc::new(RwLock::new(boiler)),
+            service_name,
+            Arc::new(Control::SetpointTime(control_min)),
+            Arc::new(Control::SetpointTime(control_max)),
+            None,
         );
         assert!(boiler_service_result.is_ok());
     }

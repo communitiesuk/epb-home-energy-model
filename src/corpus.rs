@@ -5131,7 +5131,7 @@ fn heat_source_from_input(
                             energy_supply_conn_name.as_str(),
                             control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
                             control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                            // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
+                            None // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                         )?),
                     )),
                     WetHeatSource::DirectElectricBoiler(ref mut _boiler) =>
