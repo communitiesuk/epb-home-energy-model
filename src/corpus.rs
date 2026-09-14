@@ -18,6 +18,7 @@ use crate::core::heating_systems::common::{
     HeatBatteryServiceSpace, HeatBatteryWaterService, HeatSourceWet, SpaceHeatSystem,
     SpaceHeatingService,
 };
+use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
 use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
@@ -4288,6 +4289,7 @@ impl HeatSource {
 pub(crate) enum WetHeatSource {
     HeatPump(Arc<Mutex<HeatPump>>),
     Boiler(Arc<RwLock<Boiler>>),
+    DirectElectricBoiler(Arc<RwLock<DirectElectricBoiler>>),
     Hiu(Arc<Mutex<HeatNetwork>>),
     HeatBattery(HeatBattery),
 }
@@ -4339,6 +4341,7 @@ impl WetHeatSource {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().timestep_end(simtime.index)?,
             WetHeatSource::Boiler(boiler) => boiler.write().timestep_end(simtime)?,
+            WetHeatSource::DirectElectricBoiler(boiler) => boiler.write().timestep_end(simtime)?,
             WetHeatSource::Hiu(heat_network) => heat_network.lock().timestep_end(simtime.index)?,
             WetHeatSource::HeatBattery(heat_battery) => heat_battery.timestep_end(simtime)?,
         }
@@ -5112,6 +5115,8 @@ fn heat_source_from_input(
                             // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                         )?),
                     )),
+                    WetHeatSource::DirectElectricBoiler(ref mut _boiler) =>
+                        todo!("migration to 1.0.0a9"),
                     WetHeatSource::Hiu(heat_network) => {
                         HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
                             HeatNetwork::create_service_hot_water_storage(
@@ -5963,6 +5968,9 @@ fn space_heat_systems_from_input(
                                         heat_system_names_requiring_overvent.push((system_name).clone());
                                     }
                                     SpaceHeatingService::HeatPump(heat_source_service?)
+                                }
+                                WetHeatSource::DirectElectricBoiler(_boiler) => {
+                                   todo!("migration to 1.0.0a9")
                                 }
                                 WetHeatSource::Boiler(boiler) => {
                                     let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), &energy_supply_conn_name, control);

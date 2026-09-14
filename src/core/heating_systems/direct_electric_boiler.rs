@@ -1,13 +1,16 @@
+use crate::core::common::WaterSupply;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::IncorrectBoilerDataType;
 use crate::external_conditions::ExternalConditions;
+use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{FuelType, HeatSourceWetDetails};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// An object to represent a direct electric boiler
-struct DirectElectricBoiler {
+#[derive(Debug)]
+pub struct DirectElectricBoiler {
     energy_supply: Arc<RwLock<EnergySupply>>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
@@ -19,6 +22,7 @@ struct DirectElectricBoiler {
     power_standby: f64,
     total_time_running_current_timestep: f64,
 }
+
 impl DirectElectricBoiler {
     /// Construct a Boiler object
     fn new(
@@ -73,6 +77,76 @@ impl DirectElectricBoiler {
             EnergySupply::connection(self.energy_supply.clone(), service_name).unwrap(),
         );
         Ok(())
+    }
+
+    /// Return a BoilerServiceWater object and create an EnergySupplyConnection for it
+    ///
+    /// Arguments:
+    /// * `boiler_data` - boiler hot water heating properties
+    /// * `service_name` - name of the service demanding energy from the boiler
+    /// * `temp_hot_water` - temperature of the hot water to be provided, in deg C
+    /// * `cold_feed` - reference to ColdWaterSource object
+    fn create_service_hot_water_combi(
+        &mut self,
+        service_name: &str,
+        _boiler_data: HeatSourceWetDetails,
+        _temp_hot_water: f64,
+        _cold_feed: WaterSupply,
+    ) -> Result<(), anyhow::Error> {
+        self.create_service_connection(service_name)?;
+        todo!()
+        // BoilerServiceWaterCombi::new(
+        //     self,
+        //     boiler_data,
+        //     service_name.parse()?,
+        //     temp_hot_water,
+        //     cold_feed,
+        //     self.simulation_timestep,
+        // )?;
+    }
+
+    fn create_service_hot_water_regular(&self) {
+        todo!()
+    }
+
+    fn create_service_space_heating(&self) {
+        todo!()
+    }
+
+    fn calc_current_boiler_power(&self) {
+        todo!()
+    }
+
+    fn calc_energy_output_provided(&self) {
+        todo!()
+    }
+
+    fn time_available(&self) {
+        todo!()
+    }
+
+    fn time_running(&self) {
+        todo!()
+    }
+
+    fn demand_energy(&self) {
+        todo!()
+    }
+
+    fn electrical_energy_demand(&self) {
+        todo!()
+    }
+
+    fn calc_auxiliary_energy(&self) {
+        todo!()
+    }
+
+    pub(crate) fn timestep_end(&self, _simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn energy_output_max(&self) {
+        todo!()
     }
 }
 
