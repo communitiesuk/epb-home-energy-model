@@ -10536,7 +10536,11 @@ mod tests {
                         height: 10.,
                         width: 5.,
                     },
-                    window_part_list: vec![],
+                    window_part_list: vec![WindowPart {
+                        free_area_height: 1.6,
+                        max_window_open_area: 3.,
+                        mid_height: 40.,
+                    }],
                     shading: vec![],
                     control_window_openable: None,
                     treatment: None,
@@ -10545,22 +10549,203 @@ mod tests {
             }
 
             #[rstest(inputs,
-                #[ignore = "TODO as part of 1.0.0a9 migration"]
-                case::max_window_open_area_at_most_area(json!({"max_window_open_area": 9999, "width": 5, "height": 10})
-                ),
+                case::sum_of_max_window_open_area_across_window_parts_at_most_glazed_area(json!({
+                    "window_part_list": [
+                        {"free_area_height": 1.6, "mid_height": 40, "max_window_open_area": 9999},
+                    ],
+                    "width": 5,
+                    "height": 10,
+                })),
+                case::sum_of_max_window_open_area_across_window_parts_at_most_glazed_area_for_more_than_one_part(json!({
+                    "window_part_list": [
+                        {"free_area_height": 1.6, "mid_height": 40, "max_window_open_area": 40},
+                        {"free_area_height": 1.6, "mid_height": 40, "max_window_open_area": 30},
+                    ],
+                    "width": 6,
+                    "height": 10,
+                })),
+                case::free_area_height_of_each_window_part_at_most_element_height(json!({
+                    "height": 2,
+                            "window_part_list": [
+                                {
+                                    "free_area_height": 2.5,
+                                    "mid_height": 40,
+                                    "max_window_open_area": 3,
+                                },
+                            ],
+                })),
                 case::base_height_at_least_zero(json!({"base_height": -1})),
-                #[ignore = "TODO as part of 1.0.0a9 migration"]
-                case::free_area_height_at_least_zero(json!({"free_area_height": -1})),
                 case::g_value_at_least_zero(json!({"g_value": -1})),
-                #[ignore = "TODO as part of 1.0.0a9 migration"]
-                case::max_window_open_area_at_least_zero(json!({"max_window_open_area": -1})),
-                #[ignore = "TODO as part of 1.0.0a9 migration"]
-                case::mid_height_greater_than_zero(json!({"mid_height": 0})),
                 case::thermal_resistance_construction_greater_than_zero(json!({"thermal_resistance_construction": 0})
                 ),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<BuildingElement>(valid_example, inputs);
+            }
+
+            #[rstest]
+            /// A full-height opening (free area height equal to the element height) is
+            /// permitted.
+            fn test_free_area_height_equal_to_element_height_allowed(valid_example: JsonValue) {
+                let mut under_test = valid_example;
+                under_test["height"] = json!(2);
+                under_test["window_part_list"] =
+                    json!([{"free_area_height": 2, "mid_height": 40, "max_window_open_area": 3}]);
+
+                let building_element: BuildingElement = serde_json::from_value(under_test).unwrap();
+
+                if let BuildingElement::Transparent {
+                    window_part_list, ..
+                } = building_element
+                {
+                    assert!(!window_part_list.is_empty());
+                    assert_eq!(window_part_list[0].free_area_height, 2.);
+                } else {
+                    panic!("Expected BuildingElement::Transparent");
+                }
+            }
+
+            #[rstest]
+            /// A free area height marginally above the element height (within the
+            /// validator's float tolerance) is treated as full-height, not rejected.
+            fn test_free_area_height_within_tolerance_of_element_height_allowed(
+                valid_example: JsonValue,
+            ) {
+                let mut under_test = valid_example;
+
+                let free_area_height = 2. + 1e-11;
+
+                under_test["height"] = json!(2);
+                under_test["window_part_list"] = json!([{"free_area_height": free_area_height, "mid_height": 40, "max_window_open_area": 3}]);
+
+                let building_element: BuildingElement = serde_json::from_value(under_test).unwrap();
+
+                if let BuildingElement::Transparent {
+                    window_part_list, ..
+                } = building_element
+                {
+                    assert!(!window_part_list.is_empty());
+                    assert_eq!(window_part_list[0].free_area_height, free_area_height);
+                } else {
+                    panic!("Expected BuildingElement::Transparent");
+                }
+            }
+
+            #[rstest]
+            /// A summed openable area marginally above the glazed area (within the
+            /// validator's float tolerance) is permitted, not rejected.
+            fn test_max_window_open_area_within_tolerance_of_glazed_area_allowed(
+                valid_example: JsonValue,
+            ) {
+                let mut under_test = valid_example;
+
+                let max_window_open_area = 50. + 1e-11;
+
+                under_test["height"] = json!(10);
+                under_test["width"] = json!(5);
+                under_test["window_part_list"] = json!([
+                    {
+                        "free_area_height": 1.6,
+                        "mid_height": 40,
+                        "max_window_open_area": max_window_open_area,
+                    },
+                ]);
+
+                let building_element: BuildingElement = serde_json::from_value(under_test).unwrap();
+
+                if let BuildingElement::Transparent {
+                    window_part_list, ..
+                } = building_element
+                {
+                    assert!(!window_part_list.is_empty());
+                    assert_eq!(
+                        window_part_list[0].max_window_open_area,
+                        max_window_open_area
+                    );
+                } else {
+                    panic!("Expected BuildingElement::Transparent");
+                }
+            }
+
+            #[rstest]
+            /// A fixed pane (no openable sections) cannot carry a window opening control.
+            fn test_validate_openable_control_without_openable_sections(valid_example: JsonValue) {
+                let mut under_test = valid_example;
+                under_test["window_part_list"] = serde_json::json!([]);
+                under_test["Control_WindowOpenable"] = json!("window_open_ctrl");
+
+                let building_element =
+                    serde_json::from_value::<BuildingElement>(under_test).unwrap();
+
+                assert!(
+                    building_element.validate().is_err(),
+                    "Control_WindowOpenable cannot be set on a window with no openable sections"
+                );
+            }
+
+            #[rstest]
+            /// A window opening control is permitted when openable sections exist.
+            fn test_openable_control_allowed_with_openable_sections(valid_example: JsonValue) {
+                let mut under_test = valid_example;
+
+                under_test["Control_WindowOpenable"] = json!("window_open_ctrl");
+
+                let building_element =
+                    serde_json::from_value::<BuildingElement>(under_test).unwrap();
+
+                if let BuildingElement::Transparent {
+                    control_window_openable: Some(control_window_openable),
+                    ..
+                } = building_element
+                {
+                    assert_eq!(control_window_openable, "window_open_ctrl");
+                } else {
+                    panic!();
+                }
+            }
+
+            #[rstest]
+            /// A fixed (non-openable) window has no openable sections, so an empty
+            /// window_part_list is valid.
+            fn test_window_part_list_may_be_empty(valid_example: JsonValue) {
+                let mut under_test = valid_example;
+
+                under_test["window_part_list"] = serde_json::json!([]);
+
+                let building_element =
+                    serde_json::from_value::<BuildingElement>(under_test).unwrap();
+
+                if let BuildingElement::Transparent {
+                    window_part_list, ..
+                } = building_element
+                {
+                    assert!(window_part_list.is_empty());
+                } else {
+                    panic!();
+                }
+            }
+
+            #[rstest]
+            /// `window_part_list` is optional; omitting it yields an empty list.
+            fn test_window_part_list_defaults_to_empty_when_omitted(valid_example: JsonValue) {
+                let mut under_test = valid_example;
+
+                under_test
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("window_part_list");
+
+                let building_element =
+                    serde_json::from_value::<BuildingElement>(under_test).unwrap();
+
+                if let BuildingElement::Transparent {
+                    window_part_list, ..
+                } = building_element
+                {
+                    assert!(window_part_list.is_empty());
+                } else {
+                    panic!();
+                }
             }
         }
 
