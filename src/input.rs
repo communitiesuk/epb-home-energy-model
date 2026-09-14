@@ -9784,6 +9784,38 @@ mod tests {
             }
         }
 
+        mod dry_electric_underfloor_heater {
+            use super::*;
+
+            #[fixture]
+            fn valid_example() -> JsonValue {
+                serde_json::to_value(SpaceHeatSystemDetails::DryElectricUnderfloorHeater {
+                    energy_supply: "mains elec".into(),
+                    control: "control".into(),
+                    frac_convective: 0.3,
+                    rated_power: 6.0,
+                    emitter_floor_area: 60.,
+                    exponent: 1.,
+                    constant_fields: UnderfloorHeaterConstantFields::Absolute { constant: 1. },
+                    thermal_mass_fields: UnderfloorHeaterThermalMassFields::Absolute {
+                        thermal_mass: 1.,
+                    },
+                })
+                .unwrap()
+            }
+
+            #[rstest(inputs,
+                case::frac_convective_should_be_at_least_zero(json!({"frac_convective": -1.})),
+                case::frac_convective_should_be_at_most_one(json!({"frac_convective": 2.})),
+                case::rated_power_should_be_at_least_zero(json!({"rated_power": -1.})),
+                case::thermal_mass_or_thermal_mass_per_m2_should_be_given(json!({"thermal_mass": null})),
+                case::constant_or_constant_per_m2_should_be_given(json!({"c": null})),
+            )]
+            fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<SpaceHeatSystemDetails>(valid_example, inputs);
+            }
+        }
+
         mod wet_distribution {
             use super::*;
             use monostate::MustBeBool;
@@ -9850,6 +9882,93 @@ mod tests {
                 case::emitters_at_least_one_item(json!({"emitters": []})),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
+                assert_range_constraints::<SpaceHeatSystemDetails>(valid_example, inputs);
+            }
+
+            fn pipework(location: &str) -> JsonValue {
+                json!({
+                    "location": location,
+                    "internal_diameter_mm": 14,
+                    "external_diameter_mm": 16,
+                    "length": 10.0,
+                    "insulation_thermal_conductivity": 1.0,
+                    "insulation_thickness_mm": 0,
+                    "surface_reflectivity": false,
+                    "pipe_contents": "water",
+                })
+            }
+
+            fn fancoil_emitter() -> JsonValue {
+                json!({
+                    "wet_emitter_type": "fancoil",
+                    "n_units": 1,
+                    "frac_convective": 1.0,
+                    "fancoil_test_data": {
+                        "fan_power_W": [15, 25],
+                        "fan_speed_data": [
+                            {"temperature_diff": 50.0, "power_output": [1.5, 2.8]},
+                            {"temperature_diff": 60.0, "power_output": [1.9, 3.5]},
+                        ],
+                    },
+                })
+            }
+
+            #[rstest]
+            /// `thermal_mass` cannot be set when emitters are fancoils.
+            fn test_thermal_mass_rejected_for_fancoil(valid_example: JsonValue) {
+                let inputs = json!({
+                    "emitters": [fancoil_emitter()],
+                    "thermal_mass": 0.14,
+                });
+                assert_range_constraints::<SpaceHeatSystemDetails>(valid_example, inputs);
+            }
+
+            #[rstest]
+            /// A fancoil system with no thermal_mass is valid.
+            fn test_thermal_mass_absent_for_fancoil_accepted(valid_example: JsonValue) {
+                let mut under_test = valid_example;
+                under_test["emitters"] = json!([fancoil_emitter()]);
+                under_test["thermal_mass"] = json!(null);
+
+                let space_heat_system = serde_json::from_value(under_test).unwrap();
+
+                assert!(matches!(
+                    space_heat_system,
+                    SpaceHeatSystemDetails::WetDistribution {
+                        thermal_mass: None,
+                        ..
+                    }
+                ));
+            }
+
+            #[rstest]
+            /// Internal space heating pipework is permitted.
+            fn test_internal_pipework_accepted(valid_example: JsonValue) {
+                let mut under_test = valid_example;
+                under_test["pipework"] = json!([pipework("internal")]);
+
+                let space_heat_system = serde_json::from_value(under_test).unwrap();
+
+                if let SpaceHeatSystemDetails::WetDistribution { pipework, .. } = space_heat_system
+                {
+                    assert!(!pipework.is_empty());
+                    assert!(matches!(
+                        pipework[0].location,
+                        WaterPipeworkLocation::Internal
+                    ));
+                } else {
+                    panic!(
+                        "Unexpected space heat system details: {:?}",
+                        space_heat_system
+                    );
+                }
+            }
+
+            #[rstest]
+            /// External space heating pipework is rejected, as it has no calculation effect.
+            fn test_external_pipework_rejected(valid_example: JsonValue) {
+                let inputs = json!({"pipework": [pipework("external")]});
+
                 assert_range_constraints::<SpaceHeatSystemDetails>(valid_example, inputs);
             }
         }
