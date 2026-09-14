@@ -6346,7 +6346,7 @@ pub enum MechVentData {
     #[serde(rename = "Positive input ventilation")]
     PositiveInputVentilation {
         #[serde(flatten, deserialize_with = "deserialize_maybe_nested_position")]
-        position_exhaust: MechanicalVentilationPosition,
+        position_intake: MechanicalVentilationPosition,
     },
 }
 
@@ -6410,7 +6410,7 @@ impl MechVentData {
         }
     }
 
-    pub(crate) fn position_exhaust(&self) -> (Orientation360, f64, f64) {
+    pub(crate) fn position_exhaust(&self) -> Option<(Orientation360, f64, f64)> {
         match self {
             Self::Mvhr {
                 position_exhaust, ..
@@ -6423,9 +6423,6 @@ impl MechVentData {
             }
             | Self::DecentralisedContinuousMev {
                 position_exhaust, ..
-            }
-            | Self::PositiveInputVentilation {
-                position_exhaust, ..
             } => {
                 let MechanicalVentilationPosition {
                     orientation360: orientation,
@@ -6433,14 +6430,18 @@ impl MechVentData {
                     mid_height_air_flow_path,
                 } = *position_exhaust;
 
-                (orientation, pitch, mid_height_air_flow_path)
+                Some((orientation, pitch, mid_height_air_flow_path))
             }
+            Self::PositiveInputVentilation { .. } => None,
         }
     }
 
     pub(crate) fn position_intake(&self) -> Option<(Orientation360, f64, f64)> {
         match self {
-            Self::Mvhr {
+            Self::PositiveInputVentilation {
+                position_intake, ..
+            }
+            | Self::Mvhr {
                 position_intake, ..
             } => Some((
                 position_intake.orientation360,
