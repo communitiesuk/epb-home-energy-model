@@ -239,7 +239,7 @@ fn single_control_from_details(
             charge_level,
             external_sensor,
             charge_target_schedule_or_control:
-                ChargeTargetScheduleOrControlReference::Schedule { schedule },
+                ChargeTargetScheduleOrControlReference::Schedule(schedule),
             start_day,
             time_series_step,
             temp_charge_cut,
@@ -307,7 +307,7 @@ fn single_control_from_details(
         // temporary entry for ChargeTarget with charge target control reference until implemented for 1.0.0a9
         ControlDetails::ChargeTarget {
             charge_target_schedule_or_control:
-                ChargeTargetScheduleOrControlReference::ControlReference { .. },
+                ChargeTargetScheduleOrControlReference::ChargeTimeControl(_),
             ..
         } => todo!(),
         ControlDetails::OnOffCostMinimising {
