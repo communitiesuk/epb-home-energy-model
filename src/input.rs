@@ -6392,6 +6392,7 @@ impl MechVentData {
             Self::CentralisedContinuousMev { .. }
                 | Self::DecentralisedContinuousMev { .. }
                 | Self::Mvhr { .. }
+                | Self::PositiveInputVentilation { .. }
         )
     }
 

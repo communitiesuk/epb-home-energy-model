@@ -534,6 +534,7 @@ impl MechVentType {
             Self::CentralisedContinuousMev { .. }
                 | Self::DecentralisedContinuousMev { .. }
                 | Self::Mvhr { .. }
+                | Self::PositiveInputVentilation { .. }
         )
     }
 
@@ -1376,8 +1377,14 @@ pub(crate) struct MechanicalVentilation {
 
 // From table B.4, for residential buildings, default f_ctrl = 1
 const MECHANICAL_VENTILATION_F_CTRL: f64 = 1.;
-// From table B.5, f_sys = 1.1
-const MECHANICAL_VENTILATION_F_SYS: f64 = 1.1;
+
+// f_sys (BS EN 16798-7:2017 clause 6.4.3.2.1 / table B.5) is defined only as a
+// "factor accounting for the uncertainty in the delivered air flow rate"; the
+// standard does not specify what that uncertainty represents. As it cannot be
+// distinguished from the in-use uncertainty already applied to the specific fan
+// power, it is set to 1.0 (rather than table B.5's certified, f_ctrl=1 value of
+// 1.1) to avoid double-counting.
+const MECHANICAL_VENTILATION_F_SYS: f64 = 1.0;
 // Section B.3.3.7 defaults E_v = 1 (this is the assumption for perfect mixing)
 const MECHANICAL_VENTILATION_E_V: f64 = 1.;
 
@@ -1732,9 +1739,7 @@ impl MechanicalVentilation {
                 // Balanced, therefore split power between extract and supply fans
                 (fan_energy_use_kwh / 2., fan_energy_use_kwh / 2.)
             }
-            MechVentType::PositiveInputVentilation => {
-                bail!("Positive input ventilation not yet fully supported in HEM")
-            }
+            MechVentType::PositiveInputVentilation => (fan_energy_use_kwh, 0.0),
         };
         self.energy_supply_conn
             .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration.index)?;
@@ -4976,268 +4981,320 @@ mod tests {
 
     // test_missing_positions_error is redundant as presence of these fields is enforced by type system
 
-    // #[rstest]
-    // // In Python this tests calls 'calculate_required_outdoor_air_flow_rate' in the assertion,
-    // // we've implemented the 'new' function on MechanicalVentilation so that it sets
-    // // qv_oda_req_design by calling 'calculate_required_outdoor_air_flow_rate'
-    // fn test_calculate_required_outdoor_air_flow_rate(
-    //     mechanical_ventilation: MechanicalVentilation,
-    // ) {
-    //     let expected_result = 0.55;
-    //     assert_relative_eq!(mechanical_ventilation.qv_oda_req_design, expected_result);
-    // }
+    #[rstest]
+    // In Python this tests calls 'calculate_required_outdoor_air_flow_rate' in the assertion,
+    // we've implemented the 'new' function on MechanicalVentilation so that it sets
+    // qv_oda_req_design by calling 'calculate_required_outdoor_air_flow_rate'
+    fn test_calculate_required_outdoor_air_flow_rate(
+        mechanical_ventilation: MechanicalVentilation,
+    ) {
+        let expected_result = 0.5;
+        assert_relative_eq!(mechanical_ventilation.qv_oda_req_design, expected_result);
+    }
 
-    // #[rstest]
-    // fn test_calc_req_oda_flow_rates_at_atds(mut mechanical_ventilation: MechanicalVentilation) {
-    //     let (qv_sup_req, qv_eta_req) = mechanical_ventilation
-    //         .calc_req_oda_flow_rates_at_atds()
-    //         .unwrap();
-    //     assert_relative_eq!(qv_sup_req, 0.55);
-    //     assert_relative_eq!(qv_eta_req, -0.55);
+    #[rstest]
+    fn test_calc_req_oda_flow_rates_at_atds(mut mechanical_ventilation: MechanicalVentilation) {
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation
+            .calc_req_oda_flow_rates_at_atds()
+            .unwrap();
+        assert_relative_eq!(qv_sup_req, 0.5);
+        assert_relative_eq!(qv_eta_req, -0.5);
 
-    //     mechanical_ventilation.vent_data = MechVentData::IntermittentMev;
-    //     let (qv_sup_req, qv_eta_req) = mechanical_ventilation
-    //         .calc_req_oda_flow_rates_at_atds()
-    //         .unwrap();
-    //     assert_relative_eq!(qv_sup_req, 0.);
-    //     assert_relative_eq!(qv_eta_req, -0.55);
+        mechanical_ventilation.vent_data = MechVentData::IntermittentMev {
+            h_path_exhaust: 2.0,
+            orientation_exhaust: (0.).into(),
+            pitch_exhaust: 90.,
+        };
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation
+            .calc_req_oda_flow_rates_at_atds()
+            .unwrap();
+        assert_relative_eq!(qv_sup_req, 0.);
+        assert_relative_eq!(qv_eta_req, -0.5);
 
-    //     mechanical_ventilation.vent_data = MechVentData::PositiveInputVentilation;
-    //     let (qv_sup_req, qv_eta_req) = mechanical_ventilation
-    //         .calc_req_oda_flow_rates_at_atds()
-    //         .unwrap();
-    //     assert_relative_eq!(qv_sup_req, 0.55);
-    //     assert_relative_eq!(qv_eta_req, 0.);
-    // }
+        mechanical_ventilation.vent_data = MechVentData::PositiveInputVentilation {
+            h_path_intake: 3.0,
+            orientation_intake: (180.).into(),
+            pitch_intake: 90.,
+        };
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation
+            .calc_req_oda_flow_rates_at_atds()
+            .unwrap();
+        assert_relative_eq!(qv_sup_req, 0.5);
+        assert_relative_eq!(qv_eta_req, 0.);
+    }
 
-    // #[rstest]
-    // fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
-    //     mechanical_ventilation: MechanicalVentilation,
-    //     air_temps: Vec<f64>,
-    //     mut simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
-    //         mechanical_ventilation
-    //             .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
-    //                 4.135012577787589,
-    //                 140.0.into(),
-    //                 true,
-    //                 VentilationShieldClass::Normal,
-    //                 293.15,
-    //                 celsius_to_kelvin(air_temps[0]).unwrap(),
-    //                 1.7775065710163496,
-    //                 &simulation_time_iterator.next().unwrap(),
-    //             )
-    //             .unwrap();
-    //     assert_relative_eq!(qm_sup_dis_req, 0.);
-    //     assert_relative_eq!(qm_eta_dis_req, -0.6622);
-    //     assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);
-    // }
+    #[rstest]
+    fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+        mechanical_ventilation: MechanicalVentilation,
+        air_temps: Vec<f64>,
+        mut simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
+            mechanical_ventilation
+                .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                    4.135012577787589,
+                    140.0.into(),
+                    true,
+                    VentilationShieldClass::Normal,
+                    293.15,
+                    celsius_to_kelvin(air_temps[0]).unwrap(),
+                    1.7775065710163496,
+                    &simulation_time_iterator.next().unwrap(),
+                )
+                .unwrap();
+        assert_relative_eq!(qm_sup_dis_req, 0.);
+        assert_relative_eq!(qm_eta_dis_req, -0.602);
+        assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);
+    }
 
-    // fn mock_control_with_setpnt(setpnt: Option<f64>) -> Arc<dyn ControlBehaviour> {
-    //     Arc::new(Control::Mock(
-    //         crate::core::controls::time_control::MockControl::with_setpnt(setpnt),
-    //     ))
-    // }
+    fn mock_control_with_setpnt(setpnt: Option<f64>) -> Arc<dyn ControlBehaviour> {
+        Arc::new(Control::Mock(
+            crate::core::controls::time_control::MockControl::with_setpnt(setpnt),
+        ))
+    }
 
-    // #[rstest]
-    // #[case(0.5)]
-    // #[should_panic(expected = "Error f_op_v is not between 0 and 1")]
-    // #[case(1.5)]
-    // fn test_f_op_v(
-    //     mut mechanical_ventilation: MechanicalVentilation,
-    //     simulation_time_iterator: SimulationTimeIterator,
-    //     #[case] setpoint: f64,
-    // ) {
-    //     assert_relative_eq!(
-    //         mechanical_ventilation
-    //             .f_op_v(&simulation_time_iterator.current_iteration())
-    //             .unwrap(),
-    //         1.
-    //     );
+    #[rstest]
+    #[case(0.5)]
+    #[should_panic(expected = "Error f_op_v is not between 0 and 1")]
+    #[case(1.5)]
+    fn test_f_op_v(
+        mut mechanical_ventilation: MechanicalVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+        #[case] setpoint: f64,
+    ) {
+        assert_relative_eq!(
+            mechanical_ventilation
+                .f_op_v(&simulation_time_iterator.current_iteration())
+                .unwrap(),
+            1.
+        );
 
-    //     mechanical_ventilation.vent_data = MechVentData::IntermittentMev {
-    //         h_path_exhaust: 2.,
-    //         orientation_exhaust: 180.0.into(),
-    //         pitch_exhaust: 90.,
-    //     };
-    //     mechanical_ventilation.ctrl_intermittent_mev =
-    //         Some(mock_control_with_setpnt(Some(setpoint)));
-    //     assert_eq!(
-    //         mechanical_ventilation
-    //             .f_op_v(&simulation_time_iterator.current_iteration())
-    //             .unwrap(),
-    //         0.5
-    //     );
+        mechanical_ventilation.vent_data = MechVentData::IntermittentMev {
+            h_path_exhaust: 2.,
+            orientation_exhaust: 180.0.into(),
+            pitch_exhaust: 90.,
+        };
+        mechanical_ventilation.ctrl_intermittent_mev =
+            Some(mock_control_with_setpnt(Some(setpoint)));
+        assert_eq!(
+            mechanical_ventilation
+                .f_op_v(&simulation_time_iterator.current_iteration())
+                .unwrap(),
+            0.5
+        );
 
-    //     mechanical_ventilation.ctrl_intermittent_mev =
-    //         Some(mock_control_with_setpnt(Some(setpoint)));
-    //     mechanical_ventilation
-    //         .f_op_v(&simulation_time_iterator.current_iteration())
-    //         .unwrap();
-    // }
+        mechanical_ventilation.ctrl_intermittent_mev =
+            Some(mock_control_with_setpnt(Some(setpoint)));
+        mechanical_ventilation
+            .f_op_v(&simulation_time_iterator.current_iteration())
+            .unwrap();
+    }
 
-    // #[rstest]
-    // fn test_fans(energy_supply: EnergySupply, simulation_time_iterator: SimulationTimeIterator) {
-    //     let simtime = &simulation_time_iterator.current_iteration();
-    //     let energy_supply = Arc::new(RwLock::new(energy_supply));
-    //     let energy_supply_connection =
-    //         EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
+    #[rstest]
+    fn test_fans(energy_supply: EnergySupply, simulation_time_iterator: SimulationTimeIterator) {
+        let simtime = &simulation_time_iterator.current_iteration();
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
 
-    //     let mvhr_vent_data = MechVentData::Mvhr {
-    //         orientation_intake: 180.0.into(),
-    //         pitch_intake: 90.,
-    //         h_path_intake: 2.,
-    //     };
+        let mvhr_vent_data = MechVentData::Mvhr {
+            orientation_intake: 180.0.into(),
+            pitch_intake: 90.,
+            h_path_intake: 2.,
+            h_path_exhaust: 2.,
+            orientation_exhaust: 180.0.into(),
+            pitch_exhaust: 90.,
+        };
 
-    //     let mut mechanical_ventilation = MechanicalVentilation::new(
-    //         SupplyAirFlowRateControlType::Oda,
-    //         SupplyAirTemperatureControlType::NoControl,
-    //         1.,
-    //         3.4,
-    //         mvhr_vent_data,
-    //         1.5,
-    //         50.,
-    //         energy_supply_connection,
-    //         250.,
-    //         0.,
-    //         180.0.into(),
-    //         90.,
-    //         2.,
-    //         3.,
-    //         Some(mock_control_with_setpnt(None)),
-    //         Some(0.),
-    //         Some(1.1),
-    //         1.,
-    //         None,
-    //         None,
-    //     );
+        let mut mechanical_ventilation = MechanicalVentilation::new(
+            SupplyAirFlowRateControlType::Oda,
+            SupplyAirTemperatureControlType::NoControl,
+            1.,
+            3.4,
+            mvhr_vent_data,
+            1.5,
+            50.,
+            energy_supply_connection.clone(),
+            250.,
+            0.,
+            3.,
+            Some(mock_control_with_setpnt(None)),
+            Some(0.),
+            Some(1.1),
+            1.,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-    //     mechanical_ventilation.vent_data = MechVentData::CentralisedContinuousMev;
-    //     assert_relative_eq!(
-    //         mechanical_ventilation
-    //             .fans(200., 2000., None, simtime)
-    //             .unwrap(),
-    //         0.
-    //     );
+        mechanical_ventilation.vent_data = MechVentData::CentralisedContinuousMev {
+            h_path_exhaust: 2.,
+            orientation_exhaust: 180.0.into(),
+            pitch_exhaust: 90.,
+        };
+        assert_relative_eq!(
+            mechanical_ventilation
+                .fans(200., 2000., None, simtime)
+                .unwrap(),
+            0.
+        );
 
-    //     mechanical_ventilation.vent_data = mvhr_vent_data;
+        mechanical_ventilation.vent_data = mvhr_vent_data;
 
-    //     assert_relative_eq!(
-    //         mechanical_ventilation
-    //             .fans(200., 2000., None, simtime)
-    //             .unwrap(),
-    //         1.1458333333333335,
-    //     );
-    // }
+        assert_relative_eq!(
+            mechanical_ventilation
+                .fans(200., 2000., None, simtime)
+                .unwrap(),
+            1.0416666666666667,
+        );
 
-    // #[rstest]
-    // fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone_extract_only(
-    //     energy_supply: EnergySupply,
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let simtime = &simulation_time_iterator.current_iteration();
-    //     let energy_supply = Arc::new(RwLock::new(energy_supply));
-    //     let energy_supply_connection =
-    //         EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
+        let mechanical_ventilation = MechanicalVentilation::new(
+            SupplyAirFlowRateControlType::Oda,
+            SupplyAirTemperatureControlType::NoControl,
+            1.,
+            3.4,
+            MechVentData::PositiveInputVentilation {
+                orientation_intake: 180.0.into(),
+                pitch_intake: 90.,
+                h_path_intake: 2.,
+            },
+            1.5,
+            50.,
+            energy_supply_connection,
+            250.,
+            0.,
+            3.,
+            Some(mock_control_with_setpnt(None)),
+            Some(0.),
+            Some(1.1),
+            1.,
+            None,
+            None,
+            Some(1.),
+        )
+        .unwrap();
+        assert_relative_eq!(
+            mechanical_ventilation
+                .fans(200., 2000., None, simtime)
+                .unwrap(),
+            2.0833333333333335,
+        );
+    }
 
-    //     let mechanical_ventilation = MechanicalVentilation::new(
-    //         SupplyAirFlowRateControlType::Oda,
-    //         SupplyAirTemperatureControlType::NoControl,
-    //         1.,
-    //         3.4,
-    //         MechVentData::CentralisedContinuousMev, // This is extract-only
-    //         1.5,
-    //         50.,
-    //         energy_supply_connection,
-    //         250.,
-    //         0.,
-    //         180.0.into(),
-    //         90.,
-    //         2.,
-    //         3.,
-    //         None,
-    //         Some(0.),
-    //         None,
-    //         1.,
-    //         None,
-    //         None,
-    //     );
+    #[rstest]
+    fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone_extract_only(
+        energy_supply: EnergySupply,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let simtime = &simulation_time_iterator.current_iteration();
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
 
-    //     // Test with positive delta_p_mech_vent (back pressure)
-    //     let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
-    //         mechanical_ventilation
-    //             .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
-    //                 4.135012577787589,
-    //                 140.0.into(),
-    //                 true,
-    //                 VentilationShieldClass::Normal,
-    //                 293.15,
-    //                 celsius_to_kelvin(10.).unwrap(),
-    //                 2.,
-    //                 simtime,
-    //             )
-    //             .unwrap();
+        let mechanical_ventilation = MechanicalVentilation::new(
+            SupplyAirFlowRateControlType::Oda,
+            SupplyAirTemperatureControlType::NoControl,
+            1.,
+            3.4,
+            MechVentData::CentralisedContinuousMev {
+                h_path_exhaust: 2.,
+                orientation_exhaust: 180.0.into(),
+                pitch_exhaust: 90.,
+            }, // This is extract-only
+            1.5,
+            50.,
+            energy_supply_connection,
+            250.,
+            0.,
+            3.,
+            None,
+            Some(0.),
+            None,
+            1.,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-    //     // For extract-only systems, supply should be 0
-    //     assert_eq!(qm_sup_dis_req, 0.);
-    //     // Extract should be negative (air leaving)
-    //     assert!(qm_eta_dis_req < 0.);
-    //     assert_eq!(qm_in_effective_heat_recovery_saving, 0.);
-    // }
+        // Test with positive delta_p_mech_vent (back pressure)
+        let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
+            mechanical_ventilation
+                .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                    4.135012577787589,
+                    140.0.into(),
+                    true,
+                    VentilationShieldClass::Normal,
+                    293.15,
+                    celsius_to_kelvin(10.).unwrap(),
+                    2.,
+                    simtime,
+                )
+                .unwrap();
 
-    // #[rstest]
-    // fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone_supply_only(
-    //     energy_supply_connection: EnergySupplyConnection,
-    // ) {
-    //     // First, let's test with a valid extract-only system to ensure it works
-    //     let mechvent = MechanicalVentilation::new(
-    //         SupplyAirFlowRateControlType::Oda,
-    //         SupplyAirTemperatureControlType::NoControl,
-    //         1.0,
-    //         3.4,
-    //         MechVentData::CentralisedContinuousMev,
-    //         1.5,
-    //         50.,
-    //         energy_supply_connection,
-    //         250.0,
-    //         0.,
-    //         180.0.into(),
-    //         90.,
-    //         2.,
-    //         3.,
-    //         None,
-    //         None,
-    //         None,
-    //         1.0,
-    //         None,
-    //         None,
-    //     );
+        // For extract-only systems, supply should be 0
+        assert_eq!(qm_sup_dis_req, 0.);
+        // Extract should be negative (air leaving)
+        assert!(qm_eta_dis_req < 0.);
+        assert_eq!(qm_in_effective_heat_recovery_saving, 0.);
+    }
 
-    //     let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) = mechvent
-    //         .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
-    //             4.135012577787589,
-    //             140.0.into(),
-    //             true,
-    //             VentilationShieldClass::Normal,
-    //             293.15,
-    //             celsius_to_kelvin(10.).unwrap(),
-    //             -1.0,
-    //             &SimulationTimeIteration {
-    //                 index: 0,
-    //                 time: 0.0,
-    //                 timestep: 1.0,
-    //             },
-    //         )
-    //         .unwrap();
+    #[rstest]
+    fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone_supply_only(
+        energy_supply_connection: EnergySupplyConnection,
+    ) {
+        // First, let's test with a valid extract-only system to ensure it works
+        let mechvent = MechanicalVentilation::new(
+            SupplyAirFlowRateControlType::Oda,
+            SupplyAirTemperatureControlType::NoControl,
+            1.0,
+            3.4,
+            MechVentData::CentralisedContinuousMev {
+                h_path_exhaust: 2.,
+                orientation_exhaust: 180.0.into(),
+                pitch_exhaust: 90.,
+            },
+            1.5,
+            50.,
+            energy_supply_connection,
+            250.0,
+            0.,
+            3.,
+            None,
+            None,
+            None,
+            1.0,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-    //     assert_relative_eq!(qm_sup_dis_req, 0., epsilon = 1e-6); // No supply for extract-only
-    //     assert!(qm_eta_dis_req < 0.); // negative for extraction
-    //                                   // no heat recovery
-    //     assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0., epsilon = 1e-6);
+        let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) = mechvent
+            .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                4.135012577787589,
+                140.0.into(),
+                true,
+                VentilationShieldClass::Normal,
+                293.15,
+                celsius_to_kelvin(10.).unwrap(),
+                -1.0,
+                &SimulationTimeIteration {
+                    index: 0,
+                    time: 0.0,
+                    timestep: 1.0,
+                },
+            )
+            .unwrap();
 
-    //     // TODO (from Python): When PIV (Positive Input Ventilation) is implemented, add test coverage here
-    // }
+        assert_relative_eq!(qm_sup_dis_req, 0., epsilon = 1e-6); // No supply for extract-only
+        assert!(qm_eta_dis_req < 0.); // negative for extraction
+                                      // no heat recovery
+        assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0., epsilon = 1e-6);
+
+        // TODO (from Python): When PIV (Positive Input Ventilation) is implemented, add test coverage here
+    }
 
     // /// Test that correct total duct heat loss is returned when queried
     // #[rstest]
