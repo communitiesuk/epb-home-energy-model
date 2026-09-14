@@ -6,6 +6,7 @@ use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
 
+
 /// Type to represent instantaneous electric heaters
 #[derive(Clone, Debug)]
 pub struct InstantElecHeater {
@@ -110,7 +111,7 @@ mod tests {
             simulation_time.step,
         ));
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
         ));
         let energy_supply_conn = EnergySupply::connection(energy_supply, "shower").unwrap();
         InstantElecHeater::new(

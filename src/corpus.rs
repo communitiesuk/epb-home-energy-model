@@ -116,7 +116,7 @@ use atomic_float::AtomicF64;
 use chrono::{prelude::*, TimeDelta};
 use erased_serde::__private::serde::Serializer;
 use fsum::FSum;
-use indexmap::{IndexMap, IndexSet};
+use indexmap::{indexmap, IndexMap, IndexSet};
 #[cfg(feature = "indicatif")]
 use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
 use itertools::Itertools;
@@ -512,7 +512,7 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
         &simtime.iter(),
     )?);
     let energy_supply_unmet_demand =
-        EnergySupplyBuilder::new(FuelType::UnmetDemand, simtime.total_steps()).build();
+        EnergySupplyBuilder::new(FuelType::UnmetDemand, &simtime.iter()).build();
     let mut energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>> = [(
         "_unmet_demand".into(),
         Arc::new(RwLock::new(energy_supply_unmet_demand)),
@@ -522,7 +522,7 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
         energy_supplies.insert(
             name.into(),
             Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(data.fuel, simtime.total_steps()).build(),
+                EnergySupplyBuilder::new(data.fuel, &simtime.iter()).build(),
             )),
         );
     }
@@ -3223,21 +3223,14 @@ fn energy_supplies_from_input(
     supplies.insert(
         UNMET_DEMAND_SUPPLY_NAME.into(),
         Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(
-                FuelType::UnmetDemand,
-                simulation_time_iterator.total_steps(),
-            )
-            .build(),
+            EnergySupplyBuilder::new(FuelType::UnmetDemand, simulation_time_iterator).build(),
         )),
     );
     supplies.insert(
         ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME.into(),
         Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(
-                FuelType::EnergyFromEnvironment,
-                simulation_time_iterator.total_steps(),
-            )
-            .build(),
+            EnergySupplyBuilder::new(FuelType::EnergyFromEnvironment, simulation_time_iterator)
+                .build(),
         )),
     );
     for (name, supply) in input {
@@ -3260,17 +3253,33 @@ fn energy_supply_from_input(
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<Arc<RwLock<EnergySupply>>> {
     Ok(Arc::new(RwLock::new({
-        let mut builder =
-            EnergySupplyBuilder::new(input.fuel, simulation_time_iterator.total_steps());
+        let mut builder = EnergySupplyBuilder::new(input.fuel, simulation_time_iterator);
 
-        // Just handling the single battery as a stop gap in the 1.0.0a9 migration
-        if let Some(SingleOrMap::Single(battery)) = input.electric_battery.as_ref() {
-            builder = builder.with_electric_battery(ElectricBattery::from_input(
-                battery,
-                simulation_time_iterator.step_in_hours(),
-                external_conditions,
-            ))
-        }
+        if let Some(battery) = input.electric_battery.as_ref() {
+            let batteries = match battery {
+                SingleOrMap::Single(battery) => {
+                    indexmap! {"ElectricBattery".into() => ElectricBattery::from_input(
+                        battery,
+                        simulation_time_iterator.step_in_hours(),
+                        external_conditions,
+                    )}
+                }
+                SingleOrMap::Map(batteries) => batteries
+                    .into_iter()
+                    .map(|(key, battery)| {
+                        (
+                            key.into(),
+                            ElectricBattery::from_input(
+                                battery,
+                                simulation_time_iterator.step_in_hours(),
+                                external_conditions.clone(),
+                            ),
+                        )
+                    })
+                    .collect(),
+            };
+            builder = builder.with_electric_battery(batteries);
+        };
         if let Some(priority) = input.priority.as_ref() {
             builder = builder.with_priority(priority.clone());
         }

@@ -578,8 +578,7 @@ mod tests {
             let cold_water_temps = [2.0, 3.0, 4.0];
             let cold_water_source = ColdWaterSource::new(cold_water_temps.into(), 0, 1.0);
             let energy_supply = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
-                    .build(),
+                EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
             ));
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply.clone(), "shower").unwrap();

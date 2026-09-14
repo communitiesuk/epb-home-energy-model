@@ -11,7 +11,7 @@ use std::io::Read;
 /// This module contains data on the energy tariffs.
 
 #[derive(Clone, Debug)]
-pub(super) struct TariffData {
+pub(crate) struct TariffData {
     start_day: Option<u32>,
     time_series_step: f64,
     electricity_prices: IndexMap<EnergySupplyTariff, Vec<f64>>,
@@ -19,7 +19,7 @@ pub(super) struct TariffData {
 
 impl TariffData {
     pub(super) fn new(
-        simulation_time: SimulationTimeIterator,
+        simulation_time: &SimulationTimeIterator,
         start_day: Option<u32>,
         time_series_step: f64,
         electricity_prices: IndexMap<EnergySupplyTariff, Vec<f64>>,
@@ -155,7 +155,7 @@ mod tests {
     ) -> TariffData {
         let prices = TariffData::expand_prices_schedule(loaded_prices).unwrap();
 
-        TariffData::new(simulation_time, Some(0), 1., prices).unwrap()
+        TariffData::new(&simulation_time, Some(0), 1., prices).unwrap()
     }
 
     #[fixture]
@@ -165,7 +165,7 @@ mod tests {
     ) -> TariffData {
         let prices = TariffData::expand_prices_schedule(loaded_prices).unwrap();
 
-        TariffData::new(simulation_time, None, 1., prices).unwrap()
+        TariffData::new(&simulation_time, None, 1., prices).unwrap()
     }
 
     #[rstest]

@@ -596,7 +596,7 @@ mod tests {
         output_detailed_results: Option<bool>,
     ) -> Arc<ElecStorageHeater> {
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
         ));
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "storage_heater").unwrap();
@@ -712,7 +712,7 @@ mod tests {
         ];
 
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
         ));
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "storage_heater").unwrap();
@@ -1157,7 +1157,7 @@ mod tests {
         ));
 
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
         ));
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "storage_heater").unwrap();
@@ -1276,7 +1276,7 @@ mod tests {
         charge_control: Arc<Control>,
     ) {
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
         ));
         let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
 
@@ -1805,7 +1805,7 @@ mod tests {
         charge_control: Arc<Control>,
     ) {
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
         ));
         let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
 
@@ -1877,7 +1877,7 @@ mod tests {
         charge_control: Arc<Control>,
     ) {
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
         ));
         let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
 
@@ -1968,7 +1968,7 @@ mod tests {
         charge_control: Arc<Control>,
     ) {
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
         ));
         let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
 

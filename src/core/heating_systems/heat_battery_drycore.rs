@@ -2027,6 +2027,7 @@ mod tests {
     use super::*;
     use crate::core::common::MockWaterSupply;
     use crate::core::controls::time_control::{ChargeControl, MockControl, SetpointTimeControl};
+    use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::hem_core::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::hem_core::simulation_time::SimulationTime;
@@ -2142,15 +2143,7 @@ mod tests {
     #[fixture]
     fn energy_supply(simulation_time: SimulationTime) -> Arc<RwLock<EnergySupply>> {
         Arc::new(RwLock::new(
-            EnergySupply::new(
-                FuelType::Electricity,
-                simulation_time.total_steps(),
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap(),
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
         ))
     }
 

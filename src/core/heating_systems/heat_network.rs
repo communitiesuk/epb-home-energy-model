@@ -518,11 +518,8 @@ mod tests {
             0.,
             0.8,
             Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(
-                    FuelType::Electricity,
-                    two_len_simulation_time.total_steps(),
-                )
-                .build(),
+                EnergySupplyBuilder::new(FuelType::Electricity, &two_len_simulation_time.iter())
+                    .build(),
             )),
             "aux".into(),
             "distro_losses".into(),
@@ -569,8 +566,7 @@ mod tests {
         two_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
         let energy_supply =
-            EnergySupplyBuilder::new(FuelType::Custom, two_len_simulation_time.total_steps())
-                .build();
+            EnergySupplyBuilder::new(FuelType::Custom, &two_len_simulation_time.iter()).build();
         let energy_supply_conn_name_auxiliary = "heat_network_auxiliary";
         let energy_supply_conn_name_building_level_distribution_losses =
             "HeatNetwork_building_level_distribution_losses";
@@ -711,8 +707,7 @@ mod tests {
         two_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
         let energy_supply =
-            EnergySupplyBuilder::new(FuelType::Custom, two_len_simulation_time.total_steps())
-                .build();
+            EnergySupplyBuilder::new(FuelType::Custom, &two_len_simulation_time.iter()).build();
         let energy_supply_conn_name_auxiliary = "heat_network_auxiliary";
         let energy_supply_conn_name_building_level_distribution_losses =
             "HeatNetwork_building_level_distribution_losses";
@@ -889,8 +884,7 @@ mod tests {
     #[fixture]
     fn heat_network_for_service_space(three_len_simulation_time: SimulationTime) -> HeatNetwork {
         let energy_supply =
-            EnergySupplyBuilder::new(FuelType::MainsGas, three_len_simulation_time.total_steps())
-                .build();
+            EnergySupplyBuilder::new(FuelType::MainsGas, &three_len_simulation_time.iter()).build();
         let energy_supply_conn_name_auxiliary = "Boiler_auxiliary";
         let energy_supply_conn_name_building_level_distribution_losses =
             "HeatNetwork_building_level_distribution_losses";
@@ -1013,8 +1007,7 @@ mod tests {
         two_len_simulation_time: SimulationTime,
     ) -> Arc<RwLock<EnergySupply>> {
         Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Custom, two_len_simulation_time.total_steps())
-                .build(),
+            EnergySupplyBuilder::new(FuelType::Custom, &two_len_simulation_time.iter()).build(),
         ))
     }
 

@@ -4012,11 +4012,8 @@ mod tests {
 
         let mut zone_input_copy = zone_input.clone();
         zone_input_copy["zone 1"].building_elements["window 0"].remove_window_openable_control();
-        let energy_supply = EnergySupplyBuilder::new(
-            FuelType::Electricity,
-            simulation_time_iterator.total_steps(),
-        )
-        .build();
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator).build();
         let energy_supplies =
             IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
 
@@ -4045,11 +4042,8 @@ mod tests {
             zone.building_elements.shift_remove("wall 1");
             zone.building_elements.shift_remove("wall 2");
         }
-        let energy_supply = EnergySupplyBuilder::new(
-            FuelType::Electricity,
-            simulation_time_iterator.total_steps(),
-        )
-        .build();
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator).build();
         let energy_supplies =
             IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
         // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
@@ -4624,11 +4618,7 @@ mod tests {
 
     #[fixture]
     fn energy_supply(simulation_time_iterator: SimulationTimeIterator) -> EnergySupply {
-        EnergySupplyBuilder::new(
-            FuelType::Electricity,
-            simulation_time_iterator.total_steps(),
-        )
-        .build()
+        EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator).build()
     }
 
     #[fixture]

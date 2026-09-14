@@ -153,6 +153,7 @@ impl DirectElectricBoiler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::units::Orientation360;
     use crate::hem_core::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::hem_core::simulation_time::SimulationTime;
@@ -250,8 +251,8 @@ mod tests {
     ) -> DirectElectricBoiler {
         DirectElectricBoiler::new(
             boiler_data,
-            Arc::new(<RwLock<EnergySupply>>::from(
-                EnergySupply::new(FuelType::Electricity, 1, None, None, None, None).unwrap(),
+            Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
             )),
             "boiler aux",
             simulation_time.step,

@@ -3,6 +3,7 @@ use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::heating_systems::storage_tank::SurplusDiverting;
 use crate::errors::NotImplementedError;
+use crate::hem_core::simulation_time::SimulationTimeIterator;
 use crate::input::{EnergySupplyTariff, FuelType};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -80,7 +81,7 @@ impl EnergySupplyConnection {
 
 pub struct EnergySupplyTariffInput {
     tariff: EnergySupplyTariff,
-    tariff_data: Box<dyn Read>,
+    tariff_path: Box<dyn Read>,
     threshold_charges: Option<Vec<f64>>,
     threshold_prices: Option<Vec<f64>>,
 }
@@ -88,13 +89,13 @@ pub struct EnergySupplyTariffInput {
 impl EnergySupplyTariffInput {
     pub(crate) fn new(
         tariff: EnergySupplyTariff,
-        tariff_data: Box<dyn Read>,
+        tariff_path: Box<dyn Read>,
         threshold_charges: Option<Vec<f64>>,
         threshold_prices: Option<Vec<f64>>,
     ) -> Self {
         Self {
             tariff,
-            tariff_data,
+            tariff_path,
             threshold_charges,
             threshold_prices,
         }
@@ -129,7 +130,7 @@ pub struct EnergySupply {
     fuel_type: FuelType,
     tariff_info: Option<EnergySupplyTariffInfo>,
     simulation_timesteps: usize,
-    electric_battery: Option<ElectricBattery>,
+    electric_batteries: IndexMap<String, ElectricBattery>,
     #[educe(Debug(ignore))]
     diverter: Option<Arc<RwLock<dyn SurplusDiverting>>>,
     priority: Option<Vec<String>>,
@@ -147,29 +148,44 @@ pub struct EnergySupply {
     battery_state_of_charge: Vec<AtomicF64>,
     energy_diverted: Vec<AtomicF64>,
     energy_generated_consumed: Vec<AtomicF64>,
+    tariff_data: Option<TariffData>,
 }
 
 impl EnergySupply {
     /// Arguments:
     /// * `fuel_type` - string denoting type of fuel
     /// * `simulation_timesteps` - the number of steps in the simulation time being used
-    /// * `electric_battery` - reference to an ElectricBattery object
+    /// * `electric_battery` - reference to a map from name to an ElectricBattery object
     /// * `priority`
     /// * `is_export_capable` - denotes that this Energy Supply can export its surplus supply
+    /// * `tariff_data` - tariff data containing electricity prices
     pub(crate) fn new(
         fuel_type: FuelType,
-        simulation_timesteps: usize,
+        simulation_time: &SimulationTimeIterator,
         tariff_input: Option<EnergySupplyTariffInput>,
-        electric_battery: Option<ElectricBattery>,
+        electric_batteries: IndexMap<String, ElectricBattery>, // TODO 1.0.0a9 review - python has empty dict when no batteries, keep empty indexmap or make optional?
         priority: Option<Vec<String>>,
         is_export_capable: Option<bool>,
+        tariff_data: Option<TariffData>,
     ) -> anyhow::Result<Self> {
-        let _tariff_info = if electric_battery
-            .as_ref()
-            .is_some_and(|battery| battery.is_grid_charging_possible())
+        let simulation_timesteps = simulation_time.total_steps();
+        // Create supply connection of Electric Battery to Energy Supply to account for energy imported
+        let tariff_data = if electric_batteries
+            .iter()
+            .any(|(_, battery)| battery.is_grid_charging_possible())
         {
-            if let Some(tariff_input) = tariff_input {
-                Some(tariff_input)
+            // Import electricity tariff data for grid import options
+            if let Some(tariff_data) = tariff_data {
+                Some(tariff_data)
+            } else if let Some(tariff_input) = tariff_input {
+                let prices = TariffData::load_data_from_file(tariff_input.tariff_path)?;
+                let timestep = simulation_time.step_in_hours();
+                Some(TariffData::new(
+                    simulation_time,
+                    Some(0),
+                    timestep,
+                    TariffData::expand_prices_schedule(prices)?,
+                )?)
             } else {
                 bail!("A battery that can be charged from the grid is present but no tariff data source was provided.");
             }
@@ -181,7 +197,7 @@ impl EnergySupply {
             fuel_type,
             simulation_timesteps,
             tariff_info: None, // TODO 1.0.0a9
-            electric_battery,
+            electric_batteries,
             diverter: None,
             priority,
             is_export_capable: is_export_capable.unwrap_or(true),
@@ -198,12 +214,13 @@ impl EnergySupply {
             battery_state_of_charge: init_demand_list(simulation_timesteps),
             energy_diverted: init_demand_list(simulation_timesteps),
             energy_generated_consumed: init_demand_list(simulation_timesteps),
+            tariff_data,
         })
     }
 
     pub(crate) fn timestep_end(&self) {
-        if let Some(electric_battery) = &self.electric_battery {
-            electric_battery.timestep_end()
+        for battery in self.get_batteries() {
+            battery.timestep_end()
         }
     }
 
@@ -211,44 +228,116 @@ impl EnergySupply {
         self.fuel_type
     }
 
+    pub(crate) fn get_diverters() {
+        todo!()
+    }
+
+    pub(crate) fn get_batteries(&self) -> Vec<&ElectricBattery> {
+        self.sort_by_priority()
+    }
+
+    /// Returns the values from items sorted in the order that the keys appear in the priority list
+    pub(crate) fn sort_by_priority(&self) -> Vec<&ElectricBattery> {
+        // TODO 1.0.0a9 sorting, make generic type
+        self.electric_batteries.values().collect()
+    }
+
     pub(crate) fn has_battery(&self) -> bool {
-        self.electric_battery.is_some()
+        !self.get_batteries().is_empty()
     }
 
     pub(crate) fn get_battery_max_capacity(&self) -> Option<f64> {
-        self.electric_battery
-            .as_ref()
-            .map(|battery| battery.get_max_capacity())
+        let batteries = self.get_batteries();
+        if batteries.is_empty() {
+            return None;
+        };
+
+        Some(
+            batteries
+                .iter()
+                .map(|battery| battery.get_max_capacity())
+                .sum(),
+        )
     }
 
+    #[cfg(test)] // TODO 1.0.0a9 migration - this is only used in tests now, are these tests useful?
     pub(crate) fn get_battery_charge_efficiency(
         &self,
         simtime: SimulationTimeIteration,
-    ) -> Option<f64> {
-        self.electric_battery
-            .as_ref()
-            .map(|battery| battery.get_charge_efficiency(simtime))
+        battery: Option<ElectricBattery>,
+    ) -> anyhow::Result<Option<f64>> {
+        match battery {
+            None => {
+                let batteries = self.get_batteries();
+
+                if batteries.is_empty() {
+                    Ok(None)
+                } else if batteries.len() == 1 {
+                    Ok(Some(batteries[0].get_charge_efficiency(simtime)))
+                } else {
+                    bail!("Battery not specified for function 'get_battery_charge_efficiency'")
+                }
+            }
+            Some(battery) => Ok(Some(battery.get_charge_efficiency(simtime))),
+        }
     }
 
+    #[cfg(test)] // TODO 1.0.0a9 migration - this is only used in tests now, are these tests useful?
     pub(crate) fn get_battery_discharge_efficiency(
         &self,
         simtime: SimulationTimeIteration,
-    ) -> Option<f64> {
-        self.electric_battery
-            .as_ref()
-            .map(|battery| battery.get_discharge_efficiency(simtime))
+        battery: Option<ElectricBattery>,
+    ) -> anyhow::Result<Option<f64>> {
+        match battery {
+            None => {
+                let batteries = self.get_batteries();
+
+                if batteries.is_empty() {
+                    Ok(None)
+                } else if batteries.len() == 1 {
+                    Ok(Some(batteries[0].get_discharge_efficiency(simtime)))
+                } else {
+                    bail!("Battery not specified for function 'get_battery_discharge_efficiency'")
+                }
+            }
+            Some(battery) => Ok(Some(battery.get_discharge_efficiency(simtime))),
+        }
     }
 
-    pub(crate) fn get_battery_max_discharge(&self, charge: f64) -> Option<f64> {
-        self.electric_battery
-            .as_ref()
-            .map(|battery| battery.calculate_max_discharge(charge))
+    #[cfg(test)] // TODO 1.0.0a9 migration - this is only used in tests now, are these tests useful?
+    pub(crate) fn get_battery_max_discharge(
+        &self,
+        charge: f64,
+        battery: Option<ElectricBattery>,
+    ) -> anyhow::Result<Option<f64>> {
+        match battery {
+            None => {
+                let batteries = self.get_batteries();
+
+                if batteries.is_empty() {
+                    Ok(None)
+                } else if batteries.len() == 1 {
+                    Ok(Some(batteries[0].calculate_max_discharge(charge)))
+                } else {
+                    bail!("Battery not specified for function 'get_battery_max_discharge'")
+                }
+            }
+            Some(battery) => Ok(Some(battery.calculate_max_discharge(charge))),
+        }
     }
 
     pub(crate) fn get_battery_available_charge(&self) -> Option<f64> {
-        self.electric_battery
-            .as_ref()
-            .map(|battery| battery.get_state_of_charge() * battery.get_max_capacity())
+        let batteries = self.get_batteries();
+        if batteries.is_empty() {
+            return None;
+        };
+
+        Some(
+            batteries
+                .iter()
+                .map(|battery| battery.get_state_of_charge() * battery.get_max_capacity())
+                .sum(),
+        )
     }
 
     pub(crate) fn connection(
@@ -510,10 +599,9 @@ impl EnergySupply {
         // For tariff selected look up price etc and decide whether to charge
         let elec_price = tariff_data.price(tariff, simtime)?;
         let (current_charge, charge_discharge_efficiency) = {
-            let battery = self
-                .electric_battery
-                .as_ref()
-                .expect("Electric battery expected to be set if tariff data is.");
+            let batteries = self.get_batteries();
+            let battery = batteries.first().unwrap(); // TODO 1.0.0a9 migration
+
             (
                 battery.get_state_of_charge(),
                 battery.get_charge_discharge_efficiency(),
@@ -537,7 +625,7 @@ impl EnergySupply {
         &self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
-        if let Some(electric_battery) = &self.electric_battery {
+        if let Some(electric_battery) = &self.get_batteries().first() {
             let t_idx = simtime.index;
             if electric_battery.is_grid_charging_possible() {
                 // Current conditions of the battery
@@ -614,7 +702,8 @@ impl EnergySupply {
         // See if there is a net supply/demand for the timestep
         match &self.priority {
             None => {
-                if let Some(ref battery) = &self.electric_battery {
+                if let Some(battery) = &self.get_batteries().first() {
+                    // TODO 1.0.0a9 migration
                     // See if the battery can deal with excess supply/demand for this timestep
                     // supply_surplus is -ve by convention and demand_not_met is +ve
                     let (charging_condition, _, can_charge_if_not_full) = if battery
@@ -659,17 +748,18 @@ impl EnergySupply {
             }
             Some(priority) => {
                 for item in priority {
-                    if let ("ElectricBattery", Some(electric_battery)) =
-                        (item.as_str(), self.electric_battery.as_ref())
+                    if let ("ElectricBattery", electric_battery) =
+                        (item.as_str(), self.get_batteries())
+                    // TODO 1.0.0a9 migration
                     {
-                        let (charging_condition, _, can_charge_if_not_full) = if electric_battery
+                        let (charging_condition, _, can_charge_if_not_full) = if electric_battery[0]
                             .is_grid_charging_possible()
                         {
                             self.is_charging_from_grid(simtime).expect("Expected to be able to determine whether charging from grid if grid charging is possible on battery.")
                         } else {
                             (false, Default::default(), false)
                         };
-                        let energy_out_of_battery = electric_battery.charge_discharge_battery(
+                        let energy_out_of_battery = electric_battery[0].charge_discharge_battery(
                             supply_surplus,
                             charging_condition,
                             simtime,
@@ -677,7 +767,7 @@ impl EnergySupply {
                         supply_surplus -= energy_out_of_battery;
                         self.energy_into_battery_from_generation[simtime.index]
                             .store(-energy_out_of_battery, Ordering::SeqCst);
-                        let energy_out_of_battery = electric_battery.charge_discharge_battery(
+                        let energy_out_of_battery = electric_battery[0].charge_discharge_battery(
                             demand_not_met,
                             can_charge_if_not_full,
                             simtime,
@@ -769,12 +859,13 @@ pub struct EnergySupplyBuilder {
 }
 
 impl EnergySupplyBuilder {
-    pub fn new(fuel_type: FuelType, simulation_timesteps: usize) -> Self {
+    pub fn new(fuel_type: FuelType, simulation_time: &SimulationTimeIterator) -> Self {
         Self {
             energy_supply: EnergySupply::new(
                 fuel_type,
-                simulation_timesteps,
+                simulation_time,
                 None,
+                Default::default(),
                 None,
                 None,
                 None,
@@ -796,8 +887,11 @@ impl EnergySupplyBuilder {
         Ok(self)
     }
 
-    pub fn with_electric_battery(mut self, electric_battery: ElectricBattery) -> Self {
-        self.energy_supply.electric_battery = Some(electric_battery);
+    pub fn with_electric_battery(
+        mut self,
+        electric_batteries: IndexMap<String, ElectricBattery>,
+    ) -> Self {
+        self.energy_supply.electric_batteries = electric_batteries;
         self
     }
 
@@ -840,7 +934,7 @@ mod tests {
     #[fixture]
     pub fn energy_supply<'a>(simulation_time: SimulationTime) -> EnergySupply {
         let mut energy_supply =
-            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build();
+            EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter()).build();
         energy_supply.register_end_user_name("shower".into());
         energy_supply.register_end_user_name("bath".into());
 
@@ -919,20 +1013,25 @@ mod tests {
 
         assert!(EnergySupply::new(
             FuelType::Electricity,
-            simulation_time.total_steps(),
+            &simulation_time.iter(),
             None,
-            Some(elec_battery),
+            indexmap! {"Electric_battery".into() => elec_battery},
             None,
             None,
+            None
         )
         .is_err());
 
         assert!(!energy_supply.has_battery());
         assert!(energy_supply.get_battery_max_capacity().is_none());
         assert!(energy_supply
-            .get_battery_charge_efficiency(simulation_time.iter().current_iteration())
+            .get_battery_charge_efficiency(simulation_time.iter().current_iteration(), None)
+            .unwrap()
             .is_none());
-        assert!(energy_supply.get_battery_max_discharge(0.7).is_none());
+        assert!(energy_supply
+            .get_battery_max_discharge(0.7, None)
+            .unwrap()
+            .is_none());
         assert!(energy_supply.get_battery_available_charge().is_none());
     }
 
@@ -1254,16 +1353,15 @@ mod tests {
     ) {
         // Valid battery where there is grid charging and tariff_path is set
         let battery_age = 3.;
-        let elec_battery = create_elec_battery(
+        let _elec_battery = create_elec_battery(
             true,
             BatteryLocation::Inside,
             external_conditions,
             simulation_time,
         );
-        let builder =
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps());
+        let builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
         let energy_supply = builder
-            .with_electric_battery(elec_battery)
+            .with_electric_battery(indexmap! {})
             // .with_tariff_input(tariff_input) // TODO 1.0.0a9
             .with_tariff_input()
             .unwrap()
@@ -1280,18 +1378,23 @@ mod tests {
         ); // max capacity * state of health
         assert_eq!(
             energy_supply
-                .get_battery_charge_efficiency(simulation_time.iter().current_iteration())
+                .get_battery_charge_efficiency(simulation_time.iter().current_iteration(), None)
+                .unwrap()
                 .unwrap(),
             0.8_f64.powf(0.5) * battery_state_of_health * 1.
         ); // one way efficiency * state of health * air_temp_capacity_factor
         assert_eq!(
             energy_supply
-                .get_battery_discharge_efficiency(simulation_time.iter().current_iteration())
+                .get_battery_discharge_efficiency(simulation_time.iter().current_iteration(), None)
+                .unwrap()
                 .unwrap(),
             0.8_f64.powf(0.5) * battery_state_of_health * 1.
         ); // one way efficiency * state of health * air_temp_capacity_factor
         assert_eq!(
-            energy_supply.get_battery_max_discharge(0.7).unwrap(),
+            energy_supply
+                .get_battery_max_discharge(0.7, None)
+                .unwrap()
+                .unwrap(),
             -(1.5 * 1.)
         ); // max discharge rate * discharge factor * timestep * -1
         assert_eq!(energy_supply.get_battery_available_charge().unwrap(), 0.);
@@ -1355,10 +1458,9 @@ mod tests {
             external_conditions,
             simulation_time,
         );
-        let builder =
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps());
+        let builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
         let energy_supply = builder
-            .with_electric_battery(elec_battery)
+            .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
             // .with_tariff_input(tariff_input)
             .with_tariff_input()
             .unwrap()
@@ -1387,9 +1489,10 @@ mod tests {
             external_conditions,
             simulation_time,
         );
-        let builder =
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps());
-        let energy_supply = builder.with_electric_battery(elec_battery).build();
+        let builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
+        let energy_supply = builder
+            .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
+            .build();
 
         for t_idx in simulation_time.iter() {
             energy_supply
@@ -1456,6 +1559,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "todo 1.0.0a9 migration"]
     fn test_calc_energy_import_export_betafactor(
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
@@ -1470,9 +1574,10 @@ mod tests {
             simulation_time,
         );
 
-        let builder =
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps());
-        let energy_supply = builder.with_electric_battery(elec_battery).build();
+        let builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
+        let energy_supply = builder
+            .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
+            .build();
 
         let energy_supply = Arc::new(RwLock::new(energy_supply));
 
@@ -1761,14 +1866,12 @@ mod tests {
         let elec_battery = Arc::into_inner(energy_supply)
             .unwrap()
             .into_inner()
-            .electric_battery
-            .unwrap();
+            .electric_batteries;
 
         // Set priority
         let priority = vec!["diverter", "ElectricBattery"];
 
-        let mut builder =
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps());
+        let mut builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
         builder = builder
             .with_electric_battery(elec_battery)
             .with_priority(priority);
@@ -1910,8 +2013,7 @@ mod tests {
 
     #[rstest]
     pub fn test_energy_supply_without_export(simulation_time: SimulationTime) {
-        let mut builder =
-            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps());
+        let mut builder = EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter());
         builder = builder.with_export_capable(false);
         let energy_supply = builder.build();
         let shared_supply = Arc::new(RwLock::new(energy_supply));

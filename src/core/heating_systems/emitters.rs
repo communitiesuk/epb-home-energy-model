@@ -39,6 +39,7 @@ use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+
 /// Convert flow temperature to return temperature using the 6/7th rule.
 ///
 /// Parameters:
@@ -2196,7 +2197,7 @@ mod tests {
     #[fixture]
     fn energy_supply_conn(simulation_time: SimulationTime) -> EnergySupplyConnection {
         let energy_supply =
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build();
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build();
         EnergySupply::connection(Arc::from(RwLock::from(energy_supply)), "main").unwrap()
     }
 
