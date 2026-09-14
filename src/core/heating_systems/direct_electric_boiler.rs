@@ -1,9 +1,11 @@
 use crate::core::common::WaterSupply;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
-use crate::core::heating_systems::boiler::IncorrectBoilerDataType;
+use crate::core::heating_systems::boiler::{
+    BoilerForBoilerService, BoilerServiceWaterCombi, IncorrectBoilerDataType,
+};
 use crate::external_conditions::ExternalConditions;
 use crate::hem_core::simulation_time::SimulationTimeIteration;
-use crate::input::{FuelType, HeatSourceWetDetails};
+use crate::input::{FuelType, HeatSourceWetDetails, HotWaterSourceDetails};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -22,7 +24,6 @@ pub struct DirectElectricBoiler {
     power_standby: f64,
     total_time_running_current_timestep: f64,
 }
-
 impl DirectElectricBoiler {
     /// Construct a Boiler object
     fn new(
@@ -86,23 +87,25 @@ impl DirectElectricBoiler {
     /// * `service_name` - name of the service demanding energy from the boiler
     /// * `temp_hot_water` - temperature of the hot water to be provided, in deg C
     /// * `cold_feed` - reference to ColdWaterSource object
-    fn create_service_hot_water_combi(
-        &mut self,
+    pub(crate) fn create_service_hot_water_combi(
+        boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        _boiler_data: HeatSourceWetDetails,
-        _temp_hot_water: f64,
-        _cold_feed: WaterSupply,
-    ) -> Result<(), anyhow::Error> {
-        self.create_service_connection(service_name)?;
-        todo!()
-        // BoilerServiceWaterCombi::new(
-        //     self,
-        //     boiler_data,
-        //     service_name.parse()?,
-        //     temp_hot_water,
-        //     cold_feed,
-        //     self.simulation_timestep,
-        // )?;
+        boiler_data: HotWaterSourceDetails,
+        temp_hot_water: f64,
+        cold_feed: WaterSupply,
+    ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
+        boiler
+            .write()
+            .create_service_connection(service_name)
+            .unwrap();
+        BoilerServiceWaterCombi::new(
+            BoilerForBoilerService::DirectElectricBoiler(boiler.clone()),
+            boiler_data,
+            service_name.into(),
+            temp_hot_water,
+            cold_feed,
+            boiler.read().simulation_timestep,
+        )
     }
 
     fn create_service_hot_water_regular(&self) {
@@ -129,7 +132,7 @@ impl DirectElectricBoiler {
         todo!()
     }
 
-    fn demand_energy(&self) {
+    pub(crate) fn demand_energy(&self) {
         todo!()
     }
 
@@ -155,9 +158,11 @@ mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::units::Orientation360;
+    use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::hem_core::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::hem_core::simulation_time::SimulationTime;
     use rstest::{fixture, rstest};
+    use serde_json::json;
 
     #[fixture]
     fn boiler_data() -> HeatSourceWetDetails {
@@ -276,5 +281,40 @@ mod tests {
 
         // Check system exit when connection is created with existing service name
         assert!(boiler.create_service_connection(service_name).is_err());
+    }
+
+    /// Check BoilerServiceWaterCombi object is created correctly
+    #[rstest]
+    fn test_create_service_hot_water_combi(
+        boiler: DirectElectricBoiler,
+        simulation_time: SimulationTime,
+    ) {
+        let service_name = "service_hot_water_combi";
+        let coldfeed =
+            ColdWaterSource::new(vec![1.0, 1.2], simulation_time.iter().current_day(), 1.);
+        let temp_hot_water = 50.;
+        let boiler_data: HotWaterSourceDetails = serde_json::from_value(json!({
+            "type": "CombiBoiler",
+            "combi_boiler_type": "KeepHot",
+            "ColdWaterSource": "mains water",
+            "HeatSourceWet": "hp",
+            "separate_DHW_tests": "M&L",
+            "combi_keep_hot_fuel": "Mixed",
+            "keep_hot_test_hours": 24,
+            "rejected_energy_1": 0.0004,
+            "storage_loss_factor_2": 0.91574,
+            "rejected_factor_3": 0,
+            "daily_HW_usage": 120,
+            "setpoint_temp": 60.0,
+        }))
+        .unwrap();
+        let boiler_service_result = DirectElectricBoiler::create_service_hot_water_combi(
+            Arc::new(RwLock::new(boiler)),
+            service_name,
+            boiler_data,
+            temp_hot_water,
+            WaterSupply::ColdWaterSource(Arc::new(coldfeed)),
+        );
+        assert!(boiler_service_result.is_ok());
     }
 }

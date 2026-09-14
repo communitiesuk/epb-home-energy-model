@@ -4380,6 +4380,16 @@ impl WetHeatSource {
                 cold_feed,
             )
             .map_err(|err| anyhow!(format!("{err}"))),
+            WetHeatSource::DirectElectricBoiler(ref mut boiler) => {
+                DirectElectricBoiler::create_service_hot_water_combi(
+                    boiler.clone(),
+                    service_name,
+                    boiler_data,
+                    temp_hot_water,
+                    cold_feed,
+                )
+                .map_err(|err| anyhow!(format!("{err}")))
+            }
             _ => {
                 bail!("Expect to only be able to create a hot water combi service for boilers and heat pumps.")
             }

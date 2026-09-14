@@ -2,6 +2,7 @@ use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::core::water_heat_demand::misc::{
     water_demand_to_kwh, WaterEventResult, WaterEventResultType, FRAC_DHW_ENERGY_INTERNAL_GAINS,
@@ -31,8 +32,57 @@ pub enum ServiceType {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) enum BoilerForBoilerService {
+    Boiler(Arc<RwLock<Boiler>>),
+    DirectElectricBoiler(Arc<RwLock<DirectElectricBoiler>>),
+}
+
+impl BoilerForBoilerService {
+    pub(crate) fn demand_energy(
+        &self,
+        service_name: &str,
+        service_type: ServiceType,
+        energy_output_required: f64,
+        temp_return_feed: Option<f64>,
+        time_start: Option<f64>,
+        hybrid_service_bool: Option<bool>,
+        time_elapsed_hp: Option<f64>,
+        update_heat_source_state: Option<bool>,
+    ) -> anyhow::Result<(f64, Option<f64>)> {
+        match self {
+            BoilerForBoilerService::Boiler(boiler) => boiler.write().demand_energy(
+                service_name,
+                service_type,
+                energy_output_required,
+                temp_return_feed,
+                time_start,
+                hybrid_service_bool,
+                time_elapsed_hp,
+                update_heat_source_state,
+            ),
+            BoilerForBoilerService::DirectElectricBoiler(_) => {
+                todo!()
+            }
+        }
+    }
+
+    pub(crate) fn energy_output_max(
+        &self,
+        time_start: Option<f64>,
+        time_elapsed_hp: Option<f64>,
+    ) -> f64 {
+        match self {
+            BoilerForBoilerService::Boiler(boiler) => {
+                boiler.read().energy_output_max(time_start, time_elapsed_hp)
+            }
+            BoilerForBoilerService::DirectElectricBoiler(_) => todo!(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct BoilerServiceWaterCombi {
-    boiler: Arc<RwLock<Boiler>>,
+    boiler: BoilerForBoilerService,
     service_name: String,
     temperature_hot_water_in_c: f64,
     cold_feed: WaterSupply,
@@ -61,8 +111,8 @@ impl fmt::Display for IncorrectBoilerDataType {
 impl std::error::Error for IncorrectBoilerDataType {}
 
 impl BoilerServiceWaterCombi {
-    pub fn new(
-        boiler: Arc<RwLock<Boiler>>,
+    pub(crate) fn new(
+        boiler: BoilerForBoilerService,
         boiler_data: HotWaterSourceDetails,
         service_name: String,
         temperature_hot_water_in_c: f64,
@@ -264,7 +314,6 @@ impl BoilerServiceWaterCombi {
         }
 
         self.boiler
-            .write()
             .demand_energy(
                 &self.service_name,
                 ServiceType::WaterCombi,
@@ -347,7 +396,7 @@ impl BoilerServiceWaterCombi {
     }
 
     pub fn energy_output_max(&self) -> f64 {
-        self.boiler.read().energy_output_max(None, None)
+        self.boiler.energy_output_max(None, None)
     }
 
     //TODO as part of migration to 1.0.01a: review if this is needed
@@ -750,7 +799,7 @@ impl Boiler {
             .create_service_connection(service_name)
             .unwrap();
         BoilerServiceWaterCombi::new(
-            boiler.clone(),
+            BoilerForBoilerService::Boiler(boiler.clone()),
             boiler_data,
             service_name.into(),
             temperature_hot_water_in_c,
@@ -1366,7 +1415,9 @@ mod tests {
         use crate::core::common::WaterSupply;
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
-        use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
+        use crate::core::heating_systems::boiler::{
+            Boiler, BoilerForBoilerService, BoilerServiceWaterCombi,
+        };
         use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
         use crate::core::water_heat_demand::misc::{WaterEventResult, WaterEventResultType};
         use crate::hem_core::external_conditions::ExternalConditions;
@@ -1459,7 +1510,7 @@ mod tests {
             simulation_time: SimulationTime,
         ) -> BoilerServiceWaterCombi {
             BoilerServiceWaterCombi::new(
-                Arc::new(RwLock::new(boiler)),
+                BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 boiler_service_water_combi_data,
                 "boiler_test".into(),
                 60.,
@@ -1496,7 +1547,7 @@ mod tests {
             };
             let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step);
             let boiler_service = BoilerServiceWaterCombi::new(
-                Arc::new(RwLock::new(boiler)),
+                BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 boiler_service_data,
                 "boiler_test".into(),
                 20.,
@@ -1532,7 +1583,7 @@ mod tests {
             };
             let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step);
             let boiler_service = BoilerServiceWaterCombi::new(
-                Arc::new(RwLock::new(boiler)),
+                BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 boiler_service_data,
                 "boiler_test".into(),
                 20.,
@@ -1568,7 +1619,7 @@ mod tests {
             };
             let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step);
             let boiler_service = BoilerServiceWaterCombi::new(
-                Arc::new(RwLock::new(boiler)),
+                BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 boiler_service_data,
                 "boiler_test".into(),
                 20.,
