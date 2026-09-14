@@ -5294,122 +5294,125 @@ mod tests {
         // TODO (from Python): When PIV (Positive Input Ventilation) is implemented, add test coverage here
     }
 
-    // /// Test that correct total duct heat loss is returned when queried
-    // #[rstest]
-    // fn test_calc_internal_gains_ductwork_mvhr_inside(
-    //     mechanical_ventilation: MechanicalVentilation,
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let outside_temp = [20.0, 5.0];
-    //     let inside_temp = [19.0, 19.5];
-    //     for (t_idx, _) in simulation_time_iterator.enumerate() {
-    //         assert_relative_eq!(
-    //             mechanical_ventilation
-    //                 .calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
-    //             [0.18504811111111114, -2.6831976111111118,][t_idx],
-    //             epsilon = 1e-6
-    //         );
-    //     }
-    // }
+    /// Test that correct total duct heat loss is returned when queried
+    #[rstest]
+    fn test_calc_internal_gains_ductwork_mvhr_inside(
+        mechanical_ventilation: MechanicalVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let outside_temp = [20.0, 5.0];
+        let inside_temp = [19.0, 19.5];
+        for (t_idx, _) in simulation_time_iterator.enumerate() {
+            assert_relative_eq!(
+                mechanical_ventilation
+                    .calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
+                [0.16822555555555557, -2.439270555555556,][t_idx],
+                epsilon = 1e-6
+            );
+        }
+    }
 
-    // /// Test that correct total duct heat loss is returned when queried
-    // #[rstest]
-    // fn test_calc_internal_gains_ductwork_mvhr_inside_equal_temps(
-    //     mechanical_ventilation: MechanicalVentilation,
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let outside_temp = [20.0, -5.0];
-    //     let inside_temp = [20.0, -5.0];
-    //     for (t_idx, _) in simulation_time_iterator.enumerate() {
-    //         assert_eq!(
-    //             mechanical_ventilation
-    //                 .calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
-    //             [0.0, 0.0][t_idx],
-    //         );
-    //     }
-    // }
+    /// Test that correct total duct heat loss is returned when queried
+    #[rstest]
+    fn test_calc_internal_gains_ductwork_mvhr_inside_equal_temps(
+        mechanical_ventilation: MechanicalVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let outside_temp = [20.0, -5.0];
+        let inside_temp = [20.0, -5.0];
+        for (t_idx, _) in simulation_time_iterator.enumerate() {
+            assert_eq!(
+                mechanical_ventilation
+                    .calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
+                [0.0, 0.0][t_idx],
+            );
+        }
+    }
 
-    // /// Test that correct total duct heat loss is returned when queried
-    // #[rstest]
-    // fn test_calc_internal_gains_ductwork_mvhr_outside(
-    //     mut mechanical_ventilation: MechanicalVentilation,
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     mechanical_ventilation
-    //         .mvhr_location
-    //         .replace(MVHRLocation::Outside);
+    /// Test that correct total duct heat loss is returned when queried
+    #[rstest]
+    fn test_calc_internal_gains_ductwork_mvhr_outside(
+        mut mechanical_ventilation: MechanicalVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        mechanical_ventilation
+            .mvhr_location
+            .replace(MVHRLocation::Outside);
 
-    //     let outside_temp = [20.0, 5.0];
-    //     let inside_temp = [19.0, 19.5];
-    //     for (t_idx, _) in simulation_time_iterator.enumerate() {
-    //         assert_relative_eq!(
-    //             mechanical_ventilation
-    //                 .calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
-    //             [0.18504811111111114, -2.6831976111111118,][t_idx],
-    //             epsilon = 1e-6
-    //         );
-    //     }
-    // }
+        let outside_temp = [20.0, 5.0];
+        let inside_temp = [19.0, 19.5];
+        for (t_idx, _) in simulation_time_iterator.enumerate() {
+            assert_relative_eq!(
+                mechanical_ventilation
+                    .calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
+                [0.16822555555555557, -2.439270555555556,][t_idx],
+                epsilon = 1e-6
+            );
+        }
+    }
 
-    // /// Test that correct total duct heat loss is returned when queried
-    // #[rstest]
-    // fn test_calc_internal_gains_ductwork_mvhr_outside_equal_temps(
-    //     mut mechanical_ventilation: MechanicalVentilation,
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     mechanical_ventilation
-    //         .mvhr_location
-    //         .replace(MVHRLocation::Outside);
+    /// Test that correct total duct heat loss is returned when queried
+    #[rstest]
+    fn test_calc_internal_gains_ductwork_mvhr_outside_equal_temps(
+        mut mechanical_ventilation: MechanicalVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        mechanical_ventilation
+            .mvhr_location
+            .replace(MVHRLocation::Outside);
 
-    //     let outside_temp = [19.0, -4.0];
-    //     let inside_temp = [19.0, -4.0];
-    //     for (t_idx, _) in simulation_time_iterator.enumerate() {
-    //         assert_eq!(
-    //             mechanical_ventilation
-    //                 .calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
-    //             [0.0, 0.0][t_idx],
-    //         );
-    //     }
-    // }
+        let outside_temp = [19.0, -4.0];
+        let inside_temp = [19.0, -4.0];
+        for (t_idx, _) in simulation_time_iterator.enumerate() {
+            assert_eq!(
+                mechanical_ventilation
+                    .calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
+                [0.0, 0.0][t_idx],
+            );
+        }
+    }
 
-    // /// Test that correct total duct heat loss is returned when queried
-    // #[rstest]
-    // fn test_calc_internal_gains_ductwork_not_mvhr(
-    //     energy_supply_connection: EnergySupplyConnection,
-    //     simulation_time_iterator: SimulationTimeIterator,
-    // ) {
-    //     let mechvent_mev = MechanicalVentilation::new(
-    //         SupplyAirFlowRateControlType::Oda,
-    //         SupplyAirTemperatureControlType::NoControl,
-    //         1.0,
-    //         3.4,
-    //         MechVentData::CentralisedContinuousMev,
-    //         1.5,
-    //         0.5,
-    //         energy_supply_connection,
-    //         250.0,
-    //         0.,
-    //         90.0.into(),
-    //         90.,
-    //         2.5,
-    //         3.,
-    //         Some(Arc::new(Control::Mock(MockControl::default()))),
-    //         None,
-    //         None,
-    //         1.0,
-    //         None,
-    //         None,
-    //     );
+    /// Test that correct total duct heat loss is returned when queried
+    #[rstest]
+    fn test_calc_internal_gains_ductwork_not_mvhr(
+        energy_supply_connection: EnergySupplyConnection,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let mechvent_mev = MechanicalVentilation::new(
+            SupplyAirFlowRateControlType::Oda,
+            SupplyAirTemperatureControlType::NoControl,
+            1.0,
+            3.4,
+            MechVentData::CentralisedContinuousMev {
+                h_path_exhaust: 2.5,
+                orientation_exhaust: (90.0).into(),
+                pitch_exhaust: 90.,
+            },
+            1.5,
+            0.5,
+            energy_supply_connection,
+            250.0,
+            0.,
+            3.,
+            Some(Arc::new(Control::Mock(MockControl::default()))),
+            None,
+            None,
+            1.0,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-    //     let outside_temp = [20.0, 5.0];
-    //     let inside_temp = [19.0, 19.5];
-    //     for (t_idx, _) in simulation_time_iterator.enumerate() {
-    //         assert_eq!(
-    //             mechvent_mev.calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
-    //             [0.0, 0.0][t_idx],
-    //         );
-    //     }
-    // }
+        let outside_temp = [20.0, 5.0];
+        let inside_temp = [19.0, 19.5];
+        for (t_idx, _) in simulation_time_iterator.enumerate() {
+            assert_eq!(
+                mechvent_mev.calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
+                [0.0, 0.0][t_idx],
+            );
+        }
+    }
 
     // mod infiltration_ventilation {
     //     use super::*;
