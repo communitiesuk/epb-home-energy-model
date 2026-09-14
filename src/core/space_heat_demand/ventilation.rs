@@ -4109,12 +4109,12 @@ mod tests {
             .on_off_ctrl_obj
             .is_some());
 
-        // let mut zone_input_copy = zone_input.clone();
-        // zone_input_copy["zone 1"].building_elements["window 0"].remove_window_openable_control();
-        // let energy_supply =
-        //     EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator).build();
-        // let energy_supplies =
-        //     IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
+        let mut zone_input_copy = zone_input.clone();
+        zone_input_copy["zone 1"].building_elements["window 0"].remove_window_openable_control();
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator).build();
+        let energy_supplies =
+            IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
 
         // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
         let infiltration_ventilation = InfiltrationVentilation::create(
@@ -4136,27 +4136,27 @@ mod tests {
         // Test without walls
         assert_eq!(infiltration_ventilation.leaks[4].facade_direction, Roof30);
 
-        // let mut zone_input_copy = zone_input.clone();
-        // if let Some(zone) = zone_input_copy.get_mut("zone 1") {
-        //     zone.building_elements.shift_remove("wall 1");
-        //     zone.building_elements.shift_remove("wall 2");
-        // }
-        // let energy_supply =
-        //     EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator).build();
-        // let energy_supplies =
-        //     IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
-        // // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
-        // let infiltration_ventilation = InfiltrationVentilation::create(
-        //     &infiltration_ventilation_input,
-        //     &zone_input_copy,
-        //     true,
-        //     &energy_supplies,
-        //     &controls,
-        //     None,
-        //     None,
-        //     None,
-        // )
-        // .unwrap();
+        let mut zone_input_copy = zone_input.clone();
+        if let Some(zone) = zone_input_copy.get_mut("zone 1") {
+            zone.building_elements.shift_remove("wall 1");
+            zone.building_elements.shift_remove("wall 2");
+        }
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator).build();
+        let energy_supplies =
+            IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
+        // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
+        let infiltration_ventilation = InfiltrationVentilation::create(
+            &infiltration_ventilation_input,
+            &zone_input_copy,
+            true,
+            &energy_supplies,
+            &controls,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(infiltration_ventilation.leaks[4].facade_direction, Roof10);
 
@@ -4715,10 +4715,10 @@ mod tests {
         assert_relative_eq!(q_out_comb, 0.);
     }
 
-    // #[fixture]
-    // fn energy_supply(simulation_time_iterator: SimulationTimeIterator) -> EnergySupply {
-    //     EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator).build()
-    //}
+    #[fixture]
+    fn energy_supply(simulation_time_iterator: SimulationTimeIterator) -> EnergySupply {
+        EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator).build()
+    }
 
     #[fixture]
     fn ductwork() -> Vec<Ductwork> {
