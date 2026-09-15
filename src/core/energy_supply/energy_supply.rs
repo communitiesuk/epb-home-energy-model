@@ -130,7 +130,7 @@ pub struct EnergySupply {
     fuel_type: FuelType,
     tariff_info: Option<EnergySupplyTariffInfo>,
     simulation_timesteps: usize,
-    electric_batteries: IndexMap<String, ElectricBattery>,
+    electric_batteries: IndexMap<String, Arc<ElectricBattery>>,
     #[educe(Debug(ignore))]
     diverter: Option<Arc<RwLock<dyn SurplusDiverting>>>,
     priority: Option<Vec<String>>,
@@ -163,7 +163,7 @@ impl EnergySupply {
         fuel_type: FuelType,
         simulation_time: &SimulationTimeIterator,
         tariff_input: Option<EnergySupplyTariffInput>,
-        electric_batteries: IndexMap<String, ElectricBattery>, // TODO 1.0.0a9 review - python has empty dict when no batteries, keep empty indexmap or make optional?
+        electric_batteries: IndexMap<String, ElectricBattery>,
         priority: Option<Vec<String>>,
         is_export_capable: Option<bool>,
         tariff_data: Option<TariffData>,
@@ -197,7 +197,10 @@ impl EnergySupply {
             fuel_type,
             simulation_timesteps,
             tariff_info: None, // TODO 1.0.0a9
-            electric_batteries,
+            electric_batteries: electric_batteries
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
             diverter: None,
             priority,
             is_export_capable: is_export_capable.unwrap_or(true),
@@ -232,14 +235,18 @@ impl EnergySupply {
         todo!()
     }
 
-    pub(crate) fn get_batteries(&self) -> Vec<&ElectricBattery> {
-        self.sort_by_priority()
+    pub(crate) fn get_batteries(&self) -> Vec<Arc<ElectricBattery>> {
+        self.sort_by_priority(&self.electric_batteries)
     }
 
     /// Returns the values from items sorted in the order that the keys appear in the priority list
-    pub(crate) fn sort_by_priority(&self) -> Vec<&ElectricBattery> {
-        // TODO 1.0.0a9 sorting, make generic type
-        self.electric_batteries.values().collect()
+    pub(crate) fn sort_by_priority<T: Clone>(&self, items: &IndexMap<String, T>) -> Vec<T> {
+        if let Some(_) = self.priority.as_ref() {
+            todo!();
+        } else {
+            items.values().cloned().collect()
+        }
+        // TODO 1.0.0a9 sorting
     }
 
     pub(crate) fn has_battery(&self) -> bool {
@@ -891,7 +898,10 @@ impl EnergySupplyBuilder {
         mut self,
         electric_batteries: IndexMap<String, ElectricBattery>,
     ) -> Self {
-        self.energy_supply.electric_batteries = electric_batteries;
+        self.energy_supply.electric_batteries = electric_batteries
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect();
         self
     }
 
@@ -905,6 +915,24 @@ impl EnergySupplyBuilder {
     }
 
     // write other builder methods
+}
+
+#[derive(Clone)]
+enum BatteryOrDiverter {
+    Battery(Arc<ElectricBattery>),
+    Diverter(Arc<RwLock<dyn SurplusDiverting>>),
+}
+
+impl From<Arc<RwLock<dyn SurplusDiverting>>> for BatteryOrDiverter {
+    fn from(value: Arc<RwLock<dyn SurplusDiverting>>) -> Self {
+        Self::Diverter(value)
+    }
+}
+
+impl From<Arc<ElectricBattery>> for BatteryOrDiverter {
+    fn from(value: Arc<ElectricBattery>) -> Self {
+        Self::Battery(value)
+    }
 }
 
 fn init_demand_list(timestep_count: usize) -> Vec<AtomicF64> {
@@ -1863,7 +1891,10 @@ mod tests {
         let elec_battery = Arc::into_inner(energy_supply)
             .unwrap()
             .into_inner()
-            .electric_batteries;
+            .electric_batteries
+            .into_iter()
+            .map(|(k, v)| (k, Arc::into_inner(v).unwrap()))
+            .collect();
 
         // Set priority
         let priority = vec!["diverter", "ElectricBattery"];
