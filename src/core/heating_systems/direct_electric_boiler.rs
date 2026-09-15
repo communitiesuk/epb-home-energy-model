@@ -155,8 +155,16 @@ impl DirectElectricBoiler {
         ))
     }
 
-    fn calc_current_boiler_power(&self) {
-        todo!()
+    /// Return the rated power so that running time reflects actual on-time.
+    ///
+    /// Direct electric boilers switch on at rated power and off again — they
+    /// do not modulate down to spread a small delivery over the entire
+    /// available window.
+    fn calc_current_boiler_power(&self, _energy_output_provided: f64, time_available: f64) -> f64 {
+        if time_available <= 0. {
+            return 0.;
+        }
+        self.boiler_power
     }
 
     fn calc_energy_output_provided(&self) {
@@ -201,6 +209,7 @@ mod tests {
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::hem_core::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::hem_core::simulation_time::SimulationTime;
+    use approx::assert_relative_eq;
     use rstest::{fixture, rstest};
     use serde_json::json;
 
@@ -396,5 +405,15 @@ mod tests {
             Arc::new(Control::SetpointTime(control)),
         );
         assert!(boiler_service_result.is_ok());
+    }
+
+    #[rstest]
+    fn test_calc_current_boiler_power(boiler: DirectElectricBoiler) {
+        assert_relative_eq!(boiler.calc_current_boiler_power(10., 0.), 0.);
+
+        // Returns rated power (24 kW) regardless of energy delivered, because
+        // electric boilers operate at rated power and switch off — they do not
+        // modulate down to spread delivery across the available window.
+        assert_relative_eq!(boiler.calc_current_boiler_power(10., 3.), 24.);
     }
 }
