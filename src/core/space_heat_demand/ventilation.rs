@@ -4264,8 +4264,8 @@ mod tests {
         Window::new(
             vec![WindowPartInput {
                 mid_height: 1.5,
-                free_area_height: 1.0,
-                max_window_open_area: 1.0,
+                free_area_height: 1.6,
+                max_window_open_area: 3.0,
             }],
             0.0.into(),
             90.,
@@ -4292,7 +4292,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO as part of 1.0.0a9 migration"]
     /// A single openable section splits into two virtual divisions at
     /// ±h_fa/4 around its mid-height. The mass flow sums their contributions
     /// per equations 53, 54, 56 and 57 of BS EN 16798-7."""
@@ -4330,7 +4329,7 @@ mod tests {
         // self.assertAlmostEqual(qm_out, -13193.282685996954)
         assert_relative_eq!(
             qm_out,
-            -13199.752632683054,
+            -13193.282685996954,
             max_relative = EIGHT_DECIMAL_PLACES
         );
     }
@@ -5592,7 +5591,6 @@ mod tests {
         // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
 
         #[rstest]
-        #[ignore = "TODO as part of 1.0.0a9 migration"]
         fn test_calculate_internal_reference_pressure(
             infiltration_ventilation: InfiltrationVentilation,
             wind_speeds: Vec<f64>,
@@ -5617,13 +5615,12 @@ mod tests {
                         simulation_time_iterator.current_iteration()
                     )
                     .unwrap(),
-                -2.7081717145999975,
+                -2.6867182126476887,
                 max_relative = EIGHT_DECIMAL_PLACES
             )
         }
 
         #[rstest]
-        #[ignore = "TODO as part of 1.0.0a9 migration"]
         fn test_implicit_mass_balance_for_internal_reference_pressure_components(
             mut infiltration_ventilation: InfiltrationVentilation,
             simulation_time_iterator: SimulationTimeIterator,
@@ -5646,8 +5643,8 @@ mod tests {
                     )
                     .unwrap();
 
-            assert_relative_eq!(qm_in, 6122.336725163513);
-            assert_relative_eq!(qm_out, -124.95154408329704);
+            assert_relative_eq!(qm_in, 6122.312076917804);
+            assert_relative_eq!(qm_out, -124.88921800171484);
             assert_relative_eq!(qm_in_effective_heat_recovery_saving_total, 0.);
 
             // Check results for negative qv_pdu
@@ -5666,20 +5663,20 @@ mod tests {
                     )
                     .unwrap();
 
-            assert_relative_eq!(qm_in, 5868.964503688903);
-            assert_relative_eq!(qm_out, -117.00132730163227);
+            assert_relative_eq!(qm_in, 5868.872893431313);
+            assert_relative_eq!(qm_out, -116.93900122005007);
             assert_relative_eq!(qm_in_effective_heat_recovery_saving_total, 0.);
 
             let expected_result1 = VentilationDetailedResult {
                 timestep_index: 0,
                 reporting_flag: ReportingFlag::Min,
                 r_v_arg: 0.1,
-                incoming_air_flow: 5084.99728003614,
+                incoming_air_flow: 5084.976808071266,
                 total_volume: 250.,
-                air_changes_per_hour: 20.339989120144562,
+                air_changes_per_hour: 20.339907232285064,
                 temp_interior_air: 10.,
                 p_z_ref: 5.,
-                qm_in_through_window_opening: 6054.2676951076,
+                qm_in_through_window_opening: 6054.243046861891,
                 qm_out_through_window_opening: 0.,
                 qm_in_through_vents: 18.072440880918208,
                 qm_out_through_vents: 0.,
@@ -5690,21 +5687,21 @@ mod tests {
                 qm_in_through_passive_hybrid_ducts: 0.,
                 qm_out_through_passive_hybrid_ducts: 0.,
                 qm_sup_to_vent_zone: 0.,
-                qm_eta_from_vent_zone: -0.6855868974042028,
+                qm_eta_from_vent_zone: -0.6232608158220024,
                 qm_in_effective_heat_recovery_saving_total: 0.,
-                qm_in: 6122.336725163513,
-                qm_out: -124.95154408329704,
+                qm_in: 6122.312076917804,
+                qm_out: -124.88921800171484,
             };
             let expected_result2 = VentilationDetailedResult {
                 timestep_index: 0,
                 reporting_flag: ReportingFlag::Min,
                 r_v_arg: 0.1,
-                incoming_air_flow: 5040.837181234225,
+                incoming_air_flow: 5040.758497440456,
                 total_volume: 250.,
-                air_changes_per_hour: 20.1633487249369,
+                air_changes_per_hour: 20.163033989761825,
                 temp_interior_air: 10.,
                 p_z_ref: 5.,
-                qm_in_through_window_opening: 5801.823062932729,
+                qm_in_through_window_opening: 5801.731452675139,
                 qm_out_through_window_opening: 0.,
                 qm_in_through_vents: 17.318874814724566,
                 qm_out_through_vents: 0.,
@@ -5715,10 +5712,10 @@ mod tests {
                 qm_in_through_passive_hybrid_ducts: 0.,
                 qm_out_through_passive_hybrid_ducts: 0.,
                 qm_sup_to_vent_zone: 0.,
-                qm_eta_from_vent_zone: -0.6855868974042028,
+                qm_eta_from_vent_zone: -0.6232608158220024,
                 qm_in_effective_heat_recovery_saving_total: 0.,
-                qm_in: 5868.964503688903,
-                qm_out: -117.00132730163227,
+                qm_in: 5868.872893431313,
+                qm_out: -116.93900122005007,
             };
             let results = infiltration_ventilation.output_vent_results();
 
@@ -5731,7 +5728,6 @@ mod tests {
         }
 
         #[rstest]
-        #[ignore = "TODO as part of 1.0.0a9 migration"]
         fn test_implicit_mass_balance_for_internal_reference_pressure(
             infiltration_ventilation: InfiltrationVentilation,
             wind_speeds: Vec<f64>,
@@ -5757,12 +5753,11 @@ mod tests {
                         simulation_time_iterator.current_iteration()
                     )
                     .unwrap(),
-                -21682.238264921532
+                -21661.08677188839,
             )
         }
 
         #[rstest]
-        #[ignore = "TODO as part of 1.0.0a9 migration"]
         fn test_incoming_air_flow(
             infiltration_ventilation: InfiltrationVentilation,
             wind_speeds: Vec<f64>,
@@ -5785,12 +5780,12 @@ mod tests {
                         air_temps[0],
                         r_v_arg,
                         Some(r_w_arg_min_max),
-                        None,
-                        None,
+                        ReportingFlag::Min.into(),
+                        false.into(),
                         simulation_time_iterator.current_iteration()
                     )
                     .unwrap(),
-                5.682004429268872
+                3.803220811152898,
             );
 
             assert_relative_eq!(
@@ -5808,25 +5803,26 @@ mod tests {
                         simulation_time_iterator.current_iteration()
                     )
                     .unwrap(),
-                2.2877920084276107,
+                1.8180961038986165,
                 epsilon = 1e-8
             );
         }
 
         #[rstest]
-        #[ignore = "TODO as part of 1.0.0a9 migration"]
         fn test_find_r_v_arg_within_bounds(
             infiltration_ventilation: InfiltrationVentilation,
             air_temps: Vec<f64>,
             wind_directions: Vec<f64>,
             simulation_time_iterator: SimulationTimeIterator,
         ) {
-            // Checking for ach_target = ach_max
-            let ach_min = 0.3;
-            let ach_max = 1.;
+            // Checking for ach_target = ach_max. Bounds sit inside the achievable ach
+            //  band for the MVHR fixture (~0.98 vents closed to ~1.25 vents open) so the
+            //  vent optimiser targets ach_max rather than returning fully closed.
+            let ach_min = 1.0;
+            let ach_max = 1.1;
             let temp_int_air = 20.;
-            let initial_r_v_arg = 1.;
-            let expected_output = 0.;
+            let initial_r_v_arg = 0.6;
+            let expected_output = 0.33169274967841345;
             let actual_output = infiltration_ventilation
                 .find_r_v_arg_within_bounds(
                     Some(ach_min),
@@ -5848,11 +5844,11 @@ mod tests {
                 max_relative = EIGHT_DECIMAL_PLACES
             );
 
-            let ach_min = 1.0;
-            let ach_max = 1.4;
+            let ach_min = 1.18;
+            let ach_max = 1.3;
             let temp_int_air = 20.;
             let initial_r_v_arg = 0.6;
-            let expected_output = 0.5452009507146588;
+            let expected_output = 0.638688600096638;
             let actual_output = infiltration_ventilation
                 .find_r_v_arg_within_bounds(
                     Some(ach_min),
@@ -5901,7 +5897,6 @@ mod tests {
         }
 
         #[rstest]
-        #[ignore = "TODO as part of 1.0.0a9 migration"]
         fn test_find_r_v_arg_within_bounds_below_min_vents(
             infiltration_ventilation: InfiltrationVentilation,
             air_temps: Vec<f64>,
@@ -5911,7 +5906,7 @@ mod tests {
             assert_relative_eq!(
                 infiltration_ventilation
                     .find_r_v_arg_within_bounds(
-                        Some(1.5),
+                        Some(1.2),
                         Some(20.),
                         0.6,
                         20.,
@@ -5924,7 +5919,7 @@ mod tests {
                         simulation_time_iterator.current_iteration(),
                     )
                     .unwrap(),
-                0.810203913567427,
+                0.7347415340190098,
                 max_relative = EIGHT_DECIMAL_PLACES
             );
         }
