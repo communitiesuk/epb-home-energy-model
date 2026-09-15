@@ -1,3 +1,4 @@
+use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{Control, RangeTimeControl};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
@@ -167,8 +168,11 @@ impl DirectElectricBoiler {
         self.boiler_power
     }
 
-    fn calc_energy_output_provided(&self) {
-        todo!()
+    fn calc_energy_output_provided(&self, energy_output_required: f64, time_available: f64) -> f64 {
+        let energy_output_max_power = self.boiler_power * time_available;
+        let energy_output_provided = min_of_2(energy_output_required, energy_output_max_power);
+
+        energy_output_provided
     }
 
     fn time_available(&self) {
@@ -415,5 +419,11 @@ mod tests {
         // electric boilers operate at rated power and switch off — they do not
         // modulate down to spread delivery across the available window.
         assert_relative_eq!(boiler.calc_current_boiler_power(10., 3.), 24.);
+    }
+
+    #[rstest]
+    fn test_calc_energy_output_provided(boiler: DirectElectricBoiler) {
+        assert_relative_eq!(boiler.calc_energy_output_provided(5., 1.), 5.);
+        assert_relative_eq!(boiler.calc_energy_output_provided(25., 1.), 24.);
     }
 }
