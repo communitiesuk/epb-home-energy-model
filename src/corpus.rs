@@ -4051,6 +4051,9 @@ fn building_element_from_input(
                 VentilationShieldClass::Normal => WindShieldLocation::Average,
                 VentilationShieldClass::Shielded => WindShieldLocation::Sheltered,
             },
+            // Temporarily none as part of migration to 1.0.0a9
+            None,
+            &simulation_time_iterator,
         )?),
         BuildingElementInput::AdjacentConditionedSpace {
             area,

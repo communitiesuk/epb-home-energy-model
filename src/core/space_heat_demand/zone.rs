@@ -2081,6 +2081,9 @@ mod tests {
                 0.7,
                 external_conditions.clone(),
                 WindShieldLocation::Average,
+                // Temporarily none as part of migration to 1.0.0a9
+                None,
+                &simulation_time.iter(),
             )
             .unwrap(),
         );

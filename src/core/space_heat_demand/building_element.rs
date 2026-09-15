@@ -1,5 +1,5 @@
 use crate::bail;
-use crate::core::controls::time_control::{Control, ControlBehaviour};
+use crate::core::controls::time_control::{Control, ControlBehaviour, SetpointTimeControl};
 use crate::core::units::{
     average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, Orientation360,
     JOULES_PER_KILOJOULE,
@@ -8,6 +8,7 @@ use crate::corpus::Controls;
 use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
+use crate::hem_core::simulation_time::SimulationTimeIterator;
 use crate::input::{
     EdgeInsulation, FloorData, MassDistributionClass, PartyWallCavityType, PartyWallLiningType,
     WindShieldLocation, WindowTreatment as WindowTreatmentInput,
@@ -714,6 +715,8 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         u_value: f64,
         psi_wall_floor_junc: f64,
         fallback_shield_fact_location: WindShieldLocation,
+        smart_air_brick_control: Option<SetpointTimeControl>,
+        simtime: &SimulationTimeIterator,
     ) -> anyhow::Result<()> {
         self.init_super(None);
         self.set_temp_int_annual(average_monthly_to_annual(
@@ -815,23 +818,37 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
             };
 
             // equivalent thermal transmittance between the underfloor space and the outside
+            // equivalent thermal transmittance between the underfloor space and the outside
             let equiv_therma_trans = |h_upper,
                                       u_w,
                                       shield_fact_location: WindShieldLocation,
-                                      area_per_perimeter_vent|
+                                      area_per_perimeter_vent,
+                                      smart_air_brick_control: Option<SetpointTimeControl>,
+                                      simtime: &SimulationTimeIteration|
              -> anyhow::Result<f64> {
                 // Characteristic dimension of floor
                 let char_dimen = charac_dimen_floor();
 
-                // 1450 is constant in the standard but not labelled
-                Ok(2. * (h_upper * u_w / char_dimen)
-                    + 1450.
-                        * (area_per_perimeter_vent
-                            * self.wind_speed()?
-                            * wind_shield_fact(shield_fact_location))
-                        / char_dimen)
-            };
+                // Perimeter/window well contribution
+                let u_x_perimeter = 2. * (h_upper * u_w / char_dimen);
 
+                let mut u_v_ventilation = 1450.
+                    * (area_per_perimeter_vent
+                        * self.wind_speed()?
+                        * wind_shield_fact(shield_fact_location))
+                    / char_dimen;
+
+                if let Some(smart_air_brick_conrol) = smart_air_brick_control {
+                    let opening_ratio = smart_air_brick_conrol.setpnt(simtime);
+                    u_v_ventilation = if let Some(opening_ratio) = opening_ratio {
+                        u_v_ventilation * opening_ratio
+                    } else {
+                        u_v_ventilation
+                    };
+                };
+                // 1450 is constant in the standard but not labelled
+                Ok(u_x_perimeter + u_v_ventilation)
+            };
             let total_equiv_thickness_sus =
                 |r_f_ins| -> f64 { d_we + thermal_conductivity * (r_si + r_f_ins + self.r_se()) };
 
@@ -851,7 +868,14 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                 let u_f = thermal_transmittance_sus_floor();
 
                 // equivalent thermal transmittance, in W/(m2·K)
-                let u_x = equiv_therma_trans(h_upper, u_w, shield_fact_location, area_vent)?;
+                let u_x = equiv_therma_trans(
+                    h_upper,
+                    u_w,
+                    shield_fact_location,
+                    area_vent,
+                    smart_air_brick_control,
+                    &simtime.current_iteration(),
+                )?;
 
                 // equivalent thickness, in m
                 let d_g = total_equiv_thickness_sus(r_f_ins);
@@ -2516,6 +2540,8 @@ impl BuildingElementGround {
     /// * `z_b` - depth of basement floor below ground level, in m
     /// * `r_w_b` - thermal resistance of walls of the basement, in m2·K/W
     /// * `h_w` - height of the basement walls above ground level, in m
+    /// * smart_air_brick_control -- optional SetpointTimeControl for air brick opening ratios (0-1),
+    ///    where 0 is fully closed and 1 is fully open
     ///
     /// Other variables:
     /// * `f_sky` -- view factor to the sky (see BS EN ISO 52016-1:2017, section 6.5.6.3.6)
@@ -2539,6 +2565,8 @@ impl BuildingElementGround {
         psi_wall_floor_junc: f64,
         external_conditions: Arc<ExternalConditions>,
         fallback_shield_fact_location: WindShieldLocation,
+        smart_air_brick_control: Option<SetpointTimeControl>,
+        simtime: &SimulationTimeIterator,
     ) -> anyhow::Result<Self> {
         let mut new_ground = Self {
             total_area,
@@ -2608,6 +2636,8 @@ impl BuildingElementGround {
             u_value,
             psi_wall_floor_junc,
             fallback_shield_fact_location,
+            smart_air_brick_control,
+            simtime,
         )?;
         new_ground.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
 
@@ -4110,8 +4140,14 @@ mod tests {
     }
 
     #[fixture]
+    fn simulation_time_for_ground() -> SimulationTime {
+        SimulationTime::new(742., 746., 1.)
+    }
+
+    #[fixture]
     fn ground_building_elements(
         external_conditions_for_ground: Arc<ExternalConditions>,
+        simulation_time_for_ground: SimulationTime,
     ) -> [BuildingElementGround; 5] {
         let be_i_floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,
@@ -4137,6 +4173,8 @@ mod tests {
             0.5,
             external_conditions_for_ground.clone(),
             WindShieldLocation::Average,
+            None,
+            &simulation_time_for_ground.iter(),
         )
         .unwrap();
         let be_e_floor_data = FloorData::SlabNoEdgeInsulation;
@@ -4154,6 +4192,8 @@ mod tests {
             0.6,
             external_conditions_for_ground.clone(),
             WindShieldLocation::Average,
+            None,
+            &simulation_time_for_ground.iter(),
         )
         .unwrap();
         let edge_insulation_ie = vec![
@@ -4183,6 +4223,8 @@ mod tests {
             0.7,
             external_conditions_for_ground.clone(),
             WindShieldLocation::Average,
+            None,
+            &simulation_time_for_ground.iter(),
         )
         .unwrap();
         let be_d_floor_data = FloorData::HeatedBasement {
@@ -4203,6 +4245,8 @@ mod tests {
             0.8,
             external_conditions_for_ground.clone(),
             WindShieldLocation::Average,
+            None,
+            &simulation_time_for_ground.iter(),
         )
         .unwrap();
         let be_m_floor_data = FloorData::UnheatedBasement {
@@ -4226,14 +4270,11 @@ mod tests {
             0.9,
             external_conditions_for_ground,
             WindShieldLocation::Average,
+            None,
+            &simulation_time_for_ground.iter(),
         )
         .unwrap();
         [be_i, be_e, be_ie, be_d, be_m]
-    }
-
-    #[fixture]
-    fn simulation_time_for_ground() -> SimulationTime {
-        SimulationTime::new(742., 746., 1.)
     }
 
     #[fixture]
@@ -4370,6 +4411,8 @@ mod tests {
             0.9,
             external_conditions,
             WindShieldLocation::Average,
+            None,
+            &simulation_time.iter(),
         )
         .unwrap()
     }
