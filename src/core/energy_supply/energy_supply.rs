@@ -979,6 +979,7 @@ mod tests {
 
     fn create_elec_battery(
         grid_charging_possible: bool,
+        grid_exporting_possible: bool,
         battery_location: BatteryLocation,
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
@@ -992,19 +993,21 @@ mod tests {
             1.5,
             battery_location,
             grid_charging_possible,
-            false,
+            grid_exporting_possible,
             simulation_time.step,
             Arc::new(external_conditions),
         )
     }
 
     #[rstest]
+    /// Tests for EnergySupply with no battery or invalid battery charging due to no tariff data
     fn test_no_battery_or_invalid_charging(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
         energy_supply: EnergySupply,
     ) {
         let elec_battery = create_elec_battery(
+            true,
             true,
             BatteryLocation::Inside,
             external_conditions,
@@ -1022,17 +1025,7 @@ mod tests {
         )
         .is_err());
 
-        assert!(!energy_supply.has_battery());
-        assert!(energy_supply.get_battery_max_capacity().is_none());
-        assert!(energy_supply
-            .get_battery_charge_efficiency(simulation_time.iter().current_iteration(), None)
-            .unwrap()
-            .is_none());
-        assert!(energy_supply
-            .get_battery_max_discharge(0.7, None)
-            .unwrap()
-            .is_none());
-        assert!(energy_supply.get_battery_available_charge().is_none());
+        assert!(energy_supply.get_batteries().is_empty());
     }
 
     #[rstest]
@@ -1355,6 +1348,7 @@ mod tests {
         let battery_age = 3.;
         let _elec_battery = create_elec_battery(
             true,
+            false,
             BatteryLocation::Inside,
             external_conditions,
             simulation_time,
@@ -1454,6 +1448,7 @@ mod tests {
     ) {
         let elec_battery = create_elec_battery(
             true,
+            false,
             BatteryLocation::Inside,
             external_conditions,
             simulation_time,
@@ -1484,6 +1479,7 @@ mod tests {
         external_conditions: ExternalConditions,
     ) {
         let elec_battery = create_elec_battery(
+            false,
             false,
             BatteryLocation::Inside,
             external_conditions,
@@ -1568,6 +1564,7 @@ mod tests {
         let amount_produced = [50.0, 90.0, 130.0, 210.0, 2300.0, 290.0, 300.0, 350.0];
 
         let elec_battery = create_elec_battery(
+            false,
             false,
             BatteryLocation::Outside,
             external_conditions,
