@@ -812,7 +812,7 @@ impl ControlBehaviour for RangeTimeControl {
             timestep: simulation_time_iteration.timestep,
         };
 
-        return self.is_on(&previous_simulation_time_iteration);
+        self.is_on(&previous_simulation_time_iteration)
     }
 }
 
@@ -1143,7 +1143,7 @@ impl SmartApplianceControl {
         t_idx: usize,
         demand: f64,
         energy_supply: &str,
-        simtime: SimulationTimeIteration,
+        _simtime: SimulationTimeIteration,
     ) {
         // convert demand from appliance usage event to average power over the demand series timestep
         // and add it to the series
@@ -1157,7 +1157,7 @@ impl SmartApplianceControl {
             // if we expect there will be charge in the battery when this demand occurs, assume
             // the battery supplies as much of it as possible
             let idx_24hr = t_idx % self.buffer_length;
-            let max_capacity = self.energy_supplies[energy_supply]
+            let _max_capacity = self.energy_supplies[energy_supply]
                 .read()
                 .get_battery_max_capacity()
                 .expect("Battery expected to be present and reporting max capacity");

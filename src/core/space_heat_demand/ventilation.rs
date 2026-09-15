@@ -3422,9 +3422,7 @@ mod tests {
     use crate::core::controls::time_control::Control::{OnOffTime, SetpointTime};
     use crate::core::controls::time_control::{MockControl, OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
-    use crate::core::space_heat_demand::ventilation::FacadeDirection::{
-        Roof, Roof10, Roof10_30, Roof30, WindSeg2, WindSeg4,
-    };
+    use crate::core::space_heat_demand::ventilation::FacadeDirection::{Roof10, Roof30};
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, ShadingSegment};
     use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};

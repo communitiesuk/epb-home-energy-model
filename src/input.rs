@@ -321,7 +321,7 @@ fn validate_zone_processing_order(input: &Input) -> Result<(), serde_valid::vali
                 unknown.sorted().join(", "),
             ));
         }
-        let missing = zone_names.difference(&declared);
+        let missing = zone_names.difference(declared);
         if missing.clone().count() > 0 {
             return custom_validation_error(format!(
                 "ZoneProcessingOrder must list every zone exactly once; these zones are missing: {}",
