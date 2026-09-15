@@ -2,7 +2,7 @@ use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{Control, RangeTimeControl};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{
-    BoilerForBoilerService, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
+    BoilerForBoilerService, BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
     IncorrectBoilerDataType,
 };
 use crate::external_conditions::ExternalConditions;
@@ -137,8 +137,22 @@ impl DirectElectricBoiler {
         )
     }
 
-    fn create_service_space_heating(&self) {
-        todo!()
+    /// Return a BoilerServiceSpace object and create an EnergySupplyConnection for it
+    ///
+    /// Arguments:
+    /// * `service_name` - name of the service demanding energy from the boiler
+    /// * `control` - reference to a control object which must implement is_on() and setpnt() funcs
+    fn create_service_space_heating(
+        boiler: Arc<RwLock<Self>>,
+        service_name: &str,
+        control: Arc<Control>, // TODO 1.0.0a9 this is a ControlSetPoint in Python
+    ) -> anyhow::Result<BoilerServiceSpace> {
+        boiler.write().create_service_connection(service_name)?;
+        Ok(BoilerServiceSpace::new(
+            BoilerForBoilerService::DirectElectricBoiler(boiler.clone()),
+            service_name.into(),
+            control,
+        ))
     }
 
     fn calc_current_boiler_power(&self) {
@@ -362,6 +376,24 @@ mod tests {
             Arc::new(Control::SetpointTime(control_min)),
             Arc::new(Control::SetpointTime(control_max)),
             None,
+        );
+        assert!(boiler_service_result.is_ok());
+    }
+
+    /// Check the function returns BoilerServiceSpace object
+    #[rstest]
+    fn test_create_service_space_heating(
+        boiler: DirectElectricBoiler,
+        simulation_time: SimulationTime,
+    ) {
+        let service_name = "BoilerServiceSpace";
+        let control =
+            SetpointTimeControl::new(vec![None, None], 0, 1., None, None, simulation_time.step);
+
+        let boiler_service_result = DirectElectricBoiler::create_service_space_heating(
+            Arc::new(RwLock::new(boiler)),
+            service_name,
+            Arc::new(Control::SetpointTime(control)),
         );
         assert!(boiler_service_result.is_ok());
     }

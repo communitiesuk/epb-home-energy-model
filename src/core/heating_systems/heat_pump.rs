@@ -4645,6 +4645,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+    use crate::core::heating_systems::boiler::BoilerForBoilerService;
     use crate::core::units::Orientation360;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::DaylightSavingsConfig;
@@ -8225,9 +8226,12 @@ mod tests {
             simulation_time_for_heat_pump.step,
         )));
 
-        let hybrid_boiler_service = HybridBoilerService::Space(Arc::new(Mutex::new(
-            BoilerServiceSpace::new(boiler.clone(), "boiler_service_space".into(), control),
-        )));
+        let hybrid_boiler_service =
+            HybridBoilerService::Space(Arc::new(Mutex::new(BoilerServiceSpace::new(
+                BoilerForBoilerService::Boiler(boiler.clone()),
+                "boiler_service_space".into(),
+                control,
+            ))));
 
         for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
             assert_relative_eq!(
@@ -8374,9 +8378,12 @@ mod tests {
             simulation_time_for_heat_pump.step,
         )));
 
-        let hybrid_boiler_service = HybridBoilerService::Space(Arc::new(Mutex::new(
-            BoilerServiceSpace::new(boiler.clone(), "boiler_service_space".into(), control),
-        )));
+        let hybrid_boiler_service =
+            HybridBoilerService::Space(Arc::new(Mutex::new(BoilerServiceSpace::new(
+                BoilerForBoilerService::Boiler(boiler.clone()),
+                "boiler_service_space".into(),
+                control,
+            ))));
 
         let cost_schedule_hybrid_hp = json!({
            "cost_schedule_start_day": 0,
@@ -8446,9 +8453,12 @@ mod tests {
             simulation_time_for_heat_pump.step,
         )));
 
-        let hybrid_boiler_service = HybridBoilerService::Space(Arc::new(Mutex::new(
-            BoilerServiceSpace::new(boiler.clone(), "boiler_service_space".into(), control),
-        )));
+        let hybrid_boiler_service =
+            HybridBoilerService::Space(Arc::new(Mutex::new(BoilerServiceSpace::new(
+                BoilerForBoilerService::Boiler(boiler.clone()),
+                "boiler_service_space".into(),
+                control,
+            ))));
 
         let cost_schedule_hybrid_hp = json!({
            "cost_schedule_start_day": 0,

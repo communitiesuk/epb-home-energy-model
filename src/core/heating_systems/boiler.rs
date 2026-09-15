@@ -501,14 +501,14 @@ impl BoilerServiceWaterRegular {
 /// A struct representing a space heating service provided by a boiler to e.g. a cylinder.
 #[derive(Clone, Debug)]
 pub struct BoilerServiceSpace {
-    boiler: Arc<RwLock<Boiler>>,
+    boiler: BoilerForBoilerService,
     service_name: String,
     control: Arc<Control>,
 }
 
 impl BoilerServiceSpace {
     pub(crate) fn new(
-        boiler: Arc<RwLock<Boiler>>,
+        boiler: BoilerForBoilerService,
         service_name: String,
         control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> Self {
@@ -548,7 +548,7 @@ impl BoilerServiceSpace {
             energy_demand
         };
 
-        self.boiler.write().demand_energy(
+        self.boiler.demand_energy(
             &self.service_name,
             ServiceType::Space,
             energy_demand,
@@ -571,9 +571,7 @@ impl BoilerServiceSpace {
         if !self.is_on(simtime) {
             0.0
         } else {
-            self.boiler
-                .read()
-                .energy_output_max(time_start, time_elapsed_hp)
+            self.boiler.energy_output_max(time_start, time_elapsed_hp)
         }
     }
 
@@ -851,7 +849,11 @@ impl Boiler {
             .write()
             .create_service_connection(service_name)
             .unwrap();
-        BoilerServiceSpace::new(boiler.clone(), service_name.into(), control)
+        BoilerServiceSpace::new(
+            BoilerForBoilerService::Boiler(boiler.clone()),
+            service_name.into(),
+            control,
+        )
     }
 
     fn cycling_adjustment(
@@ -2039,7 +2041,9 @@ mod tests {
         use crate::core::controls::time_control::{Control, SetpointTimeControl};
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::external_conditions;
-        use crate::core::heating_systems::boiler::{Boiler, BoilerServiceSpace};
+        use crate::core::heating_systems::boiler::{
+            Boiler, BoilerForBoilerService, BoilerServiceSpace,
+        };
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIteration};
         use crate::input::{BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails};
@@ -2115,7 +2119,7 @@ mod tests {
         #[fixture]
         fn boiler_service(boiler: Boiler, control: Control) -> BoilerServiceSpace {
             BoilerServiceSpace::new(
-                Arc::new(RwLock::new(boiler)),
+                BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 "boiler_test".into(),
                 Arc::new(control),
             )
