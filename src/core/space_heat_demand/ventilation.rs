@@ -3422,7 +3422,9 @@ mod tests {
     use crate::core::controls::time_control::Control::{OnOffTime, SetpointTime};
     use crate::core::controls::time_control::{MockControl, OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
-    use crate::core::space_heat_demand::ventilation::FacadeDirection::{Roof10, Roof30};
+    use crate::core::space_heat_demand::ventilation::FacadeDirection::{
+        Roof, Roof10, Roof10_30, Roof30, WindSeg2, WindSeg4,
+    };
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, ShadingSegment};
     use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
@@ -5414,637 +5416,673 @@ mod tests {
         }
     }
 
-    // mod infiltration_ventilation {
-    //     use super::*;
+    mod infiltration_ventilation {
+        use super::*;
 
-    //     #[fixture]
-    //     fn infiltration_ventilation(
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //         combustion_appliances: CombustionAppliances,
-    //         energy_supply: EnergySupply,
-    //     ) -> InfiltrationVentilation {
-    //         let ctrl = ctrl_that_is_on(&simulation_time_iterator);
-    //         let windows = vec![create_window(Some(ctrl), 30.)];
-    //         let vents = vec![Vent::new(1.5, 100., 20., 0.0.into(), 90., 30., 2.5)];
-    //         let leaks = CompletedVentilationLeaks {
-    //             ventilation_zone_height: 6.,
-    //             test_pressure: 50.,
-    //             test_result: 1.2,
-    //             area_roof: 25.,
-    //             area_facades: 85.,
-    //             env_area: 220.,
-    //             altitude: 30.,
-    //         };
-    //         let combustion_appliances_list = vec![combustion_appliances];
-    //         let air_terminal_devices = Vec::<AirTerminalDevices>::new();
-    //         let energy_supply = Arc::new(RwLock::new(energy_supply));
-    //         let energy_supply_connection =
-    //             EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
+        #[fixture]
+        fn infiltration_ventilation(
+            simulation_time_iterator: SimulationTimeIterator,
+            combustion_appliances: CombustionAppliances,
+            energy_supply: EnergySupply,
+        ) -> InfiltrationVentilation {
+            let ctrl = ctrl_that_is_on(&simulation_time_iterator);
+            let windows = vec![create_window(Some(ctrl), 30.)];
+            let vents = vec![Vent::new(1.5, 100., 20., 0.0.into(), 90., 30., 2.5)];
+            let leaks = CompletedVentilationLeaks {
+                ventilation_zone_height: 6.,
+                test_pressure: 50.,
+                test_result: 1.2,
+                area_roof: 25.,
+                area_facades: 85.,
+                env_area: 220.,
+                altitude: 30.,
+            };
+            let combustion_appliances_list = vec![combustion_appliances];
+            let air_terminal_devices = Vec::<AirTerminalDevices>::new();
+            let energy_supply = Arc::new(RwLock::new(energy_supply));
+            let energy_supply_connection =
+                EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
 
-    //         let mvhr_ductwork = {
-    //             let duct_perimeter = 0.9;
-    //             let internal_diameter = 0.25;
-    //             let external_diameter = 0.27;
-    //             let length = 0.4;
-    //             let k_insulation = 0.02;
-    //             let thickness_insulation = 0.022;
-    //             let reflective = false;
-    //             vec![
-    //                 Ductwork::new(
-    //                     DuctShape::Circular,
-    //                     duct_perimeter.into(),
-    //                     internal_diameter.into(),
-    //                     external_diameter.into(),
-    //                     length,
-    //                     k_insulation,
-    //                     thickness_insulation,
-    //                     reflective,
-    //                     DuctType::Exhaust,
-    //                 )
-    //                 .unwrap(),
-    //                 Ductwork::new(
-    //                     DuctShape::Circular,
-    //                     duct_perimeter.into(),
-    //                     internal_diameter.into(),
-    //                     external_diameter.into(),
-    //                     length,
-    //                     k_insulation,
-    //                     thickness_insulation,
-    //                     reflective,
-    //                     DuctType::Intake,
-    //                 )
-    //                 .unwrap(),
-    //             ]
-    //         };
+            let mvhr_ductwork = {
+                let duct_perimeter = 0.9;
+                let internal_diameter = 0.25;
+                let external_diameter = 0.27;
+                let length = 0.4;
+                let k_insulation = 0.02;
+                let thickness_insulation = 0.022;
+                let reflective = false;
+                vec![
+                    Ductwork::new(
+                        DuctShape::Circular,
+                        duct_perimeter.into(),
+                        internal_diameter.into(),
+                        external_diameter.into(),
+                        length,
+                        k_insulation,
+                        thickness_insulation,
+                        reflective,
+                        DuctType::Exhaust,
+                    )
+                    .unwrap(),
+                    Ductwork::new(
+                        DuctShape::Circular,
+                        duct_perimeter.into(),
+                        internal_diameter.into(),
+                        external_diameter.into(),
+                        length,
+                        k_insulation,
+                        thickness_insulation,
+                        reflective,
+                        DuctType::Intake,
+                    )
+                    .unwrap(),
+                ]
+            };
 
-    //         let mechanical_ventilation = MechanicalVentilation::new(
-    //             SupplyAirFlowRateControlType::Oda,
-    //             SupplyAirTemperatureControlType::NoControl,
-    //             1.,
-    //             3.4,
-    //             MechVentData::Mvhr {
-    //                 orientation_intake: 180.0.into(),
-    //                 pitch_intake: 90.,
-    //                 h_path_intake: 2.,
-    //             },
-    //             1.5,
-    //             0.5,
-    //             energy_supply_connection,
-    //             250.,
-    //             0.,
-    //             180.0.into(),
-    //             90.,
-    //             2.,
-    //             3.,
-    //             None,
-    //             Some(0.75),
-    //             None,
-    //             1.,
-    //             MVHRLocation::Inside.into(),
-    //             mvhr_ductwork.into(),
-    //         );
-    //         let mechanical_ventilations = vec![Arc::new(mechanical_ventilation)];
-    //         // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
-    //         InfiltrationVentilation::new(
-    //             true,
-    //             VentilationShieldClass::Open,
-    //             &TerrainClass::OpenField,
-    //             20.0,
-    //             windows,
-    //             vents,
-    //             leaks,
-    //             combustion_appliances_list,
-    //             air_terminal_devices,
-    //             mechanical_ventilations,
-    //             false,
-    //             0.,
-    //             250.,
-    //             2.5,
-    //             None,
-    //             None,
-    //             None,
-    //         )
-    //     }
+            let mechanical_ventilation = MechanicalVentilation::new(
+                SupplyAirFlowRateControlType::Oda,
+                SupplyAirTemperatureControlType::NoControl,
+                1.,
+                3.4,
+                MechVentData::Mvhr {
+                    orientation_intake: 180.0.into(),
+                    pitch_intake: 90.,
+                    h_path_intake: 2.,
+                    h_path_exhaust: 2.,
+                    orientation_exhaust: 180.0.into(),
+                    pitch_exhaust: 90.,
+                },
+                1.5,
+                0.5,
+                energy_supply_connection,
+                250.,
+                0.,
+                3.,
+                None,
+                Some(0.75),
+                None,
+                1.,
+                MVHRLocation::Inside.into(),
+                mvhr_ductwork.into(),
+                None,
+            )
+            .unwrap();
+            let mechanical_ventilations = vec![Arc::new(mechanical_ventilation)];
+            // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
+            InfiltrationVentilation::new(
+                true,
+                VentilationShieldClass::Open,
+                &TerrainClass::OpenField,
+                20.0,
+                windows,
+                vents,
+                leaks,
+                combustion_appliances_list,
+                air_terminal_devices,
+                mechanical_ventilations,
+                false,
+                0.,
+                250.,
+                2.5,
+                None,
+                None,
+                None,
+            )
+        }
 
-    //     #[test]
-    //     fn test_calculate_total_volume_air_flow_rate_in() {
-    //         let qm_in = 0.5;
-    //         let external_air_density = 1.;
-    //         assert_relative_eq!(
-    //             InfiltrationVentilation::calculate_total_volume_air_flow_rate_in(
-    //                 qm_in,
-    //                 external_air_density
-    //             ),
-    //             0.5
-    //         );
-    //     }
+        #[test]
+        fn test_calculate_total_volume_air_flow_rate_in() {
+            let qm_in = 0.5;
+            let external_air_density = 1.;
+            assert_relative_eq!(
+                InfiltrationVentilation::calculate_total_volume_air_flow_rate_in(
+                    qm_in,
+                    external_air_density
+                ),
+                0.5
+            );
+        }
 
-    //     #[test]
-    //     fn test_calculate_total_volume_air_flow_rate_out() {
-    //         let qm_out = 0.5;
-    //         let zone_air_density = 1.;
-    //         assert_relative_eq!(
-    //             InfiltrationVentilation::calculate_total_volume_air_flow_rate_out(
-    //                 qm_out,
-    //                 zone_air_density
-    //             ),
-    //             0.5
-    //         )
-    //     }
+        #[test]
+        fn test_calculate_total_volume_air_flow_rate_out() {
+            let qm_out = 0.5;
+            let zone_air_density = 1.;
+            assert_relative_eq!(
+                InfiltrationVentilation::calculate_total_volume_air_flow_rate_out(
+                    qm_out,
+                    zone_air_density
+                ),
+                0.5
+            )
+        }
 
-    //     // Python has a make_leaks_object test here which isn't required for Rust
+        // Python has a make_leaks_object test here which isn't required for Rust
 
-    //     #[rstest]
-    //     #[case(5., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof10])]
-    //     #[case(15., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof10_30])]
-    //     #[case(40., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof30])]
-    //     #[case(40., false, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof])]
-    //     #[should_panic = "Average roof pitch was not expected to be greater than 60 degrees."]
-    //     #[case(90., true, vec![WindSeg2, WindSeg4, Roof10])]
-    //     fn test_make_leak_objects_roof_pitch(
-    //         #[case] roof_pitch: f64,
-    //         #[case] f_cross: bool,
-    //         #[case] expected: Vec<FacadeDirection>,
-    //     ) {
-    //         let leaks = CompletedVentilationLeaks {
-    //             ventilation_zone_height: 6.,
-    //             test_pressure: 50.,
-    //             test_result: 1.2,
-    //             area_roof: 25.,
-    //             area_facades: 85.,
-    //             env_area: 220.,
-    //             altitude: 30.,
-    //         };
+        #[rstest]
+        #[case(5., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof10])]
+        #[case(15., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof10_30])]
+        #[case(40., true, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof30])]
+        #[case(40., false, vec![WindSeg2, WindSeg4, WindSeg2, WindSeg4, Roof])]
+        #[should_panic = "Average roof pitch was not expected to be greater than 60 degrees."]
+        #[case(90., true, vec![WindSeg2, WindSeg4, Roof10])]
+        fn test_make_leak_objects_roof_pitch(
+            #[case] roof_pitch: f64,
+            #[case] f_cross: bool,
+            #[case] expected: Vec<FacadeDirection>,
+        ) {
+            let leaks = CompletedVentilationLeaks {
+                ventilation_zone_height: 6.,
+                test_pressure: 50.,
+                test_result: 1.2,
+                area_roof: 25.,
+                area_facades: 85.,
+                env_area: 220.,
+                altitude: 30.,
+            };
 
-    //         let leak_vec = InfiltrationVentilation::make_leak_objects(leaks, roof_pitch, 2.5, f_cross);
+            let leak_vec =
+                InfiltrationVentilation::make_leak_objects(leaks, roof_pitch, 2.5, f_cross);
 
-    //         for (idx, leaks) in leak_vec.iter().enumerate() {
-    //             assert_eq!(leaks.facade_direction, expected[idx]);
-    //         }
-    //     }
+            for (idx, leaks) in leak_vec.iter().enumerate() {
+                assert_eq!(leaks.facade_direction, expected[idx]);
+            }
+        }
 
-    //     // NOTE - Python has a commented out test here for test_calculate_qv_pdu
-    //     // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
+        // NOTE - Python has a commented out test here for test_calculate_qv_pdu
+        // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
 
-    //     #[rstest]
-    //     #[ignore = "TODO as part of 1.0.0a9 migration"]
-    //     fn test_calculate_internal_reference_pressure(
-    //         infiltration_ventilation: InfiltrationVentilation,
-    //         wind_speeds: Vec<f64>,
-    //         wind_directions: Vec<f64>,
-    //         air_temps: Vec<f64>,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         let initial_p_z_ref_guess = 0.;
-    //         let temp_int_air = 20.;
-    //         let r_v_arg = 1.;
-    //         let r_w_arg = 0.5;
-    //         assert_relative_eq!(
-    //             infiltration_ventilation
-    //                 .calculate_internal_reference_pressure(
-    //                     initial_p_z_ref_guess,
-    //                     wind_speeds[0],
-    //                     wind_directions[0].into(),
-    //                     temp_int_air,
-    //                     air_temps[0],
-    //                     r_v_arg,
-    //                     Some(r_w_arg),
-    //                     simulation_time_iterator.current_iteration()
-    //                 )
-    //                 .unwrap(),
-    //             -2.7081717145999975,
-    //             max_relative = EIGHT_DECIMAL_PLACES
-    //         )
-    //     }
+        #[rstest]
+        #[ignore = "TODO as part of 1.0.0a9 migration"]
+        fn test_calculate_internal_reference_pressure(
+            infiltration_ventilation: InfiltrationVentilation,
+            wind_speeds: Vec<f64>,
+            wind_directions: Vec<f64>,
+            air_temps: Vec<f64>,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            let initial_p_z_ref_guess = 0.;
+            let temp_int_air = 20.;
+            let r_v_arg = 1.;
+            let r_w_arg = 0.5;
+            assert_relative_eq!(
+                infiltration_ventilation
+                    .calculate_internal_reference_pressure(
+                        initial_p_z_ref_guess,
+                        wind_speeds[0],
+                        wind_directions[0].into(),
+                        temp_int_air,
+                        air_temps[0],
+                        r_v_arg,
+                        Some(r_w_arg),
+                        simulation_time_iterator.current_iteration()
+                    )
+                    .unwrap(),
+                -2.7081717145999975,
+                max_relative = EIGHT_DECIMAL_PLACES
+            )
+        }
 
-    //     #[rstest]
-    //     #[ignore = "TODO as part of 1.0.0a9 migration"]
-    //     fn test_implicit_mass_balance_for_internal_reference_pressure_components(
-    //         mut infiltration_ventilation: InfiltrationVentilation,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         let simtime = simulation_time_iterator.current_iteration();
-    //         infiltration_ventilation.detailed_output_heating_cooling = true;
-    //         // Check results for positive qv_pdu
-    //         let (qm_in, qm_out, qm_in_effective_heat_recovery_saving_total) = infiltration_ventilation
-    //             .implicit_mass_balance_for_internal_reference_pressure_components(
-    //                 5.,
-    //                 10.,
-    //                 10.0.into(),
-    //                 10.,
-    //                 20.,
-    //                 0.1,
-    //                 Some(0.1),
-    //                 Some(ReportingFlag::Min), // the Python passes in True here
-    //                 simtime,
-    //             )
-    //             .unwrap();
+        #[rstest]
+        #[ignore = "TODO as part of 1.0.0a9 migration"]
+        fn test_implicit_mass_balance_for_internal_reference_pressure_components(
+            mut infiltration_ventilation: InfiltrationVentilation,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            let simtime = simulation_time_iterator.current_iteration();
+            infiltration_ventilation.detailed_output_heating_cooling = true;
+            // Check results for positive qv_pdu
+            let (qm_in, qm_out, qm_in_effective_heat_recovery_saving_total) =
+                infiltration_ventilation
+                    .implicit_mass_balance_for_internal_reference_pressure_components(
+                        5.,
+                        10.,
+                        10.0.into(),
+                        10.,
+                        20.,
+                        0.1,
+                        Some(0.1),
+                        Some(ReportingFlag::Min), // the Python passes in True here
+                        simtime,
+                    )
+                    .unwrap();
 
-    //         assert_relative_eq!(qm_in, 6122.336725163513);
-    //         assert_relative_eq!(qm_out, -124.95154408329704);
-    //         assert_relative_eq!(qm_in_effective_heat_recovery_saving_total, 0.);
+            assert_relative_eq!(qm_in, 6122.336725163513);
+            assert_relative_eq!(qm_out, -124.95154408329704);
+            assert_relative_eq!(qm_in_effective_heat_recovery_saving_total, 0.);
 
-    //         // Check results for negative qv_pdu
-    //         let (qm_in, qm_out, qm_in_effective_heat_recovery_saving_total) = infiltration_ventilation
-    //             .implicit_mass_balance_for_internal_reference_pressure_components(
-    //                 5.,
-    //                 10.,
-    //                 10.0.into(),
-    //                 10.,
-    //                 30.,
-    //                 0.1,
-    //                 Some(0.1),
-    //                 Some(ReportingFlag::Min), // the Python passes in True here
-    //                 simtime,
-    //             )
-    //             .unwrap();
+            // Check results for negative qv_pdu
+            let (qm_in, qm_out, qm_in_effective_heat_recovery_saving_total) =
+                infiltration_ventilation
+                    .implicit_mass_balance_for_internal_reference_pressure_components(
+                        5.,
+                        10.,
+                        10.0.into(),
+                        10.,
+                        30.,
+                        0.1,
+                        Some(0.1),
+                        Some(ReportingFlag::Min), // the Python passes in True here
+                        simtime,
+                    )
+                    .unwrap();
 
-    //         assert_relative_eq!(qm_in, 5868.964503688903);
-    //         assert_relative_eq!(qm_out, -117.00132730163227);
-    //         assert_relative_eq!(qm_in_effective_heat_recovery_saving_total, 0.);
+            assert_relative_eq!(qm_in, 5868.964503688903);
+            assert_relative_eq!(qm_out, -117.00132730163227);
+            assert_relative_eq!(qm_in_effective_heat_recovery_saving_total, 0.);
 
-    //         let expected_result1 = VentilationDetailedResult {
-    //             timestep_index: 0,
-    //             reporting_flag: ReportingFlag::Min,
-    //             r_v_arg: 0.1,
-    //             incoming_air_flow: 5084.99728003614,
-    //             total_volume: 250.,
-    //             air_changes_per_hour: 20.339989120144562,
-    //             temp_interior_air: 10.,
-    //             p_z_ref: 5.,
-    //             qm_in_through_window_opening: 6054.2676951076,
-    //             qm_out_through_window_opening: 0.,
-    //             qm_in_through_vents: 18.072440880918208,
-    //             qm_out_through_vents: 0.,
-    //             qm_in_through_leaks: 49.99658917499436,
-    //             qm_out_through_leaks: -124.26595718589283,
-    //             qm_in_through_comb: 0.,
-    //             qm_out_through_comb: 0.,
-    //             qm_in_through_passive_hybrid_ducts: 0.,
-    //             qm_out_through_passive_hybrid_ducts: 0.,
-    //             qm_sup_to_vent_zone: 0.,
-    //             qm_eta_from_vent_zone: -0.6855868974042028,
-    //             qm_in_effective_heat_recovery_saving_total: 0.,
-    //             qm_in: 6122.336725163513,
-    //             qm_out: -124.95154408329704,
-    //         };
-    //         let expected_result2 = VentilationDetailedResult {
-    //             timestep_index: 0,
-    //             reporting_flag: ReportingFlag::Min,
-    //             r_v_arg: 0.1,
-    //             incoming_air_flow: 5040.837181234225,
-    //             total_volume: 250.,
-    //             air_changes_per_hour: 20.1633487249369,
-    //             temp_interior_air: 10.,
-    //             p_z_ref: 5.,
-    //             qm_in_through_window_opening: 5801.823062932729,
-    //             qm_out_through_window_opening: 0.,
-    //             qm_in_through_vents: 17.318874814724566,
-    //             qm_out_through_vents: 0.,
-    //             qm_in_through_leaks: 49.822565941449234,
-    //             qm_out_through_leaks: -116.31574040422807,
-    //             qm_in_through_comb: 0.,
-    //             qm_out_through_comb: 0.,
-    //             qm_in_through_passive_hybrid_ducts: 0.,
-    //             qm_out_through_passive_hybrid_ducts: 0.,
-    //             qm_sup_to_vent_zone: 0.,
-    //             qm_eta_from_vent_zone: -0.6855868974042028,
-    //             qm_in_effective_heat_recovery_saving_total: 0.,
-    //             qm_in: 5868.964503688903,
-    //             qm_out: -117.00132730163227,
-    //         };
-    //         let results = infiltration_ventilation.output_vent_results();
+            let expected_result1 = VentilationDetailedResult {
+                timestep_index: 0,
+                reporting_flag: ReportingFlag::Min,
+                r_v_arg: 0.1,
+                incoming_air_flow: 5084.99728003614,
+                total_volume: 250.,
+                air_changes_per_hour: 20.339989120144562,
+                temp_interior_air: 10.,
+                p_z_ref: 5.,
+                qm_in_through_window_opening: 6054.2676951076,
+                qm_out_through_window_opening: 0.,
+                qm_in_through_vents: 18.072440880918208,
+                qm_out_through_vents: 0.,
+                qm_in_through_leaks: 49.99658917499436,
+                qm_out_through_leaks: -124.26595718589283,
+                qm_in_through_comb: 0.,
+                qm_out_through_comb: 0.,
+                qm_in_through_passive_hybrid_ducts: 0.,
+                qm_out_through_passive_hybrid_ducts: 0.,
+                qm_sup_to_vent_zone: 0.,
+                qm_eta_from_vent_zone: -0.6855868974042028,
+                qm_in_effective_heat_recovery_saving_total: 0.,
+                qm_in: 6122.336725163513,
+                qm_out: -124.95154408329704,
+            };
+            let expected_result2 = VentilationDetailedResult {
+                timestep_index: 0,
+                reporting_flag: ReportingFlag::Min,
+                r_v_arg: 0.1,
+                incoming_air_flow: 5040.837181234225,
+                total_volume: 250.,
+                air_changes_per_hour: 20.1633487249369,
+                temp_interior_air: 10.,
+                p_z_ref: 5.,
+                qm_in_through_window_opening: 5801.823062932729,
+                qm_out_through_window_opening: 0.,
+                qm_in_through_vents: 17.318874814724566,
+                qm_out_through_vents: 0.,
+                qm_in_through_leaks: 49.822565941449234,
+                qm_out_through_leaks: -116.31574040422807,
+                qm_in_through_comb: 0.,
+                qm_out_through_comb: 0.,
+                qm_in_through_passive_hybrid_ducts: 0.,
+                qm_out_through_passive_hybrid_ducts: 0.,
+                qm_sup_to_vent_zone: 0.,
+                qm_eta_from_vent_zone: -0.6855868974042028,
+                qm_in_effective_heat_recovery_saving_total: 0.,
+                qm_in: 5868.964503688903,
+                qm_out: -117.00132730163227,
+            };
+            let results = infiltration_ventilation.output_vent_results();
 
-    //         // Check detailed results
-    //         assert_eq!(results.read().len(), 2);
-    //         assert_eq!(results.read()[0].as_string_values().len(), 23);
-    //         assert_eq!(results.read()[1].as_string_values().len(), 23);
-    //         assert_eq!(results.read()[0], expected_result1);
-    //         assert_eq!(results.read()[1], expected_result2);
-    //     }
+            // Check detailed results
+            assert_eq!(results.read().len(), 2);
+            assert_eq!(results.read()[0].as_string_values().len(), 23);
+            assert_eq!(results.read()[1].as_string_values().len(), 23);
+            assert_eq!(results.read()[0], expected_result1);
+            assert_eq!(results.read()[1], expected_result2);
+        }
 
-    //     #[rstest]
-    //     #[ignore = "TODO as part of 1.0.0a9 migration"]
-    //     fn test_implicit_mass_balance_for_internal_reference_pressure(
-    //         infiltration_ventilation: InfiltrationVentilation,
-    //         wind_speeds: Vec<f64>,
-    //         wind_directions: Vec<f64>,
-    //         air_temps: Vec<f64>,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         let p_z_ref = 1.;
-    //         let temp_int_air = 20.;
-    //         let r_v_arg = 1.;
-    //         let r_w_arg_min_max = 1.;
-    //         assert_relative_eq!(
-    //             infiltration_ventilation
-    //                 .implicit_mass_balance_for_internal_reference_pressure(
-    //                     p_z_ref,
-    //                     wind_speeds[0],
-    //                     wind_directions[0].into(),
-    //                     temp_int_air,
-    //                     air_temps[0],
-    //                     r_v_arg,
-    //                     Some(r_w_arg_min_max),
-    //                     None,
-    //                     simulation_time_iterator.current_iteration()
-    //                 )
-    //                 .unwrap(),
-    //             -21682.238264921532
-    //         )
-    //     }
+        #[rstest]
+        #[ignore = "TODO as part of 1.0.0a9 migration"]
+        fn test_implicit_mass_balance_for_internal_reference_pressure(
+            infiltration_ventilation: InfiltrationVentilation,
+            wind_speeds: Vec<f64>,
+            wind_directions: Vec<f64>,
+            air_temps: Vec<f64>,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            let p_z_ref = 1.;
+            let temp_int_air = 20.;
+            let r_v_arg = 1.;
+            let r_w_arg_min_max = 1.;
+            assert_relative_eq!(
+                infiltration_ventilation
+                    .implicit_mass_balance_for_internal_reference_pressure(
+                        p_z_ref,
+                        wind_speeds[0],
+                        wind_directions[0].into(),
+                        temp_int_air,
+                        air_temps[0],
+                        r_v_arg,
+                        Some(r_w_arg_min_max),
+                        None,
+                        simulation_time_iterator.current_iteration()
+                    )
+                    .unwrap(),
+                -21682.238264921532
+            )
+        }
 
-    //     #[rstest]
-    //     #[ignore = "TODO as part of 1.0.0a9 migration"]
-    //     fn test_incoming_air_flow(
-    //         infiltration_ventilation: InfiltrationVentilation,
-    //         wind_speeds: Vec<f64>,
-    //         wind_directions: Vec<f64>,
-    //         air_temps: Vec<f64>,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         let p_z_ref = 1.;
-    //         let temp_int_air = 20.;
-    //         let r_v_arg = 1.;
-    //         let r_w_arg_min_max = 1.;
+        #[rstest]
+        #[ignore = "TODO as part of 1.0.0a9 migration"]
+        fn test_incoming_air_flow(
+            infiltration_ventilation: InfiltrationVentilation,
+            wind_speeds: Vec<f64>,
+            wind_directions: Vec<f64>,
+            air_temps: Vec<f64>,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            let p_z_ref = 1.;
+            let temp_int_air = 20.;
+            let r_v_arg = 1.;
+            let r_w_arg_min_max = 1.;
 
-    //         assert_relative_eq!(
-    //             infiltration_ventilation
-    //                 .incoming_air_flow(
-    //                     p_z_ref,
-    //                     wind_speeds[0],
-    //                     wind_directions[0].into(),
-    //                     temp_int_air,
-    //                     air_temps[0],
-    //                     r_v_arg,
-    //                     Some(r_w_arg_min_max),
-    //                     None,
-    //                     None,
-    //                     simulation_time_iterator.current_iteration()
-    //                 )
-    //                 .unwrap(),
-    //             5.682004429268872
-    //         );
+            assert_relative_eq!(
+                infiltration_ventilation
+                    .incoming_air_flow(
+                        p_z_ref,
+                        wind_speeds[0],
+                        wind_directions[0].into(),
+                        temp_int_air,
+                        air_temps[0],
+                        r_v_arg,
+                        Some(r_w_arg_min_max),
+                        None,
+                        None,
+                        simulation_time_iterator.current_iteration()
+                    )
+                    .unwrap(),
+                5.682004429268872
+            );
 
-    //         assert_relative_eq!(
-    //             infiltration_ventilation
-    //                 .incoming_air_flow(
-    //                     p_z_ref,
-    //                     wind_speeds[0],
-    //                     wind_directions[0].into(),
-    //                     temp_int_air,
-    //                     air_temps[0],
-    //                     r_v_arg,
-    //                     r_w_arg_min_max.into(),
-    //                     ReportingFlag::Min.into(),
-    //                     true.into(),
-    //                     simulation_time_iterator.current_iteration()
-    //                 )
-    //                 .unwrap(),
-    //             2.2877920084276107,
-    //             epsilon = 1e-8
-    //         );
-    //     }
+            assert_relative_eq!(
+                infiltration_ventilation
+                    .incoming_air_flow(
+                        p_z_ref,
+                        wind_speeds[0],
+                        wind_directions[0].into(),
+                        temp_int_air,
+                        air_temps[0],
+                        r_v_arg,
+                        r_w_arg_min_max.into(),
+                        ReportingFlag::Min.into(),
+                        true.into(),
+                        simulation_time_iterator.current_iteration()
+                    )
+                    .unwrap(),
+                2.2877920084276107,
+                epsilon = 1e-8
+            );
+        }
 
-    //     #[rstest]
-    //     #[ignore = "TODO as part of 1.0.0a9 migration"]
-    //     fn test_find_r_v_arg_within_bounds(
-    //         infiltration_ventilation: InfiltrationVentilation,
-    //         air_temps: Vec<f64>,
-    //         wind_directions: Vec<f64>,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         // Checking for ach_target = ach_max
-    //         let ach_min = 0.3;
-    //         let ach_max = 1.;
-    //         let temp_int_air = 20.;
-    //         let initial_r_v_arg = 1.;
-    //         let expected_output = 0.;
-    //         let actual_output = infiltration_ventilation
-    //             .find_r_v_arg_within_bounds(
-    //                 Some(ach_min),
-    //                 Some(ach_max),
-    //                 initial_r_v_arg,
-    //                 20.,
-    //                 wind_directions[0].into(),
-    //                 temp_int_air,
-    //                 air_temps[0],
-    //                 Some(0.),
-    //                 0.,
-    //                 None,
-    //                 simulation_time_iterator.current_iteration(),
-    //             )
-    //             .unwrap();
-    //         assert_relative_eq!(
-    //             actual_output,
-    //             expected_output,
-    //             max_relative = EIGHT_DECIMAL_PLACES
-    //         );
+        #[rstest]
+        #[ignore = "TODO as part of 1.0.0a9 migration"]
+        fn test_find_r_v_arg_within_bounds(
+            infiltration_ventilation: InfiltrationVentilation,
+            air_temps: Vec<f64>,
+            wind_directions: Vec<f64>,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            // Checking for ach_target = ach_max
+            let ach_min = 0.3;
+            let ach_max = 1.;
+            let temp_int_air = 20.;
+            let initial_r_v_arg = 1.;
+            let expected_output = 0.;
+            let actual_output = infiltration_ventilation
+                .find_r_v_arg_within_bounds(
+                    Some(ach_min),
+                    Some(ach_max),
+                    initial_r_v_arg,
+                    20.,
+                    wind_directions[0].into(),
+                    temp_int_air,
+                    air_temps[0],
+                    Some(0.),
+                    0.,
+                    None,
+                    simulation_time_iterator.current_iteration(),
+                )
+                .unwrap();
+            assert_relative_eq!(
+                actual_output,
+                expected_output,
+                max_relative = EIGHT_DECIMAL_PLACES
+            );
 
-    //         let ach_min = 1.0;
-    //         let ach_max = 1.4;
-    //         let temp_int_air = 20.;
-    //         let initial_r_v_arg = 0.6;
-    //         let expected_output = 0.5452009507146588;
-    //         let actual_output = infiltration_ventilation
-    //             .find_r_v_arg_within_bounds(
-    //                 Some(ach_min),
-    //                 Some(ach_max),
-    //                 initial_r_v_arg,
-    //                 20.,
-    //                 wind_directions[0].into(),
-    //                 temp_int_air,
-    //                 air_temps[0],
-    //                 Some(0.),
-    //                 0.,
-    //                 None,
-    //                 simulation_time_iterator.current_iteration(),
-    //             )
-    //             .unwrap();
-    //         assert_relative_eq!(
-    //             actual_output,
-    //             expected_output,
-    //             max_relative = EIGHT_DECIMAL_PLACES
-    //         );
-    //     }
+            let ach_min = 1.0;
+            let ach_max = 1.4;
+            let temp_int_air = 20.;
+            let initial_r_v_arg = 0.6;
+            let expected_output = 0.5452009507146588;
+            let actual_output = infiltration_ventilation
+                .find_r_v_arg_within_bounds(
+                    Some(ach_min),
+                    Some(ach_max),
+                    initial_r_v_arg,
+                    20.,
+                    wind_directions[0].into(),
+                    temp_int_air,
+                    air_temps[0],
+                    Some(0.),
+                    0.,
+                    None,
+                    simulation_time_iterator.current_iteration(),
+                )
+                .unwrap();
+            assert_relative_eq!(
+                actual_output,
+                expected_output,
+                max_relative = EIGHT_DECIMAL_PLACES
+            );
+        }
 
-    //     #[rstest]
-    //     #[should_panic = "ach_min must be less than ach_max"]
-    //     fn test_find_r_v_arg_within_bounds_min_over_max(
-    //         infiltration_ventilation: InfiltrationVentilation,
-    //         air_temps: Vec<f64>,
-    //         wind_directions: Vec<f64>,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         infiltration_ventilation
-    //             .find_r_v_arg_within_bounds(
-    //                 Some(1.4),
-    //                 Some(1.),
-    //                 0.4,
-    //                 20.,
-    //                 wind_directions[0].into(),
-    //                 20.,
-    //                 air_temps[0],
-    //                 Some(0.),
-    //                 0.,
-    //                 None,
-    //                 simulation_time_iterator.current_iteration(),
-    //             )
-    //             .unwrap();
-    //     }
+        #[rstest]
+        #[should_panic = "ach_min must be less than ach_max"]
+        fn test_find_r_v_arg_within_bounds_min_over_max(
+            infiltration_ventilation: InfiltrationVentilation,
+            air_temps: Vec<f64>,
+            wind_directions: Vec<f64>,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            infiltration_ventilation
+                .find_r_v_arg_within_bounds(
+                    Some(1.4),
+                    Some(1.),
+                    0.4,
+                    20.,
+                    wind_directions[0].into(),
+                    20.,
+                    air_temps[0],
+                    Some(0.),
+                    0.,
+                    None,
+                    simulation_time_iterator.current_iteration(),
+                )
+                .unwrap();
+        }
 
-    //     #[rstest]
-    //     #[ignore = "TODO as part of 1.0.0a9 migration"]
-    //     fn test_find_r_v_arg_within_bounds_below_min_vents(
-    //         infiltration_ventilation: InfiltrationVentilation,
-    //         air_temps: Vec<f64>,
-    //         wind_directions: Vec<f64>,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         assert_relative_eq!(
-    //             infiltration_ventilation
-    //                 .find_r_v_arg_within_bounds(
-    //                     Some(1.5),
-    //                     Some(20.),
-    //                     0.6,
-    //                     20.,
-    //                     wind_directions[0].into(),
-    //                     20.,
-    //                     air_temps[0],
-    //                     Some(0.),
-    //                     0.,
-    //                     None,
-    //                     simulation_time_iterator.current_iteration(),
-    //                 )
-    //                 .unwrap(),
-    //             0.810203913567427,
-    //             max_relative = EIGHT_DECIMAL_PLACES
-    //         );
-    //     }
+        #[rstest]
+        #[ignore = "TODO as part of 1.0.0a9 migration"]
+        fn test_find_r_v_arg_within_bounds_below_min_vents(
+            infiltration_ventilation: InfiltrationVentilation,
+            air_temps: Vec<f64>,
+            wind_directions: Vec<f64>,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            assert_relative_eq!(
+                infiltration_ventilation
+                    .find_r_v_arg_within_bounds(
+                        Some(1.5),
+                        Some(20.),
+                        0.6,
+                        20.,
+                        wind_directions[0].into(),
+                        20.,
+                        air_temps[0],
+                        Some(0.),
+                        0.,
+                        None,
+                        simulation_time_iterator.current_iteration(),
+                    )
+                    .unwrap(),
+                0.810203913567427,
+                max_relative = EIGHT_DECIMAL_PLACES
+            );
+        }
 
-    //     #[rstest]
-    //     fn test_find_r_v_arg_within_bounds_below_min(
-    //         infiltration_ventilation: InfiltrationVentilation,
-    //         air_temps: Vec<f64>,
-    //         wind_directions: Vec<f64>,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         assert_relative_eq!(
-    //             infiltration_ventilation
-    //                 .find_r_v_arg_within_bounds(
-    //                     Some(10.),
-    //                     Some(20.),
-    //                     0.6,
-    //                     20.,
-    //                     wind_directions[0].into(),
-    //                     20.,
-    //                     air_temps[0],
-    //                     Some(0.),
-    //                     0.,
-    //                     None,
-    //                     simulation_time_iterator.current_iteration(),
-    //                 )
-    //                 .unwrap(),
-    //             1.,
-    //         );
-    //     }
+        #[rstest]
+        fn test_find_r_v_arg_within_bounds_below_min(
+            infiltration_ventilation: InfiltrationVentilation,
+            air_temps: Vec<f64>,
+            wind_directions: Vec<f64>,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            assert_relative_eq!(
+                infiltration_ventilation
+                    .find_r_v_arg_within_bounds(
+                        Some(10.),
+                        Some(20.),
+                        0.6,
+                        20.,
+                        wind_directions[0].into(),
+                        20.,
+                        air_temps[0],
+                        Some(0.),
+                        0.,
+                        None,
+                        simulation_time_iterator.current_iteration(),
+                    )
+                    .unwrap(),
+                1.,
+            );
+        }
 
-    //     #[rstest]
-    //     fn test_find_r_v_arg_within_bounds_above_max(
-    //         infiltration_ventilation: InfiltrationVentilation,
-    //         air_temps: Vec<f64>,
-    //         wind_directions: Vec<f64>,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         assert_relative_eq!(
-    //             infiltration_ventilation
-    //                 .find_r_v_arg_within_bounds(
-    //                     Some(0.1),
-    //                     Some(0.2),
-    //                     0.4,
-    //                     20.,
-    //                     wind_directions[0].into(),
-    //                     20.,
-    //                     air_temps[0],
-    //                     Some(0.),
-    //                     0.,
-    //                     None,
-    //                     simulation_time_iterator.current_iteration(),
-    //                 )
-    //                 .unwrap(),
-    //             0.,
-    //         );
-    //     }
+        #[rstest]
+        fn test_find_r_v_arg_within_bounds_above_max(
+            infiltration_ventilation: InfiltrationVentilation,
+            air_temps: Vec<f64>,
+            wind_directions: Vec<f64>,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            assert_relative_eq!(
+                infiltration_ventilation
+                    .find_r_v_arg_within_bounds(
+                        Some(0.1),
+                        Some(0.2),
+                        0.4,
+                        20.,
+                        wind_directions[0].into(),
+                        20.,
+                        air_temps[0],
+                        Some(0.),
+                        0.,
+                        None,
+                        simulation_time_iterator.current_iteration(),
+                    )
+                    .unwrap(),
+                0.,
+            );
+        }
 
-    //     #[fixture]
-    //     fn infiltration_ventilation_with_patched_ach_fn(
-    //         mut infiltration_ventilation: InfiltrationVentilation,
-    //     ) -> InfiltrationVentilation {
-    //         infiltration_ventilation.set_calc_air_changes_fn(|_, _, _, _, _, _, _, _, _, _| Ok(2.0));
-    //         infiltration_ventilation
-    //     }
+        #[fixture]
+        fn infiltration_ventilation_with_patched_ach_fn(
+            mut infiltration_ventilation: InfiltrationVentilation,
+        ) -> InfiltrationVentilation {
+            infiltration_ventilation
+                .set_calc_air_changes_fn(|_, _, _, _, _, _, _, _, _, _| Ok(2.0));
+            infiltration_ventilation
+        }
 
-    //     #[rstest]
-    //     fn test_ach_within_bounds(
-    //         infiltration_ventilation_with_patched_ach_fn: InfiltrationVentilation,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         let result = infiltration_ventilation_with_patched_ach_fn
-    //             .find_r_v_arg_within_bounds(
-    //                 Some(1.5),
-    //                 Some(2.5),
-    //                 0.5,
-    //                 5.0,
-    //                 90.0.into(),
-    //                 20.0,
-    //                 10.0,
-    //                 Some(1.0),
-    //                 0.5,
-    //                 None,
-    //                 simulation_time_iterator.current_iteration(),
-    //             )
-    //             .unwrap();
-    //         assert_eq!(result, 0.5);
-    //     }
+        #[rstest]
+        fn test_ach_within_bounds(
+            infiltration_ventilation_with_patched_ach_fn: InfiltrationVentilation,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            let result = infiltration_ventilation_with_patched_ach_fn
+                .find_r_v_arg_within_bounds(
+                    Some(1.5),
+                    Some(2.5),
+                    0.5,
+                    5.0,
+                    90.0.into(),
+                    20.0,
+                    10.0,
+                    Some(1.0),
+                    0.5,
+                    None,
+                    simulation_time_iterator.current_iteration(),
+                )
+                .unwrap();
+            assert_eq!(result, 0.5);
+        }
 
-    //     #[rstest]
-    //     fn test_no_ach_target(
-    //         infiltration_ventilation_with_patched_ach_fn: InfiltrationVentilation,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         let result = infiltration_ventilation_with_patched_ach_fn
-    //             .find_r_v_arg_within_bounds(
-    //                 None,
-    //                 None,
-    //                 0.5,
-    //                 5.0,
-    //                 90.0.into(),
-    //                 20.0,
-    //                 10.0,
-    //                 Some(1.0),
-    //                 0.5,
-    //                 None,
-    //                 simulation_time_iterator.current_iteration(),
-    //             )
-    //             .unwrap();
-    //         assert_eq!(result, 0.5);
-    //     }
+        #[rstest]
+        fn test_no_ach_target(
+            infiltration_ventilation_with_patched_ach_fn: InfiltrationVentilation,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            let result = infiltration_ventilation_with_patched_ach_fn
+                .find_r_v_arg_within_bounds(
+                    None,
+                    None,
+                    0.5,
+                    5.0,
+                    90.0.into(),
+                    20.0,
+                    10.0,
+                    Some(1.0),
+                    0.5,
+                    None,
+                    simulation_time_iterator.current_iteration(),
+                )
+                .unwrap();
+            assert_eq!(result, 0.5);
+        }
 
-    //     #[rstest]
-    //     fn test_calc_internal_gains_ductwork(
-    //         infiltration_ventilation: InfiltrationVentilation,
-    //         simulation_time_iterator: SimulationTimeIterator,
-    //     ) {
-    //         let outside_temp = [21.0, 15.0];
-    //         let inside_temp = [19.75, 19.25];
-    //         for (t_idx, _) in simulation_time_iterator.enumerate() {
-    //             assert_relative_eq!(
-    //                 infiltration_ventilation
-    //                     .calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
-    //                 [0.23131013888888893, -0.7864544722222223,][t_idx],
-    //                 epsilon = 1e-8
-    //             );
-    //         }
-    //     }
-    // }
+        #[rstest]
+        fn test_calc_internal_gains_ductwork(
+            infiltration_ventilation: InfiltrationVentilation,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            let outside_temp = [21.0, 15.0];
+            let inside_temp = [19.75, 19.25];
+            for (t_idx, _) in simulation_time_iterator.enumerate() {
+                assert_relative_eq!(
+                    infiltration_ventilation
+                        .calc_internal_gains_ductwork(outside_temp[t_idx], inside_temp[t_idx]),
+                    [0.21028194444444445, -0.7149586111111111,][t_idx],
+                    epsilon = 1e-8
+                );
+            }
+        }
+
+        // Test infiltration adjustment for lower facade leaks when vents open during test.
+
+        // The adjustment is applied only to lower facade leaks (where air bricks
+        // are located) and is scaled so the overall dwelling-wide effect matches
+        // the target 11.3% reduction from the BRE Airex ECO4 trial.
+
+        // Test infiltration adjustment for lower facade leaks when vents open during test.
+        // The adjustment is applied only to lower facade leaks (where air bricks
+        // are located) and is scaled so the overall dwelling-wide effect matches
+        // the target 11.3% reduction from the BRE Airex ECO4 trial.
+        // Control returning 0.0 (fully closed) at t=0
+        #[rstest]
+        fn test_lower_facade_infiltration_adjustment_vents_open_during_test(
+            infiltration_ventilation: InfiltrationVentilation,
+            simulation_time_iterator: SimulationTimeIterator,
+        ) {
+            // Lower facade fraction = 0.5 * area_facades / (area_facades + area_roof)
+            // = 0.5 * 85.0 / 110.0
+            // reduction_lower = 0.139 / fraction_lower
+            // at t=0 (fully closed): adjustment = 1.0 - reduction_lower
+
+            let expected = 1. - infiltration_ventilation.infiltration_reduction_lower;
+            let adjustment = infiltration_ventilation
+                .calculate_lower_facade_infiltration_adjustment(
+                    simulation_time_iterator.current_iteration(),
+                );
+
+            assert_relative_eq!(adjustment, expected, epsilon = 1e-6);
+        }
+    }
 }
