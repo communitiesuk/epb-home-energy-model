@@ -175,8 +175,20 @@ impl DirectElectricBoiler {
         energy_output_provided
     }
 
-    fn time_available(&self) {
-        todo!()
+    /// Calculate time available for the current service
+    // Assumes that time spent on other services is evenly spread throughout
+    // the timestep so the adjustment for start time below is a proportional
+    // reduction of the overall time available, not simply a subtraction
+    fn time_available(&self, time_start: f64, time_elapsed_hp: Option<f64>) -> f64 {
+        let timestep = self.simulation_timestep;
+        let total_time_running_current_timestep = if let Some(time_elapsed_hp) = time_elapsed_hp {
+            time_elapsed_hp
+        } else {
+            self.total_time_running_current_timestep
+        };
+        let time_available =
+            (timestep - total_time_running_current_timestep) * (1. - time_start / timestep);
+        time_available
     }
 
     fn time_running(&self) {
@@ -425,5 +437,16 @@ mod tests {
     fn test_calc_energy_output_provided(boiler: DirectElectricBoiler) {
         assert_relative_eq!(boiler.calc_energy_output_provided(5., 1.), 5.);
         assert_relative_eq!(boiler.calc_energy_output_provided(25., 1.), 24.);
+    }
+
+    #[rstest]
+    fn test_time_available(boiler: DirectElectricBoiler, simulation_time: SimulationTime) {
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(boiler.time_available(0., None), &[1., 1.][t_idx]);
+        }
+
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(boiler.time_available(0.2, Some(0.5)), &[0.4, 0.4][t_idx]);
+        }
     }
 }
