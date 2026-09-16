@@ -168,7 +168,7 @@ impl ControlBehaviour for OnOffTimeControl {
 #[derive(Debug)]
 pub(crate) struct ChargeControl {
     logic_type: ControlLogicType,
-    schedule: Vec<bool>,
+    charge_time_control: Arc<Control>,
     start_day: u32,
     time_series_step: f64,
     charge_level: Vec<Option<f64>>,
@@ -193,7 +193,7 @@ impl ChargeControl {
     /// Construct a ChargeControl object
     /// Arguments:
     /// * `logic_type`              - ControlLogicType enum
-    /// * `schedule`                - list of boolean values where true means "on" (one entry per hour)
+    /// * `charge_time_control`     - list of boolean values where true means "on" (one entry per hour) or a Control object
     /// * `simulation_time`         - reference to SimulationTime object
     /// * `start_day`               - first day of the time series, day of the year, 0 to 365 (single value)
     /// * `time_series_step`        - timestep of the time series data, in hours__get_heat_cool_systems_for_zone
@@ -211,7 +211,7 @@ impl ChargeControl {
     ///                             for the next day rather than the current day
     pub(crate) fn new(
         logic_type: ControlLogicType,
-        schedule: Vec<bool>,
+        charge_time_control: ScheduleOrControl<bool>,
         simulation_time_iterator: &SimulationTimeIterator,
         start_day: u32,
         time_series_step: f64,
@@ -328,9 +328,18 @@ impl ChargeControl {
             }
         };
 
+        let charge_time_control = match charge_time_control {
+            ScheduleOrControl::Schedule(schedule) => Arc::new(Control::OnOffTime(OnOffTimeControl {
+                schedule: schedule.into_iter().map(Some).collect(),
+                start_day,
+                time_series_step,
+            })),
+            ScheduleOrControl::Control(control) => control,
+        };
+
         Ok(Self {
             logic_type,
-            schedule,
+            charge_time_control,
             start_day,
             time_series_step,
             charge_level,
@@ -605,10 +614,28 @@ impl ChargeControl {
     }
 }
 
+// this covers the ChargeControlSetPointAdapter logic from Python
 impl ControlBehaviour for ChargeControl {
     // In Python this is inherited from the BoolTimeControl class
-    fn is_on(&self, iteration: &SimulationTimeIteration) -> bool {
-        self.schedule[iteration.time_series_idx(self.start_day, self.time_series_step)]
+    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
+        self.charge_time_control.is_on(simulation_time_iteration)
+    }
+
+    fn in_required_period(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<bool>
+    {
+        Some(self.is_on(simulation_time_iteration))
+    }
+
+    fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+        if !self.charge_time_control.is_on(simulation_time_iteration) {
+            None
+        } else {
+            // TODO can we avoid unwrap here?
+            Some(self.target_charge(*simulation_time_iteration, None).unwrap())
+        }
     }
 }
 
@@ -712,15 +739,15 @@ impl ControlBehaviour for OnOffCostMinimisingTimeControl {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum ScheduleOrControl {
-    Schedule(Vec<Option<f64>>),
+pub(crate) enum ScheduleOrControl<T> {
+    Schedule(Vec<T>),
     Control(Arc<Control>),
 }
 
 #[derive(Debug)]
 pub(crate) struct RangeTimeControl {
-    schedule_lower: ScheduleOrControl,
-    schedule_upper: ScheduleOrControl,
+    schedule_lower: ScheduleOrControl<Option<f64>>,
+    schedule_upper: ScheduleOrControl<Option<f64>>,
     start_day: f64,
     time_series_step: f64,
     timesteps_advstart: u32,
@@ -728,8 +755,8 @@ pub(crate) struct RangeTimeControl {
 
 impl RangeTimeControl {
     pub fn new(
-        schedule_lower: ScheduleOrControl,
-        schedule_upper: ScheduleOrControl,
+        schedule_lower: ScheduleOrControl<Option<f64>>,
+        schedule_upper: ScheduleOrControl<Option<f64>>,
         simulation_time: SimulationTime,
         start_day: f64,
         time_series_step: f64,
@@ -765,7 +792,7 @@ impl RangeTimeControl {
 
     fn find_setpnt(
         simulation_time_iteration: &SimulationTimeIteration,
-        schedule: &ScheduleOrControl,
+        schedule: &ScheduleOrControl<Option<f64>>,
     ) -> Option<f64> {
         match schedule {
             ScheduleOrControl::Schedule(schedule) => schedule[simulation_time_iteration.index],
