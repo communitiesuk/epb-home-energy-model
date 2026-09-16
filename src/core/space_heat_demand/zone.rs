@@ -80,6 +80,7 @@ pub struct Zone {
     ///                      previous timestep. Positions in list defined in
     ///                      element_positions and zone_idx
     temp_setpnt_init: f64,
+    underfloor_emitter_area: f64,
 }
 
 impl Zone {
@@ -159,6 +160,7 @@ impl Zone {
             control,
             temp_setpnt_basis: temp_setpnt_basis.unwrap_or(ZoneTemperatureControlBasis::Air),
             temp_setpnt_init,
+            underfloor_emitter_area: 0.,
         };
 
         zone.init_node_temps(
