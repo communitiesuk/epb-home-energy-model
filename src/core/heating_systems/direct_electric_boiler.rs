@@ -173,9 +173,7 @@ impl DirectElectricBoiler {
 
     fn calc_energy_output_provided(&self, energy_output_required: f64, time_available: f64) -> f64 {
         let energy_output_max_power = self.boiler_power * time_available;
-        let energy_output_provided = min_of_2(energy_output_required, energy_output_max_power);
-
-        energy_output_provided
+        min_of_2(energy_output_required, energy_output_max_power)
     }
 
     /// Calculate time available for the current service
@@ -189,15 +187,15 @@ impl DirectElectricBoiler {
         } else {
             self.total_time_running_current_timestep
         };
-        let time_available =
-            (timestep - total_time_running_current_timestep) * (1. - time_start / timestep);
-        time_available
+
+        (timestep - total_time_running_current_timestep) * (1. - time_start / timestep)
     }
 
     fn time_running(&self, energy_output_provided: f64, time_available: f64) -> f64 {
         // Calculate running time of Boiler
         let current_boiler_power =
             self.calc_current_boiler_power(energy_output_provided, time_available);
+
         if current_boiler_power <= 0.0 {
             0.0
         } else {
