@@ -104,6 +104,7 @@ impl EnergySupplyTariffInput {
     }
 }
 
+// TODO 1.0.0a9 migration - add new EnergySupply threshold fields to this struct?
 #[derive(Debug)]
 struct EnergySupplyTariffInfo {
     tariff: EnergySupplyTariff,
@@ -140,6 +141,7 @@ pub struct EnergySupply {
     power_limit_export: Option<f64>,
     tariff_export: Option<String>,
     threshold_charges_export: Option<[f64; 12]>,
+    threshold_prices_export: Option<[f64; 12]>,
     demand_total: Vec<AtomicF64>,
     demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
     energy_out_by_end_user: IndexMap<String, Vec<AtomicF64>>,
@@ -167,6 +169,8 @@ impl EnergySupply {
     //                           the whole supply (generation surplus and battery discharge
     //                           combined); None means no limit
     /// * `tariff_export` - energy tariff for export
+    /// * `threshold_charges_export` - level of battery charge below which battery prohibited from exporting to grid (0 - 1)
+    /// * `threshold_prices_export` - grid price above which battery is permitted to export to grid (p/kWh)
     /// * `tariff_data` - tariff data containing electricity prices
     pub(crate) fn new(
         fuel_type: FuelType,
@@ -178,6 +182,7 @@ impl EnergySupply {
         power_limit_export: Option<f64>,
         tariff_export: Option<String>,
         threshold_charges_export: Option<[f64; 12]>,
+        threshold_prices_export: Option<[f64; 12]>,
         tariff_data: Option<TariffData>,
     ) -> anyhow::Result<Self> {
         let simulation_timesteps = simulation_time.total_steps();
@@ -219,6 +224,7 @@ impl EnergySupply {
             power_limit_export,
             tariff_export,
             threshold_charges_export,
+            threshold_prices_export,
             demand_total: init_demand_list(simulation_timesteps),
             demand_by_end_user: Default::default(),
             energy_out_by_end_user: Default::default(),
@@ -910,6 +916,7 @@ impl EnergySupplyBuilder {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap(),
         }
@@ -1081,6 +1088,7 @@ mod tests {
             &simulation_time.iter(),
             None,
             indexmap! {"Electric_battery".into() => elec_battery},
+            None,
             None,
             None,
             None,
