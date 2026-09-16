@@ -5615,7 +5615,7 @@ fn hot_water_source_from_input(
                         );
                         energy_supply
                             .write()
-                            .connect_diverter(pv_diverter.clone())
+                            .connect_diverter(pv_diverter.clone(), None) // TODO 1.0.0a9 migration - pass diverter name
                             .unwrap();
                         diverters.push(pv_diverter);
                     }

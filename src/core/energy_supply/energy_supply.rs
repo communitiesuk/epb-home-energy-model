@@ -12,6 +12,7 @@ use atomic_float::AtomicF64;
 use educe::Educe;
 use fsum::FSum;
 use indexmap::{indexmap, IndexMap};
+use itertools::Itertools;
 use parking_lot::RwLock;
 use smartstring::alias::String;
 use std::collections::HashSet;
@@ -133,7 +134,7 @@ pub struct EnergySupply {
     simulation_timesteps: usize,
     electric_batteries: IndexMap<String, Arc<ElectricBattery>>,
     #[educe(Debug(ignore))]
-    diverter: Option<Arc<RwLock<dyn SurplusDiverting>>>,
+    diverters: IndexMap<String, Arc<RwLock<dyn SurplusDiverting>>>,
     priority: Option<Vec<String>>,
     is_export_capable: bool,
     demand_total: Vec<AtomicF64>,
@@ -202,7 +203,7 @@ impl EnergySupply {
                 .into_iter()
                 .map(|(k, v)| (k, v.into()))
                 .collect(),
-            diverter: None,
+            diverters: Default::default(),
             priority,
             is_export_capable: is_export_capable.unwrap_or(true),
             demand_total: init_demand_list(simulation_timesteps),
@@ -234,8 +235,8 @@ impl EnergySupply {
         self.fuel_type
     }
 
-    pub(crate) fn get_diverters() {
-        todo!()
+    pub(crate) fn get_diverters(&self) -> anyhow::Result<Vec<Arc<RwLock<dyn SurplusDiverting>>>> {
+        self.sort_by_priority(&self.diverters)
     }
 
     pub(crate) fn get_batteries(&self) -> anyhow::Result<Vec<Arc<ElectricBattery>>> {
@@ -404,12 +405,15 @@ impl EnergySupply {
     pub fn connect_diverter(
         &mut self,
         diverter: Arc<RwLock<dyn SurplusDiverting>>,
-    ) -> Result<(), &'static str> {
-        if self.diverter.is_some() {
-            return Err("diverter was already connected");
+        name: Option<String>,
+    ) -> anyhow::Result<()> {
+        let name = name.unwrap_or("diverter".into());
+
+        if self.diverters.keys().contains(&name) {
+            bail!("diverter was already connected");
         }
 
-        self.diverter = Some(diverter);
+        self.diverters.insert(name, diverter);
 
         Ok(())
     }
@@ -759,7 +763,7 @@ impl EnergySupply {
                     }
                 }
 
-                if let Some(ref diverter) = &self.diverter {
+                if let Some(diverter) = &self.get_diverters()?.first() {
                     self.energy_diverted.get(timestep_idx).unwrap().store(
                         diverter.read().divert_surplus(supply_surplus, simtime)?,
                         Ordering::SeqCst,
@@ -797,7 +801,7 @@ impl EnergySupply {
                         self.energy_battery_to_consumption[simtime.index]
                             .store(-energy_out_of_battery, Ordering::SeqCst);
                     } else if let ("diverter", Some(diverter)) =
-                        (item.as_str(), self.diverter.as_ref())
+                        (item.as_str(), self.get_diverters()?.first())
                     {
                         self.energy_diverted[simtime.index].store(
                             diverter.read().divert_surplus(supply_surplus, simtime)?,
@@ -1125,10 +1129,14 @@ mod tests {
         mut energy_supply: EnergySupply,
         pv_diverter: Arc<RwLock<dyn SurplusDiverting>>,
     ) {
-        assert!(energy_supply.diverter.is_none());
-        energy_supply.connect_diverter(pv_diverter.clone()).unwrap();
-        assert!(energy_supply.diverter.is_some());
-        assert!(energy_supply.connect_diverter(pv_diverter.clone()).is_err());
+        assert!(energy_supply.diverters.is_empty());
+        energy_supply
+            .connect_diverter(pv_diverter.clone(), None)
+            .unwrap();
+        assert!(!energy_supply.diverters.is_empty());
+        assert!(energy_supply
+            .connect_diverter(pv_diverter.clone(), None)
+            .is_err());
     }
 
     #[rstest]
@@ -1771,7 +1779,10 @@ mod tests {
         }
 
         let diverter = Arc::new(RwLock::new(MockDiverter));
-        energy_supply.write().connect_diverter(diverter).unwrap();
+        energy_supply
+            .write()
+            .connect_diverter(diverter, None)
+            .unwrap();
 
         for (t_idx, simtime) in simulation_time.iter().enumerate() {
             let energy_supply = energy_supply.read();
@@ -1930,7 +1941,10 @@ mod tests {
         let _bath_connection = EnergySupply::connection(energy_supply.clone(), "bath").unwrap();
 
         let diverter = Arc::new(RwLock::new(MockDiverter));
-        energy_supply.write().connect_diverter(diverter).unwrap();
+        energy_supply
+            .write()
+            .connect_diverter(diverter, None)
+            .unwrap();
 
         for (t_idx, simtime) in simulation_time.iter().enumerate() {
             let energy_supply = energy_supply.read();
