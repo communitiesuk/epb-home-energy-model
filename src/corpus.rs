@@ -3832,7 +3832,7 @@ fn zone_from_input(
         infiltration_ventilation,
         external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
         input.temp_setpnt_init,
-        temp_setpnt_basis,
+        Some(temp_setpnt_basis),
         window_adjust_control,
         print_heat_balance,
         simulation_time_iterator,
