@@ -715,7 +715,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         u_value: f64,
         psi_wall_floor_junc: f64,
         fallback_shield_fact_location: WindShieldLocation,
-        smart_air_brick_control: Option<SetpointTimeControl>,
+        smart_air_brick_control: Option<Arc<Control>>, // In python this is SetpointTimeControl
         simtime: &SimulationTimeIterator,
     ) -> anyhow::Result<()> {
         self.init_super(None);
@@ -823,7 +823,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                                       u_w,
                                       shield_fact_location: WindShieldLocation,
                                       area_per_perimeter_vent,
-                                      smart_air_brick_control: Option<SetpointTimeControl>,
+                                      smart_air_brick_control: Option<Arc<Control>>,
                                       simtime: &SimulationTimeIteration|
              -> anyhow::Result<f64> {
                 // Characteristic dimension of floor
@@ -832,22 +832,17 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                 // Perimeter/window well contribution
                 let u_x_perimeter = 2. * (h_upper * u_w / char_dimen);
 
-                let mut u_v_ventilation = 1450.
+                let u_x_ventilation = 1450.
                     * (area_per_perimeter_vent
                         * self.wind_speed()?
                         * wind_shield_fact(shield_fact_location))
                     / char_dimen;
 
-                if let Some(smart_air_brick_conrol) = smart_air_brick_control {
-                    let opening_ratio = smart_air_brick_conrol.setpnt(simtime);
-                    u_v_ventilation = if let Some(opening_ratio) = opening_ratio {
-                        u_v_ventilation * opening_ratio
-                    } else {
-                        u_v_ventilation
-                    };
-                };
-                // 1450 is constant in the standard but not labelled
-                Ok(u_x_perimeter + u_v_ventilation)
+                let u_x_ventilation = smart_air_brick_control
+                    .and_then(|control| control.setpnt(simtime))
+                    .map_or(u_x_ventilation, |ratio| u_x_ventilation * ratio);
+
+                Ok(u_x_perimeter + u_x_ventilation)
             };
             let total_equiv_thickness_sus =
                 |r_f_ins| -> f64 { d_we + thermal_conductivity * (r_si + r_f_ins + self.r_se()) };
@@ -2565,7 +2560,7 @@ impl BuildingElementGround {
         psi_wall_floor_junc: f64,
         external_conditions: Arc<ExternalConditions>,
         fallback_shield_fact_location: WindShieldLocation,
-        smart_air_brick_control: Option<SetpointTimeControl>,
+        smart_air_brick_control: Option<Arc<Control>>, // In python this is SetpointTimeControl
         simtime: &SimulationTimeIterator,
     ) -> anyhow::Result<Self> {
         let mut new_ground = Self {
@@ -4654,6 +4649,74 @@ mod tests {
                 "incorrect heat capacity returned"
             );
         }
+    }
+
+    #[rstest]
+    #[ignore = "Test is ignored while implementaion of smart air brick is complete 1.0.0a9"]
+    fn test_smart_air_brick_control_applied(
+        ground_building_elements: [BuildingElementGround; 5],
+        simulation_time_for_ground: SimulationTime,
+    ) {
+        let be_without_control = &ground_building_elements[0];
+        //schedule = [1.0] * 742 + [0.0] + [1.0] * (8760 - 743)
+        let smart_air_brick_schedule: Vec<Option<f64>> = std::iter::repeat(Some(1.0))
+            .take(742)
+            .chain(std::iter::once(Some(0.0)))
+            .chain(std::iter::repeat(Some(1.0)).take(8760 - 743))
+            .collect();
+        let floor_data = FloorData::SuspendedFloor {
+            height_upper_surface: 0.5,
+            thermal_transmission_walls: 1.,
+            area_per_perimeter_vent: 0.01,
+            shield_fact_location: WindShieldLocation::Sheltered.into(),
+            control_smart_air_brick: None,
+            vents_open_during_airtightness_test: None,
+            thermal_resistance_of_insulation: 1.,
+        };
+
+        let be_with_control = BuildingElementGround::new(
+            20.0,
+            20.0,
+            180.,
+            1.5,
+            0.1,
+            19000.0,
+            MassDistributionClass::I,
+            &floor_data,
+            0.3,
+            18.0,
+            0.5,
+            be_without_control.external_conditions.clone(),
+            WindShieldLocation::Sheltered,
+            Some(Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                smart_air_brick_schedule,
+                0,
+                1.0,
+                Default::default(),
+                Default::default(),
+                simulation_time_for_ground.step,
+            )))),
+            &simulation_time_for_ground.iter(),
+        )
+        .unwrap();
+
+        // At first timestep, closed vents (opening_ratio=0) should give different temp_ext
+        // than the baseline case without smart air brick
+        let temp_ext_with_closed_vents =
+            be_with_control.temp_ext(simulation_time_for_ground.iter().current_iteration());
+        let temp_ext_baseline =
+            be_without_control.temp_ext(simulation_time_for_ground.iter().current_iteration());
+
+        // Verify values are different
+        assert_ne!(temp_ext_with_closed_vents, temp_ext_baseline);
+
+        // Verify the actual calculated value
+        // With vents closed, u_x_ventilation is reduced to zero, resulting in warmer temp_ext
+        assert_relative_eq!(
+            temp_ext_with_closed_vents,
+            4.22336883751537,
+            epsilon = 1e-10
+        );
     }
 
     // below window treatment tests are now in test_enums.py in the Python

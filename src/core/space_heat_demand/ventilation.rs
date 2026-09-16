@@ -2,7 +2,7 @@
 // The calculations are based on Method 1 of BS EN 16798-7.
 
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::controls::time_control::{Control, ControlBehaviour, SetpointTimeControl};
+use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::AIR;
@@ -1958,7 +1958,7 @@ pub(crate) struct InfiltrationVentilation {
     detailed_output_heating_cooling: bool,
     p_a_alt: f64,
     total_volume: f64,
-    smart_air_brick_control: Option<SetpointTimeControl>,
+    smart_air_brick_control: Option<Arc<Control>>, // In python this is SetpointTimeControl
     vents_open_during_airtightness_test: Option<bool>,
     smart_air_brick_floor_area_fraction: f64,
     detailed_results: Arc<RwLock<Vec<VentilationDetailedResult>>>,
@@ -2016,7 +2016,7 @@ impl InfiltrationVentilation {
         altitude: f64,
         total_volume: f64,
         ventilation_zone_base_height: f64,
-        smart_air_brick_control: Option<SetpointTimeControl>,
+        smart_air_brick_control: Option<Arc<Control>>, // In python this is SetpointTimeControl
         vents_open_during_airtightness_test: Option<bool>,
         smart_air_brick_floor_area_fraction: Option<f64>,
     ) -> Self {
@@ -2872,7 +2872,7 @@ impl InfiltrationVentilation {
         detailed_output_heating_cooling: bool,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         controls: &Controls,
-        smart_air_brick_control: Option<SetpointTimeControl>,
+        smart_air_brick_control: Option<Arc<Control>>, // In Python this is SetpointTimeControl
         vents_open_during_airtightness_test: Option<bool>,
         smart_air_brick_floor_area_fraction: Option<f64>,
     ) -> anyhow::Result<Self> {
