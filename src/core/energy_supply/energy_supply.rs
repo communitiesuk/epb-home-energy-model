@@ -14,6 +14,7 @@ use fsum::FSum;
 use indexmap::{indexmap, IndexMap};
 use parking_lot::RwLock;
 use smartstring::alias::String;
+use std::collections::HashSet;
 use std::io::Read;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -221,10 +222,12 @@ impl EnergySupply {
         })
     }
 
-    pub(crate) fn timestep_end(&self) {
-        for battery in self.get_batteries() {
+    pub(crate) fn timestep_end(&self) -> anyhow::Result<()> {
+        for battery in self.get_batteries()? {
             battery.timestep_end()
         }
+
+        Ok(())
     }
 
     pub(crate) fn fuel_type(&self) -> FuelType {
@@ -235,36 +238,47 @@ impl EnergySupply {
         todo!()
     }
 
-    pub(crate) fn get_batteries(&self) -> Vec<Arc<ElectricBattery>> {
+    pub(crate) fn get_batteries(&self) -> anyhow::Result<Vec<Arc<ElectricBattery>>> {
         self.sort_by_priority(&self.electric_batteries)
     }
 
     /// Returns the values from items sorted in the order that the keys appear in the priority list
-    pub(crate) fn sort_by_priority<T: Clone>(&self, items: &IndexMap<String, T>) -> Vec<T> {
-        if let Some(_) = self.priority.as_ref() {
-            todo!();
+    pub(crate) fn sort_by_priority<T: Clone>(
+        &self,
+        items: &IndexMap<String, T>,
+    ) -> anyhow::Result<Vec<T>> {
+        if let Some(priority) = self.priority.as_ref() {
+            let priority_set: HashSet<&String> = HashSet::from_iter(priority);
+            let items_set: HashSet<&String> = HashSet::from_iter(items.keys());
+            if !priority_set.is_superset(&items_set) {
+                bail!("Energy supply items missing from priority list")
+            };
+
+            Ok(priority
+                .iter()
+                .filter_map(|k| items.get(k).cloned())
+                .collect())
         } else {
-            items.values().cloned().collect()
+            Ok(items.values().cloned().collect())
         }
-        // TODO 1.0.0a9 sorting
     }
 
-    pub(crate) fn has_battery(&self) -> bool {
-        !self.get_batteries().is_empty()
+    pub(crate) fn has_battery(&self) -> anyhow::Result<bool> {
+        Ok(!self.get_batteries()?.is_empty())
     }
 
-    pub(crate) fn get_battery_max_capacity(&self) -> Option<f64> {
-        let batteries = self.get_batteries();
+    pub(crate) fn get_battery_max_capacity(&self) -> anyhow::Result<Option<f64>> {
+        let batteries = self.get_batteries()?;
         if batteries.is_empty() {
-            return None;
+            return Ok(None);
         };
 
-        Some(
+        Ok(Some(
             batteries
                 .iter()
                 .map(|battery| battery.get_max_capacity())
                 .sum(),
-        )
+        ))
     }
 
     #[cfg(test)] // TODO 1.0.0a9 migration - this is only used in tests now, are these tests useful?
@@ -275,7 +289,7 @@ impl EnergySupply {
     ) -> anyhow::Result<Option<f64>> {
         match battery {
             None => {
-                let batteries = self.get_batteries();
+                let batteries = self.get_batteries()?;
 
                 if batteries.is_empty() {
                     Ok(None)
@@ -297,7 +311,7 @@ impl EnergySupply {
     ) -> anyhow::Result<Option<f64>> {
         match battery {
             None => {
-                let batteries = self.get_batteries();
+                let batteries = self.get_batteries()?;
 
                 if batteries.is_empty() {
                     Ok(None)
@@ -319,7 +333,7 @@ impl EnergySupply {
     ) -> anyhow::Result<Option<f64>> {
         match battery {
             None => {
-                let batteries = self.get_batteries();
+                let batteries = self.get_batteries()?;
 
                 if batteries.is_empty() {
                     Ok(None)
@@ -333,18 +347,18 @@ impl EnergySupply {
         }
     }
 
-    pub(crate) fn get_battery_available_charge(&self) -> Option<f64> {
-        let batteries = self.get_batteries();
+    pub(crate) fn get_battery_available_charge(&self) -> anyhow::Result<Option<f64>> {
+        let batteries = self.get_batteries()?;
         if batteries.is_empty() {
-            return None;
+            return Ok(None);
         };
 
-        Some(
+        Ok(Some(
             batteries
                 .iter()
                 .map(|battery| battery.get_state_of_charge() * battery.get_max_capacity())
                 .sum(),
-        )
+        ))
     }
 
     pub(crate) fn connection(
@@ -606,7 +620,7 @@ impl EnergySupply {
         // For tariff selected look up price etc and decide whether to charge
         let elec_price = tariff_data.price(tariff, simtime)?;
         let (current_charge, charge_discharge_efficiency) = {
-            let batteries = self.get_batteries();
+            let batteries = self.get_batteries()?;
             let battery = batteries.first().unwrap(); // TODO 1.0.0a9 migration
 
             (
@@ -632,7 +646,7 @@ impl EnergySupply {
         &self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
-        if let Some(electric_battery) = &self.get_batteries().first() {
+        if let Some(electric_battery) = &self.get_batteries()?.first() {
             let t_idx = simtime.index;
             if electric_battery.is_grid_charging_possible() {
                 // Current conditions of the battery
@@ -709,7 +723,7 @@ impl EnergySupply {
         // See if there is a net supply/demand for the timestep
         match &self.priority {
             None => {
-                if let Some(battery) = &self.get_batteries().first() {
+                if let Some(battery) = &self.get_batteries()?.first() {
                     // TODO 1.0.0a9 migration
                     // See if the battery can deal with excess supply/demand for this timestep
                     // supply_surplus is -ve by convention and demand_not_met is +ve
@@ -756,7 +770,7 @@ impl EnergySupply {
             Some(priority) => {
                 for item in priority {
                     if let ("ElectricBattery", electric_battery) =
-                        (item.as_str(), self.get_batteries())
+                        (item.as_str(), self.get_batteries()?)
                     // TODO 1.0.0a9 migration
                     {
                         let (charging_condition, _, can_charge_if_not_full) = if electric_battery[0]
@@ -1053,7 +1067,7 @@ mod tests {
         )
         .is_err());
 
-        assert!(energy_supply.get_batteries().is_empty());
+        assert!(energy_supply.get_batteries().unwrap().is_empty());
     }
 
     #[rstest]
@@ -1390,12 +1404,12 @@ mod tests {
             .with_priority(vec!["ElectricBattery", "diverter"])
             .build();
 
-        assert!(energy_supply.has_battery());
+        assert!(energy_supply.has_battery().unwrap());
 
         let battery_state_of_health = -0.04 * battery_age + 1.;
 
         assert_eq!(
-            energy_supply.get_battery_max_capacity().unwrap(),
+            energy_supply.get_battery_max_capacity().unwrap().unwrap(),
             2. * battery_state_of_health
         ); // max capacity * state of health
         assert_eq!(
@@ -1419,7 +1433,13 @@ mod tests {
                 .unwrap(),
             -(1.5 * 1.)
         ); // max discharge rate * discharge factor * timestep * -1
-        assert_eq!(energy_supply.get_battery_available_charge().unwrap(), 0.);
+        assert_eq!(
+            energy_supply
+                .get_battery_available_charge()
+                .unwrap()
+                .unwrap(),
+            0.
+        );
 
         let expected_charging_state = [
             (true, Some(0.8), true), // elec_price/efficiency=13.5877158875 < 16; current charge=0
@@ -1445,7 +1465,7 @@ mod tests {
             energy_supply
                 .calc_energy_import_from_grid_to_battery(t_it)
                 .unwrap();
-            energy_supply.timestep_end();
+            energy_supply.timestep_end().unwrap();
 
             energy_supply
                 .calc_energy_import_export_betafactor(t_it)
@@ -1522,7 +1542,7 @@ mod tests {
             energy_supply
                 .calc_energy_import_from_grid_to_battery(t_idx)
                 .unwrap();
-            energy_supply.timestep_end();
+            energy_supply.timestep_end().unwrap();
         }
 
         assert_eq!(

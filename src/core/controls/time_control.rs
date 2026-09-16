@@ -1077,17 +1077,19 @@ impl SmartApplianceControl {
             .collect();
         let battery_states_of_charge = energy_supplies
             .iter()
-            .filter(|&(_name, supply)| supply.read().has_battery())
-            .map(|(name, _supply)| {
-                (
+            .filter_map(|(name, supply)| match supply.read().has_battery() {
+                Ok(true) => Some(Ok((
                     name.to_owned(),
                     battery_24hr.battery_state_of_charge[name.as_str()]
                         .iter()
                         .map(|x| AtomicF64::new(*x))
                         .collect_vec(),
-                )
+                ))),
+                Ok(false) => None,
+                Err(e) => Some(Err(e)),
             })
-            .collect();
+            .collect::<Result<IndexMap<String, Vec<AtomicF64>>, _>>()?;
+
         for energy_supply in energy_supplies.keys() {
             if power_timeseries[energy_supply.as_str()].len() as f64 * timeseries_step
                 < simulation_time_iterator.total_steps() as f64
@@ -1198,7 +1200,10 @@ impl SmartApplianceControl {
         }
     }
 
-    pub(crate) fn update_demand_buffer(&self, simtime: SimulationTimeIteration) {
+    pub(crate) fn update_demand_buffer(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<()> {
         let t_idx = simtime.index;
         let idx_24hr = t_idx % self.buffer_length;
         for (name, supply) in self.energy_supplies.iter() {
@@ -1224,7 +1229,7 @@ impl SmartApplianceControl {
             );
 
             let supply = supply.read();
-            for battery in supply.get_batteries() {
+            for battery in supply.get_batteries()? {
                 // TODO (from Python) communicate with charge control
                 let charge = battery.get_state_of_charge() * battery.get_max_capacity();
                 let charge_efficiency = battery.get_charge_efficiency(simtime);
@@ -1234,6 +1239,8 @@ impl SmartApplianceControl {
                 // supply/elecbattery, changed .store() to .fetch_add() as that seems to match the python
             }
         }
+
+        Ok(())
     }
 }
 
@@ -2418,7 +2425,7 @@ mod tests {
             simulation_time_iterator: SimulationTimeIterator,
         ) {
             for t_it in simulation_time_iterator {
-                smart_appliance_control.update_demand_buffer(t_it);
+                smart_appliance_control.update_demand_buffer(t_it).unwrap();
                 assert_eq!(
                     smart_appliance_control.get_demand(t_it.index, "mains elec"),
                     0.1

@@ -2573,7 +2573,7 @@ impl Corpus {
                 supply
                     .read()
                     .calc_energy_import_from_grid_to_battery(t_it)?;
-                supply.read().timestep_end();
+                supply.read().timestep_end()?;
             }
 
             for diverter in &self.diverters {
@@ -2581,7 +2581,7 @@ impl Corpus {
             }
 
             for (_, control) in &self.smart_appliance_controls {
-                control.update_demand_buffer(t_it);
+                control.update_demand_buffer(t_it)?;
             }
         }
 
