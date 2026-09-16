@@ -139,6 +139,7 @@ pub struct EnergySupply {
     is_export_capable: bool,
     power_limit_export: Option<f64>,
     tariff_export: Option<String>,
+    threshold_charges_export: Option<[f64; 12]>,
     demand_total: Vec<AtomicF64>,
     demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
     energy_out_by_end_user: IndexMap<String, Vec<AtomicF64>>,
@@ -176,6 +177,7 @@ impl EnergySupply {
         is_export_capable: Option<bool>,
         power_limit_export: Option<f64>,
         tariff_export: Option<String>,
+        threshold_charges_export: Option<[f64; 12]>,
         tariff_data: Option<TariffData>,
     ) -> anyhow::Result<Self> {
         let simulation_timesteps = simulation_time.total_steps();
@@ -216,6 +218,7 @@ impl EnergySupply {
             is_export_capable: is_export_capable.unwrap_or(true),
             power_limit_export,
             tariff_export,
+            threshold_charges_export,
             demand_total: init_demand_list(simulation_timesteps),
             demand_by_end_user: Default::default(),
             energy_out_by_end_user: Default::default(),
@@ -906,6 +909,7 @@ impl EnergySupplyBuilder {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap(),
         }
@@ -1077,6 +1081,7 @@ mod tests {
             &simulation_time.iter(),
             None,
             indexmap! {"Electric_battery".into() => elec_battery},
+            None,
             None,
             None,
             None,
