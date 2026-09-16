@@ -137,6 +137,7 @@ pub struct EnergySupply {
     diverters: IndexMap<String, Arc<RwLock<dyn SurplusDiverting>>>,
     priority: Option<Vec<String>>,
     is_export_capable: bool,
+    power_limit_export: Option<f64>,
     demand_total: Vec<AtomicF64>,
     demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
     energy_out_by_end_user: IndexMap<String, Vec<AtomicF64>>,
@@ -158,8 +159,11 @@ impl EnergySupply {
     /// * `fuel_type` - string denoting type of fuel
     /// * `simulation_timesteps` - the number of steps in the simulation time being used
     /// * `electric_battery` - reference to a map from name to an ElectricBattery object
-    /// * `priority`
     /// * `is_export_capable` - denotes that this Energy Supply can export its surplus supply
+    /// * `power_limit_export` - maximum AC power (kW) exportable to the grid, e.g. a
+    //                           Distribution Network Operator (DNO) export limit; applies to
+    //                           the whole supply (generation surplus and battery discharge
+    //                           combined); None means no limit
     /// * `tariff_data` - tariff data containing electricity prices
     pub(crate) fn new(
         fuel_type: FuelType,
@@ -168,6 +172,7 @@ impl EnergySupply {
         electric_batteries: IndexMap<String, ElectricBattery>,
         priority: Option<Vec<String>>,
         is_export_capable: Option<bool>,
+        power_limit_export: Option<f64>,
         tariff_data: Option<TariffData>,
     ) -> anyhow::Result<Self> {
         let simulation_timesteps = simulation_time.total_steps();
@@ -206,6 +211,7 @@ impl EnergySupply {
             diverters: Default::default(),
             priority,
             is_export_capable: is_export_capable.unwrap_or(true),
+            power_limit_export,
             demand_total: init_demand_list(simulation_timesteps),
             demand_by_end_user: Default::default(),
             energy_out_by_end_user: Default::default(),
@@ -894,6 +900,7 @@ impl EnergySupplyBuilder {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap(),
         }
@@ -1065,6 +1072,7 @@ mod tests {
             &simulation_time.iter(),
             None,
             indexmap! {"Electric_battery".into() => elec_battery},
+            None,
             None,
             None,
             None
