@@ -139,7 +139,7 @@ pub struct EnergySupply {
     priority: Option<Vec<String>>,
     is_export_capable: bool,
     power_limit_export: Option<f64>,
-    tariff_export: Option<String>,
+    tariff_export: Option<EnergySupplyTariff>,
     threshold_charges_export: Option<[f64; 12]>,
     threshold_prices_export: Option<[f64; 12]>,
     demand_total: Vec<AtomicF64>,
@@ -186,7 +186,7 @@ impl EnergySupply {
         priority: Option<Vec<String>>,
         is_export_capable: Option<bool>,
         power_limit_export: Option<f64>,
-        tariff_export: Option<String>,
+        tariff_export: Option<EnergySupplyTariff>,
         threshold_charges_export: Option<[f64; 12]>,
         threshold_prices_export: Option<[f64; 12]>,
         tariff_data: Option<TariffData>,
@@ -630,6 +630,54 @@ impl EnergySupply {
             .collect::<Vec<_>>()
     }
 
+    // Check whether the Electric Battery is in a state where we allow exporting to grid
+    /// return parameters are:
+    ///       exporting_condition     -- exporting condition combining the price and charge thresholds criteria
+    ///       threshold_charge        -- threshold charge for current timestep
+    ///       can_export_if_not_empty -- just the price threshold criteria for charging
+    pub(crate) fn is_exporting_to_grid(
+        &self,
+        battery: &ElectricBattery,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(bool, Option<f64>, bool)> {
+        let month = simtime.current_month().ok_or_else(|| {
+            anyhow!("Month could not be resolved for current simulation timestep.")
+        })? as usize;
+        let threshold_charge_export = self
+            .threshold_charges_export
+            .and_then(|charges| charges.get(month).copied());
+        let threshold_price_export = self
+            .threshold_prices_export
+            .and_then(|charges| charges.get(month).copied());
+
+        // For tariff selected look up price, etc, and decide whether to charge
+        let elec_price = if let Some(tariff_export) = self.tariff_export {
+            Some(
+                self.tariff_data
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Tariff data expected to be set on energy supply"))?
+                    .price(&tariff_export, simtime)?,
+            )
+        } else {
+            None
+        };
+
+        let current_charge = battery.get_state_of_charge();
+        let charge_discharge_efficiency = battery.get_charge_discharge_efficiency();
+
+        Ok(match (elec_price, threshold_price_export) {
+            (Some(elec_price), Some(threshold_price_export))
+                if elec_price * charge_discharge_efficiency > threshold_price_export =>
+            {
+                let is_over_threshold =
+                    threshold_charge_export.is_some_and(|threshold| current_charge > threshold);
+
+                (is_over_threshold, threshold_charge_export, true)
+            }
+            _ => (false, threshold_charge_export, false),
+        })
+    }
+
     /// Check whether the Electric Battery is in a state where we allow charging from the grid
     ///       This function is called at two different stages in the calculation:
     ///       1. When considering discharging from the battery (electric demand from house)
@@ -964,6 +1012,22 @@ impl EnergySupplyBuilder {
         Ok(self)
     }
 
+    pub fn with_tariff_export(
+        mut self,
+        threshold_charges_export: [f64; 12],
+        threshold_prices_export: [f64; 12],
+    ) -> Self {
+        self.energy_supply.tariff_export = Some(EnergySupplyTariff::ExportTariff);
+        self.energy_supply.threshold_charges_export = Some(threshold_charges_export);
+        self.energy_supply.threshold_prices_export = Some(threshold_prices_export);
+        self
+    }
+
+    pub fn with_tariff_data(mut self, tariff_data: TariffData) -> Self {
+        self.energy_supply.tariff_data = Some(tariff_data);
+        self
+    }
+
     pub fn with_electric_battery(
         mut self,
         electric_batteries: IndexMap<String, ElectricBattery>,
@@ -1022,6 +1086,7 @@ mod tests {
     use rstest::*;
     use serde_json::json;
     use std::fs::File;
+    use std::io::{BufReader, Cursor};
     use std::path::Path;
 
     #[fixture]
@@ -1073,6 +1138,22 @@ mod tests {
             energy_supply: Arc::new(RwLock::new(energy_supply)),
             end_user_name: "bath".into(),
         }
+    }
+
+    #[fixture]
+    pub fn tariff_data(simulation_time: SimulationTime) -> TariffData {
+        let prices = TariffData::load_data_from_file(BufReader::new(Cursor::new(include_str!(
+            "../../../examples/tariff_data/tariff_data_25-06-2024.csv"
+        ))))
+        .unwrap();
+
+        TariffData::new(
+            &simulation_time.iter(),
+            Some(0),
+            1.,
+            TariffData::expand_prices_schedule(prices).unwrap(),
+        )
+        .unwrap()
     }
 
     fn create_elec_battery(
@@ -1129,6 +1210,39 @@ mod tests {
         .is_err());
 
         assert!(energy_supply.get_batteries().unwrap().is_empty());
+    }
+
+    #[rstest]
+    fn test_is_exporting_to_grid(
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+        tariff_data: TariffData,
+    ) {
+        let elec_battery = create_elec_battery(
+            true,
+            true,
+            BatteryLocation::Inside,
+            external_conditions,
+            simulation_time,
+        );
+
+        let builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
+        let energy_supply = builder
+            .with_electric_battery(indexmap! {"battery".into() => elec_battery})
+            .with_tariff_data(tariff_data)
+            .with_tariff_export([0.8; 12], [20.; 12])
+            .build();
+
+        let battery = &energy_supply.electric_batteries[0];
+
+        // can't export
+        let (exporting_condition, threshold_charge, can_export_if_not_empty) = energy_supply
+            .is_exporting_to_grid(battery, simulation_time.iter().current_iteration())
+            .unwrap();
+
+        assert!(!exporting_condition);
+        assert_eq!(threshold_charge, Some(0.8));
+        assert!(!can_export_if_not_empty);
     }
 
     #[rstest]

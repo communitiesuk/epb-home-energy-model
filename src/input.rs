@@ -1333,6 +1333,9 @@ pub(crate) enum EnergySupplyTariff {
 
     #[serde(rename = "Variable Time of Day Tariff")]
     VariableTimeOfDay,
+
+    #[serde(rename = "Export Tariff")]
+    ExportTariff,
 }
 
 // It's not completely clear at the moment what the difference between fuel type and energy supply type is,
