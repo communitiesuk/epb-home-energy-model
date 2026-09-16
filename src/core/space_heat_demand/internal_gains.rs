@@ -14,6 +14,7 @@ use smartstring::alias::String;
 use std::convert::TryInto;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::vec;
 
 /// Arguments:
 /// * `total_internal_gains` - list of internal gains, in W/m2 (one entry per hour)
@@ -204,17 +205,15 @@ impl EventApplianceGains {
         let standby_power = appliance_data
             .standby
             .ok_or_else(|| anyhow!("standby is expected for EventApplianceGains"))?;
-        let usage_events = appliance_data
+        let usage_events: Vec<ApplianceGainsEvent> = appliance_data
             .events
-            .as_ref()
-            .map(|events| {
-                events
-                    .iter()
-                    .cloned()
-                    .sorted_by(|event1, event2| event1.start.total_cmp(&event2.start))
-                    .collect()
-            })
-            .ok_or_else(|| anyhow!("events are expected for EventApplianceGains"))?;
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .cloned()
+            .sorted_by(|event1, event2| event1.start.total_cmp(&event2.start))
+            .collect();
+
         let load_shifting_metadata = appliance_data
             .load_shifting
             .as_ref()
