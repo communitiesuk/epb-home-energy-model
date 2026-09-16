@@ -1,5 +1,5 @@
 use crate::bail;
-use crate::core::controls::time_control::{Control, ControlBehaviour, SetpointTimeControl};
+use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::units::{
     average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, Orientation360,
     JOULES_PER_KILOJOULE,
