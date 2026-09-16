@@ -152,9 +152,11 @@ pub struct EnergySupply {
     energy_into_battery_from_generation: Vec<AtomicF64>,
     energy_battery_to_consumption: Vec<AtomicF64>,
     energy_into_battery_from_grid: Vec<AtomicF64>,
+    energy_into_grid_from_battery: Vec<AtomicF64>,
     battery_state_of_charge: Vec<AtomicF64>,
     energy_diverted: Vec<AtomicF64>,
     energy_generated_consumed: Vec<AtomicF64>,
+    generation_curtailed: Vec<AtomicF64>,
     tariff_data: Option<TariffData>,
     power_limit_battery_import: Option<f64>,
 }
@@ -240,9 +242,11 @@ impl EnergySupply {
             energy_into_battery_from_generation: init_demand_list(simulation_timesteps),
             energy_battery_to_consumption: init_demand_list(simulation_timesteps),
             energy_into_battery_from_grid: init_demand_list(simulation_timesteps),
+            energy_into_grid_from_battery: init_demand_list(simulation_timesteps),
             battery_state_of_charge: init_demand_list(simulation_timesteps),
             energy_diverted: init_demand_list(simulation_timesteps),
             energy_generated_consumed: init_demand_list(simulation_timesteps),
+            generation_curtailed: init_demand_list(simulation_timesteps),
             tariff_data,
             power_limit_battery_import,
         })
@@ -568,10 +572,18 @@ impl EnergySupply {
     }
 
     pub fn get_energy_export(&self) -> Vec<f64> {
-        Self::vec_of_floats_from_atomics(&self.supply_surplus)
+        let supply_surplus = Self::vec_of_floats_from_atomics(&self.supply_surplus);
+        let energy_into_grid_from_battery =
+            Self::vec_of_floats_from_atomics(&self.energy_into_grid_from_battery);
+
+        (0..self.simulation_timesteps)
+            .map(|i| supply_surplus[i] + energy_into_grid_from_battery[i])
+            .collect()
     }
 
-    // skipped get_energy_export_from_generation as it has same definition as get_energy_export
+    pub fn get_energy_export_from_generation(&self) -> Vec<f64> {
+        Self::vec_of_floats_from_atomics(&self.supply_surplus)
+    }
 
     /// Return the amount of generated energy consumed in the building for all timesteps
     pub fn get_energy_generated_consumed(&self) -> Vec<f64> {
@@ -582,12 +594,14 @@ impl EnergySupply {
         Self::vec_of_floats_from_atomics(&self.grid_to_consumption)
     }
 
+    #[allow(clippy::type_complexity)]
     /// Return the amount of generated energy sent to battery and drawn from battery
-    pub fn get_energy_to_from_battery(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+    pub fn get_battery_energy_flows(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
         (
             Self::vec_of_floats_from_atomics(&self.energy_into_battery_from_generation),
             Self::vec_of_floats_from_atomics(&self.energy_battery_to_consumption),
             Self::vec_of_floats_from_atomics(&self.energy_into_battery_from_grid),
+            Self::vec_of_floats_from_atomics(&self.energy_into_grid_from_battery),
             Self::vec_of_floats_from_atomics(&self.battery_state_of_charge),
         )
     }
@@ -595,6 +609,14 @@ impl EnergySupply {
     /// Return the amount of generated energy diverted to minimise export
     pub fn get_energy_diverted(&self) -> Vec<f64> {
         Self::vec_of_floats_from_atomics(&self.energy_diverted)
+    }
+
+    /// Return the generated energy curtailed by the export power limit for all timesteps.
+    //  Curtailed energy is generation that could be neither consumed, stored, diverted
+    //  nor exported, because export was capped at the DNO export power limit. It is
+    //  reported so the generation balance closes; it is zero when no limit is set.
+    pub fn get_energy_generation_curtailed(&self) -> Vec<f64> {
+        Self::vec_of_floats_from_atomics(&self.generation_curtailed)
     }
 
     pub fn get_beta_factor(&self) -> Vec<f64> {
@@ -1499,6 +1521,7 @@ mod tests {
         let expected_energy_out_of_battery = vec![0.; 8];
         let expected_battery_state_of_charge = vec![0.8; 8];
         let expected_energy_import_from_grid = vec![1.788854381999832, 0., 0., 0., 0., 0., 0., 0.];
+        let expected_energy_export_to_grid = vec![0.; 8];
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
@@ -1520,11 +1543,12 @@ mod tests {
             expected_diverted_energy
         );
         assert_eq!(
-            energy_supply.get_energy_to_from_battery(),
+            energy_supply.get_battery_energy_flows(),
             (
                 expected_generated_energy_into_battery,
                 expected_energy_out_of_battery,
                 expected_energy_import_from_grid,
+                expected_energy_export_to_grid,
                 expected_battery_state_of_charge,
             )
         );
@@ -1559,8 +1583,14 @@ mod tests {
         }
 
         assert_eq!(
-            energy_supply.get_energy_to_from_battery(),
-            (vec![0.; 8], vec![0.; 8], vec![0.; 8], vec![0.; 8],)
+            energy_supply.get_battery_energy_flows(),
+            (
+                vec![0.; 8],
+                vec![0.; 8],
+                vec![0.; 8],
+                vec![0.; 8],
+                vec![0.; 8],
+            )
         )
     }
 
@@ -1589,8 +1619,14 @@ mod tests {
         }
 
         assert_eq!(
-            energy_supply.get_energy_to_from_battery(),
-            (vec![0.; 8], vec![0.; 8], vec![0.; 8], vec![0.; 8],)
+            energy_supply.get_battery_energy_flows(),
+            (
+                vec![0.; 8],
+                vec![0.; 8],
+                vec![0.; 8],
+                vec![0.; 8],
+                vec![0.; 8],
+            )
         )
     }
 
@@ -1763,10 +1799,11 @@ mod tests {
             );
 
             assert_eq!(
-                energy_supply.get_energy_to_from_battery(),
+                energy_supply.get_battery_energy_flows(),
                 (
                     vec![2.2431023464582824, 0., 0., 0., 0., 0., 0., 0.,],
                     vec![-1.0030750507450579, -0., 0., 0., 0., 0., 0., 0.,],
+                    vec![0.; 8],
                     vec![0.; 8],
                     vec![0.; 8]
                 )

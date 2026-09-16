@@ -2689,8 +2689,8 @@ impl Corpus {
                 name.clone(),
                 supply.get_energy_generated_consumed().to_owned(),
             );
-            let (energy_to, energy_from, storage_from, state_of_charge) =
-                supply.get_energy_to_from_battery();
+            let (energy_to, energy_from, storage_from, _storage_to, state_of_charge) =
+                supply.get_battery_energy_flows();
             energy_to_storage.insert(name.clone(), energy_to.to_owned());
             energy_from_storage.insert(name.clone(), energy_from.to_owned());
             storage_from_grid.insert(name.clone(), storage_from.to_owned());
