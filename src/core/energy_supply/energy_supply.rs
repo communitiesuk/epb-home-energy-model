@@ -156,6 +156,7 @@ pub struct EnergySupply {
     energy_diverted: Vec<AtomicF64>,
     energy_generated_consumed: Vec<AtomicF64>,
     tariff_data: Option<TariffData>,
+    power_limit_battery_import: Option<f64>,
 }
 
 impl EnergySupply {
@@ -172,6 +173,9 @@ impl EnergySupply {
     /// * `threshold_charges_export` - level of battery charge below which battery prohibited from exporting to grid (0 - 1)
     /// * `threshold_prices_export` - grid price above which battery is permitted to export to grid (p/kWh)
     /// * `tariff_data` - tariff data containing electricity prices
+    /// * `power_limit_battery_import` - the maximum power limit for charging batteries from the
+    //                                   energy supply connection (not limited to grid — also applies
+    //                                   to on-site generation), shared across all batteries (kW)
     pub(crate) fn new(
         fuel_type: FuelType,
         simulation_time: &SimulationTimeIterator,
@@ -184,6 +188,7 @@ impl EnergySupply {
         threshold_charges_export: Option<[f64; 12]>,
         threshold_prices_export: Option<[f64; 12]>,
         tariff_data: Option<TariffData>,
+        power_limit_battery_import: Option<f64>,
     ) -> anyhow::Result<Self> {
         let simulation_timesteps = simulation_time.total_steps();
         // Create supply connection of Electric Battery to Energy Supply to account for energy imported
@@ -239,6 +244,7 @@ impl EnergySupply {
             energy_diverted: init_demand_list(simulation_timesteps),
             energy_generated_consumed: init_demand_list(simulation_timesteps),
             tariff_data,
+            power_limit_battery_import,
         })
     }
 
@@ -917,6 +923,7 @@ impl EnergySupplyBuilder {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap(),
         }
@@ -1088,6 +1095,7 @@ mod tests {
             &simulation_time.iter(),
             None,
             indexmap! {"Electric_battery".into() => elec_battery},
+            None,
             None,
             None,
             None,
