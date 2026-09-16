@@ -6061,22 +6061,239 @@ mod tests {
         // are located) and is scaled so the overall dwelling-wide effect matches
         // the target 11.3% reduction from the BRE Airex ECO4 trial.
         // Control returning 0.0 (fully closed) at t=0
+
+        fn create_infiltration_ventilation_with_smart_air_brick(
+            simulation_time_iterator: &SimulationTimeIterator,
+            combustion_appliances: CombustionAppliances,
+            energy_supply: EnergySupply,
+            smart_air_brick: Option<Arc<Control>>,
+            vents_open_during_airtightness_test: Option<bool>,
+        ) -> InfiltrationVentilation {
+            let ctrl = ctrl_that_is_on(&simulation_time_iterator);
+            let windows = vec![create_window(Some(ctrl), 30.)];
+            let vents = vec![Vent::new(1.5, 100., 20., 0.0.into(), 90., 30., 2.5)];
+            let leaks = CompletedVentilationLeaks {
+                ventilation_zone_height: 6.,
+                test_pressure: 50.,
+                test_result: 1.2,
+                area_roof: 25.,
+                area_facades: 85.,
+                env_area: 220.,
+                altitude: 30.,
+            };
+            let combustion_appliances_list = vec![combustion_appliances];
+            let air_terminal_devices = Vec::<AirTerminalDevices>::new();
+            let energy_supply = Arc::new(RwLock::new(energy_supply));
+            let energy_supply_connection =
+                EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
+
+            let mvhr_ductwork = {
+                let duct_perimeter = 0.9;
+                let internal_diameter = 0.25;
+                let external_diameter = 0.27;
+                let length = 0.4;
+                let k_insulation = 0.02;
+                let thickness_insulation = 0.022;
+                let reflective = false;
+                vec![
+                    Ductwork::new(
+                        DuctShape::Circular,
+                        duct_perimeter.into(),
+                        internal_diameter.into(),
+                        external_diameter.into(),
+                        length,
+                        k_insulation,
+                        thickness_insulation,
+                        reflective,
+                        DuctType::Exhaust,
+                    )
+                    .unwrap(),
+                    Ductwork::new(
+                        DuctShape::Circular,
+                        duct_perimeter.into(),
+                        internal_diameter.into(),
+                        external_diameter.into(),
+                        length,
+                        k_insulation,
+                        thickness_insulation,
+                        reflective,
+                        DuctType::Intake,
+                    )
+                    .unwrap(),
+                ]
+            };
+
+            let mechanical_ventilation = MechanicalVentilation::new(
+                SupplyAirFlowRateControlType::Oda,
+                SupplyAirTemperatureControlType::NoControl,
+                1.,
+                3.4,
+                MechVentData::Mvhr {
+                    orientation_intake: 180.0.into(),
+                    pitch_intake: 90.,
+                    h_path_intake: 2.,
+                    h_path_exhaust: 2.,
+                    orientation_exhaust: 180.0.into(),
+                    pitch_exhaust: 90.,
+                },
+                1.5,
+                0.5,
+                energy_supply_connection,
+                250.,
+                0.,
+                3.,
+                None,
+                Some(0.75),
+                None,
+                1.,
+                MVHRLocation::Inside.into(),
+                mvhr_ductwork.into(),
+                None,
+            )
+            .unwrap();
+            let mechanical_ventilations = vec![Arc::new(mechanical_ventilation)];
+            // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
+            InfiltrationVentilation::new(
+                true,
+                VentilationShieldClass::Open,
+                &TerrainClass::OpenField,
+                20.0,
+                windows,
+                vents,
+                leaks,
+                combustion_appliances_list,
+                air_terminal_devices,
+                mechanical_ventilations,
+                false,
+                0.,
+                250.,
+                2.5,
+                smart_air_brick,
+                vents_open_during_airtightness_test,
+                None,
+            )
+        }
+
         #[rstest]
         fn test_lower_facade_infiltration_adjustment_vents_open_during_test(
-            infiltration_ventilation: InfiltrationVentilation,
             simulation_time_iterator: SimulationTimeIterator,
+            combustion_appliances: CombustionAppliances,
+            energy_supply: EnergySupply,
         ) {
-            // Lower facade fraction = 0.5 * area_facades / (area_facades + area_roof)
-            // = 0.5 * 85.0 / 110.0
-            // reduction_lower = 0.139 / fraction_lower
-            // at t=0 (fully closed): adjustment = 1.0 - reduction_lower
+            let schedule = vec![Some(0.0)]
+                .into_iter()
+                .chain(std::iter::repeat(Some(1.0)).take(8759))
+                .collect::<Vec<Option<f64>>>();
+            let start_day = 0;
+            let time_series_step = 1.;
+            let timestep = 1.;
+            let control = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                schedule,
+                start_day,
+                time_series_step,
+                None,
+                None,
+                timestep,
+            )));
 
-            let expected = 1. - infiltration_ventilation.infiltration_reduction_lower;
-            let adjustment = infiltration_ventilation
+            let infiltration_ventilation_with_patched_smart_air_brick_vents_open =
+                create_infiltration_ventilation_with_smart_air_brick(
+                    &simulation_time_iterator,
+                    combustion_appliances,
+                    energy_supply,
+                    Some(control),
+                    Some(true),
+                );
+
+            let expected = 1.
+                - infiltration_ventilation_with_patched_smart_air_brick_vents_open
+                    .infiltration_reduction_lower;
+
+            let adjustment = infiltration_ventilation_with_patched_smart_air_brick_vents_open
                 .calculate_lower_facade_infiltration_adjustment(
                     simulation_time_iterator.current_iteration(),
                 );
 
+            assert_relative_eq!(adjustment, expected, epsilon = 1e-6);
+        }
+
+        #[rstest]
+        fn test_lower_facade_infiltration_adjustment_no_setpoint(
+            simulation_time_iterator: SimulationTimeIterator,
+            combustion_appliances: CombustionAppliances,
+            energy_supply: EnergySupply,
+        ) {
+            let schedule = vec![None]
+                .into_iter()
+                .chain(std::iter::repeat(Some(1.0)).take(8759))
+                .collect::<Vec<Option<f64>>>();
+            let start_day = 0;
+            let time_series_step = 1.;
+            let timestep = 1.;
+            let control = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                schedule,
+                start_day,
+                time_series_step,
+                None,
+                None,
+                timestep,
+            )));
+            let infiltration_ventilation_with_patched_smart_air_brick_no_setpoint =
+                create_infiltration_ventilation_with_smart_air_brick(
+                    &simulation_time_iterator,
+                    combustion_appliances,
+                    energy_supply,
+                    Some(control),
+                    Some(true),
+                );
+
+            let expected = 1.0;
+            let adjustment = infiltration_ventilation_with_patched_smart_air_brick_no_setpoint
+                .calculate_lower_facade_infiltration_adjustment(
+                    simulation_time_iterator.current_iteration(),
+                );
+
+            assert_relative_eq!(adjustment, expected, epsilon = 1e-6);
+        }
+
+        #[rstest]
+        fn test_lower_facade_infiltration_adjustment_vents_closed_during_test(
+            simulation_time_iterator: SimulationTimeIterator,
+            combustion_appliances: CombustionAppliances,
+            energy_supply: EnergySupply,
+        ) {
+            let schedule = vec![Some(1.0)]
+                .into_iter()
+                .chain(std::iter::repeat(Some(0.0)).take(8759))
+                .collect::<Vec<Option<f64>>>();
+            let start_day = 0;
+            let time_series_step = 1.;
+            let timestep = 1.;
+            let control = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                schedule,
+                start_day,
+                time_series_step,
+                None,
+                None,
+                timestep,
+            )));
+            let infiltration_ventilation_with_patched_smart_air_brick_vents_closed =
+                create_infiltration_ventilation_with_smart_air_brick(
+                    &simulation_time_iterator,
+                    combustion_appliances,
+                    energy_supply,
+                    Some(control),
+                    Some(false),
+                );
+            let expected = 1.
+                / (1.
+                    - infiltration_ventilation_with_patched_smart_air_brick_vents_closed
+                        .infiltration_reduction_lower);
+            let adjustment = infiltration_ventilation_with_patched_smart_air_brick_vents_closed
+                .calculate_lower_facade_infiltration_adjustment(
+                    simulation_time_iterator.current_iteration(),
+                );
+            println!("adjustment: {}, expected: {}", adjustment, expected);
             assert_relative_eq!(adjustment, expected, epsilon = 1e-6);
         }
     }
