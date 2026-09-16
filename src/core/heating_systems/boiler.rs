@@ -8,7 +8,9 @@ use crate::core::water_heat_demand::misc::{
     water_demand_to_kwh, WaterEventResult, WaterEventResultType, FRAC_DHW_ENERGY_INTERNAL_GAINS,
 };
 use crate::external_conditions::ExternalConditions;
-use crate::input::{BoilerHotWaterTest, FuelType, HotWaterSourceDetails};
+use crate::input::{
+    BoilerHotWaterTest, CombiBoilerType, CombiKeepHotFuel, FuelType, HotWaterSourceDetails,
+};
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
@@ -1131,12 +1133,14 @@ impl Boiler {
             self.service_results.write().push(ServiceResult {
                 service_name: service_name.into(),
                 service_type,
+                temp_flow: 0.0,
                 temp_return_feed,
                 energy_output_required,
                 energy_output_provided,
                 time_available,
                 _time_start: time_start,
                 _time_elapsed_hp: time_elapsed_hp,
+                combi_boiler_config: None,
             });
         }
 
@@ -1195,8 +1199,8 @@ impl Boiler {
                 == ServiceType::Space
             {
                 (
-                        self.sum_space_heating_service_results_energy_output_required(),
-                        max_time_available.expect("max_time_available was expected to be some value as there is at least one space service"),
+                    self.sum_space_heating_service_results_energy_output_required(),
+                    max_time_available.expect("max_time_available was expected to be some value as there is at least one space service"),
                 )
             } else {
                 (
@@ -1333,15 +1337,30 @@ impl Boiler {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct CombiBoilerConfig {
+    pub(crate) combi_loss: f64,
+    pub(crate) combi_type: CombiBoilerType,
+    pub(crate) keep_hot_config: Option<KeepHotCombiBoilerConfig>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct KeepHotCombiBoilerConfig {
+    pub(crate) keep_hot_on: bool,
+    pub(crate) keep_hot_fuel: CombiKeepHotFuel,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct ServiceResult {
-    service_name: String,
-    service_type: ServiceType,
-    temp_return_feed: Option<f64>,
-    energy_output_required: f64,
-    energy_output_provided: f64,
-    time_available: f64,
-    _time_start: f64,
-    _time_elapsed_hp: Option<f64>,
+    pub(crate) service_name: String,
+    pub(crate) service_type: ServiceType,
+    pub(crate) temp_flow: f64,
+    pub(crate) temp_return_feed: Option<f64>,
+    pub(crate) energy_output_required: f64,
+    pub(crate) energy_output_provided: f64,
+    pub(crate) time_available: f64,
+    pub(crate) _time_start: f64,
+    pub(crate) _time_elapsed_hp: Option<f64>,
+    pub(crate) combi_boiler_config: Option<CombiBoilerConfig>,
 }
 
 #[cfg(test)]

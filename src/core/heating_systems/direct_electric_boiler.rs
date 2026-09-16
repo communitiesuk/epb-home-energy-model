@@ -4,11 +4,14 @@ use crate::core::controls::time_control::{Control, RangeTimeControl};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{
     BoilerForBoilerService, BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
-    IncorrectBoilerDataType,
+    CombiBoilerConfig, IncorrectBoilerDataType, KeepHotCombiBoilerConfig, ServiceResult,
+    ServiceType,
 };
 use crate::external_conditions::ExternalConditions;
 use crate::hem_core::simulation_time::SimulationTimeIteration;
-use crate::input::{FuelType, HeatSourceWetDetails, HotWaterSourceDetails};
+use crate::input::{
+    CombiBoilerType, CombiKeepHotFuel, FuelType, HeatSourceWetDetails, HotWaterSourceDetails,
+};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -191,12 +194,113 @@ impl DirectElectricBoiler {
         time_available
     }
 
-    fn time_running(&self) {
-        todo!()
+    fn time_running(&self, energy_output_provided: f64, time_available: f64) -> f64 {
+        // Calculate running time of Boiler
+        let current_boiler_power =
+            self.calc_current_boiler_power(energy_output_provided, time_available);
+        if current_boiler_power <= 0.0 {
+            0.0
+        } else {
+            min_of_2(
+                energy_output_provided / current_boiler_power,
+                time_available,
+            )
+        }
     }
 
-    pub(crate) fn demand_energy(&self) {
-        todo!()
+    /// Calculate energy required by boiler to satisfy demand for the service indicated.
+    pub(crate) fn demand_energy(
+        &mut self,
+        service_name: &str,
+        service_type: ServiceType,
+        energy_output_required: f64,
+        temp_flow: f64,
+        temp_return_feed: f64,
+        hybrid_service: Option<bool>,
+        time_start: Option<f64>,
+        time_elapsed_hp: Option<f64>,
+        update_heat_source_state: Option<bool>,
+        combi_boiler_config: Option<CombiBoilerConfig>,
+    ) -> anyhow::Result<(f64, Option<f64>)> {
+        // Account for time control where present. If no control present, assume
+        // system is always active (except for basic thermostatic control, which
+        // is implicit in demand calculation).
+        // if self.__control is None or self.__control.is_on():
+        //     // Energy that heater is able to supply is limited by power rating
+        //     energy_output_provided = min(energy_output_required, self.__boiler_power * self.__simulation_time.timestep())
+        // else:
+        //
+
+        let time_start = time_start.unwrap_or(0.0);
+        let hybrid_service_bool = hybrid_service.unwrap_or(false);
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
+        let combi_boiler_config = combi_boiler_config.unwrap_or(CombiBoilerConfig {
+            combi_loss: 0.,
+            combi_type: Default::default(),
+            keep_hot_config: None,
+        });
+
+        let time_available = self.time_available(time_start, time_elapsed_hp);
+        let energy_output_provided =
+            self.calc_energy_output_provided(energy_output_required, time_available);
+
+        // TODO Ideally, the boiler power used for the running time calculation
+        //      would account for space heating demand for all zones, but the
+        //      calculation flow does not allow for this without circularity.
+        //      Therefore, the value for time running returned from this function
+        //      (used in the hybrid HP calculation) will be slightly inaccurate.
+
+        let time_running_current_service =
+            self.time_running(energy_output_provided, time_available);
+
+        if update_heat_source_state {
+            self.total_time_running_current_timestep += time_running_current_service;
+
+            let combi_boiler_config = match service_type {
+                ServiceType::WaterCombi => {
+                    let keep_hot_config = match combi_boiler_config.combi_type {
+                        CombiBoilerType::KeepHot => {
+                            Some(combi_boiler_config.keep_hot_config.unwrap_or(
+                                KeepHotCombiBoilerConfig {
+                                    keep_hot_on: true,
+                                    keep_hot_fuel: CombiKeepHotFuel::MainBoilerFuel,
+                                },
+                            ))
+                        }
+                        _ => None,
+                    };
+
+                    Some(CombiBoilerConfig {
+                        combi_loss: combi_boiler_config.combi_loss,
+                        combi_type: combi_boiler_config.combi_type,
+                        keep_hot_config,
+                    })
+                }
+                _ => None,
+            };
+
+            // Save results that are needed later (in the timestep_end function)
+            let service_result = ServiceResult {
+                service_name: service_name.into(),
+                service_type,
+                temp_flow,
+                temp_return_feed: Some(temp_return_feed),
+                energy_output_required,
+                energy_output_provided,
+                time_available,
+                _time_start: time_start,
+                _time_elapsed_hp: time_elapsed_hp,
+                combi_boiler_config,
+            };
+
+            self.service_results.write().push(service_result);
+        }
+
+        Ok(if hybrid_service_bool {
+            (energy_output_provided, Some(time_running_current_service))
+        } else {
+            (energy_output_provided, None)
+        })
     }
 
     fn electrical_energy_demand(&self) {
@@ -447,6 +551,39 @@ mod tests {
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
             assert_relative_eq!(boiler.time_available(0.2, Some(0.5)), &[0.4, 0.4][t_idx]);
+        }
+    }
+
+    #[rstest]
+    fn test_demand_energy(mut boiler: DirectElectricBoiler, simulation_time: SimulationTime) {
+        // Test with different values of  service types and hybrid_service_bool
+        boiler
+            .create_service_connection("boiler_demand_energy")
+            .unwrap();
+
+        // Both timesteps deliver the full 10 kWh because the boiler's running
+        // time (10 / 24 h) is well within the 1 h timestep, leaving capacity
+        // for the second call.
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            let result = boiler
+                .demand_energy(
+                    "boiler_demand_energy",
+                    ServiceType::WaterCombi,
+                    10.,
+                    45.,
+                    37.,
+                    Some(false),
+                    None,
+                    None,
+                    None,
+                    Some(CombiBoilerConfig {
+                        combi_loss: 1.2,
+                        combi_type: CombiBoilerType::KeepHot,
+                        keep_hot_config: None,
+                    }),
+                )
+                .unwrap();
+            assert_relative_eq!(result.0, &[10., 10.][t_idx]);
         }
     }
 }
