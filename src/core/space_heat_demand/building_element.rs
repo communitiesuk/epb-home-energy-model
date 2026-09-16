@@ -203,6 +203,17 @@ impl BuildingElement {
         }
     }
 
+    pub(crate) fn pitch(&self) -> f64 {
+        match self {
+            BuildingElement::Opaque(el) => el._internal_pitch,
+            BuildingElement::AdjacentConditionedSpace(el) => el.pitch,
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.pitch,
+            BuildingElement::Ground(el) => el.pitch,
+            BuildingElement::Transparent(el) => el.pitch,
+            BuildingElement::PartyWall(el) => el.pitch,
+        }
+    }
+
     fn as_heat_transfer_through(&self) -> &dyn HeatTransferThrough {
         match self {
             BuildingElement::Opaque(el) => el,

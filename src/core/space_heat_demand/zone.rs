@@ -9,7 +9,7 @@ use crate::core::space_heat_demand::thermal_bridge::{
 use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::corpus::TempInternalAirFn;
-use crate::input::ZoneTemperatureControlBasis;
+use crate::input::{ZoneTemperatureControlBasis, PITCH_LIMIT_HORIZ_FLOOR};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
 use approx::relative_eq;
@@ -179,6 +179,30 @@ impl Zone {
     /// Return temp_setpnt_init
     pub(crate) fn setpnt_init(&self) -> f64 {
         self.temp_setpnt_init
+    }
+
+    /// Add the floor area used by underfloor heating and check against available floor area.
+    fn add_ufh_floor_area(&mut self, underfloor_emitter_area: f64) -> anyhow::Result<()> {
+        self.underfloor_emitter_area += underfloor_emitter_area;
+
+        let mut floor_area = 0.0;
+        for eli in &self.building_elements {
+            if eli.element.pitch() > PITCH_LIMIT_HORIZ_FLOOR {
+                floor_area += eli.element.area();
+            }
+        }
+
+        if !relative_eq!(
+            self.underfloor_emitter_area,
+            floor_area,
+            epsilon = f64::EPSILON,
+            max_relative = f64::EPSILON,
+        ) && self.underfloor_emitter_area > floor_area
+        {
+            bail!("UFH area is greater than the zone floor area");
+        }
+
+        Ok(())
     }
 
     fn init_node_temps(
