@@ -26,12 +26,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 #[derive(Debug)]
+// NOTE that these types are based on TimeControlType enum from the Python code
+// _not_ the TimeControl type
 pub(crate) enum Control {
     OnOffTime(OnOffTimeControl),
+    SetpointTime(SetpointTimeControl),
     Charge(ChargeControl),
     OnOffMinimisingTime(OnOffCostMinimisingTimeControl),
-    SetpointTime(SetpointTimeControl),
     CombinationTime(CombinationTimeControl),
+    RangeTime(RangeTimeControl),
     #[cfg(test)]
     Mock(MockControl),
 }
@@ -50,6 +53,8 @@ macro_rules! per_control {
             Control::SetpointTime($pattern) => $res,
             #[allow(noop_method_call)]
             Control::CombinationTime($pattern) => $res,
+            #[allow(noop_method_call)]
+            Control::RangeTime($pattern) => $res,
             #[cfg(test)]
             #[allow(noop_method_call)]
             Control::Mock($pattern) => $res,
@@ -707,12 +712,13 @@ impl ControlBehaviour for OnOffCostMinimisingTimeControl {
 }
 
 #[derive(Clone, Debug)]
-pub enum ScheduleOrControl {
-    Schedule(Vec<Option<f64>>), // TODO add ControlSetPoint here 1.0.0a9
+pub(crate) enum ScheduleOrControl {
+    Schedule(Vec<Option<f64>>),
+    Control(Arc<Control>),
 }
 
 #[derive(Debug)]
-pub struct RangeTimeControl {
+pub(crate) struct RangeTimeControl {
     schedule_lower: ScheduleOrControl,
     schedule_upper: ScheduleOrControl,
     start_day: f64,
@@ -742,7 +748,8 @@ impl RangeTimeControl {
                         bail!("Entries in schedule_lower must be lower than or equal to the corresponding entry in schedule_upper")
                     }
                 }
-            }
+            },
+            _ => {}
         }
 
         let timesteps_advstart = (duration_advanced_start / simulation_time.step).round() as u32;
@@ -762,8 +769,8 @@ impl RangeTimeControl {
     ) -> Option<f64> {
         match schedule {
             ScheduleOrControl::Schedule(schedule) => schedule[simulation_time_iteration.index],
+            ScheduleOrControl::Control(control) => control.setpnt(simulation_time_iteration),
         }
-        // TODO handle Control as well as Schedule
     }
 }
 
@@ -775,12 +782,16 @@ impl ControlBehaviour for RangeTimeControl {
         // Return true if current time is inside specified time for heating/cooling
         let idx = simulation_time_iteration.index;
 
+
+        // TODO can we avoid unwrap here? in_required_period should always return Some bool
         let setpnt_lower_is_set = match &self.schedule_lower {
             ScheduleOrControl::Schedule(schedule_lower) => schedule_lower[idx].is_some(),
+            ScheduleOrControl::Control(control) => control.in_required_period(simulation_time_iteration).unwrap(),
         };
 
         let setpnt_upper_is_set = match &self.schedule_upper {
             ScheduleOrControl::Schedule(schedule_upper) => schedule_upper[idx].is_some(),
+            ScheduleOrControl::Control(control) => control.in_required_period(simulation_time_iteration).unwrap(),
         };
 
         Some(setpnt_lower_is_set && setpnt_upper_is_set)
