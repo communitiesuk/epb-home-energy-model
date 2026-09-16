@@ -138,6 +138,7 @@ pub struct EnergySupply {
     priority: Option<Vec<String>>,
     is_export_capable: bool,
     power_limit_export: Option<f64>,
+    tariff_export: Option<String>,
     demand_total: Vec<AtomicF64>,
     demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
     energy_out_by_end_user: IndexMap<String, Vec<AtomicF64>>,
@@ -164,6 +165,7 @@ impl EnergySupply {
     //                           Distribution Network Operator (DNO) export limit; applies to
     //                           the whole supply (generation surplus and battery discharge
     //                           combined); None means no limit
+    /// * `tariff_export` - energy tariff for export
     /// * `tariff_data` - tariff data containing electricity prices
     pub(crate) fn new(
         fuel_type: FuelType,
@@ -173,6 +175,7 @@ impl EnergySupply {
         priority: Option<Vec<String>>,
         is_export_capable: Option<bool>,
         power_limit_export: Option<f64>,
+        tariff_export: Option<String>,
         tariff_data: Option<TariffData>,
     ) -> anyhow::Result<Self> {
         let simulation_timesteps = simulation_time.total_steps();
@@ -212,6 +215,7 @@ impl EnergySupply {
             priority,
             is_export_capable: is_export_capable.unwrap_or(true),
             power_limit_export,
+            tariff_export,
             demand_total: init_demand_list(simulation_timesteps),
             demand_by_end_user: Default::default(),
             energy_out_by_end_user: Default::default(),
@@ -901,6 +905,7 @@ impl EnergySupplyBuilder {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap(),
         }
@@ -1072,6 +1077,7 @@ mod tests {
             &simulation_time.iter(),
             None,
             indexmap! {"Electric_battery".into() => elec_battery},
+            None,
             None,
             None,
             None,
