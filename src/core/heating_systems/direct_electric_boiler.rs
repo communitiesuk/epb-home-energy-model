@@ -242,7 +242,7 @@ impl DirectElectricBoiler {
         let energy_output_provided =
             self.calc_energy_output_provided(energy_output_required, time_available);
 
-        // TODO Ideally, the boiler power used for the running time calculation
+        // TODO (from Python) Ideally, the boiler power used for the running time calculation
         //      would account for space heating demand for all zones, but the
         //      calculation flow does not allow for this without circularity.
         //      Therefore, the value for time running returned from this function
@@ -814,5 +814,28 @@ mod tests {
     fn test_energy_output_max(boiler: DirectElectricBoiler) {
         assert_relative_eq!(boiler.energy_output_max(Some(0.), None), 24.);
         assert_relative_eq!(boiler.energy_output_max(Some(0.5), None), 12.);
+    }
+
+    #[rstest]
+    /// DirectElectricBoiler must reject a non-electricity energy supply.
+    fn test_init_raises_for_non_electricity_supply(
+        boiler_data: HeatSourceWetDetails,
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) {
+        let result = DirectElectricBoiler::new(
+            boiler_data,
+            Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter()).build(),
+            )),
+            "boiler aux",
+            simulation_time.step,
+            external_conditions.into(),
+        );
+
+        let error = result.err().unwrap();
+        assert!(error
+            .to_string()
+            .contains("DirectElectricBoiler requires an electricity energy supply."));
     }
 }
