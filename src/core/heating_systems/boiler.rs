@@ -88,7 +88,9 @@ impl BoilerForBoilerService {
             BoilerForBoilerService::Boiler(boiler) => {
                 boiler.read().energy_output_max(time_start, time_elapsed_hp)
             }
-            BoilerForBoilerService::DirectElectricBoiler(_) => todo!(),
+            BoilerForBoilerService::DirectElectricBoiler(boiler) => {
+                boiler.read().energy_output_max(time_start, time_elapsed_hp)
+            }
         }
     }
 }

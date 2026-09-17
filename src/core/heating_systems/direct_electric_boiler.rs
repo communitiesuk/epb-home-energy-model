@@ -358,7 +358,11 @@ impl DirectElectricBoiler {
         Ok(())
     }
 
-    fn energy_output_max(&self, time_start: Option<f64>, time_elapsed_hp: Option<f64>) -> f64 {
+    pub(crate) fn energy_output_max(
+        &self,
+        time_start: Option<f64>,
+        time_elapsed_hp: Option<f64>,
+    ) -> f64 {
         let time_start = time_start.unwrap_or(0.);
         let time_available = self.time_available(time_start, time_elapsed_hp);
 
