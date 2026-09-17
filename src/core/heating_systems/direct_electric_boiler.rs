@@ -81,7 +81,7 @@ impl DirectElectricBoiler {
         // Set up EnergySupplyConnection for this service
         self.energy_supply_connections.insert(
             service_name.into(),
-            EnergySupply::connection(self.energy_supply.clone(), service_name).unwrap(),
+            EnergySupply::connection(self.energy_supply.clone(), service_name)?,
         );
         Ok(())
     }
@@ -100,6 +100,7 @@ impl DirectElectricBoiler {
         temp_hot_water: f64,
         cold_feed: WaterSupply,
     ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
+        // TODO: look at improving error handling here and in boiler.rs
         boiler
             .write()
             .create_service_connection(service_name)
