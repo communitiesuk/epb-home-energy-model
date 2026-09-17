@@ -2005,8 +2005,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
-    use crate::core::schedule::input::Schedule;
-use crate::core::water_heat_demand::misc::WaterEventResultType;
+    use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
         ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,

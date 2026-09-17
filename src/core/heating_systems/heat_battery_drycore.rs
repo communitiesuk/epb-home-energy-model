@@ -2026,7 +2026,9 @@ impl DetailedResult {
 mod tests {
     use super::*;
     use crate::core::common::MockWaterSupply;
-    use crate::core::controls::time_control::{ChargeControl, MockControl, ScheduleOrControl, SetpointTimeControl};
+    use crate::core::controls::time_control::{
+        ChargeControl, MockControl, ScheduleOrControl, SetpointTimeControl,
+    };
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::hem_core::external_conditions::{DaylightSavingsConfig, ExternalConditions};

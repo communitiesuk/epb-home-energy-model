@@ -432,8 +432,12 @@ mod tests {
     use super::*;
     use crate::{
         core::{
-            controls::time_control::{ChargeControl, ScheduleOrControl, SetpointTimeControl}, energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder},
-        }, external_conditions::{DaylightSavingsConfig, ExternalConditions}, input::{ControlLogicType, ExternalSensor, FuelType}, simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator},
+            controls::time_control::{ChargeControl, ScheduleOrControl, SetpointTimeControl},
+            energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder},
+        },
+        external_conditions::{DaylightSavingsConfig, ExternalConditions},
+        input::{ControlLogicType, ExternalSensor, FuelType},
+        simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator},
     };
     use approx::assert_relative_eq;
     use parking_lot::RwLock;

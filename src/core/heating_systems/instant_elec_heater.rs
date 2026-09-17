@@ -6,7 +6,6 @@ use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
 
-
 /// Type to represent instantaneous electric heaters
 #[derive(Clone, Debug)]
 pub struct InstantElecHeater {

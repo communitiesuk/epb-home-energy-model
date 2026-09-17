@@ -329,11 +329,13 @@ impl ChargeControl {
         };
 
         let charge_time_control = match charge_time_control {
-            ScheduleOrControl::Schedule(schedule) => Arc::new(Control::OnOffTime(OnOffTimeControl {
-                schedule: schedule.into_iter().map(Some).collect(),
-                start_day,
-                time_series_step,
-            })),
+            ScheduleOrControl::Schedule(schedule) => {
+                Arc::new(Control::OnOffTime(OnOffTimeControl {
+                    schedule: schedule.into_iter().map(Some).collect(),
+                    start_day,
+                    time_series_step,
+                }))
+            }
             ScheduleOrControl::Control(control) => control,
         };
 
@@ -624,8 +626,7 @@ impl ControlBehaviour for ChargeControl {
     fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool>
-    {
+    ) -> Option<bool> {
         Some(self.is_on(simulation_time_iteration))
     }
 
@@ -634,7 +635,10 @@ impl ControlBehaviour for ChargeControl {
             None
         } else {
             // TODO can we avoid unwrap here?
-            Some(self.target_charge(*simulation_time_iteration, None).unwrap())
+            Some(
+                self.target_charge(*simulation_time_iteration, None)
+                    .unwrap(),
+            )
         }
     }
 }
@@ -775,7 +779,7 @@ impl RangeTimeControl {
                         bail!("Entries in schedule_lower must be lower than or equal to the corresponding entry in schedule_upper")
                     }
                 }
-            },
+            }
             _ => {}
         }
 
@@ -809,16 +813,19 @@ impl ControlBehaviour for RangeTimeControl {
         // Return true if current time is inside specified time for heating/cooling
         let idx = simulation_time_iteration.index;
 
-
         // TODO can we avoid unwrap here? in_required_period should always return Some bool
         let setpnt_lower_is_set = match &self.schedule_lower {
             ScheduleOrControl::Schedule(schedule_lower) => schedule_lower[idx].is_some(),
-            ScheduleOrControl::Control(control) => control.in_required_period(simulation_time_iteration).unwrap(),
+            ScheduleOrControl::Control(control) => control
+                .in_required_period(simulation_time_iteration)
+                .unwrap(),
         };
 
         let setpnt_upper_is_set = match &self.schedule_upper {
             ScheduleOrControl::Schedule(schedule_upper) => schedule_upper[idx].is_some(),
-            ScheduleOrControl::Control(control) => control.in_required_period(simulation_time_iteration).unwrap(),
+            ScheduleOrControl::Control(control) => control
+                .in_required_period(simulation_time_iteration)
+                .unwrap(),
         };
 
         Some(setpnt_lower_is_set && setpnt_upper_is_set)
@@ -1293,7 +1300,9 @@ impl CombinationTimeControl {
         for control in controls.iter() {
             let (_, control) = control;
             match control.as_ref() {
-                Control::CombinationTime(_combination_time_control) => bail!("CombinationTimeControl does not accept RangeTimeControl"),
+                Control::CombinationTime(_combination_time_control) => {
+                    bail!("CombinationTimeControl does not accept RangeTimeControl")
+                }
                 _ => {}
             }
         }
@@ -1307,9 +1316,7 @@ impl CombinationTimeControl {
     // Unlike the upstream Python, we want to validate combinations on the way in so they can't fail
     // during a simulation
     // (Add more conditions if possible)
-    fn validate_combinations(
-        combinations: &ControlCombinations
-    ) -> anyhow::Result<()> {
+    fn validate_combinations(combinations: &ControlCombinations) -> anyhow::Result<()> {
         for (name, combination) in [("main", &combinations.main)].into_iter().chain(
             combinations
                 .references

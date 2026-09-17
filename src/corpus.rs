@@ -1,6 +1,8 @@
 use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{
-    ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl, OnOffCostMinimisingTimeControl, OnOffTimeControl, ScheduleOrControl, SetpointTimeControl, SmartApplianceControl,
+    ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl,
+    OnOffCostMinimisingTimeControl, OnOffTimeControl, ScheduleOrControl, SetpointTimeControl,
+    SmartApplianceControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::cooling_systems::space_cool_system_base::SpaceCoolSystem;

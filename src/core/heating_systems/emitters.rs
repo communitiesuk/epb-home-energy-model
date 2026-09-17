@@ -39,7 +39,6 @@ use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-
 /// Convert flow temperature to return temperature using the 6/7th rule.
 ///
 /// Parameters:
