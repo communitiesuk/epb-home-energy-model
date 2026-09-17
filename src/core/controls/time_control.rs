@@ -1183,7 +1183,7 @@ impl SmartApplianceControl {
         t_idx: usize,
         demand: f64,
         energy_supply: &str,
-        _simtime: SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) {
         // convert demand from appliance usage event to average power over the demand series timestep
         // and add it to the series
@@ -1194,47 +1194,35 @@ impl SmartApplianceControl {
 
         // update our prediction of battery charge over the next 24 hours
         if self.battery_states_of_charge.contains_key(energy_supply) {
-            // if we expect there will be charge in the battery when this demand occurs, assume
-            // the battery supplies as much of it as possible
-            let idx_24hr = t_idx % self.buffer_length;
-            let _max_capacity = self.energy_supplies[energy_supply]
-                .read()
-                .get_battery_max_capacity()
-                .expect("Battery expected to be present and reporting max capacity");
-            // max_discharge is a linear function however states it requires input as a 0-1 proportion of total,
-            // so divide and then multiply by max capacity in case of future changes
-            let max_discharge: f64 = 0.; // TODO 1.0.0a9 migration
-                                         // -self.energy_supplies[energy_supply]
-                                         // .read()
-                                         // .get_battery_max_discharge(
-                                         //     self.battery_states_of_charge[energy_supply][idx_24hr].load(Ordering::SeqCst)
-                                         //         / max_capacity,
-                                         // )
-                                         // .expect("Battery expected to be present and reporting max capacity")
-                                         // * max_capacity;
 
-            // the maths here follows charge_discharge_battery() in ElectricBattery
-            let discharge_efficiency: f64 = 0.; // TODO 1.0.0a9 migration
-                                                // let discharge_efficiency = self.energy_supplies[energy_supply]
-                                                //     .read()
-                                                //     .get_battery_discharge_efficiency(simtime)
-                                                //     .expect("Battery expected to be present and reporting max capacity");
+            // TODO consider returning a Result instead
+            for battery in self.energy_supplies[energy_supply].read().get_batteries().expect("Expected batteries for energy supply") {
+                // if we expect there will be charge in the battery when this demand occurs, assume
+                // the battery supplies as much of it as possible
+                let idx_24hr = t_idx % self.buffer_length;
+                let max_capacity = battery.get_max_capacity();
+                let state_of_charge = self.battery_states_of_charge[energy_supply][idx_24hr].load(Ordering::SeqCst);
+                let max_discharge = - battery.calculate_max_discharge(state_of_charge / max_capacity) * max_capacity;
 
-            let charge_utilised = min_of_2(
-                self.battery_states_of_charge[energy_supply][idx_24hr]
-                    .load(Ordering::SeqCst)
-                    .max(0.),
-                max_discharge.min(demand) * discharge_efficiency,
-            );
-            // now subtract charge_utilised from the charge stored at every step in the buffer of battery charge.
-            // if the battery is already expected to empty at a later time, this will result in the buffer
-            // reporting negative charge stored in the battery during the times it is expected to be empty
-            // and appliance preferentially not being used at those times
-            self.battery_states_of_charge[energy_supply]
-                .iter()
-                .for_each(|x| {
-                    x.fetch_sub(charge_utilised, Ordering::SeqCst);
-                });
+                // the maths here follows charge_discharge_battery() in ElectricBattery
+                let discharge_efficiency: f64 = battery.get_discharge_efficiency(simulation_time_iteration);
+                let charge_utilised = min_of_2(
+                    self.battery_states_of_charge[energy_supply][idx_24hr]
+                        .load(Ordering::SeqCst)
+                        .max(0.),
+                    max_discharge.min(demand) * discharge_efficiency,
+                );
+
+                // now subtract charge_utilised from the charge stored at every step in the buffer of battery charge.
+                // if the battery is already expected to empty at a later time, this will result in the buffer
+                // reporting negative charge stored in the battery during the times it is expected to be empty
+                // and appliance preferentially not being used at those times
+                self.battery_states_of_charge[energy_supply]
+                    .iter()
+                    .for_each(|x| {
+                        x.fetch_sub(charge_utilised, Ordering::SeqCst);
+                    });
+            }
         }
     }
 
@@ -1273,8 +1261,6 @@ impl SmartApplianceControl {
                 let charge_efficiency = battery.get_charge_efficiency(simtime);
                 self.battery_states_of_charge[name][idx_24hr]
                     .fetch_add(charge * charge_efficiency, Ordering::SeqCst);
-                // TODO 1.0.0a9 migration, review - updated this section whilst working on energy
-                // supply/elecbattery, changed .store() to .fetch_add() as that seems to match the python
             }
         }
 
