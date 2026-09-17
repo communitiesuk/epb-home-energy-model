@@ -581,7 +581,116 @@ mod tests {
                     }),
                 )
                 .unwrap();
-            assert_relative_eq!(result.0, &[10., 10.][t_idx]);
+
+            assert_eq!(result, [(10., None), (10., None)][t_idx]);
         }
+
+        boiler
+            .create_service_connection("boiler_demand_energy_with_hybrid")
+            .unwrap();
+
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            let result = boiler
+                .demand_energy(
+                    "boiler_demand_energy_with_hybrid",
+                    ServiceType::Space,
+                    100.,
+                    45.,
+                    37.,
+                    Some(true),
+                    None,
+                    Some(0.),
+                    None,
+                    None,
+                )
+                .unwrap();
+
+            assert_eq!(result, [(24., Some(1.)), (24., Some(1.))][t_idx]);
+        }
+
+        // Test with time_elapsed_hp
+        boiler
+            .create_service_connection("boiler_demand_energy_hybrid_time_elapsed")
+            .unwrap();
+
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            let result = boiler
+                .demand_energy(
+                    "boiler_demand_energy_hybrid_time_elapsed",
+                    ServiceType::Space,
+                    100.,
+                    45.,
+                    37.,
+                    Some(true),
+                    None,
+                    Some(0.5),
+                    None,
+                    None,
+                )
+                .unwrap();
+
+            assert_eq!(result, [(12., Some(0.5)), (12., Some(0.5))][t_idx]);
+        }
+
+        let sercive_results = &boiler.service_results.read();
+        let service_names = sercive_results
+            .iter()
+            .map(|service_result| service_result.service_name.as_str())
+            .collect::<Vec<&str>>();
+
+        assert!(service_names.contains(&"boiler_demand_energy"));
+        assert!(service_names.contains(&"boiler_demand_energy_with_hybrid"));
+        assert!(service_names.contains(&"boiler_demand_energy_hybrid_time_elapsed"));
+    }
+
+    #[rstest]
+    /// Two services in the same timestep share the boiler's capacity.
+    ///
+    /// The 24 kW boiler has 1 h available. The first service draws 10 kWh
+    /// (running time 10/24 h), leaving 14/24 h for the second. Requesting
+    /// 20 kWh on the second call is therefore capped at 14 kWh.
+    fn test_demand_energy_two_calls_same_timestep(mut boiler: DirectElectricBoiler) {
+        boiler.create_service_connection("service_a").unwrap();
+
+        boiler.create_service_connection("service_b").unwrap();
+
+        // First call: 10 kWh easily within the 24 kWh single-timestep capacity
+        let result_a = boiler
+            .demand_energy(
+                "service_a",
+                ServiceType::Space,
+                10.,
+                45.,
+                37.,
+                Some(false),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // 10 kWh < 24 kWh capacity, so delivered in full
+        assert_eq!(result_a, (10., None));
+
+        // Second call in the same timestep (no timestep_end between):
+        // remaining time = 1 - 10/24 = 14/24 h, max output = 24 × 14/24 = 14 kWh
+        let result_b = boiler
+            .demand_energy(
+                "service_b",
+                ServiceType::Space,
+                20.,
+                45.,
+                37.,
+                Some(false),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_relative_eq!(result_b.0, 14.);
+        assert_eq!(result_b.1, None);
     }
 }
