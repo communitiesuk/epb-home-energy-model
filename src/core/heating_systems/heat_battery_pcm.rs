@@ -2000,12 +2000,13 @@ type ResultPerTimestep = IndexMap<(Arc<str>, Option<Arc<str>>), Vec<ResultParamV
 mod tests {
     use super::*;
     use crate::core::common::MockWaterSupply;
-    use crate::core::controls::time_control::{ChargeControl, Control};
+    use crate::core::controls::time_control::{ChargeControl, Control, ScheduleOrControl};
     use crate::core::controls::time_control::{MockControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
-    use crate::core::water_heat_demand::misc::WaterEventResultType;
+    use crate::core::schedule::input::Schedule;
+use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
         ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,
@@ -2121,7 +2122,7 @@ mod tests {
         Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
-                vec![boolean, boolean],
+                ScheduleOrControl::Schedule(vec![boolean, boolean]),
                 &simulation_time_iterator,
                 0,
                 1.,
@@ -2728,7 +2729,7 @@ mod tests {
         let control = Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
-                vec![false],
+                ScheduleOrControl::Schedule(vec![false]),
                 &simulation_time_iterator,
                 0,
                 1.,
@@ -3027,7 +3028,7 @@ mod tests {
         let battery_control_on: Control = Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
-                vec![true, true, true],
+                ScheduleOrControl::Schedule(vec![true, true, true]),
                 &simulation_time_iterator,
                 0,
                 1.,
@@ -3100,7 +3101,7 @@ mod tests {
         let battery_control_on: Control = Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
-                vec![true, true, true],
+                ScheduleOrControl::Schedule(vec![true, true, true]),
                 &simulation_time_iterator,
                 0,
                 1.,
@@ -3132,7 +3133,7 @@ mod tests {
         let battery_control_on: Control = Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
-                vec![true, true, true],
+                ScheduleOrControl::Schedule(vec![true, true, true]),
                 &simulation_time_iterator,
                 0,
                 1.,

@@ -2694,7 +2694,7 @@ mod tests {
         ) -> anyhow::Result<ChargeControl> {
             ChargeControl::new(
                 logic_type,
-                schedule,
+                ScheduleOrControl::Schedule(schedule),
                 &simulation_time().iter(),
                 0,
                 1.,
@@ -3034,7 +3034,7 @@ mod tests {
         fn test_temp_charge_cut_delta_length() {
             let charge_control = ChargeControl::new(
                 ControlLogicType::Automatic,
-                schedule(),
+                ScheduleOrControl::Schedule(schedule()),
                 &simulation_time().iter(),
                 0,
                 1.,
@@ -3063,7 +3063,7 @@ mod tests {
 
             let charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
-                schedule_48_hours(),
+                ScheduleOrControl::Schedule(schedule_48_hours()),
                 &simulation_time.iter(),
                 0,
                 1.,
@@ -3107,7 +3107,7 @@ mod tests {
 
             let mut charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
-                schedule_48_hours(),
+                ScheduleOrControl::Schedule(schedule_48_hours()),
                 &simulation_time.iter(),
                 0,
                 1.,
@@ -3242,7 +3242,7 @@ mod tests {
         ) -> ChargeControl {
             ChargeControl::new(
                 ControlLogicType::Automatic,
-                schedule,
+                ScheduleOrControl::Schedule(schedule),
                 &simulation_time_1.iter(),
                 0,
                 1.,
@@ -4031,7 +4031,7 @@ mod tests {
 
         ChargeControl::new(
             ControlLogicType::Automatic,
-            schedule_for_charge_control,
+            ScheduleOrControl::Schedule(schedule_for_charge_control),
             &simulation_time_for_charge_control.iter(),
             0,
             1.,

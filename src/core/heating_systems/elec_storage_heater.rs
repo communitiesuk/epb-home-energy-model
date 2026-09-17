@@ -432,12 +432,8 @@ mod tests {
     use super::*;
     use crate::{
         core::{
-            controls::time_control::{ChargeControl, SetpointTimeControl},
-            energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder},
-        },
-        external_conditions::{DaylightSavingsConfig, ExternalConditions},
-        input::{ControlLogicType, ExternalSensor, FuelType},
-        simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator},
+            controls::time_control::{ChargeControl, ScheduleOrControl, SetpointTimeControl}, energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder},
+        }, external_conditions::{DaylightSavingsConfig, ExternalConditions}, input::{ControlLogicType, ExternalSensor, FuelType}, simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator},
     };
     use approx::assert_relative_eq;
     use parking_lot::RwLock;
@@ -556,7 +552,7 @@ mod tests {
         Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Automatic,
-                charge_control_schedule,
+                ScheduleOrControl::Schedule(charge_control_schedule),
                 &simulation_time_iterator,
                 0,
                 1.,
@@ -958,7 +954,7 @@ mod tests {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
-                charge_control_schedule,
+                ScheduleOrControl::Schedule(charge_control_schedule),
                 &simulation_time.iter(),
                 0,
                 1.,
@@ -1003,7 +999,7 @@ mod tests {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Celect,
-                charge_control_schedule,
+                ScheduleOrControl::Schedule(charge_control_schedule),
                 &simulation_time.iter(),
                 0,
                 1.,
@@ -1048,7 +1044,7 @@ mod tests {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
-                charge_control_schedule,
+                ScheduleOrControl::Schedule(charge_control_schedule),
                 &simulation_time.iter(),
                 0,
                 1.,
@@ -1093,7 +1089,7 @@ mod tests {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
-                charge_control_schedule,
+                ScheduleOrControl::Schedule(charge_control_schedule),
                 &simulation_time.iter(),
                 0,
                 1.,
@@ -1142,7 +1138,7 @@ mod tests {
         let charge_control = Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
-                charge_control_schedule,
+                ScheduleOrControl::Schedule(charge_control_schedule),
                 &simulation_time.iter(),
                 0,
                 1.,
