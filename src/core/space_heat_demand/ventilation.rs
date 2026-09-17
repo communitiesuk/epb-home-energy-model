@@ -24,6 +24,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use crate::StringOrNumber;
 use anyhow::{anyhow, bail, Error};
 use approx::relative_eq;
+use arcstr::ArcStr;
 use argmin::{
     core::{CostFunction, Executor},
     solver::brent::BrentRoot,
@@ -33,7 +34,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use serde::Serialize;
-use smartstring::alias::String;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use thiserror::Error;
@@ -2870,7 +2870,7 @@ impl InfiltrationVentilation {
         input: &InfiltrationVentilationInput,
         zones: &ZoneDictionary,
         detailed_output_heating_cooling: bool,
-        energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
+        energy_supplies: &IndexMap<ArcStr, Arc<RwLock<EnergySupply>>>,
         controls: &Controls,
         smart_air_brick_control: Option<Control>, // In Python this is SetpointTimeControl
         vents_open_during_airtightness_test: Option<bool>,
@@ -3346,31 +3346,29 @@ pub(crate) struct VentilationDetailedResult {
 impl VentilationDetailedResult {
     pub(crate) fn as_string_values(&self) -> Vec<String> {
         vec![
-            self.timestep_index.to_string().into(),
-            self.reporting_flag.to_string().into(),
-            self.r_v_arg.to_string().into(),
-            self.incoming_air_flow.to_string().into(),
-            self.total_volume.to_string().into(),
-            self.air_changes_per_hour.to_string().into(),
-            self.temp_interior_air.to_string().into(),
-            self.p_z_ref.to_string().into(),
-            self.qm_in_through_window_opening.to_string().into(),
-            self.qm_out_through_window_opening.to_string().into(),
-            self.qm_in_through_vents.to_string().into(),
-            self.qm_out_through_vents.to_string().into(),
-            self.qm_in_through_leaks.to_string().into(),
-            self.qm_out_through_leaks.to_string().into(),
-            self.qm_in_through_comb.to_string().into(),
-            self.qm_out_through_comb.to_string().into(),
-            self.qm_in_through_passive_hybrid_ducts.to_string().into(),
-            self.qm_out_through_passive_hybrid_ducts.to_string().into(),
-            self.qm_sup_to_vent_zone.to_string().into(),
-            self.qm_eta_from_vent_zone.to_string().into(),
-            self.qm_in_effective_heat_recovery_saving_total
-                .to_string()
-                .into(),
-            self.qm_in.to_string().into(),
-            self.qm_out.to_string().into(),
+            self.timestep_index.to_string(),
+            self.reporting_flag.to_string(),
+            self.r_v_arg.to_string(),
+            self.incoming_air_flow.to_string(),
+            self.total_volume.to_string(),
+            self.air_changes_per_hour.to_string(),
+            self.temp_interior_air.to_string(),
+            self.p_z_ref.to_string(),
+            self.qm_in_through_window_opening.to_string(),
+            self.qm_out_through_window_opening.to_string(),
+            self.qm_in_through_vents.to_string(),
+            self.qm_out_through_vents.to_string(),
+            self.qm_in_through_leaks.to_string(),
+            self.qm_out_through_leaks.to_string(),
+            self.qm_in_through_comb.to_string(),
+            self.qm_out_through_comb.to_string(),
+            self.qm_in_through_passive_hybrid_ducts.to_string(),
+            self.qm_out_through_passive_hybrid_ducts.to_string(),
+            self.qm_sup_to_vent_zone.to_string(),
+            self.qm_eta_from_vent_zone.to_string(),
+            self.qm_in_effective_heat_recovery_saving_total.to_string(),
+            self.qm_in.to_string(),
+            self.qm_out.to_string(),
         ]
     }
 }

@@ -7,13 +7,13 @@ use crate::input::{EnergySupplyTariff, FuelType};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
+use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use educe::Educe;
 use fsum::FSum;
 use indexmap::{indexmap, IndexMap};
 use itertools::Itertools;
 use parking_lot::RwLock;
-use smartstring::alias::String;
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -29,11 +29,11 @@ pub(crate) const ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME: &str = "_energy_from_envir
 #[derive(Clone, Debug)]
 pub(crate) struct EnergySupplyConnection {
     energy_supply: Arc<RwLock<EnergySupply>>,
-    pub(crate) end_user_name: String,
+    pub(crate) end_user_name: ArcStr,
 }
 
 impl EnergySupplyConnection {
-    pub(crate) fn new(energy_supply: Arc<RwLock<EnergySupply>>, end_user_name: String) -> Self {
+    pub(crate) fn new(energy_supply: Arc<RwLock<EnergySupply>>, end_user_name: ArcStr) -> Self {
         Self {
             energy_supply,
             end_user_name,
@@ -100,16 +100,16 @@ pub struct EnergySupply {
     tariff_info: Option<EnergySupplyTariffInfo>,
     tariff_data: Option<TariffData>,
     simulation_timesteps: usize,
-    electric_batteries: IndexMap<String, Arc<ElectricBattery>>,
+    electric_batteries: IndexMap<ArcStr, Arc<ElectricBattery>>,
     #[educe(Debug(ignore))]
-    diverters: IndexMap<String, Arc<RwLock<dyn SurplusDiverting>>>,
-    priority: Option<Vec<String>>,
+    diverters: IndexMap<ArcStr, Arc<RwLock<dyn SurplusDiverting>>>,
+    priority: Option<Vec<ArcStr>>,
     is_export_capable: bool,
     power_limit_export: Option<f64>,
     export_tariff: Option<EnergySupplyExportTariff>,
     demand_total: Vec<AtomicF64>,
-    demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
-    energy_out_by_end_user: IndexMap<String, Vec<AtomicF64>>,
+    demand_by_end_user: IndexMap<ArcStr, Vec<AtomicF64>>,
+    energy_out_by_end_user: IndexMap<ArcStr, Vec<AtomicF64>>,
     beta_factor: Vec<AtomicF64>,
     supply_surplus: Vec<AtomicF64>,
     demand_not_met: Vec<AtomicF64>,
@@ -151,8 +151,8 @@ impl EnergySupply {
         fuel_type: FuelType,
         simulation_timesteps: usize,
         tariff_info: Option<EnergySupplyTariffInfo>,
-        electric_batteries: IndexMap<String, ElectricBattery>,
-        priority: Option<Vec<String>>,
+        electric_batteries: IndexMap<ArcStr, ElectricBattery>,
+        priority: Option<Vec<ArcStr>>,
         is_export_capable: Option<bool>,
         power_limit_export: Option<f64>,
         export_tariff: Option<EnergySupplyExportTariff>,
@@ -225,11 +225,11 @@ impl EnergySupply {
     /// Returns the values from items sorted in the order that the keys appear in the priority list
     pub(crate) fn sort_by_priority<T: Clone>(
         &self,
-        items: &IndexMap<String, T>,
+        items: &IndexMap<ArcStr, T>,
     ) -> anyhow::Result<Vec<T>> {
         if let Some(priority) = self.priority.as_ref() {
-            let priority_set: HashSet<&String> = HashSet::from_iter(priority);
-            let items_set: HashSet<&String> = HashSet::from_iter(items.keys());
+            let priority_set: HashSet<ArcStr> = HashSet::from_iter(priority.iter().cloned());
+            let items_set: HashSet<ArcStr> = HashSet::from_iter(items.keys().cloned());
             if !priority_set.is_superset(&items_set) {
                 bail!("Energy supply items missing from priority list")
             };
@@ -386,7 +386,7 @@ impl EnergySupply {
     pub fn connect_diverter(
         &mut self,
         diverter: Arc<RwLock<dyn SurplusDiverting>>,
-        name: Option<String>,
+        name: Option<ArcStr>,
     ) -> anyhow::Result<()> {
         let name = name.unwrap_or("diverter".into());
 
@@ -401,7 +401,7 @@ impl EnergySupply {
 
     /// This method is used in place of calling .connection() in the Python codebase in order to register an end user name
     #[cfg(test)]
-    pub fn register_end_user_name(&mut self, end_user_name: String) {
+    pub fn register_end_user_name(&mut self, end_user_name: ArcStr) {
         self.demand_by_end_user.insert(
             end_user_name.clone(),
             init_demand_list(self.simulation_timesteps),
@@ -450,17 +450,17 @@ impl EnergySupply {
     /// Return the demand from each end user on this energy source for each timestep.
     ///
     /// Returns dictionary of lists, where dictionary keys are names of end users.
-    pub fn results_by_end_user(&self) -> IndexMap<Arc<str>, Vec<f64>> {
+    pub fn results_by_end_user(&self) -> IndexMap<ArcStr, Vec<f64>> {
         if self
             .demand_by_end_user
             .keys()
             .cloned()
-            .collect::<Vec<String>>()
+            .collect::<Vec<ArcStr>>()
             == self
                 .energy_out_by_end_user
                 .keys()
                 .cloned()
-                .collect::<Vec<String>>()
+                .collect::<Vec<ArcStr>>()
         {
             return self
                 .demand_by_end_user
@@ -502,7 +502,7 @@ impl EnergySupply {
 
     /// Return the demand from each end user on this energy source for this timestep.
     /// Returns dictionary of floats, where dictionary keys are names of end users.
-    pub(crate) fn results_by_end_user_single_step(&self, t_idx: usize) -> IndexMap<String, f64> {
+    pub(crate) fn results_by_end_user_single_step(&self, t_idx: usize) -> IndexMap<ArcStr, f64> {
         self.demand_by_end_user
             .keys()
             .map(|user_name| {
@@ -917,7 +917,7 @@ impl EnergySupply {
                 )
                 .collect(),
             Some(_) => {
-                let batteries_and_diverters: IndexMap<String, BatteryOrDiverter> = self
+                let batteries_and_diverters: IndexMap<ArcStr, BatteryOrDiverter> = self
                     .electric_batteries
                     .iter()
                     .map(|(k, v)| (k.clone(), BatteryOrDiverter::from(v.clone())))
@@ -1141,7 +1141,7 @@ impl EnergySupplyBuilder {
 
     pub fn with_electric_battery(
         mut self,
-        electric_batteries: IndexMap<String, ElectricBattery>,
+        electric_batteries: IndexMap<ArcStr, ElectricBattery>,
     ) -> Self {
         self.energy_supply.electric_batteries = electric_batteries
             .into_iter()
@@ -1150,7 +1150,7 @@ impl EnergySupplyBuilder {
         self
     }
 
-    pub fn with_priority(mut self, priority: Vec<impl Into<String>>) -> Self {
+    pub fn with_priority(mut self, priority: Vec<impl Into<ArcStr>>) -> Self {
         self.energy_supply.priority = Some(priority.into_iter().map(|s| s.into()).collect());
         self
     }

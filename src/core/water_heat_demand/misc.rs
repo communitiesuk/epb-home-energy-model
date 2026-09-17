@@ -5,7 +5,6 @@ use anyhow::bail;
 use approx::relative_eq;
 use fsum::FSum;
 use itertools::Itertools;
-use smartstring::alias::String;
 
 // Fraction of domestic hot water energy that becomes internal gains
 // This applies to both hot water usage and combi boiler losses
@@ -72,7 +71,7 @@ impl WaterEventResult {
                 s = s.trim_end_matches('0').trim_end_matches('.').into();
             }
 
-            s.into()
+            s
         };
 
         format!(
@@ -81,16 +80,11 @@ impl WaterEventResult {
             format_number(warm_volume),
             format_number(temperature)
         )
-        .into()
     }
 }
 
 pub(crate) fn summarise_events(events: &[WaterEventResult]) -> String {
-    events
-        .iter()
-        .map(|event| event.format_event())
-        .join(" | ")
-        .into()
+    events.iter().map(|event| event.format_event()).join(" | ")
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -14,6 +14,7 @@ use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{
     CombiBoilerType, CombiKeepHotFuel, FuelType, HeatSourceWetDetails, HotWaterSourceDetails,
 };
+use arcstr::ArcStr;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -24,7 +25,7 @@ pub struct DirectElectricBoiler {
     energy_supply: Arc<RwLock<EnergySupply>>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
-    energy_supply_connections: IndexMap<smartstring::alias::String, EnergySupplyConnection>,
+    energy_supply_connections: IndexMap<ArcStr, EnergySupplyConnection>,
     energy_supply_connection_aux: EnergySupplyConnection,
     service_results: RwLock<Vec<ServiceResult>>,
     boiler_power: f64,

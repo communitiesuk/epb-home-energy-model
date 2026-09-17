@@ -7,10 +7,10 @@ use crate::input::{ApplianceGainsDetails, ApplianceGainsEvent, ApplianceLoadShif
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
+use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use itertools::Itertools;
 use parking_lot::RwLock;
-use smartstring::alias::String;
 use std::convert::TryInto;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -144,7 +144,7 @@ impl ApplianceGains {
 #[derive(Debug)]
 pub struct EventApplianceGains {
     energy_supply_conn: EnergySupplyConnection,
-    energy_supply_name: String,
+    energy_supply_name: ArcStr,
     gains_fraction: f64,
     _start_day: u32,
     time_series_step: f64,

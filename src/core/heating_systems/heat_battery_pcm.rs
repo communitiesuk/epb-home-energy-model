@@ -26,12 +26,12 @@ use crate::input::{
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
+use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
-use smartstring::alias::String;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -99,7 +99,7 @@ pub(crate) struct HeatBatteryChargingSource<T: WaterSupplyBehaviour> {
     hex_b: Option<f64>,
     hex_velocity_at_1_l_per_min: Option<f64>,
     hex_capillary_diameter_m: Option<f64>,
-    schedule_unit: String,
+    schedule_unit: ArcStr,
 }
 
 ///    Check that no two charging sources have overlapping active periods.
@@ -119,7 +119,7 @@ pub(crate) struct HeatBatteryChargingSource<T: WaterSupplyBehaviour> {
 ///        simtime: Shared SimulationTime iterator used to advance through
 ///            timesteps for per-step schedule evaluation.
 fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
-    heat_source_data: IndexMap<String, HeatBatteryChargingSource<T>>,
+    heat_source_data: IndexMap<ArcStr, HeatBatteryChargingSource<T>>,
     battery_name: &str,
     simtime_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<()> {
@@ -132,7 +132,7 @@ fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
     }
 
     for (t_idx, t_it) in simtime_iterator.clone().enumerate() {
-        let mut active_sources: Vec<String> = Vec::new();
+        let mut active_sources: Vec<ArcStr> = Vec::new();
         for (src_name, charging_source) in &heat_source_data {
             match &charging_source.control {
                 Control::RangeTime(ctrl) => {
@@ -164,7 +164,7 @@ fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
 #[derive(Debug)]
 pub(crate) struct HeatBatteryPcmServiceWaterRegular<T: WaterSupplyBehaviour> {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
-    service_name: String,
+    service_name: ArcStr,
     cold_feed: T,
     control: Arc<RangeTimeControl>,
 }
@@ -182,7 +182,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
     /// * `control_max` - reference to a control object which must select current the maximum timestep temperature
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
-        service_name: String,
+        service_name: ArcStr,
         cold_feed: T,
         control: Arc<RangeTimeControl>,
     ) -> Self {
@@ -258,7 +258,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
 #[derive(Debug)]
 pub struct HeatBatteryPcmServiceWaterDirect<T: WaterSupplyBehaviour> {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
-    service_name: String,
+    service_name: ArcStr,
     setpoint_temp: f64,
     cold_feed: T,
 }
@@ -271,7 +271,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
     /// * `cold_feed` - reference to ColdWaterSource object
     fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
-        service_name: String,
+        service_name: ArcStr,
         setpoint_temp: f64,
         cold_feed: T,
     ) -> Self {
@@ -401,7 +401,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
 #[derive(Clone, Debug)]
 pub struct HeatBatteryPcmServiceSpace {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
-    service_name: String,
+    service_name: ArcStr,
     control: Control,
 }
 
@@ -412,7 +412,7 @@ pub struct HeatBatteryPcmServiceSpace {
 impl HeatBatteryPcmServiceSpace {
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
-        service_name: String,
+        service_name: ArcStr,
         control: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> Self {
         Self {
@@ -531,7 +531,7 @@ const CHARGE_APPROACH_TEMP_DIFF_C: f64 = 5.0;
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 struct HeatBatteryResult {
-    service_name: String,
+    service_name: ArcStr,
     service_type: Option<HeatingServiceType>,
     service_on: bool,
     energy_output_required: f64,
@@ -549,11 +549,11 @@ struct HeatBatteryResult {
 impl HeatBatteryResult {
     fn param(&self, param: &str) -> ResultParamValue {
         match param {
-            "service_name" => ResultParamValue::from(self.service_name.clone()),
+            "service_name" => ResultParamValue::String(self.service_name.clone()),
             "service_type" => self
                 .service_type
                 .as_ref()
-                .map(|service_type| ResultParamValue::from(String::from(service_type.to_string())))
+                .map(|service_type| ResultParamValue::String((*service_type).into()))
                 .unwrap_or(ResultParamValue::Empty),
             "service_on" => self.service_on.into(),
             "energy_output_required" => self.energy_output_required.into(),
@@ -633,7 +633,7 @@ pub struct HeatBatteryPcm {
     simulation_time_step: f64,
     energy_supply: Arc<RwLock<EnergySupply>>,
     energy_supply_connection: EnergySupplyConnection,
-    energy_supply_connections: IndexMap<String, EnergySupplyConnection>,
+    energy_supply_connections: IndexMap<ArcStr, EnergySupplyConnection>,
     pwr_in: f64,
     max_rated_losses: f64,
     power_circ_pump: f64,
@@ -1937,9 +1937,9 @@ impl HeatBatteryPcm {
         // If detailed results are to be output, save the results from the current timestep
         if let Some(detailed_results) = self.detailed_results.as_ref() {
             let service_results = self.service_results.read();
-            let services_called: IndexMap<&String, &HeatBatteryResult> = service_results
+            let services_called: IndexMap<ArcStr, &HeatBatteryResult> = service_results
                 .iter()
-                .map(|result| (&result.service_name, result))
+                .map(|result| (result.service_name.clone(), result))
                 .collect();
 
             // Ensure all registered services have an entry in the results
@@ -2003,8 +2003,8 @@ impl HeatBatteryPcm {
     /// Output detailed results of heat battery calculation
     pub(crate) fn output_detailed_results(
         &self,
-        _hot_water_energy_output: &IndexMap<Arc<str>, Vec<ResultParamValue>>,
-        _hot_water_source_name_for_heat_battery_service: &IndexMap<Arc<str>, Arc<str>>,
+        _hot_water_energy_output: &IndexMap<ArcStr, Vec<ResultParamValue>>,
+        _hot_water_source_name_for_heat_battery_service: &IndexMap<ArcStr, ArcStr>,
     ) -> Result<(ResultsPerTimestep, ResultsAnnual), OutputDetailedResultsNotEnabledError> {
         let detailed_results = self
             .detailed_results
@@ -2017,7 +2017,7 @@ impl HeatBatteryPcm {
         // Report auxiliary parameters (not specific to a service)
         for (parameter, param_unit, _) in AUX_PARAMETERS {
             if ["Temps_after_losses", "hb_after_only_charge_zone_temp"].contains(&parameter) {
-                let mut labels: Option<Vec<Arc<str>>> = Default::default();
+                let mut labels: Option<Vec<ArcStr>> = Default::default();
                 for service_results in detailed_results.read().iter() {
                     let summary = &service_results.summary;
                     let param_values = match parameter {
@@ -2059,7 +2059,7 @@ impl HeatBatteryPcm {
 
         // For each service, report required output parameters
         for (service_idx, service_name) in self.energy_supply_connections.keys().enumerate() {
-            let service_name: Arc<str> = service_name.as_str().into();
+            let service_name: ArcStr = service_name.into();
             let mut current_results: ResultPerTimestep = Default::default();
 
             // Look up each required parameter
@@ -2068,7 +2068,7 @@ impl HeatBatteryPcm {
                 for service_results in detailed_results.read().iter() {
                     let current_result = &service_results.results[service_idx];
                     if parameter == "hb_zone_temperatures" {
-                        let labels: Vec<Arc<str>> = (0..current_result.hb_zone_temperatures.len())
+                        let labels: Vec<ArcStr> = (0..current_result.hb_zone_temperatures.len())
                             .map(|i| format!("{parameter}{i}").into())
                             .collect_vec();
                         for (label, result) in labels
@@ -2133,7 +2133,7 @@ impl HeatBatteryPcm {
         }
         // For each service, report required output parameters
         for service_name in self.energy_supply_connections.keys() {
-            let service_name: Arc<str> = service_name.as_str().into();
+            let service_name: ArcStr = service_name.into();
             results_annual.insert(service_name.clone(), Default::default());
             for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
                 if incl_in_annual {
@@ -2172,7 +2172,7 @@ impl HeatBatteryPcm {
 #[error("Tried to call output_detailed_results when option to collect detailed results was not selected")]
 pub(crate) struct OutputDetailedResultsNotEnabledError;
 
-type ResultPerTimestep = IndexMap<(Arc<str>, Option<Arc<str>>), Vec<ResultParamValue>>;
+type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue>>;
 
 #[cfg(test)]
 mod tests {
@@ -2197,7 +2197,6 @@ mod tests {
     use parking_lot::RwLock;
     use rstest::*;
     use serde_json::json;
-    use smartstring::alias::String;
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
 
@@ -2381,7 +2380,7 @@ mod tests {
         )
     }
 
-    fn get_service_names_from_results(heat_battery: Arc<RwLock<HeatBatteryPcm>>) -> Vec<String> {
+    fn get_service_names_from_results(heat_battery: Arc<RwLock<HeatBatteryPcm>>) -> Vec<ArcStr> {
         heat_battery
             .read()
             .service_results
@@ -3709,7 +3708,7 @@ mod tests {
                 ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![38.82118099093947.into(), 37.64171170047278.into()],
             },
             "new_service".into() => indexmap! {
-                ("service_name".into(), None) => vec![ResultParamValue::String("new_service".into()); 2],
+                ("service_name".into(), None) => vec![ResultParamValue::String(arcstr::literal!("new_service")); 2],
                 ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::DomesticHotWaterRegular.to_string().into()); 2],
                 ("service_on".into(), None) => vec![ResultParamValue::Boolean(true); 2],
                 ("energy_output_required".into(), Some("kWh".into())) => vec![100.0.into(); 2],
@@ -4663,7 +4662,7 @@ mod tests {
                 vec![None, None, Some(0.8), Some(0.8)],
                 simtime,
             );
-            let sources: IndexMap<String, HeatBatteryChargingSource<MockWaterSupply>> = {
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource<MockWaterSupply>> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "electric".into(),
@@ -4716,7 +4715,7 @@ mod tests {
                 vec![None, Some(0.8), Some(0.8), None],
                 simtime,
             );
-            let sources: IndexMap<String, HeatBatteryChargingSource<MockWaterSupply>> = {
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource<MockWaterSupply>> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "electric".into(),
@@ -4762,7 +4761,7 @@ mod tests {
                 vec![Some(0.8), Some(0.8), Some(0.8), Some(0.8)],
                 simtime,
             );
-            let sources: IndexMap<String, HeatBatteryChargingSource<MockWaterSupply>> = {
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource<MockWaterSupply>> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "a".into(),
@@ -4805,7 +4804,7 @@ mod tests {
                 vec![None, None, Some(0.8), None],
                 simtime,
             );
-            let sources: IndexMap<String, HeatBatteryChargingSource<MockWaterSupply>> = {
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource<MockWaterSupply>> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "a".into(),

@@ -29,6 +29,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
+use arcstr::ArcStr;
 use educe::Educe;
 use fsum::FSum;
 use indexmap::IndexMap;
@@ -37,7 +38,6 @@ use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use polyfit_rs::polyfit_rs::polyfit;
 use serde::{Deserialize, Serialize};
-use smartstring::alias::String;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
@@ -1360,7 +1360,7 @@ const TIME_CONSTANT_WATER: f64 = 1560.;
 #[derive(Clone, Debug)]
 pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
-    service_name: String,
+    service_name: ArcStr,
     control: Arc<RangeTimeControl>,
     temp_limit_upper_in_k: f64,
     cold_feed: Arc<WaterSupply>,
@@ -1370,7 +1370,7 @@ pub struct HeatPumpServiceWater {
 impl HeatPumpServiceWater {
     pub(crate) fn new(
         heat_pump: Arc<Mutex<HeatPump>>,
-        service_name: String,
+        service_name: ArcStr,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<WaterSupply>,
         control: Arc<RangeTimeControl>,
@@ -1496,7 +1496,7 @@ const TIME_CONSTANT_SPACE_WARM_AIR: f64 = 120.;
 #[derive(Clone, Debug)]
 pub struct HeatPumpServiceSpace {
     heat_pump: Arc<Mutex<HeatPump>>,
-    service_name: String,
+    service_name: ArcStr,
     emitter_type: HeatPumpEmitterType,
     control: SetpointOrCombinationControl,
     temp_limit_upper_in_k: f64,
@@ -1525,7 +1525,7 @@ impl HeatPumpServiceSpace {
     /// * `boiler_service_space` - reference to the BoilerServiceWaterSpace object that is backing up or supplementing the heat pump service
     pub(crate) fn new(
         heat_pump: Arc<Mutex<HeatPump>>,
-        service_name: String,
+        service_name: ArcStr,
         emitter_type: HeatPumpEmitterType,
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
@@ -1830,7 +1830,7 @@ const HEAT_PUMP_F_AUX: f64 = 0.0;
 pub struct HeatPump {
     // energy supply
     pub(crate) energy_supply: Arc<RwLock<EnergySupply>>,
-    energy_supply_connections: IndexMap<String, Arc<EnergySupplyConnection>>,
+    energy_supply_connections: IndexMap<ArcStr, Arc<EnergySupplyConnection>>,
     energy_supply_connection_aux: Arc<EnergySupplyConnection>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
@@ -1868,7 +1868,7 @@ pub struct HeatPump {
     buffer_tank: Option<BufferTank>,
     #[educe(Debug(ignore))]
     temp_internal_air_fn: TempInternalAirFn,
-    energy_supply_heat_source_connections: IndexMap<String, Arc<EnergySupplyConnection>>,
+    energy_supply_heat_source_connections: IndexMap<ArcStr, Arc<EnergySupplyConnection>>,
     overvent_ratio: f64,
     test_data: HeatPumpTestData,
     temp_min_modulation_rate_low: Option<f64>,
@@ -3874,8 +3874,8 @@ impl HeatPump {
 
     pub fn output_detailed_results(
         &self,
-        hot_water_energy_output: &IndexMap<Arc<str>, Vec<ResultParamValue>>,
-        hot_water_source_name_for_heat_pump_service: &IndexMap<Arc<str>, Arc<str>>,
+        hot_water_energy_output: &IndexMap<ArcStr, Vec<ResultParamValue>>,
+        hot_water_source_name_for_heat_pump_service: &IndexMap<ArcStr, ArcStr>,
     ) -> anyhow::Result<(ResultsPerTimestep, ResultsAnnual)> {
         let detailed_results = self.detailed_results.as_ref().ok_or_else(||
             anyhow!("Detailed results cannot be output when the option to collect them was not selected")
@@ -3906,7 +3906,7 @@ impl HeatPump {
 
         // For each service, report required output parameters
         for (service_idx, service_name) in energy_supply_connections.keys().enumerate() {
-            let service_name: Arc<str> = service_name.to_string().into();
+            let service_name: ArcStr = service_name.to_string().into();
             let results_entry = results_per_timestep
                 .entry(service_name.clone())
                 .or_default();
@@ -3946,8 +3946,7 @@ impl HeatPump {
                         // For DHW, need to include storage and primary circuit losses.
                         // Can do this by replacing H5 numerator with total energy
                         // draw-off from hot water cylinder.
-                        let hws_name =
-                            hot_water_source_name_for_heat_pump_service[&service_name].as_ref();
+                        let hws_name = &hot_water_source_name_for_heat_pump_service[&service_name];
                         if !hot_water_energy_output.contains_key(hws_name) {
                             vec![ResultParamValue::Empty; energy_delivered_total_len]
                         } else {
@@ -4012,7 +4011,7 @@ impl HeatPump {
 
         // For each service, report required output parameters
         for service_name in energy_supply_connections.keys() {
-            let service_name: Arc<str> = service_name.as_str().into();
+            let service_name: ArcStr = service_name.as_str().into();
             let param_totals_for_overall = {
                 let annual_results_entry = results_annual.entry(service_name.clone()).or_default();
                 let mut param_totals_for_overall: IndexMap<(&str, &str), ResultParamValue> =
@@ -4250,9 +4249,9 @@ const AUX_PARAMETERS: [(&str, &str, bool); 3] = [
     ("energy_off_mode", "kWh", true),
 ];
 
-type ResultAnnual = IndexMap<(Arc<str>, Option<Arc<str>>), ResultParamValue>;
+type ResultAnnual = IndexMap<(ArcStr, Option<ArcStr>), ResultParamValue>;
 
-fn result_str(string: &str) -> String {
+fn result_str(string: &str) -> ArcStr {
     string.into()
 }
 
@@ -4289,7 +4288,7 @@ pub enum ServiceResult {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeatPumpEnergyCalculation {
-    service_name: String,
+    service_name: ArcStr,
     service_type: HeatingServiceType,
     service_on: bool,
     energy_output_required: f64,
@@ -11375,8 +11374,8 @@ mod tests {
                 ("energy_off_mode".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
             },
             "servicetimestep_demand_energy".into() => indexmap! {
-                ("service_name".into(), None) => vec![ResultParamValue::String("servicetimestep_demand_energy".into()); 2],
-                ("service_type".into(), None) => vec![ResultParamValue::String("domestic_hot_water_regular".into()); 2],
+                ("service_name".into(), None) => vec![ResultParamValue::String(arcstr::literal!("servicetimestep_demand_energy")); 2],
+                ("service_type".into(), None) => vec![ResultParamValue::String(arcstr::literal!("domestic_hot_water_regular")); 2],
                 ("service_on".into(), None) => vec![ResultParamValue::Boolean(true); 2],
                 ("energy_output_required".into(), Some("kWh".into())) => vec![5.0.into(); 2],
                 ("temp_output".into(), Some("K".into())) => vec![330.0.into(); 2],

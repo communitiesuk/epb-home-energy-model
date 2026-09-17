@@ -4,8 +4,8 @@ use crate::core::schedule::{
 use crate::hem_core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::input::EnergySupplyTariff;
 use anyhow::anyhow;
+use arcstr::ArcStr;
 use indexmap::IndexMap;
-use smartstring::alias::String;
 use std::io::Read;
 
 /// This module contains data on the energy tariffs.
@@ -91,8 +91,8 @@ impl TariffData {
     /// If the same tariff name is found, prices from the CSV will take precedence.
     pub(super) fn merge_prices_from_files(
         prices_from_csv: IndexMap<EnergySupplyTariff, NumericSchedule>,
-        prices_from_json: IndexMap<String, NumericSchedule>,
-    ) -> IndexMap<String, NumericSchedule> {
+        prices_from_json: IndexMap<ArcStr, NumericSchedule>,
+    ) -> IndexMap<ArcStr, NumericSchedule> {
         let mut merged_prices = prices_from_json;
         merged_prices.extend(
             prices_from_csv
@@ -293,7 +293,7 @@ mod tests {
     /// Test merge_prices_from_files warns of overlaps and favours prices from CSV
     fn test_merge_prices_from_files(loaded_prices: IndexMap<EnergySupplyTariff, NumericSchedule>) {
         let prices_from_csv = loaded_prices;
-        let prices_from_json: IndexMap<String, NumericSchedule> = serde_json::from_value(json!({"Standard Tariff": {"main": [1.0, 2.0, 3.0]},"Other Tariff": {"main": [1.0, 2.0, 3.0]}})).unwrap();
+        let prices_from_json: IndexMap<ArcStr, NumericSchedule> = serde_json::from_value(json!({"Standard Tariff": {"main": [1.0, 2.0, 3.0]},"Other Tariff": {"main": [1.0, 2.0, 3.0]}})).unwrap();
 
         let results = TariffData::merge_prices_from_files(prices_from_csv, prices_from_json);
 

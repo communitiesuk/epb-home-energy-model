@@ -24,6 +24,7 @@ use crate::input::{ControlLogicType, HeatBattery};
 use crate::statistics::{linspace, np_interp};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
+use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use educe::Educe;
 use fsum::FSum;
@@ -31,7 +32,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use ndarray::{array, Array1};
 use parking_lot::RwLock;
-use smartstring::alias::String;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -858,7 +858,7 @@ trait HeatBatteryDryCoreServiceBehaviour {
 pub(crate) struct HeatBatteryDryCoreServiceWaterRegular<T: WaterSupplyBehaviour> {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,
-    service_name: String,
+    service_name: ArcStr,
     cold_feed: T,
     control_min: Control,
     control_max: Control,
@@ -867,7 +867,7 @@ pub(crate) struct HeatBatteryDryCoreServiceWaterRegular<T: WaterSupplyBehaviour>
 impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
     pub(crate) fn new(
         heat_battery: Arc<HeatBatteryDryCore>,
-        service_name: String,
+        service_name: ArcStr,
         cold_feed: T,
         control_min: Control,
         control_max: Control,
@@ -939,7 +939,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
 pub struct HeatBatteryDryCoreServiceWaterDirect<T: WaterSupplyBehaviour> {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,
-    service_name: String,
+    service_name: ArcStr,
     setpoint_temp: f64,
     cold_feed: T,
 }
@@ -1077,7 +1077,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
 pub(crate) struct HeatBatteryDryCoreServiceSpace {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,
-    service_name: String,
+    service_name: ArcStr,
     control: Option<Control>,
 }
 
@@ -1090,7 +1090,7 @@ impl HeatBatteryDryCoreServiceSpace {
         Self {
             core_service: HeatBatteryDryCoreService::new(control.clone()),
             heat_battery,
-            service_name: String::from(service_name),
+            service_name: service_name.into(),
             control,
         }
     }
@@ -1162,7 +1162,7 @@ pub(crate) struct HeatBatteryDryCore {
     storage: Arc<RwLock<HeatStorageDryCore>>,
     energy_supply: Arc<RwLock<EnergySupply>>,
     energy_supply_connection: EnergySupplyConnection,
-    energy_supply_connections: Arc<RwLock<IndexMap<String, EnergySupplyConnection>>>,
+    energy_supply_connections: Arc<RwLock<IndexMap<ArcStr, EnergySupplyConnection>>>,
     fan_power: f64,
     power_instant: f64,
     power_circ_pump: f64,
@@ -1271,7 +1271,7 @@ impl HeatBatteryDryCore {
         }
 
         self.energy_supply_connections.write().insert(
-            String::from(service_name),
+            service_name.into(),
             EnergySupply::connection(self.energy_supply.clone(), service_name)?,
         );
 
@@ -1775,7 +1775,7 @@ impl HeatBatteryDryCore {
         }
 
         // For each service, report required output parameters
-        let service_names: Vec<Arc<str>> = self
+        let service_names: Vec<ArcStr> = self
             .energy_supply_connections
             .read()
             .keys()
@@ -1796,7 +1796,7 @@ impl HeatBatteryDryCore {
                         let services_list = &timestep_data.services;
                         let service_data = services_list
                             .iter()
-                            .find(|service| service.service_name.as_str() == service_name.as_ref());
+                            .find(|service| service.service_name.as_str() == service_name);
                         let result = if let Some(service_data) = service_data {
                             service_data.param(parameter)
                         } else {
@@ -1932,7 +1932,7 @@ pub(super) fn convert_to_kwh(power_in_watts: f64, time_in_hours: f64) -> f64 {
 
 #[derive(Debug, Clone)]
 struct ServiceResult {
-    service_name: String,
+    service_name: ArcStr,
     service_type: HeatingServiceType,
     service_on: bool,
     energy_output_required: f64,
@@ -1954,7 +1954,7 @@ impl ServiceResult {
     fn param(&self, param: &str) -> ResultParamValue {
         match param {
             "service_name" => ResultParamValue::from(self.service_name.clone()),
-            "service_type" => ResultParamValue::from(String::from(self.service_type.to_string())),
+            "service_type" => ResultParamValue::String(self.service_type.into()),
             "service_on" => self.service_on.into(),
             "energy_output_required" => self.energy_output_required.into(),
             "temp_output" => self.temp_output.into(),

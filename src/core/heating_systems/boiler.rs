@@ -18,11 +18,11 @@ use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::bail;
 use approx::relative_eq;
+use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use fsum::FSum;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
-use smartstring::alias::String;
 use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -100,7 +100,7 @@ impl BoilerForBoilerService {
 #[derive(Debug, Clone)]
 pub struct BoilerServiceWaterCombi {
     boiler: BoilerForBoilerService,
-    service_name: String,
+    service_name: ArcStr,
     temperature_hot_water_in_c: f64,
     cold_feed: WaterSupply,
     separate_dhw_tests: BoilerHotWaterTest,
@@ -141,7 +141,7 @@ impl BoilerServiceWaterCombi {
     pub(crate) fn new(
         boiler: BoilerForBoilerService,
         boiler_data: HotWaterSourceDetails,
-        service_name: String,
+        service_name: ArcStr,
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSupply,
         _keep_hot_control: Option<Arc<OnOffTimeControl>>,
@@ -436,14 +436,14 @@ impl BoilerServiceWaterCombi {
 /// specific to providing hot water.
 pub struct BoilerServiceWaterRegular {
     boiler: BoilerForBoilerService,
-    service_name: String,
+    service_name: ArcStr,
     control: Arc<RangeTimeControl>,
 }
 
 impl BoilerServiceWaterRegular {
     pub(crate) fn new(
         boiler: BoilerForBoilerService,
-        service_name: String,
+        service_name: ArcStr,
         // We have consolidatated controls into one field to match the validation logic Python has
         control: Arc<RangeTimeControl>,
     ) -> anyhow::Result<Self> {
@@ -519,14 +519,14 @@ impl BoilerServiceWaterRegular {
 #[derive(Clone, Debug)]
 pub struct BoilerServiceSpace {
     boiler: BoilerForBoilerService,
-    service_name: String,
+    service_name: ArcStr,
     control: SetpointOrCombinationControl,
 }
 
 impl BoilerServiceSpace {
     pub(crate) fn new(
         boiler: BoilerForBoilerService,
-        service_name: String,
+        service_name: ArcStr,
         control: SetpointOrCombinationControl,
     ) -> Self {
         Self {
@@ -603,9 +603,9 @@ pub struct Boiler {
     energy_supply: Arc<RwLock<EnergySupply>>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
-    energy_supply_connections: IndexMap<String, EnergySupplyConnection>,
+    energy_supply_connections: IndexMap<ArcStr, EnergySupplyConnection>,
     energy_supply_connection_aux: EnergySupplyConnection,
-    _energy_supply_type: String,
+    _energy_supply_type: ArcStr,
     // service_results: (),
     boiler_location: HeatSourceLocation,
     min_modulation_load: f64,
@@ -1368,7 +1368,7 @@ pub(crate) struct KeepHotCombiBoilerConfig {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ServiceResult {
-    pub(crate) service_name: String,
+    pub(crate) service_name: ArcStr,
     pub(crate) service_type: ServiceType,
     pub(crate) temp_flow: f64,
     pub(crate) temp_return_feed: Option<f64>,

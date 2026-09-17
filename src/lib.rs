@@ -34,6 +34,7 @@ use crate::read_weather_file::{
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
+use arcstr::ArcStr;
 use convert_case::{Case, Casing};
 use csv::WriterBuilder;
 use erased_serde::Serialize as ErasedSerialize;
@@ -44,7 +45,6 @@ use itertools::Itertools;
 use jsonschema::Validator;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
-use smartstring::alias::String;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::io::Read;
@@ -471,7 +471,7 @@ pub static UNITS_MAP: LazyLock<IndexMap<&'static str, &'static str>> = LazyLock:
     ])
 });
 
-type ReorganisedMapForOutput = IndexMap<Option<Arc<str>>, IndexMap<Arc<str>, Vec<f64>>>;
+type ReorganisedMapForOutput = IndexMap<Option<ArcStr>, IndexMap<ArcStr, Vec<f64>>>;
 
 fn write_core_output_file(
     output: &Output,
@@ -638,9 +638,9 @@ fn write_core_output_file(
 
         // Loop over system names and print the heating and cooling energy demand and output
         for system in reorganised_dict.keys() {
-            let system_key = &system.as_ref().map(|x| x.clone());
-            for hc_name in reorganised_dict[system_key].keys() {
-                hc_system_row.push(reorganised_dict[system_key][hc_name][t_idx]);
+            let system_key = system.clone();
+            for hc_name in reorganised_dict[&system_key].keys() {
+                hc_system_row.push(reorganised_dict[&system_key][hc_name][t_idx]);
             }
         }
 
@@ -857,6 +857,8 @@ fn write_core_output_file_summary(
             EnergySupplyStatKey::StorageEfficiency,
         ),
     ];
+    let division_by_zero_output = arcstr::literal!("DIV/0");
+    let not_applicable_output = arcstr::literal!("N/A");
     for (label, unit, field) in fields {
         let mut row: Vec<std::string::String> = vec![label.into(), unit.into()];
         for stat in output.summary.energy_supply.values() {
@@ -864,12 +866,12 @@ fn write_core_output_file_summary(
             let value = if value.is_some_and(|value| {
                 field == EnergySupplyStatKey::StorageEfficiency && value.is_nan()
             }) {
-                StringOrNumber::String("DIV/0".into())
+                StringOrNumber::String(division_by_zero_output.clone())
             } else {
                 if let Some(value) = value {
                     StringOrNumber::from(value)
                 } else {
-                    StringOrNumber::String("N/A".into())
+                    StringOrNumber::String(not_applicable_output.clone())
                 }
             };
             row.push(value.to_string());
@@ -897,22 +899,20 @@ fn write_core_output_file_summary(
         ])?;
 
         for row in dhw_cop_rows.iter_mut() {
-            let hws_name: Arc<str> = row[0].clone().into();
+            let hws_name: ArcStr = row[0].clone().into();
             row.push(StringOrNumber::Float(
-                output.summary.hot_water_demand_daily_75th_percentile[hws_name.as_ref()],
+                output.summary.hot_water_demand_daily_75th_percentile[&hws_name],
             ));
 
             row.push({
-                if let HotWaterSourceDetails::StorageTank { details } = input
-                    .hot_water_source
-                    .get(&hws_name.to_string())
-                    .ok_or_else(|| {
+                if let HotWaterSourceDetails::StorageTank { details } =
+                    input.hot_water_source.get(&hws_name).ok_or_else(|| {
                         anyhow!("Could not find hot water source with name '{hws_name}'")
                     })?
                 {
                     details.volume.into()
                 } else {
-                    StringOrNumber::String("N/A".into())
+                    StringOrNumber::String(not_applicable_output.clone())
                 }
             });
         }
@@ -994,23 +994,19 @@ struct EnergySupplyStat {
 impl EnergySupplyStat {
     fn display_for_key(&self, key: &EnergySupplyStatKey) -> String {
         match key {
-            EnergySupplyStatKey::Generation => self.generation.to_string().into(),
-            EnergySupplyStatKey::Consumption => self.consumption.to_string().into(),
-            EnergySupplyStatKey::GenerationToConsumption => {
-                self.gen_to_consumption.to_string().into()
-            }
-            EnergySupplyStatKey::GridToConsumption => self.grid_to_consumption.to_string().into(),
-            EnergySupplyStatKey::TotalGrossImport => self.total_gross_import.to_string().into(),
-            EnergySupplyStatKey::TotalGrossExport => self.total_gross_export.to_string().into(),
-            EnergySupplyStatKey::GenerationToGrid => self.generation_to_grid.to_string().into(),
-            EnergySupplyStatKey::NetImport => self.net_import.to_string().into(),
-            EnergySupplyStatKey::GenerationToStorage => self.gen_to_storage.to_string().into(),
-            EnergySupplyStatKey::StorageToConsumption => {
-                self.storage_to_consumption.to_string().into()
-            }
-            EnergySupplyStatKey::StorageFromGrid => self.storage_from_grid.to_string().into(),
-            EnergySupplyStatKey::GenerationToDiverter => self.gen_to_diverter.to_string().into(),
-            EnergySupplyStatKey::StorageEfficiency => self.storage_eff.to_string().into(),
+            EnergySupplyStatKey::Generation => self.generation.to_string(),
+            EnergySupplyStatKey::Consumption => self.consumption.to_string(),
+            EnergySupplyStatKey::GenerationToConsumption => self.gen_to_consumption.to_string(),
+            EnergySupplyStatKey::GridToConsumption => self.grid_to_consumption.to_string(),
+            EnergySupplyStatKey::TotalGrossImport => self.total_gross_import.to_string(),
+            EnergySupplyStatKey::TotalGrossExport => self.total_gross_export.to_string(),
+            EnergySupplyStatKey::GenerationToGrid => self.generation_to_grid.to_string(),
+            EnergySupplyStatKey::NetImport => self.net_import.to_string(),
+            EnergySupplyStatKey::GenerationToStorage => self.gen_to_storage.to_string(),
+            EnergySupplyStatKey::StorageToConsumption => self.storage_to_consumption.to_string(),
+            EnergySupplyStatKey::StorageFromGrid => self.storage_from_grid.to_string(),
+            EnergySupplyStatKey::GenerationToDiverter => self.gen_to_diverter.to_string(),
+            EnergySupplyStatKey::StorageEfficiency => self.storage_eff.to_string(),
         }
     }
 }
@@ -1084,7 +1080,7 @@ fn write_core_output_file_heat_balance(
     output_key: &str,
     timestep_array: &[f64],
     hour_per_step: f64,
-    heat_balance_map: &IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>,
+    heat_balance_map: &IndexMap<ArcStr, IndexMap<ArcStr, Vec<f64>>>,
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     let writer = output_writer.writer_for_location_key(output_key, "csv")?;
@@ -1092,7 +1088,7 @@ fn write_core_output_file_heat_balance(
 
     let mut headings = vec!["Timestep".to_string()];
     let mut units_row = vec!["index".to_string()];
-    let mut rows = vec![vec![StringOrNumber::String("".into())]];
+    let mut rows = vec![vec![StringOrNumber::String(arcstr::literal!(""))]];
 
     let mut headings_annual = vec!["".to_string()];
     let mut units_annual = vec!["".to_string()];
@@ -1118,7 +1114,7 @@ fn write_core_output_file_heat_balance(
             ))?
             * number_of_zones
     ];
-    annual_totals.insert(0, StringOrNumber::String("".into()));
+    annual_totals.insert(0, StringOrNumber::String(arcstr::literal!("")));
 
     for (z_name, heat_loss_gain_map) in heat_balance_map {
         for heat_loss_gain_name in heat_loss_gain_map.keys() {
@@ -1154,7 +1150,7 @@ fn write_core_output_file_heat_balance(
     Ok(())
 }
 
-type HeatSourceWetServiceResultColumn = Vec<(Arc<str>, Option<Arc<str>>)>;
+type HeatSourceWetServiceResultColumn = Vec<(ArcStr, Option<ArcStr>)>;
 
 fn write_core_output_file_heat_source_wet(
     output_key: &str,
@@ -1163,9 +1159,9 @@ fn write_core_output_file_heat_source_wet(
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     // Repeat column headings for each service
-    let mut col_headings: Vec<Arc<str>> = vec!["Timestep".into()];
-    let mut col_units_row: Vec<Arc<str>> = vec!["count".into()];
-    let mut columns: IndexMap<Arc<str>, HeatSourceWetServiceResultColumn> = Default::default();
+    let mut col_headings: Vec<ArcStr> = vec!["Timestep".into()];
+    let mut col_units_row: Vec<ArcStr> = vec!["count".into()];
+    let mut columns: IndexMap<ArcStr, HeatSourceWetServiceResultColumn> = Default::default();
 
     for (service_name, service_results) in heat_source_wet_results.iter() {
         columns.insert(
@@ -1179,13 +1175,13 @@ fn write_core_output_file_heat_source_wet(
                 .collect::<IndexMap<_, _>>()
                 .keys()
                 .map(|col_heading| format!("{service_name}: {col_heading}").into())
-                .collect::<Vec<Arc<str>>>(),
+                .collect::<Vec<ArcStr>>(),
         );
         col_units_row.extend(
             service_results
                 .keys()
                 .map(|(_, col_unit)| col_unit.clone().unwrap_or_default())
-                .collect::<Vec<Arc<str>>>(),
+                .collect::<Vec<ArcStr>>(),
         );
     }
 
@@ -1236,7 +1232,7 @@ fn write_core_output_file_heat_source_wet_summary(
             writer.write_record([
                 name.0.as_bytes(),
                 name.1.as_ref().map(|x| x.as_bytes()).unwrap_or_default(),
-                String::from(format_value(&StringOrNumber::from(value))?).as_bytes(),
+                format_value(&StringOrNumber::from(value))?.as_bytes(),
             ])?;
         }
         writer.write_record([""])?;
@@ -1247,7 +1243,7 @@ fn write_core_output_file_heat_source_wet_summary(
 
 fn write_core_output_file_emitters_detailed(
     output_prefix: &str,
-    emitters_output_map: &IndexMap<Arc<str>, IndexMap<usize, OutputEmitters>>,
+    emitters_output_map: &IndexMap<ArcStr, IndexMap<usize, OutputEmitters>>,
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     for (emitter_name, emitters_detailed_results) in emitters_output_map {
@@ -1318,7 +1314,7 @@ fn write_core_output_file_emitters_detailed(
 
 fn write_core_output_file_esh_detailed(
     output_prefix: &str,
-    esh_output: &IndexMap<Arc<str>, IndexMap<usize, Vec<f64>>>,
+    esh_output: &IndexMap<ArcStr, IndexMap<usize, Vec<f64>>>,
     output_writer: &impl OutputWriter,
 ) -> Result<(), anyhow::Error> {
     let headings = [
@@ -1438,7 +1434,7 @@ fn write_core_output_file_hot_water_source(
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum StringOrNumber {
-    String(String),
+    String(ArcStr),
     Float(f64),
     Integer(usize),
 }
@@ -1484,11 +1480,11 @@ impl From<StringOrNumber> for Vec<u8> {
 
 impl From<StringOrNumber> for String {
     fn from(value: StringOrNumber) -> Self {
-        format!("{}", value).into()
+        format!("{}", value)
     }
 }
 
-impl From<StringOrNumber> for Arc<str> {
+impl From<StringOrNumber> for ArcStr {
     fn from(value: StringOrNumber) -> Self {
         format!("{}", value).into()
     }
@@ -1502,12 +1498,6 @@ impl From<&str> for StringOrNumber {
 
 impl From<String> for StringOrNumber {
     fn from(value: String) -> Self {
-        StringOrNumber::String(value.clone())
-    }
-}
-
-impl From<std::string::String> for StringOrNumber {
-    fn from(value: std::string::String) -> Self {
         StringOrNumber::String(value.into())
     }
 }

@@ -10,16 +10,16 @@ use crate::core::water_heat_demand::misc::{water_demand_to_kwh, WaterEventResult
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use approx::relative_eq;
+use arcstr::ArcStr;
 use fsum::FSum;
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
-use smartstring::alias::String;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct HeatNetworkServiceWaterDirect {
     heat_network: Arc<Mutex<HeatNetwork>>,
-    service_name: String,
+    service_name: ArcStr,
     temperature_hot_water: f64, // in C
     cold_feed: WaterSupply,
 }
@@ -36,7 +36,7 @@ impl HeatNetworkServiceWaterDirect {
     /// * `cold_feed` - reference to ColdWaterSource object
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
-        service_name: String,
+        service_name: ArcStr,
         temperature_hot_water: f64,
         cold_feed: WaterSupply,
     ) -> Self {
@@ -104,7 +104,7 @@ impl HeatNetworkServiceWaterDirect {
 #[derive(Clone, Debug)]
 pub struct HeatNetworkServiceWaterStorage {
     heat_network: Arc<Mutex<HeatNetwork>>,
-    service_name: String,
+    service_name: ArcStr,
     control: Arc<RangeTimeControl>,
 }
 
@@ -116,7 +116,7 @@ impl HeatNetworkServiceWaterStorage {
     /// * `control_max` - reference to a control object which must select current the maximum timestep temperature
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
-        service_name: String,
+        service_name: ArcStr,
         control: Arc<RangeTimeControl>,
     ) -> Self {
         Self {
@@ -177,14 +177,14 @@ impl HeatNetworkServiceWaterStorage {
 #[derive(Clone, Debug)]
 pub struct HeatNetworkServiceSpace {
     heat_network: Arc<Mutex<HeatNetwork>>,
-    service_name: String,
+    service_name: ArcStr,
     control: Control,
 }
 
 impl HeatNetworkServiceSpace {
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
-        service_name: String,
+        service_name: ArcStr,
         control: Control, // in Python this is ControlSetPoint
     ) -> Self {
         Self {
@@ -263,7 +263,7 @@ pub(crate) struct HeatNetwork {
     power_aux: f64,
     building_level_distribution_losses: f64, // in watts
     energy_supply: Arc<RwLock<EnergySupply>>,
-    energy_supply_connections: IndexMap<String, EnergySupplyConnection>,
+    energy_supply_connections: IndexMap<ArcStr, EnergySupplyConnection>,
     energy_supply_connection_aux: EnergySupplyConnection,
     energy_supply_connection_building_level_distribution_losses: EnergySupplyConnection,
     total_time_running_current_timestep: f64,
@@ -279,8 +279,8 @@ impl HeatNetwork {
         power_aux: f64,
         building_level_distribution_losses: f64,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_conn_name_auxiliary: String,
-        energy_supply_conn_name_building_level_distribution_losses: String,
+        energy_supply_conn_name_auxiliary: ArcStr,
+        energy_supply_conn_name_building_level_distribution_losses: ArcStr,
         simulation_timestep: f64,
     ) -> Self {
         Self {

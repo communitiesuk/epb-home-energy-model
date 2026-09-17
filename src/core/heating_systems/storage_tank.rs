@@ -19,6 +19,7 @@ use crate::StringOrNumber;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arc_swap::ArcSwapOption;
+use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use educe::Educe;
 use fsum::FSum;
@@ -26,7 +27,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
-use smartstring::alias::String;
 use std::iter;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -118,8 +118,8 @@ pub struct StorageTank {
     storage_losses_kwh: AtomicF64,
     temp_surrounding_prev_heating_event: Vec<AtomicF64>,
     flag_first_water_heating_event: AtomicBool,
-    heat_source_data: IndexMap<String, PositionedHeatSource>, // heat sources, sorted by heater position
-    heating_active: IndexMap<String, AtomicBool>,
+    heat_source_data: IndexMap<ArcStr, PositionedHeatSource>, // heat sources, sorted by heater position
+    heating_active: IndexMap<ArcStr, AtomicBool>,
     q_ls_n_prev_heat_source: Arc<RwLock<Vec<f64>>>,
     q_sto_h_ls_rbl: AtomicF64, // total recoverable heat losses for heating in kWh, memoised between steps
     pipework_primary_gains_for_timestep: AtomicF64, // primary pipework gains for a timestep (mutates over lifetime)
@@ -158,7 +158,7 @@ impl StorageTank {
         initial_temperature: f64,
         cold_feed: WaterSupply,
         simulation_time_iteration: &SimulationTimeIteration,
-        heat_sources: IndexMap<String, PositionedHeatSource>,
+        heat_sources: IndexMap<ArcStr, PositionedHeatSource>,
         // In Python this is "project" but only temp_internal_air is accessed from it
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
@@ -1875,7 +1875,7 @@ impl SmartHotWaterTank {
         temp_setpnt_max: Control,
         cold_feed: WaterSupply,
         simulation_time_iteration: &SimulationTimeIteration,
-        heat_sources: IndexMap<String, PositionedHeatSource>,
+        heat_sources: IndexMap<ArcStr, PositionedHeatSource>,
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
         detailed_output: Option<bool>,
@@ -3424,7 +3424,7 @@ impl HotWaterStorageTank {
 pub struct PVDiverter {
     pre_heated_water_source: HotWaterStorageTank,
     immersion_heater: Arc<Mutex<ImmersionHeater>>,
-    heat_source_name: String,
+    heat_source_name: ArcStr,
     control_max: Option<Control>,
     capacity_used: AtomicF64,
 }
@@ -3433,7 +3433,7 @@ impl PVDiverter {
     pub(crate) fn new(
         storage_tank: &HotWaterStorageTank,
         heat_source: Arc<Mutex<ImmersionHeater>>,
-        heat_source_name: String,
+        heat_source_name: ArcStr,
         control_max: Option<Control>,
     ) -> Arc<RwLock<Self>> {
         let diverter = Arc::new(RwLock::new(Self {
@@ -4056,7 +4056,7 @@ mod tests {
         let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
         let simtime = simulation_time_for_storage_tank.iter().current_iteration();
 
-        let heat_sources = IndexMap::from([(String::from("imheater2"), heat_source)]);
+        let heat_sources = IndexMap::from([("imheater2".into(), heat_source)]);
         let storage_tank = StorageTank::new(
             210.0,
             1.61,
@@ -4191,7 +4191,7 @@ mod tests {
         )));
         let simtime = simulation_time_for_storage_tank.iter().current_iteration();
 
-        let heat_sources = IndexMap::from([(String::from("imheater"), heat_source)]);
+        let heat_sources = IndexMap::from([("imheater".into(), heat_source)]);
 
         StorageTank::new(
             150.0,
@@ -4427,7 +4427,7 @@ mod tests {
             cold_feed,
             &simulation_time_for_solar_thermal.iter().current_iteration(),
             IndexMap::from([(
-                String::from("solthermal"),
+                "solthermal".into(),
                 PositionedHeatSource {
                     heat_source: Arc::new(Mutex::new(HeatSource::Storage(
                         HeatSourceWithStorageTank::Solar(solar_thermal.clone()),
@@ -5942,7 +5942,7 @@ mod tests {
             Mutex::new(immersion_heater),
         )));
         let heat_sources = IndexMap::from([(
-            String::from(heat_source_name),
+            heat_source_name.into(),
             PositionedHeatSource {
                 heat_source: Arc::new(Mutex::new(heat_source)),
                 heater_position: 0.6,

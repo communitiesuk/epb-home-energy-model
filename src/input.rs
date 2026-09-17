@@ -7,6 +7,7 @@ use crate::simulation_time::SimulationTime;
 use crate::HEM_VERSION;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
+use arcstr::ArcStr;
 use educe::Educe;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -20,11 +21,13 @@ use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Map, Value as JsonValue};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_valid::validation::error::{Format, Message};
+use serde_valid::validation::{Error, ObjectErrors, PropertyErrorsMap, VecErrors};
 use serde_valid::{MinimumError, Validate};
 use serde_with::skip_serializing_none;
-use smartstring::alias::String;
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::Hash;
 use std::ops::Index;
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -50,16 +53,16 @@ pub struct Input {
     metadata: Option<InputMetadata>,
 
     #[serde(default)]
-    #[validate]
+    #[validate(custom = validate_map)]
     pub(crate) appliance_gains: ApplianceGains,
 
-    #[validate]
+    #[validate(custom = validate_map)]
     pub(crate) cold_water_source: ColdWaterSourceInput,
 
     #[validate]
     pub(crate) control: Control,
 
-    #[validate]
+    #[validate(custom = validate_map)]
     pub(crate) energy_supply: EnergySupplyInput,
 
     #[serde(rename = "Events")]
@@ -70,13 +73,13 @@ pub struct Input {
     pub(crate) external_conditions: Arc<ExternalConditionsInput>,
 
     /// Dictionary of available wet heat sources, keyed by user-defined names (e.g., 'boiler', 'hp', 'HeatNetwork', 'hb1'). Other models reference these keys via their heat_source_wet fields.
-    #[validate]
+    #[validate(custom = validate_optional_map)]
     pub(crate) heat_source_wet: Option<HeatSourceWet>,
 
     #[validate]
     pub(crate) hot_water_demand: HotWaterDemand,
 
-    #[validate]
+    #[validate(custom = validate_map)]
     pub(crate) hot_water_source: HotWaterSource,
 
     #[validate]
@@ -85,25 +88,24 @@ pub struct Input {
     #[validate]
     pub(crate) internal_gains: InternalGains,
 
-    #[validate]
+    #[validate(custom = validate_optional_map)]
     pub(crate) on_site_generation: Option<OnSiteGeneration>,
 
     #[serde(default)]
-    #[validate]
-    pub(crate) pre_heated_water_source: IndexMap<std::string::String, PreHeatedWaterSourceDetails>,
+    #[validate(custom = validate_map)]
+    pub(crate) pre_heated_water_source: IndexMap<ArcStr, PreHeatedWaterSourceDetails>,
 
     #[validate]
     pub simulation_time: SimulationTime,
 
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    #[validate]
-    pub(crate) smart_appliance_controls:
-        IndexMap<std::string::String, SmartApplianceControlDetails>,
+    #[validate(custom = validate_map)]
+    pub(crate) smart_appliance_controls: IndexMap<ArcStr, SmartApplianceControlDetails>,
 
-    #[validate]
+    #[validate(custom = validate_optional_map)]
     pub(crate) space_cool_system: Option<SpaceCoolSystem>,
 
-    #[validate]
+    #[validate(custom = validate_optional_map)]
     pub(crate) space_heat_system: Option<SpaceHeatSystem>,
 
     #[validate]
@@ -113,17 +115,17 @@ pub struct Input {
     pub(crate) temp_internal_air_static_calcs: f64,
 
     #[serde(rename = "WWHRS")]
-    #[validate]
+    #[validate(custom = validate_optional_map)]
     pub(crate) waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
 
-    #[validate]
+    #[validate(custom = validate_map)]
     pub(crate) zone: ZoneDictionary,
 
     /// Order in which zones are served by their heating and cooling systems. Required
     /// when more than one zone is heated or cooled, so that the order in which zones
     /// draw on a shared source is an explicit choice rather than a consequence of the
     /// order zones appear in the input. Lists every zone name exactly once.
-    pub(crate) zone_processing_order: Option<IndexSet<std::string::String>>,
+    pub(crate) zone_processing_order: Option<IndexSet<ArcStr>>,
 }
 
 impl Input {
@@ -148,7 +150,43 @@ impl Input {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct InputMetadata {
     #[validate(custom = validate_hem_core_version)]
-    hem_core_version: String,
+    hem_core_version: ArcStr,
+}
+
+fn validate_map<T, U, V>(map: &V) -> Result<(), serde_valid::validation::Error>
+where
+    T: Eq + Hash + AsRef<str>,
+    U: Validate,
+    for<'a> &'a V: IntoIterator<Item = (&'a T, &'a U)>,
+{
+    let mut properties = PropertyErrorsMap::new();
+
+    for (key, value) in map {
+        if let Err(errors) = value.validate() {
+            properties.insert(Cow::Owned(key.as_ref().to_owned()), errors);
+        }
+    }
+
+    if properties.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::Properties(ObjectErrors::new(
+            VecErrors::new(),
+            properties,
+        )))
+    }
+}
+
+fn validate_optional_map<T, U, V>(map: &Option<V>) -> Result<(), serde_valid::validation::Error>
+where
+    T: Eq + Hash + AsRef<str>,
+    U: Validate,
+    for<'a> &'a V: IntoIterator<Item = (&'a T, &'a U)>,
+{
+    match map {
+        Some(map) => validate_map(map),
+        None => Ok(()),
+    }
 }
 
 fn validate_hem_core_version(hem_core_version: &str) -> Result<(), serde_valid::validation::Error> {
@@ -205,7 +243,7 @@ fn validate_exhaust_air_heat_pump_ventilation_compatibility(
             HeatPumpSourceType::ExhaustAirMixed,
         ];
 
-        let exhaust_air_heat_pumps: IndexMap<String, HeatPumpSourceType> = heat_source_wet
+        let exhaust_air_heat_pumps: IndexMap<ArcStr, HeatPumpSourceType> = heat_source_wet
             .iter()
             .filter_map(|(name, source)| {
                 if let HeatSourceWetDetails::HeatPump { source_type, .. } = source {
@@ -224,7 +262,7 @@ fn validate_exhaust_air_heat_pump_ventilation_compatibility(
             return Ok(());
         }
 
-        let incompatible_vents: IndexMap<String, &'static str> = input
+        let incompatible_vents: IndexMap<ArcStr, &'static str> = input
             .infiltration_ventilation
             .mechanical_ventilation
             .iter()
@@ -235,7 +273,7 @@ fn validate_exhaust_air_heat_pump_ventilation_compatibility(
             .collect();
 
         if !incompatible_vents.is_empty() {
-            let mut incompatibilities: Vec<String> = Default::default();
+            let mut incompatibilities: Vec<ArcStr> = Default::default();
             for (vent_name, vent_type) in incompatible_vents.iter() {
                 for (heat_source_name, _heat_source_type) in exhaust_air_heat_pumps.iter() {
                     incompatibilities
@@ -266,7 +304,7 @@ fn validate_time_series(input: &Input) -> Result<(), serde_valid::validation::Er
         let total_steps = (simulation_time.end_time() - simulation_time.start_time()).ceil()
             / cold_water_source.time_series_step;
         if (cold_water_source.temperatures.len() as f64) < total_steps {
-            return custom_validation_error("ColdWaterSource.temperatures does not contain enough values to cover the simulation.".to_string());
+            return custom_validation_error("ColdWaterSource.temperatures does not contain enough values to cover the simulation.");
         }
     }
 
@@ -276,7 +314,7 @@ fn validate_time_series(input: &Input) -> Result<(), serde_valid::validation::Er
 fn validate_smart_appliance_control_names(
     input: &Input,
 ) -> Result<(), serde_valid::validation::Error> {
-    let appliance_gains_load_shifting_control_names: Vec<String> = input
+    let appliance_gains_load_shifting_control_names: Vec<ArcStr> = input
         .appliance_gains
         .iter()
         .filter_map(|(_, gains)| {
@@ -373,7 +411,7 @@ fn validate_energy_supply_fuel_compatibility(
     input: &Input,
 ) -> Result<(), serde_valid::validation::Error> {
     let errors = {
-        let mut errors: Vec<std::string::String> = Vec::new();
+        let mut errors: Vec<String> = Vec::new();
 
         let check = Mutex::new(
             |container: &str,
@@ -397,9 +435,9 @@ fn validate_energy_supply_fuel_compatibility(
                 let fuel_type = supply.fuel;
                 let fuel_category = fuel_type.category();
                 if !allowed.contains(&fuel_type) && !allowed_categories.contains(&fuel_category) {
-                    let allowed_values: BTreeSet<std::string::String> =
+                    let allowed_values: BTreeSet<String> =
                         allowed.iter().map(|fuel| fuel.to_string()).collect();
-                    let allowed_category_values: BTreeSet<std::string::String> = allowed_categories
+                    let allowed_category_values: BTreeSet<String> = allowed_categories
                         .iter()
                         .map(|category| category.to_string())
                         .collect();
@@ -418,7 +456,7 @@ fn validate_energy_supply_fuel_compatibility(
 
         let check_tank_heat_sources = |container: &str,
                                        tank_key: &str,
-                                       heat_sources: &IndexMap<std::string::String, HeatSource>|
+                                       heat_sources: &IndexMap<ArcStr, HeatSource>|
          -> Result<(), serde_valid::validation::Error> {
             for (hs_key, hs) in heat_sources {
                 let path_key = &[tank_key, ".HeatSource.", hs_key];
@@ -812,7 +850,7 @@ fn validate_tariff_data_time_series_step(
     if let Some(tariff_data) = input.tariff_data.as_ref() {
         if tariff_data.time_series_step < input.simulation_time.step {
             return custom_validation_error(
-                "Tariff data cannot have a smaller step than the simulation".to_string(),
+                "Tariff data cannot have a smaller step than the simulation",
             );
         }
     }
@@ -990,9 +1028,7 @@ fn validate_air_temperatures(
     if air_temps.iter().flatten().all(|&v| v >= -273.15) {
         Ok(())
     } else {
-        custom_validation_error(
-            "Some air temperatures contained values that were below -273.15˚C.".to_string(),
-        )
+        custom_validation_error("Some air temperatures contained values that were below -273.15˚C.")
     }
 }
 
@@ -1035,7 +1071,7 @@ pub(crate) struct InternalGainsDetails {
     pub(crate) schedule: NumericSchedule,
 }
 
-pub(crate) type ApplianceGains = IndexMap<std::string::String, ApplianceGainsDetails>;
+pub(crate) type ApplianceGains = IndexMap<ArcStr, ApplianceGainsDetails>;
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
@@ -1054,7 +1090,7 @@ pub(crate) struct ApplianceGainsDetails {
     pub(crate) standby: Option<f64>,
 
     #[serde(rename = "EnergySupply")]
-    pub(crate) energy_supply: String,
+    pub(crate) energy_supply: ArcStr,
 
     /// Proportion of appliance demand turned into heat gains (dimensionless, 0-1)
     #[validate(minimum = 0.)]
@@ -1101,7 +1137,7 @@ pub struct ApplianceGainsEvent {
     pub demand_w: f64,
 }
 
-pub type EnergySupplyInput = IndexMap<std::string::String, EnergySupplyDetails>;
+pub type EnergySupplyInput = IndexMap<ArcStr, EnergySupplyDetails>;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -1111,7 +1147,7 @@ where
     T: Clone + Debug + DeserializeOwned + Serialize + PartialEq + Validate,
 {
     Single(#[validate] T),
-    Map(#[validate] IndexMap<std::string::String, T>),
+    Map(#[validate(custom = validate_map)] IndexMap<ArcStr, T>),
 }
 
 impl<'de, T> Deserialize<'de> for SingleOrMap<T>
@@ -1128,7 +1164,7 @@ where
             return Ok(SingleOrMap::Single(single));
         }
 
-        serde_json::from_value::<IndexMap<std::string::String, T>>(value)
+        serde_json::from_value::<IndexMap<ArcStr, T>>(value)
             .map(SingleOrMap::Map)
             .map_err(serde::de::Error::custom)
     }
@@ -1153,7 +1189,7 @@ pub struct EnergySupplyDetails {
 
     pub factor: Option<CustomEnergySourceFactor>,
 
-    pub(crate) priority: Option<Vec<String>>,
+    pub(crate) priority: Option<Vec<ArcStr>>,
 
     /// Denotes that this energy supply can export its surplus supply
     pub(crate) is_export_capable: bool,
@@ -1191,7 +1227,7 @@ pub struct EnergySupplyDetails {
 
     pub(crate) tariff: Option<EnergySupplyTariff>,
 
-    pub(crate) tariff_export: Option<String>,
+    pub(crate) tariff_export: Option<ArcStr>,
 }
 
 impl EnergySupplyDetails {
@@ -1220,7 +1256,7 @@ fn validate_threshold_value_fractions(
 ) -> Result<(), serde_valid::validation::Error> {
     if let Some(values) = values {
         if !values.iter().all(|&v| (0. ..=1.).contains(&v)) {
-            return custom_validation_error("Some threshold values for an energy supply contained numbers that were not fractions between 0 and 1 inclusive.".to_string());
+            return custom_validation_error("Some threshold values for an energy supply contained numbers that were not fractions between 0 and 1 inclusive.");
         }
     }
 
@@ -1239,31 +1275,25 @@ pub(crate) fn validate_priority_for_energy_supply(
         return Ok(());
     };
 
-    let priority_set: std::collections::HashSet<std::string::String> =
-        priority.iter().map(|s| s.to_string()).collect();
+    let priority_set: std::collections::HashSet<ArcStr> = priority.iter().cloned().collect();
 
-    let electric_battery_keys: HashSet<std::string::String> =
-        match energy_supply.electric_battery.as_ref() {
-            Some(SingleOrMap::Single(_)) => HashSet::from(["ElectricBattery".to_string()]),
-            Some(SingleOrMap::Map(batteries)) => HashSet::from_iter(batteries.keys().cloned()),
-            None => HashSet::new(),
-        };
+    let electric_battery_keys: HashSet<ArcStr> = match energy_supply.electric_battery.as_ref() {
+        Some(SingleOrMap::Single(_)) => HashSet::from(["ElectricBattery".into()]),
+        Some(SingleOrMap::Map(batteries)) => HashSet::from_iter(batteries.keys().cloned()),
+        None => HashSet::new(),
+    };
 
-    let diverter_keys: HashSet<std::string::String> = match energy_supply.diverter.as_ref() {
-        Some(SingleOrMap::Single(_)) => HashSet::from(["diverter".to_string()]),
+    let diverter_keys: HashSet<ArcStr> = match energy_supply.diverter.as_ref() {
+        Some(SingleOrMap::Single(_)) => HashSet::from(["diverter".into()]),
         Some(SingleOrMap::Map(diverters)) => HashSet::from_iter(diverters.keys().cloned()),
         None => HashSet::new(),
     };
 
     if !priority_set.is_superset(&electric_battery_keys) {
-        return custom_validation_error(
-            "All ElectricBattery keys must all be in priority list.".to_string(),
-        );
+        return custom_validation_error("All ElectricBattery keys must all be in priority list.");
     }
     if !priority_set.is_superset(&diverter_keys) {
-        return custom_validation_error(
-            "All diverter keys must all be in priority list.".to_string(),
-        );
+        return custom_validation_error("All diverter keys must all be in priority list.");
     }
 
     if priority_set
@@ -1273,8 +1303,7 @@ pub(crate) fn validate_priority_for_energy_supply(
             .collect()
     {
         return custom_validation_error(
-            "Priority list must only contain keys in either 'ElectricBattery' or 'diverter'."
-                .to_string(),
+            "Priority list must only contain keys in either 'ElectricBattery' or 'diverter'.",
         );
     }
 
@@ -1313,7 +1342,7 @@ pub(crate) fn validate_power_limit_export_requires_export_capable(
 ) -> Result<(), serde_valid::validation::Error> {
     if energy_supply.power_limit_export.is_some() && !energy_supply.is_export_capable {
         return custom_validation_error(
-            "EnergySupply defines 'power_limit_export' but 'is_export_capable' is false; an export power limit requires an export-capable supply.".to_string(),
+            "EnergySupply defines 'power_limit_export' but 'is_export_capable' is false; an export power limit requires an export-capable supply.",
         );
     }
     Ok(())
@@ -1403,7 +1432,7 @@ impl Display for FuelType {
     }
 }
 
-impl From<FuelType> for String {
+impl From<FuelType> for ArcStr {
     fn from(value: FuelType) -> Self {
         serde_json::to_value(value)
             .unwrap()
@@ -1470,7 +1499,7 @@ pub enum EnergySupplyType {
     HeatNetwork,
 
     #[serde(untagged)]
-    Other(String),
+    Other(ArcStr),
 }
 
 impl Display for EnergySupplyType {
@@ -1483,7 +1512,7 @@ impl Display for EnergySupplyType {
     }
 }
 
-impl From<EnergySupplyType> for String {
+impl From<EnergySupplyType> for ArcStr {
     fn from(value: EnergySupplyType) -> Self {
         serde_json::to_value(value)
             .unwrap()
@@ -1498,10 +1527,10 @@ impl From<EnergySupplyType> for String {
 #[serde(rename_all = "PascalCase")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EnergyDiverter {
-    pub(crate) heat_source: String,
+    pub(crate) heat_source: ArcStr,
     /// Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.
     #[serde(rename = "Controlmax")]
-    pub(crate) control_max: String,
+    pub(crate) control_max: ArcStr,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1582,7 +1611,7 @@ pub struct CustomEnergySourceFactor {
     pub primary_energy_factor_k_wh_k_wh_delivered: f64,
 }
 
-pub type ColdWaterSourceInput = IndexMap<std::string::String, ColdWaterSourceDetails>;
+pub type ColdWaterSourceInput = IndexMap<ArcStr, ColdWaterSourceDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -1608,13 +1637,13 @@ fn validate_running_water_temperatures(
     temps: &[f64],
 ) -> Result<(), serde_valid::validation::Error> {
     if !temps.iter().all(|&t| (0. ..=100.).contains(&t)) {
-        custom_validation_error("Some cold water temperatures contained numbers that were not within the range 0 to 100 inclusive.".into())
+        custom_validation_error("Some cold water temperatures contained numbers that were not within the range 0 to 100 inclusive.")
     } else {
         Ok(())
     }
 }
 
-pub(crate) type ExtraControls = IndexMap<std::string::String, ControlDetails>;
+pub(crate) type ExtraControls = IndexMap<ArcStr, ControlDetails>;
 
 /// Control schedule configuration for heating and energy systems.
 #[skip_serializing_none]
@@ -1630,7 +1659,7 @@ pub struct Control {
     pub(crate) window_opening: Option<ControlDetails>,
 
     #[serde(flatten)]
-    #[validate]
+    #[validate(custom = validate_map)]
     pub(crate) extra: ExtraControls,
 }
 
@@ -1784,8 +1813,7 @@ fn validate_logic_type_for_charge_target(
     } = data
     {
         custom_validation_error(
-            "logic types 'automatic', 'celect' and 'hhrsh' requires temp_charge_cut to be set"
-                .into(),
+            "logic types 'automatic', 'celect' and 'hhrsh' requires temp_charge_cut to be set",
         )
     } else {
         Ok(())
@@ -1827,7 +1855,7 @@ fn validate_setpoint_bounds(
             setpoint_max,
             ..
         } if setpoint_max <= setpoint_min => {
-            custom_validation_error("setpoint_max must be greater than setpoint_min".into())
+            custom_validation_error("setpoint_max must be greater than setpoint_min")
         }
         _ => Ok(()),
     }
@@ -1870,7 +1898,7 @@ pub(crate) struct ControlCombinations {
     pub(crate) main: ControlCombination,
 
     #[serde(flatten)]
-    pub(crate) references: IndexMap<String, ControlCombination>,
+    pub(crate) references: IndexMap<ArcStr, ControlCombination>,
 }
 
 pub(crate) const MAIN_REFERENCE: &str = "main";
@@ -1901,18 +1929,16 @@ impl Index<&str> for ControlCombinations {
 pub(crate) struct ControlCombination {
     pub(crate) operation: ControlCombinationOperation,
 
-    // unable currently to use serde_valid built-in validations to validate length of string from
-    // smartstring crate, so using custom validation instead
     #[validate(custom = validate_length_minimum_one)]
-    pub(crate) controls: Vec<String>,
+    pub(crate) controls: Vec<ArcStr>,
 }
 
-fn validate_length_minimum_one(sources: &[String]) -> Result<(), serde_valid::validation::Error> {
+fn validate_length_minimum_one(sources: &[ArcStr]) -> Result<(), serde_valid::validation::Error> {
     validate_length_minimum::<1>(sources)
 }
 
 fn validate_length_minimum<const T: usize>(
-    sources: &[String],
+    sources: &[ArcStr],
 ) -> Result<(), serde_valid::validation::Error> {
     sources
         .iter()
@@ -1920,7 +1946,7 @@ fn validate_length_minimum<const T: usize>(
         .then_some(())
         .ok_or_else(|| {
             serde_valid::validation::Error::Minimum(Message::new(
-                MinimumError::new(2),
+                MinimumError::new(T),
                 Format::Default,
             ))
         })
@@ -1944,7 +1970,7 @@ pub(crate) enum ControlCombinationOperation {
 #[serde(untagged)]
 pub(crate) enum NumericScheduleOrControlReference {
     Schedule(NumericSchedule),
-    ControlReference(String),
+    ControlReference(ArcStr),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1953,7 +1979,7 @@ pub(crate) enum NumericScheduleOrControlReference {
 pub(crate) enum ChargeTargetScheduleOrControlReference {
     // the ordering here is significant in case JSON containing fields from both variants is passed
     /// The name of the control specifying when the charge control is active
-    ChargeTimeControl(String),
+    ChargeTimeControl(ArcStr),
     /// NB. The `Schedule` variant here has been marked as being deprecated in the upstream Python as of 1.0.0-alpha9.
     /// List of boolean values where true means 'on' (one entry per hour)
     Schedule(BooleanSchedule),
@@ -1967,29 +1993,29 @@ pub struct SmartApplianceBattery {
     #[validate(custom = validate_battery_state_fractions)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
-    pub battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>>,
+    pub battery_state_of_charge: IndexMap<ArcStr, Vec<f64>>,
 
     /// Dictionary of lists containing energy sent to the battery from generation for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
-    pub energy_into_battery_from_generation: IndexMap<Arc<str>, Vec<f64>>,
+    pub energy_into_battery_from_generation: IndexMap<ArcStr, Vec<f64>>,
 
     /// Dictionary of lists containing energy sent to the battery from the grid for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
-    pub energy_into_battery_from_grid: IndexMap<Arc<str>, Vec<f64>>,
+    pub energy_into_battery_from_grid: IndexMap<ArcStr, Vec<f64>>,
 
     /// Dictionary of lists containing energy drawn from the battery for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceBattery"))]
-    pub energy_out_of_battery: IndexMap<Arc<str>, Vec<f64>>,
+    pub energy_out_of_battery: IndexMap<ArcStr, Vec<f64>>,
 }
 
-fn validate_battery_state_fractions(
-    data: &IndexMap<Arc<str>, Vec<f64>>,
+fn validate_battery_state_fractions<T: Eq + Hash>(
+    data: &IndexMap<T, Vec<f64>>,
 ) -> Result<(), serde_valid::validation::Error> {
     data
         .values()
@@ -2075,12 +2101,12 @@ pub(crate) struct SmartApplianceControlDetails {
 
     /// Dictionary of lists containing demand per end user for each timestep for each energy supply (unit: W)
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceControlDetails"))]
-    pub(crate) non_appliance_demand_24hr: IndexMap<Arc<str>, Vec<f64>>,
+    pub(crate) non_appliance_demand_24hr: IndexMap<ArcStr, Vec<f64>>,
 
     /// Dictionary of lists containing expected power for appliances for each energy supply, for the entire length of the simulation (unit: W)
     #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceControlDetails"))]
     #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceControlDetails"))]
-    pub(crate) power_timeseries: IndexMap<Arc<str>, Vec<f64>>,
+    pub(crate) power_timeseries: IndexMap<ArcStr, Vec<f64>>,
 
     /// Timestep of the power time series (unit: hours)
     #[validate(minimum = 0.)]
@@ -2099,7 +2125,7 @@ fn validate_map_non_empty<T, U>(
     })
 }
 
-pub type HotWaterSource = IndexMap<std::string::String, HotWaterSourceDetails>;
+pub type HotWaterSource = IndexMap<ArcStr, HotWaterSourceDetails>;
 
 #[derive(Clone, Deserialize_enum_str, PartialEq, Debug, Serialize_enum_str)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -2136,12 +2162,12 @@ pub enum CombiKeepHotFuel {
 #[validate(custom = validate_heatsource)]
 pub struct StorageTankDetails {
     #[serde(rename = "ColdWaterSource")]
-    pub(crate) cold_water_source: String,
+    pub(crate) cold_water_source: ArcStr,
 
     /// Map of heating systems connected to the storage tank
     #[serde(rename = "HeatSource")]
-    #[validate]
-    pub(crate) heat_source: IndexMap<std::string::String, HeatSource>,
+    #[validate(custom = validate_map)]
+    pub(crate) heat_source: IndexMap<ArcStr, HeatSource>,
 
     /// Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)
     #[validate(exclusive_minimum = 0.)]
@@ -2175,15 +2201,15 @@ impl StorageTankDetails {
 #[validate(custom = check_integral_heat_exchanger_for_smart_hot_water_tank)]
 pub struct SmartHotWaterTankDetails {
     #[serde(rename = "ColdWaterSource")]
-    pub(crate) cold_water_source: String,
+    pub(crate) cold_water_source: ArcStr,
 
     #[serde(rename = "EnergySupply_pump")]
-    pub(crate) energy_supply_pump: String,
+    pub(crate) energy_supply_pump: ArcStr,
 
     /// Dictionary of heating systems connected to the smart hot water tank
     #[serde(rename = "HeatSource")]
-    #[validate]
-    pub(crate) heat_source: IndexMap<std::string::String, HeatSource>,
+    #[validate(custom = validate_map)]
+    pub(crate) heat_source: IndexMap<ArcStr, HeatSource>,
 
     /// Daily standby losses due to tank insulation at standardised conditions (unit: kWh/24h)
     #[validate(exclusive_minimum = 0.)]
@@ -2212,7 +2238,7 @@ pub struct SmartHotWaterTankDetails {
     pub(crate) primary_pipework: Option<Vec<WaterPipeworkSimple>>,
 
     /// Reference to a control schedule of maximum state of charge values
-    pub(crate) temp_setpnt_max: String,
+    pub(crate) temp_setpnt_max: ArcStr,
 
     /// Temperature below which water is considered unusable (unit: ˚C)
     #[validate(minimum = 0.)]
@@ -2265,9 +2291,7 @@ fn validate_heatsource(
         .count();
 
     if wet_heat_source_count > 1 {
-        return custom_validation_error(
-            "Only one wet heat source is allowed on a storage tank".to_string(),
-        );
+        return custom_validation_error("Only one wet heat source is allowed on a storage tank");
     }
 
     Ok(())
@@ -2290,10 +2314,13 @@ fn validate_heatsource(
 ///
 ///    Errors if an integral tank declares a heat-exchanger surface area, or a
 ///    separately-installed tank serving a HeatPump_HWOnly omits it.
-fn validate_heat_exchanger_area_against_integral(
-    heat_source: &IndexMap<std::string::String, HeatSource>,
+fn validate_heat_exchanger_area_against_integral<T>(
+    heat_source: &IndexMap<T, HeatSource>,
     heat_exchanger_surface_area: Option<f64>,
-) -> Result<(), serde_valid::validation::Error> {
+) -> Result<(), serde_valid::validation::Error>
+where
+    T: Eq + Hash,
+{
     for source in heat_source.values() {
         match source {
             HeatSource::HeatPumpHotWaterOnly {
@@ -2302,11 +2329,10 @@ fn validate_heat_exchanger_area_against_integral(
                 (true, Some(_)) => {
                     custom_validation_error(
                         "heat_exchanger_surface_area must not be set when the tank is integral to the hot-water-only heat pump (tank_is_integral is true)"
-                            .into())
+                    )
                 }
                 (false, None) => {
-                    custom_validation_error("heat_exchanger_surface_area is required for a separately-installed tank serving a HeatPump_HWOnly heat source (tank_is_integral is false)"
-                        .into())
+                    custom_validation_error("heat_exchanger_surface_area is required for a separately-installed tank serving a HeatPump_HWOnly heat source (tank_is_integral is false)")
                 }
                 _ => Ok(()),
             },
@@ -2337,7 +2363,7 @@ impl PreHeatedWaterSourceDetails {
         }
     }
 
-    pub(crate) fn heat_source(&self) -> &IndexMap<std::string::String, HeatSource> {
+    pub(crate) fn heat_source(&self) -> &IndexMap<ArcStr, HeatSource> {
         match self {
             PreHeatedWaterSourceDetails::StorageTank(StorageTankDetails {
                 heat_source, ..
@@ -2369,10 +2395,10 @@ pub enum HotWaterSourceDetails {
     },
     CombiBoiler {
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: String,
+        cold_water_source: ArcStr,
 
         #[serde(rename = "HeatSourceWet")]
-        heat_source_wet: String,
+        heat_source_wet: ArcStr,
 
         // TODO: From python
         // storage type input will be needed when storage combis are fully implemented
@@ -2417,10 +2443,10 @@ pub enum HotWaterSourceDetails {
     #[serde(rename = "HIU")]
     Hiu {
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: String,
+        cold_water_source: ArcStr,
 
         #[serde(rename = "HeatSourceWet")]
-        heat_source_wet: String,
+        heat_source_wet: ArcStr,
 
         /// Temperature setpoint for the HIU hot water output (unit: ˚C)
         #[validate(minimum = 0.)]
@@ -2436,10 +2462,10 @@ pub enum HotWaterSourceDetails {
         efficiency: f64,
 
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: String,
+        cold_water_source: ArcStr,
 
         /// Temperature setpoint for the point-of-use water heater output (unit: ˚C)
         #[validate(minimum = 0.)]
@@ -2448,10 +2474,10 @@ pub enum HotWaterSourceDetails {
     },
     HeatBattery {
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: String,
+        cold_water_source: ArcStr,
 
         #[serde(rename = "HeatSourceWet")]
-        heat_source_wet: String,
+        heat_source_wet: ArcStr,
 
         /// Temperature setpoint for the heat battery hot water output (unit: ˚C)
         #[validate(minimum = 0.)]
@@ -2474,7 +2500,7 @@ pub enum CombiTypeSpecificDetails {
 
         /// Reference to a time control object containing a schedule of booleans describing when a combi boiler keep-hot facility is on.
         #[serde(rename = "Control_keep_hot")]
-        control_keep_hot: Option<String>,
+        control_keep_hot: Option<ArcStr>,
     },
     Storage {
         /// For storage combis, whether losses from the store are included in test data.
@@ -2534,10 +2560,10 @@ fn validate_dhw_tests_inputs(
             || rejected_factor_3.is_none()
             || storage_loss_factor_2.is_none()
         {
-            return custom_validation_error("Loss factors r1, F2, and F3 are required when a combi boiler is tested to two profiles.".into());
+            return custom_validation_error("Loss factors r1, F2, and F3 are required when a combi boiler is tested to two profiles.");
         } else if storage_loss_factor_1.is_some() {
             return custom_validation_error(
-                "storage_loss_factor_1 invalid input for combis tested to two profiles.".into(),
+                "storage_loss_factor_1 invalid input for combis tested to two profiles.",
             );
         }
     } else if matches!(
@@ -2547,17 +2573,14 @@ fn validate_dhw_tests_inputs(
         if rejected_energy_1.is_none() || storage_loss_factor_1.is_none() {
             return custom_validation_error(
                 "Loss factors r1, and F1, are required when a combi boiler is tested to profile M, or not tested."
-                    .into(),
             );
         } else if storage_loss_factor_2.is_some() {
             return custom_validation_error(
                 "storage_loss_factor_2 invalid input for combis tested to one profile, or not tested."
-                    .into(),
             );
         } else if rejected_factor_3.is_some() {
             return custom_validation_error(
-                "rejected_factor_3 invalid input for combis tested to one profile, or not tested."
-                    .into(),
+                "rejected_factor_3 invalid input for combis tested to one profile, or not tested.",
             );
         }
     }
@@ -2618,16 +2641,16 @@ pub(crate) enum ControlReferences {
     Unified {
         /// Reference to a control schedule with lower and upper temperature setpoints.
         #[serde(rename = "Control")]
-        control: String,
+        control: ArcStr,
     },
     Bounded {
         /// Reference to a control schedule of minimum temperature setpoints
         #[serde(rename = "Controlmin")]
-        control_min: String,
+        control_min: ArcStr,
 
         /// Reference to a control schedule of maximum temperature setpoints
         #[serde(rename = "Controlmax")]
-        control_max: String,
+        control_max: ArcStr,
     },
 }
 
@@ -2637,7 +2660,7 @@ pub(crate) enum VentAdjustControlReferences {
     Unified {
         /// Reference to a control schedule with lower and upper temperature setpoints
         #[serde(rename = "Control_VentAdjust")]
-        control_vent_adjust: String,
+        control_vent_adjust: ArcStr,
     },
     /// N.B. this option is marked as deprecated as of 1.0.0-alpha9 in the Python
     /// though it is not clear why this deprecation notice is retained there given no benefit in
@@ -2647,9 +2670,9 @@ pub(crate) enum VentAdjustControlReferences {
     /// can emit a note of the deprecated form of input to consumers of this library.
     Bounded {
         #[serde(rename = "Control_VentAdjustMin")]
-        control_vent_adjust_min: Option<String>,
+        control_vent_adjust_min: Option<ArcStr>,
         #[serde(rename = "Control_VentAdjustMax")]
-        control_vent_adjust_max: Option<String>,
+        control_vent_adjust_max: Option<ArcStr>,
     },
 }
 
@@ -2664,7 +2687,7 @@ pub(crate) enum HeatSource {
         power: f64,
 
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.
         #[validate(minimum = 0.)]
@@ -2722,7 +2745,7 @@ pub(crate) enum HeatSource {
         power_pump_control: f64,
 
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         /// Tilt angle (inclination) of the solar thermal panel from horizontal,
         /// measured upwards facing, 0 to 90, in degrees.
@@ -2751,7 +2774,7 @@ pub(crate) enum HeatSource {
 
         /// Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.
         #[serde(rename = "Controlmax")]
-        control_max: String,
+        control_max: ArcStr,
     },
     #[serde(rename = "HeatSourceWet")]
     ServiceWaterRegular {
@@ -2761,7 +2784,7 @@ pub(crate) enum HeatSource {
         heater_position: f64,
 
         /// User-defined name for this heat source.
-        name: String,
+        name: ArcStr,
 
         /// Upper operating limit for flow temperature (unit: °C). Optional.
         #[validate(exclusive_minimum = 0.)]
@@ -2779,7 +2802,7 @@ pub(crate) enum HeatSource {
     #[serde(rename = "HeatPump_HWOnly")]
     HeatPumpHotWaterOnly {
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         /// Standing heat loss (unit: kWh/day)
         #[validate(exclusive_minimum = 0.)]
@@ -3068,12 +3091,12 @@ pub(crate) struct HotWaterDemand {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[validate]
-pub struct Showers(#[validate] pub IndexMap<std::string::String, Shower>);
+pub struct Showers(#[validate(custom = validate_map)] pub IndexMap<ArcStr, Shower>);
 
 impl Showers {
     /// Provide shower field names as strings.
-    pub fn keys(&self) -> Vec<String> {
-        self.0.keys().map(Into::into).collect()
+    pub fn keys(&self) -> Vec<ArcStr> {
+        self.0.keys().cloned().collect()
     }
 
     pub fn name_refers_to_instant_electric_shower(&self, name: &str) -> bool {
@@ -3094,11 +3117,11 @@ pub enum Shower {
         flowrate: f64,
 
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: String,
+        cold_water_source: ArcStr,
 
         /// Reference to HotWaterSource object that provides hot water to this shower. If only one HotWaterSource is defined, then this will be assumed by default
         #[serde(rename = "HotWaterSource")]
-        hot_water_source: Option<String>,
+        hot_water_source: Option<ArcStr>,
 
         #[serde(flatten)]
         wwhrs_config: Option<MixerShowerWwhrsConfiguration>,
@@ -3110,10 +3133,10 @@ pub enum Shower {
         rated_power: f64,
 
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: String,
+        cold_water_source: ArcStr,
 
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
     },
 }
 
@@ -3123,7 +3146,7 @@ pub enum Shower {
 pub struct MixerShowerWwhrsConfiguration {
     /// Reference to a key in Input.WWHRS
     #[serde(rename = "WWHRS")]
-    pub(crate) waste_water_heat_recovery_system: String,
+    pub(crate) waste_water_heat_recovery_system: ArcStr,
 
     /// WWHRS system configuration for this shower connection
     #[serde(rename = "WWHRS_configuration")]
@@ -3151,7 +3174,7 @@ pub(crate) enum WwhrsConfiguration {
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct Baths(#[validate] pub IndexMap<std::string::String, BathDetails>);
+pub struct Baths(#[validate(custom = validate_map)] pub IndexMap<ArcStr, BathDetails>);
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -3163,11 +3186,11 @@ pub struct BathDetails {
     pub(crate) size: f64,
 
     #[serde(rename = "ColdWaterSource")]
-    pub(crate) cold_water_source: String,
+    pub(crate) cold_water_source: ArcStr,
 
     /// Reference to HotWaterSource object that provides hot water to this bath. If only one HotWaterSource is defined, then this will be assumed by default
     #[serde(rename = "HotWaterSource")]
-    pub(crate) hot_water_source: Option<String>,
+    pub(crate) hot_water_source: Option<ArcStr>,
 
     /// Tap/outlet flow rate (unit: litre/minute)
     #[validate(exclusive_minimum = 0.)]
@@ -3177,7 +3200,7 @@ pub struct BathDetails {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct OtherWaterUses(#[validate] pub IndexMap<std::string::String, OtherWaterUse>);
+pub struct OtherWaterUses(#[validate(custom = validate_map)] pub IndexMap<ArcStr, OtherWaterUse>);
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -3189,11 +3212,11 @@ pub struct OtherWaterUse {
     pub(crate) flowrate: f64,
 
     #[serde(rename = "ColdWaterSource")]
-    pub(crate) cold_water_source: String,
+    pub(crate) cold_water_source: ArcStr,
 
     /// Reference to HotWaterSource object that provides hot water to this tapping point. If only one HotWaterSource is defined, then this will be assumed by default
     #[serde(rename = "HotWaterSource")]
-    pub(crate) hot_water_source: Option<String>,
+    pub(crate) hot_water_source: Option<ArcStr>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -3201,7 +3224,7 @@ pub struct OtherWaterUse {
 #[serde(untagged)]
 pub enum WaterDistribution {
     List(#[validate] Vec<WaterPipeworkSimple>),
-    Map(#[validate] IndexMap<std::string::String, Vec<WaterPipeworkSimple>>),
+    Map(#[validate(custom = validate_map)] IndexMap<ArcStr, Vec<WaterPipeworkSimple>>),
 }
 
 impl Default for WaterDistribution {
@@ -3231,18 +3254,18 @@ pub(crate) struct WaterHeatingEvents {
     pub(crate) start_day: Option<u32>,
     /// Dictionary of shower water heating events, where keys are shower names and values are lists of events
     #[serde(default)]
-    #[validate]
-    pub(crate) shower: IndexMap<std::string::String, Vec<WaterHeatingEvent>>,
+    #[validate(custom = validate_map)]
+    pub(crate) shower: IndexMap<ArcStr, Vec<WaterHeatingEvent>>,
 
     /// Dictionary of bath water heating events, where keys are bath names and values are lists of events
     #[serde(default)]
-    #[validate]
-    pub(crate) bath: IndexMap<std::string::String, Vec<WaterHeatingEvent>>,
+    #[validate(custom = validate_map)]
+    pub(crate) bath: IndexMap<ArcStr, Vec<WaterHeatingEvent>>,
 
     /// Dictionary of other water heating events (e.g., taps, sinks), where keys are event names and values are lists of events
     #[serde(default)]
-    #[validate]
-    pub(crate) other: IndexMap<std::string::String, Vec<WaterHeatingEvent>>,
+    #[validate(custom = validate_map)]
+    pub(crate) other: IndexMap<ArcStr, Vec<WaterHeatingEvent>>,
 }
 
 #[skip_serializing_none]
@@ -3276,7 +3299,7 @@ pub enum WaterHeatingEventType {
     Other,
 }
 
-pub type SpaceHeatSystem = IndexMap<std::string::String, SpaceHeatSystemDetails>;
+pub type SpaceHeatSystem = IndexMap<ArcStr, SpaceHeatSystemDetails>;
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -3288,10 +3311,10 @@ pub enum SpaceHeatSystemDetails {
     #[serde(rename = "InstantElecHeater")]
     InstantElectricHeater {
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         #[serde(rename = "Control")]
-        control: String,
+        control: ArcStr,
 
         /// Convective fraction for heating
         #[validate(minimum = 0.)]
@@ -3328,7 +3351,7 @@ pub enum SpaceHeatSystemDetails {
     #[serde(rename = "ElecStorageHeater")]
     ElectricStorageHeater {
         #[serde(rename = "ControlCharger")]
-        control_charger: String,
+        control_charger: ArcStr,
 
         /// Maximum output of the electric storage heater. (Unit: kW)
         /// Data from test showing the output from the storage heater when it is actively
@@ -3343,12 +3366,12 @@ pub enum SpaceHeatSystemDetails {
         dry_core_min_output: Vec<[f64; 2]>,
 
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         air_flow_type: ElectricStorageHeaterAirFlowType,
 
         #[serde(rename = "Control")]
-        control: String,
+        control: ArcStr,
 
         /// Fan power (unit: W)
         #[validate(minimum = 0.)]
@@ -3382,7 +3405,7 @@ pub enum SpaceHeatSystemDetails {
 
         /// The zone where the unit(s) is/are installed
         #[serde(rename = "Zone")]
-        zone: String,
+        zone: ArcStr,
     },
     WetDistribution {
         #[serde(rename = "HeatSource")]
@@ -3426,14 +3449,14 @@ pub enum SpaceHeatSystemDetails {
         thermal_mass: Option<f64>,
 
         #[serde(rename = "Control")]
-        control: String,
+        control: ArcStr,
 
         #[serde(rename = "EnergySupply")]
-        energy_supply: Option<String>,
+        energy_supply: Option<ArcStr>,
 
         /// Zone in which the emitters are located. References a key in $.Zone
         #[serde(rename = "Zone")]
-        zone: String,
+        zone: ArcStr,
 
         #[serde(flatten)]
         #[validate]
@@ -3450,15 +3473,15 @@ pub enum SpaceHeatSystemDetails {
         heat_source: SpaceHeatSystemHeatSource,
 
         #[serde(rename = "Control")]
-        control: String,
+        control: ArcStr,
     },
     #[serde(rename = "DryElectricUnderfloorHeating")]
     DryElectricUnderfloorHeater {
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         #[serde(rename = "Control")]
-        control: String,
+        control: ArcStr,
 
         /// Convective fraction for heating
         #[validate(minimum = 0.)]
@@ -3534,14 +3557,10 @@ fn validate_constants_for_instant_electric_heater(
     {
         if thermal_mass.is_some() || thermal_mass_per_kw.is_some() {
             if constant.is_none() && constant_per_kw.is_none() {
-                return custom_validation_error(
-                    "Constant needed when thermal mass is given".to_string(),
-                );
+                return custom_validation_error("Constant needed when thermal mass is given");
             }
             if exponent.is_none() {
-                return custom_validation_error(
-                    "Exponent needed when thermal mass is given".to_string(),
-                );
+                return custom_validation_error("Exponent needed when thermal mass is given");
             }
         }
     }
@@ -3563,7 +3582,7 @@ fn validate_thermal_mass_not_set_for_fancoil(
             .any(|emitter| matches!(emitter, WetEmitter::Fancoil { .. }))
         {
             return custom_validation_error(
-                "thermal_mass cannot be set when emitters are fancoils; thermal mass is not used in the fancoil calculation".to_string(),
+                "thermal_mass cannot be set when emitters are fancoils; thermal mass is not used in the fancoil calculation"
             );
         }
     }
@@ -3579,8 +3598,7 @@ fn reject_external_pipework(
         .any(|pipework| matches!(pipework.location, WaterPipeworkLocation::External))
     {
         return custom_validation_error(
-            "External space heating pipework is not supported; only internal pipework is modelled."
-                .to_string(),
+            "External space heating pipework is not supported; only internal pipework is modelled.",
         );
     }
 
@@ -3739,18 +3757,18 @@ fn validate_radiator_required_fields(
             length,
         } => {
             if constant.is_none() && constant_per_m.is_none() {
-                return custom_validation_error("Must provide 'c' or 'c_per_m'".to_string());
+                return custom_validation_error("Must provide 'c' or 'c_per_m'");
             }
 
             if constant_per_m.is_some() && length.is_none() {
                 return custom_validation_error(
-                    "Must specify 'length' when 'constant_per_m'  is provided".to_string(),
+                    "Must specify 'length' when 'constant_per_m'  is provided",
                 );
             }
 
             if thermal_mass_per_m.is_some() && length.is_none() {
                 return custom_validation_error(
-                    "Must specify 'length' when 'thermal_mass_per_m'  is provided".to_string(),
+                    "Must specify 'length' when 'thermal_mass_per_m'  is provided",
                 );
             }
 
@@ -3788,7 +3806,7 @@ fn validate_fancoil_test_data(
         .all_equal()
     {
         return custom_validation_error(
-            "Fan speed lists of fancoil manufacturer data differ in length".to_string(),
+            "Fan speed lists of fancoil manufacturer data differ in length",
         );
     }
 
@@ -3798,7 +3816,7 @@ fn validate_fancoil_test_data(
         .is_none_or(|entry| entry.power_output.len() != data.fan_power_w.len())
     {
         return custom_validation_error(
-            "Fan power data length does not match the length of fan speed data".to_string(),
+            "Fan power data length does not match the length of fan speed data",
         );
     }
 
@@ -3821,7 +3839,7 @@ fn validate_all_items_non_negative(items: &[f64]) -> Result<(), serde_valid::val
     if items.iter().all(|item| item >= &0.) {
         Ok(())
     } else {
-        custom_validation_error("All items must be non-negative".to_string())
+        custom_validation_error("All items must be non-negative")
     }
 }
 
@@ -3829,7 +3847,7 @@ fn validate_all_items_at_least_zero(items: &[f64]) -> Result<(), serde_valid::va
     if items.iter().all(|item| item > &0.) {
         Ok(())
     } else {
-        custom_validation_error("All items must be at least zero".to_string())
+        custom_validation_error("All items must be at least zero")
     }
 }
 
@@ -3839,7 +3857,7 @@ fn validate_all_items_in_option_non_negative(
     if items.iter().flatten().all(|item| item >= &0.) {
         Ok(())
     } else {
-        custom_validation_error("All items must be non-negative".to_string())
+        custom_validation_error("All items must be non-negative")
     }
 }
 
@@ -3850,7 +3868,7 @@ fn validate_all_items_in_option_at_most_n(
     if items.iter().flatten().all(|item| item <= &n) {
         Ok(())
     } else {
-        custom_validation_error("All items must be non-negative".to_string())
+        custom_validation_error("All items must be non-negative")
     }
 }
 
@@ -3860,7 +3878,7 @@ fn validate_all_items_in_option<T: Validate>(
     if items.iter().flatten().all(|item| item.validate().is_ok()) {
         Ok(())
     } else {
-        custom_validation_error("All items must be valid".to_string())
+        custom_validation_error("All items must be valid")
     }
 }
 
@@ -3869,7 +3887,7 @@ fn validate_all_items_in_option<T: Validate>(
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct SpaceHeatSystemHeatSource {
-    pub(crate) name: String,
+    pub(crate) name: ArcStr,
 
     /// Upper operating limit for temperature (unit: deg C)
     #[validate(exclusive_minimum = 0.)]
@@ -3941,7 +3959,7 @@ pub enum ElectricStorageHeaterAirFlowType {
     DamperOnly,
 }
 
-pub type ZoneDictionary = IndexMap<std::string::String, ZoneInput>;
+pub type ZoneDictionary = IndexMap<ArcStr, ZoneInput>;
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -3951,8 +3969,8 @@ pub type ZoneDictionary = IndexMap<std::string::String, ZoneInput>;
 pub struct ZoneInput {
     /// Map of building elements present in the zone (e.g. walls, floors, windows, etc.).
     #[serde(rename = "BuildingElement")]
-    #[validate]
-    pub(crate) building_elements: IndexMap<std::string::String, BuildingElement>,
+    #[validate(custom = validate_map)]
+    pub(crate) building_elements: IndexMap<ArcStr, BuildingElement>,
 
     /// Cooling system details of the zone. References a key in $.SpaceCoolSystem
     #[serde(
@@ -4001,9 +4019,7 @@ fn validate_system_list_no_duplicates(
         .space_heat_system
         .has_intersecting_entries_with(&zone.space_cool_system)
     {
-        custom_validation_error(
-            "Space heat and space cool systems cannot have overlapping entries".into(),
-        )
+        custom_validation_error("Space heat and space cool systems cannot have overlapping entries")
     } else {
         Ok(())
     }
@@ -4014,8 +4030,8 @@ fn validate_system_list_no_duplicates(
 #[serde(untagged)]
 pub(crate) enum SystemReference {
     None(()),
-    Single(String),
-    Multiple(#[validate(unique_items)] Vec<String>),
+    Single(ArcStr),
+    Multiple(#[validate(unique_items)] Vec<ArcStr>),
 }
 
 impl SystemReference {
@@ -4039,7 +4055,7 @@ impl Default for SystemReference {
 }
 
 impl IntoIterator for SystemReference {
-    type Item = String;
+    type Item = ArcStr;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -4069,7 +4085,7 @@ pub struct ZoneLighting {
     #[serde(rename = "efficacy")]
     efficacy: f64,
 
-    bulbs: Option<IndexMap<String, ZoneLightingBulbs>>,
+    bulbs: Option<IndexMap<ArcStr, ZoneLightingBulbs>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -4149,7 +4165,7 @@ pub enum BuildingElement {
         u_value_input: UValueInput,
 
         #[serde(rename = "Control_WindowOpenable")]
-        control_window_openable: Option<String>,
+        control_window_openable: Option<ArcStr>,
 
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
         #[validate(minimum = 0.)]
@@ -4382,7 +4398,7 @@ fn validate_area_height_width(
         BuildingElementAreaOrHeightWidthInput {
             area: None,
             height_and_width: None,
-        } => custom_validation_error("Building element input needed to specify an area value if a height and width pair of values was not provided.".into()),
+        } => custom_validation_error("Building element input needed to specify an area value if a height and width pair of values was not provided."),
         BuildingElementAreaOrHeightWidthInput {
             area: Some(area),
             height_and_width: Some(height_and_width),
@@ -4466,7 +4482,7 @@ fn validate_max_window_open_area_for_transparent(
 
     if total_open_area > area {
         return custom_validation_error(
-            "Sum of max_window_open_area across window_part_list must be less than or equal to the glazed area (height × width)".to_string(),
+            "Sum of max_window_open_area across window_part_list must be less than or equal to the glazed area (height × width)"
         );
     }
     Ok(())
@@ -4487,7 +4503,7 @@ fn validate_free_area_height_for_transparent(
         for part in window_part_list {
             if part.free_area_height > *height {
                 return custom_validation_error(
-                    "free_area_height of each window part must be less than or equal to the element height".to_string(),
+                    "free_area_height of each window part must be less than or equal to the element height"
                 );
             }
         }
@@ -4510,7 +4526,7 @@ fn validate_openable_control_for_transparent(
     {
         if window_part_list.is_empty() && control_window_openable.is_some() {
             return custom_validation_error(
-                "Control_WindowOpenable cannot be set on a window with no openable sections (empty window_part_list)".to_string(),
+                "Control_WindowOpenable cannot be set on a window with no openable sections (empty window_part_list)"
             );
         }
     }
@@ -4599,10 +4615,10 @@ impl BuildingElement {
 pub trait TransparentBuildingElement {
     fn set_window_openable_control(&mut self, control: &str);
     fn is_security_risk(&self) -> bool;
-    fn treatment(&mut self) -> Option<Vec<&mut Map<std::string::String, JsonValue>>>;
+    fn treatment(&mut self) -> Option<Vec<&mut Map<String, JsonValue>>>;
 }
 
-pub struct TransparentBuildingElementJsonValue<'a>(pub &'a mut Map<std::string::String, JsonValue>);
+pub struct TransparentBuildingElementJsonValue<'a>(pub &'a mut Map<String, JsonValue>);
 
 impl TransparentBuildingElement for TransparentBuildingElementJsonValue<'_> {
     fn set_window_openable_control(&mut self, control: &str) {
@@ -4617,7 +4633,7 @@ impl TransparentBuildingElement for TransparentBuildingElementJsonValue<'_> {
             .unwrap_or(false)
     }
 
-    fn treatment(&mut self) -> Option<Vec<&mut Map<std::string::String, JsonValue>>> {
+    fn treatment(&mut self) -> Option<Vec<&mut Map<String, JsonValue>>> {
         self.0
             .get_mut("treatment")
             .and_then(|v| v.as_array_mut())
@@ -4631,7 +4647,7 @@ pub trait GroundBuildingElement {
     fn set_psi_wall_floor_junc(&mut self, new_psi_wall_floor_junc: f64);
 }
 
-pub struct GroundBuildingElementJsonValue<'a>(pub &'a mut Map<std::string::String, JsonValue>);
+pub struct GroundBuildingElementJsonValue<'a>(pub &'a mut Map<String, JsonValue>);
 
 impl GroundBuildingElement for GroundBuildingElementJsonValue<'_> {
     fn set_u_value(&mut self, new_u_value: f64) {
@@ -4772,15 +4788,15 @@ pub struct WindowTreatment {
 
     /// Irradiation level above which the window treatment is assumed to be closed (unit: W/m²). References a key in $.Control.
     #[serde(rename = "Control_closing_irrad")]
-    pub(crate) control_closing_irrad: Option<String>,
+    pub(crate) control_closing_irrad: Option<ArcStr>,
 
     /// Irradiation level below which a window treatment is assumed to be open (unit: W/m²). References a key in $.Control.
     #[serde(rename = "Control_opening_irrad")]
-    pub(crate) control_opening_irrad: Option<String>,
+    pub(crate) control_opening_irrad: Option<ArcStr>,
 
     /// Reference to a time control object containing a schedule of booleans describing when a window treatment is open. References a key in $.Control.
     #[serde(rename = "Control_open")]
-    pub(crate) control_open: Option<String>,
+    pub(crate) control_open: Option<ArcStr>,
 
     /// A boolean describing the state of the window treatment
     #[serde(default)]
@@ -4859,7 +4875,7 @@ pub enum FloorData {
         /// Reference to a SetpointTimeControl for smart air brick opening ratios (0-1)
         /// Name of a SetpointTimeControl defining smart air brick opening ratios (0 = fully closed, 1 = fully open)
         #[serde(default)]
-        control_smart_air_brick: Option<String>,
+        control_smart_air_brick: Option<ArcStr>,
 
         /// Status of underfloor vents during airtightness test
         /// Whether underfloor vents were open (true) or closed (false) during the dwelling airtightness pressurisation test. Required when Control_smart_air_brick is specified.
@@ -4921,7 +4937,7 @@ fn validate_smart_air_brick_inputs(
     } = floor_data
     {
         return custom_validation_error(
-            "vents_open_during_airtightness_test must be specified when Control_smart_air_brick is provided".to_string(),
+            "vents_open_during_airtightness_test must be specified when Control_smart_air_brick is provided"
         );
     }
 
@@ -4966,7 +4982,7 @@ pub enum EdgeInsulation {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(untagged)]
 pub enum ThermalBridging {
-    Elements(#[validate] IndexMap<std::string::String, ThermalBridgingDetails>),
+    Elements(#[validate(custom = validate_map)] IndexMap<ArcStr, ThermalBridgingDetails>),
     Number(f64),
 }
 
@@ -5002,7 +5018,7 @@ pub enum HeatingControlType {
     SeparateTemperatureControl,
 }
 
-pub(crate) type SpaceCoolSystem = IndexMap<std::string::String, SpaceCoolSystemDetails>;
+pub(crate) type SpaceCoolSystem = IndexMap<ArcStr, SpaceCoolSystemDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -5024,10 +5040,10 @@ pub(crate) enum SpaceCoolSystemDetails {
         frac_convective: f64,
 
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         #[serde(rename = "Control")]
-        control: String,
+        control: ArcStr,
     },
 }
 
@@ -5038,7 +5054,7 @@ pub enum WaterHeatingSchedule {
     HeatingHours,
 }
 
-pub type HeatSourceWet = IndexMap<std::string::String, HeatSourceWetDetails>;
+pub type HeatSourceWet = IndexMap<ArcStr, HeatSourceWetDetails>;
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -5054,15 +5070,15 @@ pub enum HeatSourceWetDetails {
         buffer_tank: Option<Box<HeatPumpBufferTank>>,
 
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         /// References a key in $.EnergySupply for heat network energy supply
         #[serde(rename = "EnergySupply_heat_network")]
-        energy_supply_heat_network: Option<String>,
+        energy_supply_heat_network: Option<ArcStr>,
 
         /// References a key in $.MechanicalVentilation
         #[serde(rename = "MechanicalVentilation")]
-        mechanical_ventilation: Option<String>,
+        mechanical_ventilation: Option<ArcStr>,
 
         /// Type of backup control for the heat pump system
         #[serde(rename = "backup_ctrl_type")]
@@ -5166,11 +5182,11 @@ pub enum HeatSourceWetDetails {
     },
     Boiler {
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         /// References a key in $.EnergySupply for auxiliary electrical power
         #[serde(rename = "EnergySupply_aux")]
-        energy_supply_aux: String,
+        energy_supply_aux: ArcStr,
 
         #[validate(exclusive_minimum = 0.)]
         rated_power: f64,
@@ -5224,7 +5240,7 @@ pub enum HeatSourceWetDetails {
     #[serde(rename = "HIU")]
     Hiu {
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         /// Maximum power output of the HIU (unit: kW)
         #[validate(exclusive_minimum = 0.)]
@@ -5250,7 +5266,7 @@ pub enum HeatSourceWetDetails {
     DirectElectricBoiler {
         /// References a key (e.g., 'mains elec') in $.EnergySupply
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         /// Electrical power consumption of circulation pump (unit: kW)
         #[validate(minimum = 0.)]
@@ -5426,11 +5442,11 @@ pub struct HeatPumpBoiler {
     pub(crate) pilot_light: Option<BoilerPilotLight>,
 
     #[serde(rename = "EnergySupply")]
-    pub(crate) energy_supply: String,
+    pub(crate) energy_supply: ArcStr,
 
     /// References a key in $.EnergySupply for auxiliary electrical power
     #[serde(rename = "EnergySupply_aux")]
-    pub(crate) energy_supply_aux: String,
+    pub(crate) energy_supply_aux: ArcStr,
 
     /// Rated power output of the boiler (unit: kW)
     #[validate(exclusive_minimum = 0.)]
@@ -5531,7 +5547,7 @@ pub enum HeatBatteryPcmChargingSource {
         /// The lower setpoint triggers charging start, the upper setpoint triggers
         /// stop. Setpoint units are determined by the schedule_unit field.
         #[serde(rename = "Control")]
-        control: String,
+        control: ArcStr,
 
         /// Unit for the control schedule setpoints.
         /// `soc`: values are state-of-charge fractions (0–1).
@@ -5548,7 +5564,7 @@ pub enum HeatBatteryPcmChargingSource {
     Hydronic {
         /// Reference to a HeatSourceWet object (e.g. heat pump) in $.HeatSourceWet
         /// that provides heat for charging
-        name: String,
+        name: ArcStr,
 
         /// Maximum flow temperature the heat source should provide when charging (°C).
         /// This limits the request temperature to the heat source, reflecting the
@@ -5560,7 +5576,7 @@ pub enum HeatBatteryPcmChargingSource {
         /// The lower setpoint triggers charging start, the upper setpoint triggers
         /// stop. Setpoint units are determined by the schedule_unit field.
         #[serde(rename = "Control")]
-        control: String,
+        control: ArcStr,
 
         /// Flow rate through the heat battery heat exchanger during hydronic
         /// charging (unit: litre/minute). May differ from the battery's main
@@ -5612,7 +5628,7 @@ pub enum PcmBatteryChargingConfiguration {
         /// Reference to a ControlCharge target in $.Control for temperature-based charge control.
         /// Required when HeatSource is absent.
         #[serde(rename = "ControlCharge")]
-        control_charge: String,
+        control_charge: ArcStr,
 
         /// Rated charging power (unit: kW). Required when HeatSource is absent.
         #[validate(exclusive_minimum = 0.)]
@@ -5625,7 +5641,8 @@ pub enum PcmBatteryChargingConfiguration {
         /// with setpoint units determined by the source's schedule_unit field.
         /// Mutually exclusive with ControlCharge/rated_charge_power.
         #[serde(rename = "HeatSource")]
-        heat_source: IndexMap<std::string::String, HeatBatteryPcmChargingSource>,
+        #[validate(custom = validate_map)]
+        heat_source: IndexMap<ArcStr, HeatBatteryPcmChargingSource>,
 
         /// Minimum useful temperature (°C) used as the SOC=0 reference.
         /// This is the temperature at which the battery is considered fully
@@ -5664,7 +5681,7 @@ pub enum HeatBattery {
         inlet_diameter_mm: f64,
 
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         /// Electrical power consumption of circulation pump (unit: kW)
         #[validate(minimum = 0.)]
@@ -5733,10 +5750,10 @@ pub enum HeatBattery {
     #[serde(rename = "dry_core")]
     DryCore {
         #[serde(rename = "ControlCharge")]
-        control_charge: String,
+        control_charge: ArcStr,
 
         #[serde(rename = "EnergySupply")]
-        energy_supply: String,
+        energy_supply: ArcStr,
 
         electricity_circ_pump: f64,
 
@@ -5793,31 +5810,26 @@ fn validate_backup_configuration(
         };
 
     if boiler.is_some() && power_max_backup.is_some() {
-        return custom_validation_error(
-            "power_max_backup and boiler can not both be set.".to_string(),
-        );
+        return custom_validation_error("power_max_backup and boiler can not both be set.");
     }
     if matches!(backup_ctrl_type, HeatPumpBackupControlType::None) {
         if boiler.is_some() {
-            return custom_validation_error(
-                "boiler can not be set if backup_ctrl_type is 'None'.".to_string(),
-            );
+            return custom_validation_error("boiler can not be set if backup_ctrl_type is 'None'.");
         }
         if power_max_backup.is_some() {
             return custom_validation_error(
-                "power_max_backup can not be set if backup_ctrl_type is 'None'.".to_string(),
+                "power_max_backup can not be set if backup_ctrl_type is 'None'.",
             );
         }
     } else {
         if time_delay_backup.is_none() {
             return custom_validation_error(
-                "time_delay_backup is required if backup_ctrl_type is set.".to_string(),
+                "time_delay_backup is required if backup_ctrl_type is set.",
             );
         }
         if boiler.is_none() && power_max_backup.is_none() {
             return custom_validation_error(
-                "Either power_max_backup or boiler is required if backup_ctrl_type is set."
-                    .to_string(),
+                "Either power_max_backup or boiler is required if backup_ctrl_type is set.",
             );
         }
     }
@@ -5825,7 +5837,7 @@ fn validate_backup_configuration(
     Ok(())
 }
 
-pub type WasteWaterHeatRecovery = IndexMap<std::string::String, WasteWaterHeatRecoveryDetails>;
+pub type WasteWaterHeatRecovery = IndexMap<ArcStr, WasteWaterHeatRecoveryDetails>;
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -5839,7 +5851,7 @@ pub struct WasteWaterHeatRecoveryDetails {
     _type: MustBe!("WWHRS_Instantaneous"),
 
     #[serde(rename = "ColdWaterSource")]
-    pub cold_water_source: String,
+    pub cold_water_source: ArcStr,
 
     /// Test flow rates in litres per minute (e.g., [5., 7., 9., 11., 13.])
     #[validate(custom = validate_all_items_at_least_zero)]
@@ -5903,7 +5915,7 @@ fn validate_at_least_one_efficiency_set(
         ..
     } = data
     {
-        return custom_validation_error("At least one efficiency dataset must be provided: system_a_efficiencies, system_b_efficiencies, or system_c_efficiencies".to_string());
+        return custom_validation_error("At least one efficiency dataset must be provided: system_a_efficiencies, system_b_efficiencies, or system_c_efficiencies");
     }
 
     Ok(())
@@ -5915,7 +5927,7 @@ fn validate_flow_rates_and_efficiencies_length(
     // Validate system A (always required)
     if data.flow_rates.len() != data.system_a_efficiencies.iter().flatten().count() {
         return custom_validation_error(
-            "flow_rates and system_a_efficiencies must have the same length".into(),
+            "flow_rates and system_a_efficiencies must have the same length",
         );
     }
 
@@ -5926,7 +5938,7 @@ fn validate_flow_rates_and_efficiencies_length(
         .is_some_and(|efficiencies| data.flow_rates.len() != efficiencies.len())
     {
         return custom_validation_error(
-            "flow_rates and system_b_efficiencies must have the same length".into(),
+            "flow_rates and system_b_efficiencies must have the same length",
         );
     }
 
@@ -5937,7 +5949,7 @@ fn validate_flow_rates_and_efficiencies_length(
         .is_some_and(|efficiencies| data.flow_rates.len() != efficiencies.len())
     {
         return custom_validation_error(
-            "flow_rates and system_c_efficiencies must have the same length".into(),
+            "flow_rates and system_c_efficiencies must have the same length",
         );
     }
 
@@ -5955,19 +5967,18 @@ fn validate_all_items_in_option_valid_system_efficiency(
         Ok(())
     } else {
         custom_validation_error(
-            "All items must be a number representing a valid efficiency for a WWHRS system"
-                .to_string(),
+            "All items must be a number representing a valid efficiency for a WWHRS system",
         )
     }
 }
 
-fn custom_validation_error(
-    message: std::string::String,
+fn custom_validation_error<T: Into<String>>(
+    message: T,
 ) -> Result<(), serde_valid::validation::Error> {
-    Err(serde_valid::validation::Error::Custom(message))
+    Err(serde_valid::validation::Error::Custom(message.into()))
 }
 
-pub(crate) type OnSiteGeneration = IndexMap<std::string::String, PhotovoltaicInputs>;
+pub(crate) type OnSiteGeneration = IndexMap<ArcStr, PhotovoltaicInputs>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -6019,7 +6030,7 @@ pub(crate) struct PhotovoltaicSystemWithPanels {
     _type: MustBe!("PhotovoltaicSystem"),
 
     #[serde(rename = "EnergySupply")]
-    pub(crate) energy_supply: String,
+    pub(crate) energy_supply: ArcStr,
 
     /// Whether the inverter is considered inside the building
     pub(crate) inverter_is_inside: bool,
@@ -6073,7 +6084,7 @@ pub struct PhotovoltaicSystem {
     pub(crate) width: f64,
 
     #[serde(rename = "EnergySupply")]
-    pub(crate) energy_supply: String,
+    pub(crate) energy_supply: ArcStr,
 
     pub(crate) shading: Vec<WindowShadingObject>,
 
@@ -6150,7 +6161,7 @@ pub enum BuildType {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct InfiltrationVentilation {
     #[serde(rename = "Control_WindowAdjust")]
-    pub(crate) control_window_adjust: Option<String>,
+    pub(crate) control_window_adjust: Option<ArcStr>,
 
     /// List of the required inputs for Leaks
     #[serde(rename = "Leaks")]
@@ -6158,13 +6169,13 @@ pub struct InfiltrationVentilation {
 
     /// Provides details about available mechanical ventilation systems
     #[serde(rename = "MechanicalVentilation", default)]
-    #[validate]
-    pub(crate) mechanical_ventilation: IndexMap<std::string::String, MechanicalVentilation>,
+    #[validate(custom = validate_map)]
+    pub(crate) mechanical_ventilation: IndexMap<ArcStr, MechanicalVentilation>,
 
     /// Provides details about available non-mechanical ventilation systems
     #[serde(rename = "Vents")]
-    #[validate]
-    pub(crate) vents: IndexMap<std::string::String, Vent>,
+    #[validate(custom = validate_map)]
+    pub(crate) vents: IndexMap<ArcStr, Vent>,
 
     /// Maximum ACH (Air Changes per Hour) limit
     #[validate(minimum = 0.)]
@@ -6197,7 +6208,7 @@ pub struct InfiltrationVentilation {
 }
 
 impl InfiltrationVentilation {
-    pub fn mechanical_ventilation(&self) -> &IndexMap<std::string::String, MechanicalVentilation> {
+    pub fn mechanical_ventilation(&self) -> &IndexMap<ArcStr, MechanicalVentilation> {
         &self.mechanical_ventilation
     }
 }
@@ -6287,7 +6298,7 @@ pub struct MechanicalVentilation {
     pub(crate) mvhr_location: Option<MVHRLocation>,
 
     #[serde(rename = "Control")]
-    pub(crate) control: Option<String>,
+    pub(crate) control: Option<ArcStr>,
 
     /// Specific fan power, inclusive of any in use factors (unit: W/l/s)
     #[serde(rename = "SFP")]
@@ -6300,7 +6311,7 @@ pub struct MechanicalVentilation {
     pub(crate) sfp_in_use_factor: f64,
 
     #[serde(rename = "EnergySupply")]
-    pub(crate) energy_supply: String,
+    pub(crate) energy_supply: ArcStr,
 
     /// (unit: m³/hour)
     #[validate(exclusive_minimum = 0.)]
@@ -6473,43 +6484,6 @@ pub struct MechanicalVentilationPosition {
     pub(crate) mid_height_air_flow_path: f64,
 }
 
-pub trait MechanicalVentilationForProcessing {
-    fn vent_is_type(&self, vent_type: &str) -> bool;
-    fn measured_fan_power(&self) -> Option<f64>;
-    fn measured_air_flow_rate(&self) -> Option<f64>;
-    fn set_sfp(&mut self, sfp: f64);
-    fn set_control(&mut self, control: &str);
-}
-
-pub struct MechanicalVentilationJsonValue<'a>(pub &'a mut Map<std::string::String, JsonValue>);
-
-impl MechanicalVentilationForProcessing for MechanicalVentilationJsonValue<'_> {
-    fn vent_is_type(&self, vent_type: &str) -> bool {
-        self.0
-            .get("vent_type")
-            .and_then(|value_type| value_type.as_str())
-            .is_some_and(|existing_type| existing_type == vent_type)
-    }
-
-    fn measured_fan_power(&self) -> Option<f64> {
-        self.0.get("measured_fan_power").and_then(|m| m.as_f64())
-    }
-
-    fn measured_air_flow_rate(&self) -> Option<f64> {
-        self.0
-            .get("measured_air_flow_rate")
-            .and_then(|m| m.as_f64())
-    }
-
-    fn set_sfp(&mut self, sfp: f64) {
-        self.0.insert("SFP".into(), json!(sfp));
-    }
-
-    fn set_control(&mut self, control: &str) {
-        self.0.insert("Control".into(), json!(control));
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum SupplyAirFlowRateControlType {
@@ -6657,7 +6631,7 @@ pub enum CombustionApplianceType {
     ClosedFire,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, Eq, Hash, PartialEq, Serialize_enum_str)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum ApplianceKey {
     Fridge,
@@ -6690,38 +6664,9 @@ pub(crate) enum ApplianceKey {
     Lighting,
 }
 
-impl Display for ApplianceKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(
-            f,
-            "{}",
-            serde_json::to_value(self).unwrap().as_str().unwrap()
-        )
-    }
-}
-
-impl From<ApplianceKey> for String {
-    fn from(appliance_key: ApplianceKey) -> Self {
-        String::from(
-            serde_json::to_value(appliance_key)
-                .unwrap()
-                .as_str()
-                .unwrap(),
-        )
-    }
-}
-
-impl From<&ApplianceKey> for String {
-    fn from(appliance_key: &ApplianceKey) -> Self {
-        (*appliance_key).into()
-    }
-}
-
-impl TryFrom<&str> for ApplianceKey {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        serde_json::from_str(format!("\"{}\"", value).as_str()).map_err(|err| anyhow!(err))
+impl From<&ApplianceKey> for ArcStr {
+    fn from(value: &ApplianceKey) -> Self {
+        value.to_string().into()
     }
 }
 
@@ -6771,7 +6716,7 @@ pub(crate) struct ApplianceLoadShifting {
     /// SmartApplianceControl is not a setpoint/on-off control, so $.Control keys are
     /// not valid here.
     #[serde(rename = "Control")]
-    pub(crate) control: Option<String>,
+    pub(crate) control: Option<ArcStr>,
 
     pub(crate) priority: Option<isize>,
 
@@ -6825,7 +6770,7 @@ pub(crate) struct TariffDataInput {
     #[validate(maximum = 24.)]
     time_series_step: f64,
 
-    prices: IndexMap<String, NumericSchedule>,
+    prices: IndexMap<ArcStr, NumericSchedule>,
 }
 
 // class TariffDataInput(StrictBaseModel):
@@ -7047,6 +6992,7 @@ mod tests {
     mod test_validate_multiple_cross_references {
         use crate::input::tests::{baseline_demo_file_json, merge_json_onto_base};
         use crate::input::{ApplianceLoadShifting, Input};
+        use arcstr::ArcStr;
         use rstest::rstest;
         use serde_json::{json, Value as JsonValue};
         use serde_valid::Validate;
@@ -7099,7 +7045,7 @@ mod tests {
                 }),
             );
 
-            let control_name: smartstring::alias::String = "SmartApplianceControl".into();
+            let control_name: ArcStr = "SmartApplianceControl".into();
 
             let load_shifting = serde_json::to_value(ApplianceLoadShifting {
                 control: Some(control_name),

@@ -1,11 +1,11 @@
+use arcstr::ArcStr;
 use indexmap::IndexMap;
 use serde_json::Value;
-use smartstring::alias::String;
 
 #[derive(Debug, PartialEq)]
 pub enum ThermalBridging {
     Number(f64),
-    Bridges(IndexMap<String, ThermalBridge>),
+    Bridges(IndexMap<ArcStr, ThermalBridge>),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -42,7 +42,7 @@ pub fn thermal_bridging_from_input(input: Value) -> ThermalBridging {
                 bridges.insert(
                     name.into(),
                     match bridge_object.get("type") {
-                        Some(Value::String(s)) if s == &String::from("ThermalBridgeLinear") => {
+                        Some(Value::String(s)) if s == "ThermalBridgeLinear" => {
                             ThermalBridge::Linear {
                                 linear_thermal_transmittance: bridge_object
                                     .get("linear_thermal_transmittance")
@@ -52,7 +52,7 @@ pub fn thermal_bridging_from_input(input: Value) -> ThermalBridging {
                                 length: bridge_object.get("length").unwrap().as_f64().unwrap(),
                             }
                         }
-                        Some(Value::String(s)) if s == &String::from("ThermalBridgePoint") => {
+                        Some(Value::String(s)) if s == "ThermalBridgePoint" => {
                             ThermalBridge::Point {
                                 heat_transfer_coefficient: bridge_object
                                     .get("heat_transfer_coeff")

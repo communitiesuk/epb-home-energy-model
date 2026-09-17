@@ -23,6 +23,7 @@ use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::output::OutputEmitters;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail, Error};
+use arcstr::ArcStr;
 use serde_enum_str::Serialize_enum_str;
 use std::sync::Arc;
 
@@ -33,6 +34,23 @@ pub(crate) enum HeatingServiceType {
     DomesticHotWaterRegular,
     Space,
     DomesticHotWaterDirect,
+}
+
+impl From<HeatingServiceType> for ArcStr {
+    fn from(value: HeatingServiceType) -> Self {
+        match value {
+            HeatingServiceType::DomesticHotWaterCombi => {
+                arcstr::literal!("domestic_hot_water_combi")
+            }
+            HeatingServiceType::DomesticHotWaterRegular => {
+                arcstr::literal!("domestic_hot_water_regular")
+            }
+            HeatingServiceType::Space => arcstr::literal!("space"),
+            HeatingServiceType::DomesticHotWaterDirect => {
+                arcstr::literal!("domestic_hot_water_direct")
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

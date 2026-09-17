@@ -11,13 +11,13 @@ use crate::input::{
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
+use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use bounded_vec_deque::BoundedVecDeque;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
-use smartstring::alias::String;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::iter::repeat;
@@ -1170,14 +1170,14 @@ impl ControlBehaviour for SetpointTimeControl {
 /// An object for managing loadshifting appliances
 #[derive(Debug)]
 pub(crate) struct SmartApplianceControl {
-    appliance_names: Vec<String>,
-    energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
-    battery_states_of_charge: IndexMap<String, Vec<AtomicF64>>,
-    ts_power: IndexMap<Arc<str>, Vec<AtomicF64>>,
+    appliance_names: Vec<ArcStr>,
+    energy_supplies: IndexMap<ArcStr, Arc<RwLock<EnergySupply>>>,
+    battery_states_of_charge: IndexMap<ArcStr, Vec<AtomicF64>>,
+    ts_power: IndexMap<ArcStr, Vec<AtomicF64>>,
     ts_step: f64,
     simulation_timestep: f64,
     ts_step_ratio: f64,
-    non_appliance_demand_24hr: IndexMap<Arc<str>, Vec<AtomicF64>>,
+    non_appliance_demand_24hr: IndexMap<ArcStr, Vec<AtomicF64>>,
     buffer_length: usize,
 }
 
@@ -1197,18 +1197,18 @@ impl SmartApplianceControl {
     /// * `energysupplies` - dictionary of energysupply objects in the simulation
     /// * `appliances` - list of names of all appliance objects in the simulation
     pub(crate) fn new(
-        power_timeseries: &IndexMap<Arc<str>, Vec<f64>>,
+        power_timeseries: &IndexMap<ArcStr, Vec<f64>>,
         timeseries_step: f64,
         simulation_time_iterator: &SimulationTimeIterator,
-        non_appliance_demand_24hr: IndexMap<Arc<str>, Vec<f64>>,
+        non_appliance_demand_24hr: IndexMap<ArcStr, Vec<f64>>,
         battery_24hr: SmartApplianceBattery,
-        energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
-        appliance_names: Vec<String>,
+        energy_supplies: &IndexMap<ArcStr, Arc<RwLock<EnergySupply>>>,
+        appliance_names: Vec<ArcStr>,
     ) -> anyhow::Result<Self> {
-        let energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>> = energy_supplies
+        let energy_supplies: IndexMap<ArcStr, Arc<RwLock<EnergySupply>>> = energy_supplies
             .iter()
             .filter(|(key, _)| power_timeseries.contains_key(key.as_str()))
-            .map(|(k, v)| (k.to_owned(), v.clone()))
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         let battery_states_of_charge = energy_supplies
             .iter()
@@ -1223,7 +1223,7 @@ impl SmartApplianceControl {
                 Ok(false) => None,
                 Err(e) => Some(Err(e)),
             })
-            .collect::<Result<IndexMap<String, Vec<AtomicF64>>, _>>()?;
+            .collect::<Result<IndexMap<ArcStr, Vec<AtomicF64>>, _>>()?;
 
         for energy_supply in energy_supplies.keys() {
             if power_timeseries[energy_supply.as_str()].len() as f64 * timeseries_step
@@ -1377,7 +1377,7 @@ impl ControlBehaviour for SmartApplianceControl {}
 /// An object to model a control with nested combinations of other control types
 pub(crate) struct CombinationTimeControl {
     combinations: ControlCombinations,
-    controls: IndexMap<String, Control>,
+    controls: IndexMap<ArcStr, Control>,
 }
 
 impl CombinationTimeControl {
@@ -1389,7 +1389,7 @@ impl CombinationTimeControl {
     /// * `simulation_time` - reference to SimulationTime object
     pub(crate) fn new(
         combinations: ControlCombinations,
-        controls: IndexMap<String, Control>,
+        controls: IndexMap<ArcStr, Control>,
     ) -> anyhow::Result<Self> {
         Self::validate_combinations(&combinations)?;
 
@@ -1822,7 +1822,7 @@ impl CombinationTimeControl {
     }
 
     #[cfg(test)]
-    fn set_controls(&mut self, controls: IndexMap<String, Control>) {
+    fn set_controls(&mut self, controls: IndexMap<ArcStr, Control>) {
         self.controls = controls;
     }
 }
@@ -2774,6 +2774,7 @@ mod tests {
         use crate::input::{BatteryLocation, FuelType, SmartApplianceBattery};
         use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
         use approx::assert_relative_eq;
+        use arcstr::ArcStr;
         use indexmap::{indexmap, IndexMap};
         use parking_lot::RwLock;
         use pretty_assertions::assert_eq;
@@ -2856,7 +2857,7 @@ mod tests {
             let power_timeseries = &IndexMap::from([("mains elec".into(), vec![100.; 12])]);
             let non_appliance_demand_24hr =
                 IndexMap::from([("mains elec".into(), vec![[0.1, 0.2]; 6].into_flattened())]);
-            let battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>> =
+            let battery_state_of_charge: IndexMap<ArcStr, Vec<f64>> =
                 IndexMap::from([("mains elec".into(), vec![0.5; 12])]);
             let battery_24hr = SmartApplianceBattery {
                 battery_state_of_charge,
@@ -2883,8 +2884,8 @@ mod tests {
             simulation_time_iterator: SimulationTimeIterator,
             energy_supply: Arc<RwLock<EnergySupply>>,
         ) {
-            let battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>> =
-                IndexMap::from([("mains elec".into(), vec![0.; 12])]);
+            let battery_state_of_charge: IndexMap<ArcStr, Vec<f64>> =
+                IndexMap::from([(arcstr::literal!("mains elec"), vec![0.; 12])]);
             let battery_24hr = SmartApplianceBattery {
                 battery_state_of_charge,
                 energy_into_battery_from_generation: IndexMap::new(),
@@ -2940,7 +2941,7 @@ mod tests {
             let power_timeseries = &IndexMap::from([("mains elec".into(), vec![100.; 12])]);
             let non_appliance_demand_24hr =
                 IndexMap::from([("mains elec".into(), vec![[0.1]; 12].into_flattened())]);
-            let battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>> =
+            let battery_state_of_charge: IndexMap<ArcStr, Vec<f64>> =
                 IndexMap::from([("mains elec".into(), vec![0.0; 12])]);
             let battery_24hr = SmartApplianceBattery {
                 battery_state_of_charge,
@@ -3322,6 +3323,7 @@ mod tests {
                 control,
             )
             .unwrap();
+
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_eq!(charge_control_1.is_on(&t_it), schedule[t_idx]);
             }
@@ -3873,7 +3875,7 @@ mod tests {
         }
 
         #[fixture]
-        fn controls_1(charge_control: ChargeControl) -> IndexMap<String, Control> {
+        fn controls_1(charge_control: ChargeControl) -> IndexMap<ArcStr, Control> {
             IndexMap::from([
                 (
                     "ctrl11".into(),
@@ -4554,7 +4556,7 @@ mod tests {
         fn test_max_min_mean_operations_logic() {
             let simtime_short = SimulationTime::new(0., 4., 1.);
 
-            let controls: IndexMap<String, Control> = IndexMap::from([
+            let controls: IndexMap<ArcStr, Control> = IndexMap::from([
                 (
                     "ctrl_a".into(),
                     Control::OnOffTime(
@@ -4726,7 +4728,7 @@ mod tests {
     #[fixture]
     fn controls_for_combination(
         simulation_time_for_charge_control: SimulationTime,
-    ) -> IndexMap<String, Control> {
+    ) -> IndexMap<ArcStr, Control> {
         let cost_schedule = vec![
             5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0,
             10.0, 10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
@@ -4891,7 +4893,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_on_off(
-        controls_for_combination: IndexMap<String, Control>,
+        controls_for_combination: IndexMap<ArcStr, Control>,
     ) -> CombinationTimeControl {
         let combination_on_off: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1", "comb2"]},
@@ -4906,7 +4908,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_setpoint(
-        controls_for_combination: IndexMap<String, Control>,
+        controls_for_combination: IndexMap<ArcStr, Control>,
     ) -> CombinationTimeControl {
         let combination_setpoint: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1"]},
@@ -4919,7 +4921,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_req(
-        controls_for_combination: IndexMap<String, Control>,
+        controls_for_combination: IndexMap<ArcStr, Control>,
     ) -> CombinationTimeControl {
         let combination_req: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl9", "comb1"]},
@@ -4932,7 +4934,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_on_off_cost(
-        controls_for_combination: IndexMap<String, Control>,
+        controls_for_combination: IndexMap<ArcStr, Control>,
     ) -> CombinationTimeControl {
         let combination_on_off_cost: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1"]},
@@ -4946,7 +4948,7 @@ mod tests {
     #[fixture]
     fn controls_for_target_charge(
         charge_control_for_combination: ChargeControl,
-    ) -> IndexMap<String, Control> {
+    ) -> IndexMap<ArcStr, Control> {
         IndexMap::from([
             (
                 "ctrl11".into(),
@@ -4985,7 +4987,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_target_charge(
-        controls_for_target_charge: IndexMap<String, Control>,
+        controls_for_target_charge: IndexMap<ArcStr, Control>,
     ) -> CombinationTimeControl {
         CombinationTimeControl::new(
             serde_json::from_value(json!({
@@ -4999,7 +5001,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_target_charge1(
-        controls_for_target_charge: IndexMap<String, Control>,
+        controls_for_target_charge: IndexMap<ArcStr, Control>,
     ) -> CombinationTimeControl {
         CombinationTimeControl::new(
             serde_json::from_value(json!({
@@ -5019,7 +5021,7 @@ mod tests {
     #[fixture]
     fn controls_for_invalid_combinations(
         charge_control_for_combination: ChargeControl,
-    ) -> IndexMap<String, Control> {
+    ) -> IndexMap<ArcStr, Control> {
         IndexMap::from([
             (
                 "ctrl14".into(),
@@ -5073,7 +5075,7 @@ mod tests {
     // this test is introduced in the Rust to test up-front validation of combinations
     #[rstest]
     fn test_invalid_combinations_caught_on_instantiation(
-        controls_for_invalid_combinations: IndexMap<String, Control>,
+        controls_for_invalid_combinations: IndexMap<ArcStr, Control>,
     ) {
         let invalid_combinations = [
             json!({

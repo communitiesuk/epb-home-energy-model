@@ -13,6 +13,7 @@ use crate::input::{ZoneTemperatureControlBasis, PITCH_LIMIT_HORIZ_FLOOR};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
 use approx::relative_eq;
+use arcstr::ArcStr;
 use fsum::FSum;
 use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
@@ -103,7 +104,7 @@ impl Zone {
     pub(crate) fn new(
         area: f64,
         volume: f64,
-        building_elements: IndexMap<String, Arc<BuildingElement>>,
+        building_elements: IndexMap<ArcStr, Arc<BuildingElement>>,
         thermal_bridging: ThermalBridging,
         ventilation: Arc<InfiltrationVentilation>,
         temp_ext_air_init: f64,
@@ -1492,7 +1493,7 @@ pub(crate) enum SolverError {
 
 #[derive(Clone, Debug)]
 struct NamedBuildingElement {
-    pub name: String,
+    pub name: ArcStr,
     pub element: Arc<BuildingElement>,
 }
 
@@ -1599,6 +1600,27 @@ impl HeatBalanceAirNodeAggregate {
             .push(air_node.infiltration_ventilation);
         self.fabric_heat_loss.push(air_node.fabric_heat_loss);
     }
+
+    pub fn into_index_map(self) -> IndexMap<ArcStr, Vec<f64>> {
+        IndexMap::from([
+            (arcstr::literal!("solar gains"), self.solar_gains),
+            (arcstr::literal!("internal gains"), self.internal_gains),
+            (
+                arcstr::literal!("heating or cooling system gains"),
+                self.heating_or_cooling_system_gains,
+            ),
+            (
+                arcstr::literal!("energy to change internal temperature"),
+                self.energy_to_change_internal_temperature,
+            ),
+            (arcstr::literal!("thermal_bridges"), self.thermal_bridges),
+            (
+                arcstr::literal!("infiltration_ventilation"),
+                self.infiltration_ventilation,
+            ),
+            (arcstr::literal!("fabric"), self.fabric_heat_loss),
+        ])
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1636,6 +1658,24 @@ impl HeatBalanceInternalBoundaryAggregate {
             .push(boundary.fabric_int_int_gains);
         self.fabric_int_heat_cool
             .push(boundary.fabric_int_heat_cool);
+    }
+
+    pub fn into_index_map(self) -> IndexMap<ArcStr, Vec<f64>> {
+        IndexMap::from([
+            (
+                arcstr::literal!("fabric_int_air_convective"),
+                self.fabric_int_air_convective,
+            ),
+            (arcstr::literal!("fabric_int_sol"), self.fabric_int_sol),
+            (
+                arcstr::literal!("fabric_int_int_gains"),
+                self.fabric_int_int_gains,
+            ),
+            (
+                arcstr::literal!("fabric_int_heat_cool"),
+                self.fabric_int_heat_cool,
+            ),
+        ])
     }
 }
 
@@ -1731,6 +1771,64 @@ impl HeatBalanceExternalBoundaryAggregate {
         self.ztc_fabric_ext.push(boundary.ztc_fabric_ext);
         self.ztu_fabric_ext.push(boundary.ztu_fabric_ext);
     }
+
+    pub fn into_index_map(&self) -> IndexMap<ArcStr, Vec<f64>> {
+        IndexMap::from([
+            (arcstr::literal!("solar gains"), self.solar_gains.clone()),
+            (
+                arcstr::literal!("internal gains"),
+                self.internal_gains.clone(),
+            ),
+            (
+                arcstr::literal!("heating or cooling system gains"),
+                self.heating_or_cooling_system_gains.clone(),
+            ),
+            (
+                arcstr::literal!("thermal_bridges"),
+                self.thermal_bridges.clone(),
+            ),
+            (
+                arcstr::literal!("infiltration_ventilation"),
+                self.infiltration_ventilation.clone(),
+            ),
+            (
+                arcstr::literal!("fabric_ext_air_convective"),
+                self.fabric_ext_air_convective.clone(),
+            ),
+            (
+                arcstr::literal!("fabric_ext_air_radiative"),
+                self.fabric_ext_air_radiative.clone(),
+            ),
+            (
+                arcstr::literal!("fabric_ext_sol"),
+                self.fabric_ext_sol.clone(),
+            ),
+            (
+                arcstr::literal!("fabric_ext_sky"),
+                self.fabric_ext_sky.clone(),
+            ),
+            (
+                arcstr::literal!("opaque_fabric_ext"),
+                self.opaque_fabric_ext.clone(),
+            ),
+            (
+                arcstr::literal!("transparent_fabric_ext"),
+                self.transparent_fabric_ext.clone(),
+            ),
+            (
+                arcstr::literal!("ground_fabric_ext"),
+                self.ground_fabric_ext.clone(),
+            ),
+            (
+                arcstr::literal!("ZTC_fabric_ext"),
+                self.ztc_fabric_ext.clone(),
+            ),
+            (
+                arcstr::literal!("ZTU_fabric_ext"),
+                self.ztu_fabric_ext.clone(),
+            ),
+        ])
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -1749,12 +1847,12 @@ pub enum HeatBalanceNodeType {
     ExternalBoundary,
 }
 
-impl From<HeatBalanceNodeType> for Arc<str> {
+impl From<HeatBalanceNodeType> for ArcStr {
     fn from(node_type: HeatBalanceNodeType) -> Self {
         match node_type {
-            HeatBalanceNodeType::AirNode => "air_node".into(),
-            HeatBalanceNodeType::InternalBoundary => "internal_boundary".into(),
-            HeatBalanceNodeType::ExternalBoundary => "external_boundary".into(),
+            HeatBalanceNodeType::AirNode => arcstr::literal!("air_node"),
+            HeatBalanceNodeType::InternalBoundary => arcstr::literal!("internal_boundary"),
+            HeatBalanceNodeType::ExternalBoundary => arcstr::literal!("external_boundary"),
         }
     }
 }
@@ -1797,6 +1895,14 @@ impl HeatBalanceAggregate {
     pub fn push_external_boundary(&mut self, external_boundary: HeatBalanceExternalBoundary) {
         if let Self::ExternalBoundary(node) = self {
             node.push(external_boundary);
+        }
+    }
+
+    pub fn into_index_map(self) -> IndexMap<ArcStr, Vec<f64>> {
+        match self {
+            Self::AirNode(node) => node.into_index_map(),
+            Self::InternalBoundary(node) => node.into_index_map(),
+            Self::ExternalBoundary(node) => node.into_index_map(),
         }
     }
 }
