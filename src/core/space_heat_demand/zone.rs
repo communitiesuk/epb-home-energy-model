@@ -933,6 +933,39 @@ impl Zone {
         ach_req.max(ach_min).min(ach_max)
     }
 
+    ///Apply the cooling effect of additional window-opening ventilation.
+    ///
+    /// When no cooling air change rate has been supplied and opening windows
+    /// changes the air change rate, determine whether additional ventilation can
+    /// hold the zone at its ventilation cooling setpoint and the air change rate
+    /// needed to do so. If ventilation alone reaches the active cooling setpoint,
+    /// the ventilated free-floating temperature is returned for use in the demand
+    /// calculation; otherwise active cooling is assumed and the air change rate is
+    /// left at the target.
+    ///
+    /// Args:
+    ///     delta_t: Calculation timestep, in seconds.
+    ///     temp_ext_air: External air temperature, in deg C.
+    ///     gains_internal: Internal heat gains, in W.
+    ///     gains_solar: Directly transmitted solar gains, in W.
+    ///     gains_heat_cool: Heating (positive) or cooling (negative) gains, in W.
+    ///     frac_conv_gains_heat_cool: Convective fraction of the heating/cooling gains.
+    ///     temp_setpnt_heat: Heating setpoint, in deg C.
+    ///     temp_setpnt_cool: Active cooling setpoint, in deg C.
+    ///     temp_setpnt_cool_vent: Setpoint above which additional ventilation is
+    ///         used for cooling, in deg C.
+    ///     temp_free: Free-floating temperature without additional ventilation, in deg C.
+    ///     temp_int_air_free: Free-floating internal air temperature, in deg C.
+    ///     ach_cooling: Air change rate for cooling if already determined, else None.
+    ///     ach_windows_open: Air change rate with windows open.
+    ///     ach_target: Air change rate for the ventilation requirement.
+    ///     avg_supply_temp: Average air supply temperature, in deg C.
+    ///
+    /// Returns:
+    ///     Tuple of the free-floating temperature (the ventilated temperature when
+    ///     ventilation meets the cooling setpoint), the air change rate for cooling,
+    ///     and the air change rate at which heating would be triggered (None when
+    ///     additional ventilation does not apply).
     fn calc_cooling_potential_from_ventilation(
         &self,
         delta_t: f64,
@@ -1041,7 +1074,22 @@ impl Zone {
                     // for active cooling, assume cooling system will be used instead of
                     // additional ventilation. Otherwise, use resultant operative temperature
                     // in calculation of space heating/cooling demand.
-                    if temp_free_vent_extra > temp_setpnt_cool {
+                    // The boundary is compared with a tolerance because the ventilation
+                    // solver drives the resultant temperature to the ventilation setpoint,
+                    // which equals the active cooling setpoint when the two coincide. The
+                    // bare comparison then sits exactly on its own boundary and the last bit
+                    // of the result decides the branch, making the outcome depend on the
+                    // floating-point behaviour of the platform. A temperature within
+                    // tolerance of the setpoint is treated as having reached it by
+                    // ventilation alone, so no active cooling is required.
+                    if temp_free_vent_extra > temp_setpnt_cool
+                        && !(relative_eq!(
+                            temp_free_vent_extra,
+                            temp_setpnt_cool,
+                            epsilon = 1e-10,
+                            max_relative = 1e-9
+                        ))
+                    {
                         ach_cooling = ach_target;
                     } else {
                         temp_free = temp_free_vent_extra;
