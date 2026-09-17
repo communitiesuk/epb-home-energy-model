@@ -357,8 +357,11 @@ impl DirectElectricBoiler {
         Ok(())
     }
 
-    fn energy_output_max(&self) {
-        todo!()
+    fn energy_output_max(&self, time_start: Option<f64>, time_elapsed_hp: Option<f64>) -> f64 {
+        let time_start = time_start.unwrap_or(0.);
+        let time_available = self.time_available(time_start, time_elapsed_hp);
+
+        self.boiler_power * time_available
     }
 }
 
@@ -805,5 +808,11 @@ mod tests {
         // Assertions to check if the internal state was updated correctly
         assert_eq!(boiler.total_time_running_current_timestep, 0.);
         assert!(boiler.service_results.read().is_empty());
+    }
+
+    #[rstest]
+    fn test_energy_output_max(boiler: DirectElectricBoiler) {
+        assert_relative_eq!(boiler.energy_output_max(Some(0.), None), 24.);
+        assert_relative_eq!(boiler.energy_output_max(Some(0.5), None), 12.);
     }
 }
