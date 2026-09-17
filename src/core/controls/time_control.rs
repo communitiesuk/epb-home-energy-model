@@ -1302,7 +1302,15 @@ impl CombinationTimeControl {
         combinations: ControlCombinations,
         controls: IndexMap<String, Arc<Control>>,
     ) -> anyhow::Result<Self> {
-        Self::validate_combinations(&combinations, &controls)?;
+        Self::validate_combinations(&combinations)?;
+
+        for control in controls.iter() {
+            let (_, control) = control;
+            match control.as_ref() {
+                Control::CombinationTime(_combination_time_control) => bail!("CombinationTimeControl does not accept RangeTimeControl"),
+                _ => {}
+            }
+        }
 
         Ok(Self {
             combinations,
@@ -1314,8 +1322,7 @@ impl CombinationTimeControl {
     // during a simulation
     // (Add more conditions if possible)
     fn validate_combinations(
-        combinations: &ControlCombinations,
-        _controls: &IndexMap<String, Arc<Control>>,
+        combinations: &ControlCombinations
     ) -> anyhow::Result<()> {
         for (name, combination) in [("main", &combinations.main)].into_iter().chain(
             combinations
@@ -1644,7 +1651,9 @@ impl CombinationTimeControl {
                                         None
                                     }
                                 })).value();
-                            SetpointOrBoolean::Boolean(results_sum / results.len() as f64 > 0.5)
+
+                            // Return the arithmetic mean of the combined setpoint values
+                            SetpointOrBoolean::Setpoint(Some(results_sum / results.len() as f64))
                         }
                         _ => {
                             bail!("Unsupported combination operation encountered ('{operation:?}')")
