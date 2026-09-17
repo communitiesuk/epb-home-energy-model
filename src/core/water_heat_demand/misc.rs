@@ -142,6 +142,26 @@ pub fn water_demand_to_kwh(
         * litres_demand
 }
 
+/// Volume of hot water needed to deliver a warm-water draw at the target temperature.
+///
+/// Iteratively solves for the hot-water volume that, mixed with cold water, produces
+/// ``volume_warm_water`` at ``temperature_target``. The hot and cold water temperatures
+/// depend on the volumes drawn (supplied via the callbacks), so the mixed-water
+/// temperature is converged onto the target.
+///
+/// # Arguments
+/// * `volume_warm_water` - Volume of warm (mixed) water required, in litres.
+/// * `temperature_target` - Target temperature of the warm water, in deg C.
+/// * `func_temperature_hot_water` - Returns the hot-water temperature, in deg C, for a
+///     given hot-water volume drawn.
+/// * `func_temperature_cold_water` - Returns the (temperature, volume) pairs of the
+///     cold-water supply for a given cold-water volume drawn.
+/// * `simtime` - The simulation time iteration.
+///
+/// # Returns
+/// * `Ok(Some(f64))` - The hot-water volume required, in litres.
+/// * `Ok(None)` - When the target cannot be reached because the available hot water is colder than the target.
+/// * `Err(anyhow::Error)` - If an error occurs during the calculation.
 pub(crate) fn volume_hot_water_required<
     T: Fn(f64) -> anyhow::Result<f64>,
     U: Fn(f64, SimulationTimeIteration) -> anyhow::Result<Vec<(f64, f64)>>,
@@ -170,7 +190,17 @@ pub(crate) fn volume_hot_water_required<
     ) {
         was_in_loop = true;
         // Calculate the volume of hot/cold water needed if heating from cold water source
-        if temperature_target > temperature_hot_water {
+        if temperature_target > temperature_hot_water
+            && !relative_eq!(
+                temperature_hot_water,
+                temperature_target,
+                epsilon = 1e-10,
+                max_relative = 1e-9
+            )
+        {
+            // Hot water colder than the target - the target cannot be reached. Compared
+            // with a tolerance (matching the loop's convergence test) so a hot-water
+            // temperature within tolerance of the target is treated as feasible.
             return Ok(None);
         }
         volume_hot_water = volume_warm_water
