@@ -301,8 +301,29 @@ impl DirectElectricBoiler {
         })
     }
 
-    fn electrical_energy_demand(&self) {
-        todo!()
+    /// Calculate boiler electrical demand for all services (excl. auxiliary),
+    /// and request this from relevant EnergySupplyConnection
+    fn electrical_energy_demand(&self, timestep_idx: usize) -> anyhow::Result<()> {
+        for service_data in self.service_results.read().iter() {
+            let ServiceResult {
+                service_name,
+                temp_return_feed,
+                energy_output_provided,
+                ..
+            } = service_data;
+            let demand = if temp_return_feed.is_some() {
+                *energy_output_provided
+            } else {
+                0.
+            };
+
+            self
+                .energy_supply_connections
+                .get(service_name)
+                .ok_or_else(|| anyhow::anyhow!("Expected direct electric boiler energy_supply_connection with service name {service_name}"))?
+                .demand_energy(demand, timestep_idx)?;
+        }
+        Ok(())
     }
 
     /// Calculation of boiler electrical consumption
@@ -320,8 +341,20 @@ impl DirectElectricBoiler {
             .demand_energy(energy_aux, timestep_idx)
     }
 
-    pub(crate) fn timestep_end(&self, _simtime: SimulationTimeIteration) -> anyhow::Result<()> {
-        todo!()
+    /// Calculations to be done at the end of each timestep
+    pub(crate) fn timestep_end(&mut self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+        self.electrical_energy_demand(simtime.index)?;
+
+        let time_remaining_current_step =
+            simtime.timestep - self.total_time_running_current_timestep;
+
+        self.calc_auxiliary_energy(simtime.index, time_remaining_current_step)?;
+
+        // Variables below need to be reset at the end of each timestep
+        self.total_time_running_current_timestep = Default::default();
+        self.service_results = Default::default();
+
+        Ok(())
     }
 
     fn energy_output_max(&self) {
@@ -730,5 +763,47 @@ mod tests {
     #[rstest]
     fn test_calc_auxiliary_energy_with_space_heating() {
         todo!()
+    }
+
+    #[rstest]
+    fn test_timestep_end(mut boiler: DirectElectricBoiler, simulation_time: SimulationTime) {
+        boiler
+            .create_service_connection("boiler_demand_energy")
+            .unwrap();
+
+        boiler
+            .demand_energy(
+                "boiler_demand_energy",
+                ServiceType::WaterCombi,
+                10.,
+                45.,
+                60.,
+                Some(false),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // Running time = energy_delivered / rated_power = 10 / 24
+        assert_relative_eq!(
+            boiler.total_time_running_current_timestep,
+            0.4166666666666667
+        );
+
+        assert_eq!(
+            boiler.service_results.read()[0].service_name.as_str(),
+            "boiler_demand_energy"
+        );
+
+        // Call the method under test
+        boiler
+            .timestep_end(simulation_time.iter().current_iteration())
+            .unwrap();
+
+        // Assertions to check if the internal state was updated correctly
+        assert_eq!(boiler.total_time_running_current_timestep, 0.);
+        assert!(boiler.service_results.read().is_empty());
     }
 }
