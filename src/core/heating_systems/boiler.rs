@@ -416,11 +416,6 @@ impl BoilerServiceWaterCombi {
     pub fn energy_output_max(&self) -> f64 {
         self.boiler.energy_output_max(None, None)
     }
-
-    //TODO as part of migration to 1.0.01a: review if this is needed
-    fn is_on(&self, _simtime: SimulationTimeIteration) -> bool {
-        true
-    }
 }
 
 #[derive(Debug)]
@@ -1583,14 +1578,6 @@ mod tests {
                 simulation_time.step,
             )
             .unwrap()
-        }
-
-        #[rstest]
-        fn test_is_on_with_no_control(
-            boiler_service: BoilerServiceWaterCombi,
-            simulation_time: SimulationTime,
-        ) {
-            assert!(boiler_service.is_on(simulation_time.iter().next().unwrap()));
         }
 
         #[rstest]
