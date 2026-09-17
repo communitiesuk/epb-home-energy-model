@@ -4671,7 +4671,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "Test is ignored while implementaion of smart air brick is complete 1.0.0a9"]
     fn test_smart_air_brick_control_applied(
         ground_building_elements: [BuildingElementGround; 5],
         simulation_time_for_ground: SimulationTime,
@@ -4685,12 +4684,12 @@ mod tests {
             .collect();
         let floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,
-            thermal_transmission_walls: 1.,
+            thermal_transmission_walls: 0.5,
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered.into(),
+            thermal_resistance_of_insulation: 7.,
             control_smart_air_brick: None,
             vents_open_during_airtightness_test: None,
-            thermal_resistance_of_insulation: 1.,
         };
 
         let be_with_control = BuildingElementGround::new(
