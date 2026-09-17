@@ -2619,6 +2619,46 @@ mod tests {
     }
 
     #[rstest]
+    /// Ventilation reaching the active cooling setpoint counts as meeting it.
+    /// When additional ventilation brings the operative temperature to the active
+    /// cooling setpoint, the resultant temperature sits on the boundary of the
+    /// comparison that decides between ventilation and active cooling. Without a
+    /// tolerance the last bit of the temperature decides the branch, so the result
+    /// depends on the platform's floating-point behaviour. A temperature within
+    /// tolerance of the setpoint must be treated as having reached it by ventilation
+    /// alone, returning the ventilated temperature rather than leaving the
+    /// un-ventilated free-floating temperature for active cooling.
+    fn test_calc_cooling_potential_ventilation_at_cooling_setpoint_boundary(
+        thermal_bridging_objects: ThermalBridging,
+    ) {
+        let simulation_time_iteration = simulation_time().iter().next().unwrap();
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
+        let temp_vent_achieved = 15.144632024928118;
+        zone.temp_setpnt_basis = ZoneTemperatureControlBasis::Operative;
+        let (temp_free, ach_cooling, ach_to_trigger_heating) = zone
+            .calc_cooling_potential_from_ventilation(
+                1800.0,
+                17.8,
+                6.6,
+                0.0,
+                0.0,
+                0.0,
+                21.0,
+                temp_vent_achieved - 5e-11,
+                24.,
+                25.,
+                25.0,
+                AirChangesPerHourArgument::from_ach_target_windows_open(0.13, 0.16),
+                17.8,
+                simulation_time_iteration,
+            )
+            .unwrap();
+
+        assert_relative_eq!(temp_free, 15.144632024928118, max_relative = 1e-8);
+        assert_relative_eq!(ach_cooling, 0.13);
+        assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.13);
+    }
+    #[rstest]
     fn test_interp_heat_cool_demand(thermal_bridging_objects: ThermalBridging) {
         let mut zone = zone(thermal_bridging_objects, None).unwrap();
 
