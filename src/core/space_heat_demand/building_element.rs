@@ -843,15 +843,23 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                 // Perimeter/window well contribution
                 let u_x_perimeter = 2. * (h_upper * u_w / char_dimen);
 
+                // Ventilation contribution through air bricks
+                // 1450 is constant in the standard but not labelled
                 let u_x_ventilation = 1450.
                     * (area_per_perimeter_vent
                         * self.wind_speed()?
                         * wind_shield_fact(shield_fact_location))
                     / char_dimen;
 
+                // Apply smart air brick opening ratio to subfloor void ventilation.
+                // This is the U-value component; infiltration through envelope leaks
+                // is adjusted separately in ventilation.rs
+                // (calculate_smart_air_brick_infiltration_adjustment).
                 let u_x_ventilation = smart_air_brick_control
                     .and_then(|control| control.setpnt(simtime))
-                    .map_or(u_x_ventilation, |ratio| u_x_ventilation * ratio);
+                    .map_or(u_x_ventilation, |opening_ratio| {
+                        u_x_ventilation * opening_ratio
+                    });
 
                 Ok(u_x_perimeter + u_x_ventilation)
             };
