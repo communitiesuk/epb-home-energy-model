@@ -305,8 +305,19 @@ impl DirectElectricBoiler {
         todo!()
     }
 
-    fn calc_auxiliary_energy(&self) {
-        todo!()
+    /// Calculation of boiler electrical consumption
+    fn calc_auxiliary_energy(
+        &self,
+        timestep_idx: usize,
+        time_remaining_current_timestep: f64,
+    ) -> anyhow::Result<()> {
+        // Energy used by circulation pump
+        let mut energy_aux = self.total_time_running_current_timestep * self.power_circ_pump;
+
+        // Energy used in standby mode
+        energy_aux += self.power_standby * time_remaining_current_timestep;
+        self.energy_supply_connection_aux
+            .demand_energy(energy_aux, timestep_idx)
     }
 
     pub(crate) fn timestep_end(&self, _simtime: SimulationTimeIteration) -> anyhow::Result<()> {
@@ -692,5 +703,32 @@ mod tests {
 
         assert_relative_eq!(result_b.0, 14.);
         assert_eq!(result_b.1, None);
+    }
+
+    #[ignore = "usage of mocks in Python, won't replicate for now"]
+    #[rstest]
+    fn test_fuel_demand() {
+        todo!()
+    }
+
+    #[ignore = "usage of mocks in Python, won't replicate for now"]
+    #[rstest]
+    fn test_fuel_demand_with_no_return_feed() {
+        todo!()
+    }
+
+    #[rstest]
+    /// Check boiler electrical consumption
+    fn test_calc_auxiliary_energy(boiler: DirectElectricBoiler) {
+        // Check the function runs without throwing errors
+        assert!(boiler.calc_auxiliary_energy(1, 0.).is_ok())
+
+        // Mocks used for second assertion, won't replicate for now
+    }
+
+    #[ignore = "usage of mocks in Python, won't replicate for now"]
+    #[rstest]
+    fn test_calc_auxiliary_energy_with_space_heating() {
+        todo!()
     }
 }
