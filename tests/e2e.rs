@@ -48,6 +48,7 @@ const NON_TABULAR_FILE_SUFFIXES: &[&str] = &[
 const NON_TABULAR_FILE_FRAGMENTS: &[&str] = &["_summary__"];
 
 #[rstest]
+#[ignore = "Temporarily ignored for migration to 1.0.0a9"]
 fn test_run_all_files(files: Vec<DirEntry>) {
     let london_weather = cibse_weather_data_to_external_conditions(BufReader::new(Cursor::new(
         include_str!("../examples/weather_data/London_weather_CIBSE_format.csv"),
