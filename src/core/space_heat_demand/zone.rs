@@ -182,7 +182,10 @@ impl Zone {
     }
 
     /// Add the floor area used by underfloor heating and check against available floor area.
-    fn add_ufh_floor_area(&mut self, underfloor_emitter_area: f64) -> anyhow::Result<()> {
+    pub(crate) fn add_ufh_floor_area(
+        &mut self,
+        underfloor_emitter_area: f64,
+    ) -> anyhow::Result<()> {
         self.underfloor_emitter_area += underfloor_emitter_area;
 
         let mut floor_area = 0.0;
@@ -3210,6 +3213,21 @@ mod tests {
 
         // Verify the actual calculated value is reasonable
         assert_relative_eq!(ztu_with_party_wall, -164.2832446432019, max_relative = 1e-7);
+    }
+
+    #[rstest]
+    fn test_add_ufh_floor_area(thermal_bridging_objects: ThermalBridging) {
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
+        zone.add_ufh_floor_area(10.).unwrap();
+        zone.add_ufh_floor_area(5.).unwrap();
+        assert_eq!(zone.underfloor_emitter_area, 15.0);
+    }
+
+    #[rstest]
+    fn test_add_ufh_floor_area_over_floor_area(thermal_bridging_objects: ThermalBridging) {
+        let mut zone = zone(thermal_bridging_objects, None).unwrap();
+        let result = zone.add_ufh_floor_area(100.);
+        assert!(result.is_err());
     }
 
     #[test]
