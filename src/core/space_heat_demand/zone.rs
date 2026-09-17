@@ -192,11 +192,11 @@ impl Zone {
             }
         }
 
-        if !relative_eq!(
-            self.underfloor_emitter_area,
-            floor_area,
-            epsilon = f64::EPSILON,
-            max_relative = f64::EPSILON,
+        if !isclose(
+            &[self.underfloor_emitter_area],
+            &[floor_area],
+            Some(1e-10),
+            None,
         ) && self.underfloor_emitter_area > floor_area
         {
             bail!("UFH area is greater than the zone floor area");
@@ -1083,11 +1083,11 @@ impl Zone {
                     // tolerance of the setpoint is treated as having reached it by
                     // ventilation alone, so no active cooling is required.
                     if temp_free_vent_extra > temp_setpnt_cool
-                        && !(relative_eq!(
-                            temp_free_vent_extra,
-                            temp_setpnt_cool,
-                            epsilon = 1e-10,
-                            max_relative = 1e-9
+                        && !(isclose(
+                            &[temp_free_vent_extra],
+                            &[temp_setpnt_cool],
+                            Some(1e-10),
+                            None,
                         ))
                     {
                         ach_cooling = ach_target;
