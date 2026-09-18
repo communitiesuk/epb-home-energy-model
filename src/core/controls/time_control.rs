@@ -14,12 +14,12 @@ use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use atomic_float::AtomicF64;
 use bounded_vec_deque::BoundedVecDeque;
+use core::panic;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use smartstring::alias::String;
-use core::panic;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::iter::repeat;
@@ -836,7 +836,10 @@ impl RangeTimeControl {
 
     // In Python this is setpnt
     // but that clashes with the setpnt method in the ControlBehaviour trait
-    fn setpnt_range_time_control(&self, simulation_time_iteration: &SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
+    fn setpnt_range_time_control(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> (Option<f64>, Option<f64>) {
         // Return setpoint for the current timestep
         let setpnt_lower = self.find_setpnt(simulation_time_iteration, &self.schedule_lower);
         let setpnt_upper = self.find_setpnt(simulation_time_iteration, &self.schedule_upper);
@@ -2510,8 +2513,12 @@ mod tests {
             // Test that RangeTimeControl objects return correct status for required period
             let results = [true, false, false, true, false, true, true, true];
 
-            let range_time_control =
-                create_range_time_control(simulation_time(), schedule_lower(), schedule_upper(), None);
+            let range_time_control = create_range_time_control(
+                simulation_time(),
+                schedule_lower(),
+                schedule_upper(),
+                None,
+            );
 
             for t_it in simulation_time_iterator() {
                 assert_eq!(
@@ -2525,8 +2532,12 @@ mod tests {
 
         #[rstest]
         fn test_is_on() {
-            let range_time_control =
-                create_range_time_control(simulation_time(), schedule_lower(), schedule_upper(), None);
+            let range_time_control = create_range_time_control(
+                simulation_time(),
+                schedule_lower(),
+                schedule_upper(),
+                None,
+            );
 
             for t_it in simulation_time_iterator() {
                 assert_eq!(
@@ -2554,8 +2565,26 @@ mod tests {
 
         #[rstest]
         fn test_is_on_from_previous_timestep() {
-            let schedule_lower = [Some(21.0), None, None, Some(21.0), None, Some(21.0), Some(25.0), Some(15.0)];
-            let schedule_upper = [Some(25.0), Some(25.0), None, Some(25.0), None, Some(25.0), Some(27.0), Some(17.0)];
+            let schedule_lower = [
+                Some(21.0),
+                None,
+                None,
+                Some(21.0),
+                None,
+                Some(21.0),
+                Some(25.0),
+                Some(15.0),
+            ];
+            let schedule_upper = [
+                Some(25.0),
+                Some(25.0),
+                None,
+                Some(25.0),
+                None,
+                Some(25.0),
+                Some(27.0),
+                Some(17.0),
+            ];
             let range_time_control = create_range_time_control(
                 simulation_time(),
                 ScheduleOrControl::Schedule(schedule_lower.to_vec()),
@@ -2574,12 +2603,14 @@ mod tests {
             let schedule_lower = schedule_lower();
             let schedule_upper = schedule_upper();
 
-            let (expected_lower, expected_upper) = match (schedule_lower.clone(), schedule_upper.clone()) {
-                (ScheduleOrControl::Schedule(schedule_lower), ScheduleOrControl::Schedule(schedule_upper)) => {
-                    (schedule_lower, schedule_upper)
-                }
-                _ => unreachable!("Schedules should be of type ScheduleOrControl::Schedule"),
-            };
+            let (expected_lower, expected_upper) =
+                match (schedule_lower.clone(), schedule_upper.clone()) {
+                    (
+                        ScheduleOrControl::Schedule(schedule_lower),
+                        ScheduleOrControl::Schedule(schedule_upper),
+                    ) => (schedule_lower, schedule_upper),
+                    _ => unreachable!("Schedules should be of type ScheduleOrControl::Schedule"),
+                };
 
             let range_time_control =
                 create_range_time_control(simulation_time(), schedule_lower, schedule_upper, None);
@@ -2595,29 +2626,99 @@ mod tests {
         #[rstest]
         fn test_setpnt_lookahead() {
             // Test that setpnt returns the correct values when looking ahead in the warmup period
-            let schedule_lower = [None, Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0), Some(20.0)];
-            let schedule_upper = [None, Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0), Some(22.0)];
+            let schedule_lower = [
+                None,
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+                Some(20.0),
+            ];
+            let schedule_upper = [
+                None,
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+                Some(22.0),
+            ];
 
-            let range_time_control =
-                create_range_time_control(simulation_time(), ScheduleOrControl::Schedule(schedule_lower.to_vec()), ScheduleOrControl::Schedule(schedule_upper.to_vec()), Some(30.));
-
-            assert_eq!(
-                range_time_control.setpnt_range_time_control(&SimulationTimeIteration {index: 0, time: 0.0, timestep: 1.0 }),
-                (Some(20.0), Some(22.0))
-            );
-
-            // Test it hits the end of the schedule if not finding any non None value
-            let schedule_lower = [None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None];
-            let schedule_upper = [None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None];
             let range_time_control = create_range_time_control(
                 simulation_time(),
                 ScheduleOrControl::Schedule(schedule_lower.to_vec()),
                 ScheduleOrControl::Schedule(schedule_upper.to_vec()),
-                Some(30.)
+                Some(30.),
             );
 
             assert_eq!(
-                range_time_control.setpnt_range_time_control(&SimulationTimeIteration {index: 0, time: 0.0, timestep: 1.0 }),
+                range_time_control.setpnt_range_time_control(&SimulationTimeIteration {
+                    index: 0,
+                    time: 0.0,
+                    timestep: 1.0
+                }),
+                (Some(20.0), Some(22.0))
+            );
+
+            // Test it hits the end of the schedule if not finding any non None value
+            let schedule_lower = [
+                None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None, None, None,
+            ];
+            let schedule_upper = [
+                None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None, None, None,
+            ];
+            let range_time_control = create_range_time_control(
+                simulation_time(),
+                ScheduleOrControl::Schedule(schedule_lower.to_vec()),
+                ScheduleOrControl::Schedule(schedule_upper.to_vec()),
+                Some(30.),
+            );
+
+            assert_eq!(
+                range_time_control.setpnt_range_time_control(&SimulationTimeIteration {
+                    index: 0,
+                    time: 0.0,
+                    timestep: 1.0
+                }),
                 (None, None)
             );
         }
