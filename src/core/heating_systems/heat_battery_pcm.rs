@@ -100,6 +100,57 @@ pub(crate) struct HeatBatteryChargingSource<T: WaterSupplyBehaviour> {
     hex_capillary_diameter_m: Option<f64>,
     schedule_unit: String,
 }
+
+///    Check that no two charging sources have overlapping active periods.
+///
+///    For each timestep in the simulation, at most one source may have a
+///    non-null schedule_upper (i.e. be in an active or transition period).
+///    Raises ValueError if any overlap is found.
+///
+///    Iterates the shared SimulationTime through all timesteps so that
+///    each source's RangeTimeControl.setpnt() returns the correct
+///    per-timestep value, then resets to initial state. Must be called
+///    during construction before the simulation loop begins.
+///
+///    Args:
+///        heat_source_data: Dict of charging sources with their controls.
+///        battery_name: Name of the heat battery, for error messages.
+///        simtime: Shared SimulationTime iterator used to advance through
+///            timesteps for per-step schedule evaluation.
+fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
+    heat_source_data: IndexMap<String, HeatBatteryChargingSource<T>>,
+    battery_name: &str,
+    simtime_iterator: SimulationTimeIterator,
+) {
+    if simtime_iterator.current_index() != 0 {
+        panic!(
+            "HeatBattery '{}': validate_no_schedule_overlap must be called before the simulation starts (current timestep index: {}).",
+            battery_name,
+            simtime_iterator.current_index()
+        );
+    }
+    let source_names: Vec<String> = heat_source_data.keys().cloned().collect();
+    for (t_idx, _) in simtime_iterator.clone().enumerate() {
+        let mut active_sources: Vec<String> = Vec::new();
+        for src_name in &source_names {
+            let upper = heat_source_data[src_name]
+                .control
+                .setpnt(&simtime_iterator.current_iteration());
+            if upper.is_some() {
+                active_sources.push(src_name.clone());
+            }
+        }
+        if active_sources.len() > 1 {
+            panic!(
+                "HeatBattery '{}': charging sources {:?} have overlapping active schedules at timestep index {} (first overlapping timestep). Each source must have non-overlapping RangeTimeControl schedules.",
+                battery_name,
+                active_sources,
+                t_idx
+            );
+        }
+    }
+}
+
 /// An object to represent a water heating service provided by a regular heat battery.
 ///
 /// This object contains the parts of the heat battery calculation that are
