@@ -27,8 +27,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 #[derive(Debug)]
-// NOTE that these types are based on TimeControlType enum from the Python code
-// _not_ the TimeControl type
+// NOTE that these types are based on TimeControlType enum in enums.py
+// _not_ the TimeControl type in time_control.py
 pub(crate) enum Control {
     OnOffTime(OnOffTimeControl),
     SetpointTime(SetpointTimeControl),
@@ -769,19 +769,16 @@ impl RangeTimeControl {
     ) -> anyhow::Result<Self> {
         let duration_advanced_start = duration_advanced_start.unwrap_or(0.);
 
-        match (&schedule_lower, &schedule_upper) {
-            (ScheduleOrControl::Schedule(ref lower), ScheduleOrControl::Schedule(ref upper)) => {
-                if lower.len() != upper.len() {
-                    bail!("schedule_lower and schedule_upper must be of the same length")
-                }
+        if let (ScheduleOrControl::Schedule(ref lower), ScheduleOrControl::Schedule(ref upper)) = (&schedule_lower, &schedule_upper) {
+            if lower.len() != upper.len() {
+                bail!("schedule_lower and schedule_upper must be of the same length")
+            }
 
-                for i in 0..lower.len() {
-                    if lower[i].is_some() && upper[i].is_some() && lower[i] > upper[i] {
-                        bail!("Entries in schedule_lower must be lower than or equal to the corresponding entry in schedule_upper")
-                    }
+            for i in 0..lower.len() {
+                if lower[i].is_some() && upper[i].is_some() && lower[i] > upper[i] {
+                    bail!("Entries in schedule_lower must be lower than or equal to the corresponding entry in schedule_upper")
                 }
             }
-            _ => {}
         }
 
         let timesteps_advstart = (duration_advanced_start / simulation_time.step).round() as u32;
@@ -893,8 +890,8 @@ impl ControlBehaviour for RangeTimeControl {
         if setpnt_lower.is_some() {
             return true;
         }
-
-        if simulation_time_iteration.index <= 0 {
+        
+        if simulation_time_iteration.index == 0 {
             return false;
         }
 
@@ -1352,11 +1349,8 @@ impl CombinationTimeControl {
 
         for control in controls.iter() {
             let (_, control) = control;
-            match control.as_ref() {
-                Control::CombinationTime(_combination_time_control) => {
-                    bail!("CombinationTimeControl does not accept RangeTimeControl")
-                }
-                _ => {}
+            if let Control::RangeTime(_range_time_control) = control.as_ref() {
+                bail!("CombinationTimeControl does not accept RangeTimeControl")
             }
         }
 
@@ -3124,6 +3118,27 @@ mod tests {
             )
         }
 
+        fn create_charge_control_with_control(
+            logic_type: ControlLogicType,
+            temp_charge_cut: Option<f64>,
+            external_conditions: Option<ExternalConditions>,
+            control: Arc<Control>,
+        ) -> anyhow::Result<ChargeControl> {
+            ChargeControl::new(
+                logic_type,
+                ScheduleOrControl::Control(control),
+                &simulation_time().iter(),
+                0,
+                1.,
+                vec![Some(1.0), Some(0.8)],
+                temp_charge_cut,
+                None,
+                external_conditions.map(Arc::new),
+                Some(external_sensor()),
+                None,
+            )
+        }
+
         #[fixture]
         // In the Pyhon set up code charge_control_1 and charge_control_2 are identical
         fn charge_control_1() -> ChargeControl {
@@ -3210,6 +3225,25 @@ mod tests {
                     charge_control_1.is_on(&t_it),
                     schedule()[t_idx],
                     "incorrect schedule returned"
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_is_on_separate_control() {
+            let simulation_time = SimulationTime::new(0.0, 8.0, 1.0);
+            let schedule = [false, true, true, true, false, true, true, true];
+            let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(schedule.into_iter().map(Some).collect(), 0, 1.)));
+            let charge_control_1 = create_charge_control_with_control(
+                ControlLogicType::Automatic,
+                Some(15.5),
+                Some(external_conditions()),
+                control
+            ).unwrap();
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_eq!(
+                    charge_control_1.is_on(&t_it),
+                    schedule[t_idx]
                 );
             }
         }
@@ -3558,6 +3592,66 @@ mod tests {
         fn test_get_limit_factor_invalid(charge_control_1: ChargeControl) {
             assert!(charge_control_1.get_limit_factor(f64::NAN).is_err())
         }
+
+        // the below tests are from Test_ChargeControlSetPointAdapter in Python
+        // skipping test_is_on_delegates_to_charge_control, test_in_required_period_delegates_to_is_on
+
+        #[rstest]
+        fn test_in_required_period_delegates_to_is_on() {
+            let simulation_time_iteration = SimulationTimeIteration { index: 0, time: 0., timestep: 1.  };
+
+            let schedule = [true; 8];
+            let charge_control = create_charge_control(ControlLogicType::HeatBattery,
+                None,
+                Some(external_conditions()),
+                schedule.into()).unwrap();
+
+            let actual = charge_control.in_required_period(&simulation_time_iteration);
+            assert_eq!(actual, Some(true));
+
+            let schedule = [false; 8];
+
+            let charge_control = create_charge_control(ControlLogicType::HeatBattery,
+                None,
+                Some(external_conditions()),
+                schedule.into()).unwrap();
+
+            let actual = charge_control.in_required_period(&simulation_time_iteration);
+            assert_eq!(actual, Some(false));
+        }
+
+        #[rstest]
+        fn test_setpnt_returns_target_charge_when_on() {
+            let simulation_time_iteration = SimulationTimeIteration { index: 0, time: 0., timestep: 1.  };
+
+            let schedule = [true; 8];
+            let charge_control = create_charge_control(ControlLogicType::HeatBattery,
+                None,
+                Some(external_conditions()),
+                schedule.into()).unwrap();
+
+            let target_charge = charge_control.target_charge(simulation_time_iteration.clone(), None).unwrap();
+            let setpnt = charge_control.setpnt(&simulation_time_iteration);
+
+            assert_eq!(setpnt, Some(target_charge));
+        }
+
+        #[rstest]
+        fn test_setpnt_returns_none_when_off() {
+            let simulation_time_iteration = SimulationTimeIteration { index: 0, time: 0., timestep: 1.  };
+
+            let schedule = [false; 8];
+            let charge_control = create_charge_control(ControlLogicType::HeatBattery,
+                None,
+                Some(external_conditions()),
+                schedule.into()).unwrap();
+
+            let setpnt = charge_control.setpnt(&simulation_time_iteration);
+
+            assert!(setpnt.is_none());
+        }
+
+        // skipping test_adapter_with_range_time_control as we don't have the adapter in Rust
     }
 
     mod test_combination_time_control {
@@ -3702,6 +3796,37 @@ mod tests {
                     .into(),
                 ),
             ])
+        }
+
+        #[rstest]
+        fn test_invalid_controls(simulation_time_1: SimulationTime) {
+            // test that creating a CombinationTimeControl with a RangeTimeControl causes an error
+            let range_time_control = RangeTimeControl::new(
+                ScheduleOrControl::Schedule([10.9, 10.9, 10.9, 10.9, 10.9, 10.9, 10.9, 10.9].into_iter().map(Some).collect()),
+                ScheduleOrControl::Schedule([20.3, 20.3, 20.3, 20.3, 20.3, 20.3, 20.3, 20.3].into_iter().map(Some).collect()),
+                simulation_time_1,
+                0.,
+                1.,
+                None
+            ).unwrap();
+
+            let on_off_time_control = OnOffTimeControl::new([false, true, true, false, false, false, true, false].into_iter().map(Some).collect(), 0, 1.);
+
+            let ctrl1 = Arc::new(Control::RangeTime(range_time_control));
+            let ctrl2 = Arc::new(Control::OnOffTime(on_off_time_control));
+
+            let result = CombinationTimeControl::new(
+                serde_json::from_value(json!({
+                    "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2"]},
+                }))
+                .unwrap(),
+                IndexMap::from([
+                    ("ctrl1".into(), ctrl1),
+                    ("ctrl2".into(), ctrl2),
+                ]),
+            );
+
+            assert!(result.is_err());
         }
 
         #[rstest]
@@ -4027,7 +4152,6 @@ mod tests {
         }
 
         #[rstest]
-        #[ignore = "skipped temporarily for 1.0.0a9 migration"]
         fn test_evaluate_combination_setpnt(
             combination_control_req: CombinationTimeControl,
             simulation_time: SimulationTimeIterator,
@@ -4071,10 +4195,14 @@ mod tests {
                 .unwrap(),
             );
 
+            // (from Python)
+            //# Arithmetic mean of ctrl4 and ctrl5 per timestep:
+            // ctrl4 = [45, 47, 50, 48, 48, 48, 48, 48], ctrl5 = 52 throughout.
+            // (45+52)/2=48.5, (47+52)/2=49.5, (50+52)/2=51.0, (48+52)/2=50.0
             for (t_idx, t_it) in simtime.iter().enumerate() {
                 assert_eq!(
                     control.evaluate_combination_setpnt("main", t_it).unwrap(),
-                    [true, true, true, true, true, true, true, true][t_idx].into()
+                    [48.5, 49.5, 51.0, 50.0, 50.0, 50.0, 50.0, 50.0][t_idx].into()
                 );
             }
 
@@ -4800,4 +4928,5 @@ mod tests {
             .is_err());
         }
     }
+    
 }
