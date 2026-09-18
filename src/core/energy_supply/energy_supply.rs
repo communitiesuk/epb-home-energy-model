@@ -1,4 +1,4 @@
-use crate::compare_floats::min_of_2;
+use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::heating_systems::storage_tank::SurplusDiverting;
@@ -634,6 +634,7 @@ impl EnergySupply {
     ///       can_charge_if_not_full  -- just the price threshold criteria for charging
     pub(crate) fn is_charging_from_grid(
         &self,
+        battery: &ElectricBattery,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(bool, Option<f64>, bool)> {
         // TODO (from Python): Additional logic for grid charging decision
@@ -666,15 +667,9 @@ impl EnergySupply {
             .as_ref()
             .ok_or_else(|| anyhow!("Tariff data expected to be set on energy supply"))?
             .price(tariff, simtime)?;
-        let (current_charge, charge_discharge_efficiency) = {
-            let batteries = self.get_batteries()?;
-            let battery = batteries.first().unwrap(); // TODO 1.0.0a9 migration
 
-            (
-                battery.get_state_of_charge(),
-                battery.get_charge_discharge_efficiency(),
-            )
-        };
+        let current_charge = battery.get_state_of_charge();
+        let charge_discharge_efficiency = battery.get_charge_discharge_efficiency();
 
         Ok(match threshold_price {
             Some(threshold_price) if elec_price / charge_discharge_efficiency < threshold_price => {
@@ -693,24 +688,43 @@ impl EnergySupply {
         &self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
-        if let Some(electric_battery) = &self.get_batteries()?.first() {
-            let t_idx = simtime.index;
-            if electric_battery.is_grid_charging_possible() {
-                // Current conditions of the battery
-                let current_charge = electric_battery.get_state_of_charge();
-                let max_capacity = electric_battery.get_max_capacity();
+        let mut total_charge = 0.;
+        let mut total_max_capacity = 0.;
+        let t_idx = simtime.index;
 
-                let (charging_condition, threshold_charge, _) = self.is_charging_from_grid(simtime).expect("Expected to be able to determine whether charging from grid if grid charging is possible on battery.");
+        // Connection-level budget: total import power is shared across all batteries
+        let mut remaining_import_energy = self
+            .power_limit_battery_import
+            .map(|power_limit_battery_import| power_limit_battery_import * simtime.timestep);
+
+        for battery in &self.get_batteries()? {
+            // Current conditions of the battery
+            let current_charge = battery.get_state_of_charge();
+            let max_capacity = battery.get_max_capacity();
+
+            if battery.is_grid_charging_possible() {
+                let (charging_condition, threshold_charge, _) =
+                    self.is_charging_from_grid(battery, simtime)?;
+
                 if let Some(threshold_charge) = threshold_charge {
                     if charging_condition {
                         // Create max elec_demand from grid to complete battery charging if battery conditions allow
-                        let elec_demand = -max_capacity * (threshold_charge - current_charge)
-                            / electric_battery.get_charge_efficiency(simtime);
+                        let mut elec_demand = -max_capacity * (threshold_charge - current_charge)
+                            / battery.get_charge_efficiency(simtime);
+                        if let Some(remaining_import_energy) = remaining_import_energy {
+                            elec_demand = max_of_2(elec_demand, -remaining_import_energy);
+                        };
+
                         // Attempt charging battery and retrieving energy_accepted
                         let energy_accepted =
-                            -electric_battery.charge_discharge_battery(elec_demand, false, simtime);
+                            -battery.charge_discharge_battery(elec_demand, false, simtime);
+
+                        if let Some(remaining_import_energy) = &mut remaining_import_energy {
+                            *remaining_import_energy -= energy_accepted;
+                        };
+
                         self.energy_into_battery_from_grid[t_idx]
-                            .store(energy_accepted, Ordering::SeqCst);
+                            .fetch_add(energy_accepted, Ordering::SeqCst);
 
                         // Informing EnergyImport of imported electricity
                         self.demand_not_met[t_idx].fetch_add(energy_accepted, Ordering::SeqCst);
@@ -718,8 +732,15 @@ impl EnergySupply {
                 };
             }
 
+            total_charge += battery.get_state_of_charge() * max_capacity;
+            total_max_capacity += max_capacity;
+        }
+
+        if relative_eq!(total_max_capacity, 0., epsilon = 1e-10, max_relative = 1e-9) {
+            self.battery_state_of_charge[t_idx].store(0., Ordering::SeqCst);
+        } else {
             self.battery_state_of_charge[t_idx]
-                .store(electric_battery.get_state_of_charge(), Ordering::SeqCst);
+                .store(total_charge / total_max_capacity, Ordering::SeqCst);
         }
 
         Ok(())
@@ -777,7 +798,7 @@ impl EnergySupply {
                     let (charging_condition, _, can_charge_if_not_full) = if battery
                         .is_grid_charging_possible()
                     {
-                        self.is_charging_from_grid(simtime).expect("Expected to be able to determine whether charging from grid if grid charging is possible on battery.")
+                        self.is_charging_from_grid(battery, simtime).expect("Expected to be able to determine whether charging from grid if grid charging is possible on battery.")
                     } else {
                         (false, Default::default(), false)
                     };
@@ -820,13 +841,13 @@ impl EnergySupply {
                         (item.as_str(), self.get_batteries()?)
                     // TODO 1.0.0a9 migration
                     {
-                        let (charging_condition, _, can_charge_if_not_full) = if electric_battery[0]
-                            .is_grid_charging_possible()
-                        {
-                            self.is_charging_from_grid(simtime).expect("Expected to be able to determine whether charging from grid if grid charging is possible on battery.")
-                        } else {
-                            (false, Default::default(), false)
-                        };
+                        let (charging_condition, _, can_charge_if_not_full) =
+                            if electric_battery[0].is_grid_charging_possible() {
+                                (false, Some(0.), false)
+                            // self.is_charging_from_grid(electric_battery, simtime).expect("Expected to be able to determine whether charging from grid if grid charging is possible on battery.")
+                            } else {
+                                (false, None, false)
+                            };
                         let energy_out_of_battery = electric_battery[0].charge_discharge_battery(
                             supply_surplus,
                             charging_condition,
@@ -1511,7 +1532,7 @@ mod tests {
     ) {
         // Valid battery where there is grid charging and tariff_path is set
         let battery_age = 3.;
-        let _elec_battery = create_elec_battery(
+        let elec_battery = create_elec_battery(
             true,
             false,
             BatteryLocation::Inside,
@@ -1585,7 +1606,9 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                energy_supply.is_charging_from_grid(t_it).unwrap(),
+                energy_supply
+                    .is_charging_from_grid(&elec_battery, t_it)
+                    .unwrap(),
                 expected_charging_state[t_idx]
             );
             energy_supply
