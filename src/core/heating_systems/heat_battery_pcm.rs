@@ -2169,7 +2169,8 @@ mod tests {
         };
 
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time_iterator).build(),
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time_iterator.total_steps())
+                .build(),
         ));
 
         let energy_supply_connection: EnergySupplyConnection =
@@ -3433,7 +3434,8 @@ mod tests {
         };
 
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time_iterator).build(),
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time_iterator.total_steps())
+                .build(),
         ));
 
         let energy_supply_connection: EnergySupplyConnection =

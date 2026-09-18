@@ -526,7 +526,7 @@ mod tests {
         #[rstest]
         fn test_total_internal_gain(simtime: SimulationTimeIterator) {
             let energy_supply = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, &simtime).build(),
+                EnergySupplyBuilder::new(FuelType::Electricity, simtime.total_steps()).build(),
             ));
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), "lighting").unwrap();
@@ -585,7 +585,8 @@ mod tests {
         #[once]
         fn energy_supply(simtime: SimulationTime) -> Arc<RwLock<EnergySupply>> {
             Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, &simtime.iter()).build(),
+                EnergySupplyBuilder::new(FuelType::Electricity, simtime.iter().total_steps())
+                    .build(),
             ))
         }
 
@@ -1080,8 +1081,11 @@ mod tests {
 
         fn energy_supply() -> Arc<RwLock<EnergySupply>> {
             Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator())
-                    .build(),
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time_iterator().total_steps(),
+                )
+                .build(),
             ))
         }
 

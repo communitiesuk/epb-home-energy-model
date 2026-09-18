@@ -8,12 +8,13 @@ use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::cooling_systems::space_cool_system_base::SpaceCoolSystem;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
-    EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME,
-    UNMET_DEMAND_SUPPLY_NAME,
+    EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, EnergySupplyTariffInfo,
+    ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME, UNMET_DEMAND_SUPPLY_NAME,
 };
 use crate::core::energy_supply::inverter::Inverter;
 use crate::core::energy_supply::on_site_generation_base::OnSiteGeneration;
 use crate::core::energy_supply::pv::{PhotovoltaicPanel, PhotovoltaicSystem};
+use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{
     HeatBatteryServiceSpace, HeatBatteryWaterService, HeatSourceWet, SpaceHeatSystem,
@@ -131,7 +132,7 @@ use std::default::Default;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
-use std::io::{BufReader, Cursor, Read};
+use std::io::BufReader;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -513,7 +514,7 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
         &simtime.iter(),
     )?);
     let energy_supply_unmet_demand =
-        EnergySupplyBuilder::new(FuelType::UnmetDemand, &simtime.iter()).build();
+        EnergySupplyBuilder::new(FuelType::UnmetDemand, simtime.iter().total_steps()).build();
     let mut energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>> = [(
         "_unmet_demand".into(),
         Arc::new(RwLock::new(energy_supply_unmet_demand)),
@@ -523,7 +524,7 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
         energy_supplies.insert(
             name.into(),
             Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(data.fuel, &simtime.iter()).build(),
+                EnergySupplyBuilder::new(data.fuel, simtime.iter().total_steps()).build(),
             )),
         );
     }
@@ -3224,14 +3225,21 @@ fn energy_supplies_from_input(
     supplies.insert(
         UNMET_DEMAND_SUPPLY_NAME.into(),
         Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::UnmetDemand, simulation_time_iterator).build(),
+            EnergySupplyBuilder::new(
+                FuelType::UnmetDemand,
+                simulation_time_iterator.total_steps(),
+            )
+            .build(),
         )),
     );
     supplies.insert(
         ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME.into(),
         Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::EnergyFromEnvironment, simulation_time_iterator)
-                .build(),
+            EnergySupplyBuilder::new(
+                FuelType::EnergyFromEnvironment,
+                simulation_time_iterator.total_steps(),
+            )
+            .build(),
         )),
     );
     for (name, supply) in input {
@@ -3239,6 +3247,7 @@ fn energy_supplies_from_input(
             supply,
             simulation_time_iterator,
             tariff_data_file,
+            None, // TODO 1.0.0a9 migration - pass tariff data
             external_conditions.clone(),
         )?;
         supplies.insert(name.into(), energy_supply);
@@ -3251,10 +3260,12 @@ fn energy_supply_from_input(
     input: &EnergySupplyDetails,
     simulation_time_iterator: &SimulationTimeIterator,
     tariff_file_path: Option<&str>,
+    tariff_data: Option<TariffData>,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<Arc<RwLock<EnergySupply>>> {
     Ok(Arc::new(RwLock::new({
-        let mut builder = EnergySupplyBuilder::new(input.fuel, simulation_time_iterator);
+        let mut builder =
+            EnergySupplyBuilder::new(input.fuel, simulation_time_iterator.total_steps());
 
         if let Some(battery) = input.electric_battery.as_ref() {
             let batteries = match battery {
@@ -3285,30 +3296,43 @@ fn energy_supply_from_input(
             builder = builder.with_priority(priority.clone());
         }
         builder = builder.with_export_capable(input.is_export_capable);
-        // Just handling the single diverter as a stop gap in the 1.0.0a9 migration
+
+        // Create supply connection of Electric Battery to Energy Supply to account for energy imported
         if input.electric_battery.as_ref().is_some_and(|battery| {
-            matches!(
-                battery,
-                SingleOrMap::Single(battery) if battery.grid_charging_possible
-            )
-        }) {
-            let _tariff_data: Box<dyn Read> = match tariff_file_path {
-                // fall back to using tariff data for entire year for now
-                None => Box::new(Cursor::new(include_str!(
-                    "../examples/tariff_data/tariff_data_25-06-2024.csv"
-                ))),
-                Some(tariff_file_path) => Box::new(BufReader::new(
-                    File::open(tariff_file_path)
-                        .expect("Provided tariff file at provided path was not found."),
-                )),
+            let grid_charging_possible = match battery {
+                SingleOrMap::Single(battery) => battery.grid_charging_possible,
+                SingleOrMap::Map(batteries) => batteries
+                    .iter()
+                    .any(|(_, battery)| battery.grid_charging_possible),
             };
-            // builder = builder.with_tariff_input(EnergySupplyTariffInput::new(
-            //     input.tariff.ok_or_else(|| anyhow!("Energy supply with electric battery that allows grid charging expected tariff to be indicated"))?,
-            //     tariff_data,
-            //     input.threshold_charges.map(|threshold_charges| threshold_charges.to_vec()),
-            //     input.threshold_prices.map(|threshold_prices| threshold_prices.to_vec()),
-            // ))?;
-            builder = builder.with_tariff_input()?; // TODO 1.0.0a9 migration
+
+            grid_charging_possible
+        }) {
+            // Import electricity tariff data for grid import options
+            let tariff_data = match tariff_data {
+                Some(tariff_data) => tariff_data,
+                None => {
+                    let tariff_path = tariff_file_path.ok_or_else(|| anyhow!("A battery that can be charged from the grid is present but no tariff data source was provided"))?;
+                    let tariff_file = Box::new(BufReader::new(
+                        File::open(tariff_path)
+                            .expect("Provided tariff file at provided path was not found"),
+                    ));
+                    let prices = TariffData::load_data_from_file(tariff_file)?;
+
+                    TariffData::new(
+                        simulation_time_iterator,
+                        Some(0),
+                        simulation_time_iterator.step_in_hours(),
+                        TariffData::expand_prices_schedule(prices)?,
+                    )?
+                }
+            };
+            builder = builder.with_tariff_data(tariff_data);
+            builder = builder.with_tariff_info(EnergySupplyTariffInfo {
+                tariff: input.tariff.ok_or_else( | | anyhow!("Energy supply with electric battery that allows grid charging expected tariff to be indicated")) ?,
+                threshold_charges: input.threshold_charges.map( | threshold_charges| threshold_charges.to_vec()),
+                threshold_prices: input.threshold_prices.map( | threshold_prices| threshold_prices.to_vec()),
+            })?;
         }
 
         builder.build()

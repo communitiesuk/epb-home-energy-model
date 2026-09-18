@@ -39,6 +39,7 @@ use smartstring::alias::String;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
+
 const N_EXER: f64 = 3.0;
 
 impl HeatPumpSourceType {
@@ -6426,7 +6427,11 @@ mod tests {
 
     #[fixture]
     fn energy_supply(simulation_time_for_heat_pump: SimulationTime) -> EnergySupply {
-        EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time_for_heat_pump.iter()).build()
+        EnergySupplyBuilder::new(
+            FuelType::MainsGas,
+            simulation_time_for_heat_pump.iter().total_steps(),
+        )
+        .build()
     }
 
     fn create_boiler(
@@ -6966,8 +6971,11 @@ mod tests {
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
         let energy_supply_heat_source = RwLock::from(
-            EnergySupplyBuilder::new(FuelType::Custom, &simulation_time_for_heat_pump.iter())
-                .build(),
+            EnergySupplyBuilder::new(
+                FuelType::Custom,
+                simulation_time_for_heat_pump.iter().total_steps(),
+            )
+            .build(),
         );
 
         let input = create_heat_pump_nw_input_from_json();

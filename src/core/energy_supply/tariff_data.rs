@@ -18,7 +18,7 @@ pub struct TariffData {
 }
 
 impl TariffData {
-    pub(super) fn new(
+    pub(crate) fn new(
         simulation_time: &SimulationTimeIterator,
         start_day: Option<u32>,
         time_series_step: f64,
@@ -42,7 +42,7 @@ impl TariffData {
         })
     }
 
-    pub(super) fn expand_prices_schedule(
+    pub(crate) fn expand_prices_schedule(
         prices: IndexMap<EnergySupplyTariff, NumericSchedule>,
     ) -> anyhow::Result<IndexMap<EnergySupplyTariff, Vec<f64>>> {
         prices
@@ -55,7 +55,7 @@ impl TariffData {
             .collect()
     }
 
-    pub(super) fn load_data_from_file(
+    pub(crate) fn load_data_from_file(
         csv: impl Read,
     ) -> anyhow::Result<IndexMap<EnergySupplyTariff, NumericSchedule>> {
         let mut reader = csv::Reader::from_reader(csv);

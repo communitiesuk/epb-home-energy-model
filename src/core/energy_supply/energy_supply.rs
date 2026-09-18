@@ -3,7 +3,6 @@ use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::heating_systems::storage_tank::SurplusDiverting;
 use crate::errors::NotImplementedError;
-use crate::hem_core::simulation_time::SimulationTimeIterator;
 use crate::input::{EnergySupplyTariff, FuelType};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -16,7 +15,6 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use smartstring::alias::String;
 use std::collections::HashSet;
-use std::io::Read;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -81,57 +79,20 @@ impl EnergySupplyConnection {
     }
 }
 
-pub struct EnergySupplyTariffInput {
-    tariff: EnergySupplyTariff,
-    tariff_path: Box<dyn Read>,
-    threshold_charges: Option<Vec<f64>>,
-    threshold_prices: Option<Vec<f64>>,
-}
-
-impl EnergySupplyTariffInput {
-    pub(crate) fn new(
-        tariff: EnergySupplyTariff,
-        tariff_path: Box<dyn Read>,
-        threshold_charges: Option<Vec<f64>>,
-        threshold_prices: Option<Vec<f64>>,
-    ) -> Self {
-        Self {
-            tariff,
-            tariff_path,
-            threshold_charges,
-            threshold_prices,
-        }
-    }
-}
-
 // TODO 1.0.0a9 migration - add new EnergySupply threshold fields to this struct?
 #[derive(Debug)]
-struct EnergySupplyTariffInfo {
-    tariff: EnergySupplyTariff,
-    tariff_data: TariffData,
-    threshold_charges: Option<Vec<f64>>,
-    threshold_prices: Option<Vec<f64>>,
+pub struct EnergySupplyTariffInfo {
+    pub(crate) tariff: EnergySupplyTariff,
+    pub(crate) threshold_charges: Option<Vec<f64>>,
+    pub(crate) threshold_prices: Option<Vec<f64>>,
 }
-
-// TODO 1.0.0a9 migration - delete or can this be used with new tariff structure?
-// impl TryFrom<EnergySupplyTariffInput> for EnergySupplyTariffInfo {
-//     type Error = anyhow::Error;
-//
-//     fn try_from(input: EnergySupplyTariffInput) -> Result<Self, Self::Error> {
-//         Ok(Self {
-//             tariff: input.tariff,
-//             tariff_data: TariffData::new()?,
-//             threshold_charges: input.threshold_charges,
-//             threshold_prices: input.threshold_prices,
-//         })
-//     }
-// }
 
 #[derive(Educe)]
 #[educe(Debug)]
 pub struct EnergySupply {
     fuel_type: FuelType,
     tariff_info: Option<EnergySupplyTariffInfo>,
+    tariff_data: Option<TariffData>,
     simulation_timesteps: usize,
     electric_batteries: IndexMap<String, Arc<ElectricBattery>>,
     #[educe(Debug(ignore))]
@@ -157,7 +118,6 @@ pub struct EnergySupply {
     energy_diverted: Vec<AtomicF64>,
     energy_generated_consumed: Vec<AtomicF64>,
     generation_curtailed: Vec<AtomicF64>,
-    tariff_data: Option<TariffData>,
     power_limit_battery_import: Option<f64>,
 }
 
@@ -180,8 +140,9 @@ impl EnergySupply {
     //                                   to on-site generation), shared across all batteries (kW)
     pub(crate) fn new(
         fuel_type: FuelType,
-        simulation_time: &SimulationTimeIterator,
-        tariff_input: Option<EnergySupplyTariffInput>,
+        simulation_timesteps: usize,
+        tariff_info: Option<EnergySupplyTariffInfo>,
+        tariff_data: Option<TariffData>,
         electric_batteries: IndexMap<String, ElectricBattery>,
         priority: Option<Vec<String>>,
         is_export_capable: Option<bool>,
@@ -189,38 +150,23 @@ impl EnergySupply {
         tariff_export: Option<EnergySupplyTariff>,
         threshold_charges_export: Option<[f64; 12]>,
         threshold_prices_export: Option<[f64; 12]>,
-        tariff_data: Option<TariffData>,
         power_limit_battery_import: Option<f64>,
     ) -> anyhow::Result<Self> {
-        let simulation_timesteps = simulation_time.total_steps();
-        // Create supply connection of Electric Battery to Energy Supply to account for energy imported
-        let tariff_data = if electric_batteries
+        if electric_batteries
             .iter()
             .any(|(_, battery)| battery.is_grid_charging_possible())
+            && (tariff_data.is_none() || tariff_info.is_none())
         {
-            // Import electricity tariff data for grid import options
-            if let Some(tariff_data) = tariff_data {
-                Some(tariff_data)
-            } else if let Some(tariff_input) = tariff_input {
-                let prices = TariffData::load_data_from_file(tariff_input.tariff_path)?;
-                let timestep = simulation_time.step_in_hours();
-                Some(TariffData::new(
-                    simulation_time,
-                    Some(0),
-                    timestep,
-                    TariffData::expand_prices_schedule(prices)?,
-                )?)
-            } else {
-                bail!("A battery that can be charged from the grid is present but no tariff data source was provided.");
-            }
-        } else {
-            None
+            bail!(
+                "A battery that can be charged from the grid is present but tariff data is missing"
+            )
         };
 
         Ok(Self {
             fuel_type,
             simulation_timesteps,
-            tariff_info: None, // TODO 1.0.0a9
+            tariff_info,
+            tariff_data,
             electric_batteries: electric_batteries
                 .into_iter()
                 .map(|(k, v)| (k, v.into()))
@@ -247,7 +193,6 @@ impl EnergySupply {
             energy_diverted: init_demand_list(simulation_timesteps),
             energy_generated_consumed: init_demand_list(simulation_timesteps),
             generation_curtailed: init_demand_list(simulation_timesteps),
-            tariff_data,
             power_limit_battery_import,
         })
     }
@@ -703,7 +648,6 @@ impl EnergySupply {
         })? as usize;
         let EnergySupplyTariffInfo {
             tariff,
-            tariff_data,
             threshold_charges,
             threshold_prices,
         } = self
@@ -717,7 +661,11 @@ impl EnergySupply {
             .as_ref()
             .and_then(|threshold_charges| threshold_charges.get(month).copied());
         // For tariff selected look up price etc and decide whether to charge
-        let elec_price = tariff_data.price(tariff, simtime)?;
+        let elec_price = self
+            .tariff_data
+            .as_ref()
+            .ok_or_else(|| anyhow!("Tariff data expected to be set on energy supply"))?
+            .price(tariff, simtime)?;
         let (current_charge, charge_discharge_efficiency) = {
             let batteries = self.get_batteries()?;
             let battery = batteries.first().unwrap(); // TODO 1.0.0a9 migration
@@ -979,14 +927,14 @@ pub struct EnergySupplyBuilder {
 }
 
 impl EnergySupplyBuilder {
-    pub fn new(fuel_type: FuelType, simulation_time: &SimulationTimeIterator) -> Self {
+    pub fn new(fuel_type: FuelType, simulation_timesteps: usize) -> Self {
         Self {
             energy_supply: EnergySupply::new(
                 fuel_type,
-                simulation_time,
+                simulation_timesteps,
+                None,
                 None,
                 Default::default(),
-                None,
                 None,
                 None,
                 None,
@@ -1004,11 +952,8 @@ impl EnergySupplyBuilder {
         self
     }
 
-    pub fn with_tariff_input(
-        mut self,
-        // tariff_input: EnergySupplyTariffInput,
-    ) -> anyhow::Result<Self> {
-        self.energy_supply.tariff_info = None; // TODO 1.0.0a9
+    pub fn with_tariff_info(mut self, tariff_info: EnergySupplyTariffInfo) -> anyhow::Result<Self> {
+        self.energy_supply.tariff_info = Some(tariff_info);
         Ok(self)
     }
 
@@ -1085,9 +1030,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rstest::*;
     use serde_json::json;
-    use std::fs::File;
     use std::io::{BufReader, Cursor};
-    use std::path::Path;
 
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
@@ -1097,7 +1040,8 @@ mod tests {
     #[fixture]
     pub fn energy_supply<'a>(simulation_time: SimulationTime) -> EnergySupply {
         let mut energy_supply =
-            EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter()).build();
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
+                .build();
         energy_supply.register_end_user_name("shower".into());
         energy_supply.register_end_user_name("bath".into());
 
@@ -1195,7 +1139,8 @@ mod tests {
 
         assert!(EnergySupply::new(
             FuelType::Electricity,
-            &simulation_time.iter(),
+            simulation_time.iter().total_steps(),
+            None,
             None,
             indexmap! {"Electric_battery".into() => elec_battery},
             None,
@@ -1205,7 +1150,6 @@ mod tests {
             None,
             None,
             None,
-            None
         )
         .is_err());
 
@@ -1226,7 +1170,8 @@ mod tests {
             simulation_time,
         );
 
-        let builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
             .with_electric_battery(indexmap! {"battery".into() => elec_battery})
             .with_tariff_data(tariff_data)
@@ -1545,17 +1490,15 @@ mod tests {
     }
 
     #[fixture]
-    fn tariff_input() -> EnergySupplyTariffInput {
-        let tariff_data_path = "examples/tariff_data/tariff_data_25-06-2024.csv";
+    fn tariff_info() -> EnergySupplyTariffInfo {
         let threshold_charges = vec![0.8, 0.7, 0.7, 0.8, 0.6, 0.8, 0.7, 0.7, 0.8, 0.7, 0.8, 0.8];
         let threshold_prices = vec![16., 16., 16., 20., 20., 20., 20., 20., 20., 20., 20., 20.];
 
-        EnergySupplyTariffInput::new(
-            EnergySupplyTariff::VariableTimeOfDay,
-            Box::new(File::open(Path::new(tariff_data_path)).unwrap()),
-            Some(threshold_charges),
-            Some(threshold_prices),
-        )
+        EnergySupplyTariffInfo {
+            tariff: EnergySupplyTariff::VariableTimeOfDay,
+            threshold_charges: Some(threshold_charges),
+            threshold_prices: Some(threshold_prices),
+        }
     }
 
     #[rstest]
@@ -1563,7 +1506,8 @@ mod tests {
     fn test_battery_with_grid_charging_and_priority(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
-        _tariff_input: EnergySupplyTariffInput,
+        tariff_info: EnergySupplyTariffInfo,
+        tariff_data: TariffData,
     ) {
         // Valid battery where there is grid charging and tariff_path is set
         let battery_age = 3.;
@@ -1574,15 +1518,17 @@ mod tests {
             external_conditions,
             simulation_time,
         );
-        let builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
             .with_electric_battery(indexmap! {})
-            // .with_tariff_input(tariff_input) // TODO 1.0.0a9
-            .with_tariff_input()
+            .with_tariff_info(tariff_info)
             .unwrap()
+            .with_tariff_data(tariff_data)
             .with_priority(vec!["ElectricBattery", "diverter"])
             .build();
 
+        assert!(energy_supply.tariff_data.is_some());
         assert!(energy_supply.has_battery().unwrap());
 
         let battery_state_of_health = -0.04 * battery_age + 1.;
@@ -1673,7 +1619,7 @@ mod tests {
     fn test_battery_with_grid_charging_no_priority(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
-        _tariff_input: EnergySupplyTariffInput,
+        tariff_info: EnergySupplyTariffInfo,
     ) {
         let elec_battery = create_elec_battery(
             true,
@@ -1682,11 +1628,11 @@ mod tests {
             external_conditions,
             simulation_time,
         );
-        let builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
             .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
-            // .with_tariff_input(tariff_input)
-            .with_tariff_input()
+            .with_tariff_info(tariff_info)
             .unwrap()
             .build();
 
@@ -1720,7 +1666,8 @@ mod tests {
             external_conditions,
             simulation_time,
         );
-        let builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
             .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
             .build();
@@ -1812,7 +1759,8 @@ mod tests {
             simulation_time,
         );
 
-        let builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
             .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
             .build();
@@ -2116,7 +2064,8 @@ mod tests {
         // Set priority
         let priority = vec!["diverter", "ElectricBattery"];
 
-        let mut builder = EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter());
+        let mut builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         builder = builder
             .with_electric_battery(elec_battery)
             .with_priority(priority);
@@ -2261,7 +2210,8 @@ mod tests {
 
     #[rstest]
     pub fn test_energy_supply_without_export(simulation_time: SimulationTime) {
-        let mut builder = EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter());
+        let mut builder =
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps());
         builder = builder.with_export_capable(false);
         let energy_supply = builder.build();
         let shared_supply = Arc::new(RwLock::new(energy_supply));

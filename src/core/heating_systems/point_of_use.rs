@@ -114,7 +114,7 @@ mod tests {
 
     #[fixture]
     fn energy_supply(simtime: SimulationTime) -> EnergySupply {
-        EnergySupplyBuilder::new(FuelType::Electricity, &simtime.iter()).build()
+        EnergySupplyBuilder::new(FuelType::Electricity, simtime.iter().total_steps()).build()
     }
 
     #[fixture]

@@ -476,7 +476,11 @@ mod tests {
         DirectElectricBoiler::new(
             boiler_data,
             Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
             )),
             "boiler aux",
             simulation_time.step,
@@ -831,7 +835,8 @@ mod tests {
         let result = DirectElectricBoiler::new(
             boiler_data,
             Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
+                    .build(),
             )),
             "boiler aux",
             simulation_time.step,

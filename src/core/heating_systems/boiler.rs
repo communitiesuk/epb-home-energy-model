@@ -1531,10 +1531,15 @@ mod tests {
             simulation_time: SimulationTime,
         ) -> Boiler {
             let energy_supply = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
+                    .build(),
             ));
             let energy_supply_aux = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
             ));
             let energy_supply_conn_aux =
                 EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
@@ -1869,10 +1874,15 @@ mod tests {
             simulation_time: SimulationTime,
         ) -> Boiler {
             let energy_supply = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
+                    .build(),
             ));
             let energy_supply_aux = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
             ));
             let energy_supply_conn_aux =
                 EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
@@ -2119,10 +2129,15 @@ mod tests {
             simulation_time: SimulationTime,
         ) -> Boiler {
             let energy_supply = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
+                    .build(),
             ));
             let energy_supply_aux = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
             ));
             let energy_supply_conn_aux =
                 EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
@@ -2301,10 +2316,15 @@ mod tests {
             simulation_time: SimulationTime,
         ) -> (Boiler, Arc<RwLock<EnergySupply>>) {
             let energy_supply = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
+                    .build(),
             ));
             let energy_supply_aux = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
             ));
             let energy_supply_conn_aux =
                 EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
@@ -2747,7 +2767,11 @@ mod tests {
             let external_conditions = Arc::new(external_conditions);
 
             let energy_supply_aux = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
             ));
             let energy_supply_conn_auxiliary =
                 EnergySupply::connection(energy_supply_aux.clone(), "boiler_auxiliary").unwrap();
@@ -2848,7 +2872,8 @@ mod tests {
             assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
 
             let energy_supply = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::LpgBulk, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(FuelType::LpgBulk, simulation_time.iter().total_steps())
+                    .build(),
             ));
             let energy_supply_connection_aux =
                 EnergySupply::connection(energy_supply.clone(), "boiler_lpg_bulk").unwrap();
@@ -2877,7 +2902,8 @@ mod tests {
             // Python here has a check for handling bad fuel codes, which are inexpressible in Rust due to use of enum (good thing!)
 
             let energy_supply = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::MainsGas, &simulation_time.iter()).build(),
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
+                    .build(),
             ));
             let boiler = Boiler::new(
                 boiler_data,

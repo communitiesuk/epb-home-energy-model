@@ -489,7 +489,8 @@ mod tests {
 
     fn energy_supply(simulation_time: SimulationTime) -> Arc<RwLock<EnergySupply>> {
         Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
+                .build(),
         ))
     }
 
@@ -831,7 +832,8 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
+                .build(),
         ));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "pv generation with weighted shading")

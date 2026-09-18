@@ -110,7 +110,8 @@ mod tests {
             simulation_time.step,
         ));
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
+                .build(),
         ));
         let energy_supply_conn = EnergySupply::connection(energy_supply, "shower").unwrap();
         InstantElecHeater::new(

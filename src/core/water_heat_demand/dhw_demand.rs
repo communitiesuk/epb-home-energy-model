@@ -1400,11 +1400,13 @@ pub mod tests {
         let wwhrs = IndexMap::from([(String::from("Example_Inst_WWHRS"), wwhrsb.clone())]);
 
         let electricity_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
+                .build(),
         ));
 
         let unmet_demand = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::UnmetDemand, &simulation_time.iter()).build(),
+            EnergySupplyBuilder::new(FuelType::UnmetDemand, simulation_time.iter().total_steps())
+                .build(),
         ));
 
         let energy_supplies = IndexMap::from([

@@ -812,7 +812,7 @@ impl RangeTimeControl {
                 let mut setpnt = None;
                 for timesteps_ahead in 1..self.timesteps_advstart + 1 {
                     let t_idx = simulation_time_iteration.index;
-                    
+
                     if schedule.len() <= t_idx + timesteps_ahead as usize {
                         // Stop looking ahead if we have reached the end of the schedule
                         break;
@@ -2688,10 +2688,10 @@ mod tests {
             Arc::new(RwLock::new(
                 EnergySupply::new(
                     FuelType::Electricity,
-                    &simulation_time_iterator,
+                    simulation_time_iterator.total_steps(),
+                    None,
                     None,
                     indexmap! {"ElectricBattery".into() => electric_battery},
-                    None,
                     None,
                     None,
                     None,
@@ -2820,8 +2820,11 @@ mod tests {
                 &IndexMap::from([(
                     "mains elec".into(),
                     Arc::new(RwLock::new(
-                        EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time_iterator)
-                            .build(),
+                        EnergySupplyBuilder::new(
+                            FuelType::Electricity,
+                            simulation_time_iterator.total_steps(),
+                        )
+                        .build(),
                     )),
                 )]),
                 vec!["Clothes_drying".into()],

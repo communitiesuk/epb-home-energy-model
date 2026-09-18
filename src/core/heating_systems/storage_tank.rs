@@ -3898,7 +3898,7 @@ mod tests {
     ) -> Arc<RwLock<EnergySupply>> {
         let energy_supply = EnergySupplyBuilder::new(
             FuelType::Electricity,
-            &simulation_time_for_storage_tank.iter(),
+            simulation_time_for_storage_tank.iter().total_steps(),
         )
         .build();
 
@@ -4036,7 +4036,7 @@ mod tests {
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
-                &simulation_time_for_storage_tank.iter(),
+                simulation_time_for_storage_tank.iter().total_steps(),
             )
             .build(),
         ));
@@ -4354,7 +4354,7 @@ mod tests {
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
-                &simulation_time_for_solar_thermal.iter(),
+                simulation_time_for_solar_thermal.total_steps(),
             )
             .build(),
         ));
@@ -5250,7 +5250,7 @@ mod tests {
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
-                &simulation_time_for_storage_tank.iter(),
+                simulation_time_for_storage_tank.iter().total_steps(),
             )
             .build(),
         ));
@@ -5543,7 +5543,7 @@ mod tests {
         let rated_power = 50.;
         let energy_supply = EnergySupplyBuilder::new(
             FuelType::MainsGas,
-            &simulation_time_for_immersion_heater.iter(),
+            simulation_time_for_immersion_heater.iter().total_steps(),
         )
         .build();
         let energy_supply_connection =
@@ -5800,7 +5800,9 @@ mod tests {
         Arc::from(RwLock::from(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
-                &simulation_time_for_smart_hot_water_tank.iter(),
+                simulation_time_for_smart_hot_water_tank
+                    .iter()
+                    .total_steps(),
             )
             .build(),
         ))
@@ -5813,7 +5815,9 @@ mod tests {
         Arc::from(RwLock::from(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
-                &simulation_time_for_smart_hot_water_tank.iter(),
+                simulation_time_for_smart_hot_water_tank
+                    .iter()
+                    .total_steps(),
             )
             .build(),
         ))
@@ -6243,14 +6247,18 @@ mod tests {
         let energy_supply_for_smart_hot_water_tank_immersion_1 = Arc::from(RwLock::from(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
-                &simulation_time_for_smart_hot_water_tank.iter(),
+                simulation_time_for_smart_hot_water_tank
+                    .iter()
+                    .total_steps(),
             )
             .build(),
         ));
         let energy_supply_for_smart_hot_water_tank_pump_1 = Arc::from(RwLock::from(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
-                &simulation_time_for_smart_hot_water_tank.iter(),
+                simulation_time_for_smart_hot_water_tank
+                    .iter()
+                    .total_steps(),
             )
             .build(),
         ));
@@ -6258,14 +6266,18 @@ mod tests {
         let energy_supply_for_smart_hot_water_tank_immersion_2 = Arc::from(RwLock::from(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
-                &simulation_time_for_smart_hot_water_tank.iter(),
+                simulation_time_for_smart_hot_water_tank
+                    .iter()
+                    .total_steps(),
             )
             .build(),
         ));
         let energy_supply_for_smart_hot_water_tank_pump_2 = Arc::from(RwLock::from(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
-                &simulation_time_for_smart_hot_water_tank.iter(),
+                simulation_time_for_smart_hot_water_tank
+                    .iter()
+                    .total_steps(),
             )
             .build(),
         ));

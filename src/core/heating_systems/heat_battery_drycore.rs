@@ -2145,7 +2145,8 @@ mod tests {
     #[fixture]
     fn energy_supply(simulation_time: SimulationTime) -> Arc<RwLock<EnergySupply>> {
         Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
+                .build(),
         ))
     }
 

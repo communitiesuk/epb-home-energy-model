@@ -114,7 +114,8 @@ mod tests {
             1.0,
         );
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, &simulation_time.iter()).build(),
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
+                .build(),
         ));
         let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), "aircon").unwrap();
         (
