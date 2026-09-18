@@ -3,7 +3,11 @@ use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSupplyBehaviour;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::heating_systems::boiler::BoilerServiceWaterRegular;
 use crate::core::heating_systems::common::HeatingServiceType;
+use crate::core::heating_systems::heat_battery_drycore::HeatBatteryDryCoreServiceWaterRegular;
+use crate::core::heating_systems::heat_network::HeatNetworkServiceWaterStorage;
+use crate::core::heating_systems::heat_pump::HeatPumpServiceWater;
 use crate::core::material_properties::WATER;
 use crate::core::units::{
     KILOJOULES_PER_KILOWATT_HOUR, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, SECONDS_PER_MINUTE,
@@ -13,6 +17,7 @@ use crate::core::water_heat_demand::misc::{
     calculate_volume_weighted_average_temperature, water_demand_to_kwh, WaterEventResult,
 };
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
+use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIterator};
 use crate::input::{
     HeatBattery as HeatBatteryInput, HeatSourceWetDetails, PcmBatteryChargingConfiguration,
 };
@@ -37,6 +42,64 @@ pub(crate) enum HeatBatteryPcmOperationMode {
     Losses,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ChargingSourceType {
+    DirectElectric,
+    HeatSourceWet,
+}
+
+/// Configuration for a single charging source in the HeatSource input format.
+///
+/// Each source has its own RangeTimeControl for hysteresis scheduling
+/// and type-specific parameters (rated power for electric, heat source service
+/// reference and flow temperature limit for hydronic).
+///
+/// Attributes:
+///     source_type: ChargingSourceType.DIRECT_ELECTRIC for direct electric element,
+///         ChargingSourceType.HEAT_SOURCE_WET for hydronic charging from a wet heat source.
+///     control: RangeTimeControl providing hysteresis thresholds —
+///         lower setpoint triggers charging start, upper triggers stop.
+///         Setpoint units determined by schedule_unit.
+///     rated_charge_power: Rated charging power in kW (electric sources only).
+///     heat_source_service: Reference to the heat source service object that
+///         provides hot water for charging (hydronic sources only). Set by
+///         project.py during post-construction linking; None until then.
+///     temp_flow_max: Maximum flow temperature (°C) the heat source
+///         should provide when charging (hydronic sources only). Used to
+///         cap the heat source flow temperature request during battery charging
+///         and to estimate return temperature for energy demand calculations.
+///     flow_rate_charging_l_per_min: Flow rate through the heat exchanger
+///         during hydronic charging (litre/minute). May differ from the
+///         battery's main flow_rate_l_per_min if charging and discharging
+///         circuits have different pipework (hydronic sources only).
+///     schedule_unit: How to interpret the control schedule setpoints.
+///         "soc" (default): values are state-of-charge fractions (0–1).
+///         "temperature": values are temperatures (°C), converted to SOC
+///         internally for comparison against the battery's current state.
+
+/// Enum representing the union of all heat source service types that can provide hydronic charging.
+/// Defined here (not in _base.py) to avoid circular imports — the concrete
+/// service types are defined across multiple modules that import from _base.py.
+pub(crate) enum HeatSourceWetService<T: WaterSupplyBehaviour> {
+    HeatPumpServiceWater(HeatPumpServiceWater),
+    BoilerServiceWaterRegular(BoilerServiceWaterRegular),
+    HeatBatteryPCMServiceWaterRegular(HeatBatteryPcmServiceWaterRegular<T>),
+    HeatBatteryDryCoreServiceWaterRegular(HeatBatteryDryCoreServiceWaterRegular<T>),
+    HeatNetworkServiceWaterStorage(HeatNetworkServiceWaterStorage),
+}
+pub(crate) struct HeatBatteryChargingSource<T: WaterSupplyBehaviour> {
+    source_type: ChargingSourceType,
+    control: Arc<Control>,
+    rated_charge_power: Option<f64>,
+    heat_source_service: Option<HeatSourceWetService<T>>,
+    temp_flow_max: Option<f64>,
+    flow_rate_charging_l_per_min: Option<f64>,
+    hex_a: Option<f64>,
+    hex_b: Option<f64>,
+    hex_velocity_at_1_l_per_min: Option<f64>,
+    hex_capillary_diameter_m: Option<f64>,
+    schedule_unit: String,
+}
 /// An object to represent a water heating service provided by a regular heat battery.
 ///
 /// This object contains the parts of the heat battery calculation that are
