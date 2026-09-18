@@ -242,6 +242,7 @@ impl EnergySupply {
         Ok(!self.get_batteries()?.is_empty())
     }
 
+    #[cfg(test)]
     pub(crate) fn get_battery_max_capacity(&self) -> anyhow::Result<Option<f64>> {
         let batteries = self.get_batteries()?;
         if batteries.is_empty() {
@@ -788,97 +789,72 @@ impl EnergySupply {
         // Elec demand not met by PV (kWh) - ie amount to be imported from the grid or batteries
         let mut demand_not_met = demands_sum + supply_consumed;
 
-        // See if there is a net supply/demand for the timestep
-        match &self.priority {
-            None => {
-                if let Some(battery) = &self.get_batteries()?.first() {
-                    // TODO 1.0.0a9 migration
-                    // See if the battery can deal with excess supply/demand for this timestep
-                    // supply_surplus is -ve by convention and demand_not_met is +ve
-                    let (charging_condition, _, can_charge_if_not_full) = if battery
-                        .is_grid_charging_possible()
-                    {
-                        self.is_charging_from_grid(battery, simtime).expect("Expected to be able to determine whether charging from grid if grid charging is possible on battery.")
-                    } else {
-                        (false, Default::default(), false)
-                    };
-                    if supply_surplus < 0. {
-                        let energy_out_of_battery = battery.charge_discharge_battery(
-                            supply_surplus,
-                            charging_condition,
-                            simtime,
-                        );
-                        supply_surplus -= energy_out_of_battery;
-                        self.energy_into_battery_from_generation[timestep_idx]
-                            .store(-energy_out_of_battery, Ordering::SeqCst);
-                    }
-                    if demand_not_met > 0. {
-                        // Calling is_charging_from_grid threshold level to avoid
-                        // discharging from the electric battery and
-                        // triggering lots of small grid recharge events
-                        // when the level of charge is close to the threshold
-                        if !can_charge_if_not_full {
-                            let energy_out_of_battery =
-                                battery.charge_discharge_battery(demand_not_met, false, simtime);
-                            demand_not_met -= energy_out_of_battery;
-                            self.energy_battery_to_consumption[timestep_idx]
-                                .store(-energy_out_of_battery, Ordering::SeqCst);
-                        }
-                    }
-                }
+        // If the priority order of energy surplus is specified, calculate the same according to the order
+        let items_by_priority: Vec<BatteryOrDiverter> = match &self.priority {
+            None => self
+                .get_batteries()?
+                .into_iter()
+                .map(BatteryOrDiverter::from)
+                .chain(
+                    self.get_diverters()?
+                        .into_iter()
+                        .map(BatteryOrDiverter::from),
+                )
+                .collect(),
+            Some(_) => {
+                let batteries_and_diverters: IndexMap<String, BatteryOrDiverter> = self
+                    .electric_batteries
+                    .iter()
+                    .map(|(k, v)| (k.clone(), BatteryOrDiverter::from(v.clone())))
+                    .chain(
+                        self.diverters
+                            .iter()
+                            .map(|(k, v)| (k.clone(), BatteryOrDiverter::from(v.clone()))),
+                    )
+                    .collect();
 
-                if let Some(diverter) = &self.get_diverters()?.first() {
-                    self.energy_diverted.get(timestep_idx).unwrap().store(
-                        diverter.read().divert_surplus(supply_surplus, simtime)?,
-                        Ordering::SeqCst,
-                    );
-                    supply_surplus += self.energy_diverted[timestep_idx].load(Ordering::SeqCst);
-                }
+                self.sort_by_priority(&batteries_and_diverters)?
             }
-            Some(priority) => {
-                for item in priority {
-                    if let ("ElectricBattery", electric_battery) =
-                        (item.as_str(), self.get_batteries()?)
-                    // TODO 1.0.0a9 migration
-                    {
-                        let (charging_condition, _, can_charge_if_not_full) =
-                            if electric_battery[0].is_grid_charging_possible() {
-                                (false, Some(0.), false)
-                            // self.is_charging_from_grid(electric_battery, simtime).expect("Expected to be able to determine whether charging from grid if grid charging is possible on battery.")
-                            } else {
-                                (false, None, false)
-                            };
-                        let energy_out_of_battery = electric_battery[0].charge_discharge_battery(
-                            supply_surplus,
-                            charging_condition,
-                            simtime,
-                        );
-                        supply_surplus -= energy_out_of_battery;
-                        self.energy_into_battery_from_generation[simtime.index]
-                            .store(-energy_out_of_battery, Ordering::SeqCst);
-                        let energy_out_of_battery = electric_battery[0].charge_discharge_battery(
-                            demand_not_met,
-                            can_charge_if_not_full,
-                            simtime,
-                        );
-                        demand_not_met -= energy_out_of_battery;
-                        self.energy_battery_to_consumption[simtime.index]
-                            .store(-energy_out_of_battery, Ordering::SeqCst);
-                    } else if let ("diverter", Some(diverter)) =
-                        (item.as_str(), self.get_diverters()?.first())
-                    {
-                        self.energy_diverted[simtime.index].store(
-                            diverter.read().divert_surplus(supply_surplus, simtime)?,
-                            Ordering::SeqCst,
-                        );
-                        supply_surplus +=
-                            self.energy_diverted[simtime.index].load(Ordering::SeqCst);
-                    }
+        };
+
+        for item in items_by_priority {
+            match item {
+                BatteryOrDiverter::Battery(battery) => {
+                    (supply_surplus, demand_not_met) = self.charge_discharge_battery(
+                        battery,
+                        supply_surplus,
+                        demand_not_met,
+                        simtime,
+                    )?
+                }
+                BatteryOrDiverter::Diverter(diverter) => {
+                    supply_surplus = self.divert_surplus_to_pv(diverter, supply_surplus, simtime)?
                 }
             }
         }
 
         if self.is_export_capable {
+            if let Some(power_limit_export) = self.power_limit_export {
+                // Cap grid export at the whole-house export power limit. Convert the power
+                // limit (kW) to the maximum energy exportable in this timestep (kWh).
+                // supply_surplus is negative by convention, so limiting the export magnitude
+                // means taking the less negative of the surplus and the negative limit (the
+                // max of the two). Any surplus above the limit is curtailed: it is neither
+                // exported nor stored, having already been offered to self-consumption,
+                // battery and diverter above. Battery discharge later in the timestep shares
+                // this same limit (see calc_energy_export_from_battery_to_grid).
+                let max_energy_export = power_limit_export * simtime.timestep;
+                let surplus_before_cap = supply_surplus;
+                let supply_surplus = max_of_2(supply_surplus, -max_energy_export);
+                // Curtailed generation: the share that could be neither used nor exported.
+                // supply_surplus is negative by convention and the cap makes it less negative,
+                // so (supply_surplus - surplus_before_cap) is the reduction in export
+                // magnitude, i.e. the curtailed energy (kWh, >= 0).
+                self.generation_curtailed
+                    .get(timestep_idx)
+                    .unwrap()
+                    .fetch_add(supply_surplus - surplus_before_cap, Ordering::SeqCst);
+            }
             self.supply_surplus
                 .get(timestep_idx)
                 .unwrap()
@@ -900,6 +876,68 @@ impl EnergySupply {
             .fetch_sub(supply_consumed, Ordering::SeqCst);
 
         Ok(())
+    }
+
+    /// Diverts surplus energy to a diverter and returns the new surplus
+    fn divert_surplus_to_pv(
+        &self,
+        diverter: Arc<RwLock<dyn SurplusDiverting>>,
+        supply_surplus: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let diverted = diverter.read().divert_surplus(supply_surplus, simtime)?;
+        self.energy_diverted
+            .get(simtime.index)
+            .unwrap()
+            .fetch_add(diverted, Ordering::SeqCst);
+
+        Ok(supply_surplus + diverted)
+    }
+
+    /// Adjusts supply_surplus and demand_not_met by charging or discharging the battery. Returns the new supply_surplus, and demand_not_met
+    fn charge_discharge_battery(
+        &self,
+        battery: Arc<ElectricBattery>,
+        supply_surplus: f64,
+        demand_not_met: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        // See if the battery can deal with excess supply/demand for this timestep
+        // supply_surplus is -ve by convention and demand_not_met is +ve
+        // TODO (from Python): assumption made here that supply is done before demand, could
+        // revise in future if more evidence becomes available.
+        let (charging_condition, _, can_charge_if_not_full) = if battery.is_grid_charging_possible()
+        {
+            self.is_charging_from_grid(&battery, simtime)?
+        } else {
+            (false, Default::default(), false)
+        };
+
+        let mut supply_surplus = supply_surplus;
+        if supply_surplus < 0. {
+            let energy_battery_to_consumption =
+                battery.charge_discharge_battery(supply_surplus, charging_condition, simtime);
+            supply_surplus -= energy_battery_to_consumption;
+            self.energy_into_battery_from_generation[simtime.index]
+                .fetch_add(-energy_battery_to_consumption, Ordering::SeqCst);
+        }
+
+        let mut demand_not_met = demand_not_met;
+        if demand_not_met > 0. {
+            // Calling is_charging_from_grid threshold level to avoid
+            // discharging from the electric battery and
+            // triggering lots of small grid recharge events
+            // when the level of charge is close to the threshold
+            if !can_charge_if_not_full {
+                let energy_battery_to_consumption =
+                    battery.charge_discharge_battery(demand_not_met, false, simtime);
+                demand_not_met -= energy_battery_to_consumption;
+                self.energy_battery_to_consumption[simtime.index]
+                    .fetch_add(-energy_battery_to_consumption, Ordering::SeqCst);
+            }
+        }
+
+        Ok((supply_surplus, demand_not_met))
     }
 
     /// wrapper that applies relevant function to obtain
