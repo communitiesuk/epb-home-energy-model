@@ -2863,7 +2863,6 @@ mod tests {
         }
 
         #[rstest]
-        #[ignore = "todo 1.0.0a9 migration"]
         fn test_add_appliance_demand(
             smart_appliance_control: SmartApplianceControl,
             mut simulation_time_iterator: SimulationTimeIterator,
@@ -2879,11 +2878,40 @@ mod tests {
         }
 
         #[rstest]
-        #[ignore = "todo 1.0.0a9 migration"]
+
         fn test_update_demand_buffer(
-            smart_appliance_control: SmartApplianceControl,
-            simulation_time_iterator: SimulationTimeIterator,
+            energy_supply: Arc<RwLock<EnergySupply>>,
+            simulation_time_iterator: SimulationTimeIterator
         ) {
+            // we create our own instance of SmartApplianceControl here
+            // because we need different test data
+            // NOTE in Python this is changed in an earlier test
+            // but the state stays modified for this test
+
+            let power_timeseries = &IndexMap::from([("mains elec".into(), vec![100.; 12])]);
+            let non_appliance_demand_24hr =
+                IndexMap::from([("mains elec".into(), vec![[0.1]; 12].into_flattened())]);
+            let battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>> =
+                IndexMap::from([("mains elec".into(), vec![0.0; 12])]);
+            let battery_24hr = SmartApplianceBattery {
+                battery_state_of_charge,
+                energy_into_battery_from_generation: IndexMap::new(),
+                energy_into_battery_from_grid: IndexMap::new(),
+                energy_out_of_battery: IndexMap::new(),
+            };
+            let energy_supplies = &IndexMap::from([("mains elec".into(), energy_supply)]);
+
+            let smart_appliance_control = SmartApplianceControl::new(
+                power_timeseries,
+                2.,
+                &simulation_time_iterator,
+                non_appliance_demand_24hr,
+                battery_24hr,
+                energy_supplies,
+                vec!["Clothes_drying".into()],
+            )
+            .unwrap();
+
             for t_it in simulation_time_iterator {
                 smart_appliance_control.update_demand_buffer(t_it).unwrap();
                 assert_eq!(
