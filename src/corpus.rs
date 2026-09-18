@@ -3703,6 +3703,7 @@ fn schedule_event_from_input(
         name,
         event_type,
         existing_schedule,
+        None, // Set to allow compilation during 1.0.0a9 migrations,
     )
 }
 
