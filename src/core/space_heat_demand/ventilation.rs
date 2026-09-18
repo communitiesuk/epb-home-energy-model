@@ -2878,14 +2878,12 @@ impl InfiltrationVentilation {
     ) -> anyhow::Result<Self> {
         let ventilation_zone_base_height = input.ventilation_zone_base_height;
         let ventilation_zone_height = input.leaks.ventilation_zone_height;
-        // TODO potentially revert back to retaining all windows after checking what the intention is in the upstream python
-        let unique_building_elements: IndexMap<std::string::String, BuildingElement> = zones
+        // rather than needing to worry about key clashes between zones as the upstream python does, just collate an iterator over the elements themselves
+        let unique_building_elements = zones
             .values()
-            .flat_map(|zone| zone.building_elements.clone())
-            .collect();
+            .flat_map(|zone| zone.building_elements.values());
 
         let windows = unique_building_elements
-            .values()
             .map(|building_element| {
                 anyhow::Ok(
                     if let BuildingElement::Transparent {
