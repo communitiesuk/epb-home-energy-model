@@ -62,8 +62,8 @@ use crate::core::space_heat_demand::ventilation::{
     InfiltrationVentilation, MechVentType, MechanicalVentilation, VentilationDetailedResult,
 };
 use crate::core::space_heat_demand::zone::{
-    calc_vent_heat_transfer_coeff, AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName,
-    Zone, ZoneTempInternalAir,
+    calc_vent_heat_transfer_coeff, AirChangesPerHourArgument, HeatBalance, HeatBalanceAggregate,
+    HeatBalanceAggregateSerdeField, Zone, ZoneTempInternalAir,
 };
 use crate::core::units::{
     kelvin_to_celsius, Orientation360, DAYS_PER_YEAR, HOURS_PER_DAY, SECONDS_PER_HOUR,
@@ -126,6 +126,7 @@ use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
+use serde_json::Value;
 use smartstring::alias::String;
 use std::borrow::Cow;
 use std::default::Default;
@@ -2286,9 +2287,15 @@ impl Corpus {
         let mut space_cool_provided_dict: IndexMap<Option<Arc<str>>, Vec<f64>> = Default::default();
         let mut zone_list: Vec<Arc<str>> = Default::default();
         let mut heat_balance_all_dict: HeatBalanceAllResults = IndexMap::from([
-            (HeatBalanceFieldName::AirNode, Default::default()),
-            (HeatBalanceFieldName::InternalBoundary, Default::default()),
-            (HeatBalanceFieldName::ExternalBoundary, Default::default()),
+            (HeatBalanceAggregateSerdeField::AirNode, Default::default()),
+            (
+                HeatBalanceAggregateSerdeField::InternalBoundary,
+                Default::default(),
+            ),
+            (
+                HeatBalanceAggregateSerdeField::ExternalBoundary,
+                Default::default(),
+            ),
         ]);
         let mut heat_source_wet_results_dict: IndexMap<Arc<str>, ResultsPerTimestep> =
             Default::default();
@@ -2311,7 +2318,10 @@ impl Corpus {
             space_cool_demand_dict.insert(z_name.clone(), vec_capacity());
             zone_list.push(z_name.clone());
             for heat_balance_value in heat_balance_all_dict.values_mut() {
-                heat_balance_value.insert(z_name.clone(), Default::default());
+                heat_balance_value.insert(
+                    z_name.clone(),
+                    HeatBalanceAggregate::with_capacity(simulation_time.total_steps()),
+                );
             }
         }
 
@@ -2530,18 +2540,29 @@ impl Corpus {
 
             for (z_name, hb_dict) in heat_balance_dict {
                 if let Some(hb_dict) = hb_dict {
-                    for (hb_name, gains_losses) in hb_dict.as_index_map() {
-                        for (heat_gains_losses_name, heat_gains_losses_value) in gains_losses {
-                            heat_balance_all_dict
-                                .get_mut(&hb_name)
-                                .unwrap()
-                                .get_mut(&z_name)
-                                .unwrap()
-                                .entry(heat_gains_losses_name)
-                                .or_default()
-                                .push(heat_gains_losses_value);
-                        }
-                    }
+                    let HeatBalance {
+                        air_node,
+                        internal_boundary,
+                        external_boundary,
+                    } = hb_dict;
+                    let air_node_aggregate = heat_balance_all_dict
+                        .get_mut(&HeatBalanceAggregateSerdeField::AirNode)
+                        .unwrap()
+                        .get_mut(&z_name)
+                        .unwrap();
+                    air_node_aggregate.push_air_node(air_node);
+                    let internal_boundary_aggregate = heat_balance_all_dict
+                        .get_mut(&HeatBalanceAggregateSerdeField::InternalBoundary)
+                        .unwrap()
+                        .get_mut(&z_name)
+                        .unwrap();
+                    internal_boundary_aggregate.push_internal_boundary(internal_boundary);
+                    let external_boundary_aggregate = heat_balance_all_dict
+                        .get_mut(&HeatBalanceAggregateSerdeField::ExternalBoundary)
+                        .unwrap()
+                        .get_mut(&z_name)
+                        .unwrap();
+                    external_boundary_aggregate.push_external_boundary(external_boundary);
                 }
             }
 
@@ -2797,7 +2818,13 @@ impl Corpus {
             ductwork_gains: ductwork_gains_list,
             heat_balance_all: heat_balance_all_dict
                 .into_iter()
-                .map(|(k, v)| (Arc::<str>::from(k), v))
+                .map(|(k, v)| {
+                    let serialized: Value = serde_json::to_value(v).unwrap();
+                    let as_index_map: IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>> =
+                        serde_json::from_value(serialized).unwrap();
+
+                    (Arc::<str>::from(k.as_str()), as_index_map)
+                })
                 .collect(), // TODO (from Python) could be output object too fixed keys...
             heat_source_wet_results: heat_source_wet_results_dict,
             heat_source_wet_results_annual: heat_source_wet_results_annual_dict,
@@ -3677,7 +3704,7 @@ fn shareable_fn(num: &Arc<AtomicF64>) -> TempInternalAirFn {
 }
 
 pub(crate) type HeatBalanceAllResults =
-    IndexMap<HeatBalanceFieldName, IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>>>;
+    IndexMap<HeatBalanceAggregateSerdeField, IndexMap<Arc<str>, HeatBalanceAggregate>>;
 
 struct SpaceHeatingCalculation {
     gains_internal_zone: IndexMap<Arc<str>, f64>,
@@ -3949,7 +3976,7 @@ fn zone_from_input(
                     )?,
                 ))
             })
-            .collect::<anyhow::Result<IndexMap<String, Arc<BuildingElement>>>>()?,
+            .collect::<anyhow::Result<IndexMap<std::string::String, Arc<BuildingElement>>>>()?,
         thermal_bridging_from_input(&input.thermal_bridging),
         infiltration_ventilation,
         external_conditions.air_temp(&simulation_time_iterator.current_iteration()),

@@ -13,13 +13,12 @@ use crate::input::{ZoneTemperatureControlBasis, PITCH_LIMIT_HORIZ_FLOOR};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
 use approx::relative_eq;
-use field_types::FieldName;
 use fsum::FSum;
 use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
 use parking_lot::RwLock;
-use serde_enum_str::Serialize_enum_str;
-use smartstring::alias::String;
+use serde::Serialize;
+use serde_fields::SerdeField;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::sync::Arc;
@@ -1543,12 +1542,8 @@ impl AirChangesPerHourArgument {
     }
 }
 
-pub(crate) trait GainsLossesAsIndexMap {
-    fn as_index_map(&self) -> IndexMap<Arc<str>, f64>;
-}
-
-#[derive(Debug, FieldName, PartialEq)]
-#[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(test, derive(Serialize))]
 pub struct HeatBalanceAirNode {
     pub solar_gains: f64,
     pub internal_gains: f64,
@@ -1559,73 +1554,54 @@ pub struct HeatBalanceAirNode {
     pub fabric_heat_loss: f64,
 }
 
-impl From<HeatBalanceAirNodeFieldName> for Arc<str> {
-    fn from(value: HeatBalanceAirNodeFieldName) -> Self {
-        value.as_str().into()
-    }
+#[derive(Debug, SerdeField, Serialize)]
+pub struct HeatBalanceAirNodeAggregate {
+    #[serde(rename = "solar gains")]
+    pub solar_gains: Vec<f64>,
+    #[serde(rename = "internal gains")]
+    pub internal_gains: Vec<f64>,
+    #[serde(rename = "heating or cooling system gains")]
+    pub heating_or_cooling_system_gains: Vec<f64>,
+    #[serde(rename = "energy to change internal temperature")]
+    pub energy_to_change_internal_temperature: Vec<f64>,
+    #[serde(rename = "thermal_bridges")]
+    // NB. casing scheme is correctly different from those above (correctly in sense this fits with the upstream Python)
+    pub thermal_bridges: Vec<f64>,
+    #[serde(rename = "infiltration_ventilation")]
+    pub infiltration_ventilation: Vec<f64>,
+    #[serde(rename = "fabric")] // upstream Python uses just "fabric" for this
+    pub fabric_heat_loss: Vec<f64>,
 }
 
-impl HeatBalanceAirNodeFieldName {
-    fn as_str(&self) -> &str {
-        match self {
-            HeatBalanceAirNodeFieldName::SolarGains => "solar gains",
-            HeatBalanceAirNodeFieldName::InternalGains => "internal gains",
-            HeatBalanceAirNodeFieldName::HeatingOrCoolingSystemGains => {
-                "heating or cooling system gains"
-            }
-            HeatBalanceAirNodeFieldName::EnergyToChangeInternalTemperature => {
-                "energy to change internal temperature"
-            }
-            HeatBalanceAirNodeFieldName::ThermalBridges => "thermal_bridges", // NB. casing scheme is correctly different from those above (correctly in sense this fits with the upstream Python)
-            HeatBalanceAirNodeFieldName::InfiltrationVentilation => "infiltration_ventilation",
-            HeatBalanceAirNodeFieldName::FabricHeatLoss => "fabric", // upstream Python uses just "fabric" for this
+impl HeatBalanceAirNodeAggregate {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            solar_gains: Vec::with_capacity(capacity),
+            internal_gains: Vec::with_capacity(capacity),
+            heating_or_cooling_system_gains: Vec::with_capacity(capacity),
+            energy_to_change_internal_temperature: Vec::with_capacity(capacity),
+            thermal_bridges: Vec::with_capacity(capacity),
+            infiltration_ventilation: Vec::with_capacity(capacity),
+            fabric_heat_loss: Vec::with_capacity(capacity),
         }
     }
-}
 
-impl GainsLossesAsIndexMap for HeatBalanceAirNode {
-    fn as_index_map(&self) -> IndexMap<Arc<str>, f64> {
-        let Self {
-            solar_gains,
-            internal_gains,
-            heating_or_cooling_system_gains,
-            energy_to_change_internal_temperature,
-            thermal_bridges,
-            infiltration_ventilation,
-            fabric_heat_loss,
-        } = self;
-        IndexMap::from([
-            (HeatBalanceAirNodeFieldName::SolarGains.into(), *solar_gains),
-            (
-                HeatBalanceAirNodeFieldName::InternalGains.into(),
-                *internal_gains,
-            ),
-            (
-                HeatBalanceAirNodeFieldName::HeatingOrCoolingSystemGains.into(),
-                *heating_or_cooling_system_gains,
-            ),
-            (
-                HeatBalanceAirNodeFieldName::EnergyToChangeInternalTemperature.into(),
-                *energy_to_change_internal_temperature,
-            ),
-            (
-                HeatBalanceAirNodeFieldName::ThermalBridges.into(),
-                *thermal_bridges,
-            ),
-            (
-                HeatBalanceAirNodeFieldName::InfiltrationVentilation.into(),
-                *infiltration_ventilation,
-            ),
-            (
-                HeatBalanceAirNodeFieldName::FabricHeatLoss.into(),
-                *fabric_heat_loss,
-            ),
-        ])
+    pub fn push(&mut self, air_node: HeatBalanceAirNode) {
+        self.solar_gains.push(air_node.solar_gains);
+        self.internal_gains.push(air_node.internal_gains);
+        self.heating_or_cooling_system_gains
+            .push(air_node.heating_or_cooling_system_gains);
+        self.energy_to_change_internal_temperature
+            .push(air_node.energy_to_change_internal_temperature);
+        self.thermal_bridges.push(air_node.thermal_bridges);
+        self.infiltration_ventilation
+            .push(air_node.infiltration_ventilation);
+        self.fabric_heat_loss.push(air_node.fabric_heat_loss);
     }
 }
 
-#[derive(Debug, FieldName, PartialEq)]
-#[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(test, derive(Serialize))]
 pub struct HeatBalanceInternalBoundary {
     pub fabric_int_air_convective: f64,
     pub fabric_int_sol: f64,
@@ -1633,56 +1609,37 @@ pub struct HeatBalanceInternalBoundary {
     pub fabric_int_heat_cool: f64,
 }
 
-impl From<HeatBalanceInternalBoundaryFieldName> for Arc<str> {
-    fn from(value: HeatBalanceInternalBoundaryFieldName) -> Self {
-        value.as_str().into()
-    }
+#[derive(Debug, SerdeField, Serialize)]
+pub struct HeatBalanceInternalBoundaryAggregate {
+    pub fabric_int_air_convective: Vec<f64>,
+    pub fabric_int_sol: Vec<f64>,
+    pub fabric_int_int_gains: Vec<f64>,
+    pub fabric_int_heat_cool: Vec<f64>,
 }
 
-impl HeatBalanceInternalBoundaryFieldName {
-    fn as_str(&self) -> &str {
-        match self {
-            HeatBalanceInternalBoundaryFieldName::FabricIntAirConvective => {
-                "fabric_int_air_convective"
-            }
-            HeatBalanceInternalBoundaryFieldName::FabricIntSol => "fabric_int_sol",
-            HeatBalanceInternalBoundaryFieldName::FabricIntIntGains => "fabric_int_int_gains",
-            HeatBalanceInternalBoundaryFieldName::FabricIntHeatCool => "fabric_int_heat_cool",
+impl HeatBalanceInternalBoundaryAggregate {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            fabric_int_air_convective: Vec::with_capacity(capacity),
+            fabric_int_sol: Vec::with_capacity(capacity),
+            fabric_int_int_gains: Vec::with_capacity(capacity),
+            fabric_int_heat_cool: Vec::with_capacity(capacity),
         }
     }
-}
 
-impl GainsLossesAsIndexMap for HeatBalanceInternalBoundary {
-    fn as_index_map(&self) -> IndexMap<Arc<str>, f64> {
-        let Self {
-            fabric_int_air_convective,
-            fabric_int_sol,
-            fabric_int_int_gains,
-            fabric_int_heat_cool,
-        } = self;
-        IndexMap::from([
-            (
-                HeatBalanceInternalBoundaryFieldName::FabricIntAirConvective.into(),
-                *fabric_int_air_convective,
-            ),
-            (
-                HeatBalanceInternalBoundaryFieldName::FabricIntSol.into(),
-                *fabric_int_sol,
-            ),
-            (
-                HeatBalanceInternalBoundaryFieldName::FabricIntIntGains.into(),
-                *fabric_int_int_gains,
-            ),
-            (
-                HeatBalanceInternalBoundaryFieldName::FabricIntHeatCool.into(),
-                *fabric_int_heat_cool,
-            ),
-        ])
+    pub fn push(&mut self, boundary: HeatBalanceInternalBoundary) {
+        self.fabric_int_air_convective
+            .push(boundary.fabric_int_air_convective);
+        self.fabric_int_sol.push(boundary.fabric_int_sol);
+        self.fabric_int_int_gains
+            .push(boundary.fabric_int_int_gains);
+        self.fabric_int_heat_cool
+            .push(boundary.fabric_int_heat_cool);
     }
 }
 
-#[derive(Debug, FieldName, PartialEq)]
-#[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(test, derive(Serialize))]
 pub struct HeatBalanceExternalBoundary {
     pub solar_gains: f64,
     pub internal_gains: f64,
@@ -1700,156 +1657,121 @@ pub struct HeatBalanceExternalBoundary {
     pub ztu_fabric_ext: f64,
 }
 
-impl From<HeatBalanceExternalBoundaryFieldName> for Arc<str> {
-    fn from(value: HeatBalanceExternalBoundaryFieldName) -> Self {
-        value.as_str().into()
-    }
+#[derive(Debug, Serialize)]
+pub struct HeatBalanceExternalBoundaryAggregate {
+    #[serde(rename = "solar gains")]
+    pub solar_gains: Vec<f64>,
+    #[serde(rename = "internal gains")]
+    pub internal_gains: Vec<f64>,
+    #[serde(rename = "heating or cooling system gains")]
+    pub heating_or_cooling_system_gains: Vec<f64>,
+    #[serde(rename = "thermal_bridges")] // NB. this correctly diverges from above variants
+    pub thermal_bridges: Vec<f64>,
+    #[serde(rename = "infiltration_ventilation")]
+    pub infiltration_ventilation: Vec<f64>,
+    #[serde(rename = "fabric_ext_air_convective")]
+    pub fabric_ext_air_convective: Vec<f64>,
+    #[serde(rename = "fabric_ext_air_radiative")]
+    pub fabric_ext_air_radiative: Vec<f64>,
+    #[serde(rename = "fabric_ext_sol")]
+    pub fabric_ext_sol: Vec<f64>,
+    #[serde(rename = "fabric_ext_sky")]
+    pub fabric_ext_sky: Vec<f64>,
+    #[serde(rename = "opaque_fabric_ext")]
+    pub opaque_fabric_ext: Vec<f64>,
+    #[serde(rename = "transparent_fabric_ext")]
+    pub transparent_fabric_ext: Vec<f64>,
+    #[serde(rename = "ground_fabric_ext")]
+    pub ground_fabric_ext: Vec<f64>,
+    #[serde(rename = "ZTC_fabric_ext")]
+    pub ztc_fabric_ext: Vec<f64>,
+    #[serde(rename = "ZTU_fabric_ext")]
+    pub ztu_fabric_ext: Vec<f64>,
 }
 
-impl HeatBalanceExternalBoundaryFieldName {
-    fn as_str(&self) -> &str {
-        match self {
-            HeatBalanceExternalBoundaryFieldName::SolarGains => "solar gains",
-            HeatBalanceExternalBoundaryFieldName::InternalGains => "internal gains",
-            HeatBalanceExternalBoundaryFieldName::HeatingOrCoolingSystemGains => {
-                "heating or cooling system gains"
-            }
-            HeatBalanceExternalBoundaryFieldName::ThermalBridges => "thermal_bridges", // NB. this correctly diverges from above variants
-            HeatBalanceExternalBoundaryFieldName::InfiltrationVentilation => {
-                "infiltration_ventilation"
-            }
-            HeatBalanceExternalBoundaryFieldName::FabricExtAirConvective => {
-                "fabric_ext_air_convective"
-            }
-            HeatBalanceExternalBoundaryFieldName::FabricExtAirRadiative => {
-                "fabric_ext_air_radiative"
-            }
-            HeatBalanceExternalBoundaryFieldName::FabricExtSol => "fabric_ext_sol",
-            HeatBalanceExternalBoundaryFieldName::FabricExtSky => "fabric_ext_sky",
-            HeatBalanceExternalBoundaryFieldName::OpaqueFabricExt => "opaque_fabric_ext",
-            HeatBalanceExternalBoundaryFieldName::TransparentFabricExt => "transparent_fabric_ext",
-            HeatBalanceExternalBoundaryFieldName::GroundFabricExt => "ground_fabric_ext",
-            HeatBalanceExternalBoundaryFieldName::ZtcFabricExt => "ZTC_fabric_ext",
-            HeatBalanceExternalBoundaryFieldName::ZtuFabricExt => "ZTU_fabric_ext",
+impl HeatBalanceExternalBoundaryAggregate {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            solar_gains: Vec::with_capacity(capacity),
+            internal_gains: Vec::with_capacity(capacity),
+            heating_or_cooling_system_gains: Vec::with_capacity(capacity),
+            thermal_bridges: Vec::with_capacity(capacity),
+            infiltration_ventilation: Vec::with_capacity(capacity),
+            fabric_ext_air_convective: Vec::with_capacity(capacity),
+            fabric_ext_air_radiative: Vec::with_capacity(capacity),
+            fabric_ext_sol: Vec::with_capacity(capacity),
+            fabric_ext_sky: Vec::with_capacity(capacity),
+            opaque_fabric_ext: Vec::with_capacity(capacity),
+            transparent_fabric_ext: Vec::with_capacity(capacity),
+            ground_fabric_ext: Vec::with_capacity(capacity),
+            ztc_fabric_ext: Vec::with_capacity(capacity),
+            ztu_fabric_ext: Vec::with_capacity(capacity),
         }
     }
-}
 
-impl GainsLossesAsIndexMap for HeatBalanceExternalBoundary {
-    fn as_index_map(&self) -> IndexMap<Arc<str>, f64> {
-        let Self {
-            solar_gains,
-            internal_gains,
-            heating_or_cooling_system_gains,
-            thermal_bridges,
-            infiltration_ventilation,
-            fabric_ext_air_convective,
-            fabric_ext_air_radiative,
-            fabric_ext_sol,
-            fabric_ext_sky,
-            opaque_fabric_ext,
-            transparent_fabric_ext,
-            ground_fabric_ext,
-            ztc_fabric_ext,
-            ztu_fabric_ext,
-        } = self;
-        IndexMap::from([
-            (
-                HeatBalanceExternalBoundaryFieldName::SolarGains.into(),
-                *solar_gains,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::InternalGains.into(),
-                *internal_gains,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::HeatingOrCoolingSystemGains.into(),
-                *heating_or_cooling_system_gains,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::ThermalBridges.into(),
-                *thermal_bridges,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::InfiltrationVentilation.into(),
-                *infiltration_ventilation,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::FabricExtAirConvective.into(),
-                *fabric_ext_air_convective,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::FabricExtAirRadiative.into(),
-                *fabric_ext_air_radiative,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::FabricExtSol.into(),
-                *fabric_ext_sol,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::FabricExtSky.into(),
-                *fabric_ext_sky,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::OpaqueFabricExt.into(),
-                *opaque_fabric_ext,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::TransparentFabricExt.into(),
-                *transparent_fabric_ext,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::GroundFabricExt.into(),
-                *ground_fabric_ext,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::ZtcFabricExt.into(),
-                *ztc_fabric_ext,
-            ),
-            (
-                HeatBalanceExternalBoundaryFieldName::ZtuFabricExt.into(),
-                *ztu_fabric_ext,
-            ),
-        ])
+    pub fn push(&mut self, boundary: HeatBalanceExternalBoundary) {
+        self.solar_gains.push(boundary.solar_gains);
+        self.internal_gains.push(boundary.internal_gains);
+        self.heating_or_cooling_system_gains
+            .push(boundary.heating_or_cooling_system_gains);
+        self.thermal_bridges.push(boundary.thermal_bridges);
+        self.infiltration_ventilation
+            .push(boundary.infiltration_ventilation);
+        self.fabric_ext_air_convective
+            .push(boundary.fabric_ext_air_convective);
+        self.fabric_ext_air_radiative
+            .push(boundary.fabric_ext_air_radiative);
+        self.fabric_ext_sol.push(boundary.fabric_ext_sol);
+        self.fabric_ext_sky.push(boundary.fabric_ext_sky);
+        self.opaque_fabric_ext.push(boundary.opaque_fabric_ext);
+        self.transparent_fabric_ext
+            .push(boundary.transparent_fabric_ext);
+        self.ground_fabric_ext.push(boundary.ground_fabric_ext);
+        self.ztc_fabric_ext.push(boundary.ztc_fabric_ext);
+        self.ztu_fabric_ext.push(boundary.ztu_fabric_ext);
     }
 }
 
-#[derive(Debug, FieldName, PartialEq)]
-#[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
+#[derive(Debug, PartialEq)]
+#[cfg_attr(test, derive(Serialize))]
 pub struct HeatBalance {
     pub air_node: HeatBalanceAirNode,
     pub internal_boundary: HeatBalanceInternalBoundary,
     pub external_boundary: HeatBalanceExternalBoundary,
 }
 
-impl From<HeatBalanceFieldName> for Arc<str> {
-    fn from(value: HeatBalanceFieldName) -> Self {
-        serde_json::to_value(&value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .into()
+#[derive(Debug, Serialize, SerdeField)]
+pub struct HeatBalanceAggregate {
+    pub air_node: HeatBalanceAirNodeAggregate,
+    pub internal_boundary: HeatBalanceInternalBoundaryAggregate,
+    pub external_boundary: HeatBalanceExternalBoundaryAggregate,
+}
+
+impl Hash for HeatBalanceAggregateSerdeField {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
     }
 }
 
-impl HeatBalance {
-    pub(crate) fn as_index_map(&self) -> IndexMap<HeatBalanceFieldName, IndexMap<Arc<str>, f64>> {
-        let Self {
-            air_node,
-            internal_boundary,
-            external_boundary,
-        } = self;
-        IndexMap::from([
-            (HeatBalanceFieldName::AirNode, (*air_node).as_index_map()),
-            (
-                HeatBalanceFieldName::InternalBoundary,
-                (*internal_boundary).as_index_map(),
-            ),
-            (
-                HeatBalanceFieldName::ExternalBoundary,
-                (*external_boundary).as_index_map(),
-            ),
-        ])
+impl HeatBalanceAggregate {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            air_node: HeatBalanceAirNodeAggregate::with_capacity(capacity),
+            internal_boundary: HeatBalanceInternalBoundaryAggregate::with_capacity(capacity),
+            external_boundary: HeatBalanceExternalBoundaryAggregate::with_capacity(capacity),
+        }
+    }
+
+    pub fn push_air_node(&mut self, air_node: HeatBalanceAirNode) {
+        self.air_node.push(air_node);
+    }
+
+    pub fn push_internal_boundary(&mut self, internal_boundary: HeatBalanceInternalBoundary) {
+        self.internal_boundary.push(internal_boundary);
+    }
+
+    pub fn push_external_boundary(&mut self, external_boundary: HeatBalanceExternalBoundary) {
+        self.external_boundary.push(external_boundary);
     }
 }
 
@@ -1877,6 +1799,8 @@ mod tests {
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
+    use std::collections::HashMap;
+    use std::fmt::Display;
 
     const BASE_AIR_TEMPS: [f64; 24] = [
         0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 7.5, 10.0, 12.5, 15.0, 19.5, 17.0,
@@ -2406,27 +2330,32 @@ mod tests {
         }
     }
 
-    fn maps_approx_equal(
-        actual: &IndexMap<Arc<str>, f64>,
-        expected: &IndexMap<Arc<str>, f64>,
+    fn maps_approx_equal<T>(
+        actual: &HashMap<T, HashMap<T, f64>>,
+        expected: &HashMap<T, HashMap<T, f64>>,
         tol: f64,
-    ) -> bool {
+    ) -> bool
+    where
+        T: Eq + Hash + Display,
+    {
         if actual.len() != expected.len() {
             return false;
         }
 
-        for (key, &expected_value) in expected {
-            if let Some(actual_value) = actual.get(key) {
-                if (expected_value - actual_value).abs() > tol {
-                    eprintln!(
-                        "Field '{}' differs. Expected {}, got {}",
-                        key, expected_value, actual_value
-                    );
+        for (node_key, node) in expected.iter() {
+            for (key, expected_value) in node {
+                if let Some(actual_value) = actual[node_key].get(key) {
+                    if (expected_value - actual_value).abs() > tol {
+                        eprintln!(
+                            "Field '{}' differs. Expected {}, got {}",
+                            key, expected_value, actual_value
+                        );
+                        return false;
+                    }
+                } else {
+                    eprintln!("Could not find expected key '{key}'");
                     return false;
                 }
-            } else {
-                eprintln!("Could not find expected key '{key}'");
-                return false;
             }
         }
 
@@ -2467,20 +2396,20 @@ mod tests {
                 ztc_fabric_ext: 0.,
                 ztu_fabric_ext: -434.43500426106175,
             },
-        }
-        .as_index_map();
+        };
         let simtime = simulation_time().iter().next().unwrap();
         let actual_heat_balance = zone(thermal_bridging_objects, None)
             .unwrap()
             .update_temperatures(1800., 10., 200., 220., 0., 1., 0.4, 10., simtime)
             .unwrap()
-            .unwrap()
-            .as_index_map();
+            .unwrap();
 
-        for (key, actual_value) in actual_heat_balance {
-            let expected_value = expected_heat_balance.get(&key).unwrap();
-            assert!(maps_approx_equal(&actual_value, expected_value, 1e-8));
-        }
+        let actual_map: HashMap<String, HashMap<String, f64>> =
+            serde_json::from_value(serde_json::to_value(actual_heat_balance).unwrap()).unwrap();
+        let expected_map: HashMap<String, HashMap<String, f64>> =
+            serde_json::from_value(serde_json::to_value(expected_heat_balance).unwrap()).unwrap();
+
+        assert!(maps_approx_equal(&actual_map, &expected_map, 1e-8));
     }
 
     #[test]

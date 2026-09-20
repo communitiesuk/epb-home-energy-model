@@ -155,6 +155,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrayvec"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+
+[[package]]
 name = "async-stream"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1165,6 +1171,7 @@ dependencies = [
  "arbitrary",
  "arc-swap",
  "argmin",
+ "arrayvec",
  "atomic_float",
  "bounded-vec-deque",
  "chrono",
@@ -1195,6 +1202,7 @@ dependencies = [
  "serde",
  "serde-aux",
  "serde-enum-str",
+ "serde_fields",
  "serde_json",
  "serde_repr",
  "serde_valid",
@@ -2831,6 +2839,18 @@ dependencies = [
  "proc-macro2 1.0.106",
  "quote 1.0.46",
  "syn 3.0.1",
+]
+
+[[package]]
+name = "serde_fields"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4ad015b82b7aa2f8c7e74dc47385ca0867abdf6e5212142b2c9bfdfbc99d338"
+dependencies = [
+ "convert_case",
+ "proc-macro2 1.0.106",
+ "quote 1.0.46",
+ "syn 2.0.118",
 ]
 
 [[package]]
