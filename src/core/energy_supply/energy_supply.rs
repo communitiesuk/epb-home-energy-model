@@ -770,6 +770,15 @@ impl EnergySupply {
             }
         }
 
+        self.energy_into_battery_from_generation
+            .get(timestep_idx)
+            .unwrap()
+            .store(0., Ordering::SeqCst);
+        self.energy_battery_to_consumption
+            .get(timestep_idx)
+            .unwrap()
+            .store(0., Ordering::SeqCst);
+
         let supplies_sum =
             FSum::with_all(supplies.iter().map(|d| d.load(Ordering::SeqCst))).value();
         let demands_sum = FSum::with_all(demands.iter().map(|d| d.load(Ordering::SeqCst))).value();
@@ -778,7 +787,6 @@ impl EnergySupply {
             self.beta_factor_function(-supplies_sum, demands_sum, BetaFactorFunction::Pv)?,
             Ordering::SeqCst,
         );
-
         let current_beta_factor = self.beta_factor[timestep_idx].load(Ordering::SeqCst);
 
         // PV elec consumed within dwelling in absence of battery storage or diverter (kWh)
@@ -1723,7 +1731,7 @@ mod tests {
     ) {
         let elec_battery = create_elec_battery(
             false,
-            false,
+            true,
             BatteryLocation::Inside,
             external_conditions,
             simulation_time,
@@ -1805,7 +1813,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "todo 1.0.0a9 migration"]
     fn test_calc_energy_import_export_betafactor(
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
@@ -1815,7 +1822,7 @@ mod tests {
 
         let elec_battery = create_elec_battery(
             false,
-            false,
+            true,
             BatteryLocation::Outside,
             external_conditions,
             simulation_time,
@@ -1824,7 +1831,7 @@ mod tests {
         let builder =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
-            .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
+            .with_electric_battery(indexmap! {"ElectricBattery".into() => elec_battery})
             .build();
 
         let energy_supply = Arc::new(RwLock::new(energy_supply));
@@ -1977,7 +1984,7 @@ mod tests {
         let diverter = Arc::new(RwLock::new(MockDiverter));
         energy_supply
             .write()
-            .connect_diverter(diverter, None)
+            .connect_diverter(diverter, Some("diverter".into()))
             .unwrap();
 
         for (t_idx, simtime) in simulation_time.iter().enumerate() {
@@ -2115,7 +2122,7 @@ mod tests {
         // (the upstream Python shared the same electric battery across energy supplies in this test,
         // so its internal state is not isolated - therefore we need to cannibalise the previous energy
         // supply here for scraps (the electric battery) for use in the next set of assertions)
-        let elec_battery = Arc::into_inner(energy_supply)
+        let elec_batteries = Arc::into_inner(energy_supply)
             .unwrap()
             .into_inner()
             .electric_batteries
@@ -2129,7 +2136,7 @@ mod tests {
         let mut builder =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         builder = builder
-            .with_electric_battery(elec_battery)
+            .with_electric_battery(elec_batteries)
             .with_priority(priority);
 
         let energy_supply = Arc::new(RwLock::new(builder.build()));
