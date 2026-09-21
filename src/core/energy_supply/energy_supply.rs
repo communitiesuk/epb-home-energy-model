@@ -1561,7 +1561,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "todo 1.0.0a9 migration"]
     fn test_battery_with_grid_charging_and_priority(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
@@ -1572,7 +1571,7 @@ mod tests {
         let battery_age = 3.;
         let elec_battery = create_elec_battery(
             true,
-            false,
+            true,
             BatteryLocation::Inside,
             external_conditions,
             simulation_time,
@@ -1580,7 +1579,7 @@ mod tests {
         let builder =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
-            .with_electric_battery(indexmap! {})
+            .with_electric_battery(indexmap! {"ElectricBattery".into() => elec_battery})
             .with_tariff_info(tariff_info)
             .unwrap()
             .with_tariff_data(tariff_data)
@@ -1588,6 +1587,7 @@ mod tests {
             .build();
 
         assert!(energy_supply.tariff_data.is_some());
+        assert_eq!(energy_supply.get_batteries().unwrap().len(), 1);
         assert!(energy_supply.has_battery().unwrap());
 
         let battery_state_of_health = -0.04 * battery_age + 1.;
@@ -1635,18 +1635,18 @@ mod tests {
             (false, Some(0.8), false), // elec_price/efficiency=24.1577282 !< 16
             (false, Some(0.8), false), // elec_price/efficiency=17.394483375 !< 16
         ];
+        let expected_energy_import_from_grid = vec![1.788854381999832, 0., 0., 0., 0., 0., 0., 0.];
+        let expected_energy_export_to_grid = vec![0.; 8];
         let expected_diverted_energy = [0.; 8];
         let expected_generated_energy_into_battery = vec![0.; 8];
         let expected_energy_out_of_battery = vec![0.; 8];
         let expected_battery_state_of_charge = vec![0.8; 8];
-        let expected_energy_import_from_grid = vec![1.788854381999832, 0., 0., 0., 0., 0., 0., 0.];
-        let expected_energy_export_to_grid = vec![0.; 8];
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let battery = energy_supply.get_batteries().unwrap()[0].clone();
+
             assert_eq!(
-                energy_supply
-                    .is_charging_from_grid(&elec_battery, t_it)
-                    .unwrap(),
+                energy_supply.is_charging_from_grid(&battery, t_it).unwrap(),
                 expected_charging_state[t_idx]
             );
             energy_supply
