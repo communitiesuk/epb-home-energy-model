@@ -1676,15 +1676,15 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "todo 1.0.0a9 migration"]
     fn test_battery_with_grid_charging_no_priority(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
         tariff_info: EnergySupplyTariffInfo,
+        tariff_data: TariffData,
     ) {
         let elec_battery = create_elec_battery(
             true,
-            false,
+            true,
             BatteryLocation::Inside,
             external_conditions,
             simulation_time,
@@ -1695,6 +1695,7 @@ mod tests {
             .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
             .with_tariff_info(tariff_info)
             .unwrap()
+            .with_tariff_data(tariff_data)
             .build();
 
         for t_idx in simulation_time.iter() {
