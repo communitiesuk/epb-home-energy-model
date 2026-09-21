@@ -769,7 +769,9 @@ impl RangeTimeControl {
     ) -> anyhow::Result<Self> {
         let duration_advanced_start = duration_advanced_start.unwrap_or(0.);
 
-        if let (ScheduleOrControl::Schedule(ref lower), ScheduleOrControl::Schedule(ref upper)) = (&schedule_lower, &schedule_upper) {
+        if let (ScheduleOrControl::Schedule(ref lower), ScheduleOrControl::Schedule(ref upper)) =
+            (&schedule_lower, &schedule_upper)
+        {
             if lower.len() != upper.len() {
                 bail!("schedule_lower and schedule_upper must be of the same length")
             }
@@ -890,7 +892,7 @@ impl ControlBehaviour for RangeTimeControl {
         if setpnt_lower.is_some() {
             return true;
         }
-        
+
         if simulation_time_iteration.index == 0 {
             return false;
         }
@@ -2553,7 +2555,7 @@ mod tests {
             );
 
             for t_it in simulation_time_iterator() {
-                assert_eq!(range_time_control.is_on(&t_it), false)
+                assert!(!range_time_control.is_on(&t_it))
             }
         }
 
@@ -2721,13 +2723,18 @@ mod tests {
     }
 
     mod test_smart_appliance_control {
-        use super::*;
+        use crate::core::controls::time_control::SmartApplianceControl;
         use crate::core::energy_supply::elec_battery::ElectricBattery;
-        use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
-        use crate::input::{BatteryLocation, FuelType};
+        use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::hem_core::external_conditions::ExternalConditions;
+        use crate::input::{BatteryLocation, FuelType, SmartApplianceBattery};
+        use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
         use approx::assert_relative_eq;
-        use indexmap::indexmap;
+        use indexmap::{indexmap, IndexMap};
+        use parking_lot::RwLock;
         use pretty_assertions::assert_eq;
+        use rstest::*;
+        use std::sync::Arc;
 
         #[fixture]
         fn simulation_time_iterator() -> SimulationTimeIterator {
@@ -2881,7 +2888,7 @@ mod tests {
 
         fn test_update_demand_buffer(
             energy_supply: Arc<RwLock<EnergySupply>>,
-            simulation_time_iterator: SimulationTimeIterator
+            simulation_time_iterator: SimulationTimeIterator,
         ) {
             // we create our own instance of SmartApplianceControl here
             // because we need different test data
@@ -3261,18 +3268,20 @@ mod tests {
         fn test_is_on_separate_control() {
             let simulation_time = SimulationTime::new(0.0, 8.0, 1.0);
             let schedule = [false, true, true, true, false, true, true, true];
-            let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(schedule.into_iter().map(Some).collect(), 0, 1.)));
+            let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+                schedule.into_iter().map(Some).collect(),
+                0,
+                1.,
+            )));
             let charge_control_1 = create_charge_control_with_control(
                 ControlLogicType::Automatic,
                 Some(15.5),
                 Some(external_conditions()),
-                control
-            ).unwrap();
+                control,
+            )
+            .unwrap();
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
-                assert_eq!(
-                    charge_control_1.is_on(&t_it),
-                    schedule[t_idx]
-                );
+                assert_eq!(charge_control_1.is_on(&t_it), schedule[t_idx]);
             }
         }
 
@@ -3626,23 +3635,33 @@ mod tests {
 
         #[rstest]
         fn test_in_required_period_delegates_to_is_on() {
-            let simulation_time_iteration = SimulationTimeIteration { index: 0, time: 0., timestep: 1.  };
+            let simulation_time_iteration = SimulationTimeIteration {
+                index: 0,
+                time: 0.,
+                timestep: 1.,
+            };
 
             let schedule = [true; 8];
-            let charge_control = create_charge_control(ControlLogicType::HeatBattery,
+            let charge_control = create_charge_control(
+                ControlLogicType::HeatBattery,
                 None,
                 Some(external_conditions()),
-                schedule.into()).unwrap();
+                schedule.into(),
+            )
+            .unwrap();
 
             let actual = charge_control.in_required_period(&simulation_time_iteration);
             assert_eq!(actual, Some(true));
 
             let schedule = [false; 8];
 
-            let charge_control = create_charge_control(ControlLogicType::HeatBattery,
+            let charge_control = create_charge_control(
+                ControlLogicType::HeatBattery,
                 None,
                 Some(external_conditions()),
-                schedule.into()).unwrap();
+                schedule.into(),
+            )
+            .unwrap();
 
             let actual = charge_control.in_required_period(&simulation_time_iteration);
             assert_eq!(actual, Some(false));
@@ -3650,15 +3669,24 @@ mod tests {
 
         #[rstest]
         fn test_setpnt_returns_target_charge_when_on() {
-            let simulation_time_iteration = SimulationTimeIteration { index: 0, time: 0., timestep: 1.  };
+            let simulation_time_iteration = SimulationTimeIteration {
+                index: 0,
+                time: 0.,
+                timestep: 1.,
+            };
 
             let schedule = [true; 8];
-            let charge_control = create_charge_control(ControlLogicType::HeatBattery,
+            let charge_control = create_charge_control(
+                ControlLogicType::HeatBattery,
                 None,
                 Some(external_conditions()),
-                schedule.into()).unwrap();
+                schedule.into(),
+            )
+            .unwrap();
 
-            let target_charge = charge_control.target_charge(simulation_time_iteration.clone(), None).unwrap();
+            let target_charge = charge_control
+                .target_charge(simulation_time_iteration, None)
+                .unwrap();
             let setpnt = charge_control.setpnt(&simulation_time_iteration);
 
             assert_eq!(setpnt, Some(target_charge));
@@ -3666,13 +3694,20 @@ mod tests {
 
         #[rstest]
         fn test_setpnt_returns_none_when_off() {
-            let simulation_time_iteration = SimulationTimeIteration { index: 0, time: 0., timestep: 1.  };
+            let simulation_time_iteration = SimulationTimeIteration {
+                index: 0,
+                time: 0.,
+                timestep: 1.,
+            };
 
             let schedule = [false; 8];
-            let charge_control = create_charge_control(ControlLogicType::HeatBattery,
+            let charge_control = create_charge_control(
+                ControlLogicType::HeatBattery,
                 None,
                 Some(external_conditions()),
-                schedule.into()).unwrap();
+                schedule.into(),
+            )
+            .unwrap();
 
             let setpnt = charge_control.setpnt(&simulation_time_iteration);
 
@@ -3830,15 +3865,33 @@ mod tests {
         fn test_invalid_controls(simulation_time_1: SimulationTime) {
             // test that creating a CombinationTimeControl with a RangeTimeControl causes an error
             let range_time_control = RangeTimeControl::new(
-                ScheduleOrControl::Schedule([10.9, 10.9, 10.9, 10.9, 10.9, 10.9, 10.9, 10.9].into_iter().map(Some).collect()),
-                ScheduleOrControl::Schedule([20.3, 20.3, 20.3, 20.3, 20.3, 20.3, 20.3, 20.3].into_iter().map(Some).collect()),
+                ScheduleOrControl::Schedule(
+                    [10.9, 10.9, 10.9, 10.9, 10.9, 10.9, 10.9, 10.9]
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                ),
+                ScheduleOrControl::Schedule(
+                    [20.3, 20.3, 20.3, 20.3, 20.3, 20.3, 20.3, 20.3]
+                        .into_iter()
+                        .map(Some)
+                        .collect(),
+                ),
                 simulation_time_1,
                 0.,
                 1.,
-                None
-            ).unwrap();
+                None,
+            )
+            .unwrap();
 
-            let on_off_time_control = OnOffTimeControl::new([false, true, true, false, false, false, true, false].into_iter().map(Some).collect(), 0, 1.);
+            let on_off_time_control = OnOffTimeControl::new(
+                [false, true, true, false, false, false, true, false]
+                    .into_iter()
+                    .map(Some)
+                    .collect(),
+                0,
+                1.,
+            );
 
             let ctrl1 = Arc::new(Control::RangeTime(range_time_control));
             let ctrl2 = Arc::new(Control::OnOffTime(on_off_time_control));
@@ -3848,10 +3901,7 @@ mod tests {
                     "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2"]},
                 }))
                 .unwrap(),
-                IndexMap::from([
-                    ("ctrl1".into(), ctrl1),
-                    ("ctrl2".into(), ctrl2),
-                ]),
+                IndexMap::from([("ctrl1".into(), ctrl1), ("ctrl2".into(), ctrl2)]),
             );
 
             assert!(result.is_err());
@@ -4956,5 +5006,4 @@ mod tests {
             .is_err());
         }
     }
-    
 }

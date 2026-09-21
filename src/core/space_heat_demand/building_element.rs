@@ -4677,10 +4677,9 @@ mod tests {
     ) {
         let be_without_control = &ground_building_elements[0];
         //schedule = [1.0] * 742 + [0.0] + [1.0] * (8760 - 743)
-        let smart_air_brick_schedule: Vec<Option<f64>> = std::iter::repeat(Some(1.0))
-            .take(742)
+        let smart_air_brick_schedule: Vec<Option<f64>> = std::iter::repeat_n(Some(1.0), 742)
             .chain(std::iter::once(Some(0.0)))
-            .chain(std::iter::repeat(Some(1.0)).take(8760 - 743))
+            .chain(std::iter::repeat_n(Some(1.0), 8760 - 743))
             .collect();
         let floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,

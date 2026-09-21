@@ -6077,7 +6077,7 @@ mod tests {
             smart_air_brick: Option<Arc<Control>>,
             vents_open_during_airtightness_test: Option<bool>,
         ) -> InfiltrationVentilation {
-            let ctrl = ctrl_that_is_on(&simulation_time_iterator);
+            let ctrl = ctrl_that_is_on(simulation_time_iterator);
             let windows = vec![create_window(Some(ctrl), 30.)];
             let vents = vec![Vent::new(1.5, 100., 20., 0.0.into(), 90., 30., 2.5)];
             let leaks = CompletedVentilationLeaks {
@@ -6190,7 +6190,7 @@ mod tests {
         ) {
             let schedule = vec![Some(0.0)]
                 .into_iter()
-                .chain(std::iter::repeat(Some(1.0)).take(8759))
+                .chain(std::iter::repeat_n(Some(1.0), 8759))
                 .collect::<Vec<Option<f64>>>();
             let start_day = 0;
             let time_series_step = 1.;
@@ -6233,7 +6233,7 @@ mod tests {
         ) {
             let schedule = vec![None]
                 .into_iter()
-                .chain(std::iter::repeat(Some(1.0)).take(8759))
+                .chain(std::iter::repeat_n(Some(1.0), 8759))
                 .collect::<Vec<Option<f64>>>();
             let start_day = 0;
             let time_series_step = 1.;
@@ -6272,7 +6272,7 @@ mod tests {
         ) {
             let schedule = vec![Some(1.0)]
                 .into_iter()
-                .chain(std::iter::repeat(Some(0.0)).take(8759))
+                .chain(std::iter::repeat_n(Some(0.0), 8759))
                 .collect::<Vec<Option<f64>>>();
             let start_day = 0;
             let time_series_step = 1.;

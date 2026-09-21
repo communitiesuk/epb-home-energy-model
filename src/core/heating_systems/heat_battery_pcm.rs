@@ -4502,21 +4502,23 @@ mod tests {
         use crate::core::controls::time_control::RangeTimeControl;
 
         use super::*;
+
         #[derive(Debug, Clone)]
         struct MockWaterSupply;
+
         //mock all as they don't matter
         impl WaterSupplyBehaviour for MockWaterSupply {
             fn draw_off_water(
                 &self,
                 _: f64,
-                __: SimulationTimeIteration,
+                _: SimulationTimeIteration,
             ) -> anyhow::Result<Vec<(f64, f64)>> {
                 Ok(vec![])
             }
             fn get_temp_cold_water(
                 &self,
                 _: f64,
-                __: SimulationTimeIteration,
+                _: SimulationTimeIteration,
             ) -> anyhow::Result<Vec<(f64, f64)>> {
                 Ok(vec![])
             }
@@ -4524,10 +4526,12 @@ mod tests {
                 Self {}
             }
         }
+
         #[fixture]
         fn simtime() -> SimulationTime {
             SimulationTime::new(0., 4., 1.)
         }
+
         /// Create a RangeTimeControl with given schedule lists.
         fn make_control(
             schedule_lower: Vec<Option<f64>>,
@@ -4553,7 +4557,7 @@ mod tests {
             let ctrl_a = make_control(
                 vec![Some(0.2), Some(0.2), None, None],
                 vec![Some(0.8), Some(0.8), None, None],
-                simtime.clone(),
+                simtime,
             );
             let ctrl_b = make_control(
                 vec![None, None, Some(0.2), Some(0.2)],
