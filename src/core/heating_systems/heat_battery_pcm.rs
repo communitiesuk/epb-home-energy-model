@@ -4494,4 +4494,112 @@ mod tests {
     }
 
     // skipping python's test_demand_hot_water_zero_volume_continue due to mocking
+
+    /// Tests for validate_no_schedule_overlap (Deviation 3 fix).
+    /// Uses real RangeTimeControl objects to verify that overlapping active
+    /// schedules are rejected and non-overlapping schedules are accepted.
+    mod test_schedule_overlap_validation {
+        use crate::core::controls::time_control::RangeTimeControl;
+
+        use super::*;
+        #[derive(Debug, Clone)]
+        struct MyConcreteWaterSupply;
+        //mock all as they don't matter
+        impl WaterSupplyBehaviour for MyConcreteWaterSupply {
+            fn draw_off_water(
+                &self,
+                _: f64,
+                __: SimulationTimeIteration,
+            ) -> anyhow::Result<Vec<(f64, f64)>> {
+                Ok(vec![])
+            }
+            fn get_temp_cold_water(
+                &self,
+                _: f64,
+                __: SimulationTimeIteration,
+            ) -> anyhow::Result<Vec<(f64, f64)>> {
+                Ok(vec![])
+            }
+            fn ultimate_cold_water_source(&self) -> Self {
+                Self {}
+            }
+        }
+        #[fixture]
+        fn simtime() -> SimulationTime {
+            SimulationTime::new(0., 4., 1.)
+        }
+        /// Create a RangeTimeControl with given schedule lists.
+        fn make_control(
+            schedule_lower: Vec<Option<f64>>,
+            schedule_upper: Vec<Option<f64>>,
+            simtime: SimulationTime,
+        ) -> Arc<Control> {
+            Arc::new(Control::RangeTime(
+                RangeTimeControl::new(
+                    ScheduleOrControl::Schedule(schedule_lower),
+                    ScheduleOrControl::Schedule(schedule_upper),
+                    simtime,
+                    0.,
+                    1.0,
+                    None,
+                )
+                .unwrap(),
+            ))
+        }
+
+        #[rstest]
+        fn test_non_overlapping_schedules_pass(simtime: SimulationTime) {
+            // specify concrete type that satisfies WaterSupplyBehaviour
+            let ctrl_a = make_control(
+                vec![Some(0.2), Some(0.2), None, None],
+                vec![Some(0.8), Some(0.8), None, None],
+                simtime.clone(),
+            );
+            let ctrl_b = make_control(
+                vec![None, None, Some(0.2), Some(0.2)],
+                vec![None, None, Some(0.8), Some(0.8)],
+                simtime,
+            );
+            let sources: IndexMap<String, HeatBatteryChargingSource<MyConcreteWaterSupply>> = {
+                let mut m = IndexMap::new();
+                m.insert(
+                    "electric".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::DirectElectric,
+                        control: ctrl_a,
+                        rated_charge_power: Some(5.0),
+                        flow_rate_charging_l_per_min: None,
+                        temp_flow_max: None,
+                        hex_a: None,
+                        hex_b: None,
+                        hex_velocity_at_1_l_per_min: None,
+                        hex_capillary_diameter_m: None,
+                        heat_source_service:
+                            Option::<HeatSourceWetService<MyConcreteWaterSupply>>::None,
+                        schedule_unit: Default::default(),
+                    },
+                );
+                m.insert(
+                    "hydronic".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::HeatSourceWet,
+                        control: ctrl_b,
+                        temp_flow_max: Some(65.0),
+                        flow_rate_charging_l_per_min: Some(10.0),
+                        hex_a: Some(174.33952),
+                        hex_b: Some(-931.565),
+                        hex_velocity_at_1_l_per_min: Some(0.035),
+                        hex_capillary_diameter_m: Some(6.5 / 1000.0),
+                        heat_source_service:
+                            Option::<HeatSourceWetService<MyConcreteWaterSupply>>::None,
+                        schedule_unit: Default::default(),
+                        rated_charge_power: None,
+                    },
+                );
+                m
+            };
+            // Should not raise
+            validate_no_schedule_overlap(sources, "test_battery", &simtime.iter()).unwrap();
+        }
+    }
 }
