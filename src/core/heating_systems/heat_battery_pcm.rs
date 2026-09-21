@@ -128,15 +128,15 @@ fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
             simtime_iterator.current_index()
         );
     }
-    let source_names: Vec<String> = heat_source_data.keys().cloned().collect();
+
     for (t_idx, _) in simtime_iterator.clone().enumerate() {
         let mut active_sources: Vec<String> = Vec::new();
-        for src_name in &source_names {
-            match heat_source_data[src_name].control.deref() {
+        for (src_name, charging_source) in &heat_source_data {
+            match charging_source.control.deref() {
                 Control::RangeTime(ctrl) => {
-                    let (_, upper) =
-                        ctrl.setpnt_range_time_control(&simtime_iterator.current_iteration());
-                    if upper.is_some() {
+                    if let (_, Some(_)) =
+                        ctrl.setpnt_range_time_control(&simtime_iterator.current_iteration())
+                    {
                         active_sources.push(src_name.clone());
                     }
                 }
