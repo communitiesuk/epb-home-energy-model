@@ -747,6 +747,87 @@ impl EnergySupply {
         Ok(())
     }
 
+    pub(crate) fn calc_energy_export_from_battery_to_grid(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<()> {
+        if !self.is_export_capable {
+            return Ok(());
+        }
+
+        let mut total_charge = 0.;
+        let mut total_max_capacity = 0.;
+        let t_idx = simtime.index;
+
+        // The whole-house export power limit is shared between generation surplus and
+        // battery discharge. Generation surplus has already been capped and recorded in
+        // calc_energy_import_export_betafactor for this timestep, so the budget left for
+        // battery discharge is the limit less the surplus already exported. supply_surplus
+        // is stored negative by convention (export is negative demand), so it is added, and
+        // the headroom is floored at zero for the case where surplus already met the limit.
+        // Capping the discharge request (not the accepted energy) means any energy the
+        // battery cannot export is retained as charge rather than discarded.
+        let mut remaining_export_energy = self.power_limit_export.map(|power_limit_export| {
+            max_of_2(
+                0.,
+                power_limit_export * simtime.timestep
+                    + self.supply_surplus[t_idx].load(Ordering::SeqCst),
+            )
+        });
+
+        for battery in &self.get_batteries()? {
+            // Current conditions of the battery
+            let current_charge = battery.get_state_of_charge();
+            let max_capacity = battery.get_max_capacity();
+
+            if battery.is_grid_exporting_possible() {
+                let (exporting_condition, threshold_charge, _) =
+                    self.is_exporting_to_grid(battery, simtime)?;
+
+                if let Some(threshold_charge) = threshold_charge {
+                    if exporting_condition {
+                        for battery in self.get_batteries()? {
+                            if self.is_charging_from_grid(&battery, simtime)?.0 {
+                                bail!("Battery export conditions met while importing from grid")
+                            }
+                        }
+
+                        // Create max elec_supply for battery discharge to grid if conditions allow
+                        let mut elec_supply = max_capacity * (current_charge - threshold_charge)
+                            / battery.get_discharge_efficiency(simtime);
+                        if let Some(remaining_export_energy) = remaining_export_energy {
+                            elec_supply = min_of_2(elec_supply, remaining_export_energy);
+                        };
+
+                        // Attempt charging battery and retrieving energy_accepted
+                        let energy_accepted =
+                            -battery.charge_discharge_battery(elec_supply, false, simtime);
+
+                        if let Some(remaining_export_energy) = &mut remaining_export_energy {
+                            // energy_accepted is negative for discharge, so this reduces the budget
+                            *remaining_export_energy += energy_accepted;
+                        };
+
+                        self.energy_into_grid_from_battery[t_idx]
+                            .fetch_add(energy_accepted, Ordering::SeqCst);
+                    }
+                };
+            }
+
+            total_charge += battery.get_state_of_charge() * max_capacity;
+            total_max_capacity += max_capacity;
+        }
+
+        if relative_eq!(total_max_capacity, 0., epsilon = 1e-10, max_relative = 1e-9) {
+            self.battery_state_of_charge[t_idx].store(0., Ordering::SeqCst);
+        } else {
+            self.battery_state_of_charge[t_idx]
+                .store(total_charge / total_max_capacity, Ordering::SeqCst);
+        }
+
+        Ok(())
+    }
+
     /// Calculate how much of that supply can be offset against demand.
     /// And then calculate what demand and supply is left after offsetting, which are the amount exported imported
     pub fn calc_energy_import_export_betafactor(
@@ -1168,6 +1249,18 @@ mod tests {
         .unwrap()
     }
 
+    #[fixture]
+    fn tariff_info() -> EnergySupplyTariffInfo {
+        let threshold_charges = vec![0.8, 0.7, 0.7, 0.8, 0.6, 0.8, 0.7, 0.7, 0.8, 0.7, 0.8, 0.8];
+        let threshold_prices = vec![16., 16., 16., 20., 20., 20., 20., 20., 20., 20., 20., 20.];
+
+        EnergySupplyTariffInfo {
+            tariff: EnergySupplyTariff::VariableTimeOfDay,
+            threshold_charges: Some(threshold_charges),
+            threshold_prices: Some(threshold_prices),
+        }
+    }
+
     fn create_elec_battery(
         grid_charging_possible: bool,
         grid_exporting_possible: bool,
@@ -1225,11 +1318,113 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calc_energy_import_from_grid_to_battery_no_battery(
+        simulation_time: SimulationTime,
+        tariff_data: TariffData,
+        tariff_info: EnergySupplyTariffInfo,
+    ) {
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
+                .with_tariff_data(tariff_data)
+                .with_tariff_info(tariff_info)
+                .unwrap()
+                .build();
+
+        energy_supply
+            .calc_energy_import_from_grid_to_battery(simulation_time.iter().current_iteration())
+            .unwrap();
+
+        let (_, _, _, _, state_of_charge) = energy_supply.get_battery_energy_flows();
+
+        assert_eq!(state_of_charge, [0.; 8]);
+        assert_eq!(energy_supply.get_batteries().unwrap().len(), 0);
+    }
+
+    #[rstest]
+    fn test_calc_energy_export_from_battery_to_grid_no_battery(
+        simulation_time: SimulationTime,
+        tariff_data: TariffData,
+    ) {
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
+                .with_tariff_data(tariff_data)
+                .with_tariff_export(
+                    [0.8, 0.7, 0.7, 0.8, 0.6, 0.8, 0.7, 0.7, 0.8, 0.7, 0.8, 0.8],
+                    [16., 16., 16., 20., 20., 20., 20., 20., 20., 20., 20., 20.],
+                )
+                .build();
+
+        energy_supply
+            .calc_energy_export_from_battery_to_grid(simulation_time.iter().current_iteration())
+            .unwrap();
+
+        let (_, _, _, _, state_of_charge) = energy_supply.get_battery_energy_flows();
+
+        assert_eq!(state_of_charge, [0.; 8]);
+        assert_eq!(energy_supply.get_batteries().unwrap().len(), 0);
+    }
+
+    #[rstest]
     fn test_is_exporting_to_grid(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
         tariff_data: TariffData,
     ) {
+        let elec_battery = create_elec_battery(
+            true,
+            true,
+            BatteryLocation::Inside,
+            external_conditions.clone(),
+            simulation_time,
+        );
+
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
+        let energy_supply = builder
+            .with_electric_battery(indexmap! {"battery".into() => elec_battery})
+            .with_tariff_data(tariff_data.clone())
+            .with_tariff_export([0.8; 12], [5.; 12])
+            .build();
+
+        let battery = &energy_supply.electric_batteries[0];
+        battery.charge_discharge_battery(-100., false, simulation_time.iter().current_iteration());
+
+        // Meets threshold charge
+        let (exporting_condition, threshold_charge, can_export_if_not_empty) = energy_supply
+            .is_exporting_to_grid(battery, simulation_time.iter().current_iteration())
+            .unwrap();
+
+        assert!(exporting_condition);
+        assert_eq!(threshold_charge, Some(0.8));
+        assert!(can_export_if_not_empty);
+
+        let elec_battery = create_elec_battery(
+            true,
+            true,
+            BatteryLocation::Inside,
+            external_conditions.clone(),
+            simulation_time,
+        );
+
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
+        let energy_supply = builder
+            .with_electric_battery(indexmap! {"battery".into() => elec_battery})
+            .with_tariff_data(tariff_data.clone())
+            .with_tariff_export([0.9; 12], [5.; 12])
+            .build();
+
+        let battery = &energy_supply.electric_batteries[0];
+
+        // Meets threshold price
+        let (exporting_condition, threshold_charge, can_export_if_not_empty) = energy_supply
+            .is_exporting_to_grid(battery, simulation_time.iter().current_iteration())
+            .unwrap();
+
+        assert!(!exporting_condition);
+        assert_eq!(threshold_charge, Some(0.9));
+        assert!(can_export_if_not_empty);
+
         let elec_battery = create_elec_battery(
             true,
             true,
@@ -1555,18 +1750,6 @@ mod tests {
                 .unwrap(),
             0.
         );
-    }
-
-    #[fixture]
-    fn tariff_info() -> EnergySupplyTariffInfo {
-        let threshold_charges = vec![0.8, 0.7, 0.7, 0.8, 0.6, 0.8, 0.7, 0.7, 0.8, 0.7, 0.8, 0.8];
-        let threshold_prices = vec![16., 16., 16., 20., 20., 20., 20., 20., 20., 20., 20., 20.];
-
-        EnergySupplyTariffInfo {
-            tariff: EnergySupplyTariff::VariableTimeOfDay,
-            threshold_charges: Some(threshold_charges),
-            threshold_prices: Some(threshold_prices),
-        }
     }
 
     #[rstest]
