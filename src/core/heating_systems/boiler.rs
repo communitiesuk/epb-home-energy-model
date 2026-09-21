@@ -1909,7 +1909,7 @@ mod tests {
                 Default::default(),
                 Default::default(),
                 1.,
-            )))
+            ).into()))
         }
 
         #[fixture]
@@ -1921,7 +1921,7 @@ mod tests {
                 Default::default(),
                 Default::default(),
                 1.,
-            )))
+            ).into()))
         }
 
         #[fixture]
@@ -2164,7 +2164,7 @@ mod tests {
                 Default::default(),
                 Default::default(),
                 1.0,
-            ))
+            ).into())
         }
 
         #[fixture]
@@ -2404,7 +2404,7 @@ mod tests {
                 Default::default(),
                 Default::default(),
                 1.0,
-            )));
+            ).into()));
             let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
                 vec![None, None],
                 0,
@@ -2412,7 +2412,7 @@ mod tests {
                 Default::default(),
                 Default::default(),
                 1.0,
-            )));
+            ).into()));
 
             let boiler = Arc::new(RwLock::new(boiler));
 
@@ -2442,7 +2442,7 @@ mod tests {
                     Default::default(),
                     Default::default(),
                     1.0,
-                ))),
+                ).into())),
             );
             pretty_assertions::assert_eq!(
                 type_of(boiler_service_space_heating),

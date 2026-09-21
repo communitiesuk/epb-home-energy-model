@@ -4712,7 +4712,7 @@ mod tests {
                 Default::default(),
                 Default::default(),
                 simulation_time_for_ground.step,
-            )))),
+            ).into()))),
             &simulation_time_for_ground.iter(),
         )
         .unwrap();
@@ -5230,7 +5230,7 @@ mod tests {
             None,
             None,
             1.0,
-        )))
+        ).into()))
     }
 
     #[rstest]
@@ -5243,7 +5243,7 @@ mod tests {
             vec![Some(true)], // control is on
             0,
             1.,
-        )));
+        ).into()));
         let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
@@ -5282,7 +5282,7 @@ mod tests {
             vec![Some(false)], // control is off
             0,
             1.,
-        )));
+        ).into()));
         let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
@@ -5321,7 +5321,7 @@ mod tests {
             vec![Some(false)], // control is off
             0,
             1.,
-        )));
+        ).into()));
         let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
@@ -5364,7 +5364,7 @@ mod tests {
             vec![Some(true)], // control is on
             0,
             1.,
-        )));
+        ).into()));
         let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,

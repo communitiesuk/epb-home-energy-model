@@ -6124,7 +6124,7 @@ mod tests {
             vec![Some(true)],
             0,
             1.,
-        )));
+        ).into()));
 
         assert!(heat_pump_service_water
             .setpnt(simulation_time_for_heat_pump.iter().current_iteration())
@@ -6137,7 +6137,7 @@ mod tests {
             vec![Some(true)],
             0,
             1.,
-        )));
+        ).into()));
 
         assert!(heat_pump_service_water
             .setpnt(simulation_time_for_heat_pump.iter().current_iteration())
@@ -6212,7 +6212,7 @@ mod tests {
             vec![Some(true)],
             0,
             1.,
-        )));
+        ).into()));
         let heat_pump = create_default_heat_pump(
             None,
             external_conditions,
@@ -6999,7 +6999,7 @@ mod tests {
             Default::default(),
             Default::default(),
             1.,
-        ))
+        ).into())
     }
 
     #[rstest]
@@ -8140,7 +8140,7 @@ mod tests {
             Default::default(),
             Default::default(),
             simulation_time_for_heat_pump.step,
-        )));
+        ).into()));
 
         let boiler_service_space = Boiler::create_service_space_heating(
             boiler.clone(),
@@ -8231,7 +8231,7 @@ mod tests {
             Default::default(),
             Default::default(),
             simulation_time_for_heat_pump.step,
-        )));
+        ).into()));
 
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::new(Mutex::new(BoilerServiceSpace::new(
@@ -8383,7 +8383,7 @@ mod tests {
             Default::default(),
             Default::default(),
             simulation_time_for_heat_pump.step,
-        )));
+        ).into()));
 
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::new(Mutex::new(BoilerServiceSpace::new(
@@ -8458,7 +8458,7 @@ mod tests {
             Default::default(),
             Default::default(),
             simulation_time_for_heat_pump.step,
-        )));
+        ).into()));
 
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::new(Mutex::new(BoilerServiceSpace::new(
@@ -9330,7 +9330,7 @@ mod tests {
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace",
-            Arc::new(Control::SetpointTime(control)),
+            Arc::new(Control::SetpointTime(control.into())),
         )));
 
         let heat_pump_input = create_heat_pump_input_from_json(None, None);
@@ -9818,7 +9818,7 @@ mod tests {
             Default::default(),
             Default::default(),
             1.0,
-        ));
+        ).into());
 
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
@@ -10537,7 +10537,7 @@ mod tests {
             Default::default(),
             Default::default(),
             1.0,
-        ));
+        ).into());
 
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
@@ -10684,7 +10684,7 @@ mod tests {
             Default::default(),
             Default::default(),
             1.0,
-        )));
+        ).into()));
 
         let boiler_service_water = Arc::new(Mutex::new(
             Boiler::create_service_hot_water_regular(
@@ -12137,7 +12137,7 @@ mod tests {
             vec![Some(true)],
             0,
             1.,
-        )));
+        ).into()));
 
         assert!(hp1.setpnt(simtime).is_err());
 
@@ -12146,7 +12146,7 @@ mod tests {
             vec![Some(true)],
             0,
             1.,
-        )));
+        ).into()));
 
         assert!(hp2.setpnt(simtime).is_err());
     }
@@ -12168,7 +12168,7 @@ mod tests {
             vec![Some(false), Some(false)],
             0,
             1.,
-        )));
+        ).into()));
 
         assert_relative_eq!(heat_pump.demand_energy(10., 50., Some(40.), simtime), 0.);
     }
@@ -12191,7 +12191,7 @@ mod tests {
             vec![Some(false), Some(false)],
             0,
             1.,
-        )));
+        ).into()));
 
         assert_relative_eq!(heat_pump.energy_output_max(50., simtime), 0.);
     }

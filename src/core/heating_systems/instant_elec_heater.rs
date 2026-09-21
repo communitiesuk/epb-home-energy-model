@@ -108,7 +108,7 @@ mod tests {
             None,
             None,
             simulation_time.step,
-        ));
+        ).into());
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
                 .build(),

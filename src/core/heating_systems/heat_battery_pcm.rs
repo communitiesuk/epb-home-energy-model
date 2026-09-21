@@ -2252,7 +2252,7 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         )
     }
 
@@ -2322,7 +2322,7 @@ mod tests {
             Default::default(),
             Default::default(),
             1.,
-        ))
+        ).into())
     }
 
     fn get_service_names_from_results(heat_battery: Arc<RwLock<HeatBatteryPcm>>) -> Vec<String> {
@@ -2860,7 +2860,7 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         );
         let heat_battery = create_heat_battery(&simulation_time_iterator, control, None);
         HeatBatteryPcm::create_service_connection(heat_battery.clone(), "new_service").unwrap();
@@ -3159,7 +3159,7 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         );
 
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
@@ -3232,7 +3232,7 @@ mod tests {
                 Some(external_sensor.clone()),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         );
 
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
@@ -3264,7 +3264,7 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         );
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
 
@@ -4547,7 +4547,7 @@ mod tests {
                     1.0,
                     None,
                 )
-                .unwrap(),
+                .unwrap().into(),
             ))
         }
 

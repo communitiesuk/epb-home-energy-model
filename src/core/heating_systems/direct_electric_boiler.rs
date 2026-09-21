@@ -556,8 +556,8 @@ mod tests {
         let boiler_service_result = DirectElectricBoiler::create_service_hot_water_regular(
             Arc::new(RwLock::new(boiler)),
             service_name,
-            Arc::new(Control::SetpointTime(control_min)),
-            Arc::new(Control::SetpointTime(control_max)),
+            Arc::new(Control::SetpointTime(control_min.into())),
+            Arc::new(Control::SetpointTime(control_max.into())),
             None,
         );
         assert!(boiler_service_result.is_ok());
@@ -576,7 +576,7 @@ mod tests {
         let boiler_service_result = DirectElectricBoiler::create_service_space_heating(
             Arc::new(RwLock::new(boiler)),
             service_name,
-            Arc::new(Control::SetpointTime(control)),
+            Arc::new(Control::SetpointTime(control.into())),
         );
         assert!(boiler_service_result.is_ok());
     }

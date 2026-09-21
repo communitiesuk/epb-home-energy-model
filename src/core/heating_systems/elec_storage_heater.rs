@@ -567,7 +567,7 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         ))
     }
 
@@ -583,7 +583,7 @@ mod tests {
             Default::default(),
             Default::default(),
             1.,
-        )))
+        ).into()))
     }
 
     fn create_elec_storage_heater(
@@ -971,7 +971,7 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         ));
         let heater = create_elec_storage_heater(
             simulation_time,
@@ -1016,7 +1016,7 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         ));
         let heater = create_elec_storage_heater(
             simulation_time,
@@ -1061,7 +1061,7 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         ));
         let heater = create_elec_storage_heater(
             simulation_time,
@@ -1106,7 +1106,7 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         ));
         let heater = create_elec_storage_heater(
             simulation_time,
@@ -1155,7 +1155,7 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         ));
 
         let energy_supply = Arc::new(RwLock::new(

@@ -2113,7 +2113,7 @@ mod tests {
                 external_sensor.into(),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         ))
     }
 
@@ -2138,7 +2138,7 @@ mod tests {
                 external_sensor.into(),
                 None,
             )
-            .unwrap(),
+            .unwrap().into(),
         ))
     }
 
@@ -2275,7 +2275,7 @@ mod tests {
             Some(21.0),
             Some(true),
             Some(true),
-        )))
+        ).into()))
     }
 
     #[fixture]
@@ -2287,7 +2287,7 @@ mod tests {
             None,
             None,
             simulation_time.step,
-        )))
+        ).into()))
     }
 
     // redundant to port Python tests for abstract methods
@@ -2313,7 +2313,7 @@ mod tests {
             None,
             None,
             simulation_time.step,
-        )));
+        ).into()));
         let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
             vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
             0,
@@ -2321,7 +2321,7 @@ mod tests {
             None,
             None,
             simulation_time.step,
-        )));
+        ).into()));
         let mock_cold_feed = mock_cold_feed(None); // we can just set up a mock cold water source here - it isn't used
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
@@ -2409,12 +2409,12 @@ mod tests {
             Some(40.0),
             Some(true),
             Some(true),
-        )));
+        ).into()));
         let _control_max = Arc::new(Control::Mock(MockControl::new(
             Some(85.0), // High temperature requirement
             None,
             None,
-        )));
+        ).into()));
 
         // cold feed temperature not relevant
 
@@ -2997,7 +2997,7 @@ mod tests {
             None,
             None,
             1.0,
-        )));
+        ).into()));
 
         let service = HeatBatteryDryCore::create_service_space_heating(
             heat_battery.clone(),

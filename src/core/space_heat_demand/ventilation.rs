@@ -4047,8 +4047,8 @@ mod tests {
         .unwrap();
         let energy_supplies =
             IndexMap::from([("mains elec".into(), Arc::new(RwLock::new(energy_supply)))]);
-        let control1 = SetpointTime(SetpointTimeControl::new(vec![], 0, 1., None, None, 1.));
-        let control2 = OnOffTime(OnOffTimeControl::new(vec![], 0, 1.));
+        let control1 = SetpointTime(SetpointTimeControl::new(vec![], 0, 1., None, None, 1.).into());
+        let control2 = OnOffTime(OnOffTimeControl::new(vec![], 0, 1.).into());
         let controls: Controls = Controls::new(
             vec![],
             IndexMap::from([
@@ -4284,7 +4284,7 @@ mod tests {
             vec![Some(true)],
             simulation_time_iterator.current_day(),
             1.,
-        ))
+        ).into())
     }
 
     fn ctrl_that_is_off(simulation_time_iterator: &SimulationTimeIterator) -> Control {
@@ -4292,7 +4292,7 @@ mod tests {
             vec![Some(false)],
             simulation_time_iterator.current_day(),
             1.,
-        ))
+        ).into())
     }
 
     #[rstest]
@@ -6202,7 +6202,7 @@ mod tests {
                 None,
                 None,
                 timestep,
-            )));
+            ).into()));
 
             let infiltration_ventilation_with_patched_smart_air_brick_vents_open =
                 create_infiltration_ventilation_with_smart_air_brick(
@@ -6245,7 +6245,7 @@ mod tests {
                 None,
                 None,
                 timestep,
-            )));
+            ).into()));
             let infiltration_ventilation_with_patched_smart_air_brick_no_setpoint =
                 create_infiltration_ventilation_with_smart_air_brick(
                     &simulation_time_iterator,
@@ -6284,7 +6284,7 @@ mod tests {
                 None,
                 None,
                 timestep,
-            )));
+            ).into()));
             let infiltration_ventilation_with_patched_smart_air_brick_vents_closed =
                 create_infiltration_ventilation_with_smart_air_brick(
                     &simulation_time_iterator,

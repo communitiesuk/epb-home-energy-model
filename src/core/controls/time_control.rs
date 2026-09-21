@@ -14,7 +14,6 @@ use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use atomic_float::AtomicF64;
 use bounded_vec_deque::BoundedVecDeque;
-use core::panic;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -29,13 +28,15 @@ use std::sync::Arc;
 #[derive(Debug)]
 // NOTE that these types are based on TimeControlType enum in enums.py
 // _not_ the TimeControl type in time_control.py
+
+#[derive(Clone)]
 pub(crate) enum Control {
-    OnOffTime(OnOffTimeControl),
-    SetpointTime(SetpointTimeControl),
-    Charge(ChargeControl),
-    OnOffMinimisingTime(OnOffCostMinimisingTimeControl),
-    CombinationTime(CombinationTimeControl),
-    RangeTime(RangeTimeControl),
+    OnOffTime(Arc<OnOffTimeControl>),
+    SetpointTime(Arc<SetpointTimeControl>),
+    Charge(Arc<ChargeControl>),
+    OnOffMinimisingTime(Arc<OnOffCostMinimisingTimeControl>),
+    CombinationTime(Arc<CombinationTimeControl>),
+    RangeTime(Arc<RangeTimeControl>),
     #[cfg(test)]
     Mock(MockControl),
 }
@@ -113,6 +114,7 @@ pub(crate) enum HeatSourceControl {
     HotWaterTimer(Arc<Control>),
     WindowOpening(Arc<Control>),
 }
+
 
 impl HeatSourceControl {
     pub(crate) fn has_type(&self, control_type: HeatSourceControlType) -> bool {
@@ -331,11 +333,11 @@ impl ChargeControl {
 
         let charge_time_control = match charge_time_control {
             ScheduleOrControl::Schedule(schedule) => {
-                Arc::new(Control::OnOffTime(OnOffTimeControl {
+                Arc::new(Control::OnOffTime(Arc::new(OnOffTimeControl {
                     schedule: schedule.into_iter().map(Some).collect(),
                     start_day,
                     time_series_step,
-                }))
+                })))
             }
             ScheduleOrControl::Control(control) => control,
         };
@@ -3268,11 +3270,11 @@ mod tests {
         fn test_is_on_separate_control() {
             let simulation_time = SimulationTime::new(0.0, 8.0, 1.0);
             let schedule = [false, true, true, true, false, true, true, true];
-            let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            let control = Arc::new(Control::OnOffTime(Arc::new(OnOffTimeControl::new(
                 schedule.into_iter().map(Some).collect(),
                 0,
                 1.,
-            )));
+            ))));
             let charge_control_1 = create_charge_control_with_control(
                 ControlLogicType::Automatic,
                 Some(15.5),
@@ -3842,10 +3844,10 @@ mod tests {
                             .collect_vec(),
                         0,
                         1.,
-                    ))
+                    ).into())
                     .into(),
                 ),
-                ("ctrl12".into(), Control::Charge(charge_control).into()),
+                ("ctrl12".into(), Control::Charge(charge_control.into()).into()),
                 (
                     "ctrl13".into(),
                     Control::OnOffTime(OnOffTimeControl::new(
@@ -3855,7 +3857,7 @@ mod tests {
                             .collect_vec(),
                         0,
                         1.,
-                    ))
+                    ).into())
                     .into(),
                 ),
             ])
@@ -3893,8 +3895,8 @@ mod tests {
                 1.,
             );
 
-            let ctrl1 = Arc::new(Control::RangeTime(range_time_control));
-            let ctrl2 = Arc::new(Control::OnOffTime(on_off_time_control));
+            let ctrl1 = Arc::new(Control::RangeTime(range_time_control.into()));
+            let ctrl2 = Arc::new(Control::OnOffTime(on_off_time_control.into()));
 
             let result = CombinationTimeControl::new(
                 serde_json::from_value(json!({
@@ -4328,12 +4330,12 @@ mod tests {
                         None,
                         None,
                         1.,
-                    ))
+                    ).into())
                     .into(),
                 ),
                 (
                     "ctr12".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.)).into(),
+                    Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into()).into(),
                 ),
             ]));
 
@@ -4362,7 +4364,7 @@ mod tests {
                         None,
                         None,
                         1.,
-                    ))
+                    ).into())
                     .into(),
                 ),
                 (
@@ -4377,7 +4379,7 @@ mod tests {
                         None,
                         None,
                         1.,
-                    ))
+                    ).into())
                     .into(),
                 ),
             ]));
@@ -4404,7 +4406,7 @@ mod tests {
                             .collect(),
                         0,
                         1.,
-                    ))
+                    ).into())
                     .into(),
                 ),
                 (
@@ -4416,7 +4418,7 @@ mod tests {
                             .collect(),
                         0,
                         1.,
-                    ))
+                    ).into())
                     .into(),
                 ),
             ]));
@@ -4516,7 +4518,7 @@ mod tests {
                             .collect(),
                         0,
                         1.,
-                    ))
+                    ).into())
                     .into(),
                 ),
                 (
@@ -4528,7 +4530,7 @@ mod tests {
                             .collect(),
                         0,
                         1.,
-                    ))
+                    ).into())
                     .into(),
                 ),
                 (
@@ -4540,7 +4542,7 @@ mod tests {
                         None,
                         None,
                         1.,
-                    ))
+                    ).into())
                     .into(),
                 ),
             ]);
@@ -4685,7 +4687,7 @@ mod tests {
                 1.,
                 5.0, // Need 12 "on" hours
             )
-            .unwrap(),
+            .unwrap().into(),
         );
 
         IndexMap::from([
@@ -4698,7 +4700,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
@@ -4710,7 +4712,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
@@ -4722,7 +4724,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
@@ -4737,7 +4739,7 @@ mod tests {
                     Default::default(),
                     Default::default(),
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
@@ -4752,7 +4754,7 @@ mod tests {
                     Default::default(),
                     Default::default(),
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
@@ -4764,7 +4766,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
@@ -4776,7 +4778,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
@@ -4788,7 +4790,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
@@ -4809,7 +4811,7 @@ mod tests {
                     Default::default(),
                     Default::default(),
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             ("ctrl10".into(), cost_minimising_control.into()),
@@ -4884,12 +4886,12 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
                 "ctrl12".into(),
-                Control::Charge(charge_control_for_combination).into(),
+                Control::Charge(charge_control_for_combination.into()).into(),
             ),
             (
                 "ctrl13".into(),
@@ -4900,7 +4902,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
         ])
@@ -4953,12 +4955,12 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
                 "ctrl15".into(),
-                Control::Charge(charge_control_for_combination).into(),
+                Control::Charge(charge_control_for_combination.into()).into(),
             ),
             (
                 "ctrl16".into(),
@@ -4969,7 +4971,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
             (
@@ -4981,7 +4983,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                ))
+                ).into())
                 .into(),
             ),
         ])

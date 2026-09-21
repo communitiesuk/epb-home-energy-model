@@ -219,7 +219,7 @@ fn single_control_from_details(
                 schedule,
                 *start_day,
                 *time_series_step,
-            ))
+            ).into())
             .into()
         }
         ControlDetails::SetpointTimer {
@@ -236,7 +236,7 @@ fn single_control_from_details(
             *setpoint_bounds,
             *advanced_start,
             simulation_time_iterator.step_in_hours(),
-        ))
+        ).into())
         .into(),
         ControlDetails::ChargeTarget {
             charge_level,
@@ -301,10 +301,10 @@ fn single_control_from_details(
                 charge_level_vec,
                 *temp_charge_cut,
                 temp_charge_cut_delta,
-                Some(external_conditions.clone()),
+                Some(external_conditions.clone().into()),
                 external_sensor.clone(),
                 Some(*charge_calc_time),
-            )?)
+            )?.into())
             .into()
         }
         // temporary entry for ChargeTarget with charge target control reference until implemented for 1.0.0a9
@@ -320,12 +320,12 @@ fn single_control_from_details(
             schedule,
             ..
         } => Control::OnOffMinimisingTime(OnOffCostMinimisingTimeControl::new(
-            reject_nulls(expand_numeric_schedule(schedule))?,
+            reject_nulls(expand_numeric_schedule(schedule).into())?,
             simulation_time_iterator,
             *start_day,
             *time_series_step,
             *time_on_daily,
-        )?)
+        )?.into())
         .into(),
         ControlDetails::CombinationTime { combination } => {
             // resolved controls needs to be: IndexMap<String, Arc<Control>>
@@ -416,7 +416,7 @@ fn single_control_from_details(
             Control::CombinationTime(CombinationTimeControl::new(
                 combination.clone(),
                 resolved_controls,
-            )?)
+            )?.into())
             .into()
         }
         ControlDetails::RangeTimer { .. } => todo!("complete as part of 1.0.0a9 migration"),

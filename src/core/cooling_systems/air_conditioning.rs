@@ -125,7 +125,7 @@ mod tests {
                 0.4,
                 energy_supply_conn,
                 simulation_time.step,
-                Arc::new(Control::SetpointTime(control)),
+                Arc::new(Control::SetpointTime(control.into())),
             ),
             energy_supply,
         )
