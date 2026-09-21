@@ -4503,9 +4503,9 @@ mod tests {
 
         use super::*;
         #[derive(Debug, Clone)]
-        struct MyConcreteWaterSupply;
+        struct MockWaterSupply;
         //mock all as they don't matter
-        impl WaterSupplyBehaviour for MyConcreteWaterSupply {
+        impl WaterSupplyBehaviour for MockWaterSupply {
             fn draw_off_water(
                 &self,
                 _: f64,
@@ -4560,7 +4560,7 @@ mod tests {
                 vec![None, None, Some(0.8), Some(0.8)],
                 simtime,
             );
-            let sources: IndexMap<String, HeatBatteryChargingSource<MyConcreteWaterSupply>> = {
+            let sources: IndexMap<String, HeatBatteryChargingSource<MockWaterSupply>> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "electric".into(),
@@ -4574,8 +4574,7 @@ mod tests {
                         hex_b: None,
                         hex_velocity_at_1_l_per_min: None,
                         hex_capillary_diameter_m: None,
-                        heat_source_service:
-                            Option::<HeatSourceWetService<MyConcreteWaterSupply>>::None,
+                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
                         schedule_unit: Default::default(),
                     },
                 );
@@ -4590,8 +4589,7 @@ mod tests {
                         hex_b: Some(-931.565),
                         hex_velocity_at_1_l_per_min: Some(0.035),
                         hex_capillary_diameter_m: Some(6.5 / 1000.0),
-                        heat_source_service:
-                            Option::<HeatSourceWetService<MyConcreteWaterSupply>>::None,
+                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
                         schedule_unit: Default::default(),
                         rated_charge_power: None,
                     },
