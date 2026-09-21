@@ -833,7 +833,7 @@ impl RangeTimeControl {
 
     // In Python this is setpnt
     // but that clashes with the setpnt method in the ControlBehaviour trait
-    fn setpnt_range_time_control(
+    pub(crate) fn setpnt_range_time_control(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {

@@ -17,7 +17,7 @@ use crate::core::water_heat_demand::misc::{
     calculate_volume_weighted_average_temperature, water_demand_to_kwh, WaterEventResult,
 };
 use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
-use crate::hem_core::simulation_time::{SimulationTime, SimulationTimeIterator};
+use crate::hem_core::simulation_time::SimulationTimeIterator;
 use crate::input::{
     HeatBattery as HeatBatteryInput, HeatSourceWetDetails, PcmBatteryChargingConfiguration,
 };
@@ -76,7 +76,6 @@ pub(crate) enum ChargingSourceType {
 ///         "soc" (default): values are state-of-charge fractions (0–1).
 ///         "temperature": values are temperatures (°C), converted to SOC
 ///         internally for comparison against the battery's current state.
-
 /// Enum representing the union of all heat source service types that can provide hydronic charging.
 /// Defined here (not in _base.py) to avoid circular imports — the concrete
 /// service types are defined across multiple modules that import from _base.py.
@@ -120,8 +119,8 @@ pub(crate) struct HeatBatteryChargingSource<T: WaterSupplyBehaviour> {
 fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
     heat_source_data: IndexMap<String, HeatBatteryChargingSource<T>>,
     battery_name: &str,
-    simtime_iterator: SimulationTimeIterator,
-) {
+    simtime_iterator: &SimulationTimeIterator,
+) -> anyhow::Result<()> {
     if simtime_iterator.current_index() != 0 {
         panic!(
             "HeatBattery '{}': validate_no_schedule_overlap must be called before the simulation starts (current timestep index: {}).",
@@ -133,15 +132,21 @@ fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
     for (t_idx, _) in simtime_iterator.clone().enumerate() {
         let mut active_sources: Vec<String> = Vec::new();
         for src_name in &source_names {
-            let upper = heat_source_data[src_name]
-                .control
-                .setpnt(&simtime_iterator.current_iteration());
-            if upper.is_some() {
-                active_sources.push(src_name.clone());
-            }
+            match heat_source_data[src_name].control.deref() {
+                Control::RangeTime(ctrl) => {
+                    let (_, upper) =
+                        ctrl.setpnt_range_time_control(&simtime_iterator.current_iteration());
+                    if upper.is_some() {
+                        active_sources.push(src_name.clone());
+                    }
+                }
+                _ => {
+                    bail!("HeatBattery '{}': unsupported control type for source '{}'. Only RangeTimeControl is supported.", battery_name, src_name)
+                }
+            };
         }
         if active_sources.len() > 1 {
-            panic!(
+            bail!(
                 "HeatBattery '{}': charging sources {:?} have overlapping active schedules at timestep index {} (first overlapping timestep). Each source must have non-overlapping RangeTimeControl schedules.",
                 battery_name,
                 active_sources,
@@ -149,6 +154,7 @@ fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
             );
         }
     }
+    Ok(())
 }
 
 /// An object to represent a water heating service provided by a regular heat battery.
