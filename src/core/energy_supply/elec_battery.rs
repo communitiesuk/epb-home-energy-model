@@ -377,6 +377,18 @@ impl ElectricBattery {
     pub(crate) fn get_charge_discharge_efficiency(&self) -> f64 {
         self.charge_discharge_efficiency
     }
+
+    #[cfg(test)]
+    pub(crate) fn get_total_time_charging_current_timestep(&self) -> f64 {
+        self.total_time_charging_current_timestep
+            .load(Ordering::SeqCst)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_total_time_charging_current_timestep(&self, time: f64) {
+        self.total_time_charging_current_timestep
+            .store(time, Ordering::SeqCst)
+    }
 }
 
 #[cfg(test)]

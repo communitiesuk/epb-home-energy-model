@@ -1093,6 +1093,7 @@ mod tests {
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::BatteryLocation;
     use crate::simulation_time::SimulationTime;
+    use approx::assert_relative_eq;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use rstest::*;
@@ -2275,6 +2276,167 @@ mod tests {
                 ]
             );
         }
+    }
+
+    // skipping python's test_is_charging_from_grid_exception as in rust is_charging_from_grid requires a battery to be passed in
+
+    #[rstest]
+    /// Test that the battery state of charge is correct after calling calc_energy_import_from_grid_to_battery
+    fn test_calc_energy_import_from_grid_to_battery_multiple_items(
+        external_conditions: ExternalConditions,
+    ) {
+        let simtime = SimulationTime::new(0.0, 4.0, 1.0);
+        let battery_a = create_elec_battery(
+            false,
+            true,
+            BatteryLocation::Outside,
+            external_conditions.clone(),
+            simtime,
+        );
+        let battery_b = create_elec_battery(
+            false,
+            true,
+            BatteryLocation::Outside,
+            external_conditions,
+            simtime,
+        );
+
+        battery_a.charge_discharge_battery(-3., false, simtime.iter().current_iteration());
+        battery_b.charge_discharge_battery(-2., false, simtime.iter().current_iteration());
+
+        let mut builder =
+            EnergySupplyBuilder::new(FuelType::MainsGas, simtime.iter().total_steps());
+        builder = builder
+            .with_electric_battery(indexmap! {"A".into() => battery_a, "B".into() => battery_b})
+            .with_priority(vec!["B", "A"]);
+        let energy_supply = Arc::new(RwLock::new(builder.build()));
+
+        let shower_connection = EnergySupply::connection(energy_supply.clone(), "shower").unwrap();
+        shower_connection
+            .demand_energy(100., simtime.iter().current_index())
+            .unwrap();
+        shower_connection
+            .supply_energy(120., simtime.iter().current_index())
+            .unwrap();
+
+        energy_supply
+            .read()
+            .calc_energy_import_from_grid_to_battery(simtime.iter().current_iteration())
+            .unwrap();
+
+        assert_relative_eq!(
+            energy_supply.read().get_battery_energy_flows().4[0],
+            0.806089034373128
+        );
+        assert_relative_eq!(
+            energy_supply
+                .read()
+                .electric_batteries
+                .get("A")
+                .unwrap()
+                .get_state_of_charge(),
+            0.8522727272727273
+        );
+        assert_relative_eq!(
+            energy_supply
+                .read()
+                .electric_batteries
+                .get("B")
+                .unwrap()
+                .get_state_of_charge(),
+            0.7599053414735286
+        );
+    }
+
+    // skipping python's test_calc_energy_import_export_betafactor_multiple_items as mocking/assertions difficult to replicate in rust
+
+    #[rstest]
+    fn test_sort_by_priority(energy_supply: EnergySupply, simulation_time: SimulationTime) {
+        assert_eq!(
+            energy_supply
+                .sort_by_priority(&indexmap! {"B".into() => 2, "A".into() => 1, "C".into() => 3})
+                .unwrap(),
+            vec![2, 1, 3]
+        );
+
+        let mut builder =
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps());
+        builder = builder.with_priority(vec!["A", "C", "B"]);
+        let energy_supply = builder.build();
+
+        assert_eq!(
+            energy_supply
+                .sort_by_priority(&indexmap! {"B".into() => 2, "A".into() => 1, "C".into() => 3})
+                .unwrap(),
+            vec![1, 3, 2]
+        );
+        assert_eq!(
+            energy_supply
+                .sort_by_priority(&indexmap! {"A".into() => 1, "C".into() => 2})
+                .unwrap(),
+            vec![1, 2]
+        );
+        assert!(energy_supply
+            .sort_by_priority(&indexmap! {"D".into() => 2})
+            .is_err());
+        assert!(energy_supply
+            .sort_by_priority(
+                &indexmap! {"A".into() => 1, "B".into() => 2, "C".into() => 3, "D".into() => 4}
+            )
+            .is_err());
+    }
+
+    #[rstest]
+    // in python this test checks that timestep_end is called on the mock battery - difficult to replicate
+    // in rust so instead checking the result of the function being called (total_time_charging_current_timestep reset to 0)
+    fn test_timestep_end(simulation_time: SimulationTime, external_conditions: ExternalConditions) {
+        let battery = create_elec_battery(
+            false,
+            false,
+            BatteryLocation::Outside,
+            external_conditions,
+            simulation_time,
+        );
+        battery.set_total_time_charging_current_timestep(10.);
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
+                .with_electric_battery(indexmap! {"ElectricBattery".into() => battery})
+                .with_priority(vec!["diverter", "ElectricBattery"]);
+
+        let energy_supply = builder.build();
+
+        assert_eq!(
+            energy_supply
+                .electric_batteries
+                .get("ElectricBattery")
+                .unwrap()
+                .get_total_time_charging_current_timestep(),
+            10.
+        );
+
+        energy_supply.timestep_end().unwrap();
+
+        assert_eq!(
+            energy_supply
+                .electric_batteries
+                .get("ElectricBattery")
+                .unwrap()
+                .get_total_time_charging_current_timestep(),
+            0.
+        );
+    }
+
+    #[rstest]
+    fn test_no_battery(simulation_time: SimulationTime) {
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build();
+
+        assert!(!energy_supply.has_battery().unwrap());
+        assert!(energy_supply.get_battery_max_capacity().unwrap().is_none());
+        assert!(energy_supply
+            .get_battery_available_charge()
+            .unwrap()
+            .is_none());
     }
 
     #[rstest]
