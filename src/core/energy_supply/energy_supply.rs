@@ -2104,7 +2104,7 @@ mod tests {
                             energy_connection_2.clone().end_user_name,
                             EXPECTED_TOTAL_DEMANDS_BY_END_USER[1][simtime.index]
                         ),
-                        ("others1".into(), ((simtime.index as f64 + 1.0) * 50.0))
+                        ("others1".into(), (simtime.index as f64 + 1.0) * 50.0)
                     ])
                 );
             }
