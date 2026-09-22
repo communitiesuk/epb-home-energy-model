@@ -1359,9 +1359,9 @@ const TIME_CONSTANT_WATER: f64 = 1560.;
 pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
-    control: Arc<Control>,
-    control_min: Arc<Control>,
-    control_max: Arc<Control>,
+    control: Control,
+    control_min: Control,
+    control_max: Control,
     temp_limit_upper_in_k: f64,
     cold_feed: Arc<WaterSupply>,
     hybrid_boiler_service: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
@@ -1373,8 +1373,8 @@ impl HeatPumpServiceWater {
         service_name: String,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<WaterSupply>,
-        control_min: Arc<Control>, // in Python this is TimeControl
-        control_max: Arc<Control>, // in Python this is TimeControl
+        control_min: Control, // in Python this is TimeControl
+        control_max: Control, // in Python this is TimeControl
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
     ) -> Self {
         let control = control_min.clone();
@@ -1402,7 +1402,7 @@ impl HeatPumpServiceWater {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
         // TODO review - this check may be able to be removed in future if we validate control earlier
-        match (&self.control_min.as_ref(), &self.control_max.as_ref()) {
+        match (&self.control_min, &self.control_max) {
             (
                 Control::CombinationTime { .. } | Control::SetpointTime { .. },
                 Control::CombinationTime { .. } | Control::SetpointTime { .. },
@@ -1512,7 +1512,7 @@ pub struct HeatPumpServiceSpace {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
     emitter_type: HeatPumpEmitterType,
-    control: Arc<Control>,
+    control: Control,
     temp_limit_upper_in_k: f64,
     temp_diff_emit_design: f64,
     design_flow_temp_op_cond: f64,
@@ -1544,13 +1544,13 @@ impl HeatPumpServiceSpace {
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>, // in Python this is TimeControl | None (not making this optional in Rust as there will always be a control)
+        control: Control, // in Python this is TimeControl | None (not making this optional in Rust as there will always be a control)
         volume_heated: f64,
         boiler_service_space: Option<Arc<Mutex<BoilerServiceSpace>>>,
     ) -> anyhow::Result<Self> {
         // TODO review - this check may be able to be removed in future if we validate control earlier
         if !matches!(
-            control.as_ref(),
+            control,
             Control::CombinationTime(_) | Control::SetpointTime(_)
         ) {
             bail!("Expected control to be combination or setpoint time control");
@@ -1770,7 +1770,7 @@ impl HeatPumpWarmAir {
         service_name: &str,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>, // in Python this is TimeControl | None (not making this optional in Rust as there will always be a control)
+        control: Control, // in Python this is TimeControl | None (not making this optional in Rust as there will always be a control)
         temp_flow: f64,
         frac_convective: f64,
         volume_heated: f64,
@@ -2337,8 +2337,8 @@ impl HeatPump {
         service_name: &str,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<WaterSupply>,
-        control_min: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
-        control_max: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control_min: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control_max: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> anyhow::Result<HeatPumpServiceWater> {
         Self::create_service_connection(heat_pump.clone(), service_name)?;
         let boiler_service = heat_pump
@@ -2376,7 +2376,7 @@ impl HeatPump {
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust as there will always be a control)
+        control: Control, // in Python this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust as there will always be a control)
         volume_heated: f64,
     ) -> anyhow::Result<HeatPumpServiceSpace> {
         let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
@@ -2410,7 +2410,7 @@ impl HeatPump {
     pub(crate) fn create_service_space_heating_warm_air(
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
-        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust as there will always be a control)
+        control: Control, // in Python this is SetpointTimeControl | CombinationTimeControl | None (not making this optional in Rust as there will always be a control)
         frac_convective: f64,
         volume_heated: f64,
     ) -> anyhow::Result<HeatPumpWarmAir> {
@@ -4427,8 +4427,8 @@ pub struct HeatPumpHotWaterOnly {
     power_in_kw: f64,
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control_min: Arc<Control>,
-    control_max: Arc<Control>,
+    control_min: Control,
+    control_max: Control,
     initial_efficiency: f64,
     tank_volume: f64,
     daily_losses: f64,
@@ -4453,8 +4453,8 @@ impl HeatPumpHotWaterOnly {
         heat_exchanger_surface_area_declared: Option<f64>,
         daily_losses_declared: f64,
         simulation_timestep: f64,
-        control_min: Arc<Control>, // in Python this is TimeControl
-        control_max: Arc<Control>, // in Python this is TimeControl
+        control_min: Control, // in Python this is TimeControl
+        control_max: Control, // in Python this is TimeControl
     ) -> Self {
         let efficiencies = Efficiencies {
             l: test_data.l.as_ref().map(|profile_data| {
@@ -4584,7 +4584,7 @@ impl HeatPumpHotWaterOnly {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
         // TODO review - this check may be able to be removed in future if we validate control earlier
-        match (&self.control_min.as_ref(), &self.control_max.as_ref()) {
+        match (&self.control_min, &self.control_max) {
             (
                 Control::CombinationTime { .. } | Control::SetpointTime { .. },
                 Control::CombinationTime { .. } | Control::SetpointTime { .. },
@@ -4608,7 +4608,7 @@ impl HeatPumpHotWaterOnly {
     ) -> f64 {
         // Account for time control. In the Python they also check here whether control_min is None
         // but this is not possible as it's a required field for a HeatPumpHotWaterOnly object.
-        let energy_supplied = if self.control_min.as_ref().is_on(&simtime) {
+        let energy_supplied = if self.control_min.is_on(&simtime) {
             min_of_2(energy_demand, self.power_in_kw * self.simulation_timestep)
         } else {
             0.0
@@ -4626,7 +4626,7 @@ impl HeatPumpHotWaterOnly {
     pub fn energy_output_max(&self, _temp_return: f64, simtime: SimulationTimeIteration) -> f64 {
         // Account for time control. In the Python they also check here whether control_min is None
         // but this is not possible as it's a required field for a HeatPumpHotWaterOnly object.
-        if self.control_min.as_ref().is_on(&simtime) {
+        if self.control_min.is_on(&simtime) {
             self.power_in_kw * self.simulation_timestep
         } else {
             0.0
@@ -6098,8 +6098,8 @@ mod tests {
             "new_service".into(),
             30.,
             Arc::new(cold_feed),
-            Arc::new(control_min),
-            Arc::new(control_max),
+            control_min,
+            control_max,
             None,
         )
     }
@@ -6122,20 +6122,17 @@ mod tests {
         mut heat_pump_service_water: HeatPumpServiceWater,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
-        heat_pump_service_water.control_min = Arc::new(Control::OnOffTime(
-            OnOffTimeControl::new(vec![Some(true)], 0, 1.).into(),
-        ));
+        heat_pump_service_water.control_min =
+            Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into());
 
         assert!(heat_pump_service_water
             .setpnt(simulation_time_for_heat_pump.iter().current_iteration())
             .is_err());
 
-        heat_pump_service_water.control_min =
-            Arc::new(create_setpoint_time_control(vec![Some(10.)]));
+        heat_pump_service_water.control_min = create_setpoint_time_control(vec![Some(10.)]);
 
-        heat_pump_service_water.control_max = Arc::new(Control::OnOffTime(
-            OnOffTimeControl::new(vec![Some(true)], 0, 1.).into(),
-        ));
+        heat_pump_service_water.control_max =
+            Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into());
 
         assert!(heat_pump_service_water
             .setpnt(simulation_time_for_heat_pump.iter().current_iteration())
@@ -6169,7 +6166,7 @@ mod tests {
             50.,
             Default::default(),
             55.,
-            Arc::new(control),
+            control,
             100.,
             None,
         )
@@ -6206,9 +6203,8 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
-        let on_off_control = Arc::new(Control::OnOffTime(
-            OnOffTimeControl::new(vec![Some(true)], 0, 1.).into(),
-        ));
+        let on_off_control =
+            Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into());
         let heat_pump = create_default_heat_pump(
             None,
             external_conditions,
@@ -6239,7 +6235,7 @@ mod tests {
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let control = create_setpoint_time_control(vec![None, None]);
-        heat_pump_service_space.control = Arc::new(control);
+        heat_pump_service_space.control = control;
 
         assert_eq!(
             heat_pump_service_space
@@ -6284,7 +6280,7 @@ mod tests {
             "new_service",
             10.,
             25.,
-            Arc::new(control),
+            control,
             10.,
             0.7,
             12.,
@@ -7520,18 +7516,9 @@ mod tests {
             ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step).into(),
         );
 
-        let control_min = Arc::new(create_setpoint_time_control(vec![
-            Some(52.),
-            Some(52.),
-            None,
-            Some(52.),
-        ]));
-        let control_max = Arc::new(create_setpoint_time_control(vec![
-            Some(60.),
-            Some(60.),
-            Some(60.),
-            Some(60.),
-        ]));
+        let control_min = create_setpoint_time_control(vec![Some(52.), Some(52.), None, Some(52.)]);
+        let control_max =
+            create_setpoint_time_control(vec![Some(60.), Some(60.), Some(60.), Some(60.)]);
 
         let hot_water_service = HeatPump::create_service_hot_water(
             heat_pump.clone(),
@@ -7579,7 +7566,7 @@ mod tests {
         let service_name = "service_space";
         let temp_limit_upper = 50.0;
         let temp_diff_emit_design = 50.0;
-        let control = Arc::new(create_setpoint_time_control(vec![Some(20.), None]));
+        let control = create_setpoint_time_control(vec![Some(20.), None]);
         let volume_heated = 250.0;
 
         let heat_pump = create_default_heat_pump(
@@ -7684,7 +7671,7 @@ mod tests {
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
         let service_name = "service_space_warmair";
-        let control = Arc::from(create_setpoint_time_control(vec![]));
+        let control = create_setpoint_time_control(vec![]);
         let volume_heated = 250.;
         let frac_convective = 0.9;
 
@@ -7841,7 +7828,7 @@ mod tests {
         heat_pump.sink_type = HeatPumpSinkType::Air;
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
-        let control = Arc::from(create_setpoint_time_control(vec![]));
+        let control = create_setpoint_time_control(vec![]);
         // in Python None is passed in for the control but this is not optional in Rust
         HeatPump::create_service_space_heating_warm_air(
             heat_pump.clone(),
@@ -8132,7 +8119,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = Arc::from(Control::SetpointTime(
+        let control = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.), Some(22.)],
                 0,
@@ -8142,7 +8129,7 @@ mod tests {
                 simulation_time_for_heat_pump.step,
             )
             .into(),
-        ));
+        );
 
         let boiler_service_space = Boiler::create_service_space_heating(
             boiler.clone(),
@@ -8226,7 +8213,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = Arc::from(Control::SetpointTime(
+        let control = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(0.), Some(0.)],
                 0,
@@ -8236,7 +8223,7 @@ mod tests {
                 simulation_time_for_heat_pump.step,
             )
             .into(),
-        ));
+        );
 
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::new(Mutex::new(BoilerServiceSpace::new(
@@ -8381,7 +8368,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = Arc::from(Control::SetpointTime(
+        let control = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(0.), Some(0.)],
                 0,
@@ -8391,7 +8378,7 @@ mod tests {
                 simulation_time_for_heat_pump.step,
             )
             .into(),
-        ));
+        );
 
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::new(Mutex::new(BoilerServiceSpace::new(
@@ -8459,7 +8446,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = Arc::from(Control::SetpointTime(
+        let control = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(0.), Some(0.)],
                 0,
@@ -8469,7 +8456,7 @@ mod tests {
                 simulation_time_for_heat_pump.step,
             )
             .into(),
-        ));
+        );
 
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::new(Mutex::new(BoilerServiceSpace::new(
@@ -9341,7 +9328,7 @@ mod tests {
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace",
-            Arc::new(Control::SetpointTime(control.into())),
+            Control::SetpointTime(control.into()),
         )));
 
         let heat_pump_input = create_heat_pump_input_from_json(None, None);
@@ -9837,7 +9824,7 @@ mod tests {
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace_service_off",
-            ctrl.into(),
+            ctrl,
         )));
 
         let heat_pump_input = create_heat_pump_input_from_json(None, None);
@@ -10158,7 +10145,7 @@ mod tests {
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace",
-            Arc::new(control),
+            control,
         )));
         let input = create_heat_pump_input_from_json(None, None);
         let mut heat_pump_with_boiler = create_heat_pump(
@@ -10559,7 +10546,7 @@ mod tests {
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace",
-            Arc::new(ctrl),
+            ctrl,
         )));
 
         let heat_pump_input = create_heat_pump_input_from_json(None, None);
@@ -10694,7 +10681,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let ctrl = Arc::new(Control::SetpointTime(
+        let ctrl = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.0), Some(22.0)],
                 0,
@@ -10704,7 +10691,7 @@ mod tests {
                 1.0,
             )
             .into(),
-        ));
+        );
 
         let boiler_service_water = Arc::new(Mutex::new(
             Boiler::create_service_hot_water_regular(
@@ -10850,7 +10837,7 @@ mod tests {
         let heat_pummp_sink_air = Arc::from(Mutex::from(heat_pummp_sink_air));
 
         let service_name = "service_space_warmair";
-        let control = Arc::from(create_setpoint_time_control(vec![Some(20.)]));
+        let control = create_setpoint_time_control(vec![Some(20.)]);
         let volume_heated = 250.;
         let frac_convective = 0.9;
 
@@ -10903,7 +10890,7 @@ mod tests {
             temp_limit_upper,
             temp_diff_emit_design,
             55.,
-            Arc::new(control),
+            control,
             volume_heated,
         )
         .unwrap();
@@ -11884,7 +11871,7 @@ mod tests {
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let temp_limit_upper = 65.;
-        let control = Arc::new(create_setpoint_time_control(vec![Some(20.), Some(20.)]));
+        let control = create_setpoint_time_control(vec![Some(20.), Some(20.)]);
         external_conditions.air_temps = vec![-10., 2.5];
         let heat_pump_input = create_heat_pump_input_from_json(Some("Substitute"), None);
         let heat_pump = Arc::new(Mutex::new(create_heat_pump(
@@ -12055,18 +12042,9 @@ mod tests {
             Arc::from(RwLock::from(energy_supply)),
             "end_user_name".into(),
         );
-        let control_min = Arc::new(create_setpoint_time_control(vec![
-            Some(52.),
-            Some(52.),
-            None,
-            Some(52.),
-        ]));
-        let control_max = Arc::new(create_setpoint_time_control(vec![
-            Some(60.),
-            Some(60.),
-            Some(60.),
-            Some(60.),
-        ]));
+        let control_min = create_setpoint_time_control(vec![Some(52.), Some(52.), None, Some(52.)]);
+        let control_max =
+            create_setpoint_time_control(vec![Some(60.), Some(60.), Some(60.), Some(60.)]);
 
         HeatPumpHotWaterOnly::new(
             power_max,
@@ -12153,16 +12131,12 @@ mod tests {
         let heat_pump = create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
 
         let mut hp1 = heat_pump.clone();
-        hp1.control_min = Arc::new(Control::OnOffTime(
-            OnOffTimeControl::new(vec![Some(true)], 0, 1.).into(),
-        ));
+        hp1.control_min = Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into());
 
         assert!(hp1.setpnt(simtime).is_err());
 
         let mut hp2 = heat_pump.clone();
-        hp2.control_max = Arc::new(Control::OnOffTime(
-            OnOffTimeControl::new(vec![Some(true)], 0, 1.).into(),
-        ));
+        hp2.control_max = Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into());
 
         assert!(hp2.setpnt(simtime).is_err());
     }
@@ -12180,9 +12154,8 @@ mod tests {
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
         let mut heat_pump =
             create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
-        heat_pump.control_min = Arc::new(Control::OnOffTime(
-            OnOffTimeControl::new(vec![Some(false), Some(false)], 0, 1.).into(),
-        ));
+        heat_pump.control_min =
+            Control::OnOffTime(OnOffTimeControl::new(vec![Some(false), Some(false)], 0, 1.).into());
 
         assert_relative_eq!(heat_pump.demand_energy(10., 50., Some(40.), simtime), 0.);
     }
@@ -12201,9 +12174,8 @@ mod tests {
         let mut heat_pump =
             create_heat_pump_hw_only(None, None, None, simulation_time_for_heat_pump);
 
-        heat_pump.control_min = Arc::new(Control::OnOffTime(
-            OnOffTimeControl::new(vec![Some(false), Some(false)], 0, 1.).into(),
-        ));
+        heat_pump.control_min =
+            Control::OnOffTime(OnOffTimeControl::new(vec![Some(false), Some(false)], 0, 1.).into());
 
         assert_relative_eq!(heat_pump.energy_output_max(50., simtime), 0.);
     }

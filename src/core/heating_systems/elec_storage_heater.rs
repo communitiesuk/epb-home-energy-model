@@ -28,7 +28,7 @@ pub(crate) struct ElecStorageHeater {
     air_flow_type: ElectricStorageHeaterAirFlowType,
     frac_convective: f64,
     energy_supply_conn: EnergySupplyConnection,
-    control: Arc<Control>,
+    control: Control,
     fan_pwr: f64,
     external_conditions: Arc<ExternalConditions>,
     temp_air: f64,
@@ -130,8 +130,8 @@ impl ElecStorageHeater {
         zone_internal_air_func: Arc<dyn Fn() -> f64 + Send + Sync>,
         energy_supply_conn: EnergySupplyConnection,
         simulation_time: &SimulationTimeIterator,
-        control: Arc<Control>,
-        charge_control: Arc<Control>,
+        control: Control,
+        charge_control: Control,
         dry_core_min_output: Vec<[f64; 2]>,
         dry_core_max_output: Vec<[f64; 2]>,
         external_conditions: Arc<ExternalConditions>,
@@ -140,7 +140,7 @@ impl ElecStorageHeater {
     ) -> anyhow::Result<Arc<Self>> {
         let output_detailed_results = output_detailed_results.unwrap_or(false);
 
-        match charge_control.as_ref() {
+        match &charge_control {
             Control::Charge(charge) => {
                 if charge.logic_type() == ControlLogicType::HeatBattery {
                     bail!("Control logic type HeatBattery is not valid for ElecStorageHeater.")
@@ -191,14 +191,14 @@ impl ElecStorageHeater {
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<f64> {
-        per_control!(self.control.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) })
+        per_control!(&self.control, ctrl => { ctrl.setpnt(simulation_time_iteration) })
     }
 
     pub(crate) fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
-        per_control!(self.control.as_ref(), ctrl => { ctrl.in_required_period(simulation_time_iteration) })
+        per_control!(&self.control, ctrl => { ctrl.in_required_period(simulation_time_iteration) })
     }
 
     pub(crate) fn frac_convective(&self) -> f64 {
@@ -552,8 +552,8 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
         charge_control_schedule: Vec<bool>,
-    ) -> Arc<Control> {
-        Arc::new(Control::Charge(
+    ) -> Control {
+        Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Automatic,
                 ScheduleOrControl::Schedule(charge_control_schedule),
@@ -569,24 +569,24 @@ mod tests {
             )
             .unwrap()
             .into(),
-        ))
+        )
     }
 
     #[fixture]
-    fn control() -> Arc<Control> {
+    fn control() -> Control {
         let mut schedule = vec![Some(21.), Some(21.), None, Some(21.)];
         schedule.extend(vec![None; 20]);
 
-        Arc::new(Control::SetpointTime(
+        Control::SetpointTime(
             SetpointTimeControl::new(schedule, 0, 1., Default::default(), Default::default(), 1.)
                 .into(),
-        ))
+        )
     }
 
     fn create_elec_storage_heater(
         simulation_time: SimulationTime,
-        charge_control: Arc<Control>,
-        control: Arc<Control>,
+        charge_control: Control,
+        control: Control,
         external_conditions: Arc<ExternalConditions>,
         dry_core_min_output: Vec<[f64; 2]>,
         dry_core_max_output: Vec<[f64; 2]>,
@@ -629,8 +629,8 @@ mod tests {
     #[fixture]
     fn elec_storage_heater(
         simulation_time: SimulationTime,
-        charge_control: Arc<Control>,
-        control: Arc<Control>,
+        charge_control: Control,
+        control: Control,
         external_conditions: Arc<ExternalConditions>,
     ) -> Arc<ElecStorageHeater> {
         create_elec_storage_heater(
@@ -662,8 +662,8 @@ mod tests {
     #[rstest]
     fn test_initialisation_invalid_soc_arrays(
         simulation_time: SimulationTime,
-        charge_control: Arc<Control>,
-        control: Arc<Control>,
+        charge_control: Control,
+        control: Control,
         external_conditions: Arc<ExternalConditions>,
     ) {
         let test_cases = [
@@ -748,8 +748,8 @@ mod tests {
     #[rstest]
     fn test_initialisation_detailed_results(
         simulation_time: SimulationTime,
-        charge_control: Arc<Control>,
-        control: Arc<Control>,
+        charge_control: Control,
+        control: Control,
         external_conditions: Arc<ExternalConditions>,
     ) {
         let esh_max_output = vec![[0.0, 0.0], [0.5, 30.0], [1.0, 50.0]];
@@ -951,10 +951,10 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
-        control: Arc<Control>,
+        control: Control,
         charge_control_schedule: Vec<bool>,
     ) {
-        let charge_control = Arc::new(Control::Charge(
+        let charge_control = Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Manual,
                 ScheduleOrControl::Schedule(charge_control_schedule),
@@ -970,7 +970,7 @@ mod tests {
             )
             .unwrap()
             .into(),
-        ));
+        );
         let heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
@@ -997,10 +997,10 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
-        control: Arc<Control>,
+        control: Control,
         charge_control_schedule: Vec<bool>,
     ) {
-        let charge_control = Arc::new(Control::Charge(
+        let charge_control = Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Celect,
                 ScheduleOrControl::Schedule(charge_control_schedule),
@@ -1016,7 +1016,7 @@ mod tests {
             )
             .unwrap()
             .into(),
-        ));
+        );
         let heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
@@ -1043,10 +1043,10 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
-        control: Arc<Control>,
+        control: Control,
         charge_control_schedule: Vec<bool>,
     ) {
-        let charge_control = Arc::new(Control::Charge(
+        let charge_control = Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
                 ScheduleOrControl::Schedule(charge_control_schedule),
@@ -1062,7 +1062,7 @@ mod tests {
             )
             .unwrap()
             .into(),
-        ));
+        );
         let heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
@@ -1089,10 +1089,10 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
-        control: Arc<Control>,
+        control: Control,
         charge_control_schedule: Vec<bool>,
     ) {
-        let charge_control = Arc::new(Control::Charge(
+        let charge_control = Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Hhrsh,
                 ScheduleOrControl::Schedule(charge_control_schedule),
@@ -1108,7 +1108,7 @@ mod tests {
             )
             .unwrap()
             .into(),
-        ));
+        );
         let heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
@@ -1139,10 +1139,10 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
-        control: Arc<Control>,
+        control: Control,
         charge_control_schedule: Vec<bool>,
     ) {
-        let charge_control = Arc::new(Control::Charge(
+        let charge_control = Control::Charge(
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
                 ScheduleOrControl::Schedule(charge_control_schedule),
@@ -1158,7 +1158,7 @@ mod tests {
             )
             .unwrap()
             .into(),
-        ));
+        );
 
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
@@ -1277,8 +1277,8 @@ mod tests {
     fn test_demand_energy_detailed_results(
         simulation_time: SimulationTime,
         external_conditions: Arc<ExternalConditions>,
-        control: Arc<Control>,
-        charge_control: Arc<Control>,
+        control: Control,
+        charge_control: Control,
     ) {
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
@@ -1807,8 +1807,8 @@ mod tests {
     fn test_damper_only(
         simulation_time: SimulationTime,
         external_conditions: Arc<ExternalConditions>,
-        control: Arc<Control>,
-        charge_control: Arc<Control>,
+        control: Control,
+        charge_control: Control,
     ) {
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
@@ -1880,8 +1880,8 @@ mod tests {
     fn test_elec_storage_heater_no_instant_power(
         simulation_time: SimulationTime,
         external_conditions: Arc<ExternalConditions>,
-        control: Arc<Control>,
-        charge_control: Arc<Control>,
+        control: Control,
+        charge_control: Control,
     ) {
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
@@ -1972,8 +1972,8 @@ mod tests {
     fn test_heat_storage_dry_core_zero_capacity(
         simulation_time: SimulationTime,
         external_conditions: Arc<ExternalConditions>,
-        control: Arc<Control>,
-        charge_control: Arc<Control>,
+        control: Control,
+        charge_control: Control,
     ) {
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())

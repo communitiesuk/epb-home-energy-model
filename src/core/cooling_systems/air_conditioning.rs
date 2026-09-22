@@ -3,7 +3,6 @@ use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::simulation_time::SimulationTimeIteration;
-use std::sync::Arc;
 
 /// This module provides objects to air conditioning.
 
@@ -14,7 +13,7 @@ pub struct AirConditioning {
     frac_convective: f64,
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control: Arc<Control>,
+    control: Control,
 }
 
 impl AirConditioning {
@@ -33,7 +32,7 @@ impl AirConditioning {
         frac_convective: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
-        control: Arc<Control>,
+        control: Control,
     ) -> Self {
         Self {
             cooling_capacity_in_kw,
@@ -48,14 +47,14 @@ impl AirConditioning {
 
 impl SpaceCoolSystem for AirConditioning {
     fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        per_control!(self.control.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) })
+        per_control!(&self.control, ctrl => { ctrl.setpnt(simulation_time_iteration) })
     }
 
     fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
-        per_control!(self.control.as_ref(), ctrl => { ctrl.in_required_period(simulation_time_iteration) })
+        per_control!(&self.control, ctrl => { ctrl.in_required_period(simulation_time_iteration) })
     }
 
     fn frac_convective(&self) -> f64 {
@@ -97,6 +96,7 @@ mod tests {
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
+    use std::sync::Arc;
 
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
@@ -125,7 +125,7 @@ mod tests {
                 0.4,
                 energy_supply_conn,
                 simulation_time.step,
-                Arc::new(Control::SetpointTime(control.into())),
+                Control::SetpointTime(control.into()),
             ),
             energy_supply,
         )

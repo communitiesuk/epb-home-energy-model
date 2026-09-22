@@ -4,7 +4,6 @@ use crate::compare_floats::min_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::simulation_time::SimulationTimeIteration;
-use std::sync::Arc;
 
 /// Type to represent instantaneous electric heaters
 #[derive(Clone, Debug)]
@@ -13,7 +12,7 @@ pub struct InstantElecHeater {
     frac_convective: f64,
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control: Option<Arc<Control>>,
+    control: Option<Control>,
 }
 
 impl InstantElecHeater {
@@ -28,7 +27,7 @@ impl InstantElecHeater {
         frac_convective: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
-        control: Option<Arc<Control>>,
+        control: Option<Control>,
     ) -> Self {
         Self {
             rated_power_in_kw,
@@ -41,7 +40,7 @@ impl InstantElecHeater {
 
     pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
         self.control.as_ref().and_then(
-            |ctrl| per_control!(ctrl.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) }),
+            |ctrl| per_control!(&ctrl, ctrl => { ctrl.setpnt(simulation_time_iteration) }),
         )
     }
 
@@ -49,7 +48,7 @@ impl InstantElecHeater {
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
-        self.control.as_ref().and_then(|ctrl| per_control!(ctrl.as_ref(), ctrl => { ctrl.in_required_period(simulation_time_iteration) }))
+        self.control.as_ref().and_then(|ctrl| per_control!(&ctrl, ctrl => { ctrl.in_required_period(simulation_time_iteration) }))
     }
 
     pub fn frac_convective(&self) -> f64 {
@@ -93,6 +92,7 @@ mod tests {
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
+    use std::sync::Arc;
 
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
@@ -122,7 +122,7 @@ mod tests {
             0.4,
             energy_supply_conn,
             simulation_time.step,
-            Some(Arc::new(control)),
+            Some(control),
         )
     }
 

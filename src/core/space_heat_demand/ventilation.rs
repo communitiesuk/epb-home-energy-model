@@ -576,7 +576,7 @@ impl From<input::MechVentData> for MechVentType {
 pub(crate) struct Window {
     orientation: Orientation360,
     pitch: f64,
-    on_off_ctrl_obj: Option<Arc<Control>>,
+    on_off_ctrl_obj: Option<Control>,
     _altitude: f64,
     p_a_alt: f64,
     window_parts: Vec<WindowPart>,
@@ -600,7 +600,7 @@ impl Window {
         orientation: Orientation360,
         pitch: f64,
         altitude: f64,
-        on_off_ctrl_obj: Option<Arc<Control>>,
+        on_off_ctrl_obj: Option<Control>,
         ventilation_zone_base_height: f64,
     ) -> Self {
         Self {
@@ -1958,7 +1958,7 @@ pub(crate) struct InfiltrationVentilation {
     detailed_output_heating_cooling: bool,
     p_a_alt: f64,
     total_volume: f64,
-    smart_air_brick_control: Option<Arc<Control>>, // In python this is SetpointTimeControl
+    smart_air_brick_control: Option<Control>, // In python this is SetpointTimeControl
     vents_open_during_airtightness_test: Option<bool>,
     smart_air_brick_floor_area_fraction: f64,
     detailed_results: Arc<RwLock<Vec<VentilationDetailedResult>>>,
@@ -2016,7 +2016,7 @@ impl InfiltrationVentilation {
         altitude: f64,
         total_volume: f64,
         ventilation_zone_base_height: f64,
-        smart_air_brick_control: Option<Arc<Control>>, // In python this is SetpointTimeControl
+        smart_air_brick_control: Option<Control>, // In python this is SetpointTimeControl
         vents_open_during_airtightness_test: Option<bool>,
         smart_air_brick_floor_area_fraction: Option<f64>,
     ) -> Self {
@@ -2872,7 +2872,7 @@ impl InfiltrationVentilation {
         detailed_output_heating_cooling: bool,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         controls: &Controls,
-        smart_air_brick_control: Option<Arc<Control>>, // In Python this is SetpointTimeControl
+        smart_air_brick_control: Option<Control>, // In Python this is SetpointTimeControl
         vents_open_during_airtightness_test: Option<bool>,
         smart_air_brick_floor_area_fraction: Option<f64>,
     ) -> anyhow::Result<Self> {
@@ -2900,7 +2900,7 @@ impl InfiltrationVentilation {
                                 .and_then(|window_openable_control| {
                                     controls.get_with_string(window_openable_control)
                                 })
-                                .filter(|ctrl| matches!(&**ctrl, Control::OnOffTime(_)));
+                                .filter(|ctrl| matches!(ctrl, Control::OnOffTime(_)));
                             anyhow::Ok(Window::new(
                                 window_part_list.clone(),
                                 *orientation360,
@@ -3026,8 +3026,8 @@ impl InfiltrationVentilation {
                 .control
                 .as_ref()
                 .and_then(|ctrl_name| controls.get_with_string(ctrl_name))
-                .filter(|ctrl| matches!(&**ctrl, Control::SetpointTime(_)))
-                .map(|ctrl| ctrl.clone() as Arc<dyn ControlBehaviour>);
+                .filter(|ctrl| matches!(ctrl, Control::SetpointTime(_)))
+                .map(|ctrl| Arc::new(ctrl) as Arc<dyn ControlBehaviour>);
             let sfp_in_use_factor = mech_vents_data.sfp_in_use_factor;
             let energy_supply = energy_supplies
                 .get(&mech_vents_data.energy_supply)
@@ -4052,8 +4052,8 @@ mod tests {
         let controls: Controls = Controls::new(
             vec![],
             IndexMap::from([
-                ("min_temp".into(), control1.into()),
-                ("_window_opening_closedsleeping".into(), control2.into()),
+                ("min_temp".into(), control1),
+                ("_window_opening_closedsleeping".into(), control2),
             ]),
         );
         // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
@@ -4274,7 +4274,7 @@ mod tests {
             0.0.into(),
             90.,
             altitude,
-            ctrl.map(Arc::new),
+            ctrl,
             0.,
         )
     }
@@ -6076,7 +6076,7 @@ mod tests {
             simulation_time_iterator: &SimulationTimeIterator,
             combustion_appliances: CombustionAppliances,
             energy_supply: EnergySupply,
-            smart_air_brick: Option<Arc<Control>>,
+            smart_air_brick: Option<Control>,
             vents_open_during_airtightness_test: Option<bool>,
         ) -> InfiltrationVentilation {
             let ctrl = ctrl_that_is_on(simulation_time_iterator);
@@ -6197,7 +6197,7 @@ mod tests {
             let start_day = 0;
             let time_series_step = 1.;
             let timestep = 1.;
-            let control = Arc::new(Control::SetpointTime(
+            let control = Control::SetpointTime(
                 SetpointTimeControl::new(
                     schedule,
                     start_day,
@@ -6207,7 +6207,7 @@ mod tests {
                     timestep,
                 )
                 .into(),
-            ));
+            );
 
             let infiltration_ventilation_with_patched_smart_air_brick_vents_open =
                 create_infiltration_ventilation_with_smart_air_brick(
@@ -6243,7 +6243,7 @@ mod tests {
             let start_day = 0;
             let time_series_step = 1.;
             let timestep = 1.;
-            let control = Arc::new(Control::SetpointTime(
+            let control = Control::SetpointTime(
                 SetpointTimeControl::new(
                     schedule,
                     start_day,
@@ -6253,7 +6253,7 @@ mod tests {
                     timestep,
                 )
                 .into(),
-            ));
+            );
             let infiltration_ventilation_with_patched_smart_air_brick_no_setpoint =
                 create_infiltration_ventilation_with_smart_air_brick(
                     &simulation_time_iterator,
@@ -6285,7 +6285,7 @@ mod tests {
             let start_day = 0;
             let time_series_step = 1.;
             let timestep = 1.;
-            let control = Arc::new(Control::SetpointTime(
+            let control = Control::SetpointTime(
                 SetpointTimeControl::new(
                     schedule,
                     start_day,
@@ -6295,7 +6295,7 @@ mod tests {
                     timestep,
                 )
                 .into(),
-            ));
+            );
             let infiltration_ventilation_with_patched_smart_air_brick_vents_closed =
                 create_infiltration_ventilation_with_smart_air_brick(
                     &simulation_time_iterator,

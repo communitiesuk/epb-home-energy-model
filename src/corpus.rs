@@ -156,7 +156,7 @@ fn control_from_input(
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<Controls> {
     let mut core: Vec<HeatSourceControl> = Default::default();
-    let mut extra: IndexMap<String, Arc<Control>> = Default::default();
+    let mut extra: IndexMap<String, Control> = Default::default();
 
     // this is very ugly(!) but is just a reflection of the lack of clarity in the schema
     // and the way the variants-struct crate works;
@@ -168,7 +168,7 @@ fn control_from_input(
             simulation_time_iterator,
             control_input,
         )? {
-            core.push(HeatSourceControl::HotWaterTimer(Arc::new(ctrl)));
+            core.push(HeatSourceControl::HotWaterTimer(ctrl));
         }
     }
     if let Some(control) = &control_input.window_opening.as_ref() {
@@ -178,7 +178,7 @@ fn control_from_input(
             simulation_time_iterator,
             control_input,
         )? {
-            core.push(HeatSourceControl::WindowOpening(Arc::new(ctrl)));
+            core.push(HeatSourceControl::WindowOpening(ctrl));
         }
     }
     for (name, control) in &control_input.extra {
@@ -188,7 +188,7 @@ fn control_from_input(
             simulation_time_iterator,
             control_input,
         )? {
-            extra.insert(name.to_string().into(), Arc::new(ctrl));
+            extra.insert(name.to_string().into(), ctrl);
         }
     }
 
@@ -335,7 +335,7 @@ fn single_control_from_details(
         )
         .into(),
         ControlDetails::CombinationTime { combination } => {
-            // resolved controls needs to be: IndexMap<String, Arc<Control>>
+            // resolved controls needs to be: IndexMap<String, Control>
 
             /// Recursively collects all unique controls from the combination control dictionary.
             ///
@@ -350,7 +350,7 @@ fn single_control_from_details(
                 control_input: &ControlInput,
                 external_conditions: Arc<ExternalConditions>,
                 simulation_time_iterator: &SimulationTimeIterator,
-            ) -> anyhow::Result<IndexMap<String, Arc<Control>>> {
+            ) -> anyhow::Result<IndexMap<String, Control>> {
                 let mut empty_set: IndexSet<String> = Default::default();
                 let visited = visited.unwrap_or(&mut empty_set);
                 let mut controls: IndexSet<String> = Default::default();
@@ -402,7 +402,7 @@ fn single_control_from_details(
                         control.map(|control| {
                             Ok((
                                 control_name.clone(),
-                                Arc::new(control),
+                                control,
                             ))
                         })
                     })
@@ -746,8 +746,8 @@ pub struct Corpus {
     timestep_end_calcs: Arc<RwLock<Vec<HeatSystem>>>,
     initial_loop: AtomicBool,
     detailed_output_heating_cooling: bool,
-    vent_adjust_min_control: Option<Arc<Control>>,
-    vent_adjust_max_control: Option<Arc<Control>>,
+    vent_adjust_min_control: Option<Control>,
+    vent_adjust_max_control: Option<Control>,
     temp_internal_air_prev: Arc<AtomicF64>,
     smart_appliance_controls: IndexMap<String, Arc<SmartApplianceControl>>,
     input: Arc<Input>,
@@ -3481,22 +3481,22 @@ fn convert_energy_to_wm2(
 #[derive(Debug)]
 pub struct Controls {
     core: Vec<HeatSourceControl>,
-    extra: IndexMap<String, Arc<Control>>,
+    extra: IndexMap<String, Control>,
 }
 
 impl Controls {
-    pub(crate) fn new(core: Vec<HeatSourceControl>, extra: IndexMap<String, Arc<Control>>) -> Self {
+    pub(crate) fn new(core: Vec<HeatSourceControl>, extra: IndexMap<String, Control>) -> Self {
         Self { core, extra }
     }
 
-    pub(crate) fn get(&self, control_type: &HeatSourceControlType) -> Option<Arc<Control>> {
+    pub(crate) fn get(&self, control_type: &HeatSourceControlType) -> Option<Control> {
         self.core
             .iter()
             .find(|heat_source_control| heat_source_control.has_type(*control_type))
             .map(|heat_source_control| heat_source_control.get())
     }
 
-    pub(crate) fn get_with_string(&self, control_name: &str) -> Option<Arc<Control>> {
+    pub(crate) fn get_with_string(&self, control_name: &str) -> Option<Control> {
         match control_name {
             // hard-code ways of resolving to core control types (for now)
             "hw timer" => self.get(&HeatSourceControlType::HotWaterTimer),
@@ -3889,14 +3889,14 @@ fn infiltration_ventilation_from_input(
 ) -> anyhow::Result<(
     InfiltrationVentilation,
     Option<Arc<dyn ControlBehaviour>>,
-    Option<Arc<Control>>,
-    Option<Arc<Control>>,
+    Option<Control>,
+    Option<Control>,
 )> {
     let window_adjust_control = input
         .control_window_adjust
         .as_ref()
         .and_then(|ctrl_name| controls.get_with_string(ctrl_name))
-        .map(|ctrl| ctrl.clone() as Arc<dyn ControlBehaviour>);
+        .map(|ctrl| Arc::new(ctrl) as Arc<dyn ControlBehaviour>);
     let (vent_adjust_min_control, vent_adjust_max_control) = if let InfiltrationVentilationInput {
         vent_adjust_controls:
             VentAdjustControlReferences::Bounded {
@@ -5828,7 +5828,7 @@ fn hot_water_source_from_input(
                         )
                     })?;
 
-                match &*control {
+                match &control {
                     Control::OnOffTime(on_off_time_control) => Some(on_off_time_control.clone()),
                     _ => bail!(
                         "Control {} must be an OnOffTimeControl for a Control_keep_hot",

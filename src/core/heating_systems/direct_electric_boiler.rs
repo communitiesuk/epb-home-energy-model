@@ -128,8 +128,8 @@ impl DirectElectricBoiler {
     fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Control,
+        control_max: Control,
         control: Option<Arc<RangeTimeControl>>,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
@@ -150,7 +150,7 @@ impl DirectElectricBoiler {
     fn create_service_space_heating(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control: Arc<Control>, // TODO 1.0.0a9 this is a ControlSetPoint in Python
+        control: Control, // TODO 1.0.0a9 this is a ControlSetPoint in Python
     ) -> anyhow::Result<BoilerServiceSpace> {
         boiler.write().create_service_connection(service_name)?;
         Ok(BoilerServiceSpace::new(
@@ -556,8 +556,8 @@ mod tests {
         let boiler_service_result = DirectElectricBoiler::create_service_hot_water_regular(
             Arc::new(RwLock::new(boiler)),
             service_name,
-            Arc::new(Control::SetpointTime(control_min.into())),
-            Arc::new(Control::SetpointTime(control_max.into())),
+            Control::SetpointTime(control_min.into()),
+            Control::SetpointTime(control_max.into()),
             None,
         );
         assert!(boiler_service_result.is_ok());
@@ -576,7 +576,7 @@ mod tests {
         let boiler_service_result = DirectElectricBoiler::create_service_space_heating(
             Arc::new(RwLock::new(boiler)),
             service_name,
-            Arc::new(Control::SetpointTime(control.into())),
+            Control::SetpointTime(control.into()),
         );
         assert!(boiler_service_result.is_ok());
     }

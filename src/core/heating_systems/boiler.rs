@@ -431,8 +431,8 @@ impl BoilerServiceWaterCombi {
 pub struct BoilerServiceWaterRegular {
     boiler: BoilerForBoilerService,
     service_name: String,
-    control_min: Arc<Control>,
-    control_max: Arc<Control>,
+    control_min: Control,
+    control_max: Control,
     control: Option<Arc<RangeTimeControl>>,
 }
 
@@ -440,8 +440,8 @@ impl BoilerServiceWaterRegular {
     pub(crate) fn new(
         boiler: BoilerForBoilerService,
         service_name: String,
-        control_min: Arc<Control>, // in Python this can be one of SetpointTimeControl or CombinationTimeControl
-        control_max: Arc<Control>, // in Python this can be one of SetpointTimeControl or CombinationTimeControl
+        control_min: Control, // in Python this can be one of SetpointTimeControl or CombinationTimeControl
+        control_max: Control, // in Python this can be one of SetpointTimeControl or CombinationTimeControl
         control: Option<Arc<RangeTimeControl>>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -522,14 +522,14 @@ impl BoilerServiceWaterRegular {
 pub struct BoilerServiceSpace {
     boiler: BoilerForBoilerService,
     service_name: String,
-    control: Arc<Control>,
+    control: Control,
 }
 
 impl BoilerServiceSpace {
     pub(crate) fn new(
         boiler: BoilerForBoilerService,
         service_name: String,
-        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> Self {
         Self {
             boiler,
@@ -847,8 +847,8 @@ impl Boiler {
     pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control_min: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
-        control_max: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control_min: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control_max: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
         control: Option<Arc<RangeTimeControl>>,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
@@ -864,7 +864,7 @@ impl Boiler {
     pub(crate) fn create_service_space_heating(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> BoilerServiceSpace {
         boiler
             .write()
@@ -1904,8 +1904,8 @@ mod tests {
         }
 
         #[fixture]
-        fn control_min() -> Arc<Control> {
-            Arc::new(Control::SetpointTime(
+        fn control_min() -> Control {
+            Control::SetpointTime(
                 SetpointTimeControl::new(
                     vec![Some(52.), Some(52.), None],
                     0,
@@ -1915,12 +1915,12 @@ mod tests {
                     1.,
                 )
                 .into(),
-            ))
+            )
         }
 
         #[fixture]
-        fn control_max() -> Arc<Control> {
-            Arc::new(Control::SetpointTime(
+        fn control_max() -> Control {
+            Control::SetpointTime(
                 SetpointTimeControl::new(
                     vec![Some(60.), Some(60.)],
                     0,
@@ -1930,14 +1930,14 @@ mod tests {
                     1.,
                 )
                 .into(),
-            ))
+            )
         }
 
         #[fixture]
         fn boiler_service<'a>(
             boiler: Boiler,
-            control_min: Arc<Control>,
-            control_max: Arc<Control>,
+            control_min: Control,
+            control_max: Control,
         ) -> BoilerServiceWaterRegular {
             BoilerServiceWaterRegular::new(
                 BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
@@ -2184,7 +2184,7 @@ mod tests {
             BoilerServiceSpace::new(
                 BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 "boiler_test".into(),
-                Arc::new(control),
+                control,
             )
         }
 
@@ -2410,7 +2410,7 @@ mod tests {
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
         ) {
             let service_name = "service_hot_water_regular";
-            let control_min = Arc::new(Control::SetpointTime(
+            let control_min = Control::SetpointTime(
                 SetpointTimeControl::new(
                     vec![None, None],
                     0,
@@ -2420,8 +2420,8 @@ mod tests {
                     1.0,
                 )
                 .into(),
-            ));
-            let control_max = Arc::new(Control::SetpointTime(
+            );
+            let control_max = Control::SetpointTime(
                 SetpointTimeControl::new(
                     vec![None, None],
                     0,
@@ -2431,7 +2431,7 @@ mod tests {
                     1.0,
                 )
                 .into(),
-            ));
+            );
 
             let boiler = Arc::new(RwLock::new(boiler));
 
@@ -2454,7 +2454,7 @@ mod tests {
             let boiler_service_space_heating = Boiler::create_service_space_heating(
                 boiler,
                 "BoilerServiceSpace",
-                Arc::new(Control::SetpointTime(
+                Control::SetpointTime(
                     SetpointTimeControl::new(
                         vec![None, None],
                         0,
@@ -2464,7 +2464,7 @@ mod tests {
                         1.0,
                     )
                     .into(),
-                )),
+                ),
             );
             pretty_assertions::assert_eq!(
                 type_of(boiler_service_space_heating),

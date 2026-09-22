@@ -88,7 +88,7 @@ pub(crate) enum HeatSourceWetService<T: WaterSupplyBehaviour> {
 }
 pub(crate) struct HeatBatteryChargingSource<T: WaterSupplyBehaviour> {
     source_type: ChargingSourceType,
-    control: Arc<Control>,
+    control: Control,
     rated_charge_power: Option<f64>,
     heat_source_service: Option<HeatSourceWetService<T>>,
     temp_flow_max: Option<f64>,
@@ -132,7 +132,7 @@ fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
     for (t_idx, _) in simtime_iterator.clone().enumerate() {
         let mut active_sources: Vec<String> = Vec::new();
         for (src_name, charging_source) in &heat_source_data {
-            match charging_source.control.deref() {
+            match &charging_source.control {
                 Control::RangeTime(ctrl) => {
                     if let (_, Some(_)) =
                         ctrl.setpnt_range_time_control(&simtime_iterator.current_iteration())
@@ -166,9 +166,9 @@ pub(crate) struct HeatBatteryPcmServiceWaterRegular<T: WaterSupplyBehaviour> {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
     cold_feed: T,
-    control: Arc<Control>,
-    control_min: Arc<Control>,
-    control_max: Arc<Control>,
+    control: Control,
+    control_min: Control,
+    control_max: Control,
 }
 
 impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
@@ -182,8 +182,8 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
         cold_feed: T,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Control,
+        control_max: Control,
     ) -> Self {
         let control = control_min.clone();
 
@@ -405,7 +405,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
 pub struct HeatBatteryPcmServiceSpace {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
-    control: Arc<Control>,
+    control: Control,
 }
 
 /// An object to represent a space heating service provided by a heat_battery to e.g. radiators.
@@ -416,7 +416,7 @@ impl HeatBatteryPcmServiceSpace {
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
-        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> Self {
         Self {
             heat_battery,
@@ -426,14 +426,14 @@ impl HeatBatteryPcmServiceSpace {
     }
 
     pub fn temp_setpnt(&self, simulation_time_iteration: SimulationTimeIteration) -> Option<f64> {
-        per_control!(self.control.as_ref(), ctrl => { ctrl.setpnt(&simulation_time_iteration) })
+        per_control!(&self.control, ctrl => { ctrl.setpnt(&simulation_time_iteration) })
     }
 
     pub fn in_required_period(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> Option<bool> {
-        per_control!(self.control.as_ref(), ctrl => { ctrl.in_required_period(&simulation_time_iteration) })
+        per_control!(&self.control, ctrl => { ctrl.in_required_period(&simulation_time_iteration) })
     }
 
     /// Demand energy (in kWh) from the heat battery
@@ -465,7 +465,7 @@ impl HeatBatteryPcmServiceSpace {
     }
 
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
-        per_control!(self.control.as_ref(), ctrl => { ctrl.is_on(&simulation_time_iteration) })
+        per_control!(&self.control, ctrl => { ctrl.is_on(&simulation_time_iteration) })
     }
 
     pub(crate) fn energy_output_max(
@@ -604,7 +604,7 @@ pub struct HeatBatteryPcm {
     power_circ_pump: f64,
     power_standby: f64,
     n_units: usize,
-    charge_control: Arc<Control>, // ChargeControl variant expected
+    charge_control: Control, // ChargeControl variant expected
     // nothing external seems to read this - check upstream whether service_results field is necessary
     service_results: Arc<RwLock<Vec<HeatBatteryResult>>>,
     total_time_running_current_timestep: AtomicF64,
@@ -637,7 +637,7 @@ pub struct HeatBatteryPcm {
 impl HeatBatteryPcm {
     pub(crate) fn new(
         heat_battery_details: &HeatSourceWetDetails,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time_step: f64,
@@ -811,8 +811,8 @@ impl HeatBatteryPcm {
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         cold_feed: T,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Control,
+        control_max: Control,
     ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular<T>> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterRegular::new(
@@ -855,7 +855,7 @@ impl HeatBatteryPcm {
     pub(crate) fn create_service_space_heating(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
-        control: Arc<Control>, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
     ) -> anyhow::Result<HeatBatteryPcmServiceSpace> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceSpace::new(
@@ -880,7 +880,7 @@ impl HeatBatteryPcm {
     ///
     /// returns -- Power required in watts
     fn electric_charge(&self, simtime: SimulationTimeIteration) -> f64 {
-        if per_control!(self.charge_control.as_ref(), ctrl => { ctrl.is_on(&simtime) }) {
+        if per_control!(&self.charge_control, ctrl => { ctrl.is_on(&simtime) }) {
             self.pwr_in
         } else {
             0.0
@@ -2103,7 +2103,7 @@ impl HeatBatteryPcm {
     }
 
     fn target_charge(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
-        match self.charge_control.as_ref() {
+        match &self.charge_control {
             Control::Charge(ctrl) => ctrl.target_charge(simtime, None),
             _ => unreachable!(),
         }
@@ -2299,7 +2299,7 @@ mod tests {
 
         let heat_battery = Arc::new(RwLock::new(HeatBatteryPcm::new(
             heat_battery_details,
-            control.into(),
+            control,
             energy_supply,
             energy_supply_connection,
             simulation_time_iterator.step_in_hours(),
@@ -2349,18 +2349,15 @@ mod tests {
         let heat_battery_service = HeatBatteryPcmServiceSpace::new(
             heat_battery.clone(),
             SERVICE_NAME.into(),
-            service_control_on.into(),
+            service_control_on,
         );
 
         assert!(heat_battery_service.is_on(simulation_time_iteration));
 
         let service_control_off: Control = create_setpoint_time_control(vec![None, None]);
 
-        let heat_battery_service: HeatBatteryPcmServiceSpace = HeatBatteryPcmServiceSpace::new(
-            heat_battery,
-            SERVICE_NAME.into(),
-            service_control_off.into(),
-        );
+        let heat_battery_service: HeatBatteryPcmServiceSpace =
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), service_control_off);
 
         assert!(!heat_battery_service.is_on(simulation_time_iteration));
     }
@@ -2438,8 +2435,8 @@ mod tests {
             heat_battery,
             SERVICE_NAME.into(),
             mock_cold_feed,
-            Arc::new(control_min),
-            Arc::new(control_max),
+            control_min,
+            control_max,
         )
     }
 
@@ -2500,7 +2497,7 @@ mod tests {
         let temp_flow = 55.;
         let temp_return = 40.;
 
-        let service_control_off = Arc::new(create_setpoint_time_control(vec![None]));
+        let service_control_off = create_setpoint_time_control(vec![None]);
 
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
         let mock_cold_feed = MockWaterSupply::new(10.);
@@ -2579,7 +2576,7 @@ mod tests {
         let heat_battery =
             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
         let heat_battery_space =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
 
         assert_eq!(
             heat_battery_space.temp_setpnt(simulation_time_iteration),
@@ -2597,7 +2594,7 @@ mod tests {
         let heat_battery =
             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
         let heat_battery_space =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
 
         assert_eq!(
             heat_battery_space.in_required_period(simulation_time_iteration),
@@ -2619,7 +2616,7 @@ mod tests {
         let heat_battery =
             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
         let heat_battery_space =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
         let result = heat_battery_space
             .demand_energy(
                 energy_demand,
@@ -2647,11 +2644,8 @@ mod tests {
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
         let service_control_off: Control = create_setpoint_time_control(vec![None]);
 
-        let heat_battery_service: HeatBatteryPcmServiceSpace = HeatBatteryPcmServiceSpace::new(
-            heat_battery,
-            SERVICE_NAME.into(),
-            service_control_off.into(),
-        );
+        let heat_battery_service: HeatBatteryPcmServiceSpace =
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), service_control_off);
 
         let result = heat_battery_service
             .energy_output_max(temp_output, temp_return, None, simulation_time_iteration)
@@ -2709,7 +2703,7 @@ mod tests {
         simulation_time_iteration: SimulationTimeIteration,
         battery_control_off: Control,
     ) {
-        let control = Arc::new(create_setpoint_time_control(vec![Some(21.0)]));
+        let control = create_setpoint_time_control(vec![Some(21.0)]);
         let heat_battery =
             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
         let service = HeatBatteryPcm::create_service_space_heating(
@@ -3564,7 +3558,7 @@ mod tests {
 
         Arc::new(RwLock::new(HeatBatteryPcm::new(
             heat_battery_details,
-            battery_control_on.into(),
+            battery_control_on,
             energy_supply,
             energy_supply_connection,
             simulation_time_iterator.step_in_hours(),
@@ -3589,8 +3583,8 @@ mod tests {
             heat_battery.clone(),
             service_name,
             mock_cold_feed,
-            Arc::new(Control::Mock(MockControl::default())),
-            Arc::new(Control::Mock(MockControl::default())),
+            Control::Mock(MockControl::default()),
+            Control::Mock(MockControl::default()),
         )
         .unwrap();
 
@@ -3797,12 +3791,8 @@ mod tests {
         let service_name = "new_service";
         let control = create_setpoint_time_control(vec![]);
 
-        HeatBatteryPcm::create_service_space_heating(
-            heat_battery.clone(),
-            service_name,
-            Arc::new(control),
-        )
-        .unwrap();
+        HeatBatteryPcm::create_service_space_heating(heat_battery.clone(), service_name, control)
+            .unwrap();
 
         let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
             "auxiliary".into() => indexmap! {
@@ -4216,8 +4206,8 @@ mod tests {
             heat_battery.clone(),
             service_name,
             mock_cold_feed,
-            Arc::new(Control::Mock(MockControl::default())),
-            Arc::new(Control::Mock(MockControl::default())),
+            Control::Mock(MockControl::default()),
+            Control::Mock(MockControl::default()),
         );
 
         assert!(result.is_ok());
@@ -4226,8 +4216,8 @@ mod tests {
             heat_battery,
             service_name,
             mock_cold_feed,
-            Arc::new(Control::Mock(MockControl::default())),
-            Arc::new(Control::Mock(MockControl::default())),
+            Control::Mock(MockControl::default()),
+            Control::Mock(MockControl::default()),
         );
 
         assert!(result.is_err())
@@ -4538,8 +4528,8 @@ mod tests {
             schedule_lower: Vec<Option<f64>>,
             schedule_upper: Vec<Option<f64>>,
             simtime: SimulationTime,
-        ) -> Arc<Control> {
-            Arc::new(Control::RangeTime(
+        ) -> Control {
+            Control::RangeTime(
                 RangeTimeControl::new(
                     ScheduleOrControl::Schedule(schedule_lower),
                     ScheduleOrControl::Schedule(schedule_upper),
@@ -4550,7 +4540,7 @@ mod tests {
                 )
                 .unwrap()
                 .into(),
-            ))
+            )
         }
 
         #[rstest]

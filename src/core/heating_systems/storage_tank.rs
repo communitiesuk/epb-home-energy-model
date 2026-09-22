@@ -1838,7 +1838,7 @@ pub struct SmartHotWaterTank {
     power_pump_kw: f64,
     max_flow_rate_pump_l_per_min: f64,
     temp_usable: f64,
-    temp_setpnt_max: Arc<Control>,
+    temp_setpnt_max: Control,
     energy_supply_connection_pump: EnergySupplyConnection,
 }
 
@@ -1872,7 +1872,7 @@ impl SmartHotWaterTank {
         power_pump_kw: f64,
         max_flow_rate_pump_l_per_min: f64,
         temp_usable: f64,
-        temp_setpnt_max: Arc<Control>,
+        temp_setpnt_max: Control,
         cold_feed: WaterSupply,
         simulation_time_iteration: &SimulationTimeIteration,
         heat_sources: IndexMap<String, PositionedHeatSource>,
@@ -3167,8 +3167,8 @@ pub struct ImmersionHeater {
     pwr: f64, // rated power
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control_min: Option<Arc<Control>>,
-    control_max: Option<Arc<Control>>,
+    control_min: Option<Control>,
+    control_max: Option<Control>,
     diverter: ArcSwapOption<RwLock<PVDiverter>>,
 }
 
@@ -3188,8 +3188,8 @@ impl ImmersionHeater {
         rated_power: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
-        control_min: Option<Arc<Control>>,
-        control_max: Option<Arc<Control>>,
+        control_min: Option<Control>,
+        control_max: Option<Control>,
     ) -> Self {
         Self {
             pwr: rated_power,
@@ -3433,7 +3433,7 @@ pub struct PVDiverter {
     pre_heated_water_source: HotWaterStorageTank,
     immersion_heater: Arc<Mutex<ImmersionHeater>>,
     heat_source_name: String,
-    control_max: Option<Arc<Control>>,
+    control_max: Option<Control>,
     capacity_used: AtomicF64,
 }
 
@@ -3442,7 +3442,7 @@ impl PVDiverter {
         storage_tank: &HotWaterStorageTank,
         heat_source: Arc<Mutex<ImmersionHeater>>,
         heat_source_name: String,
-        control_max: Option<Arc<Control>>,
+        control_max: Option<Control>,
     ) -> Arc<RwLock<Self>> {
         let diverter = Arc::new(RwLock::new(Self {
             pre_heated_water_source: storage_tank.clone(),
@@ -3497,7 +3497,7 @@ impl SurplusDiverting for PVDiverter {
             )),
             &self.heat_source_name,
             energy_diverted_max,
-            self.control_max.as_ref().map(|control| control.as_ref()),
+            self.control_max.as_ref(),
             simulation_time_iteration,
         )?;
 
@@ -3530,7 +3530,7 @@ pub struct SolarThermalSystem {
     temp_internal_air_fn: TempInternalAirFn,
     heat_output_collector_loop: AtomicF64,
     energy_supplied: AtomicF64,
-    control_max: Arc<Control>,
+    control_max: Control,
     cp: f64,
     air_temp_coll_loop: AtomicF64,
     inlet_temp: AtomicF64,
@@ -3582,7 +3582,7 @@ impl SolarThermalSystem {
         external_conditions: Arc<ExternalConditions>,
         temp_internal_air_fn: TempInternalAirFn,
         simulation_timestep: f64,
-        control_max: Arc<Control>,
+        control_max: Control,
         contents: MaterialProperties,
         energy_supply_from_environment_conn: Option<EnergySupplyConnection>,
     ) -> Self {
@@ -3925,8 +3925,8 @@ mod tests {
             rated_power,
             energy_supply_connection.clone(),
             simulation_timestep,
-            Some(Arc::new(Control::SetpointTime(control_min.into()))),
-            Some(Arc::new(Control::SetpointTime(control_max.into()))),
+            Some(Control::SetpointTime(control_min.into())),
+            Some(Control::SetpointTime(control_max.into())),
         );
 
         PositionedHeatSource {
@@ -4213,7 +4213,7 @@ mod tests {
     }
 
     #[fixture]
-    fn diverter_control() -> Arc<Control> {
+    fn diverter_control() -> Control {
         Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(60.), Some(60.), Some(60.), Some(60.)],
@@ -4225,7 +4225,6 @@ mod tests {
             )
             .into(),
         )
-        .into()
     }
 
     #[fixture]
@@ -4415,7 +4414,7 @@ mod tests {
             external_conditions_for_solar_thermal.clone(),
             temp_internal_air_fn.clone(),
             simulation_time_for_solar_thermal.step,
-            Arc::new(Control::SetpointTime(control_max.into())),
+            Control::SetpointTime(control_max.into()),
             *WATER,
             None,
         )));
@@ -5548,7 +5547,7 @@ mod tests {
             EnergySupply::connection(Arc::new(RwLock::new(energy_supply)), "shower").unwrap();
         let timestep = simulation_time_for_immersion_heater.step;
 
-        let control_min = Arc::new(Control::SetpointTime(
+        let control_min = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(52.), Some(52.), None, Some(52.)],
                 0,
@@ -5558,9 +5557,9 @@ mod tests {
                 timestep,
             )
             .into(),
-        ));
+        );
 
-        let control_max = Arc::new(Control::SetpointTime(
+        let control_max = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(60.), Some(60.), Some(60.), Some(60.)],
                 0,
@@ -5570,7 +5569,7 @@ mod tests {
                 timestep,
             )
             .into(),
-        ));
+        );
 
         ImmersionHeater::new(
             rated_power,
@@ -5850,7 +5849,7 @@ mod tests {
         let power_pump_kw = 5.;
         let max_flow_rate_pump_l_per_min = 1000.;
         let temp_usable = 40.;
-        let temp_setpnt_max = Arc::new(Control::SetpointTime(
+        let temp_setpnt_max = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![
                     Some(50.0),
@@ -5869,7 +5868,7 @@ mod tests {
                 1.,
             )
             .into(),
-        ));
+        );
 
         create_smart_hot_water_tank(
             simulation_time_for_smart_hot_water_tank,
@@ -5902,7 +5901,7 @@ mod tests {
         power_pump_kw: f64,
         max_flow_rate_pump_l_per_min: f64,
         temp_usable: f64,
-        temp_setpnt_max: Arc<Control>,
+        temp_setpnt_max: Control,
         nb_vol: usize,
     ) -> SmartHotWaterTank {
         let cold_feed = WaterSupply::ColdWaterSource(Arc::new(ColdWaterSource::new(
@@ -5959,8 +5958,8 @@ mod tests {
             5.,
             energy_supply_connection,
             1.,
-            Some(control_min.into()),
-            Some(control_max.into()),
+            Some(control_min),
+            Some(control_max),
         );
         let heat_source = HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(
             Mutex::new(immersion_heater),
@@ -6660,7 +6659,7 @@ mod tests {
         energy_supply_for_smart_hot_water_tank_immersion: Arc<RwLock<EnergySupply>>,
         energy_supply_for_smart_hot_water_tank_pump: Arc<RwLock<EnergySupply>>,
     ) {
-        let temp_setpnt_max = Arc::from(Control::Mock(MockControl::new(None, None, None)));
+        let temp_setpnt_max = Control::Mock(MockControl::new(None, None, None));
 
         let tank_with_none_setpoint = create_smart_hot_water_tank(
             simulation_time_for_smart_hot_water_tank,
@@ -6777,7 +6776,7 @@ mod tests {
     fn test_capacity_used(
         mut storage_tank_for_pv_diverter: StorageTank,
         immersion_heater: ImmersionHeater,
-        diverter_control: Arc<Control>,
+        diverter_control: Control,
     ) {
         storage_tank_for_pv_diverter.q_ls_n_prev_heat_source =
             Arc::new(RwLock::new(vec![0.0, 0.1, 0.2, 0.3]));
@@ -6799,7 +6798,7 @@ mod tests {
     fn test_timestep_end(
         mut storage_tank_for_pv_diverter: StorageTank,
         immersion_heater: ImmersionHeater,
-        diverter_control: Arc<Control>,
+        diverter_control: Control,
     ) {
         storage_tank_for_pv_diverter.q_ls_n_prev_heat_source =
             Arc::new(RwLock::new(vec![0.0, 0.1, 0.2, 0.3]));
@@ -6823,7 +6822,7 @@ mod tests {
     fn test_divert_surplus(
         mut storage_tank_for_pv_diverter: StorageTank,
         immersion_heater: ImmersionHeater,
-        diverter_control: Arc<Control>,
+        diverter_control: Control,
     ) {
         // _StorageTank__Q_ls_n_prev_heat_source is needed for the functions to
         // run the test but have no bearing in the results

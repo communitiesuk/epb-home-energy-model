@@ -49,7 +49,7 @@ pub(crate) struct HeatStorageDryCore {
     pwr_in: f64,
     storage_capacity: f64,
     n_units: u32,
-    charge_control: Arc<Control>,
+    charge_control: Control,
     dry_core_min_output: Vec<[f64; 2]>,
     dry_core_max_output: Vec<[f64; 2]>,
     state_of_charge: AtomicF64,
@@ -83,7 +83,7 @@ impl HeatStorageDryCore {
         pwr_in: f64,
         storage_capacity: f64,
         n_units: u32,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         dry_core_min_output: Vec<[f64; 2]>,
         dry_core_max_output: Vec<[f64; 2]>,
         state_of_charge_init: f64,
@@ -617,7 +617,7 @@ impl HeatStorageDryCore {
     ) -> anyhow::Result<f64> {
         // Calculates target charge from potential to charge system
 
-        let charge_control = match self.charge_control.as_ref() {
+        let charge_control = match &self.charge_control {
             Control::Charge(charge_control) => charge_control,
             _ => unreachable!("charge_control must be of type ChargeControl"),
         };
@@ -833,11 +833,11 @@ pub(crate) trait HeatBatteryDryCoreCommonBehaviour: Send + Sync {
 
 #[derive(Clone, Debug)]
 pub(crate) struct HeatBatteryDryCoreService {
-    control: Option<Arc<Control>>,
+    control: Option<Control>,
 }
 
 impl HeatBatteryDryCoreService {
-    pub(crate) fn new(control: Option<Arc<Control>>) -> Self {
+    pub(crate) fn new(control: Option<Control>) -> Self {
         Self { control }
     }
 
@@ -860,8 +860,8 @@ pub(crate) struct HeatBatteryDryCoreServiceWaterRegular<T: WaterSupplyBehaviour>
     heat_battery: Arc<HeatBatteryDryCore>,
     service_name: String,
     cold_feed: T,
-    control_min: Arc<Control>,
-    control_max: Arc<Control>,
+    control_min: Control,
+    control_max: Control,
 }
 
 impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
@@ -869,8 +869,8 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
         heat_battery: Arc<HeatBatteryDryCore>,
         service_name: String,
         cold_feed: T,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Control,
+        control_max: Control,
     ) -> Self {
         Self {
             core_service: HeatBatteryDryCoreService::new(control_min.clone().into()),
@@ -1078,14 +1078,14 @@ pub(crate) struct HeatBatteryDryCoreServiceSpace {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,
     service_name: String,
-    control: Option<Arc<Control>>,
+    control: Option<Control>,
 }
 
 impl HeatBatteryDryCoreServiceSpace {
     fn new(
         heat_battery: Arc<HeatBatteryDryCore>,
         service_name: &str,
-        control: Option<Arc<Control>>,
+        control: Option<Control>,
     ) -> Self {
         Self {
             core_service: HeatBatteryDryCoreService::new(control.clone()),
@@ -1181,7 +1181,7 @@ const ZONE_TEMP_INIT: f64 = 21.0;
 impl HeatBatteryDryCore {
     pub(crate) fn new(
         heat_battery_input: &HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         n_units: Option<u32>,
@@ -1283,8 +1283,8 @@ impl HeatBatteryDryCore {
         battery: Arc<Self>,
         service_name: &str,
         cold_feed: T,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Control,
+        control_max: Control,
     ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterRegular<T>> {
         battery.create_service_connection(service_name)?;
 
@@ -1318,7 +1318,7 @@ impl HeatBatteryDryCore {
     pub(crate) fn create_service_space_heating(
         battery: Arc<Self>,
         service_name: &str,
-        control: Option<Arc<Control>>,
+        control: Option<Control>,
     ) -> anyhow::Result<HeatBatteryDryCoreServiceSpace> {
         battery.create_service_connection(service_name)?;
 
@@ -2098,8 +2098,8 @@ mod tests {
         simulation_time: SimulationTime,
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
-    ) -> Arc<Control> {
-        Arc::new(Control::Charge(
+    ) -> Control {
+        Control::Charge(
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
                 ScheduleOrControl::Schedule(schedule),
@@ -2115,7 +2115,7 @@ mod tests {
             )
             .unwrap()
             .into(),
-        ))
+        )
     }
 
     #[fixture]
@@ -2124,8 +2124,8 @@ mod tests {
         simulation_time: SimulationTime,
         external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
-    ) -> Arc<Control> {
-        Arc::new(Control::Charge(
+    ) -> Control {
+        Control::Charge(
             ChargeControl::new(
                 ControlLogicType::HeatBattery,
                 ScheduleOrControl::Schedule(schedule),
@@ -2141,7 +2141,7 @@ mod tests {
             )
             .unwrap()
             .into(),
-        ))
+        )
     }
 
     #[fixture]
@@ -2203,7 +2203,7 @@ mod tests {
     #[fixture]
     fn heat_battery(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
@@ -2233,7 +2233,7 @@ mod tests {
     #[fixture]
     fn heat_battery1(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
@@ -2262,27 +2262,23 @@ mod tests {
     }
 
     #[fixture]
-    fn mock_control_dhw() -> Arc<Control> {
-        Arc::new(Control::Mock(MockControl::with_is_on(true)))
+    fn mock_control_dhw() -> Control {
+        Control::Mock(MockControl::with_is_on(true))
     }
 
     #[fixture]
-    fn mock_control_dhw_off() -> Arc<Control> {
-        Arc::new(Control::Mock(MockControl::with_is_on(false)))
+    fn mock_control_dhw_off() -> Control {
+        Control::Mock(MockControl::with_is_on(false))
     }
 
     #[fixture]
-    fn mock_control_space() -> Arc<Control> {
-        Arc::new(Control::Mock(MockControl::new(
-            Some(21.0),
-            Some(true),
-            Some(true),
-        )))
+    fn mock_control_space() -> Control {
+        Control::Mock(MockControl::new(Some(21.0), Some(true), Some(true)))
     }
 
     #[fixture]
-    fn default_control_max(simulation_time: SimulationTime) -> Arc<Control> {
-        Arc::new(Control::SetpointTime(
+    fn default_control_max(simulation_time: SimulationTime) -> Control {
+        Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
                 0,
@@ -2292,7 +2288,7 @@ mod tests {
                 simulation_time.step,
             )
             .into(),
-        ))
+        )
     }
 
     // redundant to port Python tests for abstract methods
@@ -2308,10 +2304,10 @@ mod tests {
     #[rstest]
     fn test_create_service_hot_water_regular(
         heat_battery: Arc<HeatBatteryDryCore>,
-        mock_control_dhw_off: Arc<Control>,
+        mock_control_dhw_off: Control,
         simulation_time: SimulationTime,
     ) {
-        let control_min = Arc::new(Control::SetpointTime(
+        let control_min = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(45.), Some(46.), Some(46.), Some(46.), Some(46.)],
                 0,
@@ -2321,8 +2317,8 @@ mod tests {
                 simulation_time.step,
             )
             .into(),
-        ));
-        let control_max = Arc::new(Control::SetpointTime(
+        );
+        let control_max = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
                 0,
@@ -2332,7 +2328,7 @@ mod tests {
                 simulation_time.step,
             )
             .into(),
-        ));
+        );
         let mock_cold_feed = mock_cold_feed(None); // we can just set up a mock cold water source here - it isn't used
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
@@ -2381,7 +2377,7 @@ mod tests {
 
     #[rstest]
     fn test_heat_battery_dhw_temperature_edge_case(
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
@@ -2416,16 +2412,12 @@ mod tests {
         heat_battery.set_state_of_charge(1.);
 
         // Create control that requires high temperature
-        let _control_min = Arc::new(Control::Mock(MockControl::new(
-            Some(40.0),
-            Some(true),
-            Some(true),
-        )));
-        let _control_max = Arc::new(Control::Mock(MockControl::new(
+        let _control_min = Control::Mock(MockControl::new(Some(40.0), Some(true), Some(true)));
+        let _control_max = Control::Mock(MockControl::new(
             Some(85.0), // High temperature requirement
             None,
             None,
-        )));
+        ));
 
         // cold feed temperature not relevant
 
@@ -2458,7 +2450,7 @@ mod tests {
     #[rstest]
     fn test_create_service_space_heating(
         heat_battery: Arc<HeatBatteryDryCore>,
-        mock_control_space: Arc<Control>,
+        mock_control_space: Control,
         simulation_time: SimulationTime,
     ) {
         let service = HeatBatteryDryCore::create_service_space_heating(
@@ -2481,9 +2473,9 @@ mod tests {
     #[should_panic = "Service name already used"]
     fn test_duplicate_service_name_error(
         heat_battery: Arc<HeatBatteryDryCore>,
-        mock_control_dhw: Arc<Control>,
-        default_control_max: Arc<Control>,
-        mock_control_space: Arc<Control>,
+        mock_control_dhw: Control,
+        default_control_max: Control,
+        mock_control_space: Control,
     ) {
         let mock_cold_feed = mock_cold_feed(None); // we can just set up a normal cold water source here - it isn't used
 
@@ -2586,8 +2578,8 @@ mod tests {
     #[rstest]
     fn test_space_service_demand_energy(
         heat_battery: Arc<HeatBatteryDryCore>,
-        mock_control_space: Arc<Control>,
-        mock_control_dhw_off: Arc<Control>,
+        mock_control_space: Control,
+        mock_control_dhw_off: Control,
         simulation_time: SimulationTime,
     ) {
         let service = HeatBatteryDryCore::create_service_space_heating(
@@ -2636,8 +2628,8 @@ mod tests {
     #[rstest]
     fn test_space_service_energy_output_max(
         heat_battery: Arc<HeatBatteryDryCore>,
-        mock_control_space: Arc<Control>,
-        mock_control_dhw_off: Arc<Control>,
+        mock_control_space: Control,
+        mock_control_dhw_off: Control,
         simulation_time: SimulationTime,
     ) {
         let service = HeatBatteryDryCore::create_service_space_heating(
@@ -2711,7 +2703,7 @@ mod tests {
     #[rstest]
     fn test_timestep_end(
         heat_battery: Arc<HeatBatteryDryCore>,
-        mock_control_space: Arc<Control>,
+        mock_control_space: Control,
         simulation_time: SimulationTime,
     ) {
         let service = HeatBatteryDryCore::create_service_space_heating(
@@ -2768,7 +2760,7 @@ mod tests {
     #[rstest]
     fn test_heat_battery_with_instant_power(
         heat_battery: Arc<HeatBatteryDryCore>,
-        mock_control_space: Arc<Control>,
+        mock_control_space: Control,
         simulation_time: SimulationTime,
     ) {
         // The heat battery already has instant power configured
@@ -2799,7 +2791,7 @@ mod tests {
     #[rstest]
     fn test_heat_battery_without_instant_power(
         heat_battery: Arc<HeatBatteryDryCore>,
-        mock_control_space: Arc<Control>,
+        mock_control_space: Control,
         simulation_time: SimulationTime,
     ) {
         // The heat battery already has instant power configured
@@ -2823,7 +2815,7 @@ mod tests {
     #[rstest]
     fn test_output_detailed_results(
         heat_battery: Arc<HeatBatteryDryCore>,
-        mock_control_space: Arc<Control>,
+        mock_control_space: Control,
         simulation_time: SimulationTime,
     ) {
         let mock_cold_feed = mock_cold_feed(Some(10.));
@@ -2894,7 +2886,7 @@ mod tests {
     #[rstest]
     fn test_heat_battery_without_detailed_results(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
     ) {
@@ -2916,10 +2908,10 @@ mod tests {
     #[rstest]
     fn test_multiple_units(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
-        mock_control_space: Arc<Control>,
+        mock_control_space: Control,
         simulation_time: SimulationTime,
     ) {
         let heat_battery = HeatBatteryDryCore::new(
@@ -2985,7 +2977,7 @@ mod tests {
     #[rstest]
     fn test_heat_battery_dry_core_service_off_conditions(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
@@ -3001,9 +2993,9 @@ mod tests {
         )
         .unwrap();
 
-        let ctrl_off = Arc::new(Control::SetpointTime(
+        let ctrl_off = Control::SetpointTime(
             SetpointTimeControl::new(vec![None; 24], 0, 1.0, None, None, 1.0).into(),
-        ));
+        );
 
         let service = HeatBatteryDryCore::create_service_space_heating(
             heat_battery.clone(),
@@ -3027,7 +3019,7 @@ mod tests {
     #[rstest]
     fn test_heat_battery_dry_core_no_detailed_results(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
@@ -3055,7 +3047,7 @@ mod tests {
     #[rstest]
     fn test_heat_battery_dry_core_water_service_edge_cases(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
@@ -3109,12 +3101,12 @@ mod tests {
     #[rstest]
     fn test_heat_battery_dry_core_multiple_services_interaction(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
-        mock_control_space: Arc<Control>,
-        mock_control_dhw: Arc<Control>,
-        default_control_max: Arc<Control>,
+        mock_control_space: Control,
+        mock_control_dhw: Control,
+        default_control_max: Control,
         simulation_time: SimulationTime,
     ) {
         let simtime = simulation_time.iter().current_iteration();
@@ -3170,7 +3162,7 @@ mod tests {
     #[rstest]
     fn test_heat_battery_dry_core_get_temp_hot_water_edge_cases(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
@@ -3218,10 +3210,10 @@ mod tests {
     #[rstest]
     fn test_heat_battery_dry_core_output_detailed_results_edge_cases(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
-        mock_control_space: Arc<Control>,
+        mock_control_space: Control,
         simulation_time: SimulationTime,
     ) {
         let heat_battery = HeatBatteryDryCore::new(
@@ -3264,7 +3256,7 @@ mod tests {
     #[rstest]
     fn test_heat_battery_dry_core_timestep_end_with_charging(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
@@ -3318,7 +3310,7 @@ mod tests {
     #[rstest]
     fn test_heat_battery_dry_core_battery_losses(
         heat_battery_input: HeatBattery,
-        charge_control: Arc<Control>,
+        charge_control: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
     ) {
@@ -3345,7 +3337,7 @@ mod tests {
     #[ignore = "bad IVP solver case happens here"]
     fn test_heat_battery_edge_cases_with_losses(
         heat_battery_input: HeatBattery,
-        charge_control_target_0: Arc<Control>,
+        charge_control_target_0: Control,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,

@@ -25,10 +25,9 @@ use std::iter::repeat;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-#[derive(Debug)]
 // NOTE that these types are based on TimeControlType enum in enums.py
 // _not_ the TimeControl type in time_control.py
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum Control {
     OnOffTime(Arc<OnOffTimeControl>),
     SetpointTime(Arc<SetpointTimeControl>),
@@ -110,8 +109,8 @@ impl ControlBehaviour for Control {
 
 #[derive(Debug)]
 pub(crate) enum HeatSourceControl {
-    HotWaterTimer(Arc<Control>),
-    WindowOpening(Arc<Control>),
+    HotWaterTimer(Control),
+    WindowOpening(Control),
 }
 
 impl HeatSourceControl {
@@ -126,7 +125,7 @@ impl HeatSourceControl {
         }
     }
 
-    pub(crate) fn get(&self) -> Arc<Control> {
+    pub(crate) fn get(&self) -> Control {
         match self {
             HeatSourceControl::HotWaterTimer(control) => control.clone(),
             HeatSourceControl::WindowOpening(control) => control.clone(),
@@ -169,7 +168,7 @@ impl ControlBehaviour for OnOffTimeControl {
 #[derive(Debug)]
 pub(crate) struct ChargeControl {
     logic_type: ControlLogicType,
-    charge_time_control: Arc<Control>,
+    charge_time_control: Control,
     start_day: u32,
     time_series_step: f64,
     charge_level: Vec<Option<f64>>,
@@ -331,11 +330,11 @@ impl ChargeControl {
 
         let charge_time_control = match charge_time_control {
             ScheduleOrControl::Schedule(schedule) => {
-                Arc::new(Control::OnOffTime(Arc::new(OnOffTimeControl {
+                Control::OnOffTime(Arc::new(OnOffTimeControl {
                     schedule: schedule.into_iter().map(Some).collect(),
                     start_day,
                     time_series_step,
-                })))
+                }))
             }
             ScheduleOrControl::Control(control) => control,
         };
@@ -746,7 +745,7 @@ impl ControlBehaviour for OnOffCostMinimisingTimeControl {
 #[derive(Clone, Debug)]
 pub(crate) enum ScheduleOrControl<T> {
     Schedule(Vec<T>),
-    Control(Arc<Control>),
+    Control(Control),
 }
 
 #[derive(Debug)]
@@ -1333,7 +1332,7 @@ impl ControlBehaviour for SmartApplianceControl {}
 /// An object to model a control with nested combinations of other control types
 pub(crate) struct CombinationTimeControl {
     combinations: ControlCombinations,
-    controls: IndexMap<String, Arc<Control>>,
+    controls: IndexMap<String, Control>,
 }
 
 impl CombinationTimeControl {
@@ -1345,13 +1344,13 @@ impl CombinationTimeControl {
     /// * `simulation_time` - reference to SimulationTime object
     pub(crate) fn new(
         combinations: ControlCombinations,
-        controls: IndexMap<String, Arc<Control>>,
+        controls: IndexMap<String, Control>,
     ) -> anyhow::Result<Self> {
         Self::validate_combinations(&combinations)?;
 
         for control in controls.iter() {
             let (_, control) = control;
-            if let Control::RangeTime(_range_time_control) = control.as_ref() {
+            if let Control::RangeTime(_range_time_control) = control {
                 bail!("CombinationTimeControl does not accept RangeTimeControl")
             }
         }
@@ -1402,7 +1401,7 @@ impl CombinationTimeControl {
 
     /// Evaluate a single control
     fn evaluate_control_is_on(&self, control_name: &str, simtime: SimulationTimeIteration) -> bool {
-        let control = self.controls[control_name].as_ref();
+        let control = &self.controls[control_name];
         control.is_on(&simtime)
     }
 
@@ -1447,7 +1446,7 @@ impl CombinationTimeControl {
         control_name: &str,
         simtime: SimulationTimeIteration,
     ) -> bool {
-        let control = self.controls[control_name].as_ref();
+        let control = &self.controls[control_name];
         match control {
             c @ (Control::OnOffTime(_)
             | Control::Charge(_)
@@ -1481,7 +1480,7 @@ impl CombinationTimeControl {
                 self.evaluate_combination_in_req_period(control, simtime)?
             } else {
                 // Track the types of controls for logic enforcement
-                match self.controls[control].as_ref() {
+                match &self.controls[control] {
                     Control::OnOffTime(_)
                     | Control::Charge(_)
                     | Control::OnOffMinimisingTime(_) => {
@@ -1552,7 +1551,7 @@ impl CombinationTimeControl {
         control_name: &str,
         simtime: SimulationTimeIteration,
     ) -> SetpointOrBoolean {
-        let control = self.controls[control_name].as_ref();
+        let control = &self.controls[control_name];
         match control {
             c @ (Control::OnOffTime(_)
             | Control::Charge(_)
@@ -1584,7 +1583,7 @@ impl CombinationTimeControl {
                     self.evaluate_combination_setpnt(control_name, simtime)?
                 } else {
                     // Track the types of controls for logic enforcement
-                    match self.controls.get(control_name).ok_or_else(|| anyhow!("Control '{control_name}' not found"))?.as_ref() {
+                    match &self.controls.get(control_name).ok_or_else(|| anyhow!("Control '{control_name}' not found"))? {
                         Control::OnOffTime(_)
                         | Control::Charge(_)
                         | Control::OnOffMinimisingTime(_) => {
@@ -1714,7 +1713,7 @@ impl CombinationTimeControl {
         simtime: SimulationTimeIteration,
         temp_air: Option<f64>,
     ) -> anyhow::Result<Option<f64>> {
-        let control = self.controls[control_name].as_ref();
+        let control = &self.controls[control_name];
         Ok(if let Control::Charge(c) = control {
             Some(c.target_charge(simtime, temp_air)?)
         } else {
@@ -1778,7 +1777,7 @@ impl CombinationTimeControl {
     }
 
     #[cfg(test)]
-    fn set_controls(&mut self, controls: IndexMap<String, Arc<Control>>) {
+    fn set_controls(&mut self, controls: IndexMap<String, Control>) {
         self.controls = controls;
     }
 }
@@ -3157,7 +3156,7 @@ mod tests {
             logic_type: ControlLogicType,
             temp_charge_cut: Option<f64>,
             external_conditions: Option<ExternalConditions>,
-            control: Arc<Control>,
+            control: Control,
         ) -> anyhow::Result<ChargeControl> {
             ChargeControl::new(
                 logic_type,
@@ -3268,11 +3267,11 @@ mod tests {
         fn test_is_on_separate_control() {
             let simulation_time = SimulationTime::new(0.0, 8.0, 1.0);
             let schedule = [false, true, true, true, false, true, true, true];
-            let control = Arc::new(Control::OnOffTime(Arc::new(OnOffTimeControl::new(
+            let control = Control::OnOffTime(Arc::new(OnOffTimeControl::new(
                 schedule.into_iter().map(Some).collect(),
                 0,
                 1.,
-            ))));
+            )));
             let charge_control_1 = create_charge_control_with_control(
                 ControlLogicType::Automatic,
                 Some(15.5),
@@ -3831,7 +3830,7 @@ mod tests {
         }
 
         #[fixture]
-        fn controls_1(charge_control: ChargeControl) -> IndexMap<String, Arc<Control>> {
+        fn controls_1(charge_control: ChargeControl) -> IndexMap<String, Control> {
             IndexMap::from([
                 (
                     "ctrl11".into(),
@@ -3845,13 +3844,9 @@ mod tests {
                             1.,
                         )
                         .into(),
-                    )
-                    .into(),
+                    ),
                 ),
-                (
-                    "ctrl12".into(),
-                    Control::Charge(charge_control.into()).into(),
-                ),
+                ("ctrl12".into(), Control::Charge(charge_control.into())),
                 (
                     "ctrl13".into(),
                     Control::OnOffTime(
@@ -3864,8 +3859,7 @@ mod tests {
                             1.,
                         )
                         .into(),
-                    )
-                    .into(),
+                    ),
                 ),
             ])
         }
@@ -3902,8 +3896,8 @@ mod tests {
                 1.,
             );
 
-            let ctrl1 = Arc::new(Control::RangeTime(range_time_control.into()));
-            let ctrl2 = Arc::new(Control::OnOffTime(on_off_time_control.into()));
+            let ctrl1 = Control::RangeTime(range_time_control.into());
+            let ctrl2 = Control::OnOffTime(on_off_time_control.into());
 
             let result = CombinationTimeControl::new(
                 serde_json::from_value(json!({
@@ -4332,13 +4326,11 @@ mod tests {
                     "ctrl1".into(),
                     Control::SetpointTime(
                         SetpointTimeControl::new(vec![Some(20.); 8], 0, 1., None, None, 1.).into(),
-                    )
-                    .into(),
+                    ),
                 ),
                 (
                     "ctr12".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into())
-                        .into(),
+                    Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into()),
                 ),
             ]));
 
@@ -4370,8 +4362,7 @@ mod tests {
                             1.,
                         )
                         .into(),
-                    )
-                    .into(),
+                    ),
                 ),
                 (
                     "ctr12".into(),
@@ -4388,8 +4379,7 @@ mod tests {
                             1.,
                         )
                         .into(),
-                    )
-                    .into(),
+                    ),
                 ),
             ]));
 
@@ -4418,8 +4408,7 @@ mod tests {
                             1.,
                         )
                         .into(),
-                    )
-                    .into(),
+                    ),
                 ),
                 (
                     "ctrl2".into(),
@@ -4433,8 +4422,7 @@ mod tests {
                             1.,
                         )
                         .into(),
-                    )
-                    .into(),
+                    ),
                 ),
             ]));
 
@@ -4523,7 +4511,7 @@ mod tests {
         fn test_max_min_mean_operations_logic() {
             let simtime_short = SimulationTime::new(0., 4., 1.);
 
-            let controls: IndexMap<String, Arc<Control>> = IndexMap::from([
+            let controls: IndexMap<String, Control> = IndexMap::from([
                 (
                     "ctrl_a".into(),
                     Control::OnOffTime(
@@ -4536,8 +4524,7 @@ mod tests {
                             1.,
                         )
                         .into(),
-                    )
-                    .into(),
+                    ),
                 ),
                 (
                     "ctrl_b".into(),
@@ -4551,8 +4538,7 @@ mod tests {
                             1.,
                         )
                         .into(),
-                    )
-                    .into(),
+                    ),
                 ),
                 (
                     "ctrl_c".into(),
@@ -4566,8 +4552,7 @@ mod tests {
                             1.,
                         )
                         .into(),
-                    )
-                    .into(),
+                    ),
                 ),
             ]);
 
@@ -4698,7 +4683,7 @@ mod tests {
     #[fixture]
     fn controls_for_combination(
         simulation_time_for_charge_control: SimulationTime,
-    ) -> IndexMap<String, Arc<Control>> {
+    ) -> IndexMap<String, Control> {
         let cost_schedule = vec![
             5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0,
             10.0, 10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
@@ -4728,8 +4713,7 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl2".into(),
@@ -4743,8 +4727,7 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl3".into(),
@@ -4758,8 +4741,7 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl4".into(),
@@ -4776,8 +4758,7 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl5".into(),
@@ -4794,8 +4775,7 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl6".into(),
@@ -4809,8 +4789,7 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl7".into(),
@@ -4824,8 +4803,7 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl8".into(),
@@ -4839,8 +4817,7 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl9".into(),
@@ -4863,16 +4840,15 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
-            ("ctrl10".into(), cost_minimising_control.into()),
+            ("ctrl10".into(), cost_minimising_control),
         ])
     }
 
     #[fixture]
     fn combination_control_on_off(
-        controls_for_combination: IndexMap<String, Arc<Control>>,
+        controls_for_combination: IndexMap<String, Control>,
     ) -> CombinationTimeControl {
         let combination_on_off: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1", "comb2"]},
@@ -4887,7 +4863,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_setpoint(
-        controls_for_combination: IndexMap<String, Arc<Control>>,
+        controls_for_combination: IndexMap<String, Control>,
     ) -> CombinationTimeControl {
         let combination_setpoint: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1"]},
@@ -4900,7 +4876,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_req(
-        controls_for_combination: IndexMap<String, Arc<Control>>,
+        controls_for_combination: IndexMap<String, Control>,
     ) -> CombinationTimeControl {
         let combination_req: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl9", "comb1"]},
@@ -4913,7 +4889,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_on_off_cost(
-        controls_for_combination: IndexMap<String, Arc<Control>>,
+        controls_for_combination: IndexMap<String, Control>,
     ) -> CombinationTimeControl {
         let combination_on_off_cost: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1"]},
@@ -4927,7 +4903,7 @@ mod tests {
     #[fixture]
     fn controls_for_target_charge(
         charge_control_for_combination: ChargeControl,
-    ) -> IndexMap<String, Arc<Control>> {
+    ) -> IndexMap<String, Control> {
         IndexMap::from([
             (
                 "ctrl11".into(),
@@ -4941,12 +4917,11 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl12".into(),
-                Control::Charge(charge_control_for_combination.into()).into(),
+                Control::Charge(charge_control_for_combination.into()),
             ),
             (
                 "ctrl13".into(),
@@ -4960,15 +4935,14 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
         ])
     }
 
     #[fixture]
     fn combination_control_target_charge(
-        controls_for_target_charge: IndexMap<String, Arc<Control>>,
+        controls_for_target_charge: IndexMap<String, Control>,
     ) -> CombinationTimeControl {
         CombinationTimeControl::new(
             serde_json::from_value(json!({
@@ -4982,7 +4956,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_target_charge1(
-        controls_for_target_charge: IndexMap<String, Arc<Control>>,
+        controls_for_target_charge: IndexMap<String, Control>,
     ) -> CombinationTimeControl {
         CombinationTimeControl::new(
             serde_json::from_value(json!({
@@ -5002,7 +4976,7 @@ mod tests {
     #[fixture]
     fn controls_for_invalid_combinations(
         charge_control_for_combination: ChargeControl,
-    ) -> IndexMap<String, Arc<Control>> {
+    ) -> IndexMap<String, Control> {
         IndexMap::from([
             (
                 "ctrl14".into(),
@@ -5016,12 +4990,11 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl15".into(),
-                Control::Charge(charge_control_for_combination.into()).into(),
+                Control::Charge(charge_control_for_combination.into()),
             ),
             (
                 "ctrl16".into(),
@@ -5035,8 +5008,7 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
             (
                 "ctrl17".into(),
@@ -5050,8 +5022,7 @@ mod tests {
                         1.,
                     )
                     .into(),
-                )
-                .into(),
+                ),
             ),
         ])
     }
@@ -5059,7 +5030,7 @@ mod tests {
     // this test is introduced in the Rust to test up-front validation of combinations
     #[rstest]
     fn test_invalid_combinations_caught_on_instantiation(
-        controls_for_invalid_combinations: IndexMap<String, Arc<Control>>,
+        controls_for_invalid_combinations: IndexMap<String, Control>,
     ) {
         let invalid_combinations = [
             json!({
