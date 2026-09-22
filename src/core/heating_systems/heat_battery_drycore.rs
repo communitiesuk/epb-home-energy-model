@@ -2416,17 +2416,16 @@ mod tests {
         heat_battery.set_state_of_charge(1.);
 
         // Create control that requires high temperature
-        let _control_min = Arc::new(Control::Mock(
-            MockControl::new(Some(40.0), Some(true), Some(true)).into(),
-        ));
-        let _control_max = Arc::new(Control::Mock(
-            MockControl::new(
-                Some(85.0), // High temperature requirement
-                None,
-                None,
-            )
-            .into(),
-        ));
+        let _control_min = Arc::new(Control::Mock(MockControl::new(
+            Some(40.0),
+            Some(true),
+            Some(true),
+        )));
+        let _control_max = Arc::new(Control::Mock(MockControl::new(
+            Some(85.0), // High temperature requirement
+            None,
+            None,
+        )));
 
         // cold feed temperature not relevant
 
