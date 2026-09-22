@@ -648,32 +648,39 @@ impl EnergySupply {
         let month = simtime.current_month().ok_or_else(|| {
             anyhow!("Month could not be resolved for current simulation timestep.")
         })? as usize;
-        let EnergySupplyTariffInfo {
-            tariff,
-            threshold_charges,
-            threshold_prices,
-        } = self
-            .tariff_info
-            .as_ref()
-            .ok_or_else(|| anyhow!("Tariff info not set when expected."))?;
-        let threshold_charge = threshold_charges
-            .as_ref()
-            .and_then(|threshold_charges| threshold_charges.get(month).copied());
-        let threshold_price = threshold_prices
-            .as_ref()
-            .and_then(|threshold_charges| threshold_charges.get(month).copied());
+        let (tariff, threshold_charge, threshold_price) = match &self.tariff_info {
+            Some(tariff_info) => {
+                let threshold_charge = tariff_info
+                    .threshold_charges
+                    .as_ref()
+                    .and_then(|threshold_charges| threshold_charges.get(month).copied());
+                let threshold_price = tariff_info
+                    .threshold_prices
+                    .as_ref()
+                    .and_then(|threshold_charges| threshold_charges.get(month).copied());
+                (Some(tariff_info.tariff), threshold_charge, threshold_price)
+            }
+            None => (None, None, None),
+        };
         // For tariff selected look up price etc and decide whether to charge
-        let elec_price = self
-            .tariff_data
-            .as_ref()
-            .ok_or_else(|| anyhow!("Tariff data expected to be set on energy supply"))?
-            .price(tariff, simtime)?;
+        let elec_price = if let Some(tariff) = tariff {
+            Some(
+                self.tariff_data
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Tariff data expected to be set on energy supply"))?
+                    .price(&tariff, simtime)?,
+            )
+        } else {
+            None
+        };
 
         let current_charge = battery.get_state_of_charge();
         let charge_discharge_efficiency = battery.get_charge_discharge_efficiency();
 
-        Ok(match threshold_price {
-            Some(threshold_price) if elec_price / charge_discharge_efficiency < threshold_price => {
+        Ok(match (elec_price, threshold_price) {
+            (Some(elec_price), Some(threshold_price))
+                if elec_price / charge_discharge_efficiency < threshold_price =>
+            {
                 match threshold_charge {
                     Some(threshold_charge) if current_charge < threshold_charge => {
                         (true, Some(threshold_charge), true)
@@ -1100,9 +1107,9 @@ impl EnergySupplyBuilder {
         self
     }
 
-    pub fn with_tariff_info(mut self, tariff_info: EnergySupplyTariffInfo) -> anyhow::Result<Self> {
+    pub fn with_tariff_info(mut self, tariff_info: EnergySupplyTariffInfo) -> Self {
         self.energy_supply.tariff_info = Some(tariff_info);
-        Ok(self)
+        self
     }
 
     pub fn with_tariff_export(
@@ -1328,7 +1335,6 @@ mod tests {
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
                 .with_tariff_data(tariff_data)
                 .with_tariff_info(tariff_info)
-                .unwrap()
                 .build();
 
         energy_supply
@@ -1515,7 +1521,7 @@ mod tests {
             .with_tariff_export([0.8; 12], [5.; 12])
             .build();
 
-        for (_, t_it) in simulation_time.iter().enumerate() {
+        for t_it in simulation_time.iter() {
             energy_supply
                 .calc_energy_export_from_battery_to_grid(t_it)
                 .unwrap();
@@ -1843,7 +1849,6 @@ mod tests {
         let energy_supply = builder
             .with_electric_battery(indexmap! {"ElectricBattery".into() => elec_battery})
             .with_tariff_info(tariff_info)
-            .unwrap()
             .with_tariff_data(tariff_data)
             .with_priority(vec!["ElectricBattery", "diverter"])
             .build();
@@ -1956,7 +1961,6 @@ mod tests {
         let energy_supply = builder
             .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
             .with_tariff_info(tariff_info)
-            .unwrap()
             .with_tariff_data(tariff_data)
             .build();
 

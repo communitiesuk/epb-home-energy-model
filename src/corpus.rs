@@ -215,11 +215,9 @@ fn single_control_from_details(
             } else {
                 reject_nones(expand_boolean_schedule(schedule))?
             };
-            Control::OnOffTime(OnOffTimeControl::new(
-                schedule,
-                *start_day,
-                *time_series_step,
-            ).into())
+            Control::OnOffTime(
+                OnOffTimeControl::new(schedule, *start_day, *time_series_step).into(),
+            )
             .into()
         }
         ControlDetails::SetpointTimer {
@@ -229,14 +227,17 @@ fn single_control_from_details(
             setpoint_bounds,
             schedule,
             ..
-        } => Control::SetpointTime(SetpointTimeControl::new(
-            expand_numeric_schedule(schedule),
-            *start_day,
-            *time_series_step,
-            *setpoint_bounds,
-            *advanced_start,
-            simulation_time_iterator.step_in_hours(),
-        ).into())
+        } => Control::SetpointTime(
+            SetpointTimeControl::new(
+                expand_numeric_schedule(schedule),
+                *start_day,
+                *time_series_step,
+                *setpoint_bounds,
+                *advanced_start,
+                simulation_time_iterator.step_in_hours(),
+            )
+            .into(),
+        )
         .into(),
         ControlDetails::ChargeTarget {
             charge_level,
@@ -292,19 +293,22 @@ fn single_control_from_details(
                 vec![Some(1.0); vec_size]
             };
 
-            Control::Charge(ChargeControl::new(
-                logic_type,
-                ScheduleOrControl::Schedule(schedule),
-                simulation_time_iterator,
-                *start_day,
-                *time_series_step,
-                charge_level_vec,
-                *temp_charge_cut,
-                temp_charge_cut_delta,
-                Some(external_conditions.clone().into()),
-                external_sensor.clone(),
-                Some(*charge_calc_time),
-            )?.into())
+            Control::Charge(
+                ChargeControl::new(
+                    logic_type,
+                    ScheduleOrControl::Schedule(schedule),
+                    simulation_time_iterator,
+                    *start_day,
+                    *time_series_step,
+                    charge_level_vec,
+                    *temp_charge_cut,
+                    temp_charge_cut_delta,
+                    Some(external_conditions.clone().into()),
+                    external_sensor.clone(),
+                    Some(*charge_calc_time),
+                )?
+                .into(),
+            )
             .into()
         }
         // temporary entry for ChargeTarget with charge target control reference until implemented for 1.0.0a9
@@ -319,13 +323,16 @@ fn single_control_from_details(
             time_on_daily,
             schedule,
             ..
-        } => Control::OnOffMinimisingTime(OnOffCostMinimisingTimeControl::new(
-            reject_nulls(expand_numeric_schedule(schedule).into())?,
-            simulation_time_iterator,
-            *start_day,
-            *time_series_step,
-            *time_on_daily,
-        )?.into())
+        } => Control::OnOffMinimisingTime(
+            OnOffCostMinimisingTimeControl::new(
+                reject_nulls(expand_numeric_schedule(schedule).into())?,
+                simulation_time_iterator,
+                *start_day,
+                *time_series_step,
+                *time_on_daily,
+            )?
+            .into(),
+        )
         .into(),
         ControlDetails::CombinationTime { combination } => {
             // resolved controls needs to be: IndexMap<String, Arc<Control>>
@@ -413,10 +420,9 @@ fn single_control_from_details(
                 simulation_time_iterator,
             )?;
 
-            Control::CombinationTime(CombinationTimeControl::new(
-                combination.clone(),
-                resolved_controls,
-            )?.into())
+            Control::CombinationTime(
+                CombinationTimeControl::new(combination.clone(), resolved_controls)?.into(),
+            )
             .into()
         }
         ControlDetails::RangeTimer { .. } => todo!("complete as part of 1.0.0a9 migration"),
@@ -3328,11 +3334,18 @@ fn energy_supply_from_input(
                 }
             };
             builder = builder.with_tariff_data(tariff_data);
+        }
+
+        if let Some(tariff) = input.tariff.as_ref() {
             builder = builder.with_tariff_info(EnergySupplyTariffInfo {
-                tariff: input.tariff.ok_or_else( | | anyhow!("Energy supply with electric battery that allows grid charging expected tariff to be indicated")) ?,
-                threshold_charges: input.threshold_charges.map( | threshold_charges| threshold_charges.to_vec()),
-                threshold_prices: input.threshold_prices.map( | threshold_prices| threshold_prices.to_vec()),
-            })?;
+                tariff: *tariff,
+                threshold_charges: input
+                    .threshold_charges
+                    .map(|threshold_charges| threshold_charges.to_vec()),
+                threshold_prices: input
+                    .threshold_prices
+                    .map(|threshold_prices| threshold_prices.to_vec()),
+            });
         }
 
         builder.build()
