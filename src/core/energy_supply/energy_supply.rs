@@ -1144,6 +1144,11 @@ impl EnergySupplyBuilder {
         self
     }
 
+    pub fn with_power_limit_export(mut self, power_limit_export: f64) -> Self {
+        self.energy_supply.power_limit_export = Some(power_limit_export);
+        self
+    }
+
     pub fn build(self) -> EnergySupply {
         self.energy_supply
     }
@@ -1562,6 +1567,124 @@ mod tests {
                 expected_battery_state_of_charge[i]
             );
         }
+    }
+
+    #[rstest]
+    /// Test that the amount exported to the grid is limited by the export limit
+    fn test_calc_energy_export_from_battery_to_grid_limit(
+        tariff_data: TariffData,
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) {
+        let battery = ElectricBattery::new(
+            10.,
+            0.8,
+            3.,
+            0.001,
+            10.,
+            10.,
+            BatteryLocation::Inside,
+            true,
+            true,
+            simulation_time.iter().current_iteration().timestep,
+            Arc::new(external_conditions),
+        );
+
+        battery.charge_discharge_battery(-10., false, simulation_time.iter().current_iteration());
+
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
+                .with_tariff_data(tariff_data)
+                .with_tariff_export([0.8; 12], [5.; 12])
+                .with_electric_battery(indexmap! {"battery".into() => battery})
+                .with_power_limit_export(0.5)
+                .build();
+
+        for t_it in simulation_time.iter() {
+            energy_supply
+                .calc_energy_export_from_battery_to_grid(t_it)
+                .unwrap();
+            energy_supply.timestep_end().unwrap();
+        }
+
+        let (_, _, _, energy_into_grid_from_battery, _) = energy_supply.get_battery_energy_flows();
+
+        // Connection-level cap: export is limited to power_limit_export * timestep = 0.5 kWh.
+        assert_relative_eq!(energy_into_grid_from_battery[0], -0.5);
+    }
+
+    #[rstest]
+    /// Test that power_limit_export is a connection-level limit shared across batteries.
+    /// With two pre-charged batteries and a 0.5 kW connection limit, the total export
+    /// to the grid should not exceed 0.5 kWh per timestep.
+    fn test_calc_energy_export_from_battery_to_grid_limit_multi_battery(
+        tariff_data: TariffData,
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) {
+        let battery_a = ElectricBattery::new(
+            10.,
+            0.8,
+            3.,
+            0.001,
+            10.,
+            10.,
+            BatteryLocation::Inside,
+            true,
+            true,
+            simulation_time.iter().current_iteration().timestep,
+            Arc::new(external_conditions.clone()),
+        );
+        let battery_b = ElectricBattery::new(
+            10.,
+            0.8,
+            3.,
+            0.001,
+            10.,
+            10.,
+            BatteryLocation::Inside,
+            true,
+            true,
+            simulation_time.iter().current_iteration().timestep,
+            Arc::new(external_conditions),
+        );
+
+        // Pre-charge both batteries
+        battery_a.charge_discharge_battery(-10., false, simulation_time.iter().current_iteration());
+        battery_b.charge_discharge_battery(-10., false, simulation_time.iter().current_iteration());
+
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
+                .with_tariff_data(tariff_data)
+                .with_tariff_export([0.8; 12], [5.; 12])
+                .with_electric_battery(
+                    indexmap! {"battery_a".into() => battery_a, "battery_b".into() => battery_b},
+                )
+                .with_power_limit_export(0.5)
+                .build();
+
+        for t_it in simulation_time.iter() {
+            energy_supply
+                .calc_energy_export_from_battery_to_grid(t_it)
+                .unwrap();
+            energy_supply.timestep_end().unwrap();
+        }
+
+        let (_, _, _, energy_into_grid_from_battery, _) = energy_supply.get_battery_energy_flows();
+
+        // Connection-level cap: total export per timestep (negative values) must not
+        // exceed power_limit_export * timestep = 0.5 kWh in magnitude.
+        let timestep = 1.;
+        let max_export_energy = 0.5 * timestep;
+
+        for energy_into_grid in energy_into_grid_from_battery.iter().take(8) {
+            assert!(energy_into_grid >= &-(max_export_energy + 1e-10));
+        }
+
+        // At timestep 0 both batteries want to export. Without the shared cap,
+        // total would be 2 * (-0.5) = -1.0. With connection-level capping,
+        // total export is limited to max_export_energy (0.5 kWh).
+        assert_relative_eq!(energy_into_grid_from_battery[0], -max_export_energy);
     }
 
     #[rstest]
