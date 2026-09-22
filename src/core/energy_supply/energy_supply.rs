@@ -1527,6 +1527,41 @@ mod tests {
                 .unwrap();
             energy_supply.timestep_end().unwrap();
         }
+
+        let (
+            energy_into_battery_from_generation,
+            energy_out_of_battery,
+            energy_into_battery_from_grid,
+            energy_into_grid_from_battery,
+            battery_state_of_charge,
+        ) = energy_supply.get_battery_energy_flows();
+
+        let expected_energy_into_battery_from_generation = [0.; 8];
+        let expected_energy_out_of_battery = [0.; 8];
+        let expected_energy_into_battery_from_grid = [0.; 8];
+        let expected_energy_into_grid_from_battery =
+            [-0.1168853715511253, 0., 0., 0., 0., 0., 0., 0.];
+        let expected_battery_state_of_charge = [0.7678965533433509; 8];
+
+        for i in 0..expected_energy_into_battery_from_generation.len() {
+            assert_relative_eq!(
+                energy_into_battery_from_generation[i],
+                expected_energy_into_battery_from_generation[i]
+            );
+            assert_relative_eq!(energy_out_of_battery[i], expected_energy_out_of_battery[i]);
+            assert_relative_eq!(
+                energy_into_battery_from_grid[i],
+                expected_energy_into_battery_from_grid[i]
+            );
+            assert_relative_eq!(
+                energy_into_grid_from_battery[i],
+                expected_energy_into_grid_from_battery[i]
+            );
+            assert_relative_eq!(
+                battery_state_of_charge[i],
+                expected_battery_state_of_charge[i]
+            );
+        }
     }
 
     #[rstest]
