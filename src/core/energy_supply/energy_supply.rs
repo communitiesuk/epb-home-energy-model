@@ -1154,6 +1154,11 @@ impl EnergySupplyBuilder {
         self
     }
 
+    pub fn with_power_limit_battery_import(mut self, power_limit_battery_import: f64) -> Self {
+        self.energy_supply.power_limit_battery_import = Some(power_limit_battery_import);
+        self
+    }
+
     pub fn build(self) -> EnergySupply {
         self.energy_supply
     }
@@ -1276,6 +1281,14 @@ mod tests {
             tariff: EnergySupplyTariff::VariableTimeOfDay,
             threshold_charges: Some(threshold_charges),
             threshold_prices: Some(threshold_prices),
+        }
+    }
+
+    fn create_tariff_info(charges: [f64; 12], prices: [f64; 12]) -> EnergySupplyTariffInfo {
+        EnergySupplyTariffInfo {
+            tariff: EnergySupplyTariff::VariableTimeOfDay,
+            threshold_charges: Some(charges.to_vec()),
+            threshold_prices: Some(prices.to_vec()),
         }
     }
 
@@ -1835,6 +1848,58 @@ mod tests {
         // Both supplies carry a battery, so available charge is a float, not None
         assert!(capped_charge.is_some() && uncapped_charge.is_some());
         assert!(capped_charge > uncapped_charge);
+    }
+
+    #[rstest]
+    /// Test that the amount imported from the grid is limited by the power_limit_battery_import cap
+    fn test_calc_energy_import_from_grid_to_battery_limit(
+        tariff_data: TariffData,
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) {
+        let battery = ElectricBattery::new(
+            10.,
+            0.8,
+            3.,
+            0.001,
+            10.,
+            10.,
+            BatteryLocation::Inside,
+            true,
+            false,
+            simulation_time.iter().current_iteration().timestep,
+            Arc::new(external_conditions),
+        );
+
+        let tariff_info = create_tariff_info([0.8; 12], [16.; 12]);
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
+                .with_tariff_info(tariff_info)
+                .with_electric_battery(indexmap! {"battery".into() => battery})
+                .with_power_limit_battery_import(0.5)
+                .with_tariff_data(tariff_data)
+                .build();
+
+        for t_it in simulation_time.iter() {
+            energy_supply
+                .calc_energy_import_from_grid_to_battery(t_it)
+                .unwrap();
+            energy_supply.timestep_end().unwrap();
+        }
+
+        let (_, _, energy_into_battery_from_grid, _, _) = energy_supply.get_battery_energy_flows();
+
+        // At each timestep where charging is triggered (price/efficiency < threshold_price),
+        // the imported energy is capped at power_limit_battery_import * timestep = 0.5 kWh.
+        // Without the cap, the battery would draw ~8.94 kWh at the first opportunity.
+        // Timesteps 0, 1 and 3 have cheap enough prices to trigger charging; 2, 4-7 do not.
+        let expected = [0.5, 0.5, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0];
+
+        println!("{:#?}", energy_into_battery_from_grid);
+
+        for (t_idx, expected_val) in expected.iter().enumerate() {
+            assert_relative_eq!(energy_into_battery_from_grid[t_idx], expected_val);
+        }
     }
 
     #[rstest]

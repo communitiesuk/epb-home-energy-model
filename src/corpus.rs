@@ -3352,6 +3352,7 @@ fn energy_supply_from_input(
             // builder = builder.with_export_tariff();
             // TODO 1.0.0a9 migration
         }
+        // TODO 1.0.0a9 migration - power limit fields
 
         builder.build()
     })))
