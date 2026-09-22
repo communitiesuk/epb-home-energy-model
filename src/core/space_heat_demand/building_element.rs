@@ -4705,14 +4705,17 @@ mod tests {
             0.5,
             be_without_control.external_conditions.clone(),
             WindShieldLocation::Sheltered,
-            Some(Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-                smart_air_brick_schedule,
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                simulation_time_for_ground.step,
-            ).into()))),
+            Some(Arc::new(Control::SetpointTime(
+                SetpointTimeControl::new(
+                    smart_air_brick_schedule,
+                    0,
+                    1.0,
+                    Default::default(),
+                    Default::default(),
+                    simulation_time_for_ground.step,
+                )
+                .into(),
+            ))),
             &simulation_time_for_ground.iter(),
         )
         .unwrap();
@@ -5223,14 +5226,17 @@ mod tests {
     }
 
     fn create_setpoint_time_control(setpnt: f64) -> Arc<Control> {
-        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(setpnt)], // causes control.setpnt() to return specified value
-            0,
-            1.0,
-            None,
-            None,
-            1.0,
-        ).into()))
+        Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(setpnt)], // causes control.setpnt() to return specified value
+                0,
+                1.0,
+                None,
+                None,
+                1.0,
+            )
+            .into(),
+        ))
     }
 
     #[rstest]
@@ -5239,11 +5245,14 @@ mod tests {
         mut transparent_building_element: BuildingElementTransparent,
     ) {
         // Test that adjust_treatment opens when control is on
-        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
-            vec![Some(true)], // control is on
-            0,
-            1.,
-        ).into()));
+        let control = Arc::new(Control::OnOffTime(
+            OnOffTimeControl::new(
+                vec![Some(true)], // control is on
+                0,
+                1.,
+            )
+            .into(),
+        ));
         let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
@@ -5278,11 +5287,14 @@ mod tests {
         mut transparent_building_element: BuildingElementTransparent,
     ) {
         // Test that adjust_treatment doesn't open when control is off
-        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
-            vec![Some(false)], // control is off
-            0,
-            1.,
-        ).into()));
+        let control = Arc::new(Control::OnOffTime(
+            OnOffTimeControl::new(
+                vec![Some(false)], // control is off
+                0,
+                1.,
+            )
+            .into(),
+        ));
         let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
@@ -5317,11 +5329,14 @@ mod tests {
         mut transparent_building_element: BuildingElementTransparent,
     ) {
         // Test that adjust_treatment closes when control is off
-        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
-            vec![Some(false)], // control is off
-            0,
-            1.,
-        ).into()));
+        let control = Arc::new(Control::OnOffTime(
+            OnOffTimeControl::new(
+                vec![Some(false)], // control is off
+                0,
+                1.,
+            )
+            .into(),
+        ));
         let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
@@ -5360,11 +5375,14 @@ mod tests {
             vec![19.77, 0., 0., 0.], // surface irradiance 29.99986997757254
         );
         // Test that adjust_treatment doesn't close when control is on
-        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
-            vec![Some(true)], // control is on
-            0,
-            1.,
-        ).into()));
+        let control = Arc::new(Control::OnOffTime(
+            OnOffTimeControl::new(
+                vec![Some(true)], // control is on
+                0,
+                1.,
+            )
+            .into(),
+        ));
         let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,

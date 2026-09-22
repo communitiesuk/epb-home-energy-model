@@ -4406,6 +4406,7 @@ impl WetHeatSource {
         service_name: &str,
         temp_hot_water: f64,
         cold_feed: WaterSupply,
+        keep_hot_control: Option<Arc<OnOffTimeControl>>,
     ) -> anyhow::Result<BoilerServiceWaterCombi> {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().create_service_hot_water_combi(
@@ -4413,6 +4414,7 @@ impl WetHeatSource {
                 service_name,
                 temp_hot_water,
                 cold_feed,
+                keep_hot_control,
             ),
             WetHeatSource::Boiler(ref mut boiler) => Boiler::create_service_hot_water_combi(
                 boiler.clone(),
@@ -4420,6 +4422,7 @@ impl WetHeatSource {
                 service_name,
                 temp_hot_water,
                 cold_feed,
+                keep_hot_control,
             )
             .map_err(|err| anyhow!(format!("{err}"))),
             WetHeatSource::DirectElectricBoiler(ref mut boiler) => {
@@ -5787,6 +5790,7 @@ fn hot_water_source_from_input(
             cold_water_source: cold_water_source_type,
             heat_source_wet: heat_source_wet_type,
             setpoint_temp,
+            combi_type_specific_details,
             ..
         } => {
             let cold_water_source =
@@ -5797,6 +5801,44 @@ fn hot_water_source_from_input(
             let heat_source_wet = wet_heat_sources.get_mut(heat_source_wet_type).ok_or_else(|| {
                 anyhow!("Expected '{heat_source_wet_type}' to have been defined as a wet heat source")
             })?;
+
+            // Cases:
+            // 1 - specific types - I want an OnOffTimeControl
+            // 2 - unions - I want one of these types, e.g. OnOffTimeControl or SetpointTimeControl
+            //          proposed solution - an enum per union
+            //          then methods on the enum
+            //              from_control()
+            //              .. e.g. is_on()
+            // 3 - interface - I want any type which implements X - e.g. ControlCharge in Python
+
+            let keep_hot_control_name = match combi_type_specific_details {
+                crate::input::CombiTypeSpecificDetails::KeepHot {
+                    control_keep_hot, ..
+                } => control_keep_hot,
+                _ => &None,
+            };
+
+            let keep_hot_control = if let Some(keep_hot_control_name) = keep_hot_control_name {
+                let control = controls
+                    .get_with_string(keep_hot_control_name)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Control {} was referenced but does not exist",
+                            keep_hot_control_name
+                        )
+                    })?;
+
+                match &*control {
+                    Control::OnOffTime(on_off_time_control) => Some(on_off_time_control.clone()),
+                    _ => bail!(
+                        "Control {} must be an OnOffTimeControl for a Control_keep_hot",
+                        keep_hot_control_name
+                    ),
+                }
+            } else {
+                None
+            };
+
             HotWaterSource::CombiBoiler(
                 heat_source_wet
                     .create_service_hot_water_combi(
@@ -5806,6 +5848,7 @@ fn hot_water_source_from_input(
                             anyhow!("A setpoint temp was expected on a combi boiler input.")
                         })?,
                         cold_water_source,
+                        keep_hot_control,
                     )
                     .expect("expected to be able to instantiate a combi boiler object")
                     .into(),

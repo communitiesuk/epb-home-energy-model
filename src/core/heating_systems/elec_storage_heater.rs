@@ -567,7 +567,8 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         ))
     }
 
@@ -576,14 +577,10 @@ mod tests {
         let mut schedule = vec![Some(21.), Some(21.), None, Some(21.)];
         schedule.extend(vec![None; 20]);
 
-        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            schedule,
-            0,
-            1.,
-            Default::default(),
-            Default::default(),
-            1.,
-        ).into()))
+        Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(schedule, 0, 1., Default::default(), Default::default(), 1.)
+                .into(),
+        ))
     }
 
     fn create_elec_storage_heater(
@@ -971,7 +968,8 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         ));
         let heater = create_elec_storage_heater(
             simulation_time,
@@ -1016,7 +1014,8 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         ));
         let heater = create_elec_storage_heater(
             simulation_time,
@@ -1061,7 +1060,8 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         ));
         let heater = create_elec_storage_heater(
             simulation_time,
@@ -1106,7 +1106,8 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         ));
         let heater = create_elec_storage_heater(
             simulation_time,
@@ -1155,7 +1156,8 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         ));
 
         let energy_supply = Arc::new(RwLock::new(

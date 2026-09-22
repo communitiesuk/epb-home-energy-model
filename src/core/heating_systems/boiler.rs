@@ -1,6 +1,8 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
-use crate::core::controls::time_control::{Control, ControlBehaviour, RangeTimeControl};
+use crate::core::controls::time_control::{
+    Control, ControlBehaviour, OnOffTimeControl, RangeTimeControl,
+};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
 use crate::core::units::WATTS_PER_KILOWATT;
@@ -816,6 +818,7 @@ impl Boiler {
         service_name: &str,
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSupply,
+        _keep_hot_control: Option<Arc<OnOffTimeControl>>,
     ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
         boiler
             .write()
@@ -1902,26 +1905,32 @@ mod tests {
 
         #[fixture]
         fn control_min() -> Arc<Control> {
-            Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-                vec![Some(52.), Some(52.), None],
-                0,
-                1.,
-                Default::default(),
-                Default::default(),
-                1.,
-            ).into()))
+            Arc::new(Control::SetpointTime(
+                SetpointTimeControl::new(
+                    vec![Some(52.), Some(52.), None],
+                    0,
+                    1.,
+                    Default::default(),
+                    Default::default(),
+                    1.,
+                )
+                .into(),
+            ))
         }
 
         #[fixture]
         fn control_max() -> Arc<Control> {
-            Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-                vec![Some(60.), Some(60.)],
-                0,
-                1.,
-                Default::default(),
-                Default::default(),
-                1.,
-            ).into()))
+            Arc::new(Control::SetpointTime(
+                SetpointTimeControl::new(
+                    vec![Some(60.), Some(60.)],
+                    0,
+                    1.,
+                    Default::default(),
+                    Default::default(),
+                    1.,
+                )
+                .into(),
+            ))
         }
 
         #[fixture]
@@ -2157,14 +2166,17 @@ mod tests {
 
         #[fixture]
         fn control() -> Control {
-            Control::SetpointTime(SetpointTimeControl::new(
-                vec![Some(21.0), Some(21.0), None],
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                1.0,
-            ).into())
+            Control::SetpointTime(
+                SetpointTimeControl::new(
+                    vec![Some(21.0), Some(21.0), None],
+                    0,
+                    1.0,
+                    Default::default(),
+                    Default::default(),
+                    1.0,
+                )
+                .into(),
+            )
         }
 
         #[fixture]
@@ -2388,6 +2400,7 @@ mod tests {
                 service_name,
                 temp_hot_water,
                 WaterSupply::ColdWaterSource(Arc::new(cold_feed)),
+                None,
             );
             assert!(boiler_service_result.is_ok());
         }
@@ -2397,22 +2410,28 @@ mod tests {
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
         ) {
             let service_name = "service_hot_water_regular";
-            let control_min = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-                vec![None, None],
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                1.0,
-            ).into()));
-            let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-                vec![None, None],
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                1.0,
-            ).into()));
+            let control_min = Arc::new(Control::SetpointTime(
+                SetpointTimeControl::new(
+                    vec![None, None],
+                    0,
+                    1.0,
+                    Default::default(),
+                    Default::default(),
+                    1.0,
+                )
+                .into(),
+            ));
+            let control_max = Arc::new(Control::SetpointTime(
+                SetpointTimeControl::new(
+                    vec![None, None],
+                    0,
+                    1.0,
+                    Default::default(),
+                    Default::default(),
+                    1.0,
+                )
+                .into(),
+            ));
 
             let boiler = Arc::new(RwLock::new(boiler));
 
@@ -2435,14 +2454,17 @@ mod tests {
             let boiler_service_space_heating = Boiler::create_service_space_heating(
                 boiler,
                 "BoilerServiceSpace",
-                Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-                    vec![None, None],
-                    0,
-                    1.0,
-                    Default::default(),
-                    Default::default(),
-                    1.0,
-                ).into())),
+                Arc::new(Control::SetpointTime(
+                    SetpointTimeControl::new(
+                        vec![None, None],
+                        0,
+                        1.0,
+                        Default::default(),
+                        Default::default(),
+                        1.0,
+                    )
+                    .into(),
+                )),
             );
             pretty_assertions::assert_eq!(
                 type_of(boiler_service_space_heating),

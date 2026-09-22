@@ -28,7 +28,6 @@ use std::sync::Arc;
 #[derive(Debug)]
 // NOTE that these types are based on TimeControlType enum in enums.py
 // _not_ the TimeControl type in time_control.py
-
 #[derive(Clone)]
 pub(crate) enum Control {
     OnOffTime(Arc<OnOffTimeControl>),
@@ -114,7 +113,6 @@ pub(crate) enum HeatSourceControl {
     HotWaterTimer(Arc<Control>),
     WindowOpening(Arc<Control>),
 }
-
 
 impl HeatSourceControl {
     pub(crate) fn has_type(&self, control_type: HeatSourceControlType) -> bool {
@@ -3837,27 +3835,36 @@ mod tests {
             IndexMap::from([
                 (
                     "ctrl11".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        [true, false, false, true, true, true, true, true]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                    ).into())
+                    Control::OnOffTime(
+                        OnOffTimeControl::new(
+                            [true, false, false, true, true, true, true, true]
+                                .into_iter()
+                                .map(Some)
+                                .collect_vec(),
+                            0,
+                            1.,
+                        )
+                        .into(),
+                    )
                     .into(),
                 ),
-                ("ctrl12".into(), Control::Charge(charge_control.into()).into()),
+                (
+                    "ctrl12".into(),
+                    Control::Charge(charge_control.into()).into(),
+                ),
                 (
                     "ctrl13".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        [true, true, false, false, true, false, true, true]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                    ).into())
+                    Control::OnOffTime(
+                        OnOffTimeControl::new(
+                            [true, true, false, false, true, false, true, true]
+                                .into_iter()
+                                .map(Some)
+                                .collect_vec(),
+                            0,
+                            1.,
+                        )
+                        .into(),
+                    )
                     .into(),
                 ),
             ])
@@ -4323,19 +4330,15 @@ mod tests {
             control.set_controls(IndexMap::from([
                 (
                     "ctrl1".into(),
-                    Control::SetpointTime(SetpointTimeControl::new(
-                        vec![Some(20.); 8],
-                        0,
-                        1.,
-                        None,
-                        None,
-                        1.,
-                    ).into())
+                    Control::SetpointTime(
+                        SetpointTimeControl::new(vec![Some(20.); 8], 0, 1., None, None, 1.).into(),
+                    )
                     .into(),
                 ),
                 (
                     "ctr12".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into()).into(),
+                    Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into())
+                        .into(),
                 ),
             ]));
 
@@ -4354,32 +4357,38 @@ mod tests {
             control.set_controls(IndexMap::from([
                 (
                     "ctrl1".into(),
-                    Control::SetpointTime(SetpointTimeControl::new(
-                        vec![45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
-                            .into_iter()
-                            .map(Into::into)
-                            .collect(),
-                        0,
-                        1.,
-                        None,
-                        None,
-                        1.,
-                    ).into())
+                    Control::SetpointTime(
+                        SetpointTimeControl::new(
+                            vec![45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                            0,
+                            1.,
+                            None,
+                            None,
+                            1.,
+                        )
+                        .into(),
+                    )
                     .into(),
                 ),
                 (
                     "ctr12".into(),
-                    Control::SetpointTime(SetpointTimeControl::new(
-                        vec![45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
-                            .into_iter()
-                            .map(Into::into)
-                            .collect(),
-                        0,
-                        1.,
-                        None,
-                        None,
-                        1.,
-                    ).into())
+                    Control::SetpointTime(
+                        SetpointTimeControl::new(
+                            vec![45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                            0,
+                            1.,
+                            None,
+                            None,
+                            1.,
+                        )
+                        .into(),
+                    )
                     .into(),
                 ),
             ]));
@@ -4399,26 +4408,32 @@ mod tests {
             control.set_controls(IndexMap::from([
                 (
                     "ctrl1".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        vec![false, false, false, true, true, true, true, true]
-                            .into_iter()
-                            .map(Into::into)
-                            .collect(),
-                        0,
-                        1.,
-                    ).into())
+                    Control::OnOffTime(
+                        OnOffTimeControl::new(
+                            vec![false, false, false, true, true, true, true, true]
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                            0,
+                            1.,
+                        )
+                        .into(),
+                    )
                     .into(),
                 ),
                 (
                     "ctrl2".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        vec![false, true, false, false, true, false, true, true]
-                            .into_iter()
-                            .map(Into::into)
-                            .collect(),
-                        0,
-                        1.,
-                    ).into())
+                    Control::OnOffTime(
+                        OnOffTimeControl::new(
+                            vec![false, true, false, false, true, false, true, true]
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                            0,
+                            1.,
+                        )
+                        .into(),
+                    )
                     .into(),
                 ),
             ]));
@@ -4511,38 +4526,47 @@ mod tests {
             let controls: IndexMap<String, Arc<Control>> = IndexMap::from([
                 (
                     "ctrl_a".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        vec![false, false, true, true]
-                            .into_iter()
-                            .map(Into::into)
-                            .collect(),
-                        0,
-                        1.,
-                    ).into())
+                    Control::OnOffTime(
+                        OnOffTimeControl::new(
+                            vec![false, false, true, true]
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                            0,
+                            1.,
+                        )
+                        .into(),
+                    )
                     .into(),
                 ),
                 (
                     "ctrl_b".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(
-                        vec![false, false, false, true]
-                            .into_iter()
-                            .map(Into::into)
-                            .collect(),
-                        0,
-                        1.,
-                    ).into())
+                    Control::OnOffTime(
+                        OnOffTimeControl::new(
+                            vec![false, false, false, true]
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                            0,
+                            1.,
+                        )
+                        .into(),
+                    )
                     .into(),
                 ),
                 (
                     "ctrl_c".into(),
-                    Control::SetpointTime(SetpointTimeControl::new(
-                        vec![None, Some(20.0), None, None],
-                        0,
-                        1.,
-                        None,
-                        None,
-                        1.,
-                    ).into())
+                    Control::SetpointTime(
+                        SetpointTimeControl::new(
+                            vec![None, Some(20.0), None, None],
+                            0,
+                            1.,
+                            None,
+                            None,
+                            1.,
+                        )
+                        .into(),
+                    )
                     .into(),
                 ),
             ]);
@@ -4687,131 +4711,159 @@ mod tests {
                 1.,
                 5.0, // Need 12 "on" hours
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         );
 
         IndexMap::from([
             (
                 "ctrl1".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [true, true, false, true, true, true, true, true]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [true, true, false, true, true, true, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
                 "ctrl2".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [false, true, true, false, false, false, true, false]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [false, true, true, false, false, false, true, false]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
                 "ctrl3".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [true, false, true, false, false, false, true, false]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [true, false, true, false, false, false, true, false]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
                 "ctrl4".into(),
-                Control::SetpointTime(SetpointTimeControl::new(
-                    [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                    Default::default(),
-                    Default::default(),
-                    1.,
-                ).into())
+                Control::SetpointTime(
+                    SetpointTimeControl::new(
+                        [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                        Default::default(),
+                        Default::default(),
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
                 "ctrl5".into(),
-                Control::SetpointTime(SetpointTimeControl::new(
-                    [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                    Default::default(),
-                    Default::default(),
-                    1.,
-                ).into())
+                Control::SetpointTime(
+                    SetpointTimeControl::new(
+                        [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                        Default::default(),
+                        Default::default(),
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
                 "ctrl6".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [true, true, false, true, true, true, true, true]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [true, true, false, true, true, true, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
                 "ctrl7".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [false, true, false, false, false, false, true, false]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [false, true, false, false, false, false, true, false]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
                 "ctrl8".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [true, false, false, true, true, true, true, true]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [true, false, false, true, true, true, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
                 "ctrl9".into(),
-                Control::SetpointTime(SetpointTimeControl::new(
-                    vec![
-                        Some(45.0),
-                        None,
-                        Some(50.0),
-                        Some(48.0),
-                        Some(48.0),
-                        None,
-                        Some(48.0),
-                        Some(48.0),
-                    ],
-                    0,
-                    1.,
-                    Default::default(),
-                    Default::default(),
-                    1.,
-                ).into())
+                Control::SetpointTime(
+                    SetpointTimeControl::new(
+                        vec![
+                            Some(45.0),
+                            None,
+                            Some(50.0),
+                            Some(48.0),
+                            Some(48.0),
+                            None,
+                            Some(48.0),
+                            Some(48.0),
+                        ],
+                        0,
+                        1.,
+                        Default::default(),
+                        Default::default(),
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             ("ctrl10".into(), cost_minimising_control.into()),
@@ -4879,14 +4931,17 @@ mod tests {
         IndexMap::from([
             (
                 "ctrl11".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [true, false, false, true, true, true, true, true]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [true, false, false, true, true, true, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
@@ -4895,14 +4950,17 @@ mod tests {
             ),
             (
                 "ctrl13".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [true, true, false, false, true, false, true, true]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [true, true, false, false, true, false, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
         ])
@@ -4948,14 +5006,17 @@ mod tests {
         IndexMap::from([
             (
                 "ctrl14".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [true, false, false, true, true, true, true, true]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [true, false, false, true, true, true, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
@@ -4964,26 +5025,32 @@ mod tests {
             ),
             (
                 "ctrl16".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [true, true, false, false, true, false, true, true]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [true, true, false, false, true, false, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
             (
                 "ctrl17".into(),
-                Control::OnOffTime(OnOffTimeControl::new(
-                    [true, true, false, false, true, false, true, true]
-                        .into_iter()
-                        .map(Some)
-                        .collect_vec(),
-                    0,
-                    1.,
-                ).into())
+                Control::OnOffTime(
+                    OnOffTimeControl::new(
+                        [true, true, false, false, true, false, true, true]
+                            .into_iter()
+                            .map(Some)
+                            .collect_vec(),
+                        0,
+                        1.,
+                    )
+                    .into(),
+                )
                 .into(),
             ),
         ])

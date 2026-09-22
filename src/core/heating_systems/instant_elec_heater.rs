@@ -101,14 +101,17 @@ mod tests {
 
     #[fixture]
     pub fn instant_elec_heater(simulation_time: SimulationTime) -> InstantElecHeater {
-        let control = Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(21.0), Some(21.0), None, Some(21.0)],
-            0,
-            1.,
-            None,
-            None,
-            simulation_time.step,
-        ).into());
+        let control = Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(21.0), Some(21.0), None, Some(21.0)],
+                0,
+                1.,
+                None,
+                None,
+                simulation_time.step,
+            )
+            .into(),
+        );
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
                 .build(),

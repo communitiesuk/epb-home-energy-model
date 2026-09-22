@@ -4280,19 +4280,21 @@ mod tests {
     }
 
     fn ctrl_that_is_on(simulation_time_iterator: &SimulationTimeIterator) -> Control {
-        Control::OnOffTime(OnOffTimeControl::new(
-            vec![Some(true)],
-            simulation_time_iterator.current_day(),
-            1.,
-        ).into())
+        Control::OnOffTime(
+            OnOffTimeControl::new(vec![Some(true)], simulation_time_iterator.current_day(), 1.)
+                .into(),
+        )
     }
 
     fn ctrl_that_is_off(simulation_time_iterator: &SimulationTimeIterator) -> Control {
-        Control::OnOffTime(OnOffTimeControl::new(
-            vec![Some(false)],
-            simulation_time_iterator.current_day(),
-            1.,
-        ).into())
+        Control::OnOffTime(
+            OnOffTimeControl::new(
+                vec![Some(false)],
+                simulation_time_iterator.current_day(),
+                1.,
+            )
+            .into(),
+        )
     }
 
     #[rstest]
@@ -6195,14 +6197,17 @@ mod tests {
             let start_day = 0;
             let time_series_step = 1.;
             let timestep = 1.;
-            let control = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-                schedule,
-                start_day,
-                time_series_step,
-                None,
-                None,
-                timestep,
-            ).into()));
+            let control = Arc::new(Control::SetpointTime(
+                SetpointTimeControl::new(
+                    schedule,
+                    start_day,
+                    time_series_step,
+                    None,
+                    None,
+                    timestep,
+                )
+                .into(),
+            ));
 
             let infiltration_ventilation_with_patched_smart_air_brick_vents_open =
                 create_infiltration_ventilation_with_smart_air_brick(
@@ -6238,14 +6243,17 @@ mod tests {
             let start_day = 0;
             let time_series_step = 1.;
             let timestep = 1.;
-            let control = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-                schedule,
-                start_day,
-                time_series_step,
-                None,
-                None,
-                timestep,
-            ).into()));
+            let control = Arc::new(Control::SetpointTime(
+                SetpointTimeControl::new(
+                    schedule,
+                    start_day,
+                    time_series_step,
+                    None,
+                    None,
+                    timestep,
+                )
+                .into(),
+            ));
             let infiltration_ventilation_with_patched_smart_air_brick_no_setpoint =
                 create_infiltration_ventilation_with_smart_air_brick(
                     &simulation_time_iterator,
@@ -6277,14 +6285,17 @@ mod tests {
             let start_day = 0;
             let time_series_step = 1.;
             let timestep = 1.;
-            let control = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-                schedule,
-                start_day,
-                time_series_step,
-                None,
-                None,
-                timestep,
-            ).into()));
+            let control = Arc::new(Control::SetpointTime(
+                SetpointTimeControl::new(
+                    schedule,
+                    start_day,
+                    time_series_step,
+                    None,
+                    None,
+                    timestep,
+                )
+                .into(),
+            ));
             let infiltration_ventilation_with_patched_smart_air_brick_vents_closed =
                 create_infiltration_ventilation_with_smart_air_brick(
                     &simulation_time_iterator,

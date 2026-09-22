@@ -2252,7 +2252,8 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         )
     }
 
@@ -2315,14 +2316,10 @@ mod tests {
     }
 
     fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
-        Control::SetpointTime(SetpointTimeControl::new(
-            schedule,
-            0,
-            1.,
-            Default::default(),
-            Default::default(),
-            1.,
-        ).into())
+        Control::SetpointTime(
+            SetpointTimeControl::new(schedule, 0, 1., Default::default(), Default::default(), 1.)
+                .into(),
+        )
     }
 
     fn get_service_names_from_results(heat_battery: Arc<RwLock<HeatBatteryPcm>>) -> Vec<String> {
@@ -2860,7 +2857,8 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         );
         let heat_battery = create_heat_battery(&simulation_time_iterator, control, None);
         HeatBatteryPcm::create_service_connection(heat_battery.clone(), "new_service").unwrap();
@@ -3159,7 +3157,8 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         );
 
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
@@ -3232,7 +3231,8 @@ mod tests {
                 Some(external_sensor.clone()),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         );
 
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
@@ -3264,7 +3264,8 @@ mod tests {
                 Some(external_sensor),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         );
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
 
@@ -4547,7 +4548,8 @@ mod tests {
                     1.0,
                     None,
                 )
-                .unwrap().into(),
+                .unwrap()
+                .into(),
             ))
         }
 
