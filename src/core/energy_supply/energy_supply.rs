@@ -1318,6 +1318,7 @@ mod tests {
     }
 
     #[rstest]
+    /// Test that the state of charge is 0 where there are no batteries
     fn test_calc_energy_import_from_grid_to_battery_no_battery(
         simulation_time: SimulationTime,
         tariff_data: TariffData,
@@ -1341,6 +1342,7 @@ mod tests {
     }
 
     #[rstest]
+    /// Test that the state of charge is 0 where there are no batteries
     fn test_calc_energy_export_from_battery_to_grid_no_battery(
         simulation_time: SimulationTime,
         tariff_data: TariffData,
@@ -1451,6 +1453,74 @@ mod tests {
         assert!(!exporting_condition);
         assert_eq!(threshold_charge, Some(0.8));
         assert!(!can_export_if_not_empty);
+    }
+
+    #[rstest]
+    /// Test that calc_energy_export_from_battery_to_grid doesn't export if the energy supply is not export capable
+    fn test_calc_energy_export_from_battery_to_grid_not_export_capable(
+        tariff_data: TariffData,
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) {
+        let elec_battery = create_elec_battery(
+            true,
+            true,
+            BatteryLocation::Inside,
+            external_conditions,
+            simulation_time,
+        );
+
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
+        let energy_supply = builder
+            .with_electric_battery(indexmap! {"battery".into() => elec_battery})
+            .with_tariff_data(tariff_data)
+            .with_tariff_export([0.8; 12], [5.; 12])
+            .with_export_capable(false)
+            .build();
+
+        energy_supply
+            .calc_energy_export_from_battery_to_grid(simulation_time.iter().current_iteration())
+            .unwrap();
+
+        let (_, _, _, energy_into_grid_from_battery, _) = energy_supply.get_battery_energy_flows();
+
+        assert_eq!(energy_into_grid_from_battery[0], 0.);
+    }
+
+    #[rstest]
+    fn test_calc_energy_export_from_battery_to_grid(
+        tariff_data: TariffData,
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) {
+        let elec_battery = create_elec_battery(
+            true,
+            true,
+            BatteryLocation::Inside,
+            external_conditions,
+            simulation_time,
+        );
+        elec_battery.charge_discharge_battery(
+            -10.,
+            false,
+            simulation_time.iter().current_iteration(),
+        );
+
+        let builder =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
+        let energy_supply = builder
+            .with_electric_battery(indexmap! {"battery".into() => elec_battery})
+            .with_tariff_data(tariff_data)
+            .with_tariff_export([0.8; 12], [5.; 12])
+            .build();
+
+        for (_, t_it) in simulation_time.iter().enumerate() {
+            energy_supply
+                .calc_energy_export_from_battery_to_grid(t_it)
+                .unwrap();
+            energy_supply.timestep_end().unwrap();
+        }
     }
 
     #[rstest]
