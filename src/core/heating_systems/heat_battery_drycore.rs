@@ -2113,7 +2113,8 @@ mod tests {
                 external_sensor.into(),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         ))
     }
 
@@ -2138,7 +2139,8 @@ mod tests {
                 external_sensor.into(),
                 None,
             )
-            .unwrap().into(),
+            .unwrap()
+            .into(),
         ))
     }
 
@@ -2275,19 +2277,22 @@ mod tests {
             Some(21.0),
             Some(true),
             Some(true),
-        ).into()))
+        )))
     }
 
     #[fixture]
     fn default_control_max(simulation_time: SimulationTime) -> Arc<Control> {
-        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
-            0,
-            0.0,
-            None,
-            None,
-            simulation_time.step,
-        ).into()))
+        Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
+                0,
+                0.0,
+                None,
+                None,
+                simulation_time.step,
+            )
+            .into(),
+        ))
     }
 
     // redundant to port Python tests for abstract methods
@@ -2306,22 +2311,28 @@ mod tests {
         mock_control_dhw_off: Arc<Control>,
         simulation_time: SimulationTime,
     ) {
-        let control_min = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(45.), Some(46.), Some(46.), Some(46.), Some(46.)],
-            0,
-            1.,
-            None,
-            None,
-            simulation_time.step,
-        ).into()));
-        let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
-            0,
-            1.,
-            None,
-            None,
-            simulation_time.step,
-        ).into()));
+        let control_min = Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(45.), Some(46.), Some(46.), Some(46.), Some(46.)],
+                0,
+                1.,
+                None,
+                None,
+                simulation_time.step,
+            )
+            .into(),
+        ));
+        let control_max = Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
+                0,
+                1.,
+                None,
+                None,
+                simulation_time.step,
+            )
+            .into(),
+        ));
         let mock_cold_feed = mock_cold_feed(None); // we can just set up a mock cold water source here - it isn't used
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
@@ -2409,12 +2420,12 @@ mod tests {
             Some(40.0),
             Some(true),
             Some(true),
-        ).into()));
+        )));
         let _control_max = Arc::new(Control::Mock(MockControl::new(
             Some(85.0), // High temperature requirement
             None,
             None,
-        ).into()));
+        )));
 
         // cold feed temperature not relevant
 
@@ -2990,14 +3001,9 @@ mod tests {
         )
         .unwrap();
 
-        let ctrl_off = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![None; 24],
-            0,
-            1.0,
-            None,
-            None,
-            1.0,
-        ).into()));
+        let ctrl_off = Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(vec![None; 24], 0, 1.0, None, None, 1.0).into(),
+        ));
 
         let service = HeatBatteryDryCore::create_service_space_heating(
             heat_battery.clone(),

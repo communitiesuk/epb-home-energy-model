@@ -4214,14 +4214,17 @@ mod tests {
 
     #[fixture]
     fn diverter_control() -> Arc<Control> {
-        Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(60.), Some(60.), Some(60.), Some(60.)],
-            0,
-            1.,
-            None,
-            None,
-            1.,
-        ).into())
+        Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(60.), Some(60.), Some(60.), Some(60.)],
+                0,
+                1.,
+                None,
+                None,
+                1.,
+            )
+            .into(),
+        )
         .into()
     }
 
@@ -5080,14 +5083,9 @@ mod tests {
             .clone()
             .heat_source;
         let energy_input = 5.0;
-        let setpnt_diverter = Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(60.); 8],
-            0,
-            1.0,
-            None,
-            None,
-            1.0,
-        ).into());
+        let setpnt_diverter = Control::SetpointTime(
+            SetpointTimeControl::new(vec![Some(60.); 8], 0, 1.0, None, None, 1.0).into(),
+        );
         storage_tank1.q_ls_n_prev_heat_source = Arc::new(RwLock::new(vec![0.0, 0.1, 0.2, 0.3]));
         assert_eq!(
             storage_tank1
@@ -5550,23 +5548,29 @@ mod tests {
             EnergySupply::connection(Arc::new(RwLock::new(energy_supply)), "shower").unwrap();
         let timestep = simulation_time_for_immersion_heater.step;
 
-        let control_min = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(52.), Some(52.), None, Some(52.)],
-            0,
-            1.,
-            None,
-            None,
-            timestep,
-        ).into()));
+        let control_min = Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(52.), Some(52.), None, Some(52.)],
+                0,
+                1.,
+                None,
+                None,
+                timestep,
+            )
+            .into(),
+        ));
 
-        let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![Some(60.), Some(60.), Some(60.), Some(60.)],
-            0,
-            1.,
-            None,
-            None,
-            timestep,
-        ).into()));
+        let control_max = Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(60.), Some(60.), Some(60.), Some(60.)],
+                0,
+                1.,
+                None,
+                None,
+                timestep,
+            )
+            .into(),
+        ));
 
         ImmersionHeater::new(
             rated_power,
@@ -5846,23 +5850,26 @@ mod tests {
         let power_pump_kw = 5.;
         let max_flow_rate_pump_l_per_min = 1000.;
         let temp_usable = 40.;
-        let temp_setpnt_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
-            vec![
-                Some(50.0),
-                Some(40.0),
-                Some(30.0),
-                Some(20.0),
-                Some(50.0),
-                Some(50.0),
-                Some(50.0),
-                Some(50.0),
-            ],
-            0,
-            1.,
-            None,
-            None,
-            1.,
-        ).into()));
+        let temp_setpnt_max = Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![
+                    Some(50.0),
+                    Some(40.0),
+                    Some(30.0),
+                    Some(20.0),
+                    Some(50.0),
+                    Some(50.0),
+                    Some(50.0),
+                    Some(50.0),
+                ],
+                0,
+                1.,
+                None,
+                None,
+                1.,
+            )
+            .into(),
+        ));
 
         create_smart_hot_water_tank(
             simulation_time_for_smart_hot_water_tank,
@@ -5908,40 +5915,46 @@ mod tests {
             heat_source_name,
         )
         .unwrap();
-        let control_min = Control::SetpointTime(SetpointTimeControl::new(
-            vec![
-                Some(0.5),
+        let control_min = Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![
+                    Some(0.5),
+                    None,
+                    None,
+                    None,
+                    Some(0.5),
+                    Some(0.5),
+                    Some(0.5),
+                    Some(0.5),
+                ],
+                0,
+                1.,
                 None,
                 None,
+                1.,
+            )
+            .into(),
+        );
+        let control_max = Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![
+                    Some(1.0),
+                    Some(1.0),
+                    Some(0.9),
+                    Some(0.8),
+                    Some(0.7),
+                    Some(1.0),
+                    Some(0.9),
+                    Some(0.8),
+                ],
+                0,
+                1.,
                 None,
-                Some(0.5),
-                Some(0.5),
-                Some(0.5),
-                Some(0.5),
-            ],
-            0,
-            1.,
-            None,
-            None,
-            1.,
-        ).into());
-        let control_max = Control::SetpointTime(SetpointTimeControl::new(
-            vec![
-                Some(1.0),
-                Some(1.0),
-                Some(0.9),
-                Some(0.8),
-                Some(0.7),
-                Some(1.0),
-                Some(0.9),
-                Some(0.8),
-            ],
-            0,
-            1.,
-            None,
-            None,
-            1.,
-        ).into());
+                None,
+                1.,
+            )
+            .into(),
+        );
         let immersion_heater = ImmersionHeater::new(
             5.,
             energy_supply_connection,
@@ -6511,23 +6524,26 @@ mod tests {
             smart_hot_water_tank.storage_tank.heat_source_data["imheater"].clone();
         let heat_source = &*positioned_heat_source.heat_source.lock();
 
-        let control_max_diverter = Control::SetpointTime(SetpointTimeControl::new(
-            vec![
-                Some(1.0),
-                Some(1.0),
-                Some(0.9),
-                Some(0.8),
-                Some(0.7),
-                Some(1.0),
-                Some(0.9),
-                Some(0.8),
-            ],
-            0,
-            1.,
-            None,
-            None,
-            0.,
-        ).into());
+        let control_max_diverter = Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![
+                    Some(1.0),
+                    Some(1.0),
+                    Some(0.9),
+                    Some(0.8),
+                    Some(0.7),
+                    Some(1.0),
+                    Some(0.9),
+                    Some(0.8),
+                ],
+                0,
+                1.,
+                None,
+                None,
+                0.,
+            )
+            .into(),
+        );
 
         let expected = TemperatureCalculation {
             temp_s8_n: vec![50.0, 50.0, 50.0, 50.0],
@@ -6565,23 +6581,26 @@ mod tests {
         assert_eq!(actual, expected);
 
         smart_hot_water_tank.temp_usable = 100.0;
-        let control_max_diverter = Control::SetpointTime(SetpointTimeControl::new(
-            vec![
-                Some(0.0),
-                Some(1.0),
-                Some(0.9),
-                Some(0.8),
-                Some(0.7),
-                Some(1.0),
-                Some(0.9),
-                Some(0.8),
-            ],
-            0,
-            1.,
-            None,
-            None,
-            0.,
-        ).into());
+        let control_max_diverter = Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.9),
+                    Some(0.8),
+                    Some(0.7),
+                    Some(1.0),
+                    Some(0.9),
+                    Some(0.8),
+                ],
+                0,
+                1.,
+                None,
+                None,
+                0.,
+            )
+            .into(),
+        );
 
         // NOTE - these are the same expected values as above. Same behaviour in Python
         let expected = TemperatureCalculation {
@@ -6641,7 +6660,7 @@ mod tests {
         energy_supply_for_smart_hot_water_tank_immersion: Arc<RwLock<EnergySupply>>,
         energy_supply_for_smart_hot_water_tank_pump: Arc<RwLock<EnergySupply>>,
     ) {
-        let temp_setpnt_max = Arc::from(Control::Mock(MockControl::new(None, None, None).into()));
+        let temp_setpnt_max = Arc::from(Control::Mock(MockControl::new(None, None, None)));
 
         let tank_with_none_setpoint = create_smart_hot_water_tank(
             simulation_time_for_smart_hot_water_tank,

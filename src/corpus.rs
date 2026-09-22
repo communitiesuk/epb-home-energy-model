@@ -303,7 +303,7 @@ fn single_control_from_details(
                     charge_level_vec,
                     *temp_charge_cut,
                     temp_charge_cut_delta,
-                    Some(external_conditions.clone().into()),
+                    Some(external_conditions.clone()),
                     external_sensor.clone(),
                     Some(*charge_calc_time),
                 )?
@@ -325,7 +325,7 @@ fn single_control_from_details(
             ..
         } => Control::OnOffMinimisingTime(
             OnOffCostMinimisingTimeControl::new(
-                reject_nulls(expand_numeric_schedule(schedule).into())?,
+                reject_nulls(expand_numeric_schedule(schedule))?,
                 simulation_time_iterator,
                 *start_day,
                 *time_series_step,
