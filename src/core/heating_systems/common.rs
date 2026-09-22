@@ -159,7 +159,7 @@ impl HeatSourceWet {
             HeatSourceWet::WaterCombi(_) => {
                 bail!("BoilerServiceWaterCombi does not implement setpnt")
             }
-            HeatSourceWet::WaterRegular(regular) => regular.setpnt(simtime),
+            HeatSourceWet::WaterRegular(regular) => regular.setpnt(&simtime),
             HeatSourceWet::Space(space) => {
                 // NOTE - this is temp_setpnt in Python, rather than setpnt
                 // investigation needed to see if this is an issue

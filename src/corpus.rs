@@ -5171,17 +5171,18 @@ fn heat_source_from_input(
                             &energy_supply_conn_name,
                             temp_flow_limit_upper.ok_or_else(|| anyhow!("A temp_flow_limit_upper is needed for heat pump with the name '{name}'"))?,
                             Arc::new(cold_water_source.clone()),
-                            control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                            control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                            // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
+                            None, // TODO: update this as part of 1.0.0a9 migration
+                            None, // TODO: update this as part of 1.0.0a9 migration
+                            // TODO pass in control as part of 1.0.0a9 migration
                         )?),
                     )),
                     WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
+
                         HeatSourceWet::WaterRegular(Boiler::create_service_hot_water_regular(
                             boiler.clone(),
                             energy_supply_conn_name.as_str(),
-                            control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                            control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                            None, // TODO: update this as part of 1.0.0a9 migration
+                            None, // TODO: update this as part of 1.0.0a9 migration
                             None // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                         )?),
                     )),

@@ -38,7 +38,37 @@ pub(crate) enum Control {
     #[cfg(test)]
     Mock(MockControl),
 }
+#[derive(Clone, Debug)]
 
+pub(crate) enum SetpointOrCombinationControl {
+    SetpointTime(Arc<SetpointTimeControl>),
+    CombinationTime(Arc<CombinationTimeControl>),
+}
+
+impl SetpointOrCombinationControl {
+    pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
+        match self {
+            SetpointOrCombinationControl::SetpointTime(control) => control.setpnt(simtime),
+            SetpointOrCombinationControl::CombinationTime(control) => control.setpnt(simtime),
+        }
+    }
+
+    pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
+        match self {
+            SetpointOrCombinationControl::SetpointTime(control) => control.is_on(simtime),
+            SetpointOrCombinationControl::CombinationTime(control) => control.is_on(simtime),
+        }
+    }
+    #[deprecated]
+    pub(crate) fn into_control(self) -> Control {
+        match self {
+            SetpointOrCombinationControl::SetpointTime(control) => Control::SetpointTime(control),
+            SetpointOrCombinationControl::CombinationTime(control) => {
+                Control::CombinationTime(control)
+            }
+        }
+    }
+}
 // macro so accessing individual controls through the enum isn't so repetitive
 macro_rules! per_control {
     ($val:expr, $pattern:pat => { $res:expr }) => {

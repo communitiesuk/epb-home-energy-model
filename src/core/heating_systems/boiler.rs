@@ -1,7 +1,7 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    Control, ControlBehaviour, OnOffTimeControl, RangeTimeControl,
+    Control, ControlBehaviour, OnOffTimeControl, RangeTimeControl, SetpointOrCombinationControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
@@ -426,8 +426,8 @@ impl BoilerServiceWaterCombi {
 pub struct BoilerServiceWaterRegular {
     boiler: BoilerForBoilerService,
     service_name: String,
-    control_min: Control,
-    control_max: Control,
+    control_min: Option<SetpointOrCombinationControl>,
+    control_max: Option<SetpointOrCombinationControl>,
     control: Option<Arc<RangeTimeControl>>,
 }
 
@@ -435,8 +435,8 @@ impl BoilerServiceWaterRegular {
     pub(crate) fn new(
         boiler: BoilerForBoilerService,
         service_name: String,
-        control_min: Control, // in Python this can be one of SetpointTimeControl or CombinationTimeControl
-        control_max: Control, // in Python this can be one of SetpointTimeControl or CombinationTimeControl
+        control_min: Option<SetpointOrCombinationControl>,
+        control_max: Option<SetpointOrCombinationControl>,
         control: Option<Arc<RangeTimeControl>>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -449,10 +449,11 @@ impl BoilerServiceWaterRegular {
     }
 
     /// Return setpoint (not necessarily temperature)
-    pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
+    pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
         (
-            self.control_min.setpnt(&simtime),
-            self.control_max.setpnt(&simtime),
+            // TODO: port to alpha 9 (remove unwraps)
+            self.control_min.as_ref().unwrap().setpnt(&simtime),
+            self.control_max.as_ref().unwrap().setpnt(&simtime),
         )
     }
 
@@ -508,7 +509,8 @@ impl BoilerServiceWaterRegular {
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control_min.is_on(&simtime)
+        // TODO port to alpha 9 and remove unwrap
+        self.control_min.as_ref().unwrap().is_on(&simtime)
     }
 }
 
@@ -842,8 +844,8 @@ impl Boiler {
     pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control_min: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
-        control_max: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control_min: Option<SetpointOrCombinationControl>,
+        control_max: Option<SetpointOrCombinationControl>,
         control: Option<Arc<RangeTimeControl>>,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
@@ -1825,7 +1827,9 @@ mod tests {
     }
 
     mod test_boiler_service_water_regular {
-        use crate::core::controls::time_control::{Control, SetpointTimeControl};
+        use crate::core::controls::time_control::{
+            SetpointOrCombinationControl, SetpointTimeControl,
+        };
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{
@@ -1891,8 +1895,8 @@ mod tests {
         }
 
         #[fixture]
-        fn control_min() -> Control {
-            Control::SetpointTime(
+        fn control_min() -> SetpointOrCombinationControl {
+            SetpointOrCombinationControl::SetpointTime(
                 SetpointTimeControl::new(
                     vec![Some(52.), Some(52.), None],
                     0,
@@ -1906,8 +1910,8 @@ mod tests {
         }
 
         #[fixture]
-        fn control_max() -> Control {
-            Control::SetpointTime(
+        fn control_max() -> SetpointOrCombinationControl {
+            SetpointOrCombinationControl::SetpointTime(
                 SetpointTimeControl::new(
                     vec![Some(60.), Some(60.)],
                     0,
@@ -1923,14 +1927,14 @@ mod tests {
         #[fixture]
         fn boiler_service<'a>(
             boiler: Boiler,
-            control_min: Control,
-            control_max: Control,
+            control_min: SetpointOrCombinationControl,
+            control_max: SetpointOrCombinationControl,
         ) -> BoilerServiceWaterRegular {
             BoilerServiceWaterRegular::new(
                 BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 "boiler_test".into(),
-                control_min,
-                control_max,
+                Some(control_min),
+                Some(control_max),
                 None,
             )
             .unwrap()
@@ -1991,7 +1995,7 @@ mod tests {
             simulation_time: SimulationTime,
         ) {
             for t_it in simulation_time.iter() {
-                pretty_assertions::assert_eq!(boiler_service.setpnt(t_it), (Some(52.), Some(60.)));
+                pretty_assertions::assert_eq!(boiler_service.setpnt(&t_it), (Some(52.), Some(60.)));
             }
         }
 
@@ -2269,7 +2273,9 @@ mod tests {
 
     mod test_boiler {
         use crate::core::common::WaterSupply;
-        use crate::core::controls::time_control::{Control, SetpointTimeControl};
+        use crate::core::controls::time_control::{
+            Control, SetpointOrCombinationControl, SetpointTimeControl,
+        };
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::ServiceType;
@@ -2397,7 +2403,7 @@ mod tests {
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
         ) {
             let service_name = "service_hot_water_regular";
-            let control_min = Control::SetpointTime(
+            let control_min = SetpointOrCombinationControl::SetpointTime(
                 SetpointTimeControl::new(
                     vec![None, None],
                     0,
@@ -2408,7 +2414,7 @@ mod tests {
                 )
                 .into(),
             );
-            let control_max = Control::SetpointTime(
+            let control_max = SetpointOrCombinationControl::SetpointTime(
                 SetpointTimeControl::new(
                     vec![None, None],
                     0,
@@ -2425,8 +2431,8 @@ mod tests {
             let boiler_hotwater_regular_result = Boiler::create_service_hot_water_regular(
                 boiler,
                 service_name,
-                control_min,
-                control_max,
+                Some(control_min),
+                Some(control_max),
                 None,
             );
             assert!(boiler_hotwater_regular_result.is_ok());

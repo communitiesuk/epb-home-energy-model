@@ -1,6 +1,8 @@
 use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSupply;
-use crate::core::controls::time_control::{Control, RangeTimeControl};
+use crate::core::controls::time_control::{
+    Control, RangeTimeControl, SetpointOrCombinationControl,
+};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{
     BoilerForBoilerService, BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
@@ -128,8 +130,8 @@ impl DirectElectricBoiler {
     fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control_min: Control,
-        control_max: Control,
+        control_min: Option<SetpointOrCombinationControl>,
+        control_max: Option<SetpointOrCombinationControl>,
         control: Option<Arc<RangeTimeControl>>,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
@@ -556,8 +558,8 @@ mod tests {
         let boiler_service_result = DirectElectricBoiler::create_service_hot_water_regular(
             Arc::new(RwLock::new(boiler)),
             service_name,
-            Control::SetpointTime(control_min.into()),
-            Control::SetpointTime(control_max.into()),
+            Some(SetpointOrCombinationControl::SetpointTime(control_min.into())),
+            Some(SetpointOrCombinationControl::SetpointTime(control_max.into())),
             None,
         );
         assert!(boiler_service_result.is_ok());
