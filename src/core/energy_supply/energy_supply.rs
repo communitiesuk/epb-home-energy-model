@@ -1184,6 +1184,7 @@ fn init_demand_list(timestep_count: usize) -> Vec<AtomicF64> {
 mod tests {
     use super::*;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+    use crate::hem_core::simulation_time::SimulationTimeIterator;
     use crate::input::BatteryLocation;
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
@@ -1685,6 +1686,121 @@ mod tests {
         // total would be 2 * (-0.5) = -1.0. With connection-level capping,
         // total export is limited to max_export_energy (0.5 kWh).
         assert_relative_eq!(energy_into_grid_from_battery[0], -max_export_energy);
+    }
+
+    #[rstest]
+    /// Battery discharge shares the whole-house export limit with generation surplus.
+    /// Generation surplus is capped and exported first (in
+    /// calc_energy_import_export_betafactor), then battery discharge is limited to the
+    /// export headroom left in the same timestep. Because the discharge request is capped,
+    /// the energy the battery cannot export is retained as charge rather than discarded,
+    /// unlike generation surplus above the limit, which is curtailed.
+    fn test_battery_export_shares_whole_house_limit_and_retains_charge(
+        tariff_data: TariffData,
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) {
+        // Build a full, export-eligible battery plus generation and run one timestep
+        fn run(
+            power_limit_export: Option<f64>,
+            tariff_data: TariffData,
+            simtime: SimulationTimeIterator,
+            external_conditions: ExternalConditions,
+        ) -> Arc<RwLock<EnergySupply>> {
+            let battery = ElectricBattery::new(
+                10.,
+                0.8,
+                3.,
+                0.001,
+                10.,
+                10.,
+                BatteryLocation::Inside,
+                true,
+                true,
+                simtime.current_iteration().timestep,
+                Arc::new(external_conditions),
+            );
+
+            // Fill the battery so it cannot absorb the generation surplus and its state of
+            // charge is above the 0.8 export threshold, making it eligible to discharge.
+            battery.charge_discharge_battery(-10., false, simtime.current_iteration());
+
+            let mut builder =
+                EnergySupplyBuilder::new(FuelType::Electricity, simtime.total_steps())
+                    .with_tariff_data(tariff_data)
+                    .with_tariff_export([0.8; 12], [5.; 12])
+                    .with_electric_battery(indexmap! {"battery".into() => battery})
+                    .with_export_capable(true);
+
+            if let Some(power_limit_export) = power_limit_export {
+                builder = builder.with_power_limit_export(power_limit_export);
+            }
+
+            let mut supply = builder.build();
+
+            supply.register_end_user_name("PV".into());
+            let shared_supply = Arc::new(RwLock::new(supply));
+            let conn = EnergySupplyConnection {
+                energy_supply: shared_supply.clone(),
+                end_user_name: "PV".into(),
+            };
+            // Offer 0.5 kWh of generation surplus, below the 2 kWh whole-house limit
+            conn.supply_energy(0.5, simtime.current_index()).unwrap();
+            shared_supply
+                .read()
+                .calc_energy_import_export_betafactor(simtime.current_iteration())
+                .unwrap();
+            shared_supply
+                .read()
+                .calc_energy_export_from_battery_to_grid(simtime.current_iteration())
+                .unwrap();
+
+            shared_supply
+        }
+
+        let capped_supply = run(
+            Some(1.),
+            tariff_data.clone(),
+            simulation_time.iter(),
+            external_conditions.clone(),
+        );
+        let capped = capped_supply.read();
+        let uncapped_supply = run(
+            None,
+            tariff_data.clone(),
+            simulation_time.iter(),
+            external_conditions.clone(),
+        );
+        let uncapped = uncapped_supply.read();
+
+        let (_, _, _, capped_battery_export, _) = capped.get_battery_energy_flows();
+        let (_, _, _, uncapped_battery_export, _) = uncapped.get_battery_energy_flows();
+
+        // Generation surplus (0.5 kWh, below the 1 kWh limit) is exported in full
+        assert_relative_eq!(capped.get_energy_export_from_generation()[0], -0.5);
+
+        // Battery discharge is held to the remaining headroom: 1.0 kWh limit (1 kW over the
+        // 1 h timestep) less the 0.5 kWh generation surplus already exported = 0.5 kWh. This
+        // is below the battery's own discharge capability, so the shared limit is what binds.
+        assert_relative_eq!(capped_battery_export[0], -0.5);
+
+        // Total grid export exactly meets, and does not exceed, the whole-house limit
+        assert_relative_eq!(capped.get_energy_export()[0], -1.);
+
+        // The throttled battery energy is retained, not thrown away: none of it is recorded
+        // as curtailed generation (only unstorable generation surplus is curtailed)
+        assert_relative_eq!(capped.get_energy_generation_curtailed()[0], 0.);
+
+        // Without the limit the same battery discharges more to the grid, so capping leaves
+        // more energy stored: available charge is strictly higher in the capped run
+        assert!(uncapped_battery_export[0] < capped_battery_export[0]);
+
+        let capped_charge = capped.get_battery_available_charge().unwrap();
+        let uncapped_charge = uncapped.get_battery_available_charge().unwrap();
+
+        // Both supplies carry a battery, so available charge is a float, not None
+        assert!(capped_charge.is_some() && uncapped_charge.is_some());
+        assert!(capped_charge > uncapped_charge);
     }
 
     #[rstest]
