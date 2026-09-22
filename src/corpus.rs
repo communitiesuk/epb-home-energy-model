@@ -5802,15 +5802,6 @@ fn hot_water_source_from_input(
                 anyhow!("Expected '{heat_source_wet_type}' to have been defined as a wet heat source")
             })?;
 
-            // Cases:
-            // 1 - specific types - I want an OnOffTimeControl
-            // 2 - unions - I want one of these types, e.g. OnOffTimeControl or SetpointTimeControl
-            //          proposed solution - an enum per union
-            //          then methods on the enum
-            //              from_control()
-            //              .. e.g. is_on()
-            // 3 - interface - I want any type which implements X - e.g. ControlCharge in Python
-
             let keep_hot_control_name = match combi_type_specific_details {
                 crate::input::CombiTypeSpecificDetails::KeepHot {
                     control_keep_hot, ..
