@@ -79,12 +79,18 @@ impl EnergySupplyConnection {
     }
 }
 
-// TODO 1.0.0a9 migration - add new EnergySupply threshold fields to this struct?
 #[derive(Debug)]
 pub struct EnergySupplyTariffInfo {
     pub(crate) tariff: EnergySupplyTariff,
     pub(crate) threshold_charges: Option<Vec<f64>>,
     pub(crate) threshold_prices: Option<Vec<f64>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnergySupplyExportTariff {
+    pub(crate) tariff_export: EnergySupplyTariff,
+    pub(crate) threshold_charges_export: Option<Vec<f64>>,
+    pub(crate) threshold_prices_export: Option<Vec<f64>>,
 }
 
 #[derive(Educe)]
@@ -100,9 +106,7 @@ pub struct EnergySupply {
     priority: Option<Vec<String>>,
     is_export_capable: bool,
     power_limit_export: Option<f64>,
-    tariff_export: Option<EnergySupplyTariff>,
-    threshold_charges_export: Option<[f64; 12]>,
-    threshold_prices_export: Option<[f64; 12]>,
+    export_tariff: Option<EnergySupplyExportTariff>,
     demand_total: Vec<AtomicF64>,
     demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
     energy_out_by_end_user: IndexMap<String, Vec<AtomicF64>>,
@@ -147,9 +151,7 @@ impl EnergySupply {
         priority: Option<Vec<String>>,
         is_export_capable: Option<bool>,
         power_limit_export: Option<f64>,
-        tariff_export: Option<EnergySupplyTariff>,
-        threshold_charges_export: Option<[f64; 12]>,
-        threshold_prices_export: Option<[f64; 12]>,
+        export_tariff: Option<EnergySupplyExportTariff>,
         power_limit_battery_import: Option<f64>,
     ) -> anyhow::Result<Self> {
         if electric_batteries
@@ -175,9 +177,7 @@ impl EnergySupply {
             priority,
             is_export_capable: is_export_capable.unwrap_or(true),
             power_limit_export,
-            tariff_export,
-            threshold_charges_export,
-            threshold_prices_export,
+            export_tariff,
             demand_total: init_demand_list(simulation_timesteps),
             demand_by_end_user: Default::default(),
             energy_out_by_end_user: Default::default(),
@@ -589,15 +589,28 @@ impl EnergySupply {
         let month = simtime.current_month().ok_or_else(|| {
             anyhow!("Month could not be resolved for current simulation timestep.")
         })? as usize;
-        let threshold_charge_export = self
-            .threshold_charges_export
-            .and_then(|charges| charges.get(month).copied());
-        let threshold_price_export = self
-            .threshold_prices_export
-            .and_then(|charges| charges.get(month).copied());
+        let (tariff_export, threshold_charge_export, threshold_price_export) =
+            match &self.export_tariff {
+                Some(export_tariff) => {
+                    let threshold_charge_export =
+                        export_tariff.threshold_charges_export.as_ref().and_then(
+                            |threshold_charges_export| threshold_charges_export.get(month).copied(),
+                        );
+                    let threshold_price_export =
+                        export_tariff.threshold_prices_export.as_ref().and_then(
+                            |threshold_prices_export| threshold_prices_export.get(month).copied(),
+                        );
+                    (
+                        Some(export_tariff.tariff_export),
+                        threshold_charge_export,
+                        threshold_price_export,
+                    )
+                }
+                None => (None, None, None),
+            };
 
         // For tariff selected look up price, etc, and decide whether to charge
-        let elec_price = if let Some(tariff_export) = self.tariff_export {
+        let elec_price = if let Some(tariff_export) = tariff_export {
             Some(
                 self.tariff_data
                     .as_ref()
@@ -657,7 +670,7 @@ impl EnergySupply {
                 let threshold_price = tariff_info
                     .threshold_prices
                     .as_ref()
-                    .and_then(|threshold_charges| threshold_charges.get(month).copied());
+                    .and_then(|threshold_prices| threshold_prices.get(month).copied());
                 (Some(tariff_info.tariff), threshold_charge, threshold_price)
             }
             None => (None, None, None),
@@ -1095,8 +1108,6 @@ impl EnergySupplyBuilder {
                 None,
                 None,
                 None,
-                None,
-                None,
             )
             .unwrap(),
         }
@@ -1112,14 +1123,8 @@ impl EnergySupplyBuilder {
         self
     }
 
-    pub fn with_tariff_export(
-        mut self,
-        threshold_charges_export: [f64; 12],
-        threshold_prices_export: [f64; 12],
-    ) -> Self {
-        self.energy_supply.tariff_export = Some(EnergySupplyTariff::ExportTariff);
-        self.energy_supply.threshold_charges_export = Some(threshold_charges_export);
-        self.energy_supply.threshold_prices_export = Some(threshold_prices_export);
+    pub fn with_export_tariff(mut self, export_tariff: EnergySupplyExportTariff) -> Self {
+        self.energy_supply.export_tariff = Some(export_tariff);
         self
     }
 
@@ -1274,6 +1279,23 @@ mod tests {
         }
     }
 
+    #[fixture]
+    fn export_tariff() -> EnergySupplyExportTariff {
+        EnergySupplyExportTariff {
+            tariff_export: EnergySupplyTariff::ExportTariff,
+            threshold_charges_export: Some([0.8; 12].to_vec()),
+            threshold_prices_export: Some([5.; 12].to_vec()),
+        }
+    }
+
+    fn create_export_tariff(charges: [f64; 12], prices: [f64; 12]) -> EnergySupplyExportTariff {
+        EnergySupplyExportTariff {
+            tariff_export: EnergySupplyTariff::ExportTariff,
+            threshold_charges_export: Some(charges.to_vec()),
+            threshold_prices_export: Some(prices.to_vec()),
+        }
+    }
+
     fn create_elec_battery(
         grid_charging_possible: bool,
         grid_exporting_possible: bool,
@@ -1322,8 +1344,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
         )
         .is_err());
 
@@ -1359,13 +1379,14 @@ mod tests {
         simulation_time: SimulationTime,
         tariff_data: TariffData,
     ) {
+        let export_tariff = create_export_tariff(
+            [0.8, 0.7, 0.7, 0.8, 0.6, 0.8, 0.7, 0.7, 0.8, 0.7, 0.8, 0.8],
+            [16., 16., 16., 20., 20., 20., 20., 20., 20., 20., 20., 20.],
+        );
         let energy_supply =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
                 .with_tariff_data(tariff_data)
-                .with_tariff_export(
-                    [0.8, 0.7, 0.7, 0.8, 0.6, 0.8, 0.7, 0.7, 0.8, 0.7, 0.8, 0.8],
-                    [16., 16., 16., 20., 20., 20., 20., 20., 20., 20., 20., 20.],
-                )
+                .with_export_tariff(export_tariff)
                 .build();
 
         energy_supply
@@ -1383,6 +1404,7 @@ mod tests {
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
         tariff_data: TariffData,
+        export_tariff: EnergySupplyExportTariff,
     ) {
         let elec_battery = create_elec_battery(
             true,
@@ -1397,7 +1419,7 @@ mod tests {
         let energy_supply = builder
             .with_electric_battery(indexmap! {"battery".into() => elec_battery})
             .with_tariff_data(tariff_data.clone())
-            .with_tariff_export([0.8; 12], [5.; 12])
+            .with_export_tariff(export_tariff)
             .build();
 
         let battery = &energy_supply.electric_batteries[0];
@@ -1420,12 +1442,14 @@ mod tests {
             simulation_time,
         );
 
+        let export_tariff_custom = create_export_tariff([0.9; 12], [5.; 12]);
+
         let builder =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
             .with_electric_battery(indexmap! {"battery".into() => elec_battery})
             .with_tariff_data(tariff_data.clone())
-            .with_tariff_export([0.9; 12], [5.; 12])
+            .with_export_tariff(export_tariff_custom)
             .build();
 
         let battery = &energy_supply.electric_batteries[0];
@@ -1447,12 +1471,14 @@ mod tests {
             simulation_time,
         );
 
+        let export_tariff_custom = create_export_tariff([0.8; 12], [20.; 12]);
+
         let builder =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
             .with_electric_battery(indexmap! {"battery".into() => elec_battery})
             .with_tariff_data(tariff_data)
-            .with_tariff_export([0.8; 12], [20.; 12])
+            .with_export_tariff(export_tariff_custom)
             .build();
 
         let battery = &energy_supply.electric_batteries[0];
@@ -1471,6 +1497,7 @@ mod tests {
     /// Test that calc_energy_export_from_battery_to_grid doesn't export if the energy supply is not export capable
     fn test_calc_energy_export_from_battery_to_grid_not_export_capable(
         tariff_data: TariffData,
+        export_tariff: EnergySupplyExportTariff,
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
     ) {
@@ -1487,7 +1514,7 @@ mod tests {
         let energy_supply = builder
             .with_electric_battery(indexmap! {"battery".into() => elec_battery})
             .with_tariff_data(tariff_data)
-            .with_tariff_export([0.8; 12], [5.; 12])
+            .with_export_tariff(export_tariff)
             .with_export_capable(false)
             .build();
 
@@ -1503,6 +1530,7 @@ mod tests {
     #[rstest]
     fn test_calc_energy_export_from_battery_to_grid(
         tariff_data: TariffData,
+        export_tariff: EnergySupplyExportTariff,
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
     ) {
@@ -1524,7 +1552,7 @@ mod tests {
         let energy_supply = builder
             .with_electric_battery(indexmap! {"battery".into() => elec_battery})
             .with_tariff_data(tariff_data)
-            .with_tariff_export([0.8; 12], [5.; 12])
+            .with_export_tariff(export_tariff)
             .build();
 
         for t_it in simulation_time.iter() {
@@ -1574,6 +1602,7 @@ mod tests {
     /// Test that the amount exported to the grid is limited by the export limit
     fn test_calc_energy_export_from_battery_to_grid_limit(
         tariff_data: TariffData,
+        export_tariff: EnergySupplyExportTariff,
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
     ) {
@@ -1596,7 +1625,7 @@ mod tests {
         let energy_supply =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
                 .with_tariff_data(tariff_data)
-                .with_tariff_export([0.8; 12], [5.; 12])
+                .with_export_tariff(export_tariff)
                 .with_electric_battery(indexmap! {"battery".into() => battery})
                 .with_power_limit_export(0.5)
                 .build();
@@ -1620,6 +1649,7 @@ mod tests {
     /// to the grid should not exceed 0.5 kWh per timestep.
     fn test_calc_energy_export_from_battery_to_grid_limit_multi_battery(
         tariff_data: TariffData,
+        export_tariff: EnergySupplyExportTariff,
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
     ) {
@@ -1657,7 +1687,7 @@ mod tests {
         let energy_supply =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps())
                 .with_tariff_data(tariff_data)
-                .with_tariff_export([0.8; 12], [5.; 12])
+                .with_export_tariff(export_tariff)
                 .with_electric_battery(
                     indexmap! {"battery_a".into() => battery_a, "battery_b".into() => battery_b},
                 )
@@ -1697,6 +1727,7 @@ mod tests {
     /// unlike generation surplus above the limit, which is curtailed.
     fn test_battery_export_shares_whole_house_limit_and_retains_charge(
         tariff_data: TariffData,
+        export_tariff: EnergySupplyExportTariff,
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
     ) {
@@ -1704,6 +1735,7 @@ mod tests {
         fn run(
             power_limit_export: Option<f64>,
             tariff_data: TariffData,
+            export_tariff: EnergySupplyExportTariff,
             simtime: SimulationTimeIterator,
             external_conditions: ExternalConditions,
         ) -> Arc<RwLock<EnergySupply>> {
@@ -1728,7 +1760,7 @@ mod tests {
             let mut builder =
                 EnergySupplyBuilder::new(FuelType::Electricity, simtime.total_steps())
                     .with_tariff_data(tariff_data)
-                    .with_tariff_export([0.8; 12], [5.; 12])
+                    .with_export_tariff(export_tariff)
                     .with_electric_battery(indexmap! {"battery".into() => battery})
                     .with_export_capable(true);
 
@@ -1761,6 +1793,7 @@ mod tests {
         let capped_supply = run(
             Some(1.),
             tariff_data.clone(),
+            export_tariff.clone(),
             simulation_time.iter(),
             external_conditions.clone(),
         );
@@ -1768,6 +1801,7 @@ mod tests {
         let uncapped_supply = run(
             None,
             tariff_data.clone(),
+            export_tariff,
             simulation_time.iter(),
             external_conditions.clone(),
         );

@@ -3348,6 +3348,11 @@ fn energy_supply_from_input(
             });
         }
 
+        if let Some(_tariff_export) = input.tariff_export.as_ref() {
+            // builder = builder.with_export_tariff();
+            // TODO 1.0.0a9 migration
+        }
+
         builder.build()
     })))
 }
