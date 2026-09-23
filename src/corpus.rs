@@ -137,6 +137,7 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use ndarray::range;
 
 /// As of adopting Rust 1.82 as an MSRV we'll be able to declare this using constants as it supports floating-point arithmetic at compile time
 fn temp_setpnt_heat_none() -> f64 {
@@ -3510,6 +3511,52 @@ impl Controls {
             other => self.extra.get(other).cloned(),
         }
     }
+
+    pub(crate) fn get_range_time_control(
+        &self,
+        control_refs: &ControlReferences,
+        simulation_time_iterator: &SimulationTimeIterator,
+    ) -> anyhow::Result<Arc<RangeTimeControl>> {
+        match control_refs {
+            ControlReferences::Unified {
+                control: control_name,
+            } => {
+                let control = self
+                    .get_with_string(control_name)
+                    .ok_or_else(|| anyhow!("No control found for reference '{control_name}'"))?;
+
+                if let Control::RangeTime(range_time_control) = control {
+                    Ok(range_time_control)
+                } else {
+                    bail!(
+                        "Control {} was expected to be a RangeTimeControl",
+                        control_name
+                    );
+                }
+            }
+            ControlReferences::Bounded {
+                control_min,
+                control_max,
+            } => {
+                let min = self
+                    .get_with_string(control_min)
+                    .ok_or_else(|| anyhow!("No control found for reference '{control_min}'"))?;
+                let max = self
+                    .get_with_string(control_max)
+                    .ok_or_else(|| anyhow!("No control found for reference '{control_max}'"))?;
+
+                Ok(RangeTimeControl::new(
+                    ScheduleOrControl::Control(min),
+                    ScheduleOrControl::Control(max),
+                    simulation_time_iterator.clone(),
+                    0., // TODO assuming this is zero for now
+                    simulation_time_iterator.step_in_hours(),
+                    None,
+                )?
+                .into())
+            }
+        }
+    }
 }
 
 fn wwhrs_from_input(
@@ -5137,52 +5184,12 @@ fn heat_source_from_input(
                     anyhow!("Expected a wet heat source registered with the name '{name}'.")
                 })?
                 .clone();
-            let range_time_control: Option<Arc<RangeTimeControl>> = match control_refs {
-                None => None,
-                Some(control_refs) => match control_refs {
-                    ControlReferences::Unified {
-                        control: control_name,
-                    } => {
-                        let control = controls.get_with_string(control_name).ok_or_else(|| {
-                            anyhow!("No control found for reference '{control_name}'")
-                        })?;
 
-                        if let Control::RangeTime(range_time_control) = control {
-                            Some(range_time_control)
-                        } else {
-                            bail!(
-                                "Control {} was expected to be a RangeTimeControl",
-                                control_name
-                            );
-                        }
-                    }
-                    ControlReferences::Bounded {
-                        control_min,
-                        control_max,
-                    } => {
-                        let min = controls.get_with_string(control_min).ok_or_else(|| {
-                            anyhow!("No control found for reference '{control_min}'")
-                        })?;
-                        let max = controls.get_with_string(control_max).ok_or_else(|| {
-                            anyhow!("No control found for reference '{control_max}'")
-                        })?;
-
-                        //TODO ok_or_else
-                        Some(
-                            RangeTimeControl::new(
-                                ScheduleOrControl::Control(min),
-                                ScheduleOrControl::Control(max),
-                                simulation_time_iterator.clone(),
-                                0., // TODO assuming this is zero for now
-                                simulation_time_iterator.step_in_hours(),
-                                None,
-                            )
-                            .unwrap()
-                            .into(),
-                        )
-                    }
-                },
-            };
+            let control_refs = control_refs
+                .clone()
+                .ok_or_else(|| anyhow!("Missing control for {name}"))?;
+            let range_time_control =
+                controls.get_range_time_control(&control_refs, simulation_time_iterator)?;
 
             let mut heat_source_wet_clone = heat_source_wet.clone();
 
@@ -5194,14 +5201,14 @@ fn heat_source_from_input(
                             &energy_supply_conn_name,
                             temp_flow_limit_upper.ok_or_else(|| anyhow!("A temp_flow_limit_upper is needed for heat pump with the name '{name}'"))?,
                             Arc::new(cold_water_source.clone()),
-                            todo!() // TODO pass in control as part of 1.0.0a9 migration
+                            range_time_control
                         )?),
                     )),
                     WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
                         HeatSourceWet::WaterRegular(Boiler::create_service_hot_water_regular(
                             boiler.clone(),
                             energy_supply_conn_name.as_str(),
-                            todo!() // TODO pass in control as part of 1.0.0a9 migration
+                            range_time_control
                         )?),
                     )),
                     WetHeatSource::DirectElectricBoiler(ref mut _boiler) =>
