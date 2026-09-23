@@ -3254,7 +3254,7 @@ mod tests {
         #[fixture]
         /// A half-hourly timestep is used so that the conversion of the power limit
         /// (kW) into the maximum energy exportable per timestep (kWh) is exercised;
-        /// with a one-hour timestep the two would be numerically identical
+        /// with a one-hour timestep the two would be numerically identical.
         fn simtime() -> SimulationTime {
             SimulationTime::new(0., 2., 0.5)
         }
@@ -3299,22 +3299,46 @@ mod tests {
                     .calc_energy_import_export_betafactor(t_it)
                     .unwrap();
 
-                // Reset the battery's per-timestep charging-time accumulator between steps
+                // Reset the battery's per-timestep charging-time accumulator between steps.
                 shared_supply.read().timestep_end().unwrap();
             }
 
             shared_supply
         }
 
-        /// Run the supply for the shared generation profile and return exported energy
+        /// Run the supply for the shared generation profile and return exported energy.
         fn run(power_limit_export: Option<f64>, simtime: SimulationTime) -> Vec<f64> {
             run_supply(power_limit_export, None, None, simtime)
                 .read()
                 .get_energy_export()
         }
 
+        /// Build a large, fresh battery whose absorption is limited only by its charge rate.
+        /// A high capacity keeps the battery from filling over the short run, so the charge
+        /// rate alone determines how much surplus it takes each timestep. Located inside, so
+        /// the air-temperature capacity factor is fixed and external conditions are unused.
+        fn battery(
+            maximum_charge_rate: f64,
+            simtime: SimulationTime,
+            external_conditions: ExternalConditions,
+        ) -> ElectricBattery {
+            ElectricBattery::new(
+                100.,
+                0.8,
+                0.,
+                0.001,
+                maximum_charge_rate,
+                1.5,
+                BatteryLocation::Inside,
+                false,
+                false,
+                simtime.iter().current_iteration().timestep,
+                Arc::new(external_conditions),
+            )
+        }
+
         #[rstest]
-        /// Export is capped at the power limit converted to energy for the timestep
+        /// Export is capped at the power limit converted to energy for the timestep.
         fn test_surplus_capped_at_power_limit_export(simtime: SimulationTime) {
             // Limit 5 kW over a 0.5 h timestep caps export at 5 * 0.5 = 2.5 kWh per timestep.
             // Surplus below the cap (1.0 kWh) is exported in full; surplus at or above the
@@ -3324,6 +3348,138 @@ mod tests {
                 [-1.0, -2.5, -2.5, -2.5],
                 "surplus not capped at the export power limit"
             );
+        }
+
+        #[rstest]
+        /// With no export power limit the full surplus is exported every timestep.
+        fn test_no_power_limit_export_leaves_surplus_uncapped(simtime: SimulationTime) {
+            assert_eq!(
+                run(None, simtime),
+                [-1.0, -2.5, -4.0, -6.0],
+                "surplus altered when no export power limit is set"
+            );
+        }
+
+        #[rstest]
+        /// Surplus discarded above the limit is recorded as curtailed generation.
+        fn test_curtailed_energy_tracked(simtime: SimulationTime) {
+            // Limit 5 kW over a 0.5 h timestep caps export at 2.5 kWh. Curtailment is the
+            // surplus above the cap: 1.0 and 2.5 kWh export in full (0 curtailed); 4.0 and
+            // 6.0 kWh are held to 2.5 kWh, curtailing 4.0 - 2.5 = 1.5 and 6.0 - 2.5 = 3.5 kWh.
+            let supply = run_supply(Some(5.), None, None, simtime);
+            let supply_read = supply.read();
+
+            assert_eq!(
+                supply_read.get_energy_generation_curtailed(),
+                [0.0, 0.0, 1.5, 3.5],
+                "curtailed generation not tracked correctly"
+            );
+
+            // With no consumption, storage or diverter, gross generation must equal the
+            // exported magnitude plus the curtailed energy at every timestep.
+
+            let exported = supply_read.get_energy_export();
+            let curtailed = supply_read.get_energy_generation_curtailed();
+
+            for t_idx in 0..GENERATION.len() {
+                assert_relative_eq!(GENERATION[t_idx], -exported[t_idx] + curtailed[t_idx],);
+            }
+        }
+
+        #[rstest]
+        /// With no export power limit nothing is curtailed.
+        fn test_no_power_limit_export_reports_zero_curtailment(simtime: SimulationTime) {
+            let supply = run_supply(None, None, None, simtime);
+
+            assert_eq!(
+                supply.read().get_energy_generation_curtailed(),
+                [0.; 4],
+                "curtailment reported when no export power limit is set"
+            );
+        }
+
+        #[rstest]
+        /// A battery that absorbs all surplus leaves nothing to export or curtail.
+        /// The cap is applied after the battery, so when the battery takes the whole
+        /// surplus the export limit never binds: export and curtailment are both zero
+        /// even though the limit (0.5 kWh per timestep) is far below the generation.
+        fn test_surplus_offered_to_battery_before_cap(
+            simtime: SimulationTime,
+            external_conditions: ExternalConditions,
+        ) {
+            // A high charge rate leaves the battery unconstrained, so it absorbs the full
+            // surplus each timestep. Uniform generation below the rate keeps it that way.
+            let battery = battery(100., simtime, external_conditions);
+            let supply = run_supply(Some(1.), Some(battery), Some([2.; 4].into()), simtime);
+            let supply_read = supply.read();
+
+            let (into_battery, _, _, _, _) = supply_read.get_battery_energy_flows();
+
+            // The whole surplus is offered to the battery first: a 100 kW charge rate (50 kWh
+            // per 0.5 h step) and a 100 kWh capacity that never fills leave it unconstrained, so
+            // it absorbs the full 2.0 kWh of generation each timestep. The charge/discharge
+            // efficiency reduces what is stored, not what is drawn from generation.
+            for value in into_battery {
+                assert_relative_eq!(value, 2.);
+            }
+
+            // No residual remains, so nothing is exported or curtailed
+            assert_eq!(
+                supply_read.get_energy_generation_curtailed(),
+                [0.; 4],
+                "generation curtailed despite the battery absorbing all surplus"
+            );
+            println!("EXPORTED: {:?}", supply_read.get_energy_export());
+
+            for exported in supply_read.get_energy_export() {
+                assert_relative_eq!(exported, 0., epsilon = 1e-7);
+            }
+        }
+
+        #[rstest]
+        /// The cap limits the residual left after battery charging, and energy balances.
+        /// With a low charge rate the battery takes only a small share each timestep, and
+        /// the large residual is held to the export limit. Gross generation must still equal
+        /// consumption + battery charging + diversion + export + curtailment every timestep.
+        fn test_residual_after_battery_capped_and_balance_closes(
+            simtime: SimulationTime,
+            external_conditions: ExternalConditions,
+        ) {
+            // Generation 6.0 kWh; a 1 kW charge rate lets the battery take at most 0.5 kWh
+            // (internal) per 0.5 h step, so the residual stays well above the 2 kW (1.0 kWh)
+            // export cap and export is held to exactly the limit each timestep.
+            let battery = battery(1., simtime, external_conditions);
+            let supply = run_supply(Some(2.), Some(battery), Some([6.; 4].into()), simtime);
+            let supply_read = supply.read();
+
+            assert_eq!(
+                supply_read.get_energy_export(),
+                [-1.; 4],
+                "residual after battery charging not capped at the export limit"
+            );
+
+            let (into_battery, _, _, _, _) = supply_read.get_battery_energy_flows();
+            let consumed = supply_read.get_energy_generated_consumed();
+            let diverted = supply_read.get_energy_diverted();
+            let exported = supply_read.get_energy_export();
+            let curtailed = supply_read.get_energy_generation_curtailed();
+
+            for t_idx in 0..4 {
+                assert!(
+                    into_battery[t_idx] > 0.,
+                    "battery did not receive its share of the surplus"
+                );
+                assert!(
+                    curtailed[t_idx] > 0.,
+                    "no curtailment recorded when the limit binds"
+                );
+                // generation = consumption + to battery + to diverter + exported + curtailed
+                assert_relative_eq!(
+                    6.,
+                    consumed[t_idx] + into_battery[t_idx] + diverted[t_idx] - exported[t_idx]
+                        + curtailed[t_idx]
+                );
+            }
         }
     }
 }
