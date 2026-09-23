@@ -1284,9 +1284,13 @@ mod tests {
         }
     }
 
-    fn create_tariff_info(charges: [f64; 12], prices: [f64; 12]) -> EnergySupplyTariffInfo {
+    fn create_tariff_info(
+        tariff: EnergySupplyTariff,
+        charges: [f64; 12],
+        prices: [f64; 12],
+    ) -> EnergySupplyTariffInfo {
         EnergySupplyTariffInfo {
-            tariff: EnergySupplyTariff::VariableTimeOfDay,
+            tariff,
             threshold_charges: Some(charges.to_vec()),
             threshold_prices: Some(prices.to_vec()),
         }
@@ -1871,7 +1875,8 @@ mod tests {
             Arc::new(external_conditions),
         );
 
-        let tariff_info = create_tariff_info([0.8; 12], [16.; 12]);
+        let tariff_info =
+            create_tariff_info(EnergySupplyTariff::VariableTimeOfDay, [0.8; 12], [16.; 12]);
         let energy_supply =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
                 .with_tariff_info(tariff_info)
@@ -1895,10 +1900,115 @@ mod tests {
         // Timesteps 0, 1 and 3 have cheap enough prices to trigger charging; 2, 4-7 do not.
         let expected = [0.5, 0.5, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0];
 
-        println!("{:#?}", energy_into_battery_from_grid);
-
         for (t_idx, expected_val) in expected.iter().enumerate() {
             assert_relative_eq!(energy_into_battery_from_grid[t_idx], expected_val);
+        }
+    }
+
+    #[rstest]
+    /// Test that power_limit_battery_import is a connection-level limit shared across batteries.
+    /// With two identical batteries and a 0.5 kW connection limit, the total
+    /// grid-side import should be ≈0.5 kWh per timestep, NOT 2×0.5 as it
+    /// would be if each battery were capped independently.
+    fn test_calc_energy_import_from_grid_to_battery_limit_multi_battery(
+        tariff_data: TariffData,
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) {
+        let battery_a = ElectricBattery::new(
+            10.,
+            0.8,
+            3.,
+            0.001,
+            10.,
+            10.,
+            BatteryLocation::Inside,
+            true,
+            false,
+            simulation_time.iter().current_iteration().timestep,
+            Arc::new(external_conditions.clone()),
+        );
+        let battery_b = ElectricBattery::new(
+            10.,
+            0.8,
+            3.,
+            0.001,
+            10.,
+            10.,
+            BatteryLocation::Inside,
+            true,
+            false,
+            simulation_time.iter().current_iteration().timestep,
+            Arc::new(external_conditions),
+        );
+
+        let tariff_info =
+            create_tariff_info(EnergySupplyTariff::VariableTimeOfDay, [0.8; 12], [16.; 12]);
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
+                .with_tariff_info(tariff_info)
+                .with_electric_battery(
+                    indexmap! {"battery_a".into() => battery_a, "battery_b".into() => battery_b},
+                )
+                .with_power_limit_battery_import(0.5)
+                .with_tariff_data(tariff_data)
+                .build();
+
+        for t_it in simulation_time.iter() {
+            energy_supply
+                .calc_energy_import_from_grid_to_battery(t_it)
+                .unwrap();
+            energy_supply.timestep_end().unwrap();
+        }
+
+        let (_, _, energy_into_battery_from_grid, _, _) = energy_supply.get_battery_energy_flows();
+
+        // Connection-level cap: total import per timestep must not exceed
+        // power_limit_battery_import * timestep = 0.5 kWh.
+        let timestep = 1.;
+        let max_import_energy = 0.5 * timestep;
+
+        for energy in energy_into_battery_from_grid.iter().take(8) {
+            assert!(energy <= &(max_import_energy + 1e-10));
+        }
+
+        // At timestep 0 both batteries want to charge. Without the shared cap,
+        // total would be 2 * 0.5 = 1.0. With connection-level capping, total
+        // import is limited to max_import_energy (0.5 kWh).
+        assert_relative_eq!(energy_into_battery_from_grid[0], max_import_energy);
+    }
+
+    #[rstest]
+    /// Test that calc_energy_export_from_battery_to_grid throws if it's exporting while importing
+    fn test_calc_energy_export_from_battery_to_grid_while_charging(
+        export_tariff: EnergySupplyExportTariff,
+        tariff_data: TariffData,
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) {
+        let battery = create_elec_battery(
+            true,
+            true,
+            BatteryLocation::Inside,
+            external_conditions,
+            simulation_time,
+        );
+
+        battery.charge_discharge_battery(-10., false, simulation_time.iter().current_iteration());
+
+        let tariff_info = create_tariff_info(EnergySupplyTariff::Standard, [0.9; 12], [35.; 12]);
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps())
+                .with_tariff_data(tariff_data)
+                .with_tariff_info(tariff_info)
+                .with_export_tariff(export_tariff)
+                .with_electric_battery(indexmap! {"battery".into() => battery})
+                .build();
+
+        for t_it in simulation_time.iter() {
+            assert!(energy_supply
+                .calc_energy_export_from_battery_to_grid(t_it)
+                .is_err())
         }
     }
 
@@ -1953,7 +2063,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_connect_diverter(
+    fn test_connect_diverter_single(
         mut energy_supply: EnergySupply,
         pv_diverter: Arc<RwLock<dyn SurplusDiverting>>,
     ) {
@@ -1961,10 +2071,32 @@ mod tests {
         energy_supply
             .connect_diverter(pv_diverter.clone(), None)
             .unwrap();
-        assert!(!energy_supply.diverters.is_empty());
+        assert!(energy_supply.diverters.get("diverter").is_some());
+        // Check system exits if diverter is already connected
         assert!(energy_supply
             .connect_diverter(pv_diverter.clone(), None)
             .is_err());
+    }
+
+    #[rstest]
+    fn test_connect_diverter_multiple(
+        mut energy_supply: EnergySupply,
+        pv_diverter: Arc<RwLock<dyn SurplusDiverting>>,
+    ) {
+        assert!(energy_supply.diverters.is_empty());
+        energy_supply
+            .connect_diverter(pv_diverter.clone(), Some("diverter".into()))
+            .unwrap();
+        assert!(energy_supply.diverters.get("diverter").is_some());
+        assert_eq!(energy_supply.diverters.len(), 1);
+
+        let diverter2 = pv_diverter.clone();
+        energy_supply
+            .connect_diverter(diverter2.clone(), Some("diverter2".into()))
+            .unwrap();
+        assert_eq!(energy_supply.diverters.len(), 2);
+        assert!(energy_supply.diverters.get("diverter").is_some());
+        assert!(energy_supply.diverters.get("diverter2").is_some());
     }
 
     #[rstest]
