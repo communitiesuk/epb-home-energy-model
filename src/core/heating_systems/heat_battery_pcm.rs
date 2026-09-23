@@ -4533,7 +4533,7 @@ mod tests {
                 RangeTimeControl::new(
                     ScheduleOrControl::Schedule(schedule_lower),
                     ScheduleOrControl::Schedule(schedule_upper),
-                    simtime,
+                    simtime.iter(),
                     0.,
                     1.0,
                     None,

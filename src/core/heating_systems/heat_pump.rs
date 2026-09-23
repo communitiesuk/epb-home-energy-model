@@ -5,7 +5,7 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    Control, ControlBehaviour, OnOffTimeControl, RangeTimeControl, SetpointOrCombinationControl,
+    Control, ControlBehaviour, OnOffTimeControl, RangeTimeControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -1361,9 +1361,7 @@ const TIME_CONSTANT_WATER: f64 = 1560.;
 pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
-    control: Option<Arc<RangeTimeControl>>,
-    control_min: Option<SetpointOrCombinationControl>,
-    control_max: Option<SetpointOrCombinationControl>,
+    control: Arc<RangeTimeControl>,
     temp_limit_upper_in_k: f64,
     cold_feed: Arc<WaterSupply>,
     hybrid_boiler_service: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
@@ -1378,16 +1376,13 @@ impl HeatPumpServiceWater {
         // in Python control_min & control_max are TimeControls, but we are using the narrower
         // SetpointOrCombinationControl because this new function is only called from
         // create_service_hot_water, which itself only accepts SetpointOrCombinationControl
-        control_min: Option<SetpointOrCombinationControl>,
-        control_max: Option<SetpointOrCombinationControl>,
+        control: Arc<RangeTimeControl>,
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
     ) -> Self {
         Self {
             heat_pump,
             service_name,
-            control: None, // TODO: update as part of 1.0.0a9 migration
-            control_min,
-            control_max,
+            control,
             temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c).expect(
                 "Upper temp limit for heat pump is never expected to be below absolute zero.",
             ),
@@ -1397,24 +1392,17 @@ impl HeatPumpServiceWater {
     }
 
     pub fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        self.control.as_ref().unwrap().is_on(&simtime)
+        self.control.is_on(&simtime)
     }
 
     /// Return water heating setpoint (not necessarily temperature)
     pub(crate) fn setpnt(
         &self,
-        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        Ok((
-            self.control_min
-                .as_ref()
-                .unwrap()
-                .setpnt(&simulation_time_iteration),
-            self.control_max
-                .as_ref()
-                .unwrap()
-                .setpnt(&simulation_time_iteration),
-        ))
+        Ok(self
+            .control
+            .setpnt_range_time_control(simulation_time_iteration))
     }
 
     const SERVICE_TYPE: HeatingServiceType = HeatingServiceType::DomesticHotWaterRegular;
@@ -2338,8 +2326,8 @@ impl HeatPump {
         service_name: &str,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<WaterSupply>,
-        control_min: Option<SetpointOrCombinationControl>,
-        control_max: Option<SetpointOrCombinationControl>,
+        // We have consolidatated controls into one field to match the validation logic Python has
+        control: Arc<RangeTimeControl>,
     ) -> anyhow::Result<HeatPumpServiceWater> {
         Self::create_service_connection(heat_pump.clone(), service_name)?;
         let boiler_service = heat_pump
@@ -2351,9 +2339,7 @@ impl HeatPump {
                     Boiler::create_service_hot_water_regular(
                         boiler.clone(),
                         service_name,
-                        control_min.clone(),
-                        control_max.clone(),
-                        None, // TODO as part of migration to 1.0.0a9
+                        control.clone(),
                     )?,
                 )))
             })
@@ -2364,8 +2350,7 @@ impl HeatPump {
             service_name.into(),
             temp_limit_upper_in_c,
             cold_feed,
-            control_min,
-            control_max,
+            control,
             boiler_service,
         ))
     }
@@ -4646,7 +4631,9 @@ mod tests {
     use std::ops::Deref;
 
     use super::*;
-    use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
+    use crate::core::controls::time_control::{
+        OnOffTimeControl, ScheduleOrControl, SetpointOrCombinationControl, SetpointTimeControl,
+    };
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::heating_systems::boiler::BoilerForBoilerService;
     use crate::core::units::Orientation360;
@@ -6091,6 +6078,17 @@ mod tests {
         );
         let control_min = create_setpoint_time_control_setpoint_or_combination(vec![Some(10.)]);
         let control_max = create_setpoint_time_control_setpoint_or_combination(vec![Some(20.)]);
+
+        let range_time_control = RangeTimeControl::new(
+            ScheduleOrControl::Control(control_min.into_control()),
+            ScheduleOrControl::Control(control_max.into_control()),
+            simulation_time_for_heat_pump.iter(),
+            0.,
+            1.,
+            None,
+        )
+        .unwrap();
+
         let cold_feed = WaterSupply::ColdWaterSource(
             ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step).into(),
         ); // Python uses a mock for cold_feed
@@ -6100,8 +6098,7 @@ mod tests {
             "new_service".into(),
             30.,
             Arc::new(cold_feed),
-            Some(control_min),
-            Some(control_max),
+            range_time_control.into(),
             None,
         )
     }
@@ -6112,7 +6109,7 @@ mod tests {
         simulation_time_for_heat_pump: SimulationTime,
     ) {
         let (setpnt_min, setpnt_max) = heat_pump_service_water
-            .setpnt(simulation_time_for_heat_pump.iter().current_iteration())
+            .setpnt(&simulation_time_for_heat_pump.iter().current_iteration())
             .unwrap();
 
         assert_eq!(setpnt_min, Some(10.));
@@ -7511,6 +7508,7 @@ mod tests {
             None,
             Some(52.),
         ]);
+
         let control_max = create_setpoint_time_control_setpoint_or_combination(vec![
             Some(60.),
             Some(60.),
@@ -7518,13 +7516,24 @@ mod tests {
             Some(60.),
         ]);
 
+        let range_time_control = Arc::from(
+            RangeTimeControl::new(
+                ScheduleOrControl::Control(control_min.into_control()),
+                ScheduleOrControl::Control(control_max.into_control()),
+                simulation_time_for_heat_pump.iter(),
+                0.,
+                1.,
+                None,
+            )
+            .unwrap(),
+        );
+
         let hot_water_service = HeatPump::create_service_hot_water(
             heat_pump.clone(),
             service_name,
             60.,
             cold_feed.clone().into(),
-            Some(control_min.clone()),
-            Some(control_max.clone()),
+            range_time_control.clone(),
         )
         .unwrap();
 
@@ -7548,8 +7557,7 @@ mod tests {
             service_name,
             60.,
             cold_feed.into(),
-            Some(control_min),
-            Some(control_max),
+            range_time_control,
         )
         .unwrap();
 
@@ -8127,12 +8135,13 @@ mod tests {
                 simulation_time_for_heat_pump.step,
             )
             .into(),
-        );
+        )
+        .into_control();
 
         let boiler_service_space = Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace",
-            control.clone().into_control(),
+            control.clone(),
         );
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
@@ -8164,12 +8173,20 @@ mod tests {
         assert_relative_eq!(result, 24.);
 
         // Test with boiler service water regular
+        let range_time_control = RangeTimeControl::new(
+            ScheduleOrControl::Control(control.clone()),
+            ScheduleOrControl::Control(control),
+            simulation_time_for_heat_pump.iter(),
+            0.0,
+            0.0,
+            None,
+        )
+        .unwrap();
+
         let boiler_service_water_regular = Boiler::create_service_hot_water_regular(
             boiler,
             "service_boilerwater",
-            Some(control.clone()),
-            Some(control),
-            None,
+            range_time_control.into(),
         )
         .unwrap();
         let hybrid_boiler_service =
@@ -10679,25 +10696,21 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let ctrl = SetpointOrCombinationControl::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(21.0), Some(22.0)],
-                0,
-                1.0,
-                Default::default(),
-                Default::default(),
-                1.0,
-            )
-            .into(),
-        );
+        let range_time_control = RangeTimeControl::new(
+            ScheduleOrControl::Schedule(vec![Some(21.0), Some(22.0)]),
+            ScheduleOrControl::Schedule(vec![Some(21.0), Some(22.0)]),
+            simulation_time().iter(),
+            0.,
+            1.,
+            None,
+        )
+        .unwrap();
 
         let boiler_service_water = Arc::new(Mutex::new(
             Boiler::create_service_hot_water_regular(
                 boiler.clone(),
                 "service_water",
-                Some(ctrl.clone()),
-                Some(ctrl),
-                None,
+                range_time_control.into(),
             )
             .unwrap(),
         ));

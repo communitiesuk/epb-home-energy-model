@@ -1,8 +1,8 @@
 use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{
     ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl,
-    OnOffCostMinimisingTimeControl, OnOffTimeControl, ScheduleOrControl, SetpointTimeControl,
-    SmartApplianceControl,
+    OnOffCostMinimisingTimeControl, OnOffTimeControl, RangeTimeControl, ScheduleOrControl,
+    SetpointTimeControl, SmartApplianceControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::cooling_systems::space_cool_system_base::SpaceCoolSystem;
@@ -5008,7 +5008,7 @@ fn heat_source_from_input(
     daily_losses: f64,
     heat_exchanger_surface_area: Option<f64>,
     wet_heat_sources: &IndexMap<String, WetHeatSource>,
-    simulation_time: &SimulationTimeIterator,
+    simulation_time_iterator: &SimulationTimeIterator,
     controls: &Controls,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     temp_internal_air_fn: TempInternalAirFn,
@@ -5053,7 +5053,7 @@ fn heat_source_from_input(
                     Mutex::new(ImmersionHeater::new(
                         *power,
                         energy_supply_conn,
-                        simulation_time.step_in_hours(),
+                        simulation_time_iterator.step_in_hours(),
                         control_min,
                         control_max,
                         // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
@@ -5113,7 +5113,7 @@ fn heat_source_from_input(
                         *solar_loop_piping_hlc,
                         external_conditions.clone(),
                         temp_internal_air_fn,
-                        simulation_time.step_in_hours(),
+                        simulation_time_iterator.step_in_hours(),
                         control_max,
                         **contents,
                         Some(energy_supply_from_environment_conn),
@@ -5137,14 +5137,24 @@ fn heat_source_from_input(
                     anyhow!("Expected a wet heat source registered with the name '{name}'.")
                 })?
                 .clone();
-            let (control_min, control_max, _control) = match control_refs {
-                None => (None, None, None),
+            let range_time_control: Option<Arc<RangeTimeControl>> = match control_refs {
+                None => None,
                 Some(control_refs) => match control_refs {
-                    ControlReferences::Unified { control } => {
-                        let control = controls
-                            .get_with_string(control)
-                            .ok_or_else(|| anyhow!("No control found for reference '{control}'"))?;
-                        (None, None, Some(control))
+                    ControlReferences::Unified {
+                        control: control_name,
+                    } => {
+                        let control = controls.get_with_string(control_name).ok_or_else(|| {
+                            anyhow!("No control found for reference '{control_name}'")
+                        })?;
+
+                        if let Control::RangeTime(range_time_control) = control {
+                            Some(range_time_control)
+                        } else {
+                            bail!(
+                                "Control {} was expected to be a RangeTimeControl",
+                                control_name
+                            );
+                        }
                     }
                     ControlReferences::Bounded {
                         control_min,
@@ -5156,7 +5166,20 @@ fn heat_source_from_input(
                         let max = controls.get_with_string(control_max).ok_or_else(|| {
                             anyhow!("No control found for reference '{control_max}'")
                         })?;
-                        (Some(min), Some(max), None)
+
+                        //TODO ok_or_else
+                        Some(
+                            RangeTimeControl::new(
+                                ScheduleOrControl::Control(min),
+                                ScheduleOrControl::Control(max),
+                                simulation_time_iterator.clone(),
+                                0., // TODO assuming this is zero for now
+                                simulation_time_iterator.step_in_hours(),
+                                None,
+                            )
+                            .unwrap()
+                            .into(),
+                        )
                     }
                 },
             };
@@ -5171,19 +5194,14 @@ fn heat_source_from_input(
                             &energy_supply_conn_name,
                             temp_flow_limit_upper.ok_or_else(|| anyhow!("A temp_flow_limit_upper is needed for heat pump with the name '{name}'"))?,
                             Arc::new(cold_water_source.clone()),
-                            None, // TODO: update this as part of 1.0.0a9 migration
-                            None, // TODO: update this as part of 1.0.0a9 migration
-                            // TODO pass in control as part of 1.0.0a9 migration
+                            todo!() // TODO pass in control as part of 1.0.0a9 migration
                         )?),
                     )),
                     WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
-
                         HeatSourceWet::WaterRegular(Boiler::create_service_hot_water_regular(
                             boiler.clone(),
                             energy_supply_conn_name.as_str(),
-                            None, // TODO: update this as part of 1.0.0a9 migration
-                            None, // TODO: update this as part of 1.0.0a9 migration
-                            None // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
+                            todo!() // TODO pass in control as part of 1.0.0a9 migration
                         )?),
                     )),
                     WetHeatSource::DirectElectricBoiler(ref mut _boiler) =>
@@ -5193,8 +5211,8 @@ fn heat_source_from_input(
                             HeatNetwork::create_service_hot_water_storage(
                                 heat_network,
                                 &energy_supply_conn_name,
-                                control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                                control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
                                 // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                             ),
                         )))
@@ -5206,8 +5224,8 @@ fn heat_source_from_input(
                                     dry_core,
                                     &energy_supply_conn_name,
                                     cold_water_source.clone(),
-                                    control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                                    control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                    todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                    todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
                                     // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                                 )?,
                             ),
@@ -5216,8 +5234,8 @@ fn heat_source_from_input(
                                     pcm,
                                     &energy_supply_conn_name,
                                     cold_water_source.clone(),
-                                    control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                                    control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                    todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
+                                    todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
                                     // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
                                 )?,
                             ),
@@ -5283,7 +5301,7 @@ fn heat_source_from_input(
                         *tank_volume_declared,
                         *heat_exchanger_surface_area_declared,
                         *daily_losses_declared,
-                        simulation_time.step_in_hours(),
+                        simulation_time_iterator.step_in_hours(),
                         control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
                         control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
                         // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)

@@ -3,7 +3,6 @@
 use crate::core::schedule::validate_schedule_length;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
-use crate::hem_core::simulation_time::SimulationTime;
 use crate::input::{
     ControlCombination, ControlCombinationOperation, ControlCombinations, ControlLogicType,
     ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SetpointBoundsInput,
@@ -59,6 +58,18 @@ impl SetpointOrCombinationControl {
             SetpointOrCombinationControl::CombinationTime(control) => control.is_on(simtime),
         }
     }
+
+    pub(crate) fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool> {
+        match self {
+            SetpointOrCombinationControl::SetpointTime(control) => {
+                control.in_required_period(simtime)
+            }
+            SetpointOrCombinationControl::CombinationTime(control) => {
+                control.in_required_period(simtime)
+            }
+        }
+    }
+
     #[deprecated]
     pub(crate) fn into_control(self) -> Control {
         match self {
@@ -791,7 +802,7 @@ impl RangeTimeControl {
     pub fn new(
         schedule_lower: ScheduleOrControl<Option<f64>>,
         schedule_upper: ScheduleOrControl<Option<f64>>,
-        simulation_time: SimulationTime,
+        simulation_time_iterator: SimulationTimeIterator,
         start_day: f64,
         time_series_step: f64,
         duration_advanced_start: Option<f64>,
@@ -812,7 +823,8 @@ impl RangeTimeControl {
             }
         }
 
-        let timesteps_advstart = (duration_advanced_start / simulation_time.step).round() as u32;
+        let timesteps_advstart =
+            (duration_advanced_start / simulation_time_iterator.step_in_hours()).round() as u32;
 
         Ok(Self {
             schedule_lower,
@@ -2431,7 +2443,7 @@ mod tests {
             RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
-                simulation_time,
+                simulation_time.iter(),
                 0.,
                 1.,
                 duration_advanced_start,
@@ -2463,7 +2475,7 @@ mod tests {
             let range_time_control = RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
-                simulation_time(),
+                simulation_time().iter(),
                 0.,
                 1.,
                 None,
@@ -2494,7 +2506,7 @@ mod tests {
             let range_time_control = RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
-                simulation_time(),
+                simulation_time().iter(),
                 0.,
                 1.,
                 None,
@@ -2525,7 +2537,7 @@ mod tests {
             let range_time_control = RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
-                simulation_time(),
+                simulation_time().iter(),
                 0.,
                 1.,
                 None,
@@ -3908,7 +3920,7 @@ mod tests {
                         .map(Some)
                         .collect(),
                 ),
-                simulation_time_1,
+                simulation_time_1.iter(),
                 0.,
                 1.,
                 None,

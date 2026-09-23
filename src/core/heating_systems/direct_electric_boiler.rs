@@ -1,8 +1,6 @@
 use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSupply;
-use crate::core::controls::time_control::{
-    Control, RangeTimeControl, SetpointOrCombinationControl,
-};
+use crate::core::controls::time_control::{Control, RangeTimeControl};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{
     BoilerForBoilerService, BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
@@ -130,16 +128,12 @@ impl DirectElectricBoiler {
     fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control_min: Option<SetpointOrCombinationControl>,
-        control_max: Option<SetpointOrCombinationControl>,
-        control: Option<Arc<RangeTimeControl>>,
+        control: Arc<RangeTimeControl>,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
         BoilerServiceWaterRegular::new(
             BoilerForBoilerService::DirectElectricBoiler(boiler.clone()),
             service_name.into(),
-            control_min,
-            control_max,
             control,
         )
     }
@@ -375,7 +369,7 @@ impl DirectElectricBoiler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::controls::time_control::{ScheduleOrControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::units::Orientation360;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -550,17 +544,20 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         let service_name = "service_hot_water_regular";
-        let control_min =
-            SetpointTimeControl::new(vec![None, None], 0, 1., None, None, simulation_time.step);
-        let control_max =
-            SetpointTimeControl::new(vec![None, None], 0, 1., None, None, simulation_time.step);
+        let range_time_control = RangeTimeControl::new(
+            ScheduleOrControl::Schedule(vec![None, None]),
+            ScheduleOrControl::Schedule(vec![None, None]),
+            simulation_time.iter(),
+            0.,
+            1.,
+            None,
+        )
+        .unwrap();
 
         let boiler_service_result = DirectElectricBoiler::create_service_hot_water_regular(
             Arc::new(RwLock::new(boiler)),
             service_name,
-            Some(SetpointOrCombinationControl::SetpointTime(control_min.into())),
-            Some(SetpointOrCombinationControl::SetpointTime(control_max.into())),
-            None,
+            range_time_control.into(),
         );
         assert!(boiler_service_result.is_ok());
     }
