@@ -954,7 +954,7 @@ impl EnergySupply {
                 // this same limit (see calc_energy_export_from_battery_to_grid).
                 let max_energy_export = power_limit_export * simtime.timestep;
                 let surplus_before_cap = supply_surplus;
-                let supply_surplus = max_of_2(supply_surplus, -max_energy_export);
+                supply_surplus = max_of_2(supply_surplus, -max_energy_export);
                 // Curtailed generation: the share that could be neither used nor exported.
                 // supply_surplus is negative by convention and the cap makes it less negative,
                 // so (supply_surplus - surplus_before_cap) is the reduction in export
@@ -1205,12 +1205,12 @@ mod tests {
     use std::io::{BufReader, Cursor};
 
     #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0.0, 8.0, 1.0)
     }
 
     #[fixture]
-    pub fn energy_supply<'a>(simulation_time: SimulationTime) -> EnergySupply {
+    fn energy_supply<'a>(simulation_time: SimulationTime) -> EnergySupply {
         let mut energy_supply =
             EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
                 .build();
@@ -1221,7 +1221,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn energy_supply_connections(
+    fn energy_supply_connections(
         energy_supply: EnergySupply,
     ) -> (
         EnergySupplyConnection,
@@ -1241,7 +1241,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn energy_supply_connection_1<'a>(energy_supply: EnergySupply) -> EnergySupplyConnection {
+    fn energy_supply_connection_1<'a>(energy_supply: EnergySupply) -> EnergySupplyConnection {
         EnergySupplyConnection {
             energy_supply: Arc::new(RwLock::new(energy_supply)),
             end_user_name: "shower".into(),
@@ -1249,7 +1249,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn energy_supply_connection_2<'a>(energy_supply: EnergySupply) -> EnergySupplyConnection {
+    fn energy_supply_connection_2<'a>(energy_supply: EnergySupply) -> EnergySupplyConnection {
         EnergySupplyConnection {
             energy_supply: Arc::new(RwLock::new(energy_supply)),
             end_user_name: "bath".into(),
@@ -1257,7 +1257,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn tariff_data(simulation_time: SimulationTime) -> TariffData {
+    fn tariff_data(simulation_time: SimulationTime) -> TariffData {
         let prices = TariffData::load_data_from_file(BufReader::new(Cursor::new(include_str!(
             "../../../examples/tariff_data/tariff_data_25-06-2024.csv"
         ))))
@@ -2018,7 +2018,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_init_demand_list(simulation_time: SimulationTime) {
+    fn test_init_demand_list(simulation_time: SimulationTime) {
         assert_eq!(
             init_demand_list(simulation_time.total_steps()),
             [0.; 8].into_iter().map(AtomicF64::new).collect::<Vec<_>>()
@@ -2142,7 +2142,7 @@ mod tests {
         [50.0, 120.0, 190.0, 260.0, 330.0, 400.0, 470.0, 540.0];
 
     #[rstest]
-    pub fn test_results_total(energy_supply: EnergySupply, simulation_time: SimulationTime) {
+    fn test_results_total(energy_supply: EnergySupply, simulation_time: SimulationTime) {
         for simtime in simulation_time.iter() {
             let _ = energy_supply.demand_energy(
                 "shower",
@@ -2165,7 +2165,7 @@ mod tests {
     ];
 
     #[rstest]
-    pub fn test_results_by_end_user_and_step(
+    fn test_results_by_end_user_and_step(
         energy_supply_connections: (
             EnergySupplyConnection,
             EnergySupplyConnection,
@@ -2285,7 +2285,7 @@ mod tests {
     ];
 
     #[rstest]
-    pub fn test_beta_factor(
+    fn test_beta_factor(
         energy_supply_connections: (
             EnergySupplyConnection,
             EnergySupplyConnection,
@@ -3218,8 +3218,10 @@ mod tests {
             .is_none());
     }
 
+    // TODO 1.0.0a9 migration test_battery_specified_or_not
+
     #[rstest]
-    pub fn test_energy_supply_without_export(simulation_time: SimulationTime) {
+    fn test_energy_supply_without_export(simulation_time: SimulationTime) {
         let mut builder =
             EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps());
         builder = builder.with_export_capable(false);
@@ -3240,6 +3242,87 @@ mod tests {
                 shared_supply.read().get_energy_export()[t_idx],
                 0.,
                 "incorrect energy export returned"
+            );
+        }
+    }
+
+    /// Unit tests for the DNO export power limit on the EnergySupply class
+    mod test_energy_supply_export_power_limit {
+        use super::*;
+        use pretty_assertions::assert_eq;
+
+        #[fixture]
+        /// A half-hourly timestep is used so that the conversion of the power limit
+        /// (kW) into the maximum energy exportable per timestep (kWh) is exercised;
+        /// with a one-hour timestep the two would be numerically identical
+        fn simtime() -> SimulationTime {
+            SimulationTime::new(0., 2., 0.5)
+        }
+
+        // Generation offered to the grid each timestep (kWh). No demand is placed on
+        // the supply, so the beta factor is zero and the whole amount is surplus.
+        const GENERATION: [f64; 4] = [1., 2.5, 4., 6.];
+
+        /// Run the supply over a generation profile and return the EnergySupply object.
+        /// Args:
+        ///     power_limit_export: DNO export power limit (kW), or None for unlimited export.
+        ///     electric_battery: Optional battery placed in the surplus path before the cap.
+        ///     generation: Generation offered each timestep (kWh); defaults to the shared profile.
+        /// Returns:
+        ///     The EnergySupply after the run, so tests can read any of its result series.
+        fn run_supply(
+            power_limit_export: Option<f64>,
+            electric_battery: Option<ElectricBattery>,
+            generation: Option<Vec<f64>>,
+            simtime: SimulationTime,
+        ) -> Arc<RwLock<EnergySupply>> {
+            let profile = generation.unwrap_or(GENERATION.into());
+
+            let mut builder =
+                EnergySupplyBuilder::new(FuelType::Electricity, simtime.iter().total_steps())
+                    .with_export_capable(true);
+            if let Some(power_limit_export) = power_limit_export {
+                builder = builder.with_power_limit_export(power_limit_export);
+            }
+            if let Some(battery) = electric_battery {
+                builder =
+                    builder.with_electric_battery(indexmap! {"ElectricBattery".into() => battery});
+            }
+            let energy_supply = builder.build();
+            let shared_supply = Arc::new(RwLock::new(energy_supply));
+            let conn = EnergySupply::connection(shared_supply.clone(), "PV").unwrap();
+
+            for (t_idx, t_it) in simtime.iter().enumerate() {
+                conn.supply_energy(profile[t_idx], t_idx).unwrap();
+                shared_supply
+                    .read()
+                    .calc_energy_import_export_betafactor(t_it)
+                    .unwrap();
+
+                // Reset the battery's per-timestep charging-time accumulator between steps
+                shared_supply.read().timestep_end().unwrap();
+            }
+
+            shared_supply
+        }
+
+        /// Run the supply for the shared generation profile and return exported energy
+        fn run(power_limit_export: Option<f64>, simtime: SimulationTime) -> Vec<f64> {
+            run_supply(power_limit_export, None, None, simtime)
+                .read()
+                .get_energy_export()
+        }
+
+        #[rstest]
+        /// Export is capped at the power limit converted to energy for the timestep
+        fn test_surplus_capped_at_power_limit_export(simtime: SimulationTime) {
+            // Limit 5 kW over a 0.5 h timestep caps export at 5 * 0.5 = 2.5 kWh per timestep.
+            // Surplus below the cap (1.0 kWh) is exported in full; surplus at or above the
+            // cap (2.5, 4.0, 6.0 kWh) is limited to 2.5 kWh, the remainder being curtailed.
+            assert_eq!(
+                run(Some(5.), simtime),
+                [-1.0, -2.5, -2.5, -2.5],
+                "surplus not capped at the export power limit"
             );
         }
     }
