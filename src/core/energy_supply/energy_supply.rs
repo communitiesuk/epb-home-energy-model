@@ -2273,6 +2273,16 @@ mod tests {
         0.0,
         0.0,
     ];
+    const EXPORT_FROM_GENERATION: [f64; 8] = [
+        0.0,
+        -8.21111368576954,
+        -170.3184061684273,
+        -482.57355547066624,
+        -950.0,
+        -1600.0,
+        -2410.0,
+        -3380.0,
+    ];
 
     #[rstest]
     pub fn test_beta_factor(
@@ -2312,6 +2322,11 @@ mod tests {
                 "incorrect energy export returned"
             );
             assert_eq!(
+                energy_supply.get_energy_export_from_generation()[t_idx],
+                EXPORT_FROM_GENERATION[t_idx],
+                "incorrect energy export returned"
+            );
+            assert_eq!(
                 energy_supply.get_energy_import()[t_idx],
                 EXPECTED_DEMANDS_NOT_MET[t_idx],
                 "incorrect energy import returned"
@@ -2334,6 +2349,7 @@ mod tests {
     }
 
     #[rstest]
+    /// Tests for EnergySupply battery with grid_charging, tariffs, and priority
     fn test_battery_with_grid_charging_and_priority(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
@@ -2354,11 +2370,11 @@ mod tests {
         let energy_supply = builder
             .with_electric_battery(indexmap! {"ElectricBattery".into() => elec_battery})
             .with_tariff_info(tariff_info)
-            .with_tariff_data(tariff_data)
+            .with_tariff_data(tariff_data.clone())
             .with_priority(vec!["ElectricBattery", "diverter"])
             .build();
 
-        assert!(energy_supply.tariff_data.is_some());
+        assert_eq!(energy_supply.tariff_data, Some(tariff_data));
         assert_eq!(energy_supply.get_batteries().unwrap().len(), 1);
         assert!(energy_supply.has_battery().unwrap());
 
@@ -2464,7 +2480,7 @@ mod tests {
         let builder =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
-            .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
+            .with_electric_battery(indexmap! {"ElectricBattery".into() => elec_battery})
             .with_tariff_info(tariff_info)
             .with_tariff_data(tariff_data)
             .build();
@@ -2488,6 +2504,7 @@ mod tests {
     }
 
     #[rstest]
+    /// Tests for battery without import from grid
     fn test_battery_without_grid_charging(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
@@ -2502,7 +2519,7 @@ mod tests {
         let builder =
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.iter().total_steps());
         let energy_supply = builder
-            .with_electric_battery(indexmap! {"Electric_battery".into() => elec_battery})
+            .with_electric_battery(indexmap! {"ElectricBattery".into() => elec_battery})
             .build();
 
         for t_idx in simulation_time.iter() {

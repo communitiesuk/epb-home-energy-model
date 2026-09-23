@@ -10,7 +10,7 @@ use std::io::Read;
 
 /// This module contains data on the energy tariffs.
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TariffData {
     start_day: Option<u32>,
     time_series_step: f64,
