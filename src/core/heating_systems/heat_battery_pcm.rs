@@ -122,21 +122,19 @@ fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
     simtime_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<()> {
     if simtime_iterator.current_index() != 0 {
-        panic!(
+        bail!(
             "HeatBattery '{}': validate_no_schedule_overlap must be called before the simulation starts (current timestep index: {}).",
             battery_name,
             simtime_iterator.current_index()
         );
     }
 
-    for (t_idx, _) in simtime_iterator.clone().enumerate() {
+    for (t_idx, t_it) in simtime_iterator.clone().enumerate() {
         let mut active_sources: Vec<String> = Vec::new();
         for (src_name, charging_source) in &heat_source_data {
             match &charging_source.control {
                 Control::RangeTime(ctrl) => {
-                    if let (_, Some(_)) =
-                        ctrl.setpnt_range_time_control(&simtime_iterator.current_iteration())
-                    {
+                    if let (_, Some(_)) = ctrl.setpnt_range_time_control(&t_it) {
                         active_sources.push(src_name.clone());
                     }
                 }
@@ -4594,6 +4592,147 @@ mod tests {
             };
             // Should not raise
             validate_no_schedule_overlap(sources, "test_battery", &simtime.iter()).unwrap();
+        }
+
+        /// Overlapping schedules (both active at t1) should return an error.
+        #[rstest]
+        fn test_overlapping_schedule_raises(simtime: SimulationTime) {
+            let ctrl_a = make_control(
+                vec![Some(0.2), Some(0.2), None, None],
+                vec![Some(0.8), Some(0.8), None, None],
+                simtime,
+            );
+            let ctrl_b = make_control(
+                vec![None, Some(0.2), Some(0.2), None],
+                vec![None, Some(0.8), Some(0.8), None],
+                simtime,
+            );
+            let sources: IndexMap<String, HeatBatteryChargingSource<MockWaterSupply>> = {
+                let mut m = IndexMap::new();
+                m.insert(
+                    "electric".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::DirectElectric,
+                        control: ctrl_a,
+                        rated_charge_power: Some(5.0),
+                        flow_rate_charging_l_per_min: None,
+                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        hex_a: None,
+                        schedule_unit: "test".into(),
+                        temp_flow_max: None,
+                        hex_b: None,
+                        hex_capillary_diameter_m: None,
+                        hex_velocity_at_1_l_per_min: None,
+                    },
+                );
+                m.insert(
+                    "hydronic".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::HeatSourceWet,
+                        control: ctrl_b,
+                        rated_charge_power: Some(3.0),
+                        flow_rate_charging_l_per_min: None,
+                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        hex_a: None,
+                        schedule_unit: "test".into(),
+                        temp_flow_max: None,
+                        hex_b: None,
+                        hex_capillary_diameter_m: None,
+                        hex_velocity_at_1_l_per_min: None,
+                    },
+                );
+                m
+            };
+            assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_err());
+        }
+        /// Single source can never overlap — validation accepts it.
+        #[rstest]
+        fn single_source_always_passes(simtime: SimulationTime) {
+            let ctrl_a = make_control(
+                vec![Some(0.2), Some(0.2), Some(0.2), Some(0.2)],
+                vec![Some(0.8), Some(0.8), Some(0.8), Some(0.8)],
+                simtime,
+            );
+            let sources: IndexMap<String, HeatBatteryChargingSource<MockWaterSupply>> = {
+                let mut m = IndexMap::new();
+                m.insert(
+                    "a".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::DirectElectric,
+                        control: ctrl_a,
+                        rated_charge_power: Some(5.0),
+                        flow_rate_charging_l_per_min: None,
+                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        hex_a: None,
+                        schedule_unit: "test".into(),
+                        temp_flow_max: None,
+                        hex_b: None,
+                        hex_capillary_diameter_m: None,
+                        hex_velocity_at_1_l_per_min: None,
+                    },
+                );
+                m
+            };
+            assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_ok());
+        }
+
+        // skipped test_simtime_reset_after_validation and test_simtime_reset_on_error
+        //from Python as we don't have a mutable reference to SimulationTime in Rust.
+
+        ///Transition period (lower=None, upper=non-null) counts as active for overlap.
+        /// A transition period means existing charging may continue, so it's an
+        /// active period from the overlap perspective.
+        #[rstest]
+        fn test_transition_period_counts_as_active(simtime: SimulationTime) {
+            // Source A: fully active all timesteps
+            let ctrl_a = make_control(
+                vec![Some(0.2), Some(0.2), Some(0.2), Some(0.2)],
+                vec![Some(0.8), Some(0.8), Some(0.8), Some(0.8)],
+                simtime,
+            );
+            // Source B: transition at t2 (lower=None, upper=Some(0.8))
+            let ctrl_b = make_control(
+                vec![None, None, None, None],
+                vec![None, None, Some(0.8), None],
+                simtime,
+            );
+            let sources: IndexMap<String, HeatBatteryChargingSource<MockWaterSupply>> = {
+                let mut m = IndexMap::new();
+                m.insert(
+                    "a".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::DirectElectric,
+                        control: ctrl_a,
+                        rated_charge_power: Some(5.0),
+                        flow_rate_charging_l_per_min: None,
+                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        hex_a: None,
+                        schedule_unit: "test".into(),
+                        temp_flow_max: None,
+                        hex_b: None,
+                        hex_capillary_diameter_m: None,
+                        hex_velocity_at_1_l_per_min: None,
+                    },
+                );
+                m.insert(
+                    "b".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::DirectElectric,
+                        control: ctrl_b,
+                        rated_charge_power: Some(3.0),
+                        flow_rate_charging_l_per_min: None,
+                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        hex_a: None,
+                        schedule_unit: "test".into(),
+                        temp_flow_max: None,
+                        hex_b: None,
+                        hex_capillary_diameter_m: None,
+                        hex_velocity_at_1_l_per_min: None,
+                    },
+                );
+                m
+            };
+            assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_err());
         }
     }
 }
