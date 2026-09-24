@@ -5258,13 +5258,10 @@ fn heat_source_from_input(
                     WetHeatSource::Hiu(_heat_network) => {
                         HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
                             {
-                                let (control_min, control_max) = todo!();
-
                                 HeatNetwork::create_service_hot_water_storage(
                                     _heat_network,
                                     &energy_supply_conn_name,
-                                    control_min, // TODO: update as part of 1.0.0a9 migration
-                                    control_max, // TODO: update as part of 1.0.0a9 migration
+                                    range_time_control,
                                 )
                             }
                         )))
