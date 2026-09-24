@@ -119,15 +119,12 @@ impl DirectElectricBoiler {
     ///
     /// Arguments:
     /// `service_name` - name of the service demanding energy from the boiler
-    /// `controlmin` - reference to a control object which must select current
-    ///                the minimum timestep temperature
-    /// `controlmax` - reference to a control object which must select current
-    ///                the maximum timestep temperature
     /// `control` - reference to a RangeTimeControl object, combining controlmax and controlmin.
     ///             Takes precedence if set.
     pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
+        // We have consolidatated controls into one field to match the validation logic Python has
         control: Arc<RangeTimeControl>,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
