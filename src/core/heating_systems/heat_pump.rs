@@ -6032,7 +6032,6 @@ mod tests {
     }
 
     // TestHeatPumpService
-    #[ignore = "TODO as part of 1.0.0a0 migration"]
     #[rstest]
     fn test_is_on_for_service_water(
         heat_pump_service_water: HeatPumpServiceWater,
