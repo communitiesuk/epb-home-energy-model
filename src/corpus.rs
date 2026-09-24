@@ -5239,8 +5239,7 @@ fn heat_source_from_input(
                                     pcm,
                                     &energy_supply_conn_name,
                                     cold_water_source.clone(),
-                                    todo!(), // TODO: update as part of 1.0.0a9 migration
-                                    todo!(), // TODO: update as part of 1.0.0a9 migration
+                                    range_time_control, // TODO: update as part of 1.0.0a9 migration
                                 )?,
                             ),
                         }),

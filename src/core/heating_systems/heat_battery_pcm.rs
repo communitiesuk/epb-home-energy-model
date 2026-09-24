@@ -1,7 +1,9 @@
 use crate::compare_floats::min_of_2;
 /// This module provides object(s) to model the behaviour of heat batteries.
 use crate::core::common::WaterSupplyBehaviour;
-use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
+use crate::core::controls::time_control::{
+    per_control, Control, ControlBehaviour, RangeTimeControl,
+};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::BoilerServiceWaterRegular;
 use crate::core::heating_systems::common::HeatingServiceType;
@@ -164,9 +166,7 @@ pub(crate) struct HeatBatteryPcmServiceWaterRegular<T: WaterSupplyBehaviour> {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: String,
     cold_feed: T,
-    control: Control,
-    control_min: Control,
-    control_max: Control,
+    control: Arc<RangeTimeControl>,
 }
 
 impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
@@ -174,24 +174,23 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
     /// * `heat_battery` - reference to the Heat Battery object providing the service
     /// * `service_name` - name of the service demanding energy
     /// * `cold_feed` - reference to ColdWaterSource object
+    /// * `control` - reference to a RangeTimeControl object, combining controlmax and controlmin.
+    ///    Takes precedence if set in python, one is constructed from 2 control objects otherwise.
+    ///
+    /// * From python, used to create a range time control before this step
     /// * `control_min` - reference to a control object which must select current the minimum timestep temperature
     /// * `control_max` - reference to a control object which must select current the maximum timestep temperature
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: String,
         cold_feed: T,
-        control_min: Control,
-        control_max: Control,
+        control: Arc<RangeTimeControl>,
     ) -> Self {
-        let control = control_min.clone();
-
         Self {
             heat_battery,
             service_name,
             cold_feed,
             control,
-            control_min,
-            control_max,
         }
     }
 
@@ -200,10 +199,8 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
-        (
-            self.control_min.setpnt(&simulation_time_iteration),
-            self.control_max.setpnt(&simulation_time_iteration),
-        )
+        self.control
+            .setpnt_range_time_control(&simulation_time_iteration)
     }
 
     /// Demand energy (in kWh) from the heat_battery
@@ -809,16 +806,14 @@ impl HeatBatteryPcm {
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         cold_feed: T,
-        control_min: Control,
-        control_max: Control,
+        control: Arc<RangeTimeControl>,
     ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular<T>> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterRegular::new(
             heat_battery,
             service_name.into(),
             cold_feed,
-            control_min,
-            control_max,
+            control,
         ))
     }
 
@@ -2407,34 +2402,44 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) -> HeatBatteryPcmServiceWaterRegular<MockWaterSupply> {
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control, None);
-        let control_min = create_setpoint_time_control(vec![
-            Some(52.),
-            None,
-            None,
-            None,
-            Some(52.),
-            Some(52.),
-            Some(52.),
-            Some(52.),
-        ]);
-        let control_max = create_setpoint_time_control(vec![
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-            Some(55.),
-        ]);
+
+        let range_time_control = Arc::new(
+            RangeTimeControl::new(
+                ScheduleOrControl::Schedule(vec![
+                    Some(52.),
+                    None,
+                    None,
+                    None,
+                    Some(52.),
+                    Some(52.),
+                    Some(52.),
+                    Some(52.),
+                ]),
+                ScheduleOrControl::Schedule(vec![
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                ]),
+                simulation_time_iterator,
+                0.,
+                1.,
+                None,
+            )
+            .unwrap(),
+        );
+
         let mock_cold_feed = MockWaterSupply::new(10.);
 
         HeatBatteryPcmServiceWaterRegular::new(
             heat_battery,
             SERVICE_NAME.into(),
             mock_cold_feed,
-            control_min,
-            control_max,
+            range_time_control,
         )
     }
 
@@ -2495,7 +2500,17 @@ mod tests {
         let temp_flow = 55.;
         let temp_return = 40.;
 
-        let service_control_off = create_setpoint_time_control(vec![None]);
+        let range_time_control = Arc::new(
+            RangeTimeControl::new(
+                ScheduleOrControl::Schedule(vec![None]),
+                ScheduleOrControl::Schedule(vec![None]),
+                simulation_time_iterator.clone(),
+                0.,
+                1.,
+                None,
+            )
+            .unwrap(),
+        );
 
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
         let mock_cold_feed = MockWaterSupply::new(10.);
@@ -2504,8 +2519,7 @@ mod tests {
                 heat_battery,
                 SERVICE_NAME.into(),
                 mock_cold_feed,
-                service_control_off.clone(),
-                service_control_off,
+                range_time_control,
             );
 
         let result = heat_battery_service
@@ -3577,12 +3591,21 @@ mod tests {
         let mock_cold_feed = MockWaterSupply::new(10.);
         let service_name = "new_service";
 
+        let range_time_control = RangeTimeControl::new(
+            ScheduleOrControl::Schedule(vec![]),
+            ScheduleOrControl::Schedule(vec![]),
+            simulation_time.iter(),
+            0.,
+            1.,
+            None,
+        )
+        .unwrap();
+
         HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
             service_name,
             mock_cold_feed,
-            Control::Mock(MockControl::default()),
-            Control::Mock(MockControl::default()),
+            range_time_control.into(),
         )
         .unwrap();
 
@@ -4200,12 +4223,23 @@ mod tests {
         let service_name = "test_service";
         let mock_cold_feed = MockWaterSupply::new(10.);
 
+        let range_time_control = Arc::new(
+            RangeTimeControl::new(
+                ScheduleOrControl::Schedule(vec![]),
+                ScheduleOrControl::Schedule(vec![]),
+                simulation_time_iterator,
+                0.,
+                1.,
+                None,
+            )
+            .unwrap(),
+        );
+
         let result = HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
             service_name,
             mock_cold_feed,
-            Control::Mock(MockControl::default()),
-            Control::Mock(MockControl::default()),
+            range_time_control.clone(),
         );
 
         assert!(result.is_ok());
@@ -4214,8 +4248,7 @@ mod tests {
             heat_battery,
             service_name,
             mock_cold_feed,
-            Control::Mock(MockControl::default()),
-            Control::Mock(MockControl::default()),
+            range_time_control,
         );
 
         assert!(result.is_err())
