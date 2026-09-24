@@ -128,12 +128,23 @@ impl fmt::Display for IncorrectBoilerDataType {
 impl std::error::Error for IncorrectBoilerDataType {}
 
 impl BoilerServiceWaterCombi {
+    /// Construct a BoilerServiceWaterCombi object
+    ///
+    /// Arguments:
+    /// * `boiler` - reference to the Boiler object providing the service
+    /// * `boiler_data` - combi boiler heating properties
+    /// * `service_name` - name of the service demanding energy from the boiler_data
+    /// * `temp_hot_water` - temperature of the hot water to be provided, in deg C
+    /// * `cold_feed` - reference to ColdWaterSource object
+    /// * `keep_hot_control` - on / off control schedule for keep hot facility, if provided
+    /// * `simulation_time` - reference to SimulationTime object
     pub(crate) fn new(
         boiler: BoilerForBoilerService,
         boiler_data: HotWaterSourceDetails,
         service_name: String,
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSupply,
+        _keep_hot_control: Option<Arc<OnOffTimeControl>>,
         simulation_timestep: f64,
     ) -> Result<Self, IncorrectBoilerDataType> {
         // TODO (from Python) daily hot water use is currently a single value user input.
@@ -817,6 +828,7 @@ impl Boiler {
             service_name.into(),
             temperature_hot_water_in_c,
             cold_feed,
+            None,
             boiler.read().simulation_timestep,
         )
     }
@@ -1563,6 +1575,7 @@ mod tests {
                 "boiler_test".into(),
                 60.,
                 cold_water_source_with_temp,
+                None,
                 simulation_time.step,
             )
             .unwrap()
@@ -1592,6 +1605,7 @@ mod tests {
                 "boiler_test".into(),
                 20.,
                 WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                None,
                 simulation_time.step,
             )
             .unwrap();
@@ -1628,6 +1642,7 @@ mod tests {
                 "boiler_test".into(),
                 20.,
                 WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                None,
                 simulation_time.step,
             )
             .unwrap();
@@ -1664,6 +1679,7 @@ mod tests {
                 "boiler_test".into(),
                 20.,
                 WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                None,
                 simulation_time.step,
             )
             .unwrap();

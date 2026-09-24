@@ -1,6 +1,8 @@
 use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSupply;
-use crate::core::controls::time_control::{RangeTimeControl, SetpointOrCombinationControl};
+use crate::core::controls::time_control::{
+    OnOffTimeControl, RangeTimeControl, SetpointOrCombinationControl,
+};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{
     BoilerForBoilerService, BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
@@ -99,6 +101,7 @@ impl DirectElectricBoiler {
         boiler_data: HotWaterSourceDetails,
         temp_hot_water: f64,
         cold_feed: WaterSupply,
+        keep_hot_control: Option<Arc<OnOffTimeControl>>,
     ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
         // TODO: look at improving error handling here and in boiler.rs
         boiler
@@ -111,6 +114,7 @@ impl DirectElectricBoiler {
             service_name.into(),
             temp_hot_water,
             cold_feed,
+            keep_hot_control,
             boiler.read().simulation_timestep,
         )
     }
@@ -532,6 +536,7 @@ mod tests {
             boiler_data,
             temp_hot_water,
             WaterSupply::ColdWaterSource(Arc::new(coldfeed)),
+            None,
         );
         assert!(boiler_service_result.is_ok());
     }

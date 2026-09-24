@@ -4541,6 +4541,7 @@ impl WetHeatSource {
                     boiler_data,
                     temp_hot_water,
                     cold_feed,
+                    keep_hot_control
                 )
                 .map_err(|err| anyhow!(format!("{err}")))
             }
