@@ -129,29 +129,34 @@ impl EnergySupply {
     /// Arguments:
     /// * `fuel_type` - string denoting type of fuel
     /// * `simulation_timesteps` - the number of steps in the simulation time being used
-    /// * `electric_battery` - reference to a map from name to an ElectricBattery object
+    /// * `tariff_info` - tariff, threshold_charges and threshold_prices:
+    ///         `tariff` - energy tariff for import
+    ///         `threshold_charges` - level of battery charge above which grid prohibited from charging battery (0 - 1)
+    ///         `threshold_prices` - grid price below which battery is permitted to charge from grid (p/kWh)
+    /// * `electric_batteries` - reference to a map from name to an ElectricBattery object
     /// * `is_export_capable` - denotes that this Energy Supply can export its surplus supply
     /// * `power_limit_export` - maximum AC power (kW) exportable to the grid, e.g. a
-    //                           Distribution Network Operator (DNO) export limit; applies to
-    //                           the whole supply (generation surplus and battery discharge
-    //                           combined); None means no limit
-    /// * `tariff_export` - energy tariff for export
-    /// * `threshold_charges_export` - level of battery charge below which battery prohibited from exporting to grid (0 - 1)
-    /// * `threshold_prices_export` - grid price above which battery is permitted to export to grid (p/kWh)
+    ///                          Distribution Network Operator (DNO) export limit; applies to
+    ///                          the whole supply (generation surplus and battery discharge
+    ///                          combined); None means no limit
+    /// * `export_tariff` - energy tariff_export, threshold_charges_export and threshold_prices_export:
+    ///         `tariff_export` - energy tariff for export
+    ///         `threshold_charges_export` - level of battery charge below which battery prohibited from exporting to grid (0 - 1)
+    ///         `threshold_prices_export` - grid price above which battery is permitted to export to grid (p/kWh)
     /// * `tariff_data` - tariff data containing electricity prices
     /// * `power_limit_battery_import` - the maximum power limit for charging batteries from the
-    //                                   energy supply connection (not limited to grid — also applies
-    //                                   to on-site generation), shared across all batteries (kW)
+    ///                                  energy supply connection (not limited to grid — also applies
+    ///                                  to on-site generation), shared across all batteries (kW)
     pub(crate) fn new(
         fuel_type: FuelType,
         simulation_timesteps: usize,
         tariff_info: Option<EnergySupplyTariffInfo>,
-        tariff_data: Option<TariffData>,
         electric_batteries: IndexMap<String, ElectricBattery>,
         priority: Option<Vec<String>>,
         is_export_capable: Option<bool>,
         power_limit_export: Option<f64>,
         export_tariff: Option<EnergySupplyExportTariff>,
+        tariff_data: Option<TariffData>,
         power_limit_battery_import: Option<f64>,
     ) -> anyhow::Result<Self> {
         if electric_batteries
@@ -257,11 +262,11 @@ impl EnergySupply {
         ))
     }
 
-    #[cfg(test)] // TODO 1.0.0a9 migration - this is only used in tests now, are these tests useful?
+    #[cfg(test)]
     pub(crate) fn get_battery_charge_efficiency(
         &self,
+        battery: Option<Arc<ElectricBattery>>,
         simtime: SimulationTimeIteration,
-        battery: Option<ElectricBattery>,
     ) -> anyhow::Result<Option<f64>> {
         match battery {
             None => {
@@ -279,11 +284,11 @@ impl EnergySupply {
         }
     }
 
-    #[cfg(test)] // TODO 1.0.0a9 migration - this is only used in tests now, are these tests useful?
+    #[cfg(test)]
     pub(crate) fn get_battery_discharge_efficiency(
         &self,
+        battery: Option<Arc<ElectricBattery>>,
         simtime: SimulationTimeIteration,
-        battery: Option<ElectricBattery>,
     ) -> anyhow::Result<Option<f64>> {
         match battery {
             None => {
@@ -301,11 +306,11 @@ impl EnergySupply {
         }
     }
 
-    #[cfg(test)] // TODO 1.0.0a9 migration - this is only used in tests now, are these tests useful?
+    #[cfg(test)]
     pub(crate) fn get_battery_max_discharge(
         &self,
         charge: f64,
-        battery: Option<ElectricBattery>,
+        battery: Option<Arc<ElectricBattery>>,
     ) -> anyhow::Result<Option<f64>> {
         match battery {
             None => {
@@ -323,6 +328,7 @@ impl EnergySupply {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn get_battery_available_charge(&self) -> anyhow::Result<Option<f64>> {
         let batteries = self.get_batteries()?;
         if batteries.is_empty() {
@@ -1101,8 +1107,8 @@ impl EnergySupplyBuilder {
                 fuel_type,
                 simulation_timesteps,
                 None,
-                None,
                 Default::default(),
+                None,
                 None,
                 None,
                 None,
@@ -1354,8 +1360,8 @@ mod tests {
             FuelType::Electricity,
             simulation_time.iter().total_steps(),
             None,
-            None,
             indexmap! {"Electric_battery".into() => elec_battery},
+            None,
             None,
             None,
             None,
@@ -2386,14 +2392,14 @@ mod tests {
         ); // max capacity * state of health
         assert_eq!(
             energy_supply
-                .get_battery_charge_efficiency(simulation_time.iter().current_iteration(), None)
+                .get_battery_charge_efficiency(None, simulation_time.iter().current_iteration())
                 .unwrap()
                 .unwrap(),
             0.8_f64.powf(0.5) * battery_state_of_health * 1.
         ); // one way efficiency * state of health * air_temp_capacity_factor
         assert_eq!(
             energy_supply
-                .get_battery_discharge_efficiency(simulation_time.iter().current_iteration(), None)
+                .get_battery_discharge_efficiency(None, simulation_time.iter().current_iteration())
                 .unwrap()
                 .unwrap(),
             0.8_f64.powf(0.5) * battery_state_of_health * 1.
@@ -3213,12 +3219,86 @@ mod tests {
         assert!(!energy_supply.has_battery().unwrap());
         assert!(energy_supply.get_battery_max_capacity().unwrap().is_none());
         assert!(energy_supply
+            .get_battery_charge_efficiency(None, simulation_time.iter().current_iteration())
+            .unwrap()
+            .is_none());
+        assert!(energy_supply
+            .get_battery_discharge_efficiency(None, simulation_time.iter().current_iteration())
+            .unwrap()
+            .is_none());
+        assert!(energy_supply
+            .get_battery_max_discharge(0.7, None)
+            .unwrap()
+            .is_none());
+        assert!(energy_supply
             .get_battery_available_charge()
             .unwrap()
             .is_none());
     }
 
-    // TODO 1.0.0a9 migration test_battery_specified_or_not
+    #[rstest]
+    fn test_battery_specified_or_not(external_conditions: ExternalConditions) {
+        let simtime = SimulationTime::new(0.0, 4.0, 1.0);
+        let battery_a = create_elec_battery(
+            false,
+            true,
+            BatteryLocation::Outside,
+            external_conditions.clone(),
+            simtime,
+        );
+        let battery_b = create_elec_battery(
+            false,
+            true,
+            BatteryLocation::Outside,
+            external_conditions,
+            simtime,
+        );
+        let energy_supply = EnergySupplyBuilder::new(FuelType::MainsGas, simtime.total_steps())
+            .with_electric_battery(indexmap! {"A".into() => battery_a, "B".into() => battery_b})
+            .with_priority(vec!["B", "A"])
+            .build();
+
+        // Battery not specified
+        assert!(energy_supply
+            .get_battery_charge_efficiency(None, simtime.iter().current_iteration())
+            .is_err());
+        assert!(energy_supply
+            .get_battery_discharge_efficiency(None, simtime.iter().current_iteration())
+            .is_err());
+        assert!(energy_supply.get_battery_max_discharge(0.7, None).is_err());
+
+        // Battery specified
+        assert_relative_eq!(
+            energy_supply
+                .get_battery_charge_efficiency(
+                    Some(energy_supply.electric_batteries.get("A").unwrap().clone()),
+                    simtime.iter().current_iteration()
+                )
+                .unwrap()
+                .unwrap(),
+            0.6687167004967052
+        );
+        assert_relative_eq!(
+            energy_supply
+                .get_battery_discharge_efficiency(
+                    Some(energy_supply.electric_batteries.get("A").unwrap().clone()),
+                    simtime.iter().current_iteration()
+                )
+                .unwrap()
+                .unwrap(),
+            0.6687167004967052
+        );
+        assert_relative_eq!(
+            energy_supply
+                .get_battery_max_discharge(
+                    0.7,
+                    Some(energy_supply.electric_batteries.get("B").unwrap().clone()),
+                )
+                .unwrap()
+                .unwrap(),
+            -1.5
+        );
+    }
 
     #[rstest]
     fn test_energy_supply_without_export(simulation_time: SimulationTime) {
@@ -3429,7 +3509,6 @@ mod tests {
                 [0.; 4],
                 "generation curtailed despite the battery absorbing all surplus"
             );
-            println!("EXPORTED: {:?}", supply_read.get_energy_export());
 
             for exported in supply_read.get_energy_export() {
                 assert_relative_eq!(exported, 0., epsilon = 1e-7);

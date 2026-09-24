@@ -90,7 +90,7 @@ impl TariffData {
     /// Merge the prices from the CSV and the JSON files.
     /// If the same tariff name is found, prices from the CSV will take precedence.
     pub(super) fn merge_prices_from_files(
-        prices_from_csv: IndexMap<EnergySupplyTariff, NumericSchedule>, // TODO review tariff enum use, latest csv file has new tariff name
+        prices_from_csv: IndexMap<EnergySupplyTariff, NumericSchedule>,
         prices_from_json: IndexMap<String, NumericSchedule>,
     ) -> IndexMap<String, NumericSchedule> {
         let mut merged_prices = prices_from_json;
