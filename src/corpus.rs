@@ -3511,6 +3511,21 @@ impl Controls {
         }
     }
 
+    pub(crate) fn get_setpoint_or_combination_control(
+        &self,
+        control_name: &str,
+    ) -> anyhow::Result<SetpointOrCombinationControl> {
+        let control = self
+            .get_with_string(control_name)
+            .ok_or_else(|| anyhow!("No control found for reference '{control_name}'"))?;
+
+        match control {
+            Control::SetpointTime(control) => Ok(SetpointOrCombinationControl::SetpointTime(control)),
+            Control::CombinationTime(control) => Ok(SetpointOrCombinationControl::CombinationTime(control)),
+            _ => bail!("Control {control_name} was expected to be a SetPointTimeControl or CombinationTimeControl")
+        }
+    }
+
     pub(crate) fn get_range_time_control(
         &self,
         control_refs: &ControlReferences,
@@ -6063,12 +6078,7 @@ fn space_heat_systems_from_input(
                         let mut with_buffer_tank = false;
 
                         let control = controls.get_with_string(control_name).ok_or_else(|| anyhow!("A control object was expected for wet heat source: '{heat_source_name}'"))?;
-
-                        let setpoint_or_combination_control = match &control {
-                            Control::SetpointTime(control) => SetpointOrCombinationControl::SetpointTime(control.clone()),
-                            Control::CombinationTime(control) => SetpointOrCombinationControl::CombinationTime(control.clone()),
-                            _ => bail!("Control {control_name} was expected to be a SetPointTimeControl or CombinationTimeControl")
-                        };
+                        let setpoint_or_combination_control = controls.get_setpoint_or_combination_control(control_name)?;
 
                         let heat_source_service: SpaceHeatingService =
                             match heat_source {
@@ -6179,12 +6189,8 @@ fn space_heat_systems_from_input(
                         let energy_supply_conn_name: Arc<str> = [heat_source_name, "_space_heating: ", &system_name].concat().into();
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                         let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
-                        let control = controls.get_with_string(control_name).ok_or_else(|| anyhow!("Unknown control object reference '{control_name}' encountered"))?;
-                        let setpoint_or_combination_control = match &control {
-                            Control::SetpointTime(control) => SetpointOrCombinationControl::SetpointTime(control.clone()),
-                            Control::CombinationTime(control) => SetpointOrCombinationControl::CombinationTime(control.clone()),
-                            _ => bail!("Control {control_name} was expected to be a SetPoint or Combination Time Control for Space Heat Services")
-                        };
+
+                        let setpoint_or_combination_control = controls.get_setpoint_or_combination_control(control_name)?;
 
                         match heat_source {
                             WetHeatSource::HeatPump(heat_pump) => {
