@@ -433,6 +433,7 @@ impl BoilerServiceWaterRegular {
     pub(crate) fn new(
         boiler: BoilerForBoilerService,
         service_name: String,
+        // We have consolidatated controls into one field to match the validation logic Python has
         control: Arc<RangeTimeControl>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -824,10 +825,6 @@ impl Boiler {
     ///
     /// Arguments:
     /// * `service_name` - name of the service demanding energy from the boiler
-    /// * `controlmin` - reference to a control object which must select current
-    ///                  the minimum timestep temperature
-    /// * `controlmax` - reference to a control object which must select current
-    ///                  the maximum timestep temperature
     /// * `control` - reference to a RangeTimeControl object, combining controlmax and controlmin.
     ///               Takes precedence if set.
     pub(crate) fn create_service_hot_water_regular(
@@ -1382,9 +1379,7 @@ mod tests {
     // implemented in Rust. Instead we have directly implemented the `is_on` method on the concrete
     // BoilerService structs. Subsequently, the tests are in the relevant sections below that cover
     // these three classes/structs. The tests are:
-    // test_is_on_with_control_on, test_is_on_with_control_off and
-    // test_is_on_with_no_control (only relevant for BoilerServiceWaterCombi).
-
+    // test_is_on_with_control_on, test_is_on_with_control_off
     #[fixture]
     fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 2., 1.)
