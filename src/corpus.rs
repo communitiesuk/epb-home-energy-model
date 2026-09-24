@@ -5228,26 +5228,34 @@ fn heat_source_from_input(
                                 range_time_control,
                             )?),
                         )),
-                    WetHeatSource::Hiu(heat_network) => {
+                    WetHeatSource::Hiu(_heat_network) => {
                         HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
-                            HeatNetwork::create_service_hot_water_storage(
-                                heat_network,
-                                &energy_supply_conn_name,
-                                todo!(), // TODO: update as part of 1.0.0a9 migration
-                                todo!(), // TODO: update as part of 1.0.0a9 migration
-                            ),
+                            {
+                                let (control_min, control_max) = todo!();
+
+                                HeatNetwork::create_service_hot_water_storage(
+                                    _heat_network,
+                                    &energy_supply_conn_name,
+                                    control_min, // TODO: update as part of 1.0.0a9 migration
+                                    control_max, // TODO: update as part of 1.0.0a9 migration
+                                )
+                            }
                         )))
                     }
                     WetHeatSource::HeatBattery(battery) => HeatSource::Wet(Box::new(
                         HeatSourceWet::HeatBatteryHotWater(match battery {
-                            HeatBattery::DryCore(dry_core) => HeatBatteryWaterService::DryCore(
-                                HeatBatteryDryCore::create_service_hot_water_regular(
-                                    dry_core,
-                                    &energy_supply_conn_name,
-                                    cold_water_source.clone(),
-                                    todo!(), // TODO: update as part of 1.0.0a9 migration
-                                    todo!(), // TODO: update as part of 1.0.0a9 migration
-                                )?,
+                            HeatBattery::DryCore(_dry_core) => HeatBatteryWaterService::DryCore(
+                                {
+                                    let (control_min, control_max) = todo!();
+
+                                    HeatBatteryDryCore::create_service_hot_water_regular(
+                                        _dry_core,
+                                        &energy_supply_conn_name,
+                                        cold_water_source.clone(),
+                                        control_min, // TODO: update as part of 1.0.0a9 migration
+                                        control_max, // TODO: update as part of 1.0.0a9 migration
+                                    )?
+                                }
                             ),
                             HeatBattery::Pcm(pcm) => HeatBatteryWaterService::Pcm(
                                 HeatBatteryPcm::create_service_hot_water_regular(

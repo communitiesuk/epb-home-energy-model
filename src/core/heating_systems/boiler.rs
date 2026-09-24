@@ -445,7 +445,7 @@ impl BoilerServiceWaterRegular {
 
     /// Return setpoint (not necessarily temperature)
     pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
-        self.control.setpnt_range_time_control(&simtime)
+        self.control.setpnt_range_time_control(simtime)
     }
 
     /// Demand energy (in kWh) from the boiler

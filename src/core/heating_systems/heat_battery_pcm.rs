@@ -2114,8 +2114,9 @@ type ResultPerTimestep = IndexMap<(Arc<str>, Option<Arc<str>>), Vec<ResultParamV
 mod tests {
     use super::*;
     use crate::core::common::MockWaterSupply;
-    use crate::core::controls::time_control::{ChargeControl, Control, ScheduleOrControl};
-    use crate::core::controls::time_control::{MockControl, SetpointTimeControl};
+    use crate::core::controls::time_control::{
+        ChargeControl, Control, ScheduleOrControl, SetpointTimeControl,
+    };
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
