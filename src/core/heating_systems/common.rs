@@ -205,6 +205,7 @@ impl HeatBatteryWaterService {
                 temp_return,
                 update_heat_source_state,
                 simtime,
+                false,
             ),
             HeatBatteryWaterService::DryCore(service) => service.demand_energy(
                 energy_demand,

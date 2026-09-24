@@ -211,8 +211,9 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
         temp_return: Option<f64>,
         update_heat_source_state: Option<bool>,
         simtime: SimulationTimeIteration,
+        ignore_standard_ctrl: bool,
     ) -> anyhow::Result<f64> {
-        let service_on = self.is_on(simtime);
+        let service_on = self.is_on(simtime) || ignore_standard_ctrl;
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
@@ -2529,11 +2530,14 @@ mod tests {
                 Some(temp_return),
                 None,
                 simulation_time_iteration,
+                false,
             )
             .unwrap();
 
         assert_eq!(result, 0.);
     }
+
+    // skipped test_control_off_bypassed_by_ignore_standard_ctrl due to mocking and the minimal complexity of the change
 
     // In Python this is test_energy_output_max_service_on
     #[rstest]
