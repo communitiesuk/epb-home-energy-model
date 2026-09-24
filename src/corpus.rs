@@ -5085,28 +5085,10 @@ fn heat_source_from_input(
             let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Immersion heater references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
-            let (control_min, control_max, _control) = match control_refs {
-                None => (None, None, None),
-                Some(control_refs) => match control_refs {
-                    ControlReferences::Unified { control } => {
-                        let control = controls
-                            .get_with_string(control)
-                            .ok_or_else(|| anyhow!("No control found for reference '{control}'"))?;
-                        (None, None, Some(control))
-                    }
-                    ControlReferences::Bounded {
-                        control_min,
-                        control_max,
-                    } => {
-                        let min = controls.get_with_string(control_min).ok_or_else(|| {
-                            anyhow!("No control found for reference '{control_min}'")
-                        })?;
-                        let max = controls.get_with_string(control_max).ok_or_else(|| {
-                            anyhow!("No control found for reference '{control_max}'")
-                        })?;
-                        (Some(min), Some(max), None)
-                    }
-                },
+            let range_time_control = if let Some(control_refs) = control_refs {
+                Some(controls.get_range_time_control(control_refs, simulation_time_iterator)?)
+            } else {
+                None
             };
 
             Ok(HeatSourceFromInput {
@@ -5115,9 +5097,7 @@ fn heat_source_from_input(
                         *power,
                         energy_supply_conn,
                         simulation_time_iterator.step_in_hours(),
-                        control_min,
-                        control_max,
-                        // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
+                        range_time_control,
                     )),
                 ))),
                 energy_supply_conn_name: name.into(),

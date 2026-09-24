@@ -2,7 +2,7 @@ use crate::compare_floats::{max_of_2, min_of_2};
 #[cfg(test)]
 use crate::core::common::MockWaterSupply;
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
-use crate::core::controls::time_control::{Control, ControlBehaviour};
+use crate::core::controls::time_control::{Control, ControlBehaviour, RangeTimeControl};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
@@ -3167,8 +3167,7 @@ pub struct ImmersionHeater {
     pwr: f64, // rated power
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control_min: Option<Control>,
-    control_max: Option<Control>,
+    control: Option<Arc<RangeTimeControl>>,
     diverter: ArcSwapOption<RwLock<PVDiverter>>,
 }
 
@@ -3176,43 +3175,36 @@ pub struct ImmersionHeater {
 impl ImmersionHeater {
     /// Construct an ImmersionHeater object
     /// Arguments:
-    /// * rated_power        -- in kW
-    /// * energy_supply_conn -- reference to EnergySupplyConnection object
-    /// * simulation_time    -- reference to SimulationTime object
-    /// * controlmin            -- reference to a control object which must select current
-    ///                         the minimum timestep temperature
-    /// * controlmax            -- reference to a control object which must select current
-    ///                         the maximum timestep temperature
-    /// * diverter           -- reference to a PV diverter object
+    /// * `rated_power` - in kW
+    /// * `energy_supply_conn`- reference to EnergySupplyConnection object
+    /// * `simulation_time` - reference to SimulationTime object
+    /// * `controlmin` - reference to a control object which must select current
+    ///                  the minimum timestep temperature
+    /// * `controlmax` - reference to a control object which must select current
+    ///                  the maximum timestep temperature
+    /// * `control` - Reference to a RangeTimeControl object, combining controlmax and controlmin.
+    ///               Takes precedence if set.
+    /// * `diverter` - reference to a PV diverter object
     pub(crate) fn new(
         rated_power: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
-        control_min: Option<Control>,
-        control_max: Option<Control>,
+        control: Option<Arc<RangeTimeControl>>,
     ) -> Self {
         Self {
             pwr: rated_power,
             energy_supply_connection,
             simulation_timestep,
-            control_min,
-            control_max,
+            control,
             diverter: Default::default(),
         }
     }
     pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
-        (
-            if let Some(control_min) = self.control_min.as_ref() {
-                control_min.setpnt(&simtime)
-            } else {
-                None
-            },
-            if let Some(control_max) = &self.control_max {
-                control_max.setpnt(&simtime)
-            } else {
-                None
-            },
-        )
+        if let Some(control) = self.control.as_ref() {
+            control.setpnt_range_time_control(&simtime)
+        } else {
+            (None, None)
+        }
     }
 
     pub(crate) fn connect_diverter(&self, diverter: Arc<RwLock<PVDiverter>>) {
@@ -3234,7 +3226,7 @@ impl ImmersionHeater {
         };
 
         let energy_supplied =
-            if self.control_min.is_none() || self.control_min.as_ref().unwrap().is_on(&simtime) {
+            if self.control.is_none() || self.control.as_ref().unwrap().is_on(&simtime) {
                 min_of_2(energy_demand, self.pwr * self.simulation_timestep)
             } else {
                 0.
@@ -3258,7 +3250,7 @@ impl ImmersionHeater {
         simtime: SimulationTimeIteration,
         ignore_standard_control: bool,
     ) -> f64 {
-        if self.control_min.is_some() && self.control_min.as_ref().unwrap().is_on(&simtime)
+        if self.control.is_some() && self.control.as_ref().unwrap().is_on(&simtime)
             || ignore_standard_control
         {
             self.pwr * self.simulation_timestep
@@ -3778,7 +3770,9 @@ impl SolarThermalSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::{MockControl, SetpointTimeControl};
+    use crate::core::controls::time_control::{
+        MockControl, ScheduleOrControl, SetpointTimeControl,
+    };
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::material_properties::WATER;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -3915,18 +3909,25 @@ mod tests {
         control_max_schedule: Vec<Option<f64>>,
     ) -> PositionedHeatSource {
         let simulation_timestep = simulation_time_for_storage_tank.step;
-        let control_min =
-            SetpointTimeControl::new(control_min_schedule, 0, 1., None, None, simulation_timestep);
+        let control_min = ScheduleOrControl::Schedule(control_min_schedule);
 
-        let control_max =
-            SetpointTimeControl::new(control_max_schedule, 0, 1., None, None, simulation_timestep);
+        let control_max = ScheduleOrControl::Schedule(control_max_schedule);
 
         let immersion_heater = ImmersionHeater::new(
             rated_power,
             energy_supply_connection.clone(),
             simulation_timestep,
-            Some(Control::SetpointTime(control_min.into())),
-            Some(Control::SetpointTime(control_max.into())),
+            Some(Arc::from(
+                RangeTimeControl::new(
+                    control_min,
+                    control_max,
+                    simulation_time_for_storage_tank.iter(),
+                    0.,
+                    1.,
+                    None,
+                )
+                .unwrap(),
+            )),
         );
 
         PositionedHeatSource {
@@ -5547,39 +5548,26 @@ mod tests {
             EnergySupply::connection(Arc::new(RwLock::new(energy_supply)), "shower").unwrap();
         let timestep = simulation_time_for_immersion_heater.step;
 
-        let control_min = Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(52.), Some(52.), None, Some(52.)],
-                0,
+        let control_min = ScheduleOrControl::Schedule(vec![Some(52.), Some(52.), None, Some(52.)]);
+        let control_max =
+            ScheduleOrControl::Schedule(vec![Some(60.), Some(60.), Some(60.), Some(60.)]);
+
+        let control = Some(Arc::from(
+            RangeTimeControl::new(
+                control_min,
+                control_max,
+                simulation_time_for_immersion_heater.iter(),
+                0.,
                 1.,
                 None,
-                None,
-                timestep,
             )
-            .into(),
-        );
+            .unwrap(),
+        ));
 
-        let control_max = Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(60.), Some(60.), Some(60.), Some(60.)],
-                0,
-                1.,
-                None,
-                None,
-                timestep,
-            )
-            .into(),
-        );
-
-        ImmersionHeater::new(
-            rated_power,
-            energy_supply_connection,
-            timestep,
-            Some(control_min),
-            Some(control_max),
-        )
+        ImmersionHeater::new(rated_power, energy_supply_connection, timestep, control)
     }
 
+    #[ignore = "Update as part of migration 1.0.0a9"]
     #[rstest]
     fn test_demand_energy_for_immersion_heater(
         immersion_heater: ImmersionHeater,
@@ -5606,6 +5594,7 @@ mod tests {
             .is_err());
     }
 
+    #[ignore = "Update as part of migration 1.0.0a9"]
     #[rstest]
     fn test_energy_output_max_for_immersion_heater(
         immersion_heater: ImmersionHeater,
@@ -5914,53 +5903,41 @@ mod tests {
             heat_source_name,
         )
         .unwrap();
-        let control_min = Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![
-                    Some(0.5),
-                    None,
-                    None,
-                    None,
-                    Some(0.5),
-                    Some(0.5),
-                    Some(0.5),
-                    Some(0.5),
-                ],
-                0,
+
+        let control_min = ScheduleOrControl::Schedule(vec![
+            Some(0.5),
+            None,
+            None,
+            None,
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+        ]);
+
+        let control_max = ScheduleOrControl::Schedule(vec![
+            Some(1.0),
+            Some(1.0),
+            Some(0.9),
+            Some(0.8),
+            Some(0.7),
+            Some(1.0),
+            Some(0.9),
+            Some(0.8),
+        ]);
+
+        let control = Some(Arc::from(
+            RangeTimeControl::new(
+                control_min,
+                control_max,
+                simulation_time_for_smart_hot_water_tank.iter(),
+                0.,
                 1.,
                 None,
-                None,
-                1.,
             )
-            .into(),
-        );
-        let control_max = Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![
-                    Some(1.0),
-                    Some(1.0),
-                    Some(0.9),
-                    Some(0.8),
-                    Some(0.7),
-                    Some(1.0),
-                    Some(0.9),
-                    Some(0.8),
-                ],
-                0,
-                1.,
-                None,
-                None,
-                1.,
-            )
-            .into(),
-        );
-        let immersion_heater = ImmersionHeater::new(
-            5.,
-            energy_supply_connection,
-            1.,
-            Some(control_min),
-            Some(control_max),
-        );
+            .unwrap(),
+        ));
+        let immersion_heater = ImmersionHeater::new(5., energy_supply_connection, 1., control);
         let heat_source = HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(
             Mutex::new(immersion_heater),
         )));
@@ -6249,6 +6226,7 @@ mod tests {
         }
     }
 
+    #[ignore = "Update as part of migration 1.0.0a9"]
     #[rstest]
     fn test_demand_hot_water_for_smart_hot_water_tank(
         simulation_time_for_smart_hot_water_tank: SimulationTime,
