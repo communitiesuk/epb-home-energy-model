@@ -547,7 +547,7 @@ mod tests {
             ScheduleOrControl::Schedule(vec![None, None]),
             ScheduleOrControl::Schedule(vec![None, None]),
             simulation_time.iter(),
-            0.,
+            0,
             1.,
             None,
         )

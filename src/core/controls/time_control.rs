@@ -793,7 +793,7 @@ pub(crate) enum ScheduleOrControl<T> {
 pub(crate) struct RangeTimeControl {
     schedule_lower: ScheduleOrControl<Option<f64>>,
     schedule_upper: ScheduleOrControl<Option<f64>>,
-    start_day: f64,
+    start_day: u32,
     time_series_step: f64,
     timesteps_advstart: u32,
 }
@@ -803,7 +803,7 @@ impl RangeTimeControl {
         schedule_lower: ScheduleOrControl<Option<f64>>,
         schedule_upper: ScheduleOrControl<Option<f64>>,
         simulation_time_iterator: SimulationTimeIterator,
-        start_day: f64,
+        start_day: u32,
         time_series_step: f64,
         duration_advanced_start: Option<f64>,
     ) -> anyhow::Result<Self> {
@@ -840,8 +840,11 @@ impl RangeTimeControl {
         simulation_time_iteration: &SimulationTimeIteration,
         schedule: &ScheduleOrControl<Option<f64>>,
     ) -> Option<f64> {
+        let schedule_idx =
+            simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
+
         let setpnt = match schedule {
-            ScheduleOrControl::Schedule(schedule) => schedule[simulation_time_iteration.index],
+            ScheduleOrControl::Schedule(schedule) => schedule[schedule_idx],
             ScheduleOrControl::Control(control) => control.setpnt(simulation_time_iteration),
         };
 
@@ -940,7 +943,7 @@ impl ControlBehaviour for RangeTimeControl {
 
         let previous_simulation_time_iteration = SimulationTimeIteration {
             index: simulation_time_iteration.index - 1,
-            time: simulation_time_iteration.time, // this is not used TODO check it is correct
+            time: simulation_time_iteration.time - 1.,
             timestep: simulation_time_iteration.timestep,
         };
 
@@ -2444,7 +2447,7 @@ mod tests {
                 schedule_lower,
                 schedule_upper,
                 simulation_time.iter(),
-                0.,
+                0,
                 1.,
                 duration_advanced_start,
             )
@@ -2476,7 +2479,7 @@ mod tests {
                 schedule_lower,
                 schedule_upper,
                 simulation_time().iter(),
-                0.,
+                0,
                 1.,
                 None,
             );
@@ -2507,7 +2510,7 @@ mod tests {
                 schedule_lower,
                 schedule_upper,
                 simulation_time().iter(),
-                0.,
+                0,
                 1.,
                 None,
             );
@@ -2538,7 +2541,7 @@ mod tests {
                 schedule_lower,
                 schedule_upper,
                 simulation_time().iter(),
-                0.,
+                0,
                 1.,
                 None,
             );
@@ -3921,7 +3924,7 @@ mod tests {
                         .collect(),
                 ),
                 simulation_time_1.iter(),
-                0.,
+                0,
                 1.,
                 None,
             )

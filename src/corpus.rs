@@ -3563,7 +3563,7 @@ impl Controls {
                     ScheduleOrControl::Control(min),
                     ScheduleOrControl::Control(max),
                     simulation_time_iterator.clone(),
-                    0., // TODO assuming this is zero for now
+                    0, // TODO assuming this is zero for now
                     simulation_time_iterator.step_in_hours(),
                     None,
                 )?

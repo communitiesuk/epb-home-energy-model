@@ -3922,7 +3922,7 @@ mod tests {
                     control_min,
                     control_max,
                     simulation_time_for_storage_tank.iter(),
-                    0.,
+                    0,
                     1.,
                     None,
                 )
@@ -5557,7 +5557,7 @@ mod tests {
                 control_min,
                 control_max,
                 simulation_time_for_immersion_heater.iter(),
-                0.,
+                0,
                 1.,
                 None,
             )
@@ -5931,7 +5931,7 @@ mod tests {
                 control_min,
                 control_max,
                 simulation_time_for_smart_hot_water_tank.iter(),
-                0.,
+                0,
                 1.,
                 None,
             )

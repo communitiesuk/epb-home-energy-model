@@ -1813,9 +1813,7 @@ mod tests {
     }
 
     mod test_boiler_service_water_regular {
-        use crate::core::controls::time_control::{
-            RangeTimeControl, ScheduleOrControl, SetpointOrCombinationControl, SetpointTimeControl,
-        };
+        use crate::core::controls::time_control::{RangeTimeControl, ScheduleOrControl};
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{
@@ -1881,46 +1879,18 @@ mod tests {
         }
 
         #[fixture]
-        fn control_min() -> SetpointOrCombinationControl {
-            SetpointOrCombinationControl::SetpointTime(
-                SetpointTimeControl::new(
-                    vec![Some(52.), Some(52.), None],
-                    0,
-                    1.,
-                    Default::default(),
-                    Default::default(),
-                    1.,
-                )
-                .into(),
-            )
-        }
-
-        #[fixture]
-        fn control_max() -> SetpointOrCombinationControl {
-            SetpointOrCombinationControl::SetpointTime(
-                SetpointTimeControl::new(
-                    vec![Some(60.), Some(60.), None],
-                    0,
-                    1.,
-                    Default::default(),
-                    Default::default(),
-                    1.,
-                )
-                .into(),
-            )
-        }
-        #[fixture]
         fn boiler_service<'a>(
             boiler: Boiler,
             simulation_time: SimulationTime,
-            control_min: SetpointOrCombinationControl,
-            control_max: SetpointOrCombinationControl,
         ) -> BoilerServiceWaterRegular {
+            let control_min_schedule = vec![Some(52.), Some(52.), None];
+            let control_max_schedule = vec![Some(60.), Some(60.), None];
+
             let range_time_control = RangeTimeControl::new(
-                ScheduleOrControl::Control(control_min.into_control()),
-                ScheduleOrControl::Control(control_max.into_control()),
+                ScheduleOrControl::Schedule(control_min_schedule),
+                ScheduleOrControl::Schedule(control_max_schedule),
                 simulation_time.iter(),
-                0.,
+                0,
                 1.,
                 None,
             )
@@ -2413,7 +2383,7 @@ mod tests {
                 ScheduleOrControl::Schedule(control_min_schedule),
                 ScheduleOrControl::Schedule(control_max_schedule),
                 simulation_time.iter(),
-                0.,
+                0,
                 1.,
                 None,
             )

@@ -6070,7 +6070,7 @@ mod tests {
             ScheduleOrControl::Schedule(vec![Some(10.)]),
             ScheduleOrControl::Schedule(vec![Some(20.)]),
             simulation_time_for_heat_pump.iter(),
-            0.,
+            0,
             1.,
             None,
         )
@@ -7466,7 +7466,7 @@ mod tests {
                 ScheduleOrControl::Schedule(vec![Some(52.), Some(52.), None, Some(52.)]),
                 ScheduleOrControl::Schedule(vec![Some(60.), Some(60.), Some(60.), Some(60.)]),
                 simulation_time_for_heat_pump.iter(),
-                0.,
+                0,
                 1.,
                 None,
             )
@@ -8122,7 +8122,7 @@ mod tests {
             ScheduleOrControl::Schedule(control_schedule.clone()),
             ScheduleOrControl::Schedule(control_schedule),
             simulation_time_for_heat_pump.iter(),
-            0.0,
+            0,
             0.0,
             None,
         )
@@ -10646,7 +10646,7 @@ mod tests {
             ScheduleOrControl::Schedule(vec![Some(21.0), Some(22.0)]),
             ScheduleOrControl::Schedule(vec![Some(21.0), Some(22.0)]),
             simulation_time().iter(),
-            0.,
+            0,
             1.,
             None,
         )

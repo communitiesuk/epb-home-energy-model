@@ -4565,7 +4565,7 @@ mod tests {
                     ScheduleOrControl::Schedule(schedule_lower),
                     ScheduleOrControl::Schedule(schedule_upper),
                     simtime.iter(),
-                    0.,
+                    0,
                     1.0,
                     None,
                 )
