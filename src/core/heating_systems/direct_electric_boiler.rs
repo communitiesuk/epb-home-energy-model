@@ -1,6 +1,6 @@
 use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSupply;
-use crate::core::controls::time_control::{Control, RangeTimeControl};
+use crate::core::controls::time_control::{RangeTimeControl, SetpointOrCombinationControl};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{
     BoilerForBoilerService, BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
@@ -24,7 +24,7 @@ pub struct DirectElectricBoiler {
     external_conditions: Arc<ExternalConditions>,
     energy_supply_connections: IndexMap<smartstring::alias::String, EnergySupplyConnection>,
     energy_supply_connection_aux: EnergySupplyConnection,
-    service_results: RwLock<Vec<crate::core::heating_systems::boiler::ServiceResult>>,
+    service_results: RwLock<Vec<ServiceResult>>,
     boiler_power: f64,
     power_circ_pump: f64,
     power_standby: f64,
@@ -125,7 +125,7 @@ impl DirectElectricBoiler {
     ///                the maximum timestep temperature
     /// `control` - reference to a RangeTimeControl object, combining controlmax and controlmin.
     ///             Takes precedence if set.
-    fn create_service_hot_water_regular(
+    pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
         control: Arc<RangeTimeControl>,
@@ -146,7 +146,9 @@ impl DirectElectricBoiler {
     fn create_service_space_heating(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control: Control, // TODO 1.0.0a9 this is a ControlSetPoint in Python
+        // TODO (1.0.0a9) review control type. ControlSetPoint in Python is implemented by:
+        // SetpointTimeControl, CombinationTimeControl, ChargeControlSetPointAdapter
+        control: SetpointOrCombinationControl,
     ) -> anyhow::Result<BoilerServiceSpace> {
         boiler.write().create_service_connection(service_name)?;
         Ok(BoilerServiceSpace::new(
@@ -575,7 +577,7 @@ mod tests {
         let boiler_service_result = DirectElectricBoiler::create_service_space_heating(
             Arc::new(RwLock::new(boiler)),
             service_name,
-            Control::SetpointTime(control.into()),
+            SetpointOrCombinationControl::SetpointTime(control.into()),
         );
         assert!(boiler_service_result.is_ok());
     }

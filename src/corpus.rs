@@ -2,7 +2,7 @@ use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{
     ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl,
     OnOffCostMinimisingTimeControl, OnOffTimeControl, RangeTimeControl, ScheduleOrControl,
-    SetpointTimeControl, SmartApplianceControl,
+    SetpointOrCombinationControl, SetpointTimeControl, SmartApplianceControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::cooling_systems::space_cool_system_base::SpaceCoolSystem;
@@ -137,7 +137,6 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use ndarray::range;
 
 /// As of adopting Rust 1.82 as an MSRV we'll be able to declare this using constants as it supports floating-point arithmetic at compile time
 fn temp_setpnt_heat_none() -> f64 {
@@ -5201,26 +5200,31 @@ fn heat_source_from_input(
                             &energy_supply_conn_name,
                             temp_flow_limit_upper.ok_or_else(|| anyhow!("A temp_flow_limit_upper is needed for heat pump with the name '{name}'"))?,
                             Arc::new(cold_water_source.clone()),
-                            range_time_control
+                            range_time_control,
                         )?),
                     )),
                     WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
                         HeatSourceWet::WaterRegular(Boiler::create_service_hot_water_regular(
                             boiler.clone(),
                             energy_supply_conn_name.as_str(),
-                            range_time_control
+                            range_time_control,
                         )?),
                     )),
-                    WetHeatSource::DirectElectricBoiler(ref mut _boiler) =>
-                        todo!("migration to 1.0.0a9"),
+                    WetHeatSource::DirectElectricBoiler(ref mut boiler) =>
+                        HeatSource::Wet(Box::new(
+                            HeatSourceWet::WaterRegular(DirectElectricBoiler::create_service_hot_water_regular(
+                                boiler.clone(),
+                                energy_supply_conn_name.as_str(),
+                                range_time_control,
+                            )?),
+                        )),
                     WetHeatSource::Hiu(heat_network) => {
                         HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
                             HeatNetwork::create_service_hot_water_storage(
                                 heat_network,
                                 &energy_supply_conn_name,
-                                todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                                todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                                // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
+                                todo!(), // TODO: update as part of 1.0.0a9 migration
+                                todo!(), // TODO: update as part of 1.0.0a9 migration
                             ),
                         )))
                     }
@@ -5231,9 +5235,8 @@ fn heat_source_from_input(
                                     dry_core,
                                     &energy_supply_conn_name,
                                     cold_water_source.clone(),
-                                    todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                                    todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                                    // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
+                                    todo!(), // TODO: update as part of 1.0.0a9 migration
+                                    todo!(), // TODO: update as part of 1.0.0a9 migration
                                 )?,
                             ),
                             HeatBattery::Pcm(pcm) => HeatBatteryWaterService::Pcm(
@@ -5241,9 +5244,8 @@ fn heat_source_from_input(
                                     pcm,
                                     &energy_supply_conn_name,
                                     cold_water_source.clone(),
-                                    todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                                    todo!(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                                    // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
+                                    todo!(), // TODO: update as part of 1.0.0a9 migration
+                                    todo!(), // TODO: update as part of 1.0.0a9 migration
                                 )?,
                             ),
                         }),
@@ -5309,9 +5311,8 @@ fn heat_source_from_input(
                         *heat_exchanger_surface_area_declared,
                         *daily_losses_declared,
                         simulation_time_iterator.step_in_hours(),
-                        control_min.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                        control_max.unwrap(), // TODO: update this to be optional as part of 1.0.0a9 migration
-                        // TODO as part of migration to 1.0.0a9 (pass in control also to match Python)
+                        control_min.unwrap(), // TODO: update as part of 1.0.0a9 migration
+                        control_max.unwrap(), // TODO: update as part of 1.0.0a9 migration
                     ),
                 ))),
                 energy_supply_conn_name: energy_supply_conn_name.into(),
@@ -6050,7 +6051,7 @@ fn space_heat_systems_from_input(
                         let charge_control = controls.get_with_string(control_charger).ok_or_else(|| anyhow!("Space heat system references an invalid charge control name '{control_charger}'"))?;
                         SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(*pwr_in, *rated_power_instant, *storage_capacity, *air_flow_type, *frac_convective, *fan_pwr, *n_units, zone_setpoint_init, ZoneTempInternalAir(zone).as_fn(), energy_supply_conn, simulation_time, control, charge_control, dry_core_min_output.clone(), dry_core_max_output.clone(), external_conditions.clone(), *state_of_charge_init, Some(detailed_output_heating_cooling))?)
                     }
-                    SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, flow_data, bypass_fraction_recirculated, heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, zone, pipework, .. } => {
+                    SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, flow_data, bypass_fraction_recirculated, heat_source, temp_diff_emit_dsgn, control: control_name, thermal_mass, ecodesign_controller, design_flow_temp, zone, pipework, .. } => {
                         let zone: Arc<str> = zone.as_str().into();
                         let heat_source_name = &heat_source.name;
                         let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;
@@ -6061,7 +6062,13 @@ fn space_heat_systems_from_input(
                         let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
                         let mut with_buffer_tank = false;
 
-                        let control = controls.get_with_string(control).ok_or_else(|| anyhow!("A control object was expected for wet heat source: '{heat_source_name}'"))?;
+                        let control = controls.get_with_string(control_name).ok_or_else(|| anyhow!("A control object was expected for wet heat source: '{heat_source_name}'"))?;
+
+                        let setpoint_or_combination_control = match &control {
+                            Control::SetpointTime(control) => SetpointOrCombinationControl::SetpointTime(control.clone()),
+                            Control::CombinationTime(control) => SetpointOrCombinationControl::CombinationTime(control.clone()),
+                            _ => bail!("Control {control_name} was expected to be a SetPointTimeControl or CombinationTimeControl")
+                        };
 
                         let heat_source_service: SpaceHeatingService =
                             match heat_source {
@@ -6087,8 +6094,9 @@ fn space_heat_systems_from_input(
                                         temp_flow_limit_upper.expect("Expected a temp_flow_limit_upper to be present for a heat pump"),
                                         *temp_diff_emit_dsgn,
                                         *design_flow_temp,
-                                        control,
-                                        volume_heated);
+                                        setpoint_or_combination_control,
+                                        volume_heated,
+                                    );
 
                                     if heat_pump.lock().source_is_exhaust_air() {
                                         // Record heating system as potentially requiring overventilation
@@ -6097,10 +6105,10 @@ fn space_heat_systems_from_input(
                                     SpaceHeatingService::HeatPump(heat_source_service?)
                                 }
                                 WetHeatSource::DirectElectricBoiler(_boiler) => {
-                                   todo!("migration to 1.0.0a9")
+                                    todo!("migration to 1.0.0a9")
                                 }
                                 WetHeatSource::Boiler(boiler) => {
-                                    let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), &energy_supply_conn_name, control);
+                                    let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), &energy_supply_conn_name, setpoint_or_combination_control);
                                     SpaceHeatingService::Boiler(heat_source_service)
                                 }
                                 WetHeatSource::Hiu(heat_network) => {
@@ -6164,14 +6172,19 @@ fn space_heat_systems_from_input(
                     SpaceHeatSystemDetails::WarmAir {
                         frac_convective,
                         heat_source,
-                        control,
+                        control: control_name,
                         ..
                     } => {
                         let heat_source_name = &heat_source.name;
                         let energy_supply_conn_name: Arc<str> = [heat_source_name, "_space_heating: ", &system_name].concat().into();
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                         let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
-                        let control = controls.get_with_string(control).ok_or_else(|| anyhow!("Unknown control object reference '{control}' encountered"))?;
+                        let control = controls.get_with_string(control_name).ok_or_else(|| anyhow!("Unknown control object reference '{control_name}' encountered"))?;
+                        let setpoint_or_combination_control = match &control {
+                            Control::SetpointTime(control) => SetpointOrCombinationControl::SetpointTime(control.clone()),
+                            Control::CombinationTime(control) => SetpointOrCombinationControl::CombinationTime(control.clone()),
+                            _ => bail!("Control {control_name} was expected to be a SetPoint or Combination Time Control for Space Heat Services")
+                        };
 
                         match heat_source {
                             WetHeatSource::HeatPump(heat_pump) => {
@@ -6179,7 +6192,7 @@ fn space_heat_systems_from_input(
                                     heat_system_names_requiring_overvent.push(system_name.clone());
                                 }
                                 let volume_heated = total_volume_heated_by_system(zones, heat_system_name_for_zone, &system_name);
-                                SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), &energy_supply_conn_name, control, *frac_convective, volume_heated)?)
+                                SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), &energy_supply_conn_name, setpoint_or_combination_control, *frac_convective, volume_heated)?)
                             }
                             _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
                         }
@@ -6264,20 +6277,20 @@ fn on_site_generation_from_input(
                     energy_supply
                 ) = match generation_details {
                     PhotovoltaicInputs::DeprecatedStyle(PhotovoltaicSystemInput {
-                        peak_power,
-                        ventilation_strategy,
-                        pitch,
+                                                            peak_power,
+                                                            ventilation_strategy,
+                                                            pitch,
                                                             orientation360: orientation,
-                        base_height,
-                        height,
-                        width,
-                        energy_supply,
-                        shading,
-                        inverter_peak_power_dc,
-                        inverter_peak_power_ac,
-                        inverter_is_inside,
-                        inverter_type, ..
-                    }) => {
+                                                            base_height,
+                                                            height,
+                                                            width,
+                                                            energy_supply,
+                                                            shading,
+                                                            inverter_peak_power_dc,
+                                                            inverter_peak_power_ac,
+                                                            inverter_is_inside,
+                                                            inverter_type, ..
+                                                        }) => {
                         (
                             vec![PhotovoltaicPanel::new(*peak_power, *ventilation_strategy, *pitch, *orientation, *base_height, *height, *width, simulation_time_iterator.step_in_hours(), shading.to_vec())],
                             *inverter_peak_power_dc,
@@ -6288,8 +6301,8 @@ fn on_site_generation_from_input(
                         )
                     }
                     PhotovoltaicInputs::WithPanels(PhotovoltaicSystemWithPanelsInput {
-                       energy_supply, inverter_is_inside, inverter_peak_power_ac, inverter_peak_power_dc, inverter_type, panels, ..
-                    }) => {
+                                                       energy_supply, inverter_is_inside, inverter_peak_power_ac, inverter_peak_power_dc, inverter_type, panels, ..
+                                                   }) => {
                         (
                             panels
                                 .iter()
