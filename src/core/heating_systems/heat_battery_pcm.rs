@@ -2426,7 +2426,7 @@ mod tests {
                     Some(55.),
                 ]),
                 simulation_time_iterator,
-                0.,
+                0,
                 1.,
                 None,
             )
@@ -2505,7 +2505,7 @@ mod tests {
                 ScheduleOrControl::Schedule(vec![None]),
                 ScheduleOrControl::Schedule(vec![None]),
                 simulation_time_iterator.clone(),
-                0.,
+                0,
                 1.,
                 None,
             )
@@ -3595,7 +3595,7 @@ mod tests {
             ScheduleOrControl::Schedule(vec![]),
             ScheduleOrControl::Schedule(vec![]),
             simulation_time.iter(),
-            0.,
+            0,
             1.,
             None,
         )
@@ -4228,7 +4228,7 @@ mod tests {
                 ScheduleOrControl::Schedule(vec![]),
                 ScheduleOrControl::Schedule(vec![]),
                 simulation_time_iterator,
-                0.,
+                0,
                 1.,
                 None,
             )
