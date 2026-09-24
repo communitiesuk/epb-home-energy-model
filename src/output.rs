@@ -192,11 +192,15 @@ pub struct OutputCop {
 pub struct OutputEmitters {
     /// Current time step
     pub simulation_time_idx: usize,
-    /// Energy demand (unit: kWh)
+    /// Net energy output requested from the emitter (unit: kWh). May be
+    /// negative (between zero and emitter minimum output) when the emitter
+    /// is below room temperature and would cool the heated space below the
+    /// heating setpoint if the emitter is not actively heated to reduce heat
+    /// absorption from the heated space.
     pub energy_demand: f64,
     /// Required emitter temperature to satisfy zone setpoint (unit: Celsius)
     pub temp_emitter_required: f64,
-    /// Time at which the emitter begins operating
+    /// Time at which the emitter begins operating (unit: hours)
     pub time_heating_start: f64,
     /// Energy provided by heat source (unit: kWh)
     pub energy_provided_by_heat_source: f64,
@@ -248,12 +252,16 @@ pub struct OutputCore {
     pub energy_to_storage: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy discharged from storage to consumption (unit: kWh)
     pub energy_from_storage: IndexMap<Arc<str>, Vec<f64>>,
+    /// Total energy exported from storage to grid (unit: kWh)
+    pub storage_to_grid: IndexMap<Arc<str>, Vec<f64>>,
     /// Energy imported from the grid to storage. Does not include energy from on-site generation to storage (unit: kWh)
     pub storage_from_grid: IndexMap<Arc<str>, Vec<f64>>,
     /// Battery charge level (unit: ratio 0 to 1)
     pub battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>>,
     /// Surplus on-site generation diverted to PV diverter, e.g. immersion heater (unit: kWh)
     pub energy_diverted: IndexMap<Arc<str>, Vec<f64>>,
+    /// On-site generation curtailed because grid export reached the export power limit. Neither consumed, stored, diverted nor exported (unit: kWh)
+    pub generation_curtailed: IndexMap<Arc<str>, Vec<f64>>,
     /// Fraction of on-site generation immediately consumed within the dwelling. Does not include energy to storage or diverters (unit: ratio 0 to 1)
     pub beta_factor: IndexMap<Arc<str>, Vec<f64>>,
     /// List of the unique zone names in the zone data
@@ -314,15 +322,19 @@ pub struct OutputSummaryEnergySupply {
     pub generation_to_grid: f64,
     /// Total surplus on-site generation diverted to PV diverter, e.g. immersion heater (unit: kWh)
     pub generation_to_diverter: f64,
+    /// Total on-site generation curtailed because grid export reached the export power limit. Neither consumed, stored, diverted nor exported (unit: kWh)
+    pub generation_curtailed: f64,
     /// Total energy imported from the grid directly to consumption. Does not include grid to battery charging (unit: kWh)
     pub grid_to_consumption: f64,
     /// Total energy imported from the grid to storage. Does not include on-site generation to storage (unit: kWh)
     pub grid_to_storage: f64,
+    /// Total energy exported from storage to grid (unit: kWh)
+    pub storage_to_grid: f64,
     /// Total on-site generation put into storage. Does not include energy from the grid to storage (unit: kWh)
     pub generation_to_storage: f64,
     /// Total energy discharged from storage to consumption (unit: kWh)
     pub storage_to_consumption: f64,
-    /// Storage round-trip efficiency: total energy discharged from storage divided by total energy put into storage from both grid and on-site generation (unit: kWh)
+    /// Storage round-trip efficiency: total energy discharged from storage divided by total energy put into storage from both grid and on-site generation (unit: ratio)
     pub storage_efficiency: Option<f64>,
     /// Net import: total gross import minus total gross export (unit: kWh)
     pub net_import: f64,
@@ -365,7 +377,7 @@ pub struct OutputSummary {
     pub energy_supply: IndexMap<Arc<str>, OutputSummaryEnergySupply>,
     /// Delivered energy summary, total energy per fuel and end-use (unit: kWh)
     pub delivered_energy: IndexMap<Arc<str>, IndexMap<Arc<str>, f64>>,
-    /// 75th percentile of hot water demand summed over each 24 hour segment of the simulation.
+    /// 75th percentile of hot water demand summed over each 24 hour segment of the simulation (unit: litres)
     pub hot_water_demand_daily_75th_percentile: IndexMap<Arc<str>, f64>,
 }
 

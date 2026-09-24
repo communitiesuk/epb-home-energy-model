@@ -2677,8 +2677,10 @@ impl Corpus {
         let mut energy_to_storage: IndexMap<Arc<str>, Vec<f64>> = Default::default();
         let mut energy_from_storage: IndexMap<Arc<str>, Vec<f64>> = Default::default();
         let mut storage_from_grid: IndexMap<Arc<str>, Vec<f64>> = Default::default();
+        let mut storage_to_grid: IndexMap<Arc<str>, Vec<f64>> = Default::default();
         let mut battery_state_of_charge: IndexMap<Arc<str>, Vec<f64>> = Default::default();
         let mut energy_diverted: IndexMap<Arc<str>, Vec<f64>> = Default::default();
+        let mut generation_curtailed: IndexMap<Arc<str>, Vec<f64>> = Default::default();
         let mut beta_factor: IndexMap<Arc<str>, Vec<f64>> = Default::default();
         for (name, supply) in self
             .energy_supplies
@@ -2697,13 +2699,18 @@ impl Corpus {
                 name.clone(),
                 supply.get_energy_generated_consumed().to_owned(),
             );
-            let (energy_to, energy_from, storage_from, _storage_to, state_of_charge) =
+            let (energy_to, energy_from, storage_from, storage_to, state_of_charge) =
                 supply.get_battery_energy_flows();
             energy_to_storage.insert(name.clone(), energy_to.to_owned());
             energy_from_storage.insert(name.clone(), energy_from.to_owned());
             storage_from_grid.insert(name.clone(), storage_from.to_owned());
+            storage_to_grid.insert(name.clone(), storage_to.to_owned());
             battery_state_of_charge.insert(name.clone(), state_of_charge.to_owned());
             energy_diverted.insert(name.clone(), supply.get_energy_diverted().to_owned());
+            generation_curtailed.insert(
+                name.clone(),
+                supply.get_energy_generation_curtailed().to_owned(),
+            );
             beta_factor.insert(name, supply.get_beta_factor().to_owned());
         }
 
@@ -2761,8 +2768,10 @@ impl Corpus {
             energy_to_storage,
             energy_from_storage,
             storage_from_grid,
+            storage_to_grid,
             battery_state_of_charge,
             energy_diverted,
+            generation_curtailed,
             beta_factor,
             zone_data: output_zone_data,
             zone_list,
@@ -2918,11 +2927,15 @@ impl Corpus {
             let generation_to_grid = FSum::with_all(&output_core.generation_to_grid[key])
                 .value()
                 .abs();
+            let storage_to_grid = FSum::with_all(&output_core.storage_to_grid[key])
+                .value()
+                .abs();
             let gen_to_storage = FSum::with_all(&output_core.energy_to_storage[key]).value();
             let storage_to_consumption = FSum::with_all(&output_core.energy_from_storage[key])
                 .value()
                 .abs();
             let gen_to_diverter = FSum::with_all(&output_core.energy_diverted[key]).value();
+            let gen_curtailed = FSum::with_all(&output_core.generation_curtailed[key]).value();
             let total_gross_import = FSum::with_all(&output_core.energy_import[key]).value();
             let total_gross_export = FSum::with_all(&output_core.energy_export[key]).value();
 
@@ -2943,6 +2956,7 @@ impl Corpus {
                         .iter()
                         .sum(),
                     generation_to_grid,
+                    storage_to_grid,
                     grid_to_consumption,
                     net_import: total_gross_import + total_gross_export,
                     generation_to_storage: gen_to_storage,
@@ -2951,6 +2965,7 @@ impl Corpus {
                         .value()
                         .abs(),
                     generation_to_diverter: gen_to_diverter,
+                    generation_curtailed: gen_curtailed,
                     storage_efficiency: Some(storage_eff),
                     total_gross_import,
                     total_gross_export,
