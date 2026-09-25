@@ -224,7 +224,8 @@ impl HeatBatteryWaterService {
     ) -> anyhow::Result<f64> {
         match self {
             HeatBatteryWaterService::Pcm(service) => {
-                service.energy_output_max(temp_flow, temp_return, simtime)
+                // adds false flag for compilation as part of 1.0.0a9 migration
+                service.energy_output_max(temp_flow, temp_return, simtime, false)
             }
             HeatBatteryWaterService::DryCore(service) => {
                 service.energy_output_max(temp_flow, temp_return, simtime)
