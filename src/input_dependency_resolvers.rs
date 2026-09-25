@@ -29,22 +29,30 @@ pub(crate) fn build_preheated_water_source_dependency_graph(
     graph
 }
 
-/// Returns a list of source names in initialization order (dependencies first)
-pub(crate) fn topological_sort_preheated_water_sources<T: Clone>(
+/// Returns a list of names in dependency order (dependencies first).
+fn topological_sort<T: Clone>(
     dependency_graph: &Graph<T, T>,
+    error_context: String,
 ) -> Result<Vec<T>, CircularDependencyError> {
     match toposort(dependency_graph, None) {
         Ok(ordered_nodes) => Ok(ordered_nodes
             .into_iter()
             .map(|node| dependency_graph[node].clone())
             .collect()),
-        Err(_) => Err(CircularDependencyError),
+        Err(_) => Err(CircularDependencyError(error_context)),
     }
 }
 
-#[derive(Debug, Error)]
-#[error("A circular dependency was found between defined preheated water sources.")]
-pub(crate) struct CircularDependencyError;
+/// Topological sort for PreHeatedWaterSource dependencies.
+pub(crate) fn topological_sort_preheated_water_sources<T: Clone>(
+    dependency_graph: &Graph<T, T>,
+) -> Result<Vec<T>, CircularDependencyError> {
+    topological_sort(dependency_graph, "PreHeatedWaterSource".into())
+}
+
+#[derive(Debug, Error, PartialEq)]
+#[error("Circular dependency detected in {0}")]
+pub(crate) struct CircularDependencyError(String);
 
 #[cfg(test)]
 mod tests {

@@ -4541,7 +4541,7 @@ impl WetHeatSource {
                     boiler_data,
                     temp_hot_water,
                     cold_feed,
-                    keep_hot_control
+                    keep_hot_control,
                 )
                 .map_err(|err| anyhow!(format!("{err}")))
             }
@@ -6423,6 +6423,7 @@ struct RequiredVentData {
 mod tests {
     use crate::corpus::{Corpus, OutputOptions};
     use crate::input::{HotWaterSourceDetails, Input};
+    use crate::input_dependency_resolvers::CircularDependencyError;
     use rstest::{fixture, rstest};
     use serde_json::json;
     use std::sync::Arc;
@@ -6629,10 +6630,7 @@ mod tests {
             &OutputOptions::default(),
         );
 
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "A circular dependency was found between defined preheated water sources."
-        )
+        assert!(result.unwrap_err().is::<CircularDependencyError>());
     }
 
     /// Test that chains of dependencies work regardless of initialization order
