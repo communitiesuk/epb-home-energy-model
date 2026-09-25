@@ -485,6 +485,10 @@ impl HeatBatteryPcmServiceSpace {
             simtime,
         )
     }
+
+    pub(crate) fn timestep_record_for_service() {
+        todo!("timestep_record_for_service is not yet implemented, unsure if this is helpful")
+    }
 }
 
 const DEFAULT_N_LAYERS: usize = 8; // Number of calculation layers in heat battery
@@ -492,7 +496,38 @@ const DEFAULT_TIME_STEP_SECONDS: f64 = 20.; // Time step for iterative calculati
 const DEFAULT_INLET_TEMP_CELSIUS: f64 = 10.; // Initial inlet temperature for Reynolds number calculation (°C)
 const DEFAULT_OUTLET_TEMP_CELSIUS: f64 = 53.; // Estimated outlet temperature for Reynolds number calculation (°C)
 
+// Surrounding air temperature assumed during the standing-loss
+// characterisation test. max_rated_losses is the loss measured with the
+// battery fully charged (at max_temperature) against this ambient, so the
+// rated temperature difference is (max_temperature - this value). The value
+// mirrors the reference ambient used for hot water cylinder standby losses
+// (BS EN 12897:2016).
 // nothing seems to read this - check upstream whether service_results field is necessary
+const TEMP_AMBIENT_RATED_LOSSES_C: f64 = 20.0;
+
+// Near-equilibrium per-sub-timestep energy transfers are small differences of
+// larger flows, so their floating-point cancellation floor sits well above the
+// 1e-10 used for one-off energy comparisons elsewhere. Testing such a value
+// against zero with too tight a tolerance lets it take a different branch on
+// different platforms, which accumulates into a divergent result (seen as a
+// Windows-vs-Linux e2e difference). 1e-6 is the tightest tolerance that holds
+// the decision stable across platforms, and is still ~7 orders of magnitude
+// below any meaningful transfer (a delivering zone moves tens of kJ per step).
+// Temperature comparisons do not suffer this cancellation, so they keep 1e-10.
+const NEGLIGIBLE_ENERGY_KJ: f64 = 1e-6;
+const NEGLIGIBLE_TEMP_DIFF_C: f64 = 1e-10;
+
+// Charging flow temperature is set above the target uniform PCM temperature
+// by this heat-exchanger approach difference. A heat source must run its
+// flow above the store's target temperature to drive heat across the
+// exchanger; charging at exactly the target would collapse the driving
+// temperature difference to zero as the layers approach it, so the store
+// would only ever approach the target asymptotically and never reach it
+// within a timestep. 5 °C is a typical charging approach difference. The
+// flow temperature is capped at the source's maximum, and the energy demand
+// is capped at the target SOC, so the store charges towards its target
+// temperature and does not exceed it.
+const CHARGE_APPROACH_TEMP_DIFF_C: f64 = 5.0;
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 struct HeatBatteryResult {
@@ -633,7 +668,11 @@ pub struct HeatBatteryPcm {
     flow_rate_l_per_min: f64,
     detailed_results: Option<Arc<RwLock<Vec<HeatBatteryTimestepResult>>>>,
 }
-
+/// PCM heat battery that can be charged electrically, hydronically, or both.
+/// Models a phase-change-material heat battery that can be charged by electric
+/// elements, hydronic heat sources (heat pumps, solar thermal, etc.), or a
+/// combination of both with non-overlapping schedules. Provides space heating
+/// and hot water (regular and direct).
 impl HeatBatteryPcm {
     pub(crate) fn new(
         heat_battery_details: &HeatSourceWetDetails,
