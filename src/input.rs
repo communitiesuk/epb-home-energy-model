@@ -4874,7 +4874,7 @@ pub enum FloorData {
 
         /// Reference to a SetpointTimeControl for smart air brick opening ratios (0-1)
         /// Name of a SetpointTimeControl defining smart air brick opening ratios (0 = fully closed, 1 = fully open)
-        #[serde(default)]
+        #[serde(default, rename = "Control_smart_air_brick")]
         control_smart_air_brick: Option<ArcStr>,
 
         /// Status of underfloor vents during airtightness test
@@ -7023,7 +7023,6 @@ mod tests {
         }
 
         #[rstest]
-        #[ignore = "ignore to complete during migration to 1.0.0a9"]
         fn test_validate_smart_appliance_control_names_found(baseline_demo_file_json: JsonValue) {
             let mut modified_input = merge_json_onto_base(
                 baseline_demo_file_json,
@@ -7372,7 +7371,6 @@ mod tests {
 
     /// Test that compatible exhaust air heat pump and ventilation combinations pass validation.
     #[rstest]
-    #[ignore = "ignore to fix during 1.0.0a9"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_valid_combinations(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -7461,7 +7459,6 @@ mod tests {
 
     /// Test edge cases where validation should pass regardless of configuration.
     #[rstest]
-    #[ignore = "ignore until completed during migration to 1.0.0a9"]
     fn test_validate_exhaust_air_heat_pump_ventilation_compatibility_edge_cases(
         baseline_demo_file_json: JsonValue,
     ) {
@@ -8381,9 +8378,87 @@ mod tests {
                 case::heat_exchanger_surface_area_greater_than_zero(json!({"heat_exchanger_surface_area": 0})
                 ),
                 case::volume_greater_than_zero(json!({"volume": 0})),
+                case::only_one_wet_heat_source_on_storage_tank(json!({
+                    "HeatSource": {
+                        "hp": {
+                            "type": "HeatSourceWet",
+                            "name": "hp",
+                            "temp_flow_limit_upper": 65,
+                            "Controlmin": "min_temp",
+                            "Controlmax": "setpoint_temp_max",
+                            "heater_position": 0.1,
+                            "thermostat_position": 0.33,
+                        },
+                        "hp2": {
+                            "type": "HeatSourceWet",
+                            "name": "hp",
+                            "temp_flow_limit_upper": 65,
+                            "Controlmin": "min_temp",
+                            "Controlmax": "setpoint_temp_max",
+                            "heater_position": 0.5,
+                            "thermostat_position": 0.6,
+                        },
+                    }
+                }))
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<HotWaterSourceDetails>(valid_example, inputs);
+            }
+
+            #[rstest]
+            fn test_integral_tank_forbids_heat_exchanger_area(valid_example: JsonValue) {
+                let mut modified_input = valid_example;
+                modified_input["HeatSource"] = hw_only_heat_pump_source(true.into());
+                modified_input["heat_exchanger_surface_area"] = 1.2.into();
+
+                let tank: HotWaterSourceDetails = serde_json::from_value(modified_input).unwrap();
+
+                assert!(tank.validate().is_err());
+            }
+
+            #[rstest]
+            fn test_integral_tank_allows_omitted_heat_exchanger_area(valid_example: JsonValue) {
+                let mut modified_input = valid_example;
+                modified_input["HeatSource"] = hw_only_heat_pump_source(true.into());
+
+                let tank: HotWaterSourceDetails = serde_json::from_value(modified_input).unwrap();
+
+                assert!(matches!(
+                    tank,
+                    HotWaterSourceDetails::StorageTank {
+                        details: StorageTankDetails {
+                            heat_exchanger_surface_area: None,
+                            ..
+                        },
+                    }
+                ));
+            }
+
+            #[rstest]
+            fn test_separate_tank_requires_heat_exchanger_area(valid_example: JsonValue) {
+                let mut modified_input = valid_example;
+                modified_input["HeatSource"] = hw_only_heat_pump_source(None);
+
+                let tank = serde_json::from_value::<HotWaterSourceDetails>(modified_input).unwrap();
+                assert!(tank.validate().is_err());
+            }
+
+            #[rstest]
+            fn test_separate_tank_accepts_heat_exchanger_area(valid_example: JsonValue) {
+                let mut modified_input = valid_example;
+                modified_input["HeatSource"] = hw_only_heat_pump_source(None);
+                modified_input["heat_exchanger_surface_area"] = json!(1.2);
+
+                let tank = serde_json::from_value::<HotWaterSourceDetails>(modified_input).unwrap();
+                assert!(matches!(
+                    tank,
+                    HotWaterSourceDetails::StorageTank {
+                        details: StorageTankDetails {
+                            heat_exchanger_surface_area: Some(1.2),
+                            ..
+                        },
+                    }
+                ));
             }
         }
     }
@@ -10855,8 +10930,7 @@ mod tests {
                     ),
                     case::thermal_transm_walls_greater_than_zero(json!({"thermal_transm_walls": 0, "u_value": null})
                     ),
-                    #[ignore = "TODO as part of 1.0.0a9 migration"]
-                    case::thermal_resist_insul_greater_than_zero(json!({"thermal_resist_insul": 0})
+                    case::thermal_resist_insul_at_least_zero(json!({"thermal_resist_insul": -0.5})
                     ),
                     case::area_greater_than_zero(json!({"area": 0})),
                     case::thickness_walls_greater_than_zero(json!({"thickness_walls": 0})),
@@ -10871,6 +10945,20 @@ mod tests {
                 )]
                 fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                     assert_range_constraints::<BuildingElement>(valid_example, inputs);
+                }
+
+                #[rstest]
+                /// Test that Control_smart_air_brick requires vents_open_during_airtightness_test
+                fn test_validate_smart_air_brick_requires_vents_open_flag(
+                    valid_example: JsonValue,
+                ) {
+                    let mut modified_input = valid_example;
+                    modified_input["Control_smart_air_brick"] = "some_control".into();
+                    modified_input["vents_open_during_airtightness_test"] = JsonValue::Null;
+
+                    let element: BuildingElement = serde_json::from_value(modified_input).unwrap();
+
+                    assert!(element.validate().is_err());
                 }
             }
 
@@ -11272,6 +11360,10 @@ mod tests {
             case::ach_min_static_calcs_at_least_zero(json!({"ach_min_static_calcs": -1})),
             case::vent_opening_ratio_init_at_least_zero(json!({"vent_opening_ratio_init": -1})),
             case::vent_opening_ratio_init_at_most_zero(json!({"vent_opening_ratio_init": 2})),
+            // case::min_not_set_if_ventadjust_set(json!({"Control_VentAdjust": "vent_adjust", "Control_VentAdjustMin": "vent_adjust_min"})
+            // ),
+            // case::max_not_set_if_ventadjust_set(json!({"Control_VentAdjust": "vent_adjust", "Control_VentAdjustMax": "vent_adjust_max"})
+            // ), // these checks won't work BUT the Control_VentAdjust field will be read and the min/max fields will be ignored - furthermore this may be expected to be caught with a schema check
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<InfiltrationVentilation>(valid_example, inputs);
@@ -11308,6 +11400,8 @@ mod tests {
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<ZoneInput>(valid_example, inputs);
         }
+
+        // not implementing tests for duplicate elements as this is not expected
     }
 
     mod window_treatment {
@@ -11414,18 +11508,18 @@ mod tests {
         fn valid_example() -> JsonValue {
             serde_json::to_value(WindowPart {
                 mid_height: 1.5,
-                free_area_height: 1.0,
-                max_window_open_area: 1.0,
+                free_area_height: 1.6,
+                max_window_open_area: 0.8,
             })
             .unwrap()
         }
 
         #[rstest(inputs,
-            case::mid_height_greater_than_zero(json!({"mid_height": 0})
-            ),
             case::free_area_height_at_least_zero(json!({"free_area_height": -1})
             ),
             case::max_window_open_area_at_least_zero(json!({"max_window_open_area": -1})
+            ),
+            case::mid_height_greater_than_zero(json!({"mid_height": 0})
             ),
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
@@ -11463,6 +11557,8 @@ mod tests {
             assert_range_constraints::<HeatPumpTestDatum>(valid_example, inputs);
         }
     }
+
+    // test for ScheduleForDouble unnecessary as Rust guarantees constraint using type system
 
     // test for ScheduleRepeater unnecessary as `repeat` field uses usize type which cannot be negative
 
