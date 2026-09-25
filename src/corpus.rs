@@ -63,7 +63,7 @@ use crate::core::space_heat_demand::ventilation::{
 };
 use crate::core::space_heat_demand::zone::{
     calc_vent_heat_transfer_coeff, AirChangesPerHourArgument, HeatBalance, HeatBalanceAggregate,
-    HeatBalanceAggregateSerdeField, Zone, ZoneTempInternalAir,
+    HeatBalanceNodeType, Zone, ZoneTempInternalAir,
 };
 use crate::core::units::{
     kelvin_to_celsius, Orientation360, DAYS_PER_YEAR, HOURS_PER_DAY, SECONDS_PER_HOUR,
@@ -2287,15 +2287,9 @@ impl Corpus {
         let mut space_cool_provided_dict: IndexMap<Option<Arc<str>>, Vec<f64>> = Default::default();
         let mut zone_list: Vec<Arc<str>> = Default::default();
         let mut heat_balance_all_dict: HeatBalanceAllResults = IndexMap::from([
-            (HeatBalanceAggregateSerdeField::AirNode, Default::default()),
-            (
-                HeatBalanceAggregateSerdeField::InternalBoundary,
-                Default::default(),
-            ),
-            (
-                HeatBalanceAggregateSerdeField::ExternalBoundary,
-                Default::default(),
-            ),
+            (HeatBalanceNodeType::AirNode, Default::default()),
+            (HeatBalanceNodeType::InternalBoundary, Default::default()),
+            (HeatBalanceNodeType::ExternalBoundary, Default::default()),
         ]);
         let mut heat_source_wet_results_dict: IndexMap<Arc<str>, ResultsPerTimestep> =
             Default::default();
@@ -2317,10 +2311,10 @@ impl Corpus {
             space_heat_demand_dict.insert(z_name.clone(), vec_capacity());
             space_cool_demand_dict.insert(z_name.clone(), vec_capacity());
             zone_list.push(z_name.clone());
-            for heat_balance_value in heat_balance_all_dict.values_mut() {
+            for (node_type, heat_balance_value) in heat_balance_all_dict.iter_mut() {
                 heat_balance_value.insert(
                     z_name.clone(),
-                    HeatBalanceAggregate::with_capacity(simulation_time.total_steps()),
+                    HeatBalanceAggregate::with_capacity(simulation_time.total_steps(), *node_type),
                 );
             }
         }
@@ -2546,19 +2540,19 @@ impl Corpus {
                         external_boundary,
                     } = hb_dict;
                     let air_node_aggregate = heat_balance_all_dict
-                        .get_mut(&HeatBalanceAggregateSerdeField::AirNode)
+                        .get_mut(&HeatBalanceNodeType::AirNode)
                         .unwrap()
                         .get_mut(&z_name)
                         .unwrap();
                     air_node_aggregate.push_air_node(air_node);
                     let internal_boundary_aggregate = heat_balance_all_dict
-                        .get_mut(&HeatBalanceAggregateSerdeField::InternalBoundary)
+                        .get_mut(&HeatBalanceNodeType::InternalBoundary)
                         .unwrap()
                         .get_mut(&z_name)
                         .unwrap();
                     internal_boundary_aggregate.push_internal_boundary(internal_boundary);
                     let external_boundary_aggregate = heat_balance_all_dict
-                        .get_mut(&HeatBalanceAggregateSerdeField::ExternalBoundary)
+                        .get_mut(&HeatBalanceNodeType::ExternalBoundary)
                         .unwrap()
                         .get_mut(&z_name)
                         .unwrap();
@@ -2823,7 +2817,7 @@ impl Corpus {
                     let as_index_map: IndexMap<Arc<str>, IndexMap<Arc<str>, Vec<f64>>> =
                         serde_json::from_value(serialized).unwrap();
 
-                    (Arc::<str>::from(k.as_str()), as_index_map)
+                    (Arc::<str>::from(k), as_index_map)
                 })
                 .collect(), // TODO (from Python) could be output object too fixed keys...
             heat_source_wet_results: heat_source_wet_results_dict,
@@ -3704,7 +3698,7 @@ fn shareable_fn(num: &Arc<AtomicF64>) -> TempInternalAirFn {
 }
 
 pub(crate) type HeatBalanceAllResults =
-    IndexMap<HeatBalanceAggregateSerdeField, IndexMap<Arc<str>, HeatBalanceAggregate>>;
+    IndexMap<HeatBalanceNodeType, IndexMap<Arc<str>, HeatBalanceAggregate>>;
 
 struct SpaceHeatingCalculation {
     gains_internal_zone: IndexMap<Arc<str>, f64>,

@@ -18,6 +18,7 @@ use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
 use parking_lot::RwLock;
 use serde::Serialize;
+use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_fields::SerdeField;
 use std::hash::{Hash, Hasher};
 use std::mem;
@@ -1740,38 +1741,63 @@ pub struct HeatBalance {
     pub external_boundary: HeatBalanceExternalBoundary,
 }
 
-#[derive(Debug, Serialize, SerdeField)]
-pub struct HeatBalanceAggregate {
-    pub air_node: HeatBalanceAirNodeAggregate,
-    pub internal_boundary: HeatBalanceInternalBoundaryAggregate,
-    pub external_boundary: HeatBalanceExternalBoundaryAggregate,
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, Eq, Hash, PartialEq, Serialize_enum_str)]
+#[serde(rename_all = "snake_case")]
+pub enum HeatBalanceNodeType {
+    AirNode,
+    InternalBoundary,
+    ExternalBoundary,
 }
 
-impl Hash for HeatBalanceAggregateSerdeField {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.as_str().hash(state);
+impl From<HeatBalanceNodeType> for Arc<str> {
+    fn from(node_type: HeatBalanceNodeType) -> Self {
+        match node_type {
+            HeatBalanceNodeType::AirNode => "air_node".into(),
+            HeatBalanceNodeType::InternalBoundary => "internal_boundary".into(),
+            HeatBalanceNodeType::ExternalBoundary => "external_boundary".into(),
+        }
     }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum HeatBalanceAggregate {
+    AirNode(HeatBalanceAirNodeAggregate),
+    InternalBoundary(HeatBalanceInternalBoundaryAggregate),
+    ExternalBoundary(HeatBalanceExternalBoundaryAggregate),
+}
+
 impl HeatBalanceAggregate {
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            air_node: HeatBalanceAirNodeAggregate::with_capacity(capacity),
-            internal_boundary: HeatBalanceInternalBoundaryAggregate::with_capacity(capacity),
-            external_boundary: HeatBalanceExternalBoundaryAggregate::with_capacity(capacity),
+    pub fn with_capacity(capacity: usize, node_type: HeatBalanceNodeType) -> Self {
+        match node_type {
+            HeatBalanceNodeType::AirNode => {
+                Self::AirNode(HeatBalanceAirNodeAggregate::with_capacity(capacity))
+            }
+            HeatBalanceNodeType::InternalBoundary => Self::InternalBoundary(
+                HeatBalanceInternalBoundaryAggregate::with_capacity(capacity),
+            ),
+            HeatBalanceNodeType::ExternalBoundary => Self::ExternalBoundary(
+                HeatBalanceExternalBoundaryAggregate::with_capacity(capacity),
+            ),
         }
     }
 
     pub fn push_air_node(&mut self, air_node: HeatBalanceAirNode) {
-        self.air_node.push(air_node);
+        if let Self::AirNode(node) = self {
+            node.push(air_node);
+        }
     }
 
     pub fn push_internal_boundary(&mut self, internal_boundary: HeatBalanceInternalBoundary) {
-        self.internal_boundary.push(internal_boundary);
+        if let Self::InternalBoundary(node) = self {
+            node.push(internal_boundary);
+        }
     }
 
     pub fn push_external_boundary(&mut self, external_boundary: HeatBalanceExternalBoundary) {
-        self.external_boundary.push(external_boundary);
+        if let Self::ExternalBoundary(node) = self {
+            node.push(external_boundary);
+        }
     }
 }
 
