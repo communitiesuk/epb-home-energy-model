@@ -12096,4 +12096,176 @@ mod tests {
             }
         }
     }
+
+    mod zone_processing_order_validation {
+        use super::*;
+
+        // Validation of the declared zone processing order.
+        //
+        // The order in which zones are served by their heating systems is significant when
+        // more than one zone is heated, because the zones may draw on a shared heat source
+        // that cannot meet their combined demand. In that case the order must be declared
+        // explicitly so results do not depend on the order zones happen to appear in the input.
+
+        #[fixture]
+        fn two_heated_zones_input() -> JsonValue {
+            let file = File::open("./examples/input/core/short/demo_hp.json").unwrap();
+            serde_json::from_reader(file).unwrap()
+        }
+
+        #[rstest]
+        fn test_declared_order_accepted(two_heated_zones_input: JsonValue) {
+            // The shipped order is a permutation of the zones and validates.
+            let input: Input = serde_json::from_value(two_heated_zones_input).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[rstest]
+        fn test_order_required_when_more_than_one_zone_heated(
+            mut two_heated_zones_input: JsonValue,
+        ) {
+            let modified = two_heated_zones_input.as_object_mut().unwrap();
+            modified.remove("ZoneProcessingOrder");
+            match serde_json::from_value::<Input>(json!(modified)) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_duplicate_zone_rejected(two_heated_zones_input: JsonValue) {
+            let first_zone = two_heated_zones_input["Zone"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap()
+                .as_str()
+                .to_string();
+            let mut modified = two_heated_zones_input;
+            modified["ZoneProcessingOrder"] = json!([&first_zone, &first_zone]);
+            match serde_json::from_value::<Input>(json!(modified)) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_unknown_zone_rejected(two_heated_zones_input: JsonValue) {
+            let mut modified = two_heated_zones_input;
+            let mut modified_order: Vec<String> = modified["ZoneProcessingOrder"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s.as_str().unwrap().to_string())
+                .collect();
+            modified_order.push("no such zone".to_string());
+            modified["ZoneProcessingOrder"] = json!(modified_order);
+            match serde_json::from_value::<Input>(json!(modified)) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_missing_zone_rejected(two_heated_zones_input: JsonValue) {
+            let first_zone = two_heated_zones_input["Zone"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap()
+                .as_str()
+                .to_string();
+            let mut modified = two_heated_zones_input;
+            modified["ZoneProcessingOrder"] = json!([first_zone]);
+            match serde_json::from_value::<Input>(json!(modified)) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_order_optional_when_single_zone() {
+            // The baseline demo has a single zone, so there is no order to declare and the
+            // field may be omitted without error.
+            let file = File::open("./examples/input/core/short/demo.json").unwrap();
+            let demo: JsonValue = serde_json::from_reader(file).unwrap();
+            assert!(!demo
+                .as_object()
+                .unwrap()
+                .contains_key("ZoneProcessingOrder"));
+            assert_eq!(demo["Zone"].as_object().unwrap().len(), 1);
+            let input = serde_json::from_value::<Input>(json!(demo)).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[rstest]
+        fn test_order_optional_when_only_one_zone_heated(mut two_heated_zones_input: JsonValue) {
+            // Two zones, but only one is heated and neither is cooled, so there is no processing
+            // order to declare.
+            let modified = two_heated_zones_input.as_object_mut().unwrap();
+            modified.remove("ZoneProcessingOrder");
+            let second_zone = modified["Zone"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .nth(1)
+                .unwrap()
+                .as_str()
+                .to_string();
+            modified["Zone"][second_zone]["SpaceHeatSystem"] = json!(null);
+            let input = serde_json::from_value::<Input>(json!(modified)).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[rstest]
+        fn test_order_required_when_more_than_one_zone_cooled() {
+            // Leave only one heated zone so the requirement can only come from cooling.
+            let file = File::open(
+                "./examples/input/core/short/demo_hp_with_setback_separate_ieh_plus_cooling.json",
+            )
+            .unwrap();
+            let mut demo_value: JsonValue = serde_json::from_reader(file).unwrap();
+            let demo = demo_value.as_object_mut().unwrap();
+            demo.remove("ZoneProcessingOrder");
+            let first_zone = demo["Zone"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap()
+                .as_str()
+                .to_string();
+            demo["Zone"][first_zone]["SpaceHeatSystem"] = json!(null);
+            assert!(
+                demo["Zone"]
+                    .as_object()
+                    .unwrap()
+                    .values()
+                    .filter(|zone| !zone["SpaceHeatSystem"].is_null())
+                    .count()
+                    <= 1
+            );
+            assert!(
+                demo["Zone"]
+                    .as_object()
+                    .unwrap()
+                    .values()
+                    .filter(|zone| !zone["SpaceCoolSystem"].is_null())
+                    .count()
+                    > 1
+            );
+            let input = serde_json::from_value::<Input>(json!(demo)).unwrap();
+            assert!(input.validate().is_err());
+        }
+    }
 }
