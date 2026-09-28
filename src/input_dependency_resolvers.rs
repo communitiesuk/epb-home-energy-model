@@ -1,5 +1,3 @@
-use crate::core::common::WaterSupplyBehaviour;
-use crate::core::heating_systems::heat_battery_pcm::HeatBatteryChargingSource;
 use crate::input::{HeatBatteryPcmChargingSource, PreHeatedWaterSourceDetails};
 use anyhow::bail;
 use arcstr::ArcStr;
@@ -56,12 +54,8 @@ pub(crate) fn topological_sort_preheated_water_sources<T: Clone>(
 }
 
 /// Build a dependency graph for PCM heat battery hydronic charging.
-pub(crate) fn build_heat_battery_charging_dependency_graph<T: WaterSupplyBehaviour>(
-    pcm_hydronic_charging_pending: &[(
-        ArcStr,
-        HeatBatteryChargingSource<T>,
-        HeatBatteryPcmChargingSource,
-    )],
+pub(crate) fn build_heat_battery_charging_dependency_graph<T>(
+    pcm_hydronic_charging_pending: &[(ArcStr, T, HeatBatteryPcmChargingSource)],
 ) -> anyhow::Result<Graph<ArcStr, ArcStr>> {
     let mut graph = Graph::<ArcStr, ArcStr>::new();
     let mut nodes: IndexMap<ArcStr, _> = IndexMap::new();
