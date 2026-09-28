@@ -1,9 +1,12 @@
+use crate::core::common::WaterSupplyBehaviour;
+use crate::core::heating_systems::heat_battery_pcm::HeatBatteryChargingSource;
 use crate::input::{HeatBatteryPcmChargingSource, PreHeatedWaterSourceDetails};
+use anyhow::bail;
 use arcstr::ArcStr;
 use indexmap::IndexMap;
-use itertools::Itertools;
 use petgraph::algo::toposort;
 use petgraph::Graph;
+use std::collections::HashSet;
 use thiserror::Error;
 
 /// Build a dependency graph for PreHeatedWaterSource objects.
@@ -53,32 +56,40 @@ pub(crate) fn topological_sort_preheated_water_sources<T: Clone>(
 }
 
 /// Build a dependency graph for PCM heat battery hydronic charging.
-pub(crate) fn build_heat_battery_charging_dependency_graph(
-    pcm_hydronic_charging_pending: &IndexMap<ArcStr, (ArcStr, HeatBatteryPcmChargingSource)>, // TODO sort out this type
-) -> Graph<ArcStr, ArcStr> {
+pub(crate) fn build_heat_battery_charging_dependency_graph<T: WaterSupplyBehaviour>(
+    pcm_hydronic_charging_pending: &[(
+        ArcStr,
+        HeatBatteryChargingSource<T>,
+        HeatBatteryPcmChargingSource,
+    )],
+) -> anyhow::Result<Graph<ArcStr, ArcStr>> {
     let mut graph = Graph::<ArcStr, ArcStr>::new();
     let mut nodes: IndexMap<ArcStr, _> = IndexMap::new();
 
-    for name in pcm_hydronic_charging_pending.keys() {
-        let node_index = graph.add_node(name.into());
-        nodes.insert(name.into(), node_index);
+    let battery_names: HashSet<&ArcStr> = pcm_hydronic_charging_pending
+        .iter()
+        .map(|(name, _, _)| name)
+        .collect();
+    for name in &battery_names {
+        let node_index = graph.add_node((*name).into());
+        nodes.insert((*name).into(), node_index);
     }
 
     let mut edges = Vec::new();
 
-    for (battery_name, src_data) in pcm_hydronic_charging_pending.iter() {
-        let charging_source_name = &src_data.0;
-        if pcm_hydronic_charging_pending
-            .keys()
-            .contains(&charging_source_name)
-        {
+    for (battery_name, _, src_data) in pcm_hydronic_charging_pending.iter() {
+        let charging_source_name = match &src_data {
+            HeatBatteryPcmChargingSource::Hydronic { name, .. } => name,
+            _ => bail!("Hydronic charging source expected for a PCM heat battery"),
+        };
+        if battery_names.contains(&charging_source_name) {
             edges.push((nodes[charging_source_name], nodes[battery_name]));
         }
     }
 
     graph.extend_with_edges(&edges);
 
-    graph
+    Ok(graph)
 }
 
 /// Topological sort for heat battery charging dependencies.
