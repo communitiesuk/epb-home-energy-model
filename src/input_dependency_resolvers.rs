@@ -103,6 +103,7 @@ mod tests {
     use indexmap::indexmap;
     use serde_json::json;
 
+    // PreHeatedWaterSource tests
     fn hot_water_source_details(cold_water_source: ArcStr) -> PreHeatedWaterSourceDetails {
         serde_json::from_value(json!(
             {
@@ -291,6 +292,138 @@ mod tests {
 
             assert_eq!(graph.edge_count(), 0);
             assert_eq!(graph.node_count(), 2);
+        }
+
+        #[test]
+        /// Battery B charges battery A — A depends on B.
+        fn test_battery_charges_battery() {
+            let pending = [
+                make_pending_entry("bat_A".into(), "bat_B".into()),
+                make_pending_entry("bat_B".into(), "heat_pump_1".into()),
+            ];
+
+            let graph = build_heat_battery_charging_dependency_graph(&pending).unwrap();
+
+            let a_idx = graph
+                .node_indices()
+                .find(|&idx| graph[idx] == "bat_A")
+                .unwrap();
+            let b_idx = graph
+                .node_indices()
+                .find(|&idx| graph[idx] == "bat_B")
+                .unwrap();
+
+            assert_eq!(graph.edge_count(), 1);
+            assert_eq!(graph.node_count(), 2);
+            // A depends on B (edge flows from B to A)
+            assert!(graph.contains_edge(b_idx, a_idx));
+            // B doesn't depend on A (no edge from A to B)
+            assert!(!graph.contains_edge(a_idx, b_idx));
+        }
+
+        #[test]
+        /// Battery with both HP and battery source gets correct dependency.
+        fn test_multiple_sources_per_battery() {
+            let pending = [
+                make_pending_entry("bat_A".into(), "heat_pump_1".into()),
+                make_pending_entry("bat_A".into(), "bat_B".into()),
+                make_pending_entry("bat_B".into(), "boiler_1".into()),
+            ];
+
+            let graph = build_heat_battery_charging_dependency_graph(&pending).unwrap();
+
+            let a_idx = graph
+                .node_indices()
+                .find(|&idx| graph[idx] == "bat_A")
+                .unwrap();
+            let b_idx = graph
+                .node_indices()
+                .find(|&idx| graph[idx] == "bat_B")
+                .unwrap();
+
+            assert_eq!(graph.edge_count(), 1);
+            assert_eq!(graph.node_count(), 2);
+            // A depends on B (edge flows from B to A)
+            assert!(graph.contains_edge(b_idx, a_idx));
+            // B doesn't depend on A (no edge from A to B)
+            assert!(!graph.contains_edge(a_idx, b_idx));
+        }
+
+        #[test]
+        /// Empty input returns empty graph.
+        fn test_empty_pending_list() {
+            let graph = build_heat_battery_charging_dependency_graph::<()>(&[]).unwrap();
+
+            assert_eq!(graph.edge_count(), 0);
+            assert_eq!(graph.node_count(), 0);
+        }
+    }
+
+    mod test_topological_sort_heat_battery_charging {
+        use super::*;
+
+        #[test]
+        /// B must come before A when A depends on B.
+        fn test_chain_order() {
+            let pending = [
+                make_pending_entry("bat_A".into(), "bat_B".into()),
+                make_pending_entry("bat_B".into(), "heat_pump_1".into()),
+            ];
+
+            let graph = build_heat_battery_charging_dependency_graph(&pending).unwrap();
+
+            let result = topological_sort_heat_battery_charging(&graph).unwrap();
+
+            assert_eq!(result, ["bat_B", "bat_A"]);
+        }
+
+        #[test]
+        /// C -> B -> A: C first, then B, then A.
+        fn test_three_level_chain() {
+            let pending = [
+                make_pending_entry("bat_A".into(), "bat_B".into()),
+                make_pending_entry("bat_B".into(), "bat_C".into()),
+                make_pending_entry("bat_C".into(), "heat_pump_1".into()),
+            ];
+
+            let graph = build_heat_battery_charging_dependency_graph(&pending).unwrap();
+
+            let result = topological_sort_heat_battery_charging(&graph).unwrap();
+
+            assert_eq!(result, ["bat_C", "bat_B", "bat_A"]);
+        }
+
+        #[test]
+        /// Circular dependency produces an error
+        fn test_circular_dependency_raises() {
+            let pending = [
+                make_pending_entry("bat_A".into(), "bat_B".into()),
+                make_pending_entry("bat_B".into(), "bat_A".into()),
+            ];
+
+            let graph = build_heat_battery_charging_dependency_graph(&pending).unwrap();
+
+            let result = topological_sort_heat_battery_charging(&graph);
+
+            assert!(result.is_err());
+        }
+
+        #[test]
+        /// Independent batteries are all returned.
+        fn test_independent_batteries() {
+            let pending = [
+                make_pending_entry("bat_A".into(), "heat_pump_1".into()),
+                make_pending_entry("bat_B".into(), "heat_pump_1".into()),
+                make_pending_entry("bat_C".into(), "heat_pump_1".into()),
+            ];
+
+            let graph = build_heat_battery_charging_dependency_graph(&pending).unwrap();
+
+            let mut result = topological_sort_heat_battery_charging(&graph).unwrap();
+
+            result.sort();
+
+            assert_eq!(result, ["bat_A", "bat_B", "bat_C"]);
         }
     }
 }
