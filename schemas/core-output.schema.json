@@ -1,0 +1,1153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema#",
+  "title": "Output",
+  "type": "object",
+  "required": [
+    "static",
+    "core",
+    "summary",
+    "metadata"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "static": {
+      "$ref": "#/$defs/OutputStatic"
+    },
+    "core": {
+      "$ref": "#/$defs/OutputCore"
+    },
+    "summary": {
+      "$ref": "#/$defs/OutputSummary"
+    },
+    "metadata": {
+      "$ref": "#/$defs/OutputMetadata"
+    }
+  },
+  "$defs": {
+    "OutputCOP": {
+      "additionalProperties": false,
+      "description": "Coefficients of performance for space heating & cooling, and hot water systems.\nNull-values are used when a divide-by-zero occurs in the results. These are output as \"DIV/0\" in the CSVs.",
+      "properties": {
+        "space_heating_system": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "Overall coefficient of performance for each heating system (unitless)",
+          "title": "Space Heating System",
+          "type": "object"
+        },
+        "space_cooling_system": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "Overall coefficient of performance for each heating system (unitless)",
+          "title": "Space Cooling System",
+          "type": "object"
+        },
+        "hot_water_system": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "Overall coefficient of performance for each heating system (unitless)",
+          "title": "Hot Water System",
+          "type": "object"
+        }
+      },
+      "required": [
+        "space_heating_system",
+        "space_cooling_system",
+        "hot_water_system"
+      ],
+      "title": "OutputCOP",
+      "type": "object"
+    },
+    "OutputCore": {
+      "additionalProperties": false,
+      "description": "The raw HEM Core outputs, from Project.run()\n\nFor the _unmet_demand energy supply object, end-uses are:\n    - space heating or cooling per zone, where the naming convention is _unmet_demand: [zone name from input]\n    - water heating unmet demand, where the naming convention is _unmet_demand: [hot water source names from input]\n\nFor all other energy supplies, end-use names refer to specific systems or appliances specified in the input file.",
+      "properties": {
+        "timestep_array": {
+          "description": "The list of timesteps, serves as an index for the other outputs (unit: Hours)",
+          "items": {
+            "type": "number"
+          },
+          "title": "Timestep Array",
+          "type": "array"
+        },
+        "results_totals": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Total energy (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Results Totals",
+          "type": "object"
+        },
+        "results_end_user": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "description": "Energy end use key"
+            },
+            "type": "object"
+          },
+          "description": "Energy per supply, per end use (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Results End User",
+          "type": "object"
+        },
+        "energy_import": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Total energy imported from the grid, including both direct consumption and battery charging (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Energy Import",
+          "type": "object"
+        },
+        "energy_export": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Total energy exported to the grid (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Energy Export",
+          "type": "object"
+        },
+        "grid_to_consumption": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Energy imported from the grid directly to consumption. Does not include grid to battery charging (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Grid To Consumption",
+          "type": "object"
+        },
+        "generation_to_grid": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "On-site generation immediately exported to the grid (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Generation To Grid",
+          "type": "object"
+        },
+        "energy_generated_consumed": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "On-site generation immediately consumed within the dwelling. Does not include energy via storage or PV diverter (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Energy Generated Consumed",
+          "type": "object"
+        },
+        "energy_to_storage": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Energy from on-site generation to storage. Does not include energy from the grid to storage (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Energy To Storage",
+          "type": "object"
+        },
+        "energy_from_storage": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Energy discharged from storage to consumption (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Energy From Storage",
+          "type": "object"
+        },
+        "storage_to_grid": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Total energy exported from storage to grid (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Storage To Grid",
+          "type": "object"
+        },
+        "storage_from_grid": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Energy imported from the grid to storage. Does not include energy from on-site generation to storage (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Storage From Grid",
+          "type": "object"
+        },
+        "battery_state_of_charge": {
+          "additionalProperties": {
+            "items": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Battery charge level (unit: ratio 0 to 1)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Battery State Of Charge",
+          "type": "object"
+        },
+        "energy_diverted": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Surplus on-site generation diverted to PV diverter, e.g. immersion heater (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Energy Diverted",
+          "type": "object"
+        },
+        "generation_curtailed": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "On-site generation curtailed because grid export reached the export power limit. Neither consumed, stored, diverted nor exported (unit: kWh)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Generation Curtailed",
+          "type": "object"
+        },
+        "beta_factor": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Fraction of on-site generation immediately consumed within the dwelling. Does not include energy to storage or diverters (unit: ratio 0 to 1)",
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Beta Factor",
+          "type": "object"
+        },
+        "zone_list": {
+          "description": "List of the unique zone names in the zone data",
+          "items": {
+            "description": "Zone key",
+            "type": "string"
+          },
+          "title": "Zone List",
+          "type": "array"
+        },
+        "zone_data": {
+          "$ref": "#/$defs/OutputZoneData"
+        },
+        "heating_cooling_system": {
+          "$ref": "#/$defs/OutputHeatingCoolingSystem"
+        },
+        "cop": {
+          "$ref": "#/$defs/OutputCOP"
+        },
+        "ductwork_gains": {
+          "description": "Ventilation ductwork gains (unit: W)",
+          "items": {
+            "type": "number"
+          },
+          "title": "Ductwork Gains",
+          "type": "array"
+        },
+        "heat_balance_all": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            "propertyNames": {
+              "description": "Zone key"
+            },
+            "type": "object"
+          },
+          "description": "Heat balance data for each zone.",
+          "title": "Heat Balance All",
+          "type": "object"
+        },
+        "heat_source_wet_results": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          "description": "Heat source wet detailed results.",
+          "propertyNames": {
+            "description": "Heat source wet key"
+          },
+          "title": "Heat Source Wet Results",
+          "type": "object"
+        },
+        "heat_source_wet_results_annual": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          "description": "Annual heat source wet detailed results.",
+          "propertyNames": {
+            "description": "Heat source wet key"
+          },
+          "title": "Heat Source Wet Results Annual",
+          "type": "object"
+        },
+        "hot_water_source_results": {
+          "additionalProperties": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "description": "\n                Hot water source results.\n                Currently unstructured, see CSV for column-order.\n                ",
+          "propertyNames": {
+            "description": "Hot water source key"
+          },
+          "title": "Hot Water Source Results",
+          "type": "object"
+        },
+        "emitters": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "$ref": "#/$defs/OutputEmitters"
+            },
+            "type": "object"
+          },
+          "description": "\n            Heating system emitters detailed outputs.\n            Currently unstructured, see CSV for column-order.\n            ",
+          "propertyNames": {
+            "description": "Space heating system key"
+          },
+          "title": "Emitters",
+          "type": "object"
+        },
+        "electric_storage_heaters": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          },
+          "description": "\n            Electric storage heaters detailed outputs.\n            Currently unstructured, see CSV for column-order.\n            ",
+          "propertyNames": {
+            "description": "Space heating system key"
+          },
+          "title": "Electric Storage Heaters",
+          "type": "object"
+        },
+        "ventilation": {
+          "description": "\n            Ventilation detailed outputs.\n            Currently unstructured, see CSV for column-order.\n            ",
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "title": "Ventilation",
+          "type": "array"
+        },
+        "hot_water_systems": {
+          "$ref": "#/$defs/OutputHotWaterSystems"
+        }
+      },
+      "required": [
+        "timestep_array",
+        "results_totals",
+        "results_end_user",
+        "energy_import",
+        "energy_export",
+        "grid_to_consumption",
+        "generation_to_grid",
+        "energy_generated_consumed",
+        "energy_to_storage",
+        "energy_from_storage",
+        "storage_to_grid",
+        "storage_from_grid",
+        "battery_state_of_charge",
+        "energy_diverted",
+        "generation_curtailed",
+        "beta_factor",
+        "zone_list",
+        "zone_data",
+        "heating_cooling_system",
+        "cop",
+        "ductwork_gains",
+        "heat_balance_all",
+        "heat_source_wet_results",
+        "heat_source_wet_results_annual",
+        "hot_water_source_results",
+        "emitters",
+        "electric_storage_heaters",
+        "ventilation",
+        "hot_water_systems"
+      ],
+      "title": "OutputCore",
+      "type": "object"
+    },
+    "OutputEmitters": {
+      "additionalProperties": false,
+      "description": "Emitters data for every time step.",
+      "properties": {
+        "simulation_time_idx": {
+          "description": "Current time step",
+          "minimum": 0,
+          "title": "Simulation Time Idx",
+          "type": "integer"
+        },
+        "energy_demand": {
+          "description": "Net energy output requested from the emitter (unit: kWh). May be negative (between zero and emitter minimum output) when the emitter is below room temperature and would cool the heated space below the heating setpoint if the emitter is not actively heated to reduce heat absorption from the heated space.",
+          "title": "Energy Demand",
+          "type": "number"
+        },
+        "temp_emitter_required": {
+          "description": "Required emitter temperature to satisfy zone setpoint (unit: Celsius)",
+          "minimum": 0,
+          "title": "Temp Emitter Required",
+          "type": "number"
+        },
+        "time_heating_start": {
+          "description": "Time at which the emitter begins operating (unit: hours)",
+          "minimum": 0,
+          "title": "Time Heating Start",
+          "type": "number"
+        },
+        "energy_provided_by_heat_source": {
+          "description": "Energy provided by heat source (unit: kWh)",
+          "minimum": 0,
+          "title": "Energy Provided By Heat Source",
+          "type": "number"
+        },
+        "temp_emitter": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Temperature of the emitter (unit: Celsius)",
+          "title": "Temp Emitter"
+        },
+        "temp_emitter_max": {
+          "description": "Maximum temperature the emitter can safely reach (unit: Celsius)",
+          "minimum": 0,
+          "title": "Temp Emitter Max",
+          "type": "number"
+        },
+        "energy_released_from_emitters": {
+          "description": "Energy released from emitters (unit: kWh)",
+          "title": "Energy Released From Emitters",
+          "type": "number"
+        },
+        "temp_flow_target": {
+          "description": "Desired supply temperature to the emitter (unit: Celsius)",
+          "minimum": 0,
+          "title": "Temp Flow Target",
+          "type": "number"
+        },
+        "temp_return_target": {
+          "description": "Desired return temperature from the emitter (unit: Celsius)",
+          "minimum": 0,
+          "title": "Temp Return Target",
+          "type": "number"
+        },
+        "temp_emitter_max_is_final_temp": {
+          "description": "Whether the maximum emitter temperature is used as the final supply temperature",
+          "title": "Temp Emitter Max Is Final Temp",
+          "type": "boolean"
+        },
+        "energy_required_from_heat_source": {
+          "description": "Energy required from the heat source (unit: kWh)",
+          "minimum": 0,
+          "title": "Energy Required From Heat Source",
+          "type": "number"
+        },
+        "fan_energy": {
+          "description": "Fan electricity consumption (unit: kWh)",
+          "minimum": 0,
+          "title": "Fan Energy",
+          "type": "number"
+        }
+      },
+      "required": [
+        "simulation_time_idx",
+        "energy_demand",
+        "temp_emitter_required",
+        "time_heating_start",
+        "energy_provided_by_heat_source",
+        "temp_emitter",
+        "temp_emitter_max",
+        "energy_released_from_emitters",
+        "temp_flow_target",
+        "temp_return_target",
+        "temp_emitter_max_is_final_temp",
+        "energy_required_from_heat_source",
+        "fan_energy"
+      ],
+      "title": "OutputEmitters",
+      "type": "object"
+    },
+    "OutputHeatingCoolingSystem": {
+      "additionalProperties": false,
+      "description": "Contains the output timeseries for the heating and cooling systems, respectively.",
+      "properties": {
+        "heating_system_output": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Heating system output, for each heating system (unit: kWh)",
+          "title": "Heating System Output",
+          "type": "object"
+        },
+        "cooling_system_output": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Cooling system output, keyed by cooling system name (unit: kWh)",
+          "title": "Cooling System Output",
+          "type": "object"
+        }
+      },
+      "required": [
+        "heating_system_output",
+        "cooling_system_output"
+      ],
+      "title": "OutputHeatingCoolingSystem",
+      "type": "object"
+    },
+    "OutputHotWaterSystems": {
+      "additionalProperties": false,
+      "description": "Hot water systems data for every time step.",
+      "properties": {
+        "hot water volume required from hot water source": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Hot water volume required from hot water source, for each hot water source (unit: litres)",
+          "title": "Hot Water Volume Required From Hot Water Source",
+          "type": "object"
+        },
+        "hot water energy demand at hot water source": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Hot water energy demand at hot water source, for each hot water source (unit: kWh)",
+          "title": "Hot Water Energy Demand At Hot Water Source",
+          "type": "object"
+        },
+        "hot water energy demand at connected tapping points": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Hot water energy demand at connected tapping points, for each hot water source (unit: kWh)",
+          "title": "Hot Water Energy Demand At Connected Tapping Points",
+          "type": "object"
+        },
+        "total event duration": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Total hot water event duration, for each hot water source (unit: minutes)",
+          "title": "Total Event Duration",
+          "type": "object"
+        },
+        "number of events": {
+          "additionalProperties": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "description": "Number of hot water events, for each hot water source (unit: count)",
+          "title": "Number Of Events",
+          "type": "object"
+        },
+        "distribution pipework losses": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Pipework losses, for each hot water source (unit: kWh)",
+          "title": "Distribution Pipework Losses",
+          "type": "object"
+        },
+        "primary pipework losses": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Primary pipework losses, for each hot water source (unit: kWh)",
+          "title": "Primary Pipework Losses",
+          "type": "object"
+        },
+        "storage losses": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Storage losses, for each hot water source (unit: kWh)",
+          "title": "Storage Losses",
+          "type": "object"
+        }
+      },
+      "required": [
+        "hot water volume required from hot water source",
+        "hot water energy demand at hot water source",
+        "hot water energy demand at connected tapping points",
+        "total event duration",
+        "number of events",
+        "distribution pipework losses",
+        "primary pipework losses",
+        "storage losses"
+      ],
+      "title": "OutputHotWaterSystems",
+      "type": "object"
+    },
+    "OutputMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "hem_core_version": {
+          "title": "Hem Core Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hem_core_version"
+      ],
+      "title": "OutputMetadata",
+      "type": "object"
+    },
+    "OutputStatic": {
+      "additionalProperties": false,
+      "properties": {
+        "heat_transfer_coefficient": {
+          "description": "Heat transfer coefficient (unit: W/K)",
+          "title": "Heat Transfer Coefficient",
+          "type": "number"
+        },
+        "heat_loss_param": {
+          "description": "Heat loss parameter (unit: W/m\u00b2.K)",
+          "title": "Heat Loss Param",
+          "type": "number"
+        },
+        "heat_capacity_param": {
+          "description": "Heat capacity parameter (unit: kJ/m\u00b2.K)",
+          "title": "Heat Capacity Param",
+          "type": "number"
+        },
+        "heat_loss_form_factor": {
+          "description": "Heat loss form factor (unitless)",
+          "title": "Heat Loss Form Factor",
+          "type": "number"
+        },
+        "temperature_air_internal": {
+          "description": "Internal air temperature (unit: \u02daC)",
+          "minimum": -273.15,
+          "title": "Temperature Air Internal",
+          "type": "number"
+        },
+        "temperature_air_external": {
+          "description": "External air temperature (unit: \u02daC)",
+          "title": "Temperature Air External",
+          "type": "number"
+        }
+      },
+      "required": [
+        "heat_transfer_coefficient",
+        "heat_loss_param",
+        "heat_capacity_param",
+        "heat_loss_form_factor",
+        "temperature_air_internal",
+        "temperature_air_external"
+      ],
+      "title": "OutputStatic",
+      "type": "object"
+    },
+    "OutputSummary": {
+      "additionalProperties": false,
+      "description": "Summary outputs from HEM Core.",
+      "properties": {
+        "total_floor_area": {
+          "description": "Total floor-area of all zones (unit: m\u00b2)",
+          "exclusiveMinimum": 0,
+          "title": "Total Floor Area",
+          "type": "number"
+        },
+        "space_heat_demand_total": {
+          "description": "Space heating demand total (unit: kWh)",
+          "title": "Space Heat Demand Total",
+          "type": "number"
+        },
+        "space_cool_demand_total": {
+          "description": "Space cooling demand total (unit: kWh)",
+          "title": "Space Cool Demand Total",
+          "type": "number"
+        },
+        "electricity_peak_consumption": {
+          "$ref": "#/$defs/OutputSummaryPeakElectricityConsumption"
+        },
+        "energy_supply": {
+          "additionalProperties": {
+            "$ref": "#/$defs/OutputSummaryEnergySupply"
+          },
+          "propertyNames": {
+            "description": "Energy supply key"
+          },
+          "title": "Energy Supply",
+          "type": "object"
+        },
+        "delivered_energy": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "propertyNames": {
+              "description": "Energy end use key"
+            },
+            "type": "object"
+          },
+          "description": "Delivered energy summary, total energy per fuel and end-use (unit: kWh)",
+          "propertyNames": {
+            "description": "Fuel key"
+          },
+          "title": "Delivered Energy",
+          "type": "object"
+        },
+        "hot_water_demand_daily_75th_percentile": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "75th percentile of hot water demand summed over each 24 hour segment of the simulation (unit: litres).",
+          "propertyNames": {
+            "description": "Hot water source key"
+          },
+          "title": "Hot Water Demand Daily 75Th Percentile",
+          "type": "object"
+        }
+      },
+      "required": [
+        "total_floor_area",
+        "space_heat_demand_total",
+        "space_cool_demand_total",
+        "electricity_peak_consumption",
+        "energy_supply",
+        "delivered_energy",
+        "hot_water_demand_daily_75th_percentile"
+      ],
+      "title": "OutputSummary",
+      "type": "object"
+    },
+    "OutputSummaryEnergySupply": {
+      "additionalProperties": false,
+      "properties": {
+        "generation": {
+          "description": "All energy generated on site (unit: kWh)",
+          "title": "Generation",
+          "type": "number"
+        },
+        "consumption": {
+          "description": "All energy consumed for space and water heating, appliances and cooking (unit: kWh)",
+          "title": "Consumption",
+          "type": "number"
+        },
+        "generation_to_consumption": {
+          "description": "Total on-site generation immediately consumed within the dwelling. Does not include energy via storage or PV diverter (unit: kWh)",
+          "title": "Generation To Consumption",
+          "type": "number"
+        },
+        "generation_to_grid": {
+          "description": "Total on-site generation immediately exported to the grid (unit: kWh)",
+          "title": "Generation To Grid",
+          "type": "number"
+        },
+        "generation_to_diverter": {
+          "description": "Total surplus on-site generation diverted to PV diverter, e.g. immersion heater (unit: kWh)",
+          "title": "Generation To Diverter",
+          "type": "number"
+        },
+        "generation_curtailed": {
+          "description": "Total on-site generation curtailed because grid export reached the export power limit. Neither consumed, stored, diverted nor exported (unit: kWh)",
+          "title": "Generation Curtailed",
+          "type": "number"
+        },
+        "grid_to_consumption": {
+          "description": "Total energy imported from the grid directly to consumption. Does not include grid to battery charging (unit: kWh)",
+          "title": "Grid To Consumption",
+          "type": "number"
+        },
+        "grid_to_storage": {
+          "description": "Total energy imported from the grid to storage. Does not include on-site generation to storage (unit: kWh)",
+          "title": "Grid To Storage",
+          "type": "number"
+        },
+        "storage_to_grid": {
+          "description": "Total energy exported from storage to grid (unit: kWh)",
+          "title": "Storage To Grid",
+          "type": "number"
+        },
+        "generation_to_storage": {
+          "description": "Total on-site generation put into storage. Does not include energy from the grid to storage (unit: kWh)",
+          "title": "Generation To Storage",
+          "type": "number"
+        },
+        "storage_to_consumption": {
+          "description": "Total energy discharged from storage to consumption (unit: kWh)",
+          "title": "Storage To Consumption",
+          "type": "number"
+        },
+        "storage_efficiency": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Storage round-trip efficiency: total energy discharged from storage divided by total energy put into storage from both grid and on-site generation (unit: ratio)",
+          "title": "Storage Efficiency"
+        },
+        "net_import": {
+          "description": "Net import: total gross import minus total gross export (unit: kWh)",
+          "title": "Net Import",
+          "type": "number"
+        },
+        "total_gross_import": {
+          "description": "Total energy imported from the grid, including both direct consumption and battery charging (unit: kWh)",
+          "title": "Total Gross Import",
+          "type": "number"
+        },
+        "total_gross_export": {
+          "description": "Total energy exported to the grid (unit: kWh)",
+          "title": "Total Gross Export",
+          "type": "number"
+        }
+      },
+      "required": [
+        "generation",
+        "consumption",
+        "generation_to_consumption",
+        "generation_to_grid",
+        "generation_to_diverter",
+        "generation_curtailed",
+        "grid_to_consumption",
+        "grid_to_storage",
+        "storage_to_grid",
+        "generation_to_storage",
+        "storage_to_consumption",
+        "storage_efficiency",
+        "net_import",
+        "total_gross_import",
+        "total_gross_export"
+      ],
+      "title": "OutputSummaryEnergySupply",
+      "type": "object"
+    },
+    "OutputSummaryPeakElectricityConsumption": {
+      "additionalProperties": false,
+      "description": "Details of the time-step with the peak electricity consumption within the simulation.",
+      "properties": {
+        "peak": {
+          "description": "The maximum electricity consumption (unit: kWh)",
+          "title": "Peak",
+          "type": "number"
+        },
+        "index": {
+          "description": "The time step the peak occurred at",
+          "title": "Index",
+          "type": "integer"
+        },
+        "month": {
+          "description": "The month the peak occurred in, where 1 = January",
+          "maximum": 12,
+          "minimum": 1,
+          "title": "Month",
+          "type": "integer"
+        },
+        "day": {
+          "description": "The day of the month the peak occurred on (values start from 1)",
+          "maximum": 31,
+          "minimum": 1,
+          "title": "Day",
+          "type": "integer"
+        },
+        "hour": {
+          "description": "The hour of the day the peak occurred on (values start from 0). Decimal-time is used if the simulation step is less than 1 hour.",
+          "exclusiveMaximum": 24,
+          "minimum": 0,
+          "title": "Hour",
+          "type": "number"
+        }
+      },
+      "required": [
+        "peak",
+        "index",
+        "month",
+        "day",
+        "hour"
+      ],
+      "title": "OutputSummaryPeakElectricityConsumption",
+      "type": "object"
+    },
+    "OutputZoneData": {
+      "additionalProperties": false,
+      "description": "Zone output data. Each field is keyed by zone name.\nThese fields names are used in the core output file (substituting \" \" for \"_\")",
+      "properties": {
+        "internal_gains": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Internal gains (unit: W)",
+          "propertyNames": {
+            "description": "Zone key"
+          },
+          "title": "Internal Gains",
+          "type": "object"
+        },
+        "solar_gains": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Solar gains (unit: W)",
+          "propertyNames": {
+            "description": "Zone key"
+          },
+          "title": "Solar Gains",
+          "type": "object"
+        },
+        "operative_temp": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Operative temperature (unit: \u02daC)",
+          "propertyNames": {
+            "description": "Zone key"
+          },
+          "title": "Operative Temp",
+          "type": "object"
+        },
+        "internal_air_temp": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Internal air temperature (unit: \u02daC)",
+          "propertyNames": {
+            "description": "Zone key"
+          },
+          "title": "Internal Air Temp",
+          "type": "object"
+        },
+        "space_heat_demand": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Space heat demand (unit: kWh)",
+          "propertyNames": {
+            "description": "Zone key"
+          },
+          "title": "Space Heat Demand",
+          "type": "object"
+        },
+        "space_cool_demand": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "description": "Space cool demand (unit: kWh)",
+          "propertyNames": {
+            "description": "Zone key"
+          },
+          "title": "Space Cool Demand",
+          "type": "object"
+        }
+      },
+      "required": [
+        "internal_gains",
+        "solar_gains",
+        "operative_temp",
+        "internal_air_temp",
+        "space_heat_demand",
+        "space_cool_demand"
+      ],
+      "title": "OutputZoneData",
+      "type": "object"
+    }
+  }
+}
