@@ -254,4 +254,43 @@ mod tests {
             assert_eq!(result, ["A", "B", "C"]);
         }
     }
+
+    // Heat battery charging tests
+    fn make_pending_entry(
+        battery_name: ArcStr,
+        charging_source_name: ArcStr,
+    ) -> (ArcStr, (), HeatBatteryPcmChargingSource) {
+        let pcm_charging_source: HeatBatteryPcmChargingSource = serde_json::from_value(json!({
+            "type": "HeatSourceWet",
+            "name": charging_source_name,
+            "temp_flow_limit_upper": 65.0,
+            "flow_rate_charging_l_per_min": 10.0,
+            "A": 174.33952,
+            "B": -931.565,
+            "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": 0.035,
+            "inlet_diameter_mm": 6.5,
+            "Control": "hp_charge_control"
+        }))
+        .unwrap();
+
+        (battery_name, (), pcm_charging_source)
+    }
+
+    mod test_build_heat_battery_charging_dependency_graph {
+        use super::*;
+
+        #[test]
+        /// Batteries charged by non-battery sources have no predecessors.
+        fn test_no_battery_to_battery_dependencies() {
+            let pending = [
+                make_pending_entry("bat_A".into(), "heat_pump_1".into()),
+                make_pending_entry("bat_B".into(), "boiler_1".into()),
+            ];
+
+            let graph = build_heat_battery_charging_dependency_graph(&pending).unwrap();
+
+            assert_eq!(graph.edge_count(), 0);
+            assert_eq!(graph.node_count(), 2);
+        }
+    }
 }
