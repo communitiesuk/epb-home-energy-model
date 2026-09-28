@@ -95,103 +95,158 @@ pub(crate) struct CircularDependencyError(ArcStr);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indexmap::indexmap;
     use serde_json::json;
 
-    #[test]
-    fn test_preheated_water_sources_are_reordered() {
-        let hot_water_source_details: PreHeatedWaterSourceDetails = serde_json::from_value(json!(
-        {"type": "StorageTank",
-        "volume": 24.0,
-        "daily_losses": 1.55,
-        "init_temp": 48.0,
-        "ColdWaterSource": "storagetank2",
-        "HeatSource": {
-            "{name}_immersion": {
-                "type": "ImmersionHeater",
-                "power": 3.0,
-                "EnergySupply": "mains elec",
-                "Controlmin": "min_temp",
-                "Controlmax": "setpoint_temp_max",
-                "heater_position": 0.3,
-                "thermostat_position": 0.33}}
-            }))
-        .unwrap();
-        let hot_water_source_details_2: PreHeatedWaterSourceDetails =
-            serde_json::from_value(json!(
-            {"type": "StorageTank",
-            "volume": 24.0,
-            "daily_losses": 1.55,
-            "init_temp": 48.0,
-            "ColdWaterSource": "mains water",
-            "HeatSource": {
-                "{name}_immersion": {
-                    "type": "ImmersionHeater",
-                    "power": 3.0,
-                    "EnergySupply": "mains elec",
-                    "Controlmin": "min_temp",
-                    "Controlmax": "setpoint_temp_max",
-                    "heater_position": 0.3,
-                    "thermostat_position": 0.33}}
-                }))
-            .unwrap();
-        let preheated_sources_input: IndexMap<ArcStr, PreHeatedWaterSourceDetails> =
-            IndexMap::from([
-                ("storagetank1".into(), hot_water_source_details),
-                ("storagetank2".into(), hot_water_source_details_2),
-            ]);
-
-        let graph = build_preheated_water_source_dependency_graph(&preheated_sources_input);
-        let result = topological_sort_preheated_water_sources(&graph).unwrap();
-
-        assert_eq!(result, vec!["storagetank2", "storagetank1"]);
+    fn hot_water_source_details(cold_water_source: ArcStr) -> PreHeatedWaterSourceDetails {
+        serde_json::from_value(json!(
+            {
+                "type": "StorageTank",
+                "volume": 24.0,
+                "daily_losses": 1.55,
+                "init_temp": 48.0,
+                "ColdWaterSource": cold_water_source,
+                "HeatSource": {
+                    "{name}_immersion": {
+                        "type": "ImmersionHeater",
+                        "power": 3.0,
+                        "EnergySupply": "mains elec",
+                        "Controlmin": "min_temp",
+                        "Controlmax": "setpoint_temp_max",
+                        "heater_position": 0.3,
+                        "thermostat_position": 0.33
+                    }
+                }
+            }
+        ))
+        .unwrap()
     }
 
-    #[test]
-    fn test_preheated_water_sources_with_circular_dependency_produces_error() {
-        let hot_water_source_details: PreHeatedWaterSourceDetails = serde_json::from_value(json!(
-        {"type": "StorageTank",
-        "volume": 24.0,
-        "daily_losses": 1.55,
-        "init_temp": 48.0,
-        "ColdWaterSource": "storagetank2",
-        "HeatSource": {
-            "{name}_immersion": {
-                "type": "ImmersionHeater",
-                "power": 3.0,
-                "EnergySupply": "mains elec",
-                "Controlmin": "min_temp",
-                "Controlmax": "setpoint_temp_max",
-                "heater_position": 0.3,
-                "thermostat_position": 0.33}}
-            }))
-        .unwrap();
-        let hot_water_source_details_2: PreHeatedWaterSourceDetails =
-            serde_json::from_value(json!(
-            {"type": "StorageTank",
-            "volume": 24.0,
-            "daily_losses": 1.55,
-            "init_temp": 48.0,
-            "ColdWaterSource": "storagetank1",
-            "HeatSource": {
-                "{name}_immersion": {
-                    "type": "ImmersionHeater",
-                    "power": 3.0,
-                    "EnergySupply": "mains elec",
-                    "Controlmin": "min_temp",
-                    "Controlmax": "setpoint_temp_max",
-                    "heater_position": 0.3,
-                    "thermostat_position": 0.33}}
-                }))
-            .unwrap();
-        let preheated_sources_input: IndexMap<ArcStr, PreHeatedWaterSourceDetails> =
-            IndexMap::from([
-                ("storagetank1".into(), hot_water_source_details),
-                ("storagetank2".into(), hot_water_source_details_2),
+    mod test_build_preheated_water_source_dependency_graph {
+        use super::*;
+
+        #[test]
+        /// Sources with cold water feeds have no predecessors.
+        fn test_no_dependencies() {
+            let sources: IndexMap<ArcStr, PreHeatedWaterSourceDetails> = IndexMap::from([
+                (
+                    "preheat_A".into(),
+                    hot_water_source_details("mains_cold".into()),
+                ),
+                (
+                    "preheat_B".into(),
+                    hot_water_source_details("mains_cold".into()),
+                ),
             ]);
 
-        let graph = build_preheated_water_source_dependency_graph(&preheated_sources_input);
-        let result = topological_sort_preheated_water_sources(&graph);
+            let graph = build_preheated_water_source_dependency_graph(&sources);
 
-        assert!(result.is_err());
+            assert_eq!(graph.edge_count(), 0);
+            assert_eq!(graph.node_count(), 2);
+        }
+
+        #[test]
+        /// Source B feeds into source A — A depends on B.
+        fn test_chain_dependency() {
+            let sources: IndexMap<ArcStr, PreHeatedWaterSourceDetails> = IndexMap::from([
+                (
+                    "preheat_A".into(),
+                    hot_water_source_details("preheat_B".into()),
+                ),
+                (
+                    "preheat_B".into(),
+                    hot_water_source_details("mains_cold".into()),
+                ),
+            ]);
+
+            let graph = build_preheated_water_source_dependency_graph(&sources);
+            let a_idx = graph
+                .node_indices()
+                .find(|&idx| graph[idx] == "preheat_A")
+                .unwrap();
+            let b_idx = graph
+                .node_indices()
+                .find(|&idx| graph[idx] == "preheat_B")
+                .unwrap();
+
+            assert_eq!(graph.edge_count(), 1);
+            assert_eq!(graph.node_count(), 2);
+            // A depends on B (edge flows from B to A)
+            assert!(graph.contains_edge(b_idx, a_idx));
+            // B doesn't depend on A (no edge from A to B)
+            assert!(!graph.contains_edge(a_idx, b_idx));
+        }
+
+        #[test]
+        /// Empty input returns empty graph.
+        fn test_empty_map() {
+            let graph = build_preheated_water_source_dependency_graph(&indexmap! {});
+
+            assert_eq!(graph.edge_count(), 0);
+            assert_eq!(graph.node_count(), 0);
+        }
+    }
+
+    mod test_topological_sort_preheated_water_sources {
+        use super::*;
+
+        #[test]
+        /// B must come before A when A depends on B.
+        fn test_chain_order() {
+            let sources: IndexMap<ArcStr, PreHeatedWaterSourceDetails> = IndexMap::from([
+                (
+                    "preheat_A".into(),
+                    hot_water_source_details("preheat_B".into()),
+                ),
+                (
+                    "preheat_B".into(),
+                    hot_water_source_details("mains_cold".into()),
+                ),
+            ]);
+
+            let graph = build_preheated_water_source_dependency_graph(&sources);
+
+            let result = topological_sort_preheated_water_sources(&graph).unwrap();
+
+            assert_eq!(result, ["preheat_B", "preheat_A"]);
+        }
+
+        #[test]
+        /// Circular dependency produces an error
+        fn test_circular_dependency_raises() {
+            let sources: IndexMap<ArcStr, PreHeatedWaterSourceDetails> = IndexMap::from([
+                (
+                    "preheat_A".into(),
+                    hot_water_source_details("preheat_B".into()),
+                ),
+                (
+                    "preheat_B".into(),
+                    hot_water_source_details("preheat_A".into()),
+                ),
+            ]);
+
+            let graph = build_preheated_water_source_dependency_graph(&sources);
+
+            let result = topological_sort_preheated_water_sources(&graph);
+
+            assert!(result.is_err());
+        }
+
+        #[test]
+        /// Independent sources are all returned (order doesn't matter).
+        fn test_independent_sources() {
+            let sources: IndexMap<ArcStr, PreHeatedWaterSourceDetails> = IndexMap::from([
+                ("A".into(), hot_water_source_details("mains_cold".into())),
+                ("B".into(), hot_water_source_details("mains_cold".into())),
+                ("C".into(), hot_water_source_details("mains_cold".into())),
+            ]);
+
+            let graph = build_preheated_water_source_dependency_graph(&sources);
+
+            let mut result = topological_sort_preheated_water_sources(&graph).unwrap();
+            result.sort();
+
+            assert_eq!(result, ["A", "B", "C"]);
+        }
     }
 }
