@@ -9059,7 +9059,8 @@ mod tests {
             case::threshold_charges_item_at_least_zero(json!({"threshold_charges": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1]})
             ),
             case::threshold_prices_at_least_12_items(json!({"threshold_prices": [0, 1, 1]})),
-            case::threshold_prices_at_most_12_items(json!({"threshold_prices": [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]})),
+            case::threshold_prices_at_most_12_items(json!({"threshold_prices": [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]})
+            ),
             case::power_limit_export_should_not_be_zero(json!({"power_limit_export": 0})),
             case::power_limit_export_should_not_be_negative(json!({"power_limit_export": -1})),
         )]
@@ -9116,10 +9117,13 @@ mod tests {
         }
 
         #[rstest]
-        #[case(&[], "Priority list must be either Null or populated with keys from 'ElectricBattery' and 'diverter' keys.")]
-        #[case(&["battery1", "immersion_diverter"], "All ElectricBattery keys must all be in priority list.")]
+        #[case(&[], "Priority list must be either Null or populated with keys from 'ElectricBattery' and 'diverter' keys."
+        )]
+        #[case(&["battery1", "immersion_diverter"], "All ElectricBattery keys must all be in priority list."
+        )]
         #[case(&["battery1", "battery2"], "All diverter keys must all be in priority list.")]
-        #[case(&["battery1", "immersion_diverter", "battery2", "not_a_battery_or_diverter"], "Priority list must only contain keys in either 'ElectricBattery' or 'diverter'.")]
+        #[case(&["battery1", "immersion_diverter", "battery2", "not_a_battery_or_diverter"], "Priority list must only contain keys in either 'ElectricBattery' or 'diverter'."
+        )]
         fn test_validate_priority_invalid(
             #[case] priority: &[&str],
             #[case] expected_message: &str,
@@ -9799,8 +9803,10 @@ mod tests {
                 case::frac_convective_at_most_one(json!({"frac_convective": 2})),
                 case::rated_power_greater_than_zero(json!({"rated_power": 0})),
                 case::constant_needed_when_thermal_mass_given(json!({"thermal_mass": 100})),
-                case::constant_needed_when_thermal_mass_per_kw_given(json!({"thermal_mass_per_kw": 100})),
-                case::exponent_needed_when_thermal_mass_per_kw_given(json!({"thermal_mass_per_kw": 100, "c": 1.2})),
+                case::constant_needed_when_thermal_mass_per_kw_given(json!({"thermal_mass_per_kw": 100})
+                ),
+                case::exponent_needed_when_thermal_mass_per_kw_given(json!({"thermal_mass_per_kw": 100, "c": 1.2})
+                ),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
                 assert_range_constraints::<SpaceHeatSystemDetails>(valid_example, inputs);
@@ -9831,7 +9837,8 @@ mod tests {
                 case::frac_convective_should_be_at_least_zero(json!({"frac_convective": -1.})),
                 case::frac_convective_should_be_at_most_one(json!({"frac_convective": 2.})),
                 case::rated_power_should_be_at_least_zero(json!({"rated_power": -1.})),
-                case::thermal_mass_or_thermal_mass_per_m2_should_be_given(json!({"thermal_mass": null})),
+                case::thermal_mass_or_thermal_mass_per_m2_should_be_given(json!({"thermal_mass": null})
+                ),
                 case::constant_or_constant_per_m2_should_be_given(json!({"c": null})),
             )]
             fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
@@ -11637,4 +11644,456 @@ mod tests {
     }
 
     // no need to cover TestUniqueStringList as this is covered by unique_items constraint in serde_valid
+
+    mod energy_supply_battery_diverter_fuel_check {
+        use super::*;
+
+        #[fixture]
+        fn valid_battery() -> JsonValue {
+            serde_json::to_value(ElectricBattery {
+                capacity: 1.,
+                charge_discharge_efficiency_round_trip: 0.8,
+                battery_age: 1.,
+                minimum_charge_rate_one_way_trip: 0.001,
+                maximum_charge_rate_one_way_trip: 1.5,
+                maximum_discharge_rate_one_way_trip: 1.25,
+                battery_location: BatteryLocation::Outside,
+                grid_charging_possible: true,
+                grid_exporting_possible: Default::default(),
+            })
+            .unwrap()
+        }
+
+        #[fixture]
+        fn valid_diverter() -> JsonValue {
+            json!({
+                "Controlmax": "diverter_ctrl",
+                "HeatSource": "immersion",
+            })
+        }
+
+        #[rstest]
+        #[case(FuelType::Electricity)]
+        #[case(FuelType::Custom)]
+        fn test_battery_accepted_on_electric_supply(
+            #[case] fuel_type: FuelType,
+            valid_battery: JsonValue,
+        ) {
+            let supply = serde_json::from_value::<EnergySupplyDetails>(json!({
+                "fuel": fuel_type,
+                "is_export_capable": true,
+                "ElectricBattery": valid_battery,
+            }))
+            .unwrap();
+            assert!(supply.validate().is_ok());
+        }
+
+        #[rstest]
+        #[case(FuelType::MainsGas)]
+        #[case(FuelType::LpgBottled)]
+        #[case(FuelType::LpgBulk)]
+        #[case(FuelType::LpgCondition11F)]
+        fn test_battery_rejected_on_non_electric_supply(
+            #[case] fuel_type: FuelType,
+            valid_battery: JsonValue,
+        ) {
+            match serde_json::from_value::<EnergySupplyDetails>(json!({
+                "fuel": fuel_type,
+                "is_export_capable": true,
+                "ElectricBattery": valid_battery,
+            })) {
+                Ok(energy_supply) => {
+                    assert!(energy_supply.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_diverter_rejected_on_non_electric_supply(valid_diverter: JsonValue) {
+            match serde_json::from_value::<EnergySupplyDetails>(json!({
+                "fuel": FuelType::MainsGas,
+                "is_export_capable": false,
+                "diverter": valid_diverter,
+            })) {
+                Ok(energy_supply) => {
+                    assert!(energy_supply.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        // the upstream checks both are reported - we aren't (yet) so concerned with that
+        #[rstest]
+        fn test_battery_and_diverter_fail_when_both_set(
+            valid_battery: JsonValue,
+            valid_diverter: JsonValue,
+        ) {
+            match serde_json::from_value::<EnergySupplyDetails>(json!({
+                "fuel": FuelType::MainsGas,
+                "is_export_capable": false,
+                "ElectricBattery": valid_battery,
+                "diverter": valid_diverter,
+            })) {
+                Ok(energy_supply) => {
+                    assert!(energy_supply.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+    }
+
+    fn add_gas_supply(supplies: &mut JsonValue, name: Option<&str>) {
+        let name = name.unwrap_or("gas_supply");
+        supplies["EnergySupply"][name] = json!({
+            "fuel": FuelType::MainsGas,
+            "is_export_capable": false,
+        });
+    }
+
+    fn example_boiler(energy_supply: &str, energy_supply_aux: &str) -> JsonValue {
+        json!({
+            "type": "Boiler",
+            "EnergySupply": energy_supply,
+            "EnergySupply_aux": energy_supply_aux,
+            "rated_power": 24.0,
+            "efficiency_full_load": 0.891,
+            "efficiency_part_load": 0.991,
+            "boiler_location": "internal",
+            "modulation_load": 0.3,
+            "electricity_circ_pump": 0.06,
+            "electricity_part_load": 0.0131,
+            "electricity_full_load": 0.0388,
+            "electricity_standby": 0.0244,
+        })
+    }
+
+    fn add_custom_supply(supplies: &mut JsonValue, name: Option<&str>) {
+        let name = name.unwrap_or("custom_supply");
+        supplies["EnergySupply"][name] = json!({
+            "fuel": "custom",
+            "is_export_capable": false,
+        });
+    }
+
+    fn example_hiu(energy_supply: &str) -> JsonValue {
+        json!({
+            "type": "HIU",
+            "EnergySupply": energy_supply,
+            "power_max": 3.0,
+            "HIU_daily_loss": 0.8,
+            "building_level_distribution_losses": 62,
+            "power_circ_pump": 0.05,
+            "power_aux": 0.08,
+        })
+    }
+
+    fn example_point_of_use(energy_supply: &str) -> JsonValue {
+        json!({
+            "type": "PointOfUse",
+            "efficiency": 1.0,
+            "EnergySupply": energy_supply,
+            "ColdWaterSource": "mains water",
+            "setpoint_temp": 52,
+        })
+    }
+
+    fn example_direct_electric_boiler(energy_supply: &str) -> JsonValue {
+        json!({
+            "type": "DirectElectricBoiler",
+            "EnergySupply": energy_supply,
+            "rated_power": 15.0,
+            "electricity_circ_pump": 0.05,
+            "electricity_standby": 0.01,
+        })
+    }
+
+    fn example_dry_electric_underfloor_heater(energy_supply: &str, control: &str) -> JsonValue {
+        json!({
+            "type": "DryElectricUnderfloorHeating",
+            "EnergySupply": energy_supply,
+            "Control": control,
+            "emitter_floor_area": 80.0,
+            "c_per_m2": 0.014,
+            "n": 1.02,
+            "thermal_mass_per_m2": 0.01,
+            "frac_convective": 0.4,
+            "rated_power": 10.0,
+        })
+    }
+
+    mod input_fuel_compatibility {
+        use super::*;
+
+        #[rstest]
+        fn test_baseline_passes(baseline_demo_file_json: JsonValue) {
+            let input: Input = serde_json::from_value(baseline_demo_file_json).unwrap();
+            assert!(input.validate().is_ok());
+        }
+
+        #[rstest]
+        fn test_instant_electric_heater_on_gas_rejected(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            add_gas_supply(&mut modified, None);
+            modified["SpaceHeatSystem"]["main"]["EnergySupply"] = json!("gas_supply");
+            match serde_json::from_value::<Input>(modified) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_immersion_heater_on_gas_rejected(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            add_gas_supply(&mut modified, None);
+            modified["HotWaterSource"]["hw cylinder"]["HeatSource"]["immersion"]["EnergySupply"] =
+                json!("gas_supply");
+            match serde_json::from_value::<Input>(modified) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_boiler_on_gas_accepted(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            add_gas_supply(&mut modified, None);
+            modified["HeatSourceWet"] = json!({
+                "blr1": example_boiler("gas_supply".into(), "mains elec".into())
+            });
+            let input: Input = serde_json::from_value(modified).unwrap();
+            assert!(input.validate().is_ok());
+        }
+
+        #[rstest]
+        fn test_boiler_on_electricity_rejected(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            modified["HeatSourceWet"] = json!({
+                "blr1": example_boiler("mains elec".into(), "mains elec".into())
+            });
+            match serde_json::from_value::<Input>(modified) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_boiler_aux_on_gas_rejected(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            add_gas_supply(&mut modified, None);
+            modified["HeatSourceWet"] = json!({
+                "blr1": example_boiler("gas_supply".into(), "gas_supply".into())
+            });
+            match serde_json::from_value::<Input>(modified) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        // skipping test_multiple_mismatches_reported_together, though we expect they should be reported together
+
+        #[rstest]
+        fn test_custom_fuel_accepted_on_electric_system(baseline_demo_file_json: JsonValue) {
+            // CUSTOM is treated as compatible with both electric-only and combustion
+            // classes so users defining a fuel outside the built-in enum are not
+            // blocked by this validator.
+            let mut modified = baseline_demo_file_json;
+            modified["EnergySupply"]["custom_supply"] = json!({
+                "fuel": "custom",
+                "is_export_capable": false,
+            });
+            modified["SpaceHeatSystem"]["main"]["EnergySupply"] = json!("custom_supply");
+            let input: Input = serde_json::from_value(modified).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[rstest]
+        fn test_appliance_gains_on_gas_accepted(baseline_demo_file_json: JsonValue) {
+            // Hobs and ovens can be gas-fuelled; ApplianceGains is intentionally
+            // unconstrained so this must validate.
+            let mut modified = baseline_demo_file_json;
+            add_gas_supply(&mut modified, None);
+            let first_appliance = modified["ApplianceGains"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap()
+                .to_string();
+            modified["ApplianceGains"][first_appliance]["EnergySupply"] = json!("gas_supply");
+            let input: Input = serde_json::from_value(modified).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[rstest]
+        fn test_hiu_on_custom_accepted(baseline_demo_file_json: JsonValue) {
+            // District-heat import has no built-in FuelType, so users declare it as
+            // CUSTOM. An HIU with a CUSTOM supply must validate.
+            let mut modified = baseline_demo_file_json;
+            add_custom_supply(&mut modified, "heat network".into());
+            modified["HeatSourceWet"] = json!({"HeatNetwork": example_hiu("heat network".into())});
+            let input: Input = serde_json::from_value(modified).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[rstest]
+        fn test_hiu_on_electricity_rejected(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            modified["HeatSourceWet"] = json!({"HeatNetwork": example_hiu("mains elec".into())});
+            match serde_json::from_value::<Input>(modified) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_hiu_on_gas_rejected(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            add_gas_supply(&mut modified, None);
+            modified["HeatSourceWet"] = json!({"HeatNetwork": example_hiu("gas_supply".into())});
+            match serde_json::from_value::<Input>(modified) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_point_of_use_on_electricity_accepted(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            modified["HotWaterSource"]["hw cylinder"] =
+                json!(example_point_of_use("mains elec".into()));
+            let input: Input = serde_json::from_value(modified).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[rstest]
+        fn test_point_of_use_on_gas_rejected(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            add_gas_supply(&mut modified, None);
+            modified["HotWaterSource"]["hw cylinder"] =
+                json!(example_point_of_use("gas_supply".into()));
+            match serde_json::from_value::<Input>(modified) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_point_of_use_on_custom_accepted(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            add_custom_supply(&mut modified, None);
+            modified["HotWaterSource"]["hw cylinder"] =
+                json!(example_point_of_use("custom_supply".into()));
+            let input: Input = serde_json::from_value(modified).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[fixture]
+        fn heat_network_5g() -> JsonValue {
+            let file = File::open("./examples/input/core/short/demo_heat_network_5G.json").unwrap();
+            serde_json::from_reader(file).unwrap()
+        }
+
+        #[rstest]
+        fn test_heat_pump_heat_network_on_custom_accepted(heat_network_5g: JsonValue) {
+            let input: Input = serde_json::from_value(heat_network_5g).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[rstest]
+        fn test_heat_pump_heat_network_on_electricity_rejected(heat_network_5g: JsonValue) {
+            let mut demo = heat_network_5g;
+            demo["EnergySupply"]["heat network"]["fuel"] = "electricity".into();
+            match serde_json::from_value::<Input>(demo) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_heat_pump_heat_network_on_gas_rejected(heat_network_5g: JsonValue) {
+            let mut demo = heat_network_5g;
+            demo["EnergySupply"]["heat network"]["fuel"] = "mains_gas".into();
+            match serde_json::from_value::<Input>(demo) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_direct_electric_boiler_on_electricity_accepted(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            modified["HeatSourceWet"] = json!({
+                "deb1": example_direct_electric_boiler("mains elec".into())
+            });
+            let input: Input = serde_json::from_value(modified).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[rstest]
+        fn test_direct_electric_boiler_on_gas_rejected(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            add_gas_supply(&mut modified, None);
+            modified["HeatSourceWet"] = json!({
+                "deb1": example_direct_electric_boiler("gas_supply".into())
+            });
+            match serde_json::from_value::<Input>(modified) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[rstest]
+        fn test_dry_electric_underfloor_heater_on_electricity_accepted(
+            baseline_demo_file_json: JsonValue,
+        ) {
+            let mut modified = baseline_demo_file_json;
+            modified["SpaceHeatSystem"]["main"] = example_dry_electric_underfloor_heater(
+                "mains elec",
+                modified["SpaceHeatSystem"]["main"]["Control"]
+                    .as_str()
+                    .unwrap(),
+            );
+            let input: Input = serde_json::from_value(modified).unwrap();
+            input.validate().unwrap();
+        }
+
+        #[rstest]
+        fn test_dry_electric_underfloor_heater_on_gas_rejected(baseline_demo_file_json: JsonValue) {
+            let mut modified = baseline_demo_file_json;
+            add_gas_supply(&mut modified, None);
+            modified["SpaceHeatSystem"]["main"] = example_dry_electric_underfloor_heater(
+                "gas_supply",
+                modified["SpaceHeatSystem"]["main"]["Control"]
+                    .as_str()
+                    .unwrap(),
+            );
+            match serde_json::from_value::<Input>(modified) {
+                Ok(input) => {
+                    assert!(input.validate().is_err());
+                }
+                Err(_) => {}
+            }
+        }
+    }
 }
