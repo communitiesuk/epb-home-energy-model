@@ -35,7 +35,6 @@ use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkService
 use crate::core::heating_systems::heat_pump::{
     HeatPump, HeatPumpEmitterType, HeatPumpHotWaterOnly,
 };
-use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
     HeatSourceWithStorageTank, HotWaterStorageTank, ImmersionHeater, PVDiverter,
@@ -6111,23 +6110,21 @@ fn space_heat_systems_from_input(
                 system_name.clone(),
                 Arc::new(Mutex::new(match space_heat_system_details {
                     SpaceHeatSystemDetails::InstantElectricHeater {
-                        rated_power,
-                        control,
-                        frac_convective,
                         energy_supply,
                         ..
                     } => {
                         let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
                         let energy_supply_conn_name = system_name.clone();
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
-                        let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_ref()).unwrap();
-                        SpaceHeatSystem::Instant(InstantElecHeater::new(
-                            *rated_power,
-                            *frac_convective,
-                            energy_supply_conn,
-                            simulation_time.step_in_hours(),
-                            controls.get_with_string(control),
-                        ))
+                        let _energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_ref()).unwrap();
+                        // SpaceHeatSystem::Instant(InstantElecHeater::new(
+                        //     *rated_power,
+                        //     *frac_convective,
+                        //     energy_supply_conn,
+                        //     simulation_time.step_in_hours(),
+                        //     controls.get_with_string(control),
+                        // ))
+                        todo!()
                     }
                     SpaceHeatSystemDetails::ElectricStorageHeater { pwr_in, rated_power_instant, storage_capacity, air_flow_type, frac_convective, fan_pwr, n_units, energy_supply, zone, control, control_charger, dry_core_min_output, dry_core_max_output, state_of_charge_init, .. } => {
                         let zone: ArcStr = zone.into();

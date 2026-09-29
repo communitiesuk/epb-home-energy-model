@@ -290,22 +290,22 @@ impl SpaceHeatSystem {
         energy_demand: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        Ok(match self {
+        match self {
             SpaceHeatSystem::ElecStorage(elec_storage) => {
-                elec_storage.demand_energy(energy_demand, &simulation_time_iteration)?
+                elec_storage.demand_energy(energy_demand, &simulation_time_iteration)
             }
             SpaceHeatSystem::Instant(ref mut instant) => {
                 instant.demand_energy(energy_demand, simulation_time_iteration)
             }
             SpaceHeatSystem::WarmAir(ref mut warm_air) => {
-                warm_air.demand_energy(energy_demand, simulation_time_iteration)?
+                warm_air.demand_energy(energy_demand, simulation_time_iteration)
             }
             SpaceHeatSystem::WetDistribution(ref wet_distribution) => Emitters::demand_energy(
                 wet_distribution.clone(),
                 energy_demand,
                 simulation_time_iteration,
-            )?,
-        })
+            ),
+        }
     }
 
     pub fn in_required_period(
