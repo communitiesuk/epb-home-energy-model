@@ -4921,19 +4921,16 @@ fn heat_source_wet_from_input(
                         )
                     })?
                     .clone();
-                let energy_supply_conn_aux_boiler = EnergySupply::connection(
-                    energy_supply_aux_boiler,
-                    format!("Boiler_auxiliary: {name}").as_str(),
-                )?;
 
                 let cost_schedule_hybrid_hp = boiler.cost_schedule_hybrid.clone();
 
                 let boiler = Arc::new(RwLock::new(Boiler::new(
                     boiler.as_ref().into(),
                     energy_supply_boiler,
-                    energy_supply_conn_aux_boiler,
+                    energy_supply_aux_boiler,
                     external_conditions.clone(),
                     simulation_time.step_in_hours(),
+                    name,
                 )?));
 
                 timestep_end_calcs.push(WetHeatSource::Boiler(boiler.clone()));
@@ -4983,17 +4980,15 @@ fn heat_source_wet_from_input(
                 })?
                 .clone();
             let energy_supply_aux = energy_supplies.get(energy_supply_auxiliary).ok_or_else(|| anyhow!("Boiler references undeclared auxiliary energy supply '{energy_supply_auxiliary}'."))?.clone();
-            let aux_supply_name = format!("Boiler_auxiliary: {name}");
-            let energy_supply_conn_aux =
-                EnergySupply::connection(energy_supply_aux.clone(), aux_supply_name.as_str())?;
-
+          
             let heat_source = WetHeatSource::Boiler(Arc::new(RwLock::new(
                 Boiler::new(
                     input,
                     energy_supply,
-                    energy_supply_conn_aux,
+                    energy_supply_aux,
                     external_conditions.clone(),
                     simulation_time.step_in_hours(),
+                    name
                 )
                 .expect("could not construct boiler value from provided data"),
             )));

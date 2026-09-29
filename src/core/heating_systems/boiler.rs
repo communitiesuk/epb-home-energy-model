@@ -11,7 +11,8 @@ use crate::core::water_heat_demand::misc::{
 };
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    BoilerHotWaterTest, CombiBoilerType, CombiKeepHotFuel, FuelType, HotWaterSourceDetails,
+    BoilerHotWaterTest, CombiBoilerType, CombiKeepHotFuel, FuelCategory, FuelType,
+    HotWaterSourceDetails,
 };
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
@@ -625,6 +626,15 @@ pub struct Boiler {
     service_results: RwLock<Vec<ServiceResult>>,
 }
 
+// Max gross efficiency values from HEM-TP-14 Table 5
+const MAX_GROSS_EFFICIENCY_NON_CONDENSING_PART_LOAD_NATURAL_GAS: f64 = 0.88991;
+const MAX_GROSS_EFFICIENCY_NON_CONDENSING_PART_LOAD_LPG: f64 = 0.83811;
+const MAX_GROSS_EFFICIENCY_NON_CONDENSING_PART_LOAD_OIL: f64 = 0.87141;
+
+const MAX_GROSS_EFFICIENCY_NON_CONDENSING_FULL_LOAD_NATURAL_GAS: f64 = 0.82892;
+const MAX_GROSS_EFFICIENCY_NON_CONDENSING_FULL_LOAD_LPG: f64 = 0.84732;
+const MAX_GROSS_EFFICIENCY_NON_CONDENSING_FULL_LOAD_OIL: f64 = 0.86204;
+
 impl Boiler {
     /// Arguments:
     /// * `boiler_data` - boiler characteristics
@@ -632,10 +642,25 @@ impl Boiler {
     pub(crate) fn new(
         boiler_data: HeatSourceWetDetails,
         energy_supply: Arc<RwLock<EnergySupply>>,
-        energy_supply_conn_aux: EnergySupplyConnection,
+        energy_supply_aux: Arc<RwLock<EnergySupply>>,
         external_conditions: Arc<ExternalConditions>,
         simulation_timestep: f64,
+        name: &str,
     ) -> anyhow::Result<Self> {
+        let fuel_category = energy_supply.read().fuel_type().category();
+        match fuel_category {
+            FuelCategory::Gaseous | FuelCategory::Liquid => {}
+            _ => {
+                bail!("Boiler requires a gas or liquid fuel energy supply; got {fuel_category}")
+            }
+        }
+
+        let aux_supply_name = format!("Boiler_auxiliary: {name}");
+        let energy_supply_conn_aux = EnergySupply::connection(
+            energy_supply_aux,
+            format!("Boiler_auxiliary: {aux_supply_name}").as_str(),
+        )?;
+
         match boiler_data {
             HeatSourceWetDetails::Boiler {
                 energy_supply: energy_supply_type,
@@ -1468,7 +1493,7 @@ mod tests {
 
     mod test_boiler_service_water_combi {
         use crate::core::common::WaterSupply;
-        use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{
             Boiler, BoilerForBoilerService, BoilerServiceWaterCombi,
@@ -1539,15 +1564,14 @@ mod tests {
                 )
                 .build(),
             ));
-            let energy_supply_conn_aux =
-                EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
 
             let mut boiler = Boiler::new(
                 boiler_data,
                 energy_supply,
-                energy_supply_conn_aux,
+                energy_supply_aux,
                 Arc::new(external_conditions),
                 simulation_time.step,
+                "Boiler_auxiliary",
             )
             .unwrap();
 
@@ -1830,7 +1854,7 @@ mod tests {
 
     mod test_boiler_service_water_regular {
         use crate::core::controls::time_control::{RangeTimeControl, ScheduleOrControl};
-        use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{
             Boiler, BoilerForBoilerService, BoilerServiceWaterRegular,
@@ -1878,15 +1902,14 @@ mod tests {
                 )
                 .build(),
             ));
-            let energy_supply_conn_aux =
-                EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
 
             let mut boiler = Boiler::new(
                 boiler_data,
                 energy_supply,
-                energy_supply_conn_aux,
+                energy_supply_aux,
                 Arc::new(external_conditions),
                 simulation_time.step,
+                "Boiler_auxiliary",
             )
             .unwrap();
             boiler.create_service_connection("boiler_test").unwrap();
@@ -2070,7 +2093,7 @@ mod tests {
         use crate::core::controls::time_control::{
             SetpointOrCombinationControl, SetpointTimeControl,
         };
-        use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+        use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
         use crate::core::heating_systems::boiler::tests::external_conditions;
         use crate::core::heating_systems::boiler::{
             Boiler, BoilerForBoilerService, BoilerServiceSpace,
@@ -2124,15 +2147,14 @@ mod tests {
                 )
                 .build(),
             ));
-            let energy_supply_conn_aux =
-                EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
 
             let mut boiler = Boiler::new(
                 boiler_data,
                 energy_supply,
-                energy_supply_conn_aux,
+                energy_supply_aux,
                 Arc::new(external_conditions),
                 simulation_time.step,
+                "Boiler_auxiliary",
             )
             .unwrap();
             boiler.create_service_connection("boiler_test").unwrap();
@@ -2319,15 +2341,14 @@ mod tests {
                 )
                 .build(),
             ));
-            let energy_supply_conn_aux =
-                EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
 
             let mut boiler = Boiler::new(
                 boiler_data,
                 energy_supply.clone(),
-                energy_supply_conn_aux,
+                energy_supply_aux,
                 Arc::new(external_conditions),
                 simulation_time.step,
+                "Boiler_auxiliary",
             )
             .unwrap();
             boiler.create_service_connection("boiler_test").unwrap();
@@ -2489,15 +2510,14 @@ mod tests {
                 "electricity_standby" : 0.0244
             }))
             .unwrap();
-            let energy_supply_conn_aux =
-                EnergySupply::connection(energy_supply.clone(), "Boiler_auxiliary").unwrap();
 
             let boiler_external = Boiler::new(
                 boiler_external_data,
+                energy_supply.clone(),
                 energy_supply,
-                energy_supply_conn_aux,
                 Arc::new(external_conditions),
                 simulation_time.step,
+                "Boiler_auxiliary",
             )
             .unwrap();
 
@@ -2604,15 +2624,14 @@ mod tests {
                 "electricity_standby" : 0.0244
             }))
             .unwrap();
-            let energy_supply_conn_aux =
-                EnergySupply::connection(energy_supply.clone(), "Boiler_auxiliary").unwrap();
 
             let boiler_external = Boiler::new(
                 boiler_external_data,
+                energy_supply.clone(),
                 energy_supply,
-                energy_supply_conn_aux,
                 Arc::new(external_conditions),
                 simulation_time.step,
+                "Boiler_auxiliary",
             )
             .unwrap();
 
@@ -2765,15 +2784,14 @@ mod tests {
                 )
                 .build(),
             ));
-            let energy_supply_conn_auxiliary =
-                EnergySupply::connection(energy_supply_aux.clone(), "boiler_auxiliary").unwrap();
 
             let mut boiler = Boiler::new(
                 boiler_data,
-                energy_supply.clone(),
-                energy_supply_conn_auxiliary,
+                energy_supply,
+                energy_supply_aux,
                 external_conditions.clone(),
                 simulation_time.step,
+                "boiler_auxiliary",
             )
             .unwrap();
 
@@ -2867,14 +2885,14 @@ mod tests {
                 EnergySupplyBuilder::new(FuelType::LpgBulk, simulation_time.iter().total_steps())
                     .build(),
             ));
-            let energy_supply_connection_aux =
-                EnergySupply::connection(energy_supply.clone(), "boiler_lpg_bulk").unwrap();
+
             let boiler_lpg = Boiler::new(
                 boiler_data.clone(),
                 energy_supply.clone(),
-                energy_supply_connection_aux.clone(),
+                energy_supply,
                 external_conditions.clone(),
                 simulation_time.step,
+                "boiler_lpg_bulk",
             )
             .unwrap();
 
@@ -2900,9 +2918,10 @@ mod tests {
             let boiler = Boiler::new(
                 boiler_data,
                 energy_supply.clone(),
-                energy_supply_connection_aux,
+                energy_supply,
                 external_conditions.clone(),
                 simulation_time.step,
+                "boiler_lpg_bulk",
             )
             .unwrap();
             assert_relative_eq!(

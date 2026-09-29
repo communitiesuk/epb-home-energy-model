@@ -6383,17 +6383,13 @@ mod tests {
 
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::from(RwLock::from(energy_supply));
 
-        let energy_supply_conn_aux = EnergySupplyConnection::new(
-            energy_supply.clone(),
-            energy_supply_conn_name_auxiliary.into(),
-        );
-
         Boiler::new(
             boiler_details,
+            energy_supply.clone(),
             energy_supply,
-            energy_supply_conn_aux,
             Arc::new(external_conditions),
             simulation_time_for_heat_pump.step,
+            energy_supply_conn_name_auxiliary,
         )
         .unwrap()
     }
