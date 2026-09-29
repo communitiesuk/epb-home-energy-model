@@ -86,7 +86,7 @@ use crate::input::{
     HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
     HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
-    InternalGains as InternalGainsInput, InternalGainsDetails,
+    InternalGains as InternalGainsInput, InternalGainsDetails, NumericScheduleOrControlReference,
     OnSiteGeneration as OnSiteGenerationInput, PartyWallCavityType,
     PcmBatteryChargingConfiguration, PhotovoltaicInputs,
     PhotovoltaicSystem as PhotovoltaicSystemInput,
@@ -425,8 +425,85 @@ fn single_control_from_details(
             )
             .into()
         }
-        ControlDetails::RangeTimer { .. } => todo!("complete as part of 1.0.0a9 migration"),
+        ControlDetails::RangeTimer {
+            start_day,
+            time_series_step,
+            advanced_start,
+            schedule_lower,
+            schedule_upper,
+        } => {
+
+            // TODO ensure this is tested
+            let schedule_or_control_lower: ScheduleOrControl<Option<f64>> = match schedule_lower {
+                NumericScheduleOrControlReference::Schedule(schedule) => {
+                    ScheduleOrControl::Schedule(expand_numeric_schedule(schedule))
+                }
+                NumericScheduleOrControlReference::ControlReference(control_name) => {
+                    let control = get_referenced_control(
+                        external_conditions.clone(),
+                        simulation_time_iterator,
+                        control_input,
+                        control_name,
+                    )?;
+                    ScheduleOrControl::Control(control)
+                }
+            };
+
+            let schedule_or_control_upper: ScheduleOrControl<Option<f64>> = match schedule_upper {
+                NumericScheduleOrControlReference::Schedule(schedule) => {
+                    ScheduleOrControl::Schedule(expand_numeric_schedule(schedule))
+                }
+                NumericScheduleOrControlReference::ControlReference(control_name) => {
+                    let control = get_referenced_control(
+                        external_conditions.clone(),
+                        simulation_time_iterator,
+                        control_input,
+                        control_name,
+                    )?;
+                    ScheduleOrControl::Control(control)
+                }
+            };
+
+            let range_time_control = RangeTimeControl::new(
+                schedule_or_control_lower,
+                schedule_or_control_upper,
+                simulation_time_iterator.clone(),
+                *start_day,
+                *time_series_step,
+                *advanced_start,
+            )?;
+            Control::RangeTime(range_time_control.into()).into()
+        }
     })
+}
+
+fn get_referenced_control(
+    external_conditions: Arc<ExternalConditions>,
+    simulation_time_iterator: &SimulationTimeIterator,
+    control_input: &ControlInput,
+    control_name: &ArcStr,
+) -> anyhow::Result<Control> {
+    // TODO avoid circular references
+    let control_details = match control_input.get(control_name) {
+        Some(control_details) => control_details,
+        None => bail!(
+            "There was a reference to a control with name '{control_name}' that was not provided."
+        ),
+    };
+    let control = single_control_from_details(
+        control_details,
+        external_conditions.clone(),
+        simulation_time_iterator,
+        control_input,
+    )?;
+
+    if control.is_none() {
+        // TODO look into why this is an Option<>
+        // is it possible for this to be None?
+        bail!("Referenced control '{control_name}' could not be read");
+    }
+
+    Ok(control.unwrap())
 }
 
 fn init_resistance_or_uvalue_from_data(
