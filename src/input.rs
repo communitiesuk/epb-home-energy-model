@@ -11681,29 +11681,23 @@ mod tests {
             #[case] fuel_type: FuelType,
             valid_battery: JsonValue,
         ) {
-            match serde_json::from_value::<EnergySupplyDetails>(json!({
+            if let Ok(energy_supply) = serde_json::from_value::<EnergySupplyDetails>(json!({
                 "fuel": fuel_type,
                 "is_export_capable": true,
                 "ElectricBattery": valid_battery,
             })) {
-                Ok(energy_supply) => {
-                    assert!(energy_supply.validate().is_err());
-                }
-                Err(_) => {}
+                assert!(energy_supply.validate().is_err());
             }
         }
 
         #[rstest]
         fn test_diverter_rejected_on_non_electric_supply(valid_diverter: JsonValue) {
-            match serde_json::from_value::<EnergySupplyDetails>(json!({
+            if let Ok(energy_supply) = serde_json::from_value::<EnergySupplyDetails>(json!({
                 "fuel": FuelType::MainsGas,
                 "is_export_capable": false,
                 "diverter": valid_diverter,
             })) {
-                Ok(energy_supply) => {
-                    assert!(energy_supply.validate().is_err());
-                }
-                Err(_) => {}
+                assert!(energy_supply.validate().is_err());
             }
         }
 
@@ -11713,16 +11707,13 @@ mod tests {
             valid_battery: JsonValue,
             valid_diverter: JsonValue,
         ) {
-            match serde_json::from_value::<EnergySupplyDetails>(json!({
+            if let Ok(energy_supply) = serde_json::from_value::<EnergySupplyDetails>(json!({
                 "fuel": FuelType::MainsGas,
                 "is_export_capable": false,
                 "ElectricBattery": valid_battery,
                 "diverter": valid_diverter,
             })) {
-                Ok(energy_supply) => {
-                    assert!(energy_supply.validate().is_err());
-                }
-                Err(_) => {}
+                assert!(energy_supply.validate().is_err());
             }
         }
     }
@@ -11820,11 +11811,8 @@ mod tests {
             let mut modified = baseline_demo_file_json;
             add_gas_supply(&mut modified, None);
             modified["SpaceHeatSystem"]["main"]["EnergySupply"] = json!("gas_supply");
-            match serde_json::from_value::<Input>(modified) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -11834,11 +11822,8 @@ mod tests {
             add_gas_supply(&mut modified, None);
             modified["HotWaterSource"]["hw cylinder"]["HeatSource"]["immersion"]["EnergySupply"] =
                 json!("gas_supply");
-            match serde_json::from_value::<Input>(modified) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -11847,7 +11832,7 @@ mod tests {
             let mut modified = baseline_demo_file_json;
             add_gas_supply(&mut modified, None);
             modified["HeatSourceWet"] = json!({
-                "blr1": example_boiler("gas_supply".into(), "mains elec".into())
+                "blr1": example_boiler("gas_supply", "mains elec")
             });
             let input: Input = serde_json::from_value(modified).unwrap();
             assert!(input.validate().is_ok());
@@ -11857,13 +11842,10 @@ mod tests {
         fn test_boiler_on_electricity_rejected(baseline_demo_file_json: JsonValue) {
             let mut modified = baseline_demo_file_json;
             modified["HeatSourceWet"] = json!({
-                "blr1": example_boiler("mains elec".into(), "mains elec".into())
+                "blr1": example_boiler("mains elec", "mains elec")
             });
-            match serde_json::from_value::<Input>(modified) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -11872,13 +11854,10 @@ mod tests {
             let mut modified = baseline_demo_file_json;
             add_gas_supply(&mut modified, None);
             modified["HeatSourceWet"] = json!({
-                "blr1": example_boiler("gas_supply".into(), "gas_supply".into())
+                "blr1": example_boiler("gas_supply", "gas_supply")
             });
-            match serde_json::from_value::<Input>(modified) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -11923,7 +11902,7 @@ mod tests {
             // CUSTOM. An HIU with a CUSTOM supply must validate.
             let mut modified = baseline_demo_file_json;
             add_custom_supply(&mut modified, "heat network".into());
-            modified["HeatSourceWet"] = json!({"HeatNetwork": example_hiu("heat network".into())});
+            modified["HeatSourceWet"] = json!({"HeatNetwork": example_hiu("heat network")});
             let input: Input = serde_json::from_value(modified).unwrap();
             input.validate().unwrap();
         }
@@ -11931,12 +11910,9 @@ mod tests {
         #[rstest]
         fn test_hiu_on_electricity_rejected(baseline_demo_file_json: JsonValue) {
             let mut modified = baseline_demo_file_json;
-            modified["HeatSourceWet"] = json!({"HeatNetwork": example_hiu("mains elec".into())});
-            match serde_json::from_value::<Input>(modified) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            modified["HeatSourceWet"] = json!({"HeatNetwork": example_hiu("mains elec")});
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -11944,20 +11920,16 @@ mod tests {
         fn test_hiu_on_gas_rejected(baseline_demo_file_json: JsonValue) {
             let mut modified = baseline_demo_file_json;
             add_gas_supply(&mut modified, None);
-            modified["HeatSourceWet"] = json!({"HeatNetwork": example_hiu("gas_supply".into())});
-            match serde_json::from_value::<Input>(modified) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            modified["HeatSourceWet"] = json!({"HeatNetwork": example_hiu("gas_supply")});
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
         #[rstest]
         fn test_point_of_use_on_electricity_accepted(baseline_demo_file_json: JsonValue) {
             let mut modified = baseline_demo_file_json;
-            modified["HotWaterSource"]["hw cylinder"] =
-                json!(example_point_of_use("mains elec".into()));
+            modified["HotWaterSource"]["hw cylinder"] = json!(example_point_of_use("mains elec"));
             let input: Input = serde_json::from_value(modified).unwrap();
             input.validate().unwrap();
         }
@@ -11966,13 +11938,9 @@ mod tests {
         fn test_point_of_use_on_gas_rejected(baseline_demo_file_json: JsonValue) {
             let mut modified = baseline_demo_file_json;
             add_gas_supply(&mut modified, None);
-            modified["HotWaterSource"]["hw cylinder"] =
-                json!(example_point_of_use("gas_supply".into()));
-            match serde_json::from_value::<Input>(modified) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            modified["HotWaterSource"]["hw cylinder"] = json!(example_point_of_use("gas_supply"));
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -11981,7 +11949,7 @@ mod tests {
             let mut modified = baseline_demo_file_json;
             add_custom_supply(&mut modified, None);
             modified["HotWaterSource"]["hw cylinder"] =
-                json!(example_point_of_use("custom_supply".into()));
+                json!(example_point_of_use("custom_supply"));
             let input: Input = serde_json::from_value(modified).unwrap();
             input.validate().unwrap();
         }
@@ -12002,11 +11970,8 @@ mod tests {
         fn test_heat_pump_heat_network_on_electricity_rejected(heat_network_5g: JsonValue) {
             let mut demo = heat_network_5g;
             demo["EnergySupply"]["heat network"]["fuel"] = "electricity".into();
-            match serde_json::from_value::<Input>(demo) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(demo)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -12014,11 +11979,8 @@ mod tests {
         fn test_heat_pump_heat_network_on_gas_rejected(heat_network_5g: JsonValue) {
             let mut demo = heat_network_5g;
             demo["EnergySupply"]["heat network"]["fuel"] = "mains_gas".into();
-            match serde_json::from_value::<Input>(demo) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(demo)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -12026,7 +11988,7 @@ mod tests {
         fn test_direct_electric_boiler_on_electricity_accepted(baseline_demo_file_json: JsonValue) {
             let mut modified = baseline_demo_file_json;
             modified["HeatSourceWet"] = json!({
-                "deb1": example_direct_electric_boiler("mains elec".into())
+                "deb1": example_direct_electric_boiler("mains elec")
             });
             let input: Input = serde_json::from_value(modified).unwrap();
             input.validate().unwrap();
@@ -12037,13 +11999,10 @@ mod tests {
             let mut modified = baseline_demo_file_json;
             add_gas_supply(&mut modified, None);
             modified["HeatSourceWet"] = json!({
-                "deb1": example_direct_electric_boiler("gas_supply".into())
+                "deb1": example_direct_electric_boiler("gas_supply")
             });
-            match serde_json::from_value::<Input>(modified) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -12072,11 +12031,8 @@ mod tests {
                     .as_str()
                     .unwrap(),
             );
-            match serde_json::from_value::<Input>(modified) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
     }
@@ -12110,11 +12066,8 @@ mod tests {
         ) {
             let modified = two_heated_zones_input.as_object_mut().unwrap();
             modified.remove("ZoneProcessingOrder");
-            match serde_json::from_value::<Input>(json!(modified)) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -12130,11 +12083,8 @@ mod tests {
                 .to_string();
             let mut modified = two_heated_zones_input;
             modified["ZoneProcessingOrder"] = json!([&first_zone, &first_zone]);
-            match serde_json::from_value::<Input>(json!(modified)) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -12149,11 +12099,8 @@ mod tests {
                 .collect();
             modified_order.push("no such zone".to_string());
             modified["ZoneProcessingOrder"] = json!(modified_order);
-            match serde_json::from_value::<Input>(json!(modified)) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
@@ -12169,11 +12116,8 @@ mod tests {
                 .to_string();
             let mut modified = two_heated_zones_input;
             modified["ZoneProcessingOrder"] = json!([first_zone]);
-            match serde_json::from_value::<Input>(json!(modified)) {
-                Ok(input) => {
-                    assert!(input.validate().is_err());
-                }
-                Err(_) => {}
+            if let Ok(input) = serde_json::from_value::<Input>(json!(modified)) {
+                assert!(input.validate().is_err());
             }
         }
 
