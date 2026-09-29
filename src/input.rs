@@ -7329,22 +7329,6 @@ mod tests {
         json
     }
 
-    //     @staticmethod
-    //     def _create_storage_heater_charge_control_config(logic_type: str) -> dict[str, Any]:
-    //         """Helper method to create a ChargeControl entry for an electric storage heater."""
-    //         config: dict[str, Any] = {
-    //             "type": "ChargeControl",
-    //             "start_day": 0,
-    //             "time_series_step": 1,
-    //             "logic_type": logic_type,
-    //             "charge_level": 1.0,
-    //             "schedule": {"main": [{"value": True, "repeat": 24}]},
-    //         }
-    //         # AUTOMATIC, CELECT and HHRSH require temp_charge_cut (see ControlChargeTarget.validate_logic_type)
-    //         if logic_type in ("automatic", "celect", "hhrsh"):
-    //             config["temp_charge_cut"] = 20.5
-    //         return config
-
     /// Helper method to create complete exhaust air heat pump configuration.
     fn create_exhaust_air_heat_pump_config(
         base_input: &JsonValue,
