@@ -54,6 +54,9 @@ pub(crate) fn topological_sort_preheated_water_sources<T: Clone>(
 }
 
 /// Build a dependency graph for PCM heat battery hydronic charging.
+/// Args:
+///     pcm_hydronic_charging_pending: List of (battery_name, HeatBatteryChargingSource (ignored
+///     by this function so given generic T type), HeatBatteryPcmChargingSource)
 pub(crate) fn build_heat_battery_charging_dependency_graph<T>(
     pcm_hydronic_charging_pending: &[(ArcStr, T, HeatBatteryPcmChargingSource)],
 ) -> anyhow::Result<Graph<ArcStr, ArcStr>> {
