@@ -18,7 +18,7 @@ use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::bail;
-use approx::relative_eq;
+use approx::{abs_diff_eq, relative_eq};
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use fsum::FSum;
@@ -971,11 +971,30 @@ impl Boiler {
 
     fn cycling_adjustment(
         &self,
+        temp_flow: f64,
         temperature_return_feed: f64,
         standing_loss: f64,
         prop_of_timestep_at_min_rate: f64,
         temperature_boiler_loc: f64,
     ) -> f64 {
+        // temp_boiler is "generator average water temperature (or return temperature to
+        // the generator for condensing boilers) as a function of the specific operating
+        // conditions" from BS EN 15316-4-1:2017, Table 5
+        let temperature_boiler = match self._boiler_type {
+            BoilerType::Condensing => temperature_return_feed,
+            BoilerType::NonCondensing => (temp_flow + temperature_return_feed) / 2.0,
+        };
+
+        // If the boiler is not warmer than its surroundings there are no standby
+        // cycling losses. Guarding also avoids a negative base raised to the
+        // fractional sby_loss_idx, which Python evaluates to a complex number.
+        // NOTE Python uses math.isclose here
+        if temperature_boiler < temperature_boiler_loc
+            || abs_diff_eq!(temperature_boiler, temperature_boiler_loc, epsilon = 1e-10)
+        {
+            return 0.;
+        }
+
         let ton_toff = (1. - prop_of_timestep_at_min_rate) / prop_of_timestep_at_min_rate;
 
         standing_loss
@@ -1037,6 +1056,7 @@ impl Boiler {
     pub(crate) fn calc_boiler_eff(
         &self,
         service_type_is_water_combi: bool,
+        temp_flow: f64,
         temp_return_feed: f64,
         energy_output_required: f64,
         time_start: Option<f64>,
@@ -1048,6 +1068,7 @@ impl Boiler {
 
         self.calc_boiler_eff_internal(
             service_type_is_water_combi,
+            temp_flow,
             temp_return_feed,
             energy_output_required,
             time_available,
@@ -1058,6 +1079,7 @@ impl Boiler {
     fn calc_boiler_eff_internal(
         &self,
         service_type_is_water_combi: bool,
+        temp_flow: f64,
         temp_return_feed: f64,
         energy_output_required: f64,
         time_available: f64,
@@ -1122,6 +1144,7 @@ impl Boiler {
             && !service_type_is_water_combi
         {
             self.cycling_adjustment(
+                temp_flow,
                 temp_return_feed,
                 standing_loss,
                 prop_of_timestep_at_min_rate,
@@ -1298,6 +1321,7 @@ impl Boiler {
             let service_type = service_data.service_type;
             let temp_return_feed = service_data.temp_return_feed;
             let energy_output_provided = service_data.energy_output_provided;
+            let temp_flow = service_data.temp_flow;
 
             // Aggregate space heating services
             // TODO (from Python) This is only necessary because the model cannot handle an
@@ -1324,6 +1348,7 @@ impl Boiler {
             let fuel_demand = if let Some(temp_return_feed) = temp_return_feed {
                 let blr_eff_final = self.calc_boiler_eff_internal(
                     service_type == ServiceType::WaterCombi,
+                    temp_flow,
                     temp_return_feed,
                     combined_energy_output_required,
                     time_available,
@@ -2543,7 +2568,7 @@ mod tests {
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
         ) {
             assert_relative_eq!(
-                boiler.cycling_adjustment(40.0, 0.05, 0.5, 20.),
+                boiler.cycling_adjustment(45.0, 40.0, 0.05, 0.5, 20.),
                 0.015905414575341014,
                 max_relative = 1e-7
             );
@@ -2672,7 +2697,7 @@ mod tests {
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_relative_eq!(
                     boiler
-                        .calc_boiler_eff(false, 37., 3., None, Some(0.), t_it)
+                        .calc_boiler_eff(false, 45., 37., 3., None, Some(0.), t_it)
                         .unwrap(),
                     [0.8642616521182549, 0.8642616521182549][t_idx],
                     max_relative = 1e-7
@@ -2708,7 +2733,7 @@ mod tests {
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_relative_eq!(
                     boiler_external
-                        .calc_boiler_eff(false, 37., 3., None, Some(0.), t_it)
+                        .calc_boiler_eff(false, 45., 37., 3., None, Some(0.), t_it)
                         .unwrap(),
                     [0.8537436763973477, 0.855177537866697][t_idx],
                     max_relative = 1e-7

@@ -2611,6 +2611,7 @@ impl HeatPump {
                 )?;
                 let boiler_eff = boiler.read().calc_boiler_eff(
                     false,
+                    temp_output,
                     kelvin_to_celsius(temp_return_feed)?,
                     energy_output_max_boiler,
                     Some(time_start),
@@ -3103,9 +3104,12 @@ impl HeatPump {
         // TODO (from Python) Consider moving some of these checks earlier or to HeatPumpService
         //      classes. May be able to skip a lot of the calculation.
         let mut boiler_eff = boiler_eff;
-        if let (Some(_), Some(boiler)) = (&hybrid_boiler_service, &self.boiler) {
+        if let (Some(temp_output), Some(_), Some(boiler)) =
+            (temp_output, &hybrid_boiler_service, &self.boiler)
+        {
             boiler_eff = Some(boiler.read().calc_boiler_eff(
                 false,
+                temp_output,
                 kelvin_to_celsius(temp_return_feed.ok_or_else(|| anyhow!("Temperature return feed must be provided when calculating boiler efficiency"))?)?,
                 energy_output_required,
                 Some(time_start),
