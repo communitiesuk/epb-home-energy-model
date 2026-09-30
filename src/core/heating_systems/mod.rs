@@ -14,5 +14,6 @@ pub mod heat_battery_drycore;
 pub mod heat_battery_pcm;
 pub mod heat_pump;
 pub mod instant_elec_heater;
+mod primary_pipework_losses_mixin;
 pub mod storage_tank;
 pub mod wwhrs;
