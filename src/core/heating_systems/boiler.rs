@@ -626,7 +626,7 @@ pub struct Boiler {
     service_results: RwLock<Vec<ServiceResult>>,
     _full_load_gross: f64,
     _part_load_gross: f64,
-    _boiler_type: BoilerType,
+    boiler_type: BoilerType,
     _pilot: Option<BoilerPilotLight>,
     _pilot_light_power: f64,
     _pilot_light_gains_fraction: f64,
@@ -772,7 +772,7 @@ impl Boiler {
                     boiler_power,
                     _full_load_gross: full_load_gross,
                     _part_load_gross: part_load_gross,
-                    _boiler_type: boiler_type,
+                    boiler_type,
                     fuel_code,
                     _pilot: pilot,
                     _pilot_light_power: pilot_light_power,
@@ -980,7 +980,7 @@ impl Boiler {
         // temp_boiler is "generator average water temperature (or return temperature to
         // the generator for condensing boilers) as a function of the specific operating
         // conditions" from BS EN 15316-4-1:2017, Table 5
-        let temperature_boiler = match self._boiler_type {
+        let temperature_boiler = match self.boiler_type {
             BoilerType::Condensing => temperature_return_feed,
             BoilerType::NonCondensing => (temp_flow + temperature_return_feed) / 2.0,
         };
@@ -1117,7 +1117,14 @@ impl Boiler {
         ) {
             0.0
         } else {
-            (4.0 * current_boiler_power.powf(-0.4)) / 100.0
+            // Calculate standing loss using equation 5 from BS EN-15316-4-1
+            match self.boiler_type {
+                BoilerType::Condensing => (4.0 * current_boiler_power.powf(-0.4)) / 100.0,
+                BoilerType::NonCondensing => {
+                    // Use values from Table B.3 of BS EN-15316-4-1 for boiler age 1978-1994
+                    (7.0 * current_boiler_power.powf(-0.3)) / 100.0
+                }
+            }
         };
 
         // use weather temperature at timestep
