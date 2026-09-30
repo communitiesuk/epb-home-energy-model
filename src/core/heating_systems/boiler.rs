@@ -12,7 +12,7 @@ use crate::core::water_heat_demand::misc::{
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     BoilerHotWaterTest, BoilerPilotLight, BoilerType, CombiBoilerType, CombiKeepHotFuel,
-    FuelCategory, FuelType, HotWaterSourceDetails,
+    CombiTypeSpecificDetails, FuelCategory, FuelType, HotWaterSourceDetails,
 };
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
@@ -632,6 +632,7 @@ pub struct Boiler {
     _pilot_light_gains_fraction: f64,
     _internal_gains_pilot_light: f64,
     _energy_supply_connection_pilot_light: Option<EnergySupplyConnection>,
+    energy_supply_conn_keephot: Option<EnergySupplyConnection>,
 }
 
 // Max gross efficiency values from HEM-TP-14 Table 5
@@ -790,6 +791,7 @@ impl Boiler {
                     standby_loss_index,
                     ebv_curve_offset,
                     service_results: Default::default(),
+                    energy_supply_conn_keephot: None,
                 })
             }
             _ => unreachable!("Expected boiler data"),
@@ -886,19 +888,42 @@ impl Boiler {
         service_name: &str,
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSupply,
-        _keep_hot_control: Option<Arc<OnOffTimeControl>>,
+        keep_hot_control: Option<Arc<OnOffTimeControl>>,
     ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
         boiler
             .write()
             .create_service_connection(service_name)
             .unwrap();
+
+        match boiler_data {
+            HotWaterSourceDetails::CombiBoiler {
+                ref combi_type_specific_details,
+                ..
+            } => {
+                if let CombiTypeSpecificDetails::KeepHot {
+                    combi_keep_hot_fuel,
+                    ..
+                } = combi_type_specific_details
+                {
+                    match combi_keep_hot_fuel {
+                        CombiKeepHotFuel::Electricity | CombiKeepHotFuel::Mixed => {
+                            boiler.write().energy_supply_conn_keephot =
+                                Option::from(boiler.read().energy_supply_connection_aux.clone());
+                        }
+                        CombiKeepHotFuel::MainBoilerFuel => {}
+                    }
+                }
+            }
+            _ => {}
+        };
+
         BoilerServiceWaterCombi::new(
             BoilerForBoilerService::Boiler(boiler.clone()),
             boiler_data,
             service_name.into(),
             temperature_hot_water_in_c,
             cold_feed,
-            None,
+            keep_hot_control,
             boiler.read().simulation_timestep,
         )
     }
