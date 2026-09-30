@@ -5302,12 +5302,12 @@ fn validate_boxed_in_option<T: Validate>(
 pub struct BoilerPilotLight {
     /// Power consumption of the pilot light (unit: kW)
     #[validate(minimum = 0.)]
-    power: f64,
+    pub(crate) power: f64,
 
     /// Proportion of pilot light demand turned into heat gains (dimensionless, 0-1)
     #[validate(minimum = 0.)]
     #[validate(maximum = 1.)]
-    gains_fraction: Option<f64>,
+    pub(crate) gains_fraction: Option<f64>,
 }
 
 #[derive(Copy, Clone, Debug, Default, Deserialize, PartialEq, Serialize)]

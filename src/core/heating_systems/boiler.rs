@@ -11,8 +11,8 @@ use crate::core::water_heat_demand::misc::{
 };
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    BoilerHotWaterTest, CombiBoilerType, CombiKeepHotFuel, FuelCategory, FuelType,
-    HotWaterSourceDetails,
+    BoilerHotWaterTest, BoilerPilotLight, BoilerType, CombiBoilerType, CombiKeepHotFuel,
+    FuelCategory, FuelType, HotWaterSourceDetails,
 };
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
@@ -624,6 +624,14 @@ pub struct Boiler {
     standby_loss_index: f64,
     ebv_curve_offset: f64,
     service_results: RwLock<Vec<ServiceResult>>,
+    _full_load_gross: f64,
+    _part_load_gross: f64,
+    _boiler_type: BoilerType,
+    _pilot: Option<BoilerPilotLight>,
+    _pilot_light_power: f64,
+    _pilot_light_gains_fraction: f64,
+    _internal_gains_pilot_light: f64,
+    _energy_supply_connection_pilot_light: Option<EnergySupplyConnection>,
 }
 
 // Max gross efficiency values from HEM-TP-14 Table 5
@@ -636,9 +644,6 @@ const MAX_GROSS_EFFICIENCY_NON_CONDENSING_FULL_LOAD_LPG: f64 = 0.84732;
 const MAX_GROSS_EFFICIENCY_NON_CONDENSING_FULL_LOAD_OIL: f64 = 0.86204;
 
 impl Boiler {
-    /// Arguments:
-    /// * `boiler_data` - boiler characteristics
-    /// * `external_conditions` - reference to an ExternalConditions value
     pub(crate) fn new(
         boiler_data: HeatSourceWetDetails,
         energy_supply: Arc<RwLock<EnergySupply>>,
@@ -675,12 +680,44 @@ impl Boiler {
                 electricity_part_load: power_part_load,
                 electricity_full_load: power_full_load,
                 electricity_standby: power_standby,
+                boiler_type,
+                pilot_light,
                 ..
             } => {
                 let total_time_running_current_timestep = 0.;
                 let pump_running_time_current_timestep = 0.;
 
                 let fuel_code = energy_supply.read().fuel_type();
+                let pilot = pilot_light;
+                let internal_gains_pilot_light = 0.0;
+
+                let (
+                    pilot_light_power,
+                    energy_supply_connection_pilot_light,
+                    pilot_light_gains_fraction,
+                ) = if let Some(pilot_light) = pilot_light {
+                    let energy_supply_connection_pilot_light = EnergySupply::connection(
+                        energy_supply.clone(),
+                        format!("Boiler_pilotLight : {name}").as_str(),
+                    )?;
+
+                    let gains_fraction = if let Some(gains_fraction) = pilot_light.gains_fraction {
+                        gains_fraction
+                    } else {
+                        match boiler_location {
+                            HeatSourceLocation::Internal => 0.2,
+                            HeatSourceLocation::External => 0.0,
+                        }
+                    };
+
+                    (
+                        pilot_light.power,
+                        Some(energy_supply_connection_pilot_light),
+                        gains_fraction,
+                    )
+                } else {
+                    (0.0, None, 0.0)
+                };
 
                 let net_to_gross = Self::net_to_gross(&fuel_code)?;
                 let full_load_net = full_load_gross / net_to_gross;
@@ -732,7 +769,15 @@ impl Boiler {
                     boiler_location,
                     min_modulation_load,
                     boiler_power,
+                    _full_load_gross: full_load_gross,
+                    _part_load_gross: part_load_gross,
+                    _boiler_type: boiler_type,
                     fuel_code,
+                    _pilot: pilot,
+                    _pilot_light_power: pilot_light_power,
+                    _energy_supply_connection_pilot_light: energy_supply_connection_pilot_light,
+                    _pilot_light_gains_fraction: pilot_light_gains_fraction,
+                    _internal_gains_pilot_light: internal_gains_pilot_light,
                     power_circ_pump,
                     power_part_load,
                     power_full_load,
