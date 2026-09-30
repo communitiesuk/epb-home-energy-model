@@ -6,14 +6,11 @@ use crate::core::controls::time_control::{
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{
     BoilerForBoilerService, BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
-    CombiBoilerConfig, IncorrectBoilerDataType, KeepHotCombiBoilerConfig, ServiceResult,
-    ServiceType,
+    CombiBoilerConfig, IncorrectBoilerDataType, ServiceResult, ServiceType,
 };
 use crate::external_conditions::ExternalConditions;
 use crate::hem_core::simulation_time::SimulationTimeIteration;
-use crate::input::{
-    CombiBoilerType, CombiKeepHotFuel, FuelType, HeatSourceWetDetails, HotWaterSourceDetails,
-};
+use crate::input::{FuelType, HeatSourceWetDetails, HotWaterSourceDetails};
 use arcstr::ArcStr;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
@@ -233,11 +230,6 @@ impl DirectElectricBoiler {
         let time_start = time_start.unwrap_or(0.0);
         let hybrid_service_bool = hybrid_service.unwrap_or(false);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
-        let combi_boiler_config = combi_boiler_config.unwrap_or(CombiBoilerConfig {
-            combi_loss: 0.,
-            combi_type: Default::default(),
-            keep_hot_config: None,
-        });
 
         let time_available = self.time_available(time_start, time_elapsed_hp);
         let energy_output_provided =
@@ -254,29 +246,6 @@ impl DirectElectricBoiler {
 
         if update_heat_source_state {
             self.total_time_running_current_timestep += time_running_current_service;
-
-            let combi_boiler_config = match service_type {
-                ServiceType::WaterCombi => {
-                    let keep_hot_config = match combi_boiler_config.combi_type {
-                        CombiBoilerType::KeepHot => {
-                            Some(combi_boiler_config.keep_hot_config.unwrap_or(
-                                KeepHotCombiBoilerConfig {
-                                    keep_hot_on: true,
-                                    keep_hot_fuel: CombiKeepHotFuel::MainBoilerFuel,
-                                },
-                            ))
-                        }
-                        _ => None,
-                    };
-
-                    Some(CombiBoilerConfig {
-                        combi_loss: combi_boiler_config.combi_loss,
-                        combi_type: combi_boiler_config.combi_type,
-                        keep_hot_config,
-                    })
-                }
-                _ => None,
-            };
 
             // Save results that are needed later (in the timestep_end function)
             let service_result = ServiceResult {
@@ -379,6 +348,7 @@ mod tests {
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::hem_core::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::hem_core::simulation_time::SimulationTime;
+    use crate::input::CombiKeepHotFuel;
     use approx::assert_relative_eq;
     use rstest::{fixture, rstest};
     use serde_json::json;
@@ -634,10 +604,12 @@ mod tests {
                     None,
                     None,
                     None,
-                    Some(CombiBoilerConfig {
+                    Some(CombiBoilerConfig::KeepHot {
                         combi_loss: 1.2,
-                        combi_type: CombiBoilerType::KeepHot,
-                        keep_hot_config: None,
+                        keep_hot_on: false,
+                        keep_hot_fuel: CombiKeepHotFuel::MainBoilerFuel,
+                        keep_hot_test_hours: None,
+                        keep_hot_control: None,
                     }),
                 )
                 .unwrap();

@@ -11,8 +11,8 @@ use crate::core::water_heat_demand::misc::{
 };
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    BoilerHotWaterTest, BoilerPilotLight, BoilerType, CombiBoilerType, CombiKeepHotFuel,
-    CombiTypeSpecificDetails, FuelCategory, FuelType, HotWaterSourceDetails,
+    BoilerHotWaterTest, BoilerPilotLight, BoilerType, CombiKeepHotFuel, CombiTypeSpecificDetails,
+    FuelCategory, FuelType, HotWaterSourceDetails,
 };
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
@@ -54,6 +54,7 @@ impl BoilerForBoilerService {
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
+        combi_boiler_config: Option<CombiBoilerConfig>,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         match self {
             BoilerForBoilerService::Boiler(boiler) => boiler.write().demand_energy(
@@ -66,6 +67,7 @@ impl BoilerForBoilerService {
                 hybrid_service_bool,
                 time_elapsed_hp,
                 update_heat_source_state,
+                combi_boiler_config,
             ),
             BoilerForBoilerService::DirectElectricBoiler(boiler) => boiler.write().demand_energy(
                 service_name,
@@ -77,7 +79,7 @@ impl BoilerForBoilerService {
                 time_start,
                 time_elapsed_hp,
                 update_heat_source_state,
-                None,
+                combi_boiler_config,
             ),
         }
     }
@@ -353,6 +355,7 @@ impl BoilerServiceWaterCombi {
                 None,
                 None,
                 None,
+                None,
             )
             .map(|res| res.0)
     }
@@ -494,6 +497,7 @@ impl BoilerServiceWaterRegular {
             Some(hybrid_service_bool),
             time_elapsed_hp,
             Some(update_heat_source_state),
+            None,
         )
     }
 
@@ -576,6 +580,7 @@ impl BoilerServiceSpace {
             Some(hybrid_service_bool),
             time_elapsed_hp,
             Some(update_heat_source_state),
+            None,
         )
     }
 
@@ -1230,6 +1235,7 @@ impl Boiler {
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
+        combi_boiler_config: Option<CombiBoilerConfig>,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         let time_start = time_start.unwrap_or(0.0);
         let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
@@ -1282,7 +1288,7 @@ impl Boiler {
                 time_available,
                 _time_start: time_start,
                 _time_elapsed_hp: time_elapsed_hp,
-                combi_boiler_config: None,
+                combi_boiler_config,
             });
         }
 
@@ -1481,16 +1487,22 @@ impl Boiler {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CombiBoilerConfig {
-    pub(crate) combi_loss: f64,
-    pub(crate) combi_type: CombiBoilerType,
-    pub(crate) keep_hot_config: Option<KeepHotCombiBoilerConfig>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct KeepHotCombiBoilerConfig {
-    pub(crate) keep_hot_on: bool,
-    pub(crate) keep_hot_fuel: CombiKeepHotFuel,
+pub(crate) enum CombiBoilerConfig {
+    Instantaneous {
+        combi_loss: f64,
+    },
+    KeepHot {
+        combi_loss: f64,
+        keep_hot_on: bool,
+        keep_hot_fuel: CombiKeepHotFuel,
+        keep_hot_test_hours: Option<f64>,
+        keep_hot_control: Option<Arc<OnOffTimeControl>>,
+    },
+    Storage {
+        combi_loss: f64,
+        combi_storage_loss_in_test: bool,
+        store_volume: f64,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -2793,6 +2805,7 @@ mod tests {
                             Some(false),
                             None,
                             None,
+                            None
                         )
                         .unwrap()
                         .0,
@@ -2816,6 +2829,7 @@ mod tests {
                             None,
                             Some(true),
                             Some(0.),
+                            None,
                             None,
                         )
                         .unwrap(),
@@ -2841,6 +2855,7 @@ mod tests {
                             Some(true),
                             Some(0.5),
                             None,
+                            None
                         )
                         .unwrap(),
                     [(12.0, Some(0.5)), (12.0, Some(0.5))][t_idx]
@@ -2922,6 +2937,7 @@ mod tests {
                     Some(60.),
                     None,
                     Some(false),
+                    None,
                     None,
                     None,
                 )
