@@ -351,7 +351,7 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::ElecStorage(elec_storage) => {
                 elec_storage.energy_output_min(&simulation_time_iteration)
             }
-            SpaceHeatSystem::Instant(instant) => Ok(instant.energy_output_min()),
+            SpaceHeatSystem::Instant(instant) => instant.energy_output_min(),
             SpaceHeatSystem::WarmAir(warm_air) => Ok(warm_air.energy_output_min()),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
                 wet_distribution.energy_output_min(simulation_time_iteration)
