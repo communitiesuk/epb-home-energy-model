@@ -900,27 +900,25 @@ impl Boiler {
             .create_service_connection(service_name)
             .unwrap();
 
-        match boiler_data {
-            HotWaterSourceDetails::CombiBoiler {
-                ref combi_type_specific_details,
+        if let HotWaterSourceDetails::CombiBoiler {
+            ref combi_type_specific_details,
+            ..
+        } = boiler_data
+        {
+            if let CombiTypeSpecificDetails::KeepHot {
+                combi_keep_hot_fuel,
                 ..
-            } => {
-                if let CombiTypeSpecificDetails::KeepHot {
-                    combi_keep_hot_fuel,
-                    ..
-                } = combi_type_specific_details
-                {
-                    match combi_keep_hot_fuel {
-                        CombiKeepHotFuel::Electricity | CombiKeepHotFuel::Mixed => {
-                            boiler.write().energy_supply_conn_keephot =
-                                Option::from(boiler.read().energy_supply_connection_aux.clone());
-                        }
-                        CombiKeepHotFuel::MainBoilerFuel => {}
+            } = combi_type_specific_details
+            {
+                match combi_keep_hot_fuel {
+                    CombiKeepHotFuel::Electricity | CombiKeepHotFuel::Mixed => {
+                        boiler.write().energy_supply_conn_keephot =
+                            Option::from(boiler.read().energy_supply_connection_aux.clone());
                     }
+                    CombiKeepHotFuel::MainBoilerFuel => {}
                 }
             }
-            _ => {}
-        };
+        }
 
         BoilerServiceWaterCombi::new(
             BoilerForBoilerService::Boiler(boiler.clone()),
@@ -1276,6 +1274,12 @@ impl Boiler {
                     bail!("Unexpected service type - ServiceType::DomesticHotWaterDirect");
                 }
             }
+
+            let combi_boiler_config = if let ServiceType::WaterCombi = service_type {
+                combi_boiler_config
+            } else {
+                None
+            };
 
             // Save results that are needed later (in the timestep_end function)
             self.service_results.write().push(ServiceResult {

@@ -244,6 +244,12 @@ impl DirectElectricBoiler {
         let time_running_current_service =
             self.time_running(energy_output_provided, time_available);
 
+        let combi_boiler_config = if let ServiceType::WaterCombi = service_type {
+            combi_boiler_config
+        } else {
+            None
+        };
+
         if update_heat_source_state {
             self.total_time_running_current_timestep += time_running_current_service;
 
