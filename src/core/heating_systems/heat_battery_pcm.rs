@@ -967,6 +967,145 @@ impl HeatBatteryPcm {
             }
         }
     }
+
+    /// Calculate energy-based state of charge for the PCM heat battery.
+    ///
+    /// For each layer, calculates stored energy above temp_ref across the
+    /// three PCM thermal regimes (below, during, and above phase transition).
+    /// SOC is the ratio of total stored energy to maximum storable energy (all
+    /// layers at temp_charge_max).
+    ///
+    /// Args:
+    ///     zone_temps: List of current temperatures for each battery layer (°C).
+    ///
+    /// Returns:
+    ///     State of charge as a float between 0.0 (fully discharged to
+    ///     temp_ref) and 1.0 (all layers at temp_charge_max).
+    fn calc_state_of_charge(self, zone_temps: Vec<f64>) -> anyhow::Result<f64> {
+        let temp_ref = self.temp_ref;
+
+        let energy_stored_total: f64 = zone_temps
+            .iter()
+            .map(|&t| {
+                HeatBatteryPcm::calculate_layer_energy_stored(
+                    t,
+                    temp_ref,
+                    self.phase_transition_temperature_lower,
+                    self.phase_transition_temperature_upper,
+                    self.heat_storage_kj_per_k_below,
+                    self.heat_storage_kj_per_k_during,
+                    self.heat_storage_kj_per_k_above,
+                )
+            })
+            .sum();
+
+        let mut soc = energy_stored_total / self.energy_stored_max;
+
+        if soc > 1.0 + 1e-10 {
+            bail!(
+                "State of charge exceeds 1.0 {} Zone temperatures exceed temp_charge_max ({} °C).",
+                soc,
+                self.max_temp_of_charge
+            );
+        }
+
+        soc = soc.min(1.0);
+
+        Ok(soc)
+    }
+
+    /// Convert a temperature setpoint to equivalent state of charge.
+    ///
+    /// Assumes all layers are at the given temperature — the simplifying
+    /// assumption appropriate for a schedule setpoint (uniform target).
+    ///
+    /// Args:
+    ///     temp: Target temperature in °C.
+    ///
+    /// Returns:
+    ///      SOC value (0–1) corresponding to the given temperature.
+    ///
+    fn temp_to_soc(self, temp: f64) -> anyhow::Result<f64> {
+        let temp_ref = self.temp_ref;
+        let energy_stored = HeatBatteryPcm::calculate_layer_energy_stored(
+            temp,
+            temp_ref,
+            self.phase_transition_temperature_lower,
+            self.phase_transition_temperature_upper,
+            self.heat_storage_kj_per_k_below,
+            self.heat_storage_kj_per_k_during,
+            self.heat_storage_kj_per_k_above,
+        ) * self.n_layers as f64;
+
+        let mut soc = energy_stored / self.energy_stored_max;
+
+        if soc > 1.0 + 1e-10 {
+            bail!(
+                "State of charge exceeds 1.0 ({soc}). Target temperature ({temp} °C) exceeds temp_charge_max ({} °C).",
+                self.max_temp_of_charge
+            );
+        }
+
+        soc = soc.min(1.0);
+
+        Ok(soc)
+    }
+
+    /// Convert a state of charge to the equivalent uniform temperature.
+    ///
+    ///  Inverts the piecewise-linear energy function used by __temp_to_soc.
+    ///  Assumes all layers are at the same temperature (uniform target), which
+    ///  is appropriate for converting a schedule SOC target to a temperature
+    ///  setpoint
+    ///
+    ///  The energy function has three thermal regimes separated by the phase
+    ///  transition band. This method computes the target energy from the SOC,
+    ///  determines which regime it falls in, and inverts the corresponding
+    ///  linear segment to recover the temperature
+    ///
+    ///  Args:
+    ///      soc: State of charge (0.0–1.0)
+    ///  Returns:
+    ///      Temperature in °C corresponding to the given SOC
+    fn soc_to_temp(&self, soc: f64) -> f64 {
+        if soc <= 0.0 {
+            return self.temp_ref;
+        }
+        if soc >= 1.0 {
+            return self.max_temp_of_charge;
+        }
+        let temp_ref = self.temp_ref;
+        let temp_lower = self.phase_transition_temperature_lower;
+        let temp_upper = self.phase_transition_temperature_upper;
+        let cap_below = self.heat_storage_kj_per_k_below;
+        let cap_during = self.heat_storage_kj_per_k_during;
+        let cap_above = self.heat_storage_kj_per_k_above;
+
+        let energy_max = HeatBatteryPcm::calculate_layer_energy_stored(
+            temp_lower, temp_ref, temp_lower, temp_upper, cap_below, cap_during, cap_above,
+        );
+        let energy_target = soc * energy_max;
+
+        // Energy at the boundaries of the phase transition band, accumulated
+        // from temp_ref upward. These define the regime boundaries in energy
+        // space.
+        let energy_at_lower = HeatBatteryPcm::calculate_layer_energy_stored(
+            temp_lower, temp_ref, temp_lower, temp_upper, cap_below, cap_during, cap_above,
+        );
+        let energy_at_upper = HeatBatteryPcm::calculate_layer_energy_stored(
+            temp_upper, temp_ref, temp_lower, temp_upper, cap_below, cap_during, cap_above,
+        );
+        if energy_target <= energy_at_lower {
+            // Target falls in the below-transition regime
+            return temp_lower + (energy_target / cap_below);
+        } else if energy_target <= energy_at_upper {
+            // Target falls in the phase-transition regime
+            return temp_lower + ((energy_target - energy_at_lower) / cap_during);
+        } else {
+            // Target falls in the above-transition regime
+            return temp_upper + ((energy_target - energy_at_upper) / cap_above);
+        }
+    }
     fn create_service_connection(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
