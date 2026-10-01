@@ -1,6 +1,6 @@
 use crate::compare_floats::min_of_2;
 /// This module provides object(s) to model the behaviour of heat batteries.
-use crate::core::common::WaterSupplyBehaviour;
+use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
     per_control, Control, ControlBehaviour, RangeTimeControl,
 };
@@ -81,18 +81,18 @@ pub(crate) enum ChargingSourceType {
 /// Enum representing the union of all heat source service types that can provide hydronic charging.
 /// Defined here (not in _base.py) to avoid circular imports — the concrete
 /// service types are defined across multiple modules that import from _base.py.
-pub(crate) enum HeatSourceWetService<T: WaterSupplyBehaviour> {
+pub(crate) enum HeatSourceWetService {
     HeatPumpServiceWater(HeatPumpServiceWater),
     BoilerServiceWaterRegular(BoilerServiceWaterRegular),
-    HeatBatteryPCMServiceWaterRegular(HeatBatteryPcmServiceWaterRegular<T>),
-    HeatBatteryDryCoreServiceWaterRegular(HeatBatteryDryCoreServiceWaterRegular<T>),
+    HeatBatteryPCMServiceWaterRegular(HeatBatteryPcmServiceWaterRegular),
+    HeatBatteryDryCoreServiceWaterRegular(HeatBatteryDryCoreServiceWaterRegular),
     HeatNetworkServiceWaterStorage(HeatNetworkServiceWaterStorage),
 }
-pub(crate) struct HeatBatteryChargingSource<T: WaterSupplyBehaviour> {
+pub(crate) struct HeatBatteryChargingSource {
     source_type: ChargingSourceType,
     control: Control,
     rated_charge_power: Option<f64>,
-    heat_source_service: Option<HeatSourceWetService<T>>,
+    heat_source_service: Option<HeatSourceWetService>,
     temp_flow_max: Option<f64>,
     flow_rate_charging_l_per_min: Option<f64>,
     hex_a: Option<f64>,
@@ -118,8 +118,8 @@ pub(crate) struct HeatBatteryChargingSource<T: WaterSupplyBehaviour> {
 ///        battery_name: Name of the heat battery, for error messages.
 ///        simtime: Shared SimulationTime iterator used to advance through
 ///            timesteps for per-step schedule evaluation.
-fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
-    heat_source_data: IndexMap<ArcStr, HeatBatteryChargingSource<T>>,
+fn validate_no_schedule_overlap(
+    heat_source_data: IndexMap<ArcStr, HeatBatteryChargingSource>,
     battery_name: &str,
     simtime_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<()> {
@@ -162,14 +162,14 @@ fn validate_no_schedule_overlap<T: WaterSupplyBehaviour>(
 /// This object contains the parts of the heat battery calculation that are
 /// specific to providing hot water.
 #[derive(Debug)]
-pub(crate) struct HeatBatteryPcmServiceWaterRegular<T: WaterSupplyBehaviour> {
+pub(crate) struct HeatBatteryPcmServiceWaterRegular {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: ArcStr,
-    cold_feed: T,
+    cold_feed: WaterSupply,
     control: Arc<RangeTimeControl>,
 }
 
-impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
+impl HeatBatteryPcmServiceWaterRegular {
     /// Arguments:
     /// * `heat_battery` - reference to the Heat Battery object providing the service
     /// * `service_name` - name of the service demanding energy
@@ -183,7 +183,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: ArcStr,
-        cold_feed: T,
+        cold_feed: WaterSupply,
         control: Arc<RangeTimeControl>,
     ) -> Self {
         Self {
@@ -256,14 +256,14 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterRegular<T> {
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
 #[derive(Debug)]
-pub struct HeatBatteryPcmServiceWaterDirect<T: WaterSupplyBehaviour> {
+pub struct HeatBatteryPcmServiceWaterDirect {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: ArcStr,
     setpoint_temp: f64,
-    cold_feed: T,
+    cold_feed: WaterSupply,
 }
 
-impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
+impl HeatBatteryPcmServiceWaterDirect {
     /// Arguments:
     /// * `heat_battery` - reference to the HeatBatteryPCM object providing the service
     /// * `service_name` - name of the service demanding energy from the heat battery
@@ -273,7 +273,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: ArcStr,
         setpoint_temp: f64,
-        cold_feed: T,
+        cold_feed: WaterSupply,
     ) -> Self {
         Self {
             heat_battery,
@@ -283,7 +283,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryPcmServiceWaterDirect<T> {
         }
     }
 
-    pub(crate) fn get_cold_water_source(&self) -> &T {
+    pub(crate) fn get_cold_water_source(&self) -> &WaterSupply {
         &self.cold_feed
     }
 
@@ -846,12 +846,12 @@ impl HeatBatteryPcm {
     /// * `cold_feed` - reference to ColdWaterSource object
     /// * `control_min` - reference to a control object which must select current the minimum timestep temperature
     /// * `control_max` - reference to a control object which must select current the maximum timestep temperature
-    pub(crate) fn create_service_hot_water_regular<T: WaterSupplyBehaviour>(
+    pub(crate) fn create_service_hot_water_regular(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
-        cold_feed: T,
+        cold_feed: WaterSupply,
         control: Arc<RangeTimeControl>,
-    ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular<T>> {
+    ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterRegular::new(
             heat_battery,
@@ -868,12 +868,12 @@ impl HeatBatteryPcm {
     /// * `service_name` - name of the service demanding energy from the heat battery
     /// * `setpoint_temp` - temperature of hot water to be provided, in deg C
     /// * `cold_feed` - reference to ColdWaterSource object
-    pub(crate) fn create_service_hot_water_direct<T: WaterSupplyBehaviour>(
+    pub(crate) fn create_service_hot_water_direct(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         setpoint_temp: f64,
-        cold_feed: T,
-    ) -> anyhow::Result<HeatBatteryPcmServiceWaterDirect<T>> {
+        cold_feed: WaterSupply,
+    ) -> anyhow::Result<HeatBatteryPcmServiceWaterDirect> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterDirect::new(
             heat_battery,
@@ -2177,7 +2177,7 @@ type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::common::MockWaterSupply;
+    use crate::core::common::{MockWaterSupply, VaryingTempWaterSupply};
     use crate::core::controls::time_control::{
         ChargeControl, Control, ScheduleOrControl, SetpointTimeControl,
     };
@@ -2424,10 +2424,10 @@ mod tests {
     fn heat_battery_service_water_direct(
         battery_control_off: Control,
         simulation_time_iterator: SimulationTimeIterator,
-    ) -> HeatBatteryPcmServiceWaterDirect<MockWaterSupply> {
+    ) -> HeatBatteryPcmServiceWaterDirect {
         let heat_battery =
             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-        let mock_cold_feed = MockWaterSupply::new(10.);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
         let service_name = "WaterHeating".into();
 
         HeatBatteryPcmServiceWaterDirect::new(heat_battery, service_name, 60., mock_cold_feed)
@@ -2435,21 +2435,25 @@ mod tests {
 
     #[rstest]
     fn test_get_cold_water_source_for_water_direct(
-        heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect<MockWaterSupply>,
+        heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
     ) {
-        let expected = &MockWaterSupply::new(10.);
+        let expected = &WaterSupply::Mock(MockWaterSupply::new(10.));
 
         let actual = heat_battery_service_water_direct.get_cold_water_source();
 
-        assert_eq!(actual, expected);
+        if let WaterSupply::Mock(mock) = actual {
+            assert_eq!(mock, &MockWaterSupply::new(10.));
+        } else {
+            panic!("Expected a MockWaterSupply");
+        }
     }
 
     #[rstest]
     fn test_get_temp_hot_water_for_water_direct(
-        mut heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect<MockWaterSupply>,
+        mut heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
         simulation_time_iteration: SimulationTimeIteration,
     ) {
-        heat_battery_service_water_direct.cold_feed = MockWaterSupply::new(25.);
+        heat_battery_service_water_direct.cold_feed = WaterSupply::Mock(MockWaterSupply::new(25.));
 
         let expected = vec![(60., 20.)];
         let actual = heat_battery_service_water_direct
@@ -2465,7 +2469,7 @@ mod tests {
     fn create_service_water_regular_with_controls(
         battery_control: Control,
         simulation_time_iterator: SimulationTimeIterator,
-    ) -> HeatBatteryPcmServiceWaterRegular<MockWaterSupply> {
+    ) -> HeatBatteryPcmServiceWaterRegular {
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control, None);
 
         let range_time_control = Arc::new(
@@ -2498,7 +2502,7 @@ mod tests {
             .unwrap(),
         );
 
-        let mock_cold_feed = MockWaterSupply::new(10.);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
 
         HeatBatteryPcmServiceWaterRegular::new(
             heat_battery,
@@ -2578,8 +2582,8 @@ mod tests {
         );
 
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-        let mock_cold_feed = MockWaterSupply::new(10.);
-        let heat_battery_service: HeatBatteryPcmServiceWaterRegular<MockWaterSupply> =
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
+        let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
             HeatBatteryPcmServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
@@ -2763,7 +2767,7 @@ mod tests {
         battery_control_on: Control,
     ) {
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-        let mock_cold_feed = MockWaterSupply::new(10.);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
         let service = HeatBatteryPcm::create_service_hot_water_direct(
             heat_battery.clone(),
             "new_service",
@@ -2774,7 +2778,11 @@ mod tests {
 
         let actual = service.get_cold_water_source();
 
-        assert_eq!(actual, &mock_cold_feed);
+        if let WaterSupply::Mock(mock) = actual {
+            assert_eq!(mock, &MockWaterSupply::new(10.));
+        } else {
+            panic!("Expected a MockWaterSupply");
+        }
 
         assert!(heat_battery
             .read()
@@ -3108,7 +3116,7 @@ mod tests {
     ) {
         let heat_battery =
             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-        let mock_cold_feed = MockWaterSupply::new(10.);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
         let service = HeatBatteryPcm::create_service_hot_water_direct(
             heat_battery,
             "dhw_complex",
@@ -3119,7 +3127,11 @@ mod tests {
 
         let actual = service.get_cold_water_source();
 
-        assert_eq!(actual, &mock_cold_feed);
+        if let WaterSupply::Mock(mock) = actual {
+            assert_eq!(mock, &MockWaterSupply::new(10.));
+        } else {
+            panic!("Expected a MockWaterSupply");
+        }
 
         // Test with usage events
         let usage_events = vec![
@@ -3183,7 +3195,7 @@ mod tests {
         battery_control_on: Control,
     ) {
         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-        let mock_cold_feed = MockWaterSupply::new(10.);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
         // Create only a direct hot water service
         HeatBatteryPcm::create_service_hot_water_direct(
             heat_battery.clone(),
@@ -3663,7 +3675,7 @@ mod tests {
         heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
     ) {
         let heat_battery = heat_battery_no_service_connection;
-        let mock_cold_feed = MockWaterSupply::new(10.);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
         let service_name = "new_service";
 
         let range_time_control = RangeTimeControl::new(
@@ -4296,7 +4308,7 @@ mod tests {
         let heat_battery =
             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
         let service_name = "test_service";
-        let mock_cold_feed = MockWaterSupply::new(10.);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
 
         let range_time_control = Arc::new(
             RangeTimeControl::new(
@@ -4313,7 +4325,7 @@ mod tests {
         let result = HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
             service_name,
-            mock_cold_feed,
+            mock_cold_feed.clone(),
             range_time_control.clone(),
         );
 
@@ -4322,7 +4334,7 @@ mod tests {
         let result = HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery,
             service_name,
-            mock_cold_feed,
+            mock_cold_feed.clone(),
             range_time_control,
         );
 
@@ -4424,51 +4436,10 @@ mod tests {
             }
         }
 
-        #[derive(Default, Clone)]
-        struct VaryingTempWaterSupply {
-            volumes_passed_to_draw_off_hot_water: Arc<RwLock<Vec<f64>>>,
-        }
-
-        impl VaryingTempWaterSupply {
-            fn new(volumes_container: Arc<RwLock<Vec<f64>>>) -> Self {
-                Self {
-                    volumes_passed_to_draw_off_hot_water: volumes_container,
-                }
-            }
-
-            fn register_call_to_draw_off_water(&self, volume: f64) {
-                self.volumes_passed_to_draw_off_hot_water
-                    .write()
-                    .push(volume);
-            }
-
-            fn volumes_passed_to_draw_off_water(&self) -> Vec<f64> {
-                self.volumes_passed_to_draw_off_hot_water.read().clone()
-            }
-        }
-
-        impl WaterSupplyBehaviour for VaryingTempWaterSupply {
-            fn get_temp_cold_water(
-                &self,
-                volume_needed: f64,
-                _simtime: SimulationTimeIteration,
-            ) -> anyhow::Result<Vec<(f64, f64)>> {
-                Ok(varying_temp_by_volume(volume_needed))
-            }
-
-            fn draw_off_water(
-                &self,
-                volume_needed: f64,
-                _simtime: SimulationTimeIteration,
-            ) -> anyhow::Result<Vec<(f64, f64)>> {
-                self.register_call_to_draw_off_water(volume_needed);
-                Ok(varying_temp_by_volume(volume_needed))
-            }
-        }
-
         let volumes_container: Arc<RwLock<Vec<f64>>> = Default::default();
 
-        let mock_cold_feed = VaryingTempWaterSupply::new(volumes_container.clone());
+        let mock_cold_feed =
+            WaterSupply::VaryingTemp(VaryingTempWaterSupply::new(volumes_container.clone()));
 
         let service = HeatBatteryPcm::create_service_hot_water_direct(
             heat_battery.clone(),
@@ -4662,7 +4633,7 @@ mod tests {
                 vec![None, None, Some(0.8), Some(0.8)],
                 simtime,
             );
-            let sources: IndexMap<ArcStr, HeatBatteryChargingSource<MockWaterSupply>> = {
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "electric".into(),
@@ -4676,7 +4647,7 @@ mod tests {
                         hex_b: None,
                         hex_velocity_at_1_l_per_min: None,
                         hex_capillary_diameter_m: None,
-                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
                         schedule_unit: Default::default(),
                     },
                 );
@@ -4691,7 +4662,7 @@ mod tests {
                         hex_b: Some(-931.565),
                         hex_velocity_at_1_l_per_min: Some(0.035),
                         hex_capillary_diameter_m: Some(6.5 / 1000.0),
-                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
                         schedule_unit: Default::default(),
                         rated_charge_power: None,
                     },
@@ -4715,7 +4686,7 @@ mod tests {
                 vec![None, Some(0.8), Some(0.8), None],
                 simtime,
             );
-            let sources: IndexMap<ArcStr, HeatBatteryChargingSource<MockWaterSupply>> = {
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "electric".into(),
@@ -4724,7 +4695,7 @@ mod tests {
                         control: ctrl_a,
                         rated_charge_power: Some(5.0),
                         flow_rate_charging_l_per_min: None,
-                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
                         hex_a: None,
                         schedule_unit: "test".into(),
                         temp_flow_max: None,
@@ -4740,7 +4711,7 @@ mod tests {
                         control: ctrl_b,
                         rated_charge_power: Some(3.0),
                         flow_rate_charging_l_per_min: None,
-                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
                         hex_a: None,
                         schedule_unit: "test".into(),
                         temp_flow_max: None,
@@ -4761,7 +4732,7 @@ mod tests {
                 vec![Some(0.8), Some(0.8), Some(0.8), Some(0.8)],
                 simtime,
             );
-            let sources: IndexMap<ArcStr, HeatBatteryChargingSource<MockWaterSupply>> = {
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "a".into(),
@@ -4770,7 +4741,7 @@ mod tests {
                         control: ctrl_a,
                         rated_charge_power: Some(5.0),
                         flow_rate_charging_l_per_min: None,
-                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
                         hex_a: None,
                         schedule_unit: "test".into(),
                         temp_flow_max: None,
@@ -4804,7 +4775,7 @@ mod tests {
                 vec![None, None, Some(0.8), None],
                 simtime,
             );
-            let sources: IndexMap<ArcStr, HeatBatteryChargingSource<MockWaterSupply>> = {
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "a".into(),
@@ -4813,7 +4784,7 @@ mod tests {
                         control: ctrl_a,
                         rated_charge_power: Some(5.0),
                         flow_rate_charging_l_per_min: None,
-                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
                         hex_a: None,
                         schedule_unit: "test".into(),
                         temp_flow_max: None,
@@ -4829,7 +4800,7 @@ mod tests {
                         control: ctrl_b,
                         rated_charge_power: Some(3.0),
                         flow_rate_charging_l_per_min: None,
-                        heat_source_service: Option::<HeatSourceWetService<MockWaterSupply>>::None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
                         hex_a: None,
                         schedule_unit: "test".into(),
                         temp_flow_max: None,

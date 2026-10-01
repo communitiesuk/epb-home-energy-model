@@ -431,7 +431,6 @@ fn single_control_from_details(
             schedule_lower,
             schedule_upper,
         } => {
-
             // TODO ensure this is tested
             let schedule_or_control_lower: ScheduleOrControl<Option<f64>> = match schedule_lower {
                 NumericScheduleOrControlReference::Schedule(schedule) => {
@@ -4979,7 +4978,7 @@ fn heat_source_wet_from_input(
                 })?
                 .clone();
             let energy_supply_aux = energy_supplies.get(energy_supply_auxiliary).ok_or_else(|| anyhow!("Boiler references undeclared auxiliary energy supply '{energy_supply_auxiliary}'."))?.clone();
-          
+
             let heat_source = WetHeatSource::Boiler(Arc::new(RwLock::new(
                 Boiler::new(
                     input,
@@ -4987,7 +4986,7 @@ fn heat_source_wet_from_input(
                     energy_supply_aux,
                     external_conditions.clone(),
                     simulation_time.step_in_hours(),
-                    name
+                    name,
                 )
                 .expect("could not construct boiler value from provided data"),
             )));
@@ -5568,8 +5567,8 @@ impl HotWaterSourceBehaviour for HotWaterSource {
 
 #[derive(Clone, Debug)]
 pub enum HeatBatteryHotWaterSource {
-    Pcm(Arc<HeatBatteryPcmServiceWaterDirect<WaterSupply>>),
-    DryCore(Arc<HeatBatteryDryCoreServiceWaterDirect<WaterSupply>>),
+    Pcm(Arc<HeatBatteryPcmServiceWaterDirect>),
+    DryCore(Arc<HeatBatteryDryCoreServiceWaterDirect>),
 }
 
 impl HotWaterSourceBehaviour for HeatBatteryHotWaterSource {

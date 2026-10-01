@@ -2,7 +2,7 @@
 //! This includes the common functionality for electrical storage and discharge
 //! that is shared between Electric Storage Heaters and Dry Core Heat Batteries.
 
-use crate::core::common::WaterSupplyBehaviour;
+use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
@@ -855,20 +855,20 @@ trait HeatBatteryDryCoreServiceBehaviour {
 }
 
 #[derive(Debug)]
-pub(crate) struct HeatBatteryDryCoreServiceWaterRegular<T: WaterSupplyBehaviour> {
+pub(crate) struct HeatBatteryDryCoreServiceWaterRegular {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,
     service_name: ArcStr,
-    cold_feed: T,
+    cold_feed: WaterSupply,
     control_min: Control,
     control_max: Control,
 }
 
-impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
+impl HeatBatteryDryCoreServiceWaterRegular {
     pub(crate) fn new(
         heat_battery: Arc<HeatBatteryDryCore>,
         service_name: ArcStr,
-        cold_feed: T,
+        cold_feed: WaterSupply,
         control_min: Control,
         control_max: Control,
     ) -> Self {
@@ -936,20 +936,20 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterRegular<T> {
 ///
 /// This is similar to a combi boiler or HIU providing hot water on demand.
 #[derive(Debug)]
-pub struct HeatBatteryDryCoreServiceWaterDirect<T: WaterSupplyBehaviour> {
+pub struct HeatBatteryDryCoreServiceWaterDirect {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,
     service_name: ArcStr,
     setpoint_temp: f64,
-    cold_feed: T,
+    cold_feed: WaterSupply,
 }
 
-impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
+impl HeatBatteryDryCoreServiceWaterDirect {
     fn new(
         heat_battery: Arc<HeatBatteryDryCore>,
         service_name: &str,
         setpoint_temp: f64,
-        cold_feed: T,
+        cold_feed: WaterSupply,
     ) -> Self {
         Self {
             core_service: HeatBatteryDryCoreService::new(None),
@@ -960,7 +960,7 @@ impl<T: WaterSupplyBehaviour> HeatBatteryDryCoreServiceWaterDirect<T> {
         }
     }
 
-    pub(crate) fn get_cold_water_source(&self) -> &T {
+    pub(crate) fn get_cold_water_source(&self) -> &WaterSupply {
         &self.cold_feed
     }
 
@@ -1279,13 +1279,13 @@ impl HeatBatteryDryCore {
     }
 
     /// Return a HeatBatteryDryCoreServiceWaterRegular object for DHW.
-    pub(crate) fn create_service_hot_water_regular<T: WaterSupplyBehaviour>(
+    pub(crate) fn create_service_hot_water_regular(
         battery: Arc<Self>,
         service_name: &str,
-        cold_feed: T,
+        cold_feed: WaterSupply,
         control_min: Control,
         control_max: Control,
-    ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterRegular<T>> {
+    ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterRegular> {
         battery.create_service_connection(service_name)?;
 
         Ok(HeatBatteryDryCoreServiceWaterRegular::new(
@@ -1298,12 +1298,12 @@ impl HeatBatteryDryCore {
     }
 
     /// Return a HeatBatteryDryCoreServiceWaterDirect object and create an EnergySupplyConnection for it
-    pub(crate) fn create_service_hot_water_direct<T: WaterSupplyBehaviour>(
+    pub(crate) fn create_service_hot_water_direct(
         battery: Arc<Self>,
         service_name: &str,
         setpoint_temp: f64,
-        cold_feed: T,
-    ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterDirect<T>> {
+        cold_feed: WaterSupply,
+    ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterDirect> {
         battery.create_service_connection(service_name)?;
 
         Ok(HeatBatteryDryCoreServiceWaterDirect::new(
@@ -2025,7 +2025,7 @@ impl DetailedResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::common::MockWaterSupply;
+    use crate::core::common::{MockWaterSupply, VaryingTempWaterSupply};
     use crate::core::controls::time_control::{
         ChargeControl, MockControl, ScheduleOrControl, SetpointTimeControl,
     };
@@ -2257,8 +2257,8 @@ mod tests {
         .unwrap()
     }
 
-    fn mock_cold_feed(temperature: Option<f64>) -> MockWaterSupply {
-        MockWaterSupply::new(temperature.unwrap_or(10.))
+    fn mock_cold_feed(temperature: Option<f64>) -> WaterSupply {
+        WaterSupply::Mock(MockWaterSupply::new(temperature.unwrap_or(10.)))
     }
 
     #[fixture]
@@ -2333,7 +2333,7 @@ mod tests {
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
             "dhw_service",
-            mock_cold_feed,
+            mock_cold_feed.clone(),
             control_min,
             control_max.clone(),
         )
@@ -2360,7 +2360,7 @@ mod tests {
         let service1 = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery,
             "dhw_service1",
-            mock_cold_feed,
+            mock_cold_feed.clone(),
             mock_control_dhw_off,
             control_max,
         )
@@ -3384,77 +3384,15 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         let simtime = simulation_time.iter().current_iteration();
-
-        // Set up cold feed to return different temperatures based on volume
-        // Simulates drawing from a stratified tank or mixed sources
-        fn varying_temp_by_volume(volume_needed: f64) -> Vec<(f64, f64)> {
-            let volume = volume_needed;
-
-            if volume <= 10. {
-                // Small volume - warm water from top of tank
-                vec![(15.0, volume)]
-            } else if volume <= 30. {
-                // Medium volume - mix of warm and cold
-                let warm_portion = 10.;
-                let cold_portion = volume - 10.;
-                vec![(15.0, warm_portion), (8.0, cold_portion)]
-            } else {
-                // Large volume - mostly cold water
-                vec![(15.0, 10.), (8.0, 20.), (5.0, volume - 30.)]
-            }
-        }
-
-        #[derive(Default, Clone)]
-        struct VaryingTempWaterSupply {
-            volumes_passed_to_draw_off_hot_water: Arc<RwLock<Vec<f64>>>,
-        }
-
-        impl VaryingTempWaterSupply {
-            fn new(volumes_container: Arc<RwLock<Vec<f64>>>) -> Self {
-                Self {
-                    volumes_passed_to_draw_off_hot_water: volumes_container,
-                }
-            }
-
-            fn register_call_to_draw_off_water(&self, volume: f64) {
-                self.volumes_passed_to_draw_off_hot_water
-                    .write()
-                    .push(volume);
-            }
-
-            fn volumes_passed_to_draw_off_water(&self) -> Vec<f64> {
-                self.volumes_passed_to_draw_off_hot_water.read().clone()
-            }
-        }
-
-        impl WaterSupplyBehaviour for VaryingTempWaterSupply {
-            fn get_temp_cold_water(
-                &self,
-                volume_needed: f64,
-                _simtime: SimulationTimeIteration,
-            ) -> anyhow::Result<Vec<(f64, f64)>> {
-                Ok(varying_temp_by_volume(volume_needed))
-            }
-
-            fn draw_off_water(
-                &self,
-                volume_needed: f64,
-                _simtime: SimulationTimeIteration,
-            ) -> anyhow::Result<Vec<(f64, f64)>> {
-                self.register_call_to_draw_off_water(volume_needed);
-                Ok(varying_temp_by_volume(volume_needed))
-            }
-        }
-
         let volumes_container: Arc<RwLock<Vec<f64>>> = Default::default();
-
-        let mock_cold_feed = VaryingTempWaterSupply::new(volumes_container.clone());
+        let mock_cold_feed =
+            WaterSupply::VaryingTemp(VaryingTempWaterSupply::new(volumes_container.clone()));
 
         let service = HeatBatteryDryCore::create_service_hot_water_direct(
             heat_battery.clone(),
             "dhw_varying_temp",
             65.0,
-            mock_cold_feed,
+            mock_cold_feed.clone(),
         )
         .unwrap();
 
@@ -3492,7 +3430,11 @@ mod tests {
             .unwrap();
 
         // Varify draw_off_water was called with correct volumes
-        let draw_volumes = volumes_container.read().clone();
+        let draw_volumes = if let WaterSupply::VaryingTemp(varying_temp) = &mock_cold_feed {
+            varying_temp.volumes_passed_to_draw_off_water()
+        } else {
+            vec![]
+        };
         assert_eq!(draw_volumes.len(), 3);
 
         assert_eq!(draw_volumes[0], 5.0); // First event volume

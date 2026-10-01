@@ -196,8 +196,8 @@ impl HeatSourceWet {
 
 #[derive(Debug)]
 pub(crate) enum HeatBatteryWaterService {
-    Pcm(HeatBatteryPcmServiceWaterRegular<WaterSupply>),
-    DryCore(HeatBatteryDryCoreServiceWaterRegular<WaterSupply>),
+    Pcm(HeatBatteryPcmServiceWaterRegular),
+    DryCore(HeatBatteryDryCoreServiceWaterRegular),
 }
 
 impl HeatBatteryWaterService {
