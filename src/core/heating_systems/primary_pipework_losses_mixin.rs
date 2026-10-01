@@ -223,6 +223,21 @@ mod tests {
         .unwrap()
     }
 
+    #[fixture]
+    fn external_pipework() -> Pipework {
+        Pipework::new(
+            PipeworkLocation::External,
+            0.025,
+            0.027,
+            1.5,
+            0.035,
+            0.038,
+            false,
+            PipeworkContents::Water,
+        )
+        .unwrap()
+    }
+
     #[rstest]
     /// No pipework → zero losses and zero gains regardless of energy input.
     fn test_empty_pipework_list_returns_zero() {
@@ -270,10 +285,11 @@ mod tests {
 
         let mut results = Vec::new();
         for _ in simtime.iter() {
-            let result = mixin
-                .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
-                .unwrap();
-            results.push(result);
+            results.push(
+                mixin
+                    .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+                    .unwrap(),
+            );
         }
 
         // First timestep: Phase 1 (warm-up) + Phase 2 (steady-state)
@@ -282,5 +298,48 @@ mod tests {
         // Subsequent timesteps: Phase 2 only — steady_state_kWh(55→20)
         assert_relative_eq!(results[1].0, 0.010657894331822992);
         assert_relative_eq!(results[2].0, 0.010657894331822992);
+    }
+
+    #[rstest]
+    /// Internal pipework steady-state losses are also returned as dwelling gains.
+    fn test_phase2_steady_state_internal_contributes_gains(internal_pipework: Pipework) {
+        let simtime = simtime(2.);
+        let mixin = concrete_pipework_user(vec![internal_pipework], Some(20.));
+
+        // Skip first timestep (Phase 1 fires), check second (Phase 2 only)
+        let mut results = Vec::new();
+        for _ in simtime.iter() {
+            results.push(
+                mixin
+                    .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+                    .unwrap(),
+            );
+        }
+        let (_, gains_steady) = results[1];
+
+        // steady_state_heat_loss(55→20) in W
+        assert_relative_eq!(gains_steady, 10.657894331822993);
+    }
+
+    #[rstest]
+    /// External pipework losses do NOT contribute to dwelling heat gains.
+    fn test_phase2_external_pipework_no_gains(external_pipework: Pipework) {
+        let simtime = simtime(2.);
+        let mixin = concrete_pipework_user(vec![external_pipework], Some(5.));
+
+        // Skip first timestep (Phase 1 fires), check second (Phase 2 only)
+        let mut results = Vec::new();
+        for _ in simtime.iter() {
+            results.push(
+                mixin
+                    .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+                    .unwrap(),
+            );
+        }
+        let (losses, gains) = results[1];
+
+        // steady_state_kWh(55→5) for external pipe, no dwelling gains
+        assert_relative_eq!(losses, 0.011708048420277326);
+        assert_eq!(gains, 0.);
     }
 }
