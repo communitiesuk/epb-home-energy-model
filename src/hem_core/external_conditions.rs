@@ -136,7 +136,7 @@ pub struct ExternalConditions {
     #[allow(dead_code)]
     pub(crate) longitude: f64,
     #[allow(dead_code)]
-    pub(crate) timezone: i32,
+    pub(crate) timezone: f64,
     pub(crate) start_day: u32,
     time_series_step: f64,
     shading_segments: Option<Vec<ShadingSegment>>,
@@ -162,7 +162,7 @@ pub struct ExternalConditions {
 /// * `solar_reflectivity_of_ground` - list of ground reflectivity values, 0 to 1 (one entry per hour)
 /// * `latitude` - latitude of weather station, angle from south, in degrees (single value)
 /// * `longitude` - longitude of weather station, easterly +ve westerly -ve, in degrees (single value)
-/// * `timezone` - timezone of weather station, -12 to 12 (single value)
+/// * `timezone` - timezone of weather station, in hours ahead of UTC, -12 to 14 (single value)
 /// * `start_day` - first day of the time series, day of the year, 0 to 365 (single value)
 /// * `end_day` - last day of the time series, day of the year, 0 to 365 (single value)
 /// * `time_series_step` - timestep of the time series data, in hours
@@ -188,7 +188,7 @@ impl ExternalConditions {
         solar_reflectivity_of_ground: Vec<f64>,
         latitude: f64,
         longitude: f64,
-        timezone: i32,
+        timezone: f64,
         start_day: u32,
         _end_day: Option<u32>,
         time_series_step: f64,
@@ -1999,7 +1999,8 @@ pub fn create_external_conditions(
 ) -> anyhow::Result<ExternalConditions> {
     // TODO (from Python) Some inputs are not currently used, so set to None here rather
     //       than requiring them in input file.
-    // TODO (from Python) Read timezone from input file. For now, set timezone to 0 (GMT)
+    // The timezone is optional and defaults to 0 (GMT), which the Python reference implementation
+    // currently always uses.
 
     // Let direct beam conversion input be optional, this will be set if comes from weather file.
     let dir_beam_conversion = input.direct_beam_conversion_needed.unwrap_or(false);
@@ -2018,7 +2019,7 @@ pub fn create_external_conditions(
             .ok_or_else(|| anyhow!("Solar reflectivity of ground values for external conditions were not available when expected"))?,
         input.latitude.ok_or_else(|| anyhow!("Latitude for external conditions were not available when expected"))?,
         input.longitude.ok_or_else(|| anyhow!("Longitude for external conditions were not available when expected"))?,
-        0,
+        input.timezone.unwrap_or(0.),
         0,
         Some(365),
         1.,
@@ -2103,13 +2104,13 @@ fn init_equation_of_time(current_day: u32) -> f64 {
     }
 }
 
-fn init_time_shift(timezone: i32, longitude: f64) -> f64 {
+fn init_time_shift(timezone: f64, longitude: f64) -> f64 {
     // """ Calculate the time shift, in hours, resulting from the fact that the
     // longitude and the path of the sun are not equal
     //
     // NOTE Daylight saving time is disregarded in tshift which is time independent
     // """
-    timezone as f64 - longitude / 15.0
+    timezone - longitude / 15.0
 }
 
 fn init_solar_time(
@@ -2748,8 +2749,8 @@ mod tests {
     }
 
     #[fixture]
-    fn timezone() -> i32 {
-        0
+    fn timezone() -> f64 {
+        0.
     }
 
     #[fixture]
@@ -3181,10 +3182,83 @@ mod tests {
         );
 
         assert_relative_eq!(
-            init_time_shift(-5, -73.),
+            init_time_shift(-5., -73.),
             -0.13333333333333375,
             max_relative = 1e-8
         );
+
+        // time zones with fractional hours are not rounded
+        assert_eq!(init_time_shift(9.5, 142.5), 0.);
+        assert_eq!(init_time_shift(5.75, 86.25), 0.);
+        assert_eq!(init_time_shift(-3.5, -52.5), 0.);
+        assert_eq!(init_time_shift(9.5, 135.), 0.5);
+    }
+
+    fn external_conditions_input_for_site(
+        longitude: f64,
+        timezone: Option<f64>,
+    ) -> ExternalConditionsInput {
+        ExternalConditionsInput {
+            air_temperatures: Some(air_temps()),
+            diffuse_horizontal_radiation: Some(diffuse_horizontal_radiation().to_vec()),
+            direct_beam_conversion_needed: Some(direct_beam_conversion_needed()),
+            direct_beam_radiation: Some(direct_beam_radiation().to_vec()),
+            latitude: Some(latitude()),
+            longitude: Some(longitude),
+            shading_segments: shading_segments(),
+            solar_reflectivity_of_ground: Some(solar_reflectivity_of_ground().to_vec()),
+            timezone,
+            wind_directions: Some(wind_directions()),
+            wind_speeds: Some(wind_speeds()),
+        }
+    }
+
+    fn assert_sun_position_follows_timezone(
+        build: impl Fn(ExternalConditionsInput) -> ExternalConditions,
+    ) {
+        // a site keeping a time zone one hour ahead of UTC per 15 degrees east of Greenwich
+        // (e.g. 15 degrees east keeping UTC+1, or 142.5 degrees east keeping UTC+9:30) has the
+        // same solar time (and so the same sun positions) as a site on the Greenwich meridian
+        // keeping GMT
+        let greenwich_gmt = build(external_conditions_input_for_site(0., None));
+
+        for (longitude, timezone) in [(15., 1.), (142.5, 9.5), (86.25, 5.75), (-52.5, -3.5)] {
+            let site = build(external_conditions_input_for_site(
+                longitude,
+                Some(timezone),
+            ));
+            let site_timezone_not_given =
+                build(external_conditions_input_for_site(longitude, None));
+
+            assert_eq!(site.timezone, timezone);
+            assert_eq!(site_timezone_not_given.timezone, 0.);
+            assert_eq!(
+                site.solar_altitudes, greenwich_gmt.solar_altitudes,
+                "longitude {longitude}, timezone {timezone}"
+            );
+            assert_eq!(
+                site.solar_azimuth_angles, greenwich_gmt.solar_azimuth_angles,
+                "longitude {longitude}, timezone {timezone}"
+            );
+            assert_ne!(
+                site_timezone_not_given.solar_altitudes,
+                greenwich_gmt.solar_altitudes
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_create_external_conditions_uses_timezone(simulation_time: SimulationTime) {
+        assert_sun_position_follows_timezone(|input| {
+            create_external_conditions(input, &simulation_time.iter()).unwrap()
+        });
+    }
+
+    #[rstest]
+    fn test_external_conditions_from_input_uses_timezone(simulation_time: SimulationTime) {
+        assert_sun_position_follows_timezone(|input| {
+            crate::external_conditions_from_input(Arc::new(input), simulation_time)
+        });
     }
 
     #[rstest]

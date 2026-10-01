@@ -3875,7 +3875,7 @@ mod tests {
             solar_reflectivity_of_ground,
             51.383,
             -0.783,
-            0,
+            0.0,
             0,
             Some(0),
             1.0,
@@ -4090,7 +4090,7 @@ mod tests {
         let solar_reflectivity_of_ground = vec![0.2; 8760];
         let latitude = 51.42;
         let longitude = -0.75;
-        let timezone = 0;
+        let timezone = 0.0;
         let start_day = 0;
         let end_day = 0;
         let time_series_step = 1.;
@@ -4319,7 +4319,7 @@ mod tests {
             solar_reflectivity_of_ground,
             51.383,
             -0.783,
-            0,
+            0.0,
             212,
             Some(212),
             1.0,

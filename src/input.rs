@@ -305,6 +305,11 @@ pub struct ExternalConditionsInput {
     #[validate(custom = |v| validate_all_items_in_option_at_most_n(v, 1.))]
     pub(crate) solar_reflectivity_of_ground: Option<Vec<f64>>,
 
+    /// Time zone of the weather station, in hours ahead of UTC/GMT (e.g. 1 for UTC+1, 9.5 for UTC+9:30), -12 to 14. Defaults to 0 (GMT) if not provided (unit: h)
+    #[validate(minimum = -12.)]
+    #[validate(maximum = 14.)]
+    pub(crate) timezone: Option<f64>,
+
     /// List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: ˚)
     #[validate(custom = validate_all_items_in_option)]
     pub(crate) wind_directions: Option<Vec<Orientation360>>,
@@ -414,6 +419,7 @@ impl From<ExternalConditionsFromFile> for ExternalConditionsInput {
             solar_reflectivity_of_ground: weather_file_conditions
                 .solar_reflectivity_of_ground
                 .into(),
+            timezone: weather_file_conditions.timezone.into(),
             wind_directions: weather_file_conditions.wind_directions.into(),
             wind_speeds: weather_file_conditions.wind_speeds.into(),
         }
@@ -8774,6 +8780,7 @@ mod tests {
                 longitude: None,
                 shading_segments: None,
                 solar_reflectivity_of_ground: None,
+                timezone: None,
                 wind_directions: None,
                 wind_speeds: None,
             })
@@ -8798,9 +8805,43 @@ mod tests {
             ),
             case::wind_directions_should_be_at_least_zero(json!({"wind_directions": [-1]})),
             case::wind_directions_should_be_at_most_360(json!({"wind_directions": [361]})),
+            case::timezone_should_be_at_least_minus_12(json!({"timezone": -13})),
+            case::timezone_should_be_at_most_14(json!({"timezone": 15})),
+            case::timezone_should_be_at_most_14_fractional(json!({"timezone": 14.5})),
         )]
         fn test_validate_range_constraints(valid_example: JsonValue, inputs: JsonValue) {
             assert_range_constraints::<ExternalConditionsInput>(valid_example, inputs);
+        }
+
+        #[rstest]
+        #[case(json!(-12))]
+        #[case(json!(-3.5))]
+        #[case(json!(0))]
+        #[case(json!(5.75))]
+        #[case(json!(9.5))]
+        #[case(json!(13))]
+        #[case(json!(14))]
+        fn test_validate_timezone(valid_example: JsonValue, #[case] timezone: JsonValue) {
+            let input: ExternalConditionsInput = serde_json::from_value(merge_json_onto_base(
+                valid_example,
+                &json!({"timezone": timezone}),
+            ))
+            .unwrap();
+            assert!(input.validate().is_ok());
+            assert_eq!(input.timezone, timezone.as_f64());
+        }
+
+        #[rstest]
+        #[case(f64::NAN)]
+        #[case(f64::INFINITY)]
+        #[case(f64::NEG_INFINITY)]
+        fn test_validate_timezone_should_be_finite(#[case] timezone: f64) {
+            // JSON cannot represent these values, so check the validation directly
+            let input = ExternalConditionsInput {
+                timezone: Some(timezone),
+                ..Default::default()
+            };
+            assert!(input.validate().is_err());
         }
 
         #[rstest]
@@ -8814,6 +8855,7 @@ mod tests {
                 longitude: Some(34.2),
                 shading_segments: Some(vec![]),
                 solar_reflectivity_of_ground: Some(vec![0.; 8760]),
+                timezone: None,
                 wind_directions: Some(vec![0.0.into(); 8760]),
                 wind_speeds: Some(vec![0.; 8760]),
             };
@@ -8828,6 +8870,7 @@ mod tests {
                 longitude: None,
                 shading_segments: None,
                 solar_reflectivity_of_ground: None,
+                timezone: None,
                 wind_directions: None,
                 wind_speeds: None,
             };
@@ -8844,6 +8887,7 @@ mod tests {
                 longitude: Some(34.2),
                 shading_segments: Some(vec![]),
                 solar_reflectivity_of_ground: Some(vec![0.; 8760]),
+                timezone: None,
                 wind_directions: Some(vec![0.0.into(); 8760]),
                 wind_speeds: Some(vec![0.; 8760]),
             };

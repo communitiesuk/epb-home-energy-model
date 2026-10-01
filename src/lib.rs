@@ -434,7 +434,7 @@ pub fn external_conditions_from_input(
             .unwrap_or_default(),
         input.latitude.unwrap_or(55.0),
         input.longitude.unwrap_or(0.0),
-        0,
+        input.timezone.unwrap_or(0.0),
         0,
         Some(365),
         1.0,
@@ -1579,6 +1579,7 @@ impl From<&ExternalConditionsFromFile> for ExternalConditionsInput {
             solar_reflectivity_of_ground: Some(value.solar_reflectivity_of_ground.clone()),
             latitude: Some(value.latitude),
             longitude: Some(value.longitude),
+            timezone: Some(value.timezone),
             direct_beam_conversion_needed: Some(value.direct_beam_conversion_needed),
             ..Default::default()
         }

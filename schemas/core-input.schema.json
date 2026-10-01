@@ -2667,6 +2667,21 @@
           "description": "List of ground reflectivity values, 0 to 1, one entry per hour",
           "title": "Solar Reflectivity Of Ground"
         },
+        "timezone": {
+          "anyOf": [
+            {
+              "maximum": 14,
+              "minimum": -12,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Time zone of the weather station, in hours ahead of UTC/GMT (e.g. 1 for UTC+1, 9.5 for UTC+9:30), -12 to 14. Defaults to 0 (GMT) if not provided (unit: h)",
+          "title": "Timezone"
+        },
         "wind_directions": {
           "anyOf": [
             {
