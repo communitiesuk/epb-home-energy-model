@@ -433,7 +433,7 @@ impl BoilerServiceWaterCombi {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// An object to represent a water heating service provided by a regular boiler.
 ///
 /// This object contains the parts of the boiler calculation that are

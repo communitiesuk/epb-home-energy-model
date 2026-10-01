@@ -854,7 +854,7 @@ trait HeatBatteryDryCoreServiceBehaviour {
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct HeatBatteryDryCoreServiceWaterRegular {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,

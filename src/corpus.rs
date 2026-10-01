@@ -5080,25 +5080,28 @@ fn heat_source_wet_from_input(
                         }
                     };
 
-                    WetHeatSource::HeatBattery(HeatBattery::Pcm(Arc::new(RwLock::new(HeatBatteryPcm::new(
-                        &input,
-                        controls
-                            .get_with_string(control_charge)
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "expected a control to be registered with the name '{control_charge}'"
-                                )
-                            })
-                            .clone(),
-                        energy_supply,
-                        energy_supply_conn,
-                        simulation_time.step_in_hours(),
-                        None,
-                        None,
-                        None,
-                        None,
-                        Some(detailed_output_heating_cooling),
-                    )))))
+                    WetHeatSource::HeatBattery(HeatBattery::Pcm(Arc::new(RwLock::new(
+                        todo!("as part of migration to 1.0.0a9"),
+                        // HeatBatteryPcm::new(
+                        //     // &input,
+                        //     // controls
+                        //     //     .get_with_string(control_charge)
+                        //     //     .unwrap_or_else(|| {
+                        //     //         panic!(
+                        //     //             "expected a control to be registered with the name '{control_charge}'"
+                        //     //         )
+                        //     //     })
+                        //     //     .clone(),
+                        //     // energy_supply,
+                        //     // energy_supply_conn,
+                        //     // simulation_time.step_in_hours(),
+                        //     // None,
+                        //     // None,
+                        //     // None,
+                        //     // None,
+                        //     // Some(detailed_output_heating_cooling),
+                        // ),
+                    ))))
                 }
                 HeatBatteryInput::DryCore {
                     control_charge,
