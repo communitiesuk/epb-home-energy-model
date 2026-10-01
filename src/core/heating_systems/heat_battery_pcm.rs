@@ -731,7 +731,7 @@ impl HeatBatteryPcm {
         // Per-source hysteresis state: tracks whether each source is currently
         // in its active charging band (SOC below upper setpoint after being
         // triggered by SOC falling below lower setpoint)
-        for (src_name, src) in &heat_source_data.clone().unwrap_or(IndexMap::new()) {
+        for (src_name, src) in &heat_source_data.clone().unwrap_or_default() {
             if src.schedule_unit == ScheduleUnit::Temperature && src.temp_flow_max.is_some() {
                 todo!("self.warn_if_schedule_exceeds_flow_temp")
             }
@@ -941,31 +941,29 @@ impl HeatBatteryPcm {
 
         if temp_layer < temp_lower {
             // Both below phase transition
-            return (temp_layer - temp_ref) * cap_below;
+            (temp_layer - temp_ref) * cap_below
         } else if temp_layer >= temp_upper {
             // Both above phase transition
-            return (temp_lower - temp_ref) * cap_above;
+            (temp_lower - temp_ref) * cap_above
         } else if temp_ref >= temp_lower {
             // temp_ref in transition band
             if temp_layer <= temp_upper {
                 // Both in transition band
-                return (temp_layer - temp_ref) * cap_during;
+                (temp_layer - temp_ref) * cap_during
             } else {
                 // temp_ref in transition, temp_layer above
-                return (temp_upper - temp_ref) * cap_during
-                    + (temp_layer - temp_upper) * cap_above;
+                (temp_upper - temp_ref) * cap_during + (temp_layer - temp_upper) * cap_above
             }
         } else {
             // temp_ref below transition band
             if temp_layer <= temp_upper {
                 // temp_ref below, temp_layer in transition
-                return (temp_lower - temp_ref) * cap_below
-                    + (temp_layer - temp_lower) * cap_during;
+                (temp_lower - temp_ref) * cap_below + (temp_layer - temp_lower) * cap_during
             } else {
                 // Spans all three regions
-                return (temp_lower - temp_ref) * cap_below
+                (temp_lower - temp_ref) * cap_below
                     + (temp_upper - temp_lower) * cap_during
-                    + (temp_layer - temp_upper) * cap_above;
+                    + (temp_layer - temp_upper) * cap_above
             }
         }
     }
