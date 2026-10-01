@@ -18,7 +18,7 @@ use crate::corpus::TempInternalAirFn;
 use anyhow::anyhow;
 use approx::relative_eq;
 use atomic_float::AtomicF64;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// Shared three-step primary pipework loss calculation.
@@ -39,8 +39,8 @@ use std::sync::Arc;
 struct PrimaryPipeworkLossesMixin {
     primary_pipework: Vec<Pipework>,
     pipework_energy_input_prev_timestep: AtomicF64,
-    temp_surrounding_prev_heating_event: Vec<f64>,
-    flag_first_pipework_heating_event: bool,
+    temp_surrounding_prev_heating_event: Vec<AtomicF64>,
+    flag_first_pipework_heating_event: AtomicBool,
     temp_external_air_fn: Arc<dyn Fn() -> f64 + Send + Sync>, // TODO review type
     temp_internal_air_fn: TempInternalAirFn,
 }
@@ -55,14 +55,14 @@ impl PrimaryPipeworkLossesMixin {
         temp_external_air_fn: Arc<dyn Fn() -> f64 + Send + Sync>,
         temp_internal_air_fn: TempInternalAirFn,
     ) -> Self {
-        let temp_surrounding_prev_heating_event: Vec<f64> = pipework_list
+        let temp_surrounding_prev_heating_event: Vec<AtomicF64> = pipework_list
             .iter()
             .map(|pw| {
-                Self::temp_surrounding_pipework(
+                AtomicF64::new(Self::temp_surrounding_pipework(
                     pw,
                     temp_external_air_fn.clone(),
                     temp_internal_air_fn.clone(),
-                )
+                ))
             })
             .collect();
 
@@ -72,7 +72,7 @@ impl PrimaryPipeworkLossesMixin {
             temp_internal_air_fn,
             pipework_energy_input_prev_timestep: AtomicF64::new(0.),
             temp_surrounding_prev_heating_event,
-            flag_first_pipework_heating_event: Default::default(),
+            flag_first_pipework_heating_event: true.into(),
         }
     }
 
@@ -141,10 +141,13 @@ impl PrimaryPipeworkLossesMixin {
 
                 // Between-event losses: pipe cooled from previous event's
                 // surrounding temp to current surrounding temp
-                if !self.flag_first_pipework_heating_event {
-                    let inside_temp = self.temp_surrounding_prev_heating_event.get(pipe_idx).ok_or_else(|| anyhow!("Index ({pipe_idx}) out of bounds for temp_surrounding_prev_heating_event"))?;
+                if !self
+                    .flag_first_pipework_heating_event
+                    .load(Ordering::SeqCst)
+                {
+                    let inside_temp = self.temp_surrounding_prev_heating_event.get(pipe_idx).ok_or_else(|| anyhow!("Index ({pipe_idx}) out of bounds for temp_surrounding_prev_heating_event"))?.load(Ordering::SeqCst);
                     let between_events_loss =
-                        pipework.calculate_cool_down_loss(*inside_temp, temp_surrounding);
+                        pipework.calculate_cool_down_loss(inside_temp, temp_surrounding);
                     pipework_losses_kwh += between_events_loss;
                     if matches!(pipework.location(), PipeworkLocation::Internal) {
                         primary_gains_w +=
@@ -171,7 +174,33 @@ impl PrimaryPipeworkLossesMixin {
             }
         }
 
-        // TODO complete function
+        // Phase 3: End of heating event — record surrounding temps
+        if relative_eq!(energy_input, 0., epsilon = 1e-10, max_relative = 1e-9)
+            && energy_input_prev > 0.
+        {
+            for (pipe_idx, pipework) in self.primary_pipework.iter().enumerate() {
+                let temp_surrounding = Self::temp_surrounding_pipework(
+                    pipework,
+                    self.temp_external_air_fn.clone(),
+                    self.temp_internal_air_fn.clone(),
+                );
+                self.temp_surrounding_prev_heating_event
+                    .get(pipe_idx).ok_or_else(|| anyhow!("Index ({pipe_idx}) out of bounds for temp_surrounding_prev_heating_event"))?.store(temp_surrounding, Ordering::SeqCst);
+                if matches!(pipework.location(), PipeworkLocation::Internal) {
+                    primary_gains_w += pipework
+                        .calculate_cool_down_loss(temp_flow, temp_surrounding)
+                        * WATTS_PER_KILOWATT as f64
+                        / timestep;
+                }
+            }
+            if self
+                .flag_first_pipework_heating_event
+                .load(Ordering::SeqCst)
+            {
+                self.flag_first_pipework_heating_event
+                    .store(false, Ordering::SeqCst);
+            }
+        }
 
         if update_tracking {
             self.pipework_energy_input_prev_timestep
@@ -341,5 +370,79 @@ mod tests {
         // steady_state_kWh(55→5) for external pipe, no dwelling gains
         assert_relative_eq!(losses, 0.011708048420277326);
         assert_eq!(gains, 0.);
+    }
+
+    #[rstest]
+    /// End of heating (energy→0 after prev>0) records surrounding temps.
+    /// Internal pipework should contribute cool-down gains at the end of the event.
+    fn test_phase3_end_of_heating_records_temps_and_reports_internal_gains(
+        internal_pipework: Pipework,
+    ) {
+        let simtime = simtime(3.);
+        let mixin = concrete_pipework_user(vec![internal_pipework], Some(20.));
+
+        // Timestep 0: heating active
+        let mut results = vec![mixin
+            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .unwrap()];
+
+        // Timestep 1: heating ends → Phase 3
+        results.push(
+            mixin
+                .calculate_primary_pipework_losses(0., 55., Some(true), simtime.step)
+                .unwrap(),
+        );
+
+        // Timestep 2: still off
+        results.push(
+            mixin
+                .calculate_primary_pipework_losses(0., 55., Some(true), simtime.step)
+                .unwrap(),
+        );
+
+        let (losses_end, gains_end) = results[1];
+
+        // Phase 3 cool-down gains: cool_down(55→20) * W_per_kW / timestep
+        assert_relative_eq!(gains_end, 36.804386255335146);
+        // No losses when energy is zero
+        assert_eq!(losses_end, 0.);
+        // First heating event flag should now be cleared
+        assert!(!mixin
+            .flag_first_pipework_heating_event
+            .load(Ordering::SeqCst));
+    }
+
+    #[rstest]
+    /// Between-event losses are only calculated after the first heating event ends.
+    /// Sequence: heating on → off (Phase 3, records surrounding temp at 20°C) →
+    /// change surrounding temp to 15°C → on again (Phase 1 includes between-event
+    /// cool-down from 20→15 on top of warm-up and steady-state).
+    fn test_between_events_loss_only_after_first_event_ends(internal_pipework: Pipework) {
+        let simtime = simtime(4.);
+        let mut mixin = concrete_pipework_user(vec![internal_pipework], Some(20.));
+
+        // Timestep 0: first heating event starts
+        let (losses_first_start, _) = mixin
+            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .unwrap();
+
+        // Timestep 1: first heating event ends (Phase 3 records surrounding=20)
+        mixin
+            .calculate_primary_pipework_losses(0., 55., Some(true), simtime.step)
+            .unwrap();
+
+        // Change surrounding temp so between-event cool-down is non-zero
+        mixin.temp_external_air_fn = Arc::new(move || 15.);
+        mixin.temp_internal_air_fn = Arc::new(move || 15.);
+
+        // Timestep 2: second heating event starts → should include between-event loss
+        let (losses_second_start, _) = mixin
+            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .unwrap();
+
+        // First start: warm_up(20→55) + steady_state_kWh(55→20), no between-event
+        assert_relative_eq!(losses_first_start, 0.04746228058715814);
+        // Second start: warm_up(15→55) + between_event(20→15) + steady_state_kWh(55→15)
+        assert_eq!(losses_second_start, 0.05950037585037147);
     }
 }
