@@ -752,7 +752,7 @@ impl From<EnergySupplyType> for String {
 #[serde(rename_all = "PascalCase")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EnergyDiverter {
-    pub(crate) heat_source: DiverterHeatSourceType,
+    pub(crate) heat_source: String,
     /// Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.
     #[serde(rename = "Controlmax")]
     pub(crate) control_max: String,
@@ -770,22 +770,6 @@ impl StorageTankType {
     pub fn matches(&self, type_string: &str) -> bool {
         match self {
             StorageTankType::HotWaterCylinder => type_string == "hw cylinder",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum DiverterHeatSourceType {
-    #[serde(rename = "immersion")]
-    Immersion,
-}
-
-impl DiverterHeatSourceType {
-    // implementation here could be derived via serde stuff, but keeping simple/ duplicated for now
-    pub fn matches(&self, type_string: &str) -> bool {
-        match self {
-            DiverterHeatSourceType::Immersion => type_string == "immersion",
         }
     }
 }
