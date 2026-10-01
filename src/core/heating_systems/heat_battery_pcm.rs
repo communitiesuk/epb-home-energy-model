@@ -96,7 +96,7 @@ pub(crate) enum HeatSourceWetService {
 #[derive(Debug, Clone)]
 pub(crate) struct HeatBatteryChargingSource {
     source_type: ChargingSourceType,
-    control: Control,
+    control: Arc<RangeTimeControl>,
     rated_charge_power: Option<f64>,
     heat_source_service: Option<HeatSourceWetService>,
     temp_flow_max: Option<f64>,
@@ -140,16 +140,9 @@ fn validate_no_schedule_overlap(
     for (t_idx, t_it) in simtime_iterator.clone().enumerate() {
         let mut active_sources: Vec<ArcStr> = Vec::new();
         for (src_name, charging_source) in &heat_source_data {
-            match &charging_source.control {
-                Control::RangeTime(ctrl) => {
-                    if let (_, Some(_)) = ctrl.setpnt_range_time_control(&t_it) {
-                        active_sources.push(src_name.clone());
-                    }
-                }
-                _ => {
-                    bail!("HeatBattery '{}': unsupported control type for source '{}'. Only RangeTimeControl is supported.", battery_name, src_name)
-                }
-            };
+            if let (_, Some(_)) = charging_source.control.setpnt_range_time_control(&t_it) {
+                active_sources.push(src_name.clone());
+            }
         }
         if active_sources.len() > 1 {
             bail!(
@@ -981,7 +974,7 @@ impl HeatBatteryPcm {
     /// Returns:
     ///     State of charge as a float between 0.0 (fully discharged to
     ///     temp_ref) and 1.0 (all layers at temp_charge_max).
-    fn calc_state_of_charge(self, zone_temps: Vec<f64>) -> anyhow::Result<f64> {
+    fn calc_state_of_charge(&self, zone_temps: Vec<f64>) -> anyhow::Result<f64> {
         let temp_ref = self.temp_ref;
 
         let energy_stored_total: f64 = zone_temps
@@ -1025,7 +1018,7 @@ impl HeatBatteryPcm {
     /// Returns:
     ///      SOC value (0–1) corresponding to the given temperature.
     ///
-    fn temp_to_soc(self, temp: f64) -> anyhow::Result<f64> {
+    fn temp_to_soc(&self, temp: f64) -> anyhow::Result<f64> {
         let temp_ref = self.temp_ref;
         let energy_stored = HeatBatteryPcm::calculate_layer_energy_stored(
             temp,
@@ -2464,6 +2457,42 @@ impl HeatBatteryPcm {
         } else {
             unreachable!()
         }
+    }
+
+    /// Get the current setpoints for a charging source, converting if needed.
+    ///
+    ///        When schedule_unit is "temperature", converts the raw temperature
+    ///        setpoints from the RangeTimeControl to SOC values using the battery's
+    ///        energy calculation. When schedule_unit is "soc", returns unchanged.
+    ///
+    ///        Args:
+    ///            source: Charging source with control and schedule_unit.
+    ///
+    ///        Returns:
+    ///            Tuple of (setpnt_lower, setpnt_upper) as SOC values (0–1).
+    ///
+    fn resolve_setpoints(
+        self,
+        source: &HeatBatteryChargingSource,
+        simtime: &SimulationTimeIteration,
+    ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
+        let (mut setpnt_lower, mut setpnt_upper) =
+            source.control.setpnt_range_time_control(simtime);
+        if source.schedule_unit == ScheduleUnit::Temperature {
+            if let Some(lower) = setpnt_lower {
+                setpnt_lower = Some(self.temp_to_soc(lower)?);
+            }
+            if let Some(upper) = setpnt_upper {
+                setpnt_upper = Some(self.temp_to_soc(upper)?);
+            }
+        }
+        // Reject invalid combination: lower set but upper not set.
+        // Follows StorageTank._retrieve_setpnt() convention.
+        if setpnt_upper.is_none() && setpnt_lower.is_some() {
+            bail!("schedule_lower must be None when schedule_upper is None");
+        }
+
+        Ok((setpnt_lower, setpnt_upper))
     }
 }
 
