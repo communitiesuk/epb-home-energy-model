@@ -445,4 +445,120 @@ mod tests {
         // Second start: warm_up(15→55) + between_event(20→15) + steady_state_kWh(55→15)
         assert_eq!(losses_second_start, 0.05950037585037147);
     }
+
+    #[rstest]
+    /// Between-event losses on internal pipework contribute to dwelling gains.
+    /// With surrounding temp rising from 18°C to 22°C between events, the
+    /// between-event cool-down is negative (pipe absorbs heat from the warmer
+    /// surroundings). This reduces gains compared to a scenario without
+    /// between-event losses, verifying the between-event term is applied.
+    fn test_between_events_internal_gain(internal_pipework: Pipework) {
+        let simtime = simtime(4.);
+        let mut mixin = concrete_pipework_user(vec![internal_pipework], Some(18.));
+
+        // Heat on
+        mixin
+            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .unwrap();
+
+        // Heat off (end of first event, records surrounding=18)
+        mixin
+            .calculate_primary_pipework_losses(0., 55., Some(true), simtime.step)
+            .unwrap();
+
+        // Surrounding rises to 22°C between events
+        mixin.temp_external_air_fn = Arc::new(|| 22.);
+        mixin.temp_internal_air_fn = Arc::new(|| 22.);
+
+        // Heat on again — Phase 1 between-event + Phase 2 steady-state
+        let (_, gains) = mixin
+            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .unwrap();
+
+        // Total gains = between_event(18→22) * W/kW / timestep + ss(55→22)
+        // between_event cool_down(18→22) is negative (pipe absorbs heat from
+        // warmer surroundings), so total gains are less than ss(55→22) alone
+        assert_relative_eq!(gains, 5.842656226537662);
+        // Verify the between-event term specifically reduces gains below
+        // what steady-state alone would give (10.049 W)
+        let steady_state_only =
+            mixin.primary_pipework[0].calculate_steady_state_heat_loss(55., 22.);
+
+        assert!(gains < steady_state_only);
+    }
+
+    #[rstest]
+    /// Energy within abs_tol=1e-10 of zero triggers Phase 3 (end of heating).
+    /// This exercises the math.isclose boundary: a tiny energy_input after a
+    /// real heating timestep should be treated as end-of-event.
+    fn test_phase3_fires_with_tiny_energy_close_to_zero(internal_pipework: Pipework) {
+        let simtime = simtime(3.);
+        let mixin = concrete_pipework_user(vec![internal_pipework], Some(20.));
+
+        // Timestep 0: heating active
+        mixin
+            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .unwrap();
+
+        // Timestep 1: tiny energy (effectively zero) → Phase 3 should fire
+        let (_, gains) = mixin
+            .calculate_primary_pipework_losses(1e-11, 55., Some(true), simtime.step)
+            .unwrap();
+
+        // Phase 3 cool-down gains + Phase 2 steady-state gains:
+        // warm_up(20→55) * W_per_kW / timestep + ss(55→20)
+        assert_relative_eq!(gains, 47.46228058715814);
+
+        // First-event flag should be cleared
+        assert!(!mixin
+            .flag_first_pipework_heating_event
+            .load(Ordering::SeqCst));
+    }
+
+    #[rstest]
+    /// Both internal and external pipes contribute to losses; only internal to gains.
+    fn test_mixed_internal_and_external_pipework(
+        internal_pipework: Pipework,
+        external_pipework: Pipework,
+    ) {
+        let simtime = simtime(2.);
+        let mixin = concrete_pipework_user(vec![internal_pipework, external_pipework], Some(20.));
+
+        // Skip first timestep (Phase 1), check second (Phase 2 steady-state only)
+        let mut results = Vec::new();
+        for _ in simtime.iter() {
+            results.push(
+                mixin
+                    .calculate_primary_pipework_losses(3., 55., None, simtime.step)
+                    .unwrap(),
+            );
+        }
+        let (losses_both, gains_both) = results[1];
+
+        // Both pipes' steady-state losses combined
+        // ss_kWh(int, 55→20) + ss_kWh(ext, 55→20)
+        assert_relative_eq!(losses_both, 0.01885352822601712);
+        // Only internal pipe's steady-state contributes to gains
+        assert_relative_eq!(gains_both, 10.657894331822993);
+    }
+
+    #[rstest]
+    /// initialising PrimaryPipeworkLossesMixin calls temp_surrounding_pipework for each pipe.
+    fn test_init_records_initial_surrounding_temps(internal_pipework: Pipework) {
+        let mixin = concrete_pipework_user(vec![internal_pipework], Some(18.));
+
+        assert_eq!(
+            mixin.temp_surrounding_prev_heating_event,
+            [AtomicF64::new(18.)]
+        );
+        assert!(mixin
+            .flag_first_pipework_heating_event
+            .load(Ordering::SeqCst));
+        assert_eq!(
+            mixin
+                .pipework_energy_input_prev_timestep
+                .load(Ordering::SeqCst),
+            0.
+        );
+    }
 }
