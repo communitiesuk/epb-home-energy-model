@@ -59,7 +59,7 @@ const DEFAULT_PREVIOUS_EVENT_TIME_END: f64 = 0.;
 const THERMAL_CONSTANTS_F_RVD_AUX: f64 = 0.25;
 
 // Thermal loss recovery factor
-const THERMAL_CONSTANTS_F_STO_M: f64 = 0.75;
+pub const THERMAL_CONSTANTS_F_STO_M: f64 = 0.75;
 
 // Standby losses adaptation factor
 const THERMAL_CONSTANTS_F_STO_BAC_ACC: f64 = 1.;

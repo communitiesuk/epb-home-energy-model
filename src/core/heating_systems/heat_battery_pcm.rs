@@ -10,6 +10,7 @@ use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::heating_systems::heat_battery_drycore::HeatBatteryDryCoreServiceWaterRegular;
 use crate::core::heating_systems::heat_network::HeatNetworkServiceWaterStorage;
 use crate::core::heating_systems::heat_pump::HeatPumpServiceWater;
+use crate::core::heating_systems::storage_tank::THERMAL_CONSTANTS_F_STO_M;
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
 use crate::core::units::{
@@ -656,7 +657,7 @@ pub struct HeatBatteryPcm {
     energy_charged_total: AtomicF64,
     energy_charged_electric: AtomicF64,
     battery_losses: AtomicF64,
-    pipework_primary_gains_kwh: f64,
+    pipework_primary_gains_kwh: AtomicF64,
     simultaneous_charging_and_discharging: bool,
     max_temp_of_charge: f64,
     energy_stored_max: f64,
@@ -1154,8 +1155,7 @@ impl HeatBatteryPcm {
     /// * `heat_battery` - reference to heat battery
     /// * `service_name` - name of the service demanding energy from the heat battery
     /// * `cold_feed` - reference to ColdWaterSource object
-    /// * `control_min` - reference to a control object which must select current the minimum timestep temperature
-    /// * `control_max` - reference to a control object which must select current the maximum timestep temperature
+    /// * `control` - reference to a RangeTimeControl
     pub(crate) fn create_service_hot_water_regular(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
@@ -1212,11 +1212,29 @@ impl HeatBatteryPcm {
         ))
     }
 
-    /// Return battery losses
+    /// Return recoverable standing losses and accumulated pipework gains for the timestep.
+    ///
+    ///        Includes both standing heat losses from the battery casing and any
+    ///        internal pipework gains from hydronic charging. Both are recoverable
+    ///        as dwelling internal gains.
+    ///
+    ///        Only the share of standing losses that reaches the heated space is
+    ///        returned, given by the thermal loss recovery factor f_sto_m
+    ///        (BS EN 15316-5:2017 Table B.3). This matches StorageTank, whose
+    ///        recoverable storage losses already carry f_sto_m, so centralised
+    ///        storage technologies are compared on a consistent basis. The remaining
+    ///        losses escape the dwelling.
+    ///
+    ///        Returns:
+    ///            Total recoverable losses across all units, in kWh.
     pub(crate) fn get_battery_losses(&self) -> f64 {
-        let battery_losses = self.battery_losses.load(Ordering::SeqCst) * self.n_units as f64;
+        let battery_losses = self.battery_losses.load(Ordering::SeqCst)
+            * self.n_units as f64
+            * THERMAL_CONSTANTS_F_STO_M;
+        let pipework_gains = self.pipework_primary_gains_kwh.load(Ordering::SeqCst);
+        self.pipework_primary_gains_kwh.store(0., Ordering::SeqCst);
         self.battery_losses.store(0., Ordering::SeqCst);
-        battery_losses
+        battery_losses + pipework_gains
     }
 
     /// Calculates power required for unit
