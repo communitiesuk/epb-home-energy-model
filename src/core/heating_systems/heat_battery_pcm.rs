@@ -1237,13 +1237,31 @@ impl HeatBatteryPcm {
         battery_losses + pipework_gains
     }
 
-    /// Calculates power required for unit
+    /// Return cumulative energy delivered to each service over the calculation.
+    ///
+    /// A running total, accumulated across timesteps and never reset, of the energy the
+    /// battery delivers to each service (keyed by energy supply connection name). It is read
+    /// after the simulation to apportion the battery's charging energy — metered on a single
+    /// connection rather than per service — between the services in proportion to the output
+    /// each received.
+    ///
+    /// Returns:
+    ///     Mapping of service connection name to cumulative delivered energy (kWh), across all
+    ///     units.
+    pub(crate) fn energy_delivered_by_service(&self) -> &IndexMap<ArcStr, f64> {
+        &self.energy_delivered_by_service
+    }
+
+    /// Calculate electric charging power for the current timestep (ChargeControl mode).
     ///
     /// Arguments
-    /// * `time` - current time period that we are looking at
     /// * `simtime` - an iteration of the contextual simulation time
     ///
-    /// returns -- Power required in watts
+    /// In ChargeControl mode, returns the rated charge power when the
+    /// ChargeControl is on, otherwise 0. In RangeTimeControl mode, always
+    /// returns 0 because charging dispatch is handled per-source in timestep_end().
+    ///   Returns:
+    ///      Charging power in kW.
     fn electric_charge(&self, simtime: SimulationTimeIteration) -> f64 {
         if let Some(control) = &self.charge_control {
             if control.is_on(&simtime) {
