@@ -1765,18 +1765,51 @@ impl HeatBatteryPcm {
         ))
     }
 
-    /// Charge the battery (update the zones temperature)
-    /// It follows the same methodology as energy_demand function
-    fn _charge_battery_hydraulic(
+    /// Charge the battery via hot water flow (hydronic charging).
+    ///
+    /// Simulates heat exchange between hot water flowing through the heat
+    /// exchanger and the PCM zones. Iterates in sub-timesteps of
+    /// __hb_time_step seconds, recalculating Reynolds number each iteration.
+    /// Stops when:
+    ///     - The outlet temperature reaches the inlet temperature (no further
+    ///   heat transfer possible)
+    ///     - The accumulated energy reaches energy_limit_kWh (conservation cap)
+    ///     - Time runs out
+    ///
+    /// Args:
+    ///     inlet_temp_C: Temperature of incoming hot water from the heat
+    ///         source (°C). Typically the heat source flow temperature.
+    ///     time_available_hrs: Time available for charging in this timestep
+    ///         (hours). Accounts for time already spent on other services.
+    ///     flow_rate_l_per_min: Flow rate through the charging heat exchanger
+    ///         (litre/minute). From the hydronic source configuration.
+    ///     target_charge_fraction: SOC target (0–1) from the source's
+    ///         RangeTimeControl upper setpoint. Limits the temperature
+    ///         target during zone heat exchange.
+    ///     energy_limit_kWh: Maximum energy the battery can absorb (kWh),
+    ///         based on the heat source capacity minus pipework losses.
+    ///         Prevents the battery from absorbing more energy than the
+    ///         heat source delivers.
+    ///
+    /// Returns:
+    ///     Tuple of (energy_charged_kWh, updated_zone_temperatures).
+    ///     energy_charged_kWh is positive when the battery absorbs energy.
+    ///
+    fn _charge_battery_hydronic(
         &mut self,
         inlet_temp_c: f64,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        todo!("Implement the hydraulic charging of the heat battery as part of 1.0.0a9");
+        flow_rate_l_per_min: f64,
+        target_charge_fraction: f64,
+        energy_limit_kwh: f64,
+        hex_a: f64,
+        hex_b: f64,
+        hex_velocity_at_1_l_per_min: f64,
+        hex_capillary_diameter_m: f64,
+    ) -> anyhow::Result<(f64, Vec<f64>)> {
         let total_time_s = self.simulation_time_step * SECONDS_PER_HOUR as f64;
         let time_step_s = self.hb_time_step;
 
-        // Initial Reynold number
+        // Initial Reynolds number
         let mut water_kinematic_viscosity_m2_per_s =
             Self::calculate_water_kinematic_viscosity_m2_per_s(
                 self.initial_inlet_temp,
@@ -1784,52 +1817,96 @@ impl HeatBatteryPcm {
             );
         let mut reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
             water_kinematic_viscosity_m2_per_s,
-            self.velocity_in_hex_tube,
-            self.capillary_diameter_m,
+            hex_velocity_at_1_l_per_min,
+            hex_capillary_diameter_m,
         );
 
-        let flow_rate_kg_per_s =
-            (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
         let n_time_steps = (total_time_s / time_step_s) as usize;
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
-        let mut total_charge = 0.;
-
+        let mut energy_absorbed_kj = 0.0;
+        //      # Iterate through sub-timesteps, accumulating energy transferred to
+        //       # the battery. energy_transf from __process_heat_battery_zones is
+        //      # negative when the battery absorbs heat (water loses energy), so
+        //        # we negate the sum to get positive energy_charged_kWh.
+        //        energy_absorbed_kJ = 0.0
+        //        energy_limit_kJ = energy_limit_kWh * units.kJ_per_kWh
         for _ in 0..n_time_steps {
-            // Processing HB zones
-            let (outlet_temp_c, energy_transf_charged, _) = self.process_heat_battery_zones(
+            let mut zone_temp_c_dist_prev = zone_temp_c_dist.clone();
+            let (mut outlet_temp_c, energy_transf_charged, _) = self.process_heat_battery_zones(
                 inlet_temp_c,
                 &mut zone_temp_c_dist,
                 time_step_s,
                 reynold_number_at_1_l_per_min,
-                self.flow_rate_l_per_min,,
+                self.flow_rate_l_per_min,
                 Some(0.),
-                simtime,
-                
+                Some(HeatBatteryPcmOperationMode::OnlyCharging),
+                target_charge_fraction,
+                Some(hex_a),
+                Some(hex_b),
             )?;
 
-            // RN for next time step
+            //  Recalculate Reynolds number for next sub-timestep
             water_kinematic_viscosity_m2_per_s =
                 Self::calculate_water_kinematic_viscosity_m2_per_s(inlet_temp_c, outlet_temp_c);
             reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
                 water_kinematic_viscosity_m2_per_s,
-                self.velocity_in_hex_tube,
-                self.capillary_diameter_m,
+                hex_velocity_at_1_l_per_min,
+                hex_capillary_diameter_m,
             );
 
-            // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
-            let energy_charged_during_battery_time_step =
-                FSum::with_all(&energy_transf_charged).value();
+            let energy_limit_kj = energy_limit_kwh * units::KILOJOULES_PER_KILOWATT_HOUR as f64;
 
-            if outlet_temp_c < inlet_temp_c {
-                total_charge += energy_charged_during_battery_time_step;
-            } else {
+            // energy_transf_per_zone values are negative when the battery
+            // absorbs heat from hot water (outlet cooler than inlet). Continue
+            // charging only while the outlet is meaningfully below the inlet;
+            // treating a near-equal outlet and inlet as "stop" keeps the
+            // decision platform-independent at the noise floor.
+            if outlet_temp_c < inlet_temp_c
+                && !relative_eq!(
+                    outlet_temp_c,
+                    inlet_temp_c,
+                    epsilon = NEGLIGIBLE_TEMP_DIFF_C
+                )
+            {
+                let energy_this_step_kj = -FSum::with_all(&energy_transf_charged).value();
+                energy_absorbed_kj += energy_this_step_kj;
+                if energy_absorbed_kj > energy_limit_kj
+                    || relative_eq!(energy_absorbed_kj, energy_limit_kj, epsilon = 1e-10)
+                {
+                    if energy_this_step_kj > 0. {
+                        let energy_allowed_kj =
+                            energy_limit_kj - (energy_absorbed_kj - energy_this_step_kj);
+                        let fraction = energy_allowed_kj / energy_this_step_kj;
+                        let (_, _, __) = self.process_heat_battery_zones(
+                            inlet_temp_c,
+                            zone_temp_c_dist_prev.as_mut_slice(),
+                            time_step_s * fraction,
+                            reynold_number_at_1_l_per_min,
+                            flow_rate_l_per_min,
+                            Some(0.),
+                            Some(HeatBatteryPcmOperationMode::OnlyCharging),
+                            target_charge_fraction,
+                            Some(hex_a),
+                            Some(hex_b),
+                        )?;
+                        self.zone_temp_c_dist_initial
+                            .write()
+                            .clone_from(&zone_temp_c_dist);
+                        energy_absorbed_kj = energy_limit_kj;
+                    }
+                    break;
+                }
                 break;
             }
         }
 
+        // Convert kJ to kWh (positive = energy absorbed by battery)
+        let energy_charged_kwh = energy_absorbed_kj / units::KILOJOULES_PER_KILOWATT_HOUR as f64;
+        self.energy_charged_total
+            .fetch_add(energy_charged_kwh, Ordering::SeqCst);
         *self.zone_temp_c_dist_initial.write() = zone_temp_c_dist;
 
-        Ok(total_charge)
+        Ok((energy_charged_kwh, zone_temp_c_dist))
     }
 
     /// Charge the battery (update the zones temperature)
