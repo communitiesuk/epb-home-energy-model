@@ -1367,6 +1367,29 @@ impl HeatBatteryPcm {
         (velocity_in_hex_tube * diameter_m) / water_kinematic_viscosity_m2_per_s
     }
 
+    /// Return the energy transfer and starting temperature for a single zone.
+    ///
+    ///  The behaviour depends on the operation mode: charging fills zones from
+    ///  the top down, standing losses remove heat in proportion to each zone's
+    ///  temperature above the surroundings, and normal operation exchanges heat
+    ///  with the water flowing through the heat exchanger.
+    ///
+    ///  Args:
+    ///      index: Iteration index over the zones.
+    ///      mode: Operation mode selecting the zone calculation.
+    ///      zone_temp_C_dist: Current temperature of each zone, in °C.
+    ///      inlet_temp_C: Temperature entering the battery (the surrounding air
+    ///    temperature in the losses mode), in °C.
+    ///      inlet_temp_C_Zone: Temperature entering this zone, in °C.
+    ///      Q_max_kJ: Energy available for transfer over the timestep, in kJ.
+    ///      reynold_number_at_1_l_per_min: Reynolds number at 1 litre/minute.
+    ///      flow_rate_kg_per_s: Heat exchanger flow rate, in kg/s.
+    ///      time_step_s: Length of the calculation step, in seconds.
+    ///
+    ///  Returns:
+    ///      A tuple of the energy transferred for this zone (in kJ), the zone
+    ///      index, the zone's starting temperature (in °C), and the outlet
+    ///      temperature (in °C).
     fn get_zone_properties(
         &self,
         index: usize,
@@ -1376,8 +1399,10 @@ impl HeatBatteryPcm {
         inlet_temp_c_zone: f64,
         q_max_kj: f64,
         reynold_number_at_1_l_per_min: f64,
-        flow_rate_kg_per_s: f64,
         time_step_s: f64,
+        flow_rate_l_per_min: f64,
+        hex_a: Option<f64>,
+        hex_b: Option<f64>,
     ) -> (f64, usize, f64, f64) {
         match mode {
             HeatBatteryPcmOperationMode::OnlyCharging => {
@@ -1387,22 +1412,40 @@ impl HeatBatteryPcm {
             }
             HeatBatteryPcmOperationMode::Losses => {
                 let zone_temp_c_start = zone_temp_c_dist[index];
-                let energy_transf = if zone_temp_c_start > inlet_temp_c {
-                    q_max_kj / zone_temp_c_dist.len() as f64
-                } else {
-                    0.
-                };
+                // Standing loss for this zone scales with its temperature above the
+                // surroundings, relative to the temperature difference at which the
+                // rated loss was characterised (BS EN 15316-5:2017, as for
+                // StorageTank). Q_max_kJ carries the full rated-loss energy for the
+                // timestep; share it equally across zones and weight by the per-zone
+                // temperature ratio. Clamp at zero so a zone at or below the
+                // surrounding temperature does not gain heat.
+                let temp_diff_zone = zone_temp_c_start - inlet_temp_c;
+                let energy_transf = (q_max_kj / zone_temp_c_dist.len() as f64 * temp_diff_zone
+                    / self.temp_diff_rated_losses)
+                    .max(0.0);
                 (energy_transf, index, zone_temp_c_start, 0.)
             }
             HeatBatteryPcmOperationMode::Normal => {
                 // NORMAL mode include battery primarily hydraulic charging or discharging with or without simultaneous electric charging
                 let zone_temp_c_start = zone_temp_c_dist[index];
+                let flow_rate_kg_per_s =
+                    (flow_rate_l_per_min / units::SECONDS_PER_MINUTE as f64) * WATER.density();
+                let effective_a = hex_a.unwrap_or(self.a);
+                let effective_b = hex_b.unwrap_or(self.b);
+                // The A * ln(Re * V) + B correlation returns the UA value for the
+                // whole heat battery heat exchanger [W/K]. UA is an extensive
+                // quantity (UA = U * area), so when the exchanger is discretised
+                // into n_layers zones in series, each zone owns 1 / n_layers of the
+                // surface area and therefore a conductance of UA / n_layers. Dividing
+                // here keeps the total NTU (and hence the modelled heat transfer)
+                // invariant to the chosen layer count. The zone storage capacities
+                // are divided per layer in the same way (see __init__).
                 let heat_transfer_kw_per_k = Self::calculate_heat_transfer_kw_per_k(
-                    self.a,
-                    self.b,
-                    self.flow_rate_l_per_min,
+                    effective_a,
+                    effective_b,
+                    flow_rate_l_per_min,
                     reynold_number_at_1_l_per_min,
-                );
+                ) / self.n_layers as f64;
 
                 // Calculate outlet temperature and heat exchange for this zone
                 let outlet_temp_c = Self::calculate_outlet_temp_c(
@@ -1422,77 +1465,82 @@ impl HeatBatteryPcm {
         }
     }
 
-    fn calculate_zone_energy_required(&self, zone_temp_c_start: f64, target_temp: f64) -> f64 {
+    fn calculate_zone_energy_required(
+        &self,
+        zone_temp_c_start: f64,
+        temp_charge_target: f64,
+    ) -> f64 {
         if zone_temp_c_start >= self.phase_transition_temperature_upper {
-            self.heat_storage_kj_per_k_above * (zone_temp_c_start - target_temp)
+            self.heat_storage_kj_per_k_above * (zone_temp_c_start - temp_charge_target)
         } else if zone_temp_c_start >= self.phase_transition_temperature_lower {
-            if target_temp > self.phase_transition_temperature_upper {
+            if temp_charge_target > self.phase_transition_temperature_upper {
                 self.heat_storage_kj_per_k_above
-                    * (self.phase_transition_temperature_upper - target_temp)
+                    * (self.phase_transition_temperature_upper - temp_charge_target)
                     + self.heat_storage_kj_per_k_during
                         * (zone_temp_c_start - self.phase_transition_temperature_upper)
             } else {
-                self.heat_storage_kj_per_k_during * (zone_temp_c_start - target_temp)
+                self.heat_storage_kj_per_k_during * (zone_temp_c_start - temp_charge_target)
             }
-        } else if target_temp > self.phase_transition_temperature_upper {
+        } else if temp_charge_target > self.phase_transition_temperature_upper {
             self.heat_storage_kj_per_k_above
-                * (self.phase_transition_temperature_upper - target_temp)
+                * (self.phase_transition_temperature_upper - temp_charge_target)
                 + self.heat_storage_kj_per_k_during
                     * (self.phase_transition_temperature_lower
                         - self.phase_transition_temperature_upper)
                 + self.heat_storage_kj_per_k_below
                     * (zone_temp_c_start - self.phase_transition_temperature_lower)
-        } else if target_temp > self.phase_transition_temperature_lower {
+        } else if temp_charge_target > self.phase_transition_temperature_lower {
             self.heat_storage_kj_per_k_during
-                * (self.phase_transition_temperature_lower - target_temp)
+                * (self.phase_transition_temperature_lower - temp_charge_target)
                 + self.heat_storage_kj_per_k_below
                     * (zone_temp_c_start - self.phase_transition_temperature_lower)
         } else {
-            self.heat_storage_kj_per_k_below * (zone_temp_c_start - target_temp)
+            self.heat_storage_kj_per_k_below * (zone_temp_c_start - temp_charge_target)
         }
     }
 
     fn process_zone_simultaneous_charging(
         &self,
         zone_temp_c_start: f64,
-        target_temp: f64,
+        temp_charge_target: f64,
         q_max_kj: f64,
         energy_transf: f64,
-        energy_charged: f64,
+        energy_charged_electric: f64,
     ) -> (f64, f64, f64) {
         let mut q_max_kj = q_max_kj;
-        let mut energy_charged = energy_charged;
+        let mut energy_charged_electric = energy_charged_electric;
         let mut energy_transf = energy_transf;
 
-        if zone_temp_c_start < target_temp {
+        if zone_temp_c_start < temp_charge_target {
             // zone initially below full charge
             let mut q_required =
-                self.calculate_zone_energy_required(zone_temp_c_start, target_temp);
+                self.calculate_zone_energy_required(zone_temp_c_start, temp_charge_target);
 
             if energy_transf >= 0. {
                 // inlet water withdraws energy from battery
                 if -q_max_kj >= energy_transf {
                     // Charging is enough to recover energy withdrawn and possibly more
                     q_max_kj += energy_transf;
-                    energy_charged += energy_transf / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    energy_charged_electric += energy_transf / KILOJOULES_PER_KILOWATT_HOUR as f64;
                     energy_transf = 0.;
 
                     if q_max_kj > q_required {
                         // Charging is not enough to push zone temperature to target
                         q_required = q_max_kj;
-                        energy_charged += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                        energy_charged_electric += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
                         q_max_kj = 0.;
                     } else {
                         // Charging is enough to push zone temperature to target temperature
                         q_max_kj -= q_required;
-                        energy_charged += -q_required / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                        energy_charged_electric +=
+                            -q_required / KILOJOULES_PER_KILOWATT_HOUR as f64;
                     }
                     // Update zone temperature with energy from charging
                     energy_transf += q_required;
                 } else {
                     // Charging can only recover partially the energy withdrawn
                     energy_transf += q_max_kj;
-                    energy_charged += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    energy_charged_electric += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
                     q_max_kj = 0.;
                 }
             } else {
@@ -1500,7 +1548,7 @@ impl HeatBatteryPcm {
                 if q_max_kj + energy_transf > q_required {
                     // inlet water + charging is not enough to push zone temperature to target
                     q_required = q_max_kj + energy_transf;
-                    energy_charged += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    energy_charged_electric += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
                     q_max_kj = 0.;
 
                     energy_transf = q_required;
@@ -1509,7 +1557,7 @@ impl HeatBatteryPcm {
                     if energy_transf >= q_required {
                         // There is plenty of charging after taking zone temperature to target
                         q_max_kj -= q_required - energy_transf;
-                        energy_charged +=
+                        energy_charged_electric +=
                             -(q_required - energy_transf) / KILOJOULES_PER_KILOWATT_HOUR as f64;
                         energy_transf = q_required;
                     }
@@ -1522,18 +1570,18 @@ impl HeatBatteryPcm {
                 if -q_max_kj > energy_transf {
                     // Charging is enough to recover energy withdrawn
                     q_max_kj += energy_transf;
-                    energy_charged += energy_transf / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    energy_charged_electric += energy_transf / KILOJOULES_PER_KILOWATT_HOUR as f64;
                     energy_transf = 0.;
                 } else {
                     // Charging can only recover partially the energy withdrawn
                     energy_transf += q_max_kj;
-                    energy_charged += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    energy_charged_electric += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
                     q_max_kj = 0.;
                 }
             }
         }
 
-        (q_max_kj, energy_charged, energy_transf)
+        (q_max_kj, energy_charged_electric, energy_transf)
     }
 
     /// ranges _1, _2, and _3 refer to:
@@ -1548,7 +1596,12 @@ impl HeatBatteryPcm {
         let mut delta_temp_1 = 0.;
         let mut delta_temp_2 = 0.;
         let mut delta_temp_3 = 0.;
-
+        if relative_eq!(energy_transf, 0.0, epsilon = NEGLIGIBLE_ENERGY_KJ) {
+            // Negligible transfer: zone temperature is unchanged. Guarding the sign
+            // test stops a noise-floor value taking the delivering vs retrieving
+            // branch differently across platforms.
+            return zone_temp_c_start;
+        }
         if energy_transf > 0. {
             // zone delivering energy to water
             if zone_temp_c_start >= self.phase_transition_temperature_upper {
@@ -1638,17 +1691,23 @@ impl HeatBatteryPcm {
         &self,
         inlet_temp_c: f64,
         zone_temp_c_dist: &mut [f64],
-        flow_rate_kg_per_s: f64,
         time_step_s: f64,
         reynold_number_at_1_l_per_min: f64,
+        flow_rate_l_per_min: f64,
         pwr_in: Option<f64>,
         mode: Option<HeatBatteryPcmOperationMode>,
-        simtime: SimulationTimeIteration,
+        target_charge_fraction: f64,
+        hex_a: Option<f64>,
+        hex_b: Option<f64>,
     ) -> anyhow::Result<(f64, Vec<f64>, f64)> {
         let pwr_in = pwr_in.unwrap_or(0.);
         let mode = mode.unwrap_or(HeatBatteryPcmOperationMode::Normal);
-        let target_temp = self.max_temp_of_charge * self.target_charge(simtime)?;
-        let mut energy_charged = 0.;
+        // target_charge_fraction is the SOC target (0–1) for charging, passed
+        // by the caller. In ChargeControl mode this comes from ChargeControl.target_charge();
+        // in RangeTimeControl mode from the source's upper setpoint.
+        // Non-charging callers (discharge, losses) use the default 1.0.
+        let target_temp = self.soc_to_temp(target_charge_fraction);
+        let mut energy_charged_electric = 0.;
 
         let mut q_max_kj =
             -pwr_in * time_step_s / SECONDS_PER_HOUR as f64 * KILOJOULES_PER_KILOWATT_HOUR as f64;
@@ -1671,21 +1730,23 @@ impl HeatBatteryPcm {
                     inlet_temp_c_zone,
                     q_max_kj,
                     reynold_number_at_1_l_per_min,
-                    flow_rate_kg_per_s,
                     time_step_s,
+                    flow_rate_l_per_min,
+                    hex_a,
+                    hex_b,
                 );
 
             energy_transf_delivered[zone_index] += energy_transf;
 
             // Process energy transfer in zone with simultaneous charging
             if q_max_kj < 0. {
-                (q_max_kj, energy_charged, energy_transf) = self
+                (q_max_kj, energy_charged_electric, energy_transf) = self
                     .process_zone_simultaneous_charging(
                         zone_temp_c_start,
                         target_temp,
                         q_max_kj,
                         energy_transf,
-                        energy_charged,
+                        energy_charged_electric,
                     );
             };
 
@@ -1697,7 +1758,11 @@ impl HeatBatteryPcm {
             inlet_temp_c_zone = outlet_temp_c
         }
 
-        Ok((outlet_temp_c, energy_transf_delivered, energy_charged))
+        Ok((
+            outlet_temp_c,
+            energy_transf_delivered,
+            energy_charged_electric,
+        ))
     }
 
     /// Charge the battery (update the zones temperature)
@@ -1707,6 +1772,7 @@ impl HeatBatteryPcm {
         inlet_temp_c: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
+        todo!("Implement the hydraulic charging of the heat battery as part of 1.0.0a9");
         let total_time_s = self.simulation_time_step * SECONDS_PER_HOUR as f64;
         let time_step_s = self.hb_time_step;
 
@@ -1733,12 +1799,12 @@ impl HeatBatteryPcm {
             let (outlet_temp_c, energy_transf_charged, _) = self.process_heat_battery_zones(
                 inlet_temp_c,
                 &mut zone_temp_c_dist,
-                flow_rate_kg_per_s,
                 time_step_s,
                 reynold_number_at_1_l_per_min,
+                self.flow_rate_l_per_min,,
                 Some(0.),
-                None,
                 simtime,
+                
             )?;
 
             // RN for next time step
