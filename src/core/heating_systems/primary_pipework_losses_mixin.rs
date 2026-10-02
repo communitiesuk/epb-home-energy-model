@@ -28,20 +28,20 @@ use std::sync::Arc;
 /// for internal pipework (zone air).
 ///
 /// State variables:
-/// pipework_energy_input_prev_timestep: Energy input from the previous
-/// timestep, used to detect start/end of heating events.
-/// temp_surrounding_prev_heating_event: Surrounding temperature at each
-/// pipe segment when the previous heating event ended. Used for
-/// between-event cool-down loss calculation.
-/// flag_first_pipework_heating_event: True until the first heating event
-/// completes. Between-event losses are not calculated before the
-/// first event ends.
+///     pipework_energy_input_prev_timestep: Energy input from the previous
+///         timestep, used to detect start/end of heating events.
+///     temp_surrounding_prev_heating_event: Surrounding temperature at each
+///         pipe segment when the previous heating event ended. Used for
+///         between-event cool-down loss calculation.
+///     flag_first_pipework_heating_event: True until the first heating event
+///         completes. Between-event losses are not calculated before the
+///         first event ends.
 struct PrimaryPipeworkLossesMixin {
     primary_pipework: Vec<Pipework>,
     pipework_energy_input_prev_timestep: AtomicF64,
     temp_surrounding_prev_heating_event: Vec<AtomicF64>,
     flag_first_pipework_heating_event: AtomicBool,
-    temp_external_air_fn: Arc<dyn Fn() -> f64 + Send + Sync>, // TODO review type
+    temp_external_air_fn: Arc<dyn Fn() -> f64 + Send + Sync>,
     temp_internal_air_fn: TempInternalAirFn,
 }
 
@@ -76,13 +76,22 @@ impl PrimaryPipeworkLossesMixin {
         }
     }
 
+    /// Return the ambient temperature surrounding a primary pipework segment.
+    ///
+    /// Dispatches to the appropriate callback based on pipework location.
+    ///
+    /// Args:
+    /// pipework: Pipework object to query location from.
+    ///
+    /// Returns:
+    /// Surrounding temperature in °C.
     pub(crate) fn temp_surrounding_pipework(
         pipework: &Pipework,
         temp_external_air_fn: Arc<dyn Fn() -> f64 + Send + Sync>,
         temp_internal_air_fn: TempInternalAirFn,
     ) -> f64 {
         match pipework.location() {
-            PipeworkLocation::External => temp_external_air_fn(), // TODO WaterPipeworkLocation?
+            PipeworkLocation::External => temp_external_air_fn(),
             PipeworkLocation::Internal => temp_internal_air_fn(),
         }
     }
@@ -479,6 +488,7 @@ mod tests {
         // between_event cool_down(18→22) is negative (pipe absorbs heat from
         // warmer surroundings), so total gains are less than ss(55→22) alone
         assert_relative_eq!(gains, 5.842656226537662);
+
         // Verify the between-event term specifically reduces gains below
         // what steady-state alone would give (10.049 W)
         let steady_state_only =
@@ -508,7 +518,6 @@ mod tests {
         // Phase 3 cool-down gains + Phase 2 steady-state gains:
         // warm_up(20→55) * W_per_kW / timestep + ss(55→20)
         assert_relative_eq!(gains, 47.46228058715814);
-
         // First-event flag should be cleared
         assert!(!mixin
             .flag_first_pipework_heating_event
