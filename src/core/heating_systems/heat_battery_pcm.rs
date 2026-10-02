@@ -99,7 +99,7 @@ pub(crate) struct HeatBatteryChargingSource {
     control: Arc<RangeTimeControl>,
     rated_charge_power: Option<f64>,
     heat_source_service: Option<HeatSourceWetService>,
-    temp_flow_max: Option<f64>,
+    temp_flow_max: f64,
     flow_rate_charging_l_per_min: Option<f64>,
     hex_a: Option<f64>,
     hex_b: Option<f64>,
@@ -689,7 +689,7 @@ impl HeatBatteryPcm {
         heat_battery_details: &HeatSourceWetDetails,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
-        simulation_time_step: f64,
+        simulation_time: SimulationTimeIterator,
         external_conditions: Arc<ExternalConditions>,
         temp_min_useful: Option<f64>,
         temp_internal_air_callback: fn() -> f64,
@@ -700,7 +700,7 @@ impl HeatBatteryPcm {
         initial_inlet_temp: Option<f64>,
         estimated_outlet_temp: Option<f64>,
         output_detailed_results: Option<bool>,
-        primary_pipework: Option<Vec<Pipework>>, // Todo: not handled the init of this yet.
+        _primary_pipework: Option<Vec<Pipework>>, // Todo: not handled the init of this yet.
     ) -> anyhow::Result<Self> {
         // 20secs is the current preferred timestep to run the heat battery iterative calculations
         let hb_time_step = hb_time_step.unwrap_or(DEFAULT_TIME_STEP_SECONDS);
@@ -712,6 +712,10 @@ impl HeatBatteryPcm {
         // Determine charging configuration mode: HeatSource dict with
         // per-source RangeTimeControl vs single ChargeControl + rated_charge_power
         let use_heatsource_data = heat_source_data.is_some();
+
+        // Per-source hysteresis state: tracks whether each source is currently
+        // in its active charging band (SOC below upper setpoint after being
+        // triggered by SOC falling below lower setpoint)
         let charging_active = if let Some(heat_source_data) = &heat_source_data {
             heat_source_data
                 .iter()
@@ -721,16 +725,15 @@ impl HeatBatteryPcm {
         } else {
             IndexMap::new()
         };
-        // Per-source hysteresis state: tracks whether each source is currently
-        // in its active charging band (SOC below upper setpoint after being
-        // triggered by SOC falling below lower setpoint)
-        for (src_name, src) in &heat_source_data.clone().unwrap_or_default() {
-            if src.schedule_unit == ScheduleUnit::Temperature && src.temp_flow_max.is_some() {
-                todo!("self.warn_if_schedule_exceeds_flow_temp")
+
+        // Warn when temperature-based schedules exceed the heat source's flow
+        // temperature limit — the battery cannot reach those targets, so
+        // charging will cycle inefficiently and may degrade performance.
+        for (_, src) in &heat_source_data.clone().unwrap_or_default() {
+            if src.schedule_unit == ScheduleUnit::Temperature {
+                HeatBatteryPcm::warn_if_schedule_exceeds_flow_temp(src, &simulation_time)?;
             }
         }
-        // not sure we need this
-        let time_units = units::SECONDS_PER_HOUR;
 
         let (
             pwr_in,
@@ -858,7 +861,7 @@ impl HeatBatteryPcm {
             estimated_outlet_temp,
             energy_supply,
             energy_supply_connection,
-            simulation_time_step,
+            simulation_time_step: simulation_time.step_in_hours(),
             external_conditions,
             energy_supply_connections: Default::default(),
             use_heatsource_data,
@@ -902,6 +905,30 @@ impl HeatBatteryPcm {
             temp_ref: temp_min_useful.unwrap_or(0.),
             temp_internal_air_callback,
         })
+    }
+
+    fn warn_if_schedule_exceeds_flow_temp(
+        source: &HeatBatteryChargingSource,
+        simtime_iterator: &SimulationTimeIterator,
+    ) -> anyhow::Result<()> {
+        if simtime_iterator.current_index() != 0 {
+            bail!(
+                "warn_if_schedule_exceeds_flow_temp must not be called after the simulation has started, as it resets simulation_time."
+            )
+        }
+        let mut temp_observed_max = source.temp_flow_max;
+        for _ in simtime_iterator.clone().enumerate() {
+            let (lower, upper) = source
+                .control
+                .setpnt_range_time_control(&simtime_iterator.current_iteration());
+            if let Some(lower) = lower {
+                temp_observed_max = lower.max(temp_observed_max);
+            }
+            if let Some(upper) = upper {
+                temp_observed_max = upper.max(temp_observed_max);
+            }
+        }
+        Ok(())
     }
     /// Calculate energy stored in a single layer above a reference temperature.
     ///
@@ -1090,13 +1117,13 @@ impl HeatBatteryPcm {
         );
         if energy_target <= energy_at_lower {
             // Target falls in the below-transition regime
-            return temp_lower + (energy_target / cap_below);
+            temp_lower + (energy_target / cap_below)
         } else if energy_target <= energy_at_upper {
             // Target falls in the phase-transition regime
-            return temp_lower + ((energy_target - energy_at_lower) / cap_during);
+            temp_lower + ((energy_target - energy_at_lower) / cap_during)
         } else {
             // Target falls in the above-transition regime
-            return temp_upper + ((energy_target - energy_at_upper) / cap_above);
+            temp_upper + ((energy_target - energy_at_upper) / cap_above)
         }
     }
     fn create_service_connection(
