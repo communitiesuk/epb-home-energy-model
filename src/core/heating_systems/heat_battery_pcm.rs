@@ -1904,9 +1904,76 @@ impl HeatBatteryPcm {
         let energy_charged_kwh = energy_absorbed_kj / units::KILOJOULES_PER_KILOWATT_HOUR as f64;
         self.energy_charged_total
             .fetch_add(energy_charged_kwh, Ordering::SeqCst);
-        *self.zone_temp_c_dist_initial.write() = zone_temp_c_dist;
+        *self.zone_temp_c_dist_initial.write() = zone_temp_c_dist.clone();
 
         Ok((energy_charged_kwh, zone_temp_c_dist))
+    }
+
+    /// Calculate the energy demand to charge the battery from current SOC.
+    ///
+    /// Uses the SOC deficit and the battery's energy capacity to estimate
+    /// the energy needed in kWh. When temp_flow_max is provided (hydronic
+    /// charging), the target temperature is capped to avoid requesting more
+    /// energy than the heat source can thermodynamically deliver. The
+    /// target_soc parameter limits how far to charge — preventing
+    /// overcharging beyond the RangeTimeControl upper setpoint within a
+    /// single timestep.
+    ///
+    /// Args:
+    ///     temp_flow_max: Maximum flow temperature the heat source can
+    ///         deliver (°C). When provided, caps the charge target at
+    ///         min(temp_flow_max, temp_charge_max). Without this cap, a heat
+    ///         source with a lower flow temperature than the battery's max
+    ///         would be billed for energy it cannot deliver, breaking
+    ///         conservation of energy.
+    ///     target_soc: SOC target (0–1) from the source's RangeTimeControl
+    ///         upper setpoint. Energy demand is capped at the deficit to
+    ///         reach this SOC rather than full charge.
+    ///
+    /// Returns:
+    ///     Energy demand in kWh (positive). Returns 0.0 if battery is at or
+    ///     above the target SOC.
+    fn calculate_charge_energy_demand(
+        &self,
+        temp_flow_max: Option<f64>,
+        target_soc: f64,
+    ) -> anyhow::Result<f64> {
+        let current_soc =
+            self.calc_state_of_charge(self.zone_temp_c_dist_initial.read().clone())?;
+        if current_soc > target_soc || relative_eq!(current_soc, target_soc, epsilon = 1e-10) {
+            return Ok(0.0);
+        }
+
+        let temp_ref = self.temp_ref;
+        let energy_current_kj = self.energy_stored_max * current_soc;
+
+        // Demand based on SOC target (relative to full battery capacity at
+        // temp_charge_max). This is how much energy is needed to reach the
+        // target SOC regardless of flow temperature limitations.
+        let energy_at_target_soc_kj = self.energy_stored_max * target_soc;
+        let demand_soc_kj = energy_at_target_soc_kj - energy_current_kj;
+
+        // Demand based on flow temperature limit (maximum energy the heat
+        // source can thermodynamically deliver). When temp_flow_max <
+        // temp_charge_max, the battery cannot be heated beyond temp_flow_max
+        // even if the SOC target is higher.
+        let energy_deficit_kj = if let Some(temp_flow_max) = temp_flow_max {
+            let energy_at_flow_max_kj = HeatBatteryPcm::calculate_layer_energy_stored(
+                temp_flow_max,
+                temp_ref,
+                self.phase_transition_temperature_lower,
+                self.phase_transition_temperature_upper,
+                self.heat_storage_kj_per_k_below,
+                self.heat_storage_kj_per_k_during,
+                self.heat_storage_kj_per_k_above,
+            ) * self.n_layers as f64;
+            let demand_flow_kj = (energy_at_flow_max_kj - energy_current_kj).max(0.0);
+            demand_soc_kj.min(demand_flow_kj)
+        } else {
+            demand_soc_kj
+        };
+
+        Ok(energy_deficit_kj / units::KILOJOULES_PER_KILOWATT_HOUR as f64)
     }
 
     /// Charge the battery (update the zones temperature)
