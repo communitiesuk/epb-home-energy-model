@@ -1976,33 +1976,65 @@ impl HeatBatteryPcm {
         Ok(energy_deficit_kj / units::KILOJOULES_PER_KILOWATT_HOUR as f64)
     }
 
-    /// Charge the battery (update the zones temperature)
     /// It follows the same methodology as energy_demand function
-    fn charge_battery(&self, simtime: SimulationTimeIteration) -> anyhow::Result<(f64, Vec<f64>)> {
+    /// Charge the battery electrically at the given rated power.
+    ///
+    /// Applies electric heating to all battery zones using the
+    /// `OnlyCharging` operation mode. The charge target limits the zone
+    /// temperatures so the battery does not charge beyond the active control
+    /// setpoint during this timestep.
+    ///
+    /// # Arguments
+    ///
+    /// * `rated_power` - Electric charging power in kW.
+    /// * `target_charge_fraction` - SOC target in the range 0–1. This limits
+    ///   the temperature target during zone heat exchange.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    ///
+    /// * The energy charged during this timestep in kWh.
+    /// * The updated zone temperatures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if processing the battery zones fails.
+    fn charge_battery_electric(
+        &self,
+        rated_power: f64,
+        target_charge_fraction: f64,
+    ) -> anyhow::Result<(f64, Vec<f64>)> {
         let timestep = self.simulation_time_step;
         let time_available = self.time_available(0., timestep);
-
-        let pwr_in = self.electric_charge(simtime);
         let time_step_s = time_available * SECONDS_PER_HOUR as f64;
+
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
 
-        // Processing HB zones
-        let (_, _, energy_charged_during_battery_time_step) = self.process_heat_battery_zones(
+        // Apply the electric charging power across all battery zones.
+        let (_, _, energy_charged_electric_substep) = self.process_heat_battery_zones(
             0.,
             &mut zone_temp_c_dist,
-            0.,
             time_step_s,
             0.,
-            Some(pwr_in),
+            self.flow_rate_l_per_min,
+            Some(rated_power),
             Some(HeatBatteryPcmOperationMode::OnlyCharging),
-            simtime,
+            target_charge_fraction,
+            None,
+            None,
         )?;
 
+        // The returned energy is already in kWh.
+        self.energy_charged_total
+            .fetch_add(energy_charged_electric_substep, Ordering::SeqCst);
+
         self.energy_charged_electric
-            .fetch_add(energy_charged_during_battery_time_step, Ordering::SeqCst);
+            .fetch_add(energy_charged_electric_substep, Ordering::SeqCst);
+
         *self.zone_temp_c_dist_initial.write() = zone_temp_c_dist.clone();
 
-        Ok((energy_charged_during_battery_time_step, zone_temp_c_dist))
+        Ok((energy_charged_electric_substep, zone_temp_c_dist))
     }
 
     fn battery_heat_loss(
