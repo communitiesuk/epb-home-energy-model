@@ -28,7 +28,7 @@ use crate::input::{
     ScheduleUnit,
 };
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Ok};
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
@@ -2037,35 +2037,210 @@ impl HeatBatteryPcm {
         Ok((energy_charged_electric_substep, zone_temp_c_dist))
     }
 
+    /*+
+    +        end_of_ts_charge = 0.0
+    +        zone_temp_C_after_charging = self.__zone_temp_C_dist_initial
+    +
+    +        if self.__use_heatsource_dict:
+    +            # RangeTimeControl: per-source charging dispatch (SOC or temperature-based).
+    +            # The order of processing heat sources shouldn't matter because
+    +            # their schedules should not overlap.
+    +            for source_name, source in self.__heat_source_data.items():
+    +                self.__determine_heat_source_switch_on(source_name, source)
+    +                self.__determine_heat_source_switch_off(source_name, source)
+    +                if self.__charging_active[source_name]:
+    +                    # Use the upper setpoint from the source's RangeTimeControl
+    +                    # as the SOC target for charging. This limits both the
+    +                    # temperature target in zone heat exchange and the energy
+    +                    # demand calculation, preventing overcharging beyond the
+    +                    # hysteresis upper threshold within a single timestep.
+    +                    _, setpnt_upper = self.__resolve_setpoints(source)
+    +                    assert setpnt_upper is not None  # Guaranteed by switch_off
+    +                    target_soc = setpnt_upper
+    +
+    +                    if source.source_type == ChargingSourceType.DIRECT_ELECTRIC:
+    +                        assert source.rated_charge_power is not None
+    +                        end_of_ts_charge, zone_temp_C_after_charging = (
+    +                            self.__charge_battery_electric(
+    +                                rated_power=source.rated_charge_power,
+    +                                target_charge_fraction=target_soc,
+    +                            )
+    +                        )
+    +                    elif source.source_type == ChargingSourceType.HEAT_SOURCE_WET:
+    +                        assert source.heat_source_service is not None
+    +                        end_of_ts_charge, zone_temp_C_after_charging = (
+    +                            self.__charge_from_heat_source(
+    +                                source=source,
+    +                                time_available_hrs=time_remaining_current_timestep,
+    +                                target_charge_fraction=target_soc,
+    +                            )
+    +                        )
+    +                else:
+    +                    if source.source_type == ChargingSourceType.HEAT_SOURCE_WET:
+    +                        # Hydronic source not active — call demand_energy(0) so
+    +                        # the heat source records a zero-demand service call
+    +                        # every timestep (ensures consistent detailed results
+    +                        # without placeholders)
+    +                        assert source.temp_flow_max is not None
+    +                        assert source.heat_source_service is not None
+    +                        assert source.flow_rate_charging_l_per_min is not None
+    +                        assert source.hex_A is not None
+    +                        assert source.hex_B is not None
+    +                        assert source.hex_velocity_at_1_l_per_min is not None
+    +                        assert source.hex_capillary_diameter_m is not None
+    +                        temp_return = self.__estimate_return_temp(
+    +                            source.temp_flow_max,
+    +                            source.flow_rate_charging_l_per_min,
+    +                            source.hex_A,
+    +                            source.hex_B,
+    +                            source.hex_velocity_at_1_l_per_min,
+    +                            source.hex_capillary_diameter_m,
+    +                        )
+    +                        source.heat_source_service.demand_energy(
+    +                            0.0, source.temp_flow_max, temp_return
+    +                        )
+    +                        # Report zero input to pipework loss tracker for event
+    +                        # boundary detection
+    +                        self._calculate_primary_pipework_losses(0.0, source.temp_flow_max)
+    +        elif self.__charge_control is not None:
+    +            if self.__charge_control.is_on():
+    +                # ChargeControl: single electric element with temperature-based proxy
+    +                pwr_in = self.__electric_charge()
+    +                target = self.__charge_control.target_charge()
+    +                end_of_ts_charge, zone_temp_C_after_charging = self.__charge_battery_electric(
+    +                    rated_power=pwr_in, target_charge_fraction=target
+    +                )
+    +        else:
+    +            raise ValueError(  # pragma: no cover
+    +                "No charging configuration: neither HeatSource dict "
+    +                "nor ChargeControl is configured."
+    +            )
+    +
+    +        return end_of_ts_charge, zone_temp_C_after_charging */
+    /// Unified charging entry point for both control modes.
+    ///
+    /// Dispatches to the appropriate charging path based on the battery's
+    /// configuration:
+    /// - RangeTimeControl mode (HeatSource dict): per-source SOC-based
+    ///   charging with hysteresis, supporting both electric and hydronic sources.
+    /// - ChargeControl mode: single electric element controlled by
+    ///   ChargeControl.is_on() and target_charge().
+    ///
+    /// Args:
+    ///     time_remaining_current_timestep: Time remaining in the current
+    ///         timestep (hours), after services have consumed their share.
+    ///
+    /// Returns:
+    ///      Tuple of (energy_charged_kWh, updated_zone_temperatures).
+    fn charge_battery(
+        &self,
+        time_remaining_current_timestep: f64,
+        simtime: &SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, Vec<f64>)> {
+        let mut end_of_ts_charge = 0.0;
+        let mut zone_temp_c_after_charging = self.zone_temp_c_dist_initial.read().clone();
+
+        if self.use_heatsource_data {
+            // RangeTimeControl: per-source charging dispatch (SOC or temperature-based).
+            // The order of processing heat sources shouldn't matter because
+            // their schedules should not overlap.
+            for (src, source) in self.heat_source_data.as_ref().unwrap_or(&IndexMap::new()) {
+                self.determine_heat_source_switch_on(source, simtime)?;
+                self.determine_heat_source_switch_off(source, simtime)?;
+                if *self.charging_active.get(src).unwrap_or(&false) {
+                    // Use the upper setpoint from the source's RangeTimeControl
+                    // as the SOC target for charging. This limits both the
+                    // temperature target in zone heat exchange and the energy
+                    // demand calculation, preventing overcharging beyond the
+                    // hysteresis upper threshold within a single timestep.
+                    let (_, setpnt_upper) = self.resolve_setpoints(source, &simtime)?;
+                    let target_soc = if let Some(setpnt_upper) = setpnt_upper {
+                        setpnt_upper
+                    } else {
+                        bail!("Upper setpoint should be guaranteed by switch_off logic");
+                    };
+                    match source.source_type {
+                        ChargingSourceType::DirectElectric => {
+                            if let Some(rated_charge_power) = source.rated_charge_power {
+                                return self
+                                    .charge_battery_electric(rated_charge_power, target_soc);
+                            } else {
+                                // maybe this is already enforced elsewhere
+                                bail!("Rated charge power must not be None for DirectElectric charging source");
+                            }
+                        }
+                        ChargingSourceType::HeatSourceWet => {
+                            if let Some(heat_source_service) = &source.heat_source_service {
+                                return self.charge_from_heat_source(
+                                    source,
+                                    time_remaining_current_timestep,
+                                    target_soc,
+                                );
+                            } else {
+                                bail!("Heat source service must not be None for HeatSourceWet charging source");
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Implement charging logic using ChargeControl data
+        }
+
+        todo!("Implement charging logic for the heat battery PCM 1.0.0a9")
+    }
+
+    fn charge_from_heat_source(
+        &self,
+        source: &HeatBatteryChargingSource,
+        time_remaining_current_timestep: f64,
+        target_soc: f64,
+    ) -> anyhow::Result<(f64, Vec<f64>)> {
+        unimplemented!("charge_from_heat_source not implemented 1.0.0a9")
+    }
+    fn determine_heat_source_switch_on(
+        &self,
+        source: &HeatBatteryChargingSource,
+        simtime: &SimulationTimeIteration,
+    ) -> anyhow::Result<bool> {
+        unimplemented!("determine_heat_source_switch_on not implemented")
+    }
+    fn determine_heat_source_switch_off(
+        &self,
+        source: &HeatBatteryChargingSource,
+        simtime: &SimulationTimeIteration,
+    ) -> anyhow::Result<bool> {
+        unimplemented!("determine_heat_source_switch_off not implemented")
+    }
     fn battery_heat_loss(
         &self,
-        simtime: SimulationTimeIteration,
+        simtime: &SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Vec<f64>)> {
         // Battery losses
         let timestep = self.simulation_time_step;
         let time_step_s = timestep * SECONDS_PER_HOUR as f64;
 
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
-
+        let energy_loss = todo!("update args 1.0.0a9");
         // Processing HB zones
-        let (_, energy_loss, _) = self.process_heat_battery_zones(
-            22.,
-            &mut zone_temp_c_dist,
-            0.,
-            time_step_s,
-            0.,
-            Some(-self.max_rated_losses),
-            Some(HeatBatteryPcmOperationMode::Losses),
-            simtime,
-        )?;
+        // let (_, energy_loss, _) = self.process_heat_battery_zones(
+        //     22.,
+        //     &mut zone_temp_c_dist,
+        //     0.,
+        //     time_step_s,
+        //     0.,
+        //     Some(-self.max_rated_losses),
+        //     Some(HeatBatteryPcmOperationMode::Losses),
+        //     simtime,
+        // )?;
 
-        *self.zone_temp_c_dist_initial.write() = zone_temp_c_dist.clone();
+        // *self.zone_temp_c_dist_initial.write() = zone_temp_c_dist.clone();
 
-        // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
-        Ok((
-            FSum::with_all(&energy_loss).value() / KILOJOULES_PER_KILOWATT_HOUR as f64,
-            zone_temp_c_dist,
-        ))
+        // // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
+        // Ok((
+        //     FSum::with_all(&energy_loss).value() / KILOJOULES_PER_KILOWATT_HOUR as f64,
+        //     zone_temp_c_dist,
+        // ))
     }
 
     fn get_temp_hot_water(
@@ -2115,7 +2290,9 @@ impl HeatBatteryPcm {
                 reynold_number_at_1_l_per_min,
                 pwr_in.into(),
                 None,
-                simtime,
+                0.,   // Todo - temp values as part of 1.0.0a9
+                None, // Todo - temp values as part of 1.0.0a9
+                None, // Todo - temp values as part of 1.0.0a9
             )?;
 
             // RN for next time step
@@ -2209,7 +2386,9 @@ impl HeatBatteryPcm {
                 reynold_number_at_1_l_per_min,
                 pwr_in.into(),
                 None,
-                simtime,
+                0.0,  // Todo - temp values as part of 1.0.0a9
+                None, // Todo - temp values as part of 1.0.0a9
+                None, // Todo - temp values as part of 1.0.0a9
             )?;
 
             // RN for next time step
@@ -2355,7 +2534,9 @@ impl HeatBatteryPcm {
                 reynold_number_at_1_l_per_min,
                 Some(pwr_in),
                 None,
-                simtime,
+                0.0,  // Todo - temp values as part of 1.0.0a9
+                None, // Todo - temp values as part of 1.0.0a9
+                None, // Todo - temp values as part of 1.0.0a9
             )?;
 
             outlet_temp_c = Some(outlet_temp_c_new);
@@ -2510,7 +2691,7 @@ impl HeatBatteryPcm {
         let energy_aux =
             self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, simtime.index)?;
 
-        let (battery_losses, zone_temp_c_after_losses) = self.battery_heat_loss(simtime)?;
+        let (battery_losses, zone_temp_c_after_losses) = self.battery_heat_loss(&simtime)?;
         self.battery_losses.store(battery_losses, Ordering::SeqCst);
 
         // Charging battery for the remainder of the timestep
@@ -2520,7 +2701,7 @@ impl HeatBatteryPcm {
             .unwrap_or(todo!("charge control must be set"))
             .is_on(&simtime)
         {
-            self.charge_battery(simtime)?
+            self.charge_battery(time_remaining_current_timestep, &simtime)?
         } else {
             (0., self.zone_temp_c_dist_initial.read().clone())
         };
@@ -2752,8 +2933,8 @@ impl HeatBatteryPcm {
                 }
             }
         }
-
-        Ok((results_per_timestep, results_annual))
+        todo!("Method needs updating as part of 1.0.0a9 migration")
+        //Ok((results_per_timestep, results_annual))
     }
 
     fn target_charge(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
@@ -2777,7 +2958,7 @@ impl HeatBatteryPcm {
     ///            Tuple of (setpnt_lower, setpnt_upper) as SOC values (0–1).
     ///
     fn resolve_setpoints(
-        self,
+        &self,
         source: &HeatBatteryChargingSource,
         simtime: &SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
