@@ -2474,35 +2474,45 @@ impl HeatBatteryPcm {
         Ok(temp_outlet_c)
     }
 
-    fn battery_heat_loss(
-        &self,
-        simtime: &SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, Vec<f64>)> {
+    /// Calculate the standing heat loss over the timestep and update zone temperatures.
+    ///
+    /// Losses are applied per zone in proportion to each zone's temperature
+    /// above the assumed surrounding air temperature, scaled by the temperature
+    /// difference at which the rated loss was characterised.
+    ///
+    /// Returns:
+    ///     A tuple of the total standing loss over the timestep (in kWh) and
+    ///     the updated zone temperatures (in °C).
+    ///
+    fn battery_heat_loss(&self) -> anyhow::Result<(f64, Vec<f64>)> {
         // Battery losses
         let timestep = self.simulation_time_step;
-        let time_step_s = timestep * SECONDS_PER_HOUR as f64;
+        let time_step_s = timestep * SECONDS_PER_HOUR as f64; // time_available * SECONDS_PER_HOUR;
 
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
-        let energy_loss = todo!("update args 1.0.0a9");
-        // Processing HB zones
-        // let (_, energy_loss, _) = self.process_heat_battery_zones(
-        //     22.,
-        //     &mut zone_temp_c_dist,
-        //     0.,
-        //     time_step_s,
-        //     0.,
-        //     Some(-self.max_rated_losses),
-        //     Some(HeatBatteryPcmOperationMode::Losses),
-        //     simtime,
-        // )?;
 
-        // *self.zone_temp_c_dist_initial.write() = zone_temp_c_dist.clone();
+        // Processing HB zones. The surrounding air temperature is assumed fixed,
+        // consistent with the hot water cylinder standby-loss calculation.
+        let (_, energy_loss, _) = self.process_heat_battery_zones(
+            22.,
+            &mut zone_temp_c_dist,
+            time_step_s,
+            time_step_s,
+            0.,
+            Some(-self.max_rated_losses),
+            Some(HeatBatteryPcmOperationMode::Losses),
+            0.,
+            None,
+            None,
+        )?;
 
-        // // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
-        // Ok((
-        //     FSum::with_all(&energy_loss).value() / KILOJOULES_PER_KILOWATT_HOUR as f64,
-        //     zone_temp_c_dist,
-        // ))
+        *self.zone_temp_c_dist_initial.write() = zone_temp_c_dist.clone();
+
+        //Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
+        Ok((
+            FSum::with_all(&energy_loss).value() / KILOJOULES_PER_KILOWATT_HOUR as f64,
+            zone_temp_c_dist,
+        ))
     }
 
     fn get_temp_hot_water(
@@ -2530,9 +2540,6 @@ impl HeatBatteryPcm {
             self.capillary_diameter_m,
         );
 
-        let flow_rate_kg_per_s =
-            (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
-
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
         let mut inlet_temp_c = inlet_temp;
         let mut outlet_temp_c = inlet_temp_c; // initialise, though expectation is this will be overridden in loop
@@ -2547,12 +2554,12 @@ impl HeatBatteryPcm {
             (outlet_temp_c, _, _) = self.process_heat_battery_zones(
                 inlet_temp_c,
                 &mut zone_temp_c_dist,
-                flow_rate_kg_per_s,
                 time_step_s,
                 reynold_number_at_1_l_per_min,
-                pwr_in.into(),
+                self.flow_rate_l_per_min,
+                Some(pwr_in),
                 None,
-                0.0,  // Todo - temp values as part of 1.0.0a9
+                0.,
                 None, // Todo - temp values as part of 1.0.0a9
                 None, // Todo - temp values as part of 1.0.0a9
             )?;
@@ -2952,7 +2959,7 @@ impl HeatBatteryPcm {
         let energy_aux =
             self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, simtime.index)?;
 
-        let (battery_losses, zone_temp_c_after_losses) = self.battery_heat_loss(&simtime)?;
+        let (battery_losses, zone_temp_c_after_losses) = self.battery_heat_loss()?;
         self.battery_losses.store(battery_losses, Ordering::SeqCst);
 
         // Charging battery for the remainder of the timestep
