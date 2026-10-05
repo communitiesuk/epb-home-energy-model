@@ -1909,7 +1909,7 @@ impl HeatBatteryPcm {
         //        energy_limit_kJ = energy_limit_kWh * units.kJ_per_kWh
         for _ in 0..n_time_steps {
             let mut zone_temp_c_dist_prev = zone_temp_c_dist.clone();
-            let (mut outlet_temp_c, energy_transf_charged, _) = self.process_heat_battery_zones(
+            let (outlet_temp_c, energy_transf_charged, _) = self.process_heat_battery_zones(
                 inlet_temp_c,
                 &mut zone_temp_c_dist,
                 time_step_s,
@@ -1954,7 +1954,7 @@ impl HeatBatteryPcm {
                         let energy_allowed_kj =
                             energy_limit_kj - (energy_absorbed_kj - energy_this_step_kj);
                         let fraction = energy_allowed_kj / energy_this_step_kj;
-                        let (_, _, __) = self.process_heat_battery_zones(
+                        let (_, _, _) = self.process_heat_battery_zones(
                             inlet_temp_c,
                             zone_temp_c_dist_prev.as_mut_slice(),
                             time_step_s * fraction,
@@ -2149,7 +2149,7 @@ impl HeatBatteryPcm {
                     // temperature target in zone heat exchange and the energy
                     // demand calculation, preventing overcharging beyond the
                     // hysteresis upper threshold within a single timestep.
-                    let (_, setpnt_upper) = self.resolve_setpoints(source, &simtime)?;
+                    let (_, setpnt_upper) = self.resolve_setpoints(source, simtime)?;
                     let target_soc = if let Some(setpnt_upper) = setpnt_upper {
                         setpnt_upper
                     } else {
@@ -2166,7 +2166,7 @@ impl HeatBatteryPcm {
                             }
                         }
                         ChargingSourceType::HeatSourceWet => {
-                            if let Some(_) = &source.heat_source_service {
+                            if source.heat_source_service.is_some() {
                                 return self.charge_from_heat_source(
                                     source,
                                     time_remaining_current_timestep,
@@ -2230,7 +2230,7 @@ impl HeatBatteryPcm {
                 let target = charge_control.target_charge(*simtime, None)?;
                 return self.charge_battery_electric(pwr_in, target);
             }
-            return Ok((0., zone_temp_c_after_charging));
+            Ok((0., zone_temp_c_after_charging))
         } else {
             bail!("No charging configuration: neither HeatSource dict nor ChargeControl is configured.")
         }
@@ -2402,7 +2402,7 @@ impl HeatBatteryPcm {
                         Ordering::SeqCst,
                     );
                 }
-                return Ok((energy_charged, zone_temps));
+                Ok((energy_charged, zone_temps))
             }
         } else {
             bail!("Incomplete heat source configuration, missing required fields. heat_source_service, temp_flow_max, flow_rate_charging_l_per_min, hex_a, hex_b, hex_velocity_at_1_l_per_min, hex_capillary_diameter_m are required.")
@@ -2459,7 +2459,7 @@ impl HeatBatteryPcm {
         );
 
         // Run one sub-timestep on a copy of zone temps (non-mutating)
-        let (temp_outlet_c, _, __) = self.process_heat_battery_zones(
+        let (temp_outlet_c, _, _) = self.process_heat_battery_zones(
             temp_flow,
             self.zone_temp_c_dist_initial.read().clone().as_mut_slice(),
             self.hb_time_step,
