@@ -107,7 +107,6 @@ pub struct StorageTank {
     temp_flow_prev: Arc<RwLock<Option<f64>>>,
     #[educe(Debug(ignore))]
     temp_internal_air_fn: TempInternalAirFn,
-    external_conditions: Arc<ExternalConditions>,
     volume_total_in_litres: f64,
     vol_n: Vec<f64>,
     cp: f64,  // contents (usually water) specific heat in kWh/kg.K
@@ -214,14 +213,14 @@ impl StorageTank {
             }
         };
 
-        let temp_external_air_fn = external_conditions
-            .clone()
-            .air_temp(&simulation_time_iteration);
         let pipework = PrimaryPipeworkLossesMixin::new(
             pipework_lst,
-            Arc::new(move || temp_external_air_fn),
+            // TODO review 1.0.0a9
+            Arc::new(move |simtime| external_conditions.air_temp(simtime)),
             temp_internal_air_fn.clone(),
+            &simulation_time_iteration,
         );
+
 
         // With pre-heated storage tanks, there could be the situation of tanks without heat sources
         // They could just get warmed up with WWHRS water.
@@ -251,7 +250,6 @@ impl StorageTank {
             number_of_volumes,
             temp_flow_prev: Default::default(),
             temp_internal_air_fn,
-            external_conditions,
             volume_total_in_litres,
             vol_n,
             cp,
@@ -856,7 +854,7 @@ impl StorageTank {
                                 energy_potential,
                                 temp_flow.into(),
                                 Some(false),
-                                simulation_time.timestep,
+                                &simulation_time,
                             )?;
                         energy_potential -= primary_pipework_losses_kwh;
                     }
@@ -1110,7 +1108,7 @@ impl StorageTank {
                         input_energy_adj,
                         temp_flow,
                         None,
-                        simulation_time_iteration.timestep,
+                        &simulation_time_iteration,
                     )?;
                 let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
 
@@ -1221,19 +1219,15 @@ impl StorageTank {
     /// Returns:
     ///     Surrounding temperature in °C.
     fn temperature_surrounding_primary_pipework(
-        external_conditions: Arc<ExternalConditions>,
-        temp_internal_air_fn: TempInternalAirFn,
+        &self,
         pipework_data: &Pipework,
-        simulation_time_iteration: SimulationTimeIteration,
+        simtime: &SimulationTimeIteration,
     ) -> f64 {
-        let temp_external_air_fn =
-            Arc::new(move || external_conditions.air_temp(&simulation_time_iteration));
-
-        // TODO 1.0.0a9 migration - use self.pipework?
         PrimaryPipeworkLossesMixin::temp_surrounding_pipework(
             pipework_data,
-            temp_external_air_fn,
-            temp_internal_air_fn,
+            self.pipework.temp_external_air_fn.clone(),
+            self.pipework.temp_internal_air_fn.clone(),
+            simtime,
         )
     }
 
@@ -2141,7 +2135,7 @@ impl SmartHotWaterTank {
                                 energy_potential,
                                 Some(temp_flow),
                                 Some(false),
-                                simulation_time.timestep,
+                                &simulation_time,
                             )?;
                         energy_potential -= primary_pipework_losses_kwh;
                     }
@@ -4535,6 +4529,7 @@ mod tests {
         simulation_time_for_storage_tank: SimulationTime,
     ) {
         let (storage_tank1, _) = storage_tank1;
+
         // External Pipe
         let pipework = Pipework::new(
             PipeworkLocation::External,
@@ -4547,19 +4542,14 @@ mod tests {
             PipeworkContents::Water,
         )
         .unwrap();
-        let external_conditions = storage_tank1.external_conditions;
-        let temp_internal_air_fn = storage_tank1.temp_internal_air_fn;
+
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
-                StorageTank::temperature_surrounding_primary_pipework(
-                    external_conditions.clone(),
-                    temp_internal_air_fn.clone(),
-                    &pipework,
-                    t_it
-                ),
+                storage_tank1.temperature_surrounding_primary_pipework(&pipework, &t_it),
                 [0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0][t_idx]
             );
         }
+
         // Internal Pipe
         let pipework = Pipework::new(
             PipeworkLocation::Internal,
@@ -4572,14 +4562,10 @@ mod tests {
             PipeworkContents::Water,
         )
         .unwrap();
+
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
-                StorageTank::temperature_surrounding_primary_pipework(
-                    external_conditions.clone(),
-                    temp_internal_air_fn.clone(),
-                    &pipework,
-                    t_it
-                ),
+                storage_tank1.temperature_surrounding_primary_pipework(&pipework, &t_it),
                 [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx]
             );
         }
@@ -5135,7 +5121,7 @@ mod tests {
                         input_energy_adj,
                         setpnt_max.into(),
                         None,
-                        t_it.timestep
+                        &t_it
                     )
                     .unwrap(),
                 [
@@ -5168,7 +5154,7 @@ mod tests {
                         input_energy_adj,
                         setpnt_max.into(),
                         None,
-                        t_it.timestep
+                        &t_it
                     )
                     .unwrap(),
                 if t_idx == 0 {

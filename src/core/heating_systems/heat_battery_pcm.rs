@@ -788,8 +788,9 @@ impl HeatBatteryPcm {
         let use_heatsource_data = heat_source_data.is_some();
         let pipework = PrimaryPipeworkLossesMixin::new(
             primary_pipework.unwrap_or_default(),
-            Arc::new(|| 0.0), // TODO: THis needs thinking about
+            Arc::new(|_| 0.0), // TODO: THis needs thinking about
             temp_internal_air_callback,
+            &simulation_time.current_iteration(),
         );
         // Per-source hysteresis state: tracks whether each source is currently
         // in its active charging band (SOC below upper setpoint after being
@@ -2216,7 +2217,7 @@ impl HeatBatteryPcm {
                                 0.0,
                                 Some(source.temp_flow_max),
                                 Some(true),
-                                1.,
+                                simtime,
                             )?;
                         }
                     }
@@ -2321,7 +2322,7 @@ impl HeatBatteryPcm {
                     0.0,
                     Some(source.temp_flow_max),
                     Some(true),
-                    1.,
+                    simtime,
                 )?;
                 return Ok((0., self.zone_temp_c_dist_initial.read().clone()));
             }
@@ -2341,7 +2342,7 @@ impl HeatBatteryPcm {
                     0.,
                     Some(temp_flow),
                     Some(true),
-                    1.,
+                    simtime,
                 )?;
                 return Ok((0., self.zone_temp_c_dist_initial.read().clone()));
             } else if energy_max < 0. {
@@ -2362,7 +2363,7 @@ impl HeatBatteryPcm {
                         energy_demand_total,
                         Some(temp_flow),
                         Some(true),
-                        simtime.timestep,
+                        &simtime,
                     )?;
 
                 // Energy available for the battery is what the heat source can

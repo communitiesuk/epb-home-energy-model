@@ -15,6 +15,7 @@
 use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::corpus::TempInternalAirFn;
+use crate::hem_core::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
 use approx::relative_eq;
 use atomic_float::AtomicF64;
@@ -41,8 +42,8 @@ pub(crate) struct PrimaryPipeworkLossesMixin {
     pipework_energy_input_prev_timestep: AtomicF64,
     temp_surrounding_prev_heating_event: Vec<AtomicF64>,
     flag_first_pipework_heating_event: AtomicBool,
-    temp_external_air_fn: Arc<dyn Fn() -> f64 + Send + Sync>,
-    temp_internal_air_fn: TempInternalAirFn,
+    pub(crate) temp_external_air_fn: Arc<dyn Fn(&SimulationTimeIteration) -> f64 + Send + Sync>,
+    pub(crate) temp_internal_air_fn: TempInternalAirFn,
 }
 
 impl std::fmt::Debug for PrimaryPipeworkLossesMixin {
@@ -58,8 +59,9 @@ impl PrimaryPipeworkLossesMixin {
     /// * `temp_internal_air_fn` - Returns the current internal air temperature (°C) for internal pipework segments
     pub(crate) fn new(
         pipework_list: Vec<Pipework>,
-        temp_external_air_fn: Arc<dyn Fn() -> f64 + Send + Sync>,
+        temp_external_air_fn: Arc<dyn Fn(&SimulationTimeIteration) -> f64 + Send + Sync>,
         temp_internal_air_fn: TempInternalAirFn,
+        simtime: &SimulationTimeIteration,
     ) -> Self {
         let temp_surrounding_prev_heating_event: Vec<AtomicF64> = pipework_list
             .iter()
@@ -68,6 +70,7 @@ impl PrimaryPipeworkLossesMixin {
                     pw,
                     temp_external_air_fn.clone(),
                     temp_internal_air_fn.clone(),
+                    simtime,
                 ))
             })
             .collect();
@@ -93,11 +96,12 @@ impl PrimaryPipeworkLossesMixin {
     /// Surrounding temperature in °C.
     pub(crate) fn temp_surrounding_pipework(
         pipework: &Pipework,
-        temp_external_air_fn: Arc<dyn Fn() -> f64 + Send + Sync>,
+        temp_external_air_fn: Arc<dyn Fn(&SimulationTimeIteration) -> f64 + Send + Sync>,
         temp_internal_air_fn: TempInternalAirFn,
+        simtime: &SimulationTimeIteration,
     ) -> f64 {
         match pipework.location() {
-            PipeworkLocation::External => temp_external_air_fn(),
+            PipeworkLocation::External => temp_external_air_fn(simtime),
             PipeworkLocation::Internal => temp_internal_air_fn(),
         }
     }
@@ -127,7 +131,7 @@ impl PrimaryPipeworkLossesMixin {
         energy_input: f64,
         temp_flow: Option<f64>,
         update_tracking: Option<bool>,
-        timestep: f64,
+        simtime: &SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
         let update_tracking = update_tracking.unwrap_or(true);
 
@@ -150,6 +154,7 @@ impl PrimaryPipeworkLossesMixin {
                     pipework,
                     self.temp_external_air_fn.clone(),
                     self.temp_internal_air_fn.clone(),
+                    simtime,
                 );
                 let cool_down_loss = pipework.calculate_cool_down_loss(
                     temp_flow.ok_or_else(|| {
@@ -171,7 +176,7 @@ impl PrimaryPipeworkLossesMixin {
                     pipework_losses_kwh += between_events_loss;
                     if matches!(pipework.location(), PipeworkLocation::Internal) {
                         primary_gains_w +=
-                            between_events_loss * WATTS_PER_KILOWATT as f64 / timestep;
+                            between_events_loss * WATTS_PER_KILOWATT as f64 / simtime.timestep;
                     }
                 }
             }
@@ -184,6 +189,7 @@ impl PrimaryPipeworkLossesMixin {
                     pipework,
                     self.temp_external_air_fn.clone(),
                     self.temp_internal_air_fn.clone(),
+                    simtime,
                 );
                 let steady_state_loss_w = pipework.calculate_steady_state_heat_loss(
                     temp_flow.ok_or_else(|| {
@@ -194,7 +200,8 @@ impl PrimaryPipeworkLossesMixin {
                 if matches!(pipework.location(), PipeworkLocation::Internal) {
                     primary_gains_w += steady_state_loss_w;
                 }
-                pipework_losses_kwh += steady_state_loss_w * timestep / WATTS_PER_KILOWATT as f64;
+                pipework_losses_kwh +=
+                    steady_state_loss_w * simtime.timestep / WATTS_PER_KILOWATT as f64;
             }
         }
 
@@ -207,6 +214,7 @@ impl PrimaryPipeworkLossesMixin {
                     pipework,
                     self.temp_external_air_fn.clone(),
                     self.temp_internal_air_fn.clone(),
+                    simtime,
                 );
                 self.temp_surrounding_prev_heating_event
                     .get(pipe_idx).ok_or_else(|| anyhow!("Index ({pipe_idx}) out of bounds for temp_surrounding_prev_heating_event"))?.store(temp_surrounding, Ordering::SeqCst);
@@ -217,7 +225,7 @@ impl PrimaryPipeworkLossesMixin {
                         })?,
                         temp_surrounding,
                     ) * WATTS_PER_KILOWATT as f64
-                        / timestep;
+                        / simtime.timestep;
                 }
             }
             if self
@@ -254,13 +262,15 @@ mod tests {
     fn concrete_pipework_user(
         pipework_list: Vec<Pipework>,
         surrounding_temp: Option<f64>,
+        simtime: &SimulationTimeIteration,
     ) -> PrimaryPipeworkLossesMixin {
         let surrounding_temp = surrounding_temp.unwrap_or(20.);
 
         PrimaryPipeworkLossesMixin::new(
             pipework_list,
+            Arc::new(move |_| surrounding_temp),
             Arc::new(move || surrounding_temp),
-            Arc::new(move || surrounding_temp),
+            simtime,
         )
     }
 
@@ -298,13 +308,18 @@ mod tests {
     /// No pipework → zero losses and zero gains regardless of energy input.
     fn test_empty_pipework_list_returns_zero() {
         let simtime = simtime(1.);
-        let mixin = concrete_pipework_user(vec![], None);
+        let mixin = concrete_pipework_user(vec![], None, &simtime.iter().current_iteration());
         let mut losses = 0.;
         let mut gains = 0.;
 
         for _ in simtime.iter() {
             (losses, gains) = mixin
-                .calculate_primary_pipework_losses(5., Some(55.), Some(true), simtime.step)
+                .calculate_primary_pipework_losses(
+                    5.,
+                    Some(55.),
+                    Some(true),
+                    &simtime.iter().current_iteration(),
+                )
                 .unwrap();
         }
 
@@ -316,13 +331,22 @@ mod tests {
     /// No energy input → zero losses and zero gains (no active heating).
     fn test_zero_energy_returns_zero(internal_pipework: Pipework) {
         let simtime = simtime(1.);
-        let mixin = concrete_pipework_user(vec![internal_pipework], None);
+        let mixin = concrete_pipework_user(
+            vec![internal_pipework],
+            None,
+            &simtime.iter().current_iteration(),
+        );
         let mut losses = 0.;
         let mut gains = 0.;
 
         for _ in simtime.iter() {
             (losses, gains) = mixin
-                .calculate_primary_pipework_losses(0., Some(55.), Some(true), simtime.step)
+                .calculate_primary_pipework_losses(
+                    0.,
+                    Some(55.),
+                    Some(true),
+                    &simtime.iter().current_iteration(),
+                )
                 .unwrap();
         }
 
@@ -337,13 +361,17 @@ mod tests {
     /// timesteps are Phase 2 only (steady-state).
     fn test_phase1_start_of_heating_adds_warm_up_loss(internal_pipework: Pipework) {
         let simtime = simtime(3.);
-        let mixin = concrete_pipework_user(vec![internal_pipework], Some(20.));
+        let mixin = concrete_pipework_user(
+            vec![internal_pipework],
+            Some(20.),
+            &simtime.iter().current_iteration(),
+        );
 
         let mut results = Vec::new();
-        for _ in simtime.iter() {
+        for t_it in simtime.iter() {
             results.push(
                 mixin
-                    .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
+                    .calculate_primary_pipework_losses(3., Some(55.), Some(true), &t_it)
                     .unwrap(),
             );
         }
@@ -360,14 +388,18 @@ mod tests {
     /// Internal pipework steady-state losses are also returned as dwelling gains.
     fn test_phase2_steady_state_internal_contributes_gains(internal_pipework: Pipework) {
         let simtime = simtime(2.);
-        let mixin = concrete_pipework_user(vec![internal_pipework], Some(20.));
+        let mixin = concrete_pipework_user(
+            vec![internal_pipework],
+            Some(20.),
+            &simtime.iter().current_iteration(),
+        );
 
         // Skip first timestep (Phase 1 fires), check second (Phase 2 only)
         let mut results = Vec::new();
-        for _ in simtime.iter() {
+        for t_it in simtime.iter() {
             results.push(
                 mixin
-                    .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
+                    .calculate_primary_pipework_losses(3., Some(55.), Some(true), &t_it)
                     .unwrap(),
             );
         }
@@ -381,14 +413,18 @@ mod tests {
     /// External pipework losses do NOT contribute to dwelling heat gains.
     fn test_phase2_external_pipework_no_gains(external_pipework: Pipework) {
         let simtime = simtime(2.);
-        let mixin = concrete_pipework_user(vec![external_pipework], Some(5.));
+        let mixin = concrete_pipework_user(
+            vec![external_pipework],
+            Some(5.),
+            &simtime.iter().current_iteration(),
+        );
 
         // Skip first timestep (Phase 1 fires), check second (Phase 2 only)
         let mut results = Vec::new();
-        for _ in simtime.iter() {
+        for t_it in simtime.iter() {
             results.push(
                 mixin
-                    .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
+                    .calculate_primary_pipework_losses(3., Some(55.), Some(true), &t_it)
                     .unwrap(),
             );
         }
@@ -406,24 +442,43 @@ mod tests {
         internal_pipework: Pipework,
     ) {
         let simtime = simtime(3.);
-        let mixin = concrete_pipework_user(vec![internal_pipework], Some(20.));
+        let mixin = concrete_pipework_user(
+            vec![internal_pipework],
+            Some(20.),
+            &simtime.iter().current_iteration(),
+        );
 
         // Timestep 0: heating active
         let mut results = vec![mixin
-            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
+            .calculate_primary_pipework_losses(
+                3.,
+                Some(55.),
+                Some(true),
+                &simtime.iter().current_iteration(),
+            )
             .unwrap()];
 
         // Timestep 1: heating ends → Phase 3
         results.push(
             mixin
-                .calculate_primary_pipework_losses(0., Some(55.), Some(true), simtime.step)
+                .calculate_primary_pipework_losses(
+                    0.,
+                    Some(55.),
+                    Some(true),
+                    &simtime.iter().current_iteration(),
+                )
                 .unwrap(),
         );
 
         // Timestep 2: still off
         results.push(
             mixin
-                .calculate_primary_pipework_losses(0., Some(55.), Some(true), simtime.step)
+                .calculate_primary_pipework_losses(
+                    0.,
+                    Some(55.),
+                    Some(true),
+                    &simtime.iter().current_iteration(),
+                )
                 .unwrap(),
         );
 
@@ -446,25 +501,44 @@ mod tests {
     /// cool-down from 20→15 on top of warm-up and steady-state).
     fn test_between_events_loss_only_after_first_event_ends(internal_pipework: Pipework) {
         let simtime = simtime(4.);
-        let mut mixin = concrete_pipework_user(vec![internal_pipework], Some(20.));
+        let mut mixin = concrete_pipework_user(
+            vec![internal_pipework],
+            Some(20.),
+            &simtime.iter().current_iteration(),
+        );
 
         // Timestep 0: first heating event starts
         let (losses_first_start, _) = mixin
-            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
+            .calculate_primary_pipework_losses(
+                3.,
+                Some(55.),
+                Some(true),
+                &simtime.iter().current_iteration(),
+            )
             .unwrap();
 
         // Timestep 1: first heating event ends (Phase 3 records surrounding=20)
         mixin
-            .calculate_primary_pipework_losses(0., Some(55.), Some(true), simtime.step)
+            .calculate_primary_pipework_losses(
+                0.,
+                Some(55.),
+                Some(true),
+                &simtime.iter().current_iteration(),
+            )
             .unwrap();
 
         // Change surrounding temp so between-event cool-down is non-zero
-        mixin.temp_external_air_fn = Arc::new(move || 15.);
+        mixin.temp_external_air_fn = Arc::new(move |_| 15.);
         mixin.temp_internal_air_fn = Arc::new(move || 15.);
 
         // Timestep 2: second heating event starts → should include between-event loss
         let (losses_second_start, _) = mixin
-            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
+            .calculate_primary_pipework_losses(
+                3.,
+                Some(55.),
+                Some(true),
+                &simtime.iter().current_iteration(),
+            )
             .unwrap();
 
         // First start: warm_up(20→55) + steady_state_kWh(55→20), no between-event
@@ -481,25 +555,44 @@ mod tests {
     /// between-event losses, verifying the between-event term is applied.
     fn test_between_events_internal_gain(internal_pipework: Pipework) {
         let simtime = simtime(4.);
-        let mut mixin = concrete_pipework_user(vec![internal_pipework], Some(18.));
+        let mut mixin = concrete_pipework_user(
+            vec![internal_pipework],
+            Some(18.),
+            &simtime.iter().current_iteration(),
+        );
 
         // Heat on
         mixin
-            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
+            .calculate_primary_pipework_losses(
+                3.,
+                Some(55.),
+                Some(true),
+                &simtime.iter().current_iteration(),
+            )
             .unwrap();
 
         // Heat off (end of first event, records surrounding=18)
         mixin
-            .calculate_primary_pipework_losses(0., Some(55.), Some(true), simtime.step)
+            .calculate_primary_pipework_losses(
+                0.,
+                Some(55.),
+                Some(true),
+                &simtime.iter().current_iteration(),
+            )
             .unwrap();
 
         // Surrounding rises to 22°C between events
-        mixin.temp_external_air_fn = Arc::new(|| 22.);
+        mixin.temp_external_air_fn = Arc::new(|_| 22.);
         mixin.temp_internal_air_fn = Arc::new(|| 22.);
 
         // Heat on again — Phase 1 between-event + Phase 2 steady-state
         let (_, gains) = mixin
-            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
+            .calculate_primary_pipework_losses(
+                3.,
+                Some(55.),
+                Some(true),
+                &simtime.iter().current_iteration(),
+            )
             .unwrap();
 
         // Total gains = between_event(18→22) * W/kW / timestep + ss(55→22)
@@ -521,16 +614,30 @@ mod tests {
     /// real heating timestep should be treated as end-of-event.
     fn test_phase3_fires_with_tiny_energy_close_to_zero(internal_pipework: Pipework) {
         let simtime = simtime(3.);
-        let mixin = concrete_pipework_user(vec![internal_pipework], Some(20.));
+        let mixin = concrete_pipework_user(
+            vec![internal_pipework],
+            Some(20.),
+            &simtime.iter().current_iteration(),
+        );
 
         // Timestep 0: heating active
         mixin
-            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
+            .calculate_primary_pipework_losses(
+                3.,
+                Some(55.),
+                Some(true),
+                &simtime.iter().current_iteration(),
+            )
             .unwrap();
 
         // Timestep 1: tiny energy (effectively zero) → Phase 3 should fire
         let (_, gains) = mixin
-            .calculate_primary_pipework_losses(1e-11, Some(55.), Some(true), simtime.step)
+            .calculate_primary_pipework_losses(
+                1e-11,
+                Some(55.),
+                Some(true),
+                &simtime.iter().current_iteration(),
+            )
             .unwrap();
 
         // Phase 3 cool-down gains + Phase 2 steady-state gains:
@@ -549,14 +656,18 @@ mod tests {
         external_pipework: Pipework,
     ) {
         let simtime = simtime(2.);
-        let mixin = concrete_pipework_user(vec![internal_pipework, external_pipework], Some(20.));
+        let mixin = concrete_pipework_user(
+            vec![internal_pipework, external_pipework],
+            Some(20.),
+            &simtime.iter().current_iteration(),
+        );
 
         // Skip first timestep (Phase 1), check second (Phase 2 steady-state only)
         let mut results = Vec::new();
-        for _ in simtime.iter() {
+        for t_it in simtime.iter() {
             results.push(
                 mixin
-                    .calculate_primary_pipework_losses(3., Some(55.), None, simtime.step)
+                    .calculate_primary_pipework_losses(3., Some(55.), None, &t_it)
                     .unwrap(),
             );
         }
@@ -572,7 +683,12 @@ mod tests {
     #[rstest]
     /// initialising PrimaryPipeworkLossesMixin calls temp_surrounding_pipework for each pipe.
     fn test_init_records_initial_surrounding_temps(internal_pipework: Pipework) {
-        let mixin = concrete_pipework_user(vec![internal_pipework], Some(18.));
+        let simtime = simtime(2.);
+        let mixin = concrete_pipework_user(
+            vec![internal_pipework],
+            Some(18.),
+            &simtime.iter().current_iteration(),
+        );
 
         assert_eq!(
             mixin.temp_surrounding_prev_heating_event,
