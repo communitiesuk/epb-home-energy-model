@@ -95,6 +95,78 @@ pub(crate) enum HeatSourceWetService {
     HeatBatteryDryCoreServiceWaterRegular(HeatBatteryDryCoreServiceWaterRegular),
     HeatNetworkServiceWaterStorage(HeatNetworkServiceWaterStorage),
 }
+// Set to be ergonomic for current use cases by providing a unified interface for all heat source services.
+// may need to be more flexible in the future
+impl HeatSourceWetService {
+    fn energy_output_max(
+        &self,
+        temp_flow: f64,
+        temp_return: f64,
+        simtime: &SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            Self::HeatPumpServiceWater(service) => Ok(service
+                .energy_output_max(temp_flow, temp_return, *simtime)?
+                .0),
+            Self::BoilerServiceWaterRegular(service) => {
+                Ok(service.energy_output_max(temp_flow, temp_return, None, *simtime))
+            }
+            Self::HeatBatteryPCMServiceWaterRegular(service) => {
+                service.energy_output_max(temp_flow, temp_return, *simtime, false)
+            }
+            Self::HeatBatteryDryCoreServiceWaterRegular(service) => {
+                service.energy_output_max(temp_flow, temp_return, *simtime)
+            }
+            Self::HeatNetworkServiceWaterStorage(service) => {
+                Ok(service.energy_output_max(temp_flow, temp_return, simtime))
+            }
+        }
+    }
+
+    fn demand_energy(
+        &self,
+        energy_demand: f64,
+        temp_flow: f64,
+        temp_return: f64,
+        simtime: &SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            Self::HeatPumpServiceWater(service) => {
+                service.demand_energy(energy_demand, Some(temp_flow), Some(temp_return), *simtime)
+            }
+            Self::BoilerServiceWaterRegular(service) => Ok(service
+                .demand_energy(
+                    energy_demand,
+                    temp_flow,
+                    Some(temp_return),
+                    None,
+                    None,
+                    Some(true),
+                    *simtime,
+                )?
+                .0),
+            Self::HeatBatteryPCMServiceWaterRegular(service) => service.demand_energy(
+                energy_demand,
+                Some(temp_flow),
+                Some(temp_return),
+                Some(true),
+                *simtime,
+                false,
+            ),
+            Self::HeatBatteryDryCoreServiceWaterRegular(service) => service.demand_energy(
+                energy_demand,
+                Some(temp_flow),
+                temp_return,
+                Some(true),
+                *simtime,
+            ),
+            Self::HeatNetworkServiceWaterStorage(service) => {
+                service.demand_energy(energy_demand, temp_flow, Some(temp_return), simtime)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct HeatBatteryChargingSource {
     source_type: ChargingSourceType,
@@ -1800,9 +1872,10 @@ impl HeatBatteryPcm {
     ///     Tuple of (energy_charged_kWh, updated_zone_temperatures).
     ///     energy_charged_kWh is positive when the battery absorbs energy.
     ///
-    fn _charge_battery_hydronic(
-        &mut self,
+    fn charge_battery_hydronic(
+        &self,
         inlet_temp_c: f64,
+        time_available_hrs: f64,
         flow_rate_l_per_min: f64,
         target_charge_fraction: f64,
         energy_limit_kwh: f64,
@@ -1811,7 +1884,7 @@ impl HeatBatteryPcm {
         hex_velocity_at_1_l_per_min: f64,
         hex_capillary_diameter_m: f64,
     ) -> anyhow::Result<(f64, Vec<f64>)> {
-        let total_time_s = self.simulation_time_step * SECONDS_PER_HOUR as f64;
+        let total_time_s = time_available_hrs * SECONDS_PER_HOUR as f64;
         let time_step_s = self.hb_time_step;
 
         // Initial Reynolds number
@@ -1825,7 +1898,6 @@ impl HeatBatteryPcm {
             hex_velocity_at_1_l_per_min,
             hex_capillary_diameter_m,
         );
-
         let n_time_steps = (total_time_s / time_step_s) as usize;
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
         let mut energy_absorbed_kj = 0.0;
@@ -2099,6 +2171,7 @@ impl HeatBatteryPcm {
                                     source,
                                     time_remaining_current_timestep,
                                     target_soc,
+                                    simtime,
                                 );
                             } else {
                                 bail!("Heat source service must not be None for HeatSourceWet charging source");
@@ -2209,13 +2282,177 @@ impl HeatBatteryPcm {
         }
     }
 
+    /// Charge the battery from a wet heat source (e.g. heat pump).
+    ///
+    /// Iterative temperature refinement algorithm:
+    /// 1. Estimate return temperature via one-pass heat exchange simulation
+    ///    on a copy of zone state (non-mutating)
+    /// 2. Query energy_output_max() (side-effect-free) to get heat source capacity
+    ///    at estimated flow/return temperatures
+    /// 3. Calculate battery energy demand, cap to heat source capacity
+    /// 4. Make a single demand_energy() call with refined temperatures
+    ///
+    /// Args:
+    ///     source: HeatBatteryChargingSource with heat_source_service,
+    ///         temp_flow_max, and control.
+    ///     time_available_hrs: Remaining timestep time in hours.
+    ///     target_charge_fraction: SOC target (0–1) from the source's
+    ///         RangeTimeControl upper setpoint.
+    ///
+    /// Returns:
+    ///     Tuple of (energy_charged_kWh, updated_zone_temperatures).
+    ///
     fn charge_from_heat_source(
         &self,
         source: &HeatBatteryChargingSource,
-        time_remaining_current_timestep: f64,
-        target_soc: f64,
+        time_available_hrs: f64,
+        target_charge_fraction: f64,
+        simtime: &SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Vec<f64>)> {
-        unimplemented!("charge_from_heat_source not implemented 1.0.0a9")
+        if let HeatBatteryChargingSource {
+            heat_source_service: Some(heat_source_service),
+            flow_rate_charging_l_per_min: Some(flow_rate_charging_l_per_min),
+            hex_a: Some(hex_a),
+            hex_b: Some(hex_b),
+            hex_velocity_at_1_l_per_min: Some(hex_velocity_at_1_l_per_min),
+            hex_capillary_diameter_m: Some(hex_capillary_diameter_m),
+            ..
+        } = source
+        {
+            // Charge at the flow temperature needed to reach the SOC target plus a
+            // heat-exchanger approach difference, not the source's peak.
+            // __soc_to_temp gives the uniform PCM temperature for the target charge
+            // fraction; the approach difference above it drives heat across the
+            // exchanger so the store can actually reach the target rather than only
+            // approach it asymptotically. Querying a wet source (e.g. a heat pump)
+            // at temp_flow_max would understate its COP and capacity. The source
+            // cannot deliver above its own maximum, so bound by that.
+
+            //           let   temp_flow = min(
+            // +            source.temp_flow_max,
+            // +            self.__soc_to_temp(target_charge_fraction) + self.CHARGE_APPROACH_TEMP_DIFF_C,
+            // +        )
+            let temp_flow = (self.soc_to_temp(target_charge_fraction)
+                + CHARGE_APPROACH_TEMP_DIFF_C)
+                .min(source.temp_flow_max);
+            let temp_return = self.estimate_return_temp(
+                temp_flow,
+                *flow_rate_charging_l_per_min,
+                *hex_a,
+                *hex_b,
+                *hex_velocity_at_1_l_per_min,
+                *hex_capillary_diameter_m,
+            )?;
+            // Calculate how much energy one unit needs, capped to what the
+            // heat source can deliver at its max flow temperature and limited
+            // to the SOC target from the source's RangeTimeControl.
+            let energy_demand_per_unit = self.calculate_charge_energy_demand(
+                Some(source.temp_flow_max),
+                target_charge_fraction,
+            )?;
+
+            if energy_demand_per_unit <= 0.
+                || relative_eq!(energy_demand_per_unit, 0., epsilon = 1e-10)
+            {
+                // No charging needed — still call demand_energy(0) so the heat
+                // source records a zero-demand service call, and run pipework loss
+                // calc to detect end-of-event transition.
+                heat_source_service.demand_energy(
+                    0.,
+                    source.temp_flow_max,
+                    temp_return,
+                    simtime,
+                )?;
+                self.pipework.calculate_primary_pipework_losses(
+                    0.0,
+                    source.temp_flow_max,
+                    Some(true),
+                    1.,
+                )?;
+                return Ok((0., self.zone_temp_c_dist_initial.read().clone()));
+            }
+            // Scale to total demand across all units for heat source interaction
+            let energy_demand_total = energy_demand_per_unit * self.n_units as f64;
+
+            // Use energy_output_max() to check heat source capacity at the estimated
+            // temperatures. This is side-effect-free (no energy consumption
+            // recorded), giving the maximum energy the heat source can deliver.
+            let energy_max =
+                heat_source_service.energy_output_max(temp_flow, temp_return, simtime)?;
+
+            if relative_eq!(energy_max, 0.0, epsilon = 1e-10) {
+                // Heat source has no capacity — call demand_energy(0) for reporting
+                heat_source_service.demand_energy(0., temp_flow, temp_return, simtime)?;
+                self.pipework
+                    .calculate_primary_pipework_losses(0., temp_flow, Some(true), 1.)?;
+                return Ok((0., self.zone_temp_c_dist_initial.read().clone()));
+            } else if energy_max < 0. {
+                bail!(
+                    "energy_output_max returned negative value ({energy_max}). This indicates a bug in the heat source implementation."
+                );
+            } else {
+                // Cap demand to heat source capacity before calculating pipework losses,
+                // so losses are based on the achievable energy transfer, not the
+                // uncapped demand.
+                let energy_demand_total = energy_demand_total.min(energy_max);
+
+                // Account for primary pipework losses: the heat source must deliver
+                // extra energy to compensate for losses in the pipes between it and
+                // the battery (following StorageTank's heat_source_output pattern)
+                let (pipework_losses_kwh, primary_gains_w) =
+                    self.pipework.calculate_primary_pipework_losses(
+                        energy_demand_total,
+                        temp_flow,
+                        Some(true),
+                        simtime.timestep,
+                    )?;
+
+                // Energy available for the battery is what the heat source can
+                // deliver minus what's lost in the pipework.
+                let energy_for_battery =
+                    (energy_max - pipework_losses_kwh).min(energy_demand_total);
+                let energy_for_battery_per_unit = energy_for_battery / self.n_units as f64;
+
+                // Simulate the physical heat exchange with energy conservation cap.
+                // The simulation stops when the battery has absorbed
+                // energy_for_battery_per_unit, preventing it from absorbing more
+                // than the heat source delivers minus pipework losses.
+                let (energy_charged, zone_temps) = self.charge_battery_hydronic(
+                    temp_flow,
+                    time_available_hrs,
+                    *flow_rate_charging_l_per_min,
+                    target_charge_fraction,
+                    energy_for_battery_per_unit,
+                    *hex_a,
+                    *hex_b,
+                    *hex_velocity_at_1_l_per_min,
+                    *hex_capillary_diameter_m,
+                )?;
+
+                // Bill the heat source for the actual energy absorbed by the battery
+                // plus pipework losses. This ensures the HP is only charged for what
+                // was actually used, not the pre-estimated demand.
+                let energy_hp_demand = energy_charged * self.n_units as f64 + pipework_losses_kwh;
+                heat_source_service.demand_energy(
+                    energy_hp_demand,
+                    temp_flow,
+                    temp_return,
+                    simtime,
+                )?;
+
+                // Accumulate internal pipework gains for return via get_battery_losses().
+                // Convert W to kWh for consistency with __battery_losses (both are in kWh).
+                if primary_gains_w > 0. {
+                    self.pipework_primary_gains_kwh.fetch_add(
+                        primary_gains_w / WATTS_PER_KILOWATT as f64 * self.simulation_time_step,
+                        Ordering::SeqCst,
+                    );
+                }
+                return Ok((energy_charged, zone_temps));
+            }
+        } else {
+            bail!("Incomplete heat source configuration, missing required fields. heat_source_service, temp_flow_max, flow_rate_charging_l_per_min, hex_a, hex_b, hex_velocity_at_1_l_per_min, hex_capillary_diameter_m are required.")
+        }
     }
     fn determine_heat_source_switch_on(
         &self,
@@ -2247,7 +2484,6 @@ impl HeatBatteryPcm {
     ///
     /// Returns:
     ///     Estimated outlet (return) temperature in °C.
-    ///
     fn estimate_return_temp(
         &self,
         temp_flow: f64,
