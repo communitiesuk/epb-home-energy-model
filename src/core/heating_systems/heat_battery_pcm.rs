@@ -747,7 +747,7 @@ pub struct HeatBatteryPcm {
     b: f64,
     flow_rate_l_per_min: f64,
     service_results: Arc<RwLock<Vec<HeatBatteryResult>>>,
-    energy_delivered_by_service: IndexMap<ArcStr, f64>,
+    energy_delivered_by_service: Arc<RwLock<IndexMap<ArcStr, f64>>>,
     detailed_results: Option<Arc<RwLock<Vec<HeatBatteryTimestepResult>>>>,
     flag_1_warning: [bool; 2],
     temp_ref: f64,
@@ -910,7 +910,8 @@ impl HeatBatteryPcm {
         // (across all units). Unlike __service_results this is never reset at timestep end; it
         // is read after the simulation to apportion the battery's charging energy between the
         // services it feeds in proportion to the output each received.
-        let energy_delivered_by_service: IndexMap<ArcStr, f64> = IndexMap::new();
+        let energy_delivered_by_service: Arc<RwLock<IndexMap<ArcStr, f64>>> =
+            Arc::new(RwLock::new(IndexMap::new()));
 
         // Minimum useful temperature for SOC calculation — the temperature at which
         // the battery is considered fully discharged (SOC=0).
@@ -1327,8 +1328,8 @@ impl HeatBatteryPcm {
     /// Returns:
     ///     Mapping of service connection name to cumulative delivered energy (kWh), across all
     ///     units.
-    pub(crate) fn energy_delivered_by_service(&self) -> &IndexMap<ArcStr, f64> {
-        &self.energy_delivered_by_service
+    pub(crate) fn energy_delivered_by_service(&self) -> IndexMap<ArcStr, f64> {
+        self.energy_delivered_by_service.read().clone()
     }
 
     /// Calculate electric charging power for the current timestep (ChargeControl mode).
@@ -2144,7 +2145,7 @@ impl HeatBatteryPcm {
             // their schedules should not overlap.
             for (src, source) in self.heat_source_data.as_ref().unwrap_or(&IndexMap::new()) {
                 self.determine_heat_source_switch_on(src, source, simtime)?;
-                self.determine_heat_source_switch_off(source, simtime)?;
+                self.determine_heat_source_switch_off(src, source, simtime)?;
                 if *self.charging_active.read().get(src).unwrap_or(&false) {
                     // Use the upper setpoint from the source's RangeTimeControl
                     // as the SOC target for charging. This limits both the
@@ -2450,12 +2451,33 @@ impl HeatBatteryPcm {
         // Off period — control is entirely off, don't start charging
         Ok(())
     }
+    /// Deactivate charging for a source when SOC reaches the upper setpoint.
+    ///
+    /// Follows StorageTank._determine_heat_source_switch_off pattern.
+    /// Setpoints are resolved to SOC via __resolve_setpoints (converting
+    /// from temperature when schedule_unit="temperature"). Turns off when:
+    /// - setpnt_upper is None (off period), or
+    /// - SOC >= upper setpoint (battery sufficiently charged)
+    ///
+    /// Args:
+    ///     source_name: Key into __charging_active for this source.
+    ///     source: HeatBatteryChargingSource with control and config.
+    ///
     fn determine_heat_source_switch_off(
         &self,
+        source_name: &str,
         source: &HeatBatteryChargingSource,
         simtime: &SimulationTimeIteration,
     ) -> anyhow::Result<()> {
-        unimplemented!("determine_heat_source_switch_off is not yet implemented")
+        let (_, setpnt_upper) = self.resolve_setpoints(source, simtime)?;
+        let soc = self.calc_state_of_charge(self.zone_temp_c_dist_initial.read().clone())?;
+        if setpnt_upper.is_none_or(|upper| soc > upper || relative_eq!(soc, upper, epsilon = 1e-10))
+        {
+            self.charging_active
+                .write()
+                .insert(source_name.into(), false);
+        }
+        Ok(())
     }
 
     /// Estimate the return temperature from a single heat exchange pass.
@@ -2992,6 +3014,11 @@ impl HeatBatteryPcm {
             - self
                 .total_time_running_current_timestep
                 .load(Ordering::SeqCst);
+        // Direct DHW uses a separate heat exchanger from hydronic charging,
+        // so time spent on direct DHW is still available for charging.
+        let time_remaining_for_charging = self
+            .time_running_direct_current_timestep
+            .fetch_add(time_remaining_current_timestep, Ordering::SeqCst);
 
         if self.flag_first_call.load(Ordering::SeqCst) {
             self.first_call();
@@ -3005,14 +3032,15 @@ impl HeatBatteryPcm {
         let (battery_losses, zone_temp_c_after_losses) = self.battery_heat_loss()?;
         self.battery_losses.store(battery_losses, Ordering::SeqCst);
 
-        // Charging battery for the remainder of the timestep
+        // Charging battery for the remaining of the timestep. Direct DHW
+        // time is added back because it uses a separate heat exchanger and
+        // can happen simultaneously with hydronic charging.
         let (end_of_ts_charge, zone_temp_c_after_charging) = if self
             .charge_control
             .clone()
-            .unwrap_or(todo!("charge control must be set"))
-            .is_on(&simtime)
+            .is_some_and(|cc| cc.is_on(&simtime))
         {
-            self.charge_battery(time_remaining_current_timestep, &simtime)?
+            self.charge_battery(time_remaining_for_charging, &simtime)?
         } else {
             (0., self.zone_temp_c_dist_initial.read().clone())
         };
@@ -3021,6 +3049,10 @@ impl HeatBatteryPcm {
             self.energy_charged_electric.load(Ordering::SeqCst) * self.n_units as f64,
             simtime.index,
         )?;
+
+        // Calculate SOC at end of timestep (after charging and losses)
+        let soc_end_of_timestep =
+            self.calc_state_of_charge(self.zone_temp_c_dist_initial.read().clone())?;
 
         // If detailed results are to be output, save the results from the current timestep
         if let Some(detailed_results) = self.detailed_results.as_ref() {
@@ -3062,7 +3094,7 @@ impl HeatBatteryPcm {
             // Add auxiliary results at the end
             let n_units = self.n_units as f64;
             let battery_losses = self.battery_losses.load(Ordering::SeqCst) * n_units;
-            let total_charge = self.energy_charged_electric.load(Ordering::SeqCst) * n_units;
+            let total_charge = self.energy_charged_total.load(Ordering::SeqCst) * n_units;
 
             detailed_results.write().push(HeatBatteryTimestepResult {
                 results: ordered_service_results,
@@ -3073,15 +3105,30 @@ impl HeatBatteryPcm {
                     total_charge,
                     end_of_timestep_charge: end_of_ts_charge * n_units,
                     hb_after_only_charge_zone_temp: zone_temp_c_after_charging,
+                    state_of_charge: soc_end_of_timestep,
                 },
             });
         }
 
+        // Accumulate the energy delivered to each service this timestep into the running total
+        // before __service_results is reset, so the per-service delivery survives for the
+        // post-simulation charging-energy apportionment.
+        for result in self.service_results.read().iter() {
+            let service_name = &result.service_name;
+            self.energy_delivered_by_service
+                .write()
+                .get_mut(service_name)
+                .map(|f| *f += result.energy_delivered_total);
+        }
         self.total_time_running_current_timestep
             .store(Default::default(), Ordering::SeqCst);
         self.pump_running_time_current_timestep
             .store(Default::default(), Ordering::SeqCst);
+        self.time_running_direct_current_timestep
+            .store(Default::default(), Ordering::SeqCst);
         *self.service_results.write() = Default::default();
+        self.energy_charged_total
+            .store(Default::default(), Ordering::SeqCst);
         self.energy_charged_electric
             .store(Default::default(), Ordering::SeqCst);
 
