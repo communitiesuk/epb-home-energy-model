@@ -4,6 +4,7 @@ use crate::core::common::MockWaterSupply;
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{Control, ControlBehaviour, RangeTimeControl};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
+use crate::core::heating_systems::primary_pipework_losses_mixin::PrimaryPipeworkLossesMixin;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
 use crate::core::units::{Orientation360, MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
@@ -157,7 +158,7 @@ impl StorageTank {
         losses: f64,
         initial_temperature: f64,
         cold_feed: WaterSupply,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
         heat_sources: IndexMap<ArcStr, PositionedHeatSource>,
         // In Python this is "project" but only temp_internal_air is accessed from it
         temp_internal_air_fn: TempInternalAirFn,
@@ -215,7 +216,7 @@ impl StorageTank {
 
                     // Initialize surrounding temperature for this pipe based on its location
                     let surrounding_temp = StorageTank::temperature_surrounding_primary_pipework(
-                        &external_conditions,
+                        external_conditions.clone(),
                         temp_internal_air_fn.clone(),
                         &new_pipework,
                         simulation_time_iteration,
@@ -1218,16 +1219,28 @@ impl StorageTank {
         Ok(setpntmax)
     }
 
+    /// Return the ambient temperature surrounding a primary pipework segment.
+    ///
+    /// Delegates to PrimaryPipeworkLossesMixin temp_surrounding_pipework.
+    ///
+    /// Args:
+    ///     pipework_data: Pipework object to query location from.
+    /// Returns:
+    ///     Surrounding temperature in °C.
     fn temperature_surrounding_primary_pipework(
-        external_conditions: &Arc<ExternalConditions>,
+        external_conditions: Arc<ExternalConditions>,
         temp_internal_air_fn: TempInternalAirFn,
         pipework_data: &Pipework,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
-        match pipework_data.location() {
-            PipeworkLocation::External => external_conditions.air_temp(simulation_time_iteration),
-            PipeworkLocation::Internal => (temp_internal_air_fn)(),
-        }
+        let temp_external_air_fn =
+            Arc::new(move || external_conditions.air_temp(&simulation_time_iteration));
+
+        PrimaryPipeworkLossesMixin::temp_surrounding_pipework(
+            pipework_data,
+            temp_external_air_fn,
+            temp_internal_air_fn,
+        )
     }
 
     pub(crate) fn get_cold_water_source(&self) -> &WaterSupply {
@@ -1697,10 +1710,10 @@ impl StorageTank {
             {
                 for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
                     let outside_temperature = StorageTank::temperature_surrounding_primary_pipework(
-                        &self.external_conditions,
+                        self.external_conditions.clone(),
                         self.temp_internal_air_fn.clone(),
                         pipework_data,
-                        &simulation_time_iteration,
+                        simulation_time_iteration,
                     );
                     let cool_down_loss =
                         pipework_data.calculate_cool_down_loss(temp_flow.ok_or_else(|| anyhow!("temp_flow is required to have a value when calculating cool down loss for primary pipework in storage tank module"))?, outside_temperature);
@@ -1731,10 +1744,10 @@ impl StorageTank {
                     // Primary losses for the timestep calculated from temperature difference
 
                     let outside_temperature = StorageTank::temperature_surrounding_primary_pipework(
-                        &self.external_conditions,
+                        self.external_conditions.clone(),
                         self.temp_internal_air_fn.clone(),
                         pipework_data,
-                        &simulation_time_iteration,
+                        simulation_time_iteration,
                     );
                     let primary_pipework_losses_w = pipework_data
                         .calculate_steady_state_heat_loss(temp_flow.ok_or_else(|| anyhow!("temp_flow is required to have a value when calculating steady state heat loss for primary pipework in storage tank module"))?, outside_temperature);
@@ -1758,10 +1771,10 @@ impl StorageTank {
                 for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
                     let location = pipework_data.location();
                     let outside_temperature = StorageTank::temperature_surrounding_primary_pipework(
-                        &self.external_conditions,
+                        self.external_conditions.clone(),
                         self.temp_internal_air_fn.clone(),
                         pipework_data,
-                        &simulation_time_iteration,
+                        simulation_time_iteration,
                     );
                     self.temp_surrounding_prev_heating_event[pipe_idx]
                         .store(outside_temperature, Ordering::SeqCst);
@@ -1874,7 +1887,7 @@ impl SmartHotWaterTank {
         temp_usable: f64,
         temp_setpnt_max: Control,
         cold_feed: WaterSupply,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
         heat_sources: IndexMap<ArcStr, PositionedHeatSource>,
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
@@ -3990,7 +4003,7 @@ mod tests {
             1.68,
             55.0,
             cold_feed,
-            &simtime,
+            simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
@@ -4062,7 +4075,7 @@ mod tests {
             1.61,
             60.0,
             cold_feed,
-            &simtime,
+            simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
@@ -4198,7 +4211,7 @@ mod tests {
             1.68,
             55.0,
             cold_feed,
-            &simtime,
+            simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions_for_pv_diverter.clone(),
@@ -4425,7 +4438,7 @@ mod tests {
             1.68,
             55.0,
             cold_feed,
-            &simulation_time_for_solar_thermal.iter().current_iteration(),
+            simulation_time_for_solar_thermal.iter().current_iteration(),
             IndexMap::from([(
                 "solthermal".into(),
                 PositionedHeatSource {
@@ -4652,10 +4665,10 @@ mod tests {
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
                 StorageTank::temperature_surrounding_primary_pipework(
-                    &external_conditions,
+                    external_conditions.clone(),
                     temp_internal_air_fn.clone(),
                     &pipework,
-                    &t_it
+                    t_it
                 ),
                 [0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0][t_idx]
             );
@@ -4675,10 +4688,10 @@ mod tests {
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
                 StorageTank::temperature_surrounding_primary_pipework(
-                    &external_conditions,
+                    external_conditions.clone(),
                     temp_internal_air_fn.clone(),
                     &pipework,
-                    &t_it
+                    t_it
                 ),
                 [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx]
             );
@@ -5290,7 +5303,7 @@ mod tests {
             1.68,
             55.0,
             cold_feed,
-            &simtime,
+            simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
@@ -5466,7 +5479,7 @@ mod tests {
             1.61,
             52.0,
             cold_feed,
-            &simtime,
+            simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
@@ -5963,7 +5976,7 @@ mod tests {
             temp_usable,
             temp_setpnt_max,
             cold_feed,
-            &simulation_time_for_smart_hot_water_tank
+            simulation_time_for_smart_hot_water_tank
                 .iter()
                 .current_iteration(),
             heat_sources,

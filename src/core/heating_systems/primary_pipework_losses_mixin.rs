@@ -36,7 +36,7 @@ use std::sync::Arc;
 ///     flag_first_pipework_heating_event: True until the first heating event
 ///         completes. Between-event losses are not calculated before the
 ///         first event ends.
-struct PrimaryPipeworkLossesMixin {
+pub(crate) struct PrimaryPipeworkLossesMixin {
     primary_pipework: Vec<Pipework>,
     pipework_energy_input_prev_timestep: AtomicF64,
     temp_surrounding_prev_heating_event: Vec<AtomicF64>,
