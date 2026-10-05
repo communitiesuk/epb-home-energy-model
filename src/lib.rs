@@ -42,7 +42,7 @@ use hem_core::external_conditions;
 use hem_core::simulation_time;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use jsonschema::Validator;
+use jsonschema::{validator, Validator};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
 use std::borrow::Cow;
@@ -127,16 +127,20 @@ pub fn run_project_from_input_file(
 ) -> Result<CalculationResult, HemError> {
     #[instrument(skip_all)]
     fn finalize(input: Value) -> anyhow::Result<Input> {
-        let evaluation = CORE_SCHEMA_VALIDATOR.evaluate(&input);
-        if !evaluation.flag().valid {
-            bail!(
-                "Wrapper formed invalid JSON for the core schema: {}",
-                evaluation
-                    .iter_errors()
-                    .map(|e| format!("{}: {}", e.instance_location, e.error))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            );
+        // use compile-time validator first to quickly establish happy case (speed important), fall back to static validator for evaluate in case of errors
+        // (compile-time validator does not yet support evaluate() stably
+        if !CoreSchema::is_valid(&input) {
+            let evaluation = CORE_SCHEMA_VALIDATOR.evaluate(&input);
+            if !evaluation.flag().valid {
+                bail!(
+                    "Wrapper formed invalid JSON for the core schema: {}",
+                    evaluation
+                        .iter_errors()
+                        .map(|e| format!("{}: {}", e.instance_location, e.error))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                );
+            }
         }
 
         serde_json::from_value(input).map_err(|err| anyhow!(err))
@@ -1592,6 +1596,9 @@ pub fn load_weather_data(
         WeatherFileType::Cibse => cibse_weather_data_to_external_conditions(input),
     }
 }
+
+#[validator(path = "./schemas/core-input.schema.json")]
+struct CoreSchema;
 
 static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     let schema = serde_json::from_str(include_str!("../schemas/core-input.schema.json")).unwrap();

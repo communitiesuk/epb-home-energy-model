@@ -11,7 +11,6 @@ use arcstr::ArcStr;
 use educe::Educe;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use jsonschema::Validator;
 use monostate::MustBe;
 use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
@@ -30,7 +29,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ops::Index;
 use std::sync::Arc;
-use std::sync::LazyLock;
 
 const HOURS_IN_YEAR: usize = 8760;
 
@@ -6820,12 +6818,6 @@ impl InputForCalcHtcHlp for Input {
         self.temp_internal_air_static_calcs
     }
 }
-
-#[expect(unused)]
-static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
-    let schema = serde_json::from_str(include_str!("../schemas/core-input.schema.json")).unwrap();
-    jsonschema::validator_for(&schema).unwrap()
-});
 
 #[cfg(test)]
 mod tests {
