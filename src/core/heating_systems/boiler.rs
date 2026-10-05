@@ -1446,7 +1446,11 @@ impl Boiler {
     }
 
     /// Calculation of boiler electrical consumption
-    fn calc_auxiliary_energy(&mut self, time_remaining_current_timestep: f64, timestep_idx: usize) {
+    fn calc_auxiliary_energy(
+        &mut self,
+        time_remaining_current_timestep: f64,
+        timestep_idx: usize,
+    ) -> anyhow::Result<()> {
         // Energy used by circulation pump (for regular hot water and space heating services)
         let mut energy_aux = self
             .pump_running_time_current_timestep
@@ -1522,8 +1526,18 @@ impl Boiler {
         }
 
         self.energy_supply_connection_aux
-            .demand_energy(energy_aux, timestep_idx)
-            .unwrap();
+            .demand_energy(energy_aux, timestep_idx)?;
+
+        if let Some(ref mut pilot_light) = self.pilot_light_config {
+            let gas_aux = pilot_light.pilot_light_power * time_remaining_current_timestep;
+            pilot_light.internal_gains_pilot_light =
+                gas_aux * pilot_light.pilot_light_gains_fraction;
+            pilot_light
+                .energy_supply_connection_pilot_light
+                .demand_energy(gas_aux, timestep_idx)?
+        }
+
+        Ok(())
     }
 
     /// Calculations to be done at the end of each timestep
@@ -1536,7 +1550,7 @@ impl Boiler {
                 .total_time_running_current_timestep
                 .load(Ordering::SeqCst);
 
-        self.calc_auxiliary_energy(time_remaining_current_timestep, simtime.index);
+        self.calc_auxiliary_energy(time_remaining_current_timestep, simtime.index)?;
 
         self.total_time_running_current_timestep = Default::default();
         self.pump_running_time_current_timestep = Default::default();
@@ -2999,7 +3013,7 @@ mod tests {
             .unwrap();
 
             // Check the function runs without panicking
-            boiler.calc_auxiliary_energy(1., 0);
+            boiler.calc_auxiliary_energy(1., 0).unwrap();
 
             // in Python there is some use of mocking here, which does not seem worth porting due to
             // the disproportionate difficulty in doing this vs the benefit of the assertion provided
