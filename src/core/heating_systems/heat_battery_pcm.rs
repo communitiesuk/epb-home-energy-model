@@ -2203,64 +2203,18 @@ impl HeatBatteryPcm {
                                 *hex_velocity_at_1_l_per_min,
                                 *hex_capillary_diameter_m,
                             )?;
-                            match heat_source_service {
-                                HeatSourceWetService::HeatPumpServiceWater(service) => {
-                                    service.demand_energy(
-                                        0.0,
-                                        Some(source.temp_flow_max),
-                                        Some(temp_return),
-                                        *simtime,
-                                    )?;
-                                }
-                                HeatSourceWetService::BoilerServiceWaterRegular(service) => {
-                                    service.demand_energy(
-                                        0.,
-                                        source.temp_flow_max,
-                                        Some(temp_return),
-                                        None,
-                                        None,
-                                        Some(true),
-                                        *simtime,
-                                    )?;
-                                }
-                                HeatSourceWetService::HeatBatteryPCMServiceWaterRegular(
-                                    service,
-                                ) => {
-                                    service.demand_energy(
-                                        0.,
-                                        Some(source.temp_flow_max),
-                                        Some(temp_return),
-                                        Some(true),
-                                        *simtime,
-                                        false,
-                                    )?;
-                                }
 
-                                HeatSourceWetService::HeatBatteryDryCoreServiceWaterRegular(
-                                    service,
-                                ) => {
-                                    service.demand_energy(
-                                        0.,
-                                        Some(source.temp_flow_max),
-                                        temp_return,
-                                        Some(true),
-                                        *simtime,
-                                    )?;
-                                }
-                                HeatSourceWetService::HeatNetworkServiceWaterStorage(service) => {
-                                    service.demand_energy(
-                                        0.,
-                                        source.temp_flow_max,
-                                        Some(temp_return),
-                                        *&simtime,
-                                    )?;
-                                }
-                            };
+                            heat_source_service.demand_energy(
+                                0.0,
+                                *temp_flow_max,
+                                temp_return,
+                                simtime,
+                            )?;
                             // Report zero input to pipework loss tracker for event
                             // boundary detection
                             self.pipework.calculate_primary_pipework_losses(
                                 0.0,
-                                source.temp_flow_max,
+                                *temp_flow_max,
                                 Some(true),
                                 1.,
                             )?;
