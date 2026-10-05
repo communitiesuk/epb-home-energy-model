@@ -1540,6 +1540,15 @@ impl Boiler {
         Ok(())
     }
 
+    /// Return internal gains from pilot light, from previous timestep
+    fn internal_gains(&self) -> f64 {
+        if let Some(pilot_light) = &self.pilot_light_config {
+            pilot_light.internal_gains_pilot_light
+        } else {
+            0.0
+        }
+    }
+
     /// Calculations to be done at the end of each timestep
     pub(crate) fn timestep_end(&mut self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
         self.fuel_demand(simtime)?;
