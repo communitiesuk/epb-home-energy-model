@@ -848,12 +848,12 @@ impl Boiler {
                 let corrected_full_load_gross = full_load_gross;
                 let corrected_part_load_gross =
                     part_load_gross + 0.0004 * (return_temp_part - return_temp);
-                let part_load_max = Self::non_condensing_part_load_max_gross_efficiency();
-                let full_load_max = Self::non_condensing_full_load_max_gross_efficiency();
+                let part_load_max = Self::non_condensing_part_load_max_gross_efficiency(fuel_code)?;
+                let full_load_max = Self::non_condensing_full_load_max_gross_efficiency(fuel_code)?;
                 let corrected_full_load_gross = min_of_2(corrected_full_load_gross, full_load_max);
                 let corrected_part_load_gross = min_of_2(corrected_part_load_gross, part_load_max);
 
-               Ok((corrected_full_load_gross + corrected_part_load_gross) / 2.0)
+                Ok((corrected_full_load_gross + corrected_part_load_gross) / 2.0)
             }
         }
     }
@@ -873,12 +873,28 @@ impl Boiler {
         )
     }
 
-    fn non_condensing_part_load_max_gross_efficiency() -> f64 {
-        todo!()
+    /// Returns the maximum gross efficiency for part load non-condensing boilers
+    fn non_condensing_part_load_max_gross_efficiency(fuel_code: &FuelType) -> anyhow::Result<f64> {
+        match fuel_code {
+            FuelType::MainsGas => Ok(MAX_GROSS_EFFICIENCY_NON_CONDENSING_PART_LOAD_NATURAL_GAS),
+            FuelType::LpgBulk | FuelType::LpgBottled | FuelType::LpgCondition11F => {
+                Ok(MAX_GROSS_EFFICIENCY_NON_CONDENSING_PART_LOAD_LPG)
+            }
+            FuelType::HeatingOil => Ok(MAX_GROSS_EFFICIENCY_NON_CONDENSING_PART_LOAD_OIL),
+            _ => bail!("Unexpected fuel code {fuel_code:?} encountered for non condensing boiler"),
+        }
     }
 
-    fn non_condensing_full_load_max_gross_efficiency() -> f64 {
-        todo!()
+    /// Returns the maximum gross efficiency for full load non-condensing boilers
+    fn non_condensing_full_load_max_gross_efficiency(fuel_code: &FuelType) -> anyhow::Result<f64> {
+        match fuel_code {
+            FuelType::MainsGas => Ok(MAX_GROSS_EFFICIENCY_NON_CONDENSING_FULL_LOAD_NATURAL_GAS),
+            FuelType::LpgBulk | FuelType::LpgBottled | FuelType::LpgCondition11F => {
+                Ok(MAX_GROSS_EFFICIENCY_NON_CONDENSING_FULL_LOAD_LPG)
+            }
+            FuelType::HeatingOil => Ok(MAX_GROSS_EFFICIENCY_NON_CONDENSING_FULL_LOAD_OIL),
+            _ => bail!("Unexpected fuel code {fuel_code:?} encountered for non condensing boiler"),
+        }
     }
 
     fn high_value_correction_part_load(
