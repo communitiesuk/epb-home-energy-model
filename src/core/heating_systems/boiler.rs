@@ -931,6 +931,7 @@ impl Boiler {
         match fuel_code {
             FuelType::MainsGas => Ok(0.901),
             FuelType::LpgBulk | FuelType::LpgBottled | FuelType::LpgCondition11F => Ok(0.921),
+            FuelType::HeatingOil => Ok(0.937),
             _ => bail!("could not convert net to gross for fuel code '{fuel_code:?}'"),
         }
     }
