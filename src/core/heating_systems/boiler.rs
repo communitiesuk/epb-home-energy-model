@@ -630,8 +630,8 @@ pub struct Boiler {
     standby_loss_index: f64,
     ebv_curve_offset: f64,
     service_results: RwLock<Vec<ServiceResult>>,
-    _full_load_gross: f64,
-    _part_load_gross: f64,
+    full_load_gross: f64,
+    part_load_gross: f64,
     boiler_type: BoilerType,
     pilot_light_config: Option<PilotLightConfig>,
     energy_supply_conn_keephot: Option<EnergySupplyConnection>,
@@ -747,12 +747,18 @@ impl Boiler {
                 let temp_full_load_test = 60.;
                 let offset_for_theoretical_eff = 0.;
                 let theoretical_eff_part_load = Self::efficiency_over_return_temperatures(
+                    &boiler_type,
                     &fuel_code,
+                    full_load_gross,
+                    part_load_gross,
                     temp_part_load_test,
                     offset_for_theoretical_eff,
                 )?;
                 let theoretical_eff_full_load = Self::efficiency_over_return_temperatures(
+                    &boiler_type,
                     &fuel_code,
+                    full_load_gross,
+                    part_load_gross,
                     temp_full_load_test,
                     offset_for_theoretical_eff,
                 )?;
@@ -770,8 +776,8 @@ impl Boiler {
                     boiler_location,
                     min_modulation_load,
                     boiler_power,
-                    _full_load_gross: full_load_gross,
-                    _part_load_gross: part_load_gross,
+                    full_load_gross,
+                    part_load_gross,
                     boiler_type,
                     fuel_code,
                     pilot_light_config,
@@ -797,31 +803,59 @@ impl Boiler {
     /// Return boiler efficiency at different return temperatures
     /// In Python this is effvsreturntemp
     fn efficiency_over_return_temperatures(
+        boiler_type: &BoilerType,
         fuel_code: &FuelType,
+        full_load_gross: f64,
+        part_load_gross: f64,
         return_temp: f64,
         offset: f64,
     ) -> anyhow::Result<f64> {
-        let mains_gas_dewpoint = 52.2;
-        let lpg_dewpoint = 48.3;
-        let theoretical_eff = match fuel_code {
-            FuelType::MainsGas => {
-                if return_temp < mains_gas_dewpoint {
-                    -0.0000686 * return_temp.powi(2) + 0.00175 * return_temp + 0.97845
-                } else {
-                    -0.000619 * return_temp + 0.91250229
-                }
+        match boiler_type {
+            BoilerType::Condensing => {
+                let mains_gas_dewpoint = 52.2;
+                let lpg_dewpoint = 48.3;
+                let oil_dewpoint = 45.1;
+                // TODO: add remaining fuels
+                let theoretical_eff = match fuel_code {
+                    FuelType::MainsGas => {
+                        if return_temp < mains_gas_dewpoint {
+                            -0.0000686 * return_temp.powi(2) + 0.00175 * return_temp + 0.97845
+                        } else {
+                            -0.000619 * return_temp + 0.91250229
+                        }
+                    }
+                    FuelType::LpgBulk | FuelType::LpgBottled | FuelType::LpgCondition11F => {
+                        if return_temp < lpg_dewpoint {
+                            -0.00006118 * return_temp.powi(2) + 0.00126 * return_temp + 0.98586
+                        } else {
+                            -0.00062 * return_temp + 0.9332
+                        }
+                    }
+                    FuelType::HeatingOil => {
+                        if return_temp < oil_dewpoint {
+                            -0.0000573 * return_temp.powi(2) + 0.000991 * return_temp + 0.98956
+                        } else {
+                            -0.000619 * return_temp + 0.9454
+                        }
+                    }
+                    _ => bail!("Unexpected fuel code {fuel_code:?} encountered"),
+                };
+                Ok(theoretical_eff - offset)
             }
-            FuelType::LpgBulk | FuelType::LpgBottled | FuelType::LpgCondition11F => {
-                if return_temp < lpg_dewpoint {
-                    -0.00006118 * return_temp.powi(2) + 0.00126 * return_temp + 0.98586
-                } else {
-                    -0.00062 * return_temp + 0.9332
-                }
-            }
-            _ => bail!("Unexpected fuel code {fuel_code:?} encountered"),
-        };
+            BoilerType::NonCondensing => {
+                // Calculate corrected efficiency according to BS EN-15316-4-1 equation 41
+                let return_temp_part = 50.0;
+                let corrected_full_load_gross = full_load_gross;
+                let corrected_part_load_gross =
+                    part_load_gross + 0.0004 * (return_temp_part - return_temp);
+                let part_load_max = Self::non_condensing_part_load_max_gross_efficiency();
+                let full_load_max = Self::non_condensing_full_load_max_gross_efficiency();
+                let corrected_full_load_gross = min_of_2(corrected_full_load_gross, full_load_max);
+                let corrected_part_load_gross = min_of_2(corrected_part_load_gross, part_load_max);
 
-        Ok(theoretical_eff - offset)
+               Ok((corrected_full_load_gross + corrected_part_load_gross) / 2.0)
+            }
+        }
     }
 
     pub fn boiler_efficiency_over_return_temperatures(
@@ -829,7 +863,22 @@ impl Boiler {
         return_temp: f64,
         offset: f64,
     ) -> anyhow::Result<f64> {
-        Self::efficiency_over_return_temperatures(&self.fuel_code, return_temp, offset)
+        Self::efficiency_over_return_temperatures(
+            &self.boiler_type,
+            &self.fuel_code,
+            self.full_load_gross,
+            self.part_load_gross,
+            return_temp,
+            offset,
+        )
+    }
+
+    fn non_condensing_part_load_max_gross_efficiency() -> f64 {
+        todo!()
+    }
+
+    fn non_condensing_full_load_max_gross_efficiency() -> f64 {
+        todo!()
     }
 
     fn high_value_correction_part_load(
