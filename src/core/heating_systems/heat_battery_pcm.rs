@@ -2637,9 +2637,6 @@ impl HeatBatteryPcm {
             self.capillary_diameter_m,
         );
 
-        let flow_rate_kg_per_s =
-            (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
-
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().deref().clone();
         let mut energy_delivered_hb = 0.;
         let mut inlet_temp_c = temp_return_feed;
@@ -2650,14 +2647,14 @@ impl HeatBatteryPcm {
             let (outlet_temp_c, energy_transf_delivered, _) = self.process_heat_battery_zones(
                 inlet_temp_c,
                 &mut zone_temp_c_dist,
-                flow_rate_kg_per_s,
                 time_step_s,
                 reynold_number_at_1_l_per_min,
+                self.flow_rate_l_per_min,
                 Some(pwr_in),
                 None,
-                0.0,  // Todo - temp values as part of 1.0.0a9
-                None, // Todo - temp values as part of 1.0.0a9
-                None, // Todo - temp values as part of 1.0.0a9
+                0.0,
+                None,
+                None,
             )?;
 
             // RN for next time step
@@ -2673,6 +2670,12 @@ impl HeatBatteryPcm {
             let energy_delivered_kj = FSum::with_all(&energy_transf_delivered).value();
             let energy_delivered_ts = energy_delivered_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
 
+            // Stop before counting a sub-step in which the battery would absorb heat from
+            // the inlet flow rather than deliver it, matching demand_energy. The required
+            // flow temperature does not gate delivery, so the maximum is the full positive
+            // heat transfer the core can drive from the return-feed inlet. A negligibly-
+            // negative result is floating-point noise and is treated as zero so the stop
+            // decision is identical across platforms.
             if energy_delivered_kj < 0. || relative_eq!(energy_delivered_kj, 0.0, epsilon = 1e-12) {
                 break;
             }
