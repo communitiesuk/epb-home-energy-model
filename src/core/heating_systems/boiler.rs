@@ -796,7 +796,6 @@ impl Boiler {
 
     /// Return boiler efficiency at different return temperatures
     /// In Python this is effvsreturntemp
-    #[allow(clippy::unreadable_literal)]
     fn efficiency_over_return_temperatures(
         fuel_code: &FuelType,
         return_temp: f64,
@@ -892,23 +891,16 @@ impl Boiler {
             .unwrap();
 
         if let HotWaterSourceDetails::CombiBoiler {
-            ref combi_type_specific_details,
+            combi_type_specific_details:
+                CombiTypeSpecificDetails::KeepHot {
+                    combi_keep_hot_fuel: CombiKeepHotFuel::Electricity | CombiKeepHotFuel::Mixed,
+                    ..
+                },
             ..
         } = boiler_data
         {
-            if let CombiTypeSpecificDetails::KeepHot {
-                combi_keep_hot_fuel,
-                ..
-            } = combi_type_specific_details
-            {
-                match combi_keep_hot_fuel {
-                    CombiKeepHotFuel::Electricity | CombiKeepHotFuel::Mixed => {
-                        boiler.write().energy_supply_conn_keephot =
-                            Option::from(boiler.read().energy_supply_connection_aux.clone());
-                    }
-                    CombiKeepHotFuel::MainBoilerFuel => {}
-                }
-            }
+            let mut boiler = boiler.write();
+            boiler.energy_supply_conn_keephot = Some(boiler.energy_supply_connection_aux.clone());
         }
 
         BoilerServiceWaterCombi::new(
