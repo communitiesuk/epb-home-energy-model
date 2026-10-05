@@ -2113,6 +2113,7 @@ impl HeatBatteryPcm {
                         // without placeholders)
                         if let HeatBatteryChargingSource {
                             heat_source_service: Some(heat_source_service),
+                            temp_flow_max,
                             flow_rate_charging_l_per_min: Some(flow_rate_charging_l_per_min),
                             hex_a: Some(hex_a),
                             hex_b: Some(hex_b),
@@ -2122,13 +2123,13 @@ impl HeatBatteryPcm {
                         } = source
                         {
                             let temp_return = self.estimate_return_temp(
-                                heat_source_service,
+                                *temp_flow_max,
                                 *flow_rate_charging_l_per_min,
                                 *hex_a,
                                 *hex_b,
                                 *hex_velocity_at_1_l_per_min,
                                 *hex_capillary_diameter_m,
-                            );
+                            )?;
                             match heat_source_service {
                                 HeatSourceWetService::HeatPumpServiceWater(service) => {
                                     service.demand_energy(
@@ -2230,16 +2231,57 @@ impl HeatBatteryPcm {
     ) -> anyhow::Result<bool> {
         unimplemented!("determine_heat_source_switch_off not implemented")
     }
+
+    /// Estimate the return temperature from a single heat exchange pass.
+    ///
+    /// Runs one sub-timestep of zone-by-zone heat exchange on a copy of
+    /// the current zone temperatures (non-mutating). The outlet temperature
+    /// from this pass reflects the heat exchanger effectiveness, flow rate,
+    /// and current zone thermal state — giving a physics-based estimate of
+    /// what temperature the water returns to the heat source.
+    ///
+    /// Args:
+    ///     temp_flow: Inlet temperature from the heat source (°C).
+    ///     flow_rate_l_per_min: Flow rate through the charging heat exchanger
+    ///         (litre/minute).
+    ///
+    /// Returns:
+    ///     Estimated outlet (return) temperature in °C.
+    ///
     fn estimate_return_temp(
         &self,
-        heat_source_service: &HeatSourceWetService,
+        temp_flow: f64,
         flow_rate_charging_l_per_min: f64,
         hex_a: f64,
         hex_b: f64,
         hex_velocity_at_1_l_per_min: f64,
         hex_capillary_diameter_m: f64,
-    ) -> f64 {
-        unimplemented!("estimate_return_temp not implemented 1.0.0a9")
+    ) -> anyhow::Result<f64> {
+        let water_kinematic_viscosity_m2_per_s =
+            HeatBatteryPcm::calculate_water_kinematic_viscosity_m2_per_s(
+                self.initial_inlet_temp,
+                self.estimated_outlet_temp,
+            );
+        let reynold_number_at_1_l_per_min = HeatBatteryPcm::calculate_reynold_number_at_1_l_per_min(
+            water_kinematic_viscosity_m2_per_s,
+            hex_velocity_at_1_l_per_min,
+            hex_capillary_diameter_m,
+        );
+
+        // Run one sub-timestep on a copy of zone temps (non-mutating)
+        let (temp_outlet_c, _, __) = self.process_heat_battery_zones(
+            temp_flow,
+            self.zone_temp_c_dist_initial.read().clone().as_mut_slice(),
+            self.hb_time_step,
+            reynold_number_at_1_l_per_min,
+            flow_rate_charging_l_per_min,
+            Some(0.0),
+            Some(HeatBatteryPcmOperationMode::Normal),
+            0.,
+            Some(hex_a),
+            Some(hex_b),
+        )?;
+        Ok(temp_outlet_c)
     }
 
     fn battery_heat_loss(
