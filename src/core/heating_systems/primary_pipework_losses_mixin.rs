@@ -45,6 +45,12 @@ pub(crate) struct PrimaryPipeworkLossesMixin {
     temp_internal_air_fn: TempInternalAirFn,
 }
 
+impl std::fmt::Debug for PrimaryPipeworkLossesMixin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!("Implement Debug for PrimaryPipeworkLossesMixin")
+    }
+}
+
 impl PrimaryPipeworkLossesMixin {
     /// Arguments
     /// * `pipework_list` - List of Pipework objects for primary circuit

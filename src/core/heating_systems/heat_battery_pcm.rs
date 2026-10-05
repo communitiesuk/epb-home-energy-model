@@ -10,6 +10,7 @@ use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::heating_systems::heat_battery_drycore::HeatBatteryDryCoreServiceWaterRegular;
 use crate::core::heating_systems::heat_network::HeatNetworkServiceWaterStorage;
 use crate::core::heating_systems::heat_pump::HeatPumpServiceWater;
+use crate::core::heating_systems::primary_pipework_losses_mixin::PrimaryPipeworkLossesMixin;
 use crate::core::heating_systems::storage_tank::THERMAL_CONSTANTS_F_STO_M;
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
@@ -20,7 +21,7 @@ use crate::core::units::{
 use crate::core::water_heat_demand::misc::{
     calculate_volume_weighted_average_temperature, water_demand_to_kwh, WaterEventResult,
 };
-use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep};
+use crate::corpus::{ResultParamValue, ResultsAnnual, ResultsPerTimestep, TempInternalAirFn};
 use crate::hem_core::external_conditions::ExternalConditions;
 use crate::hem_core::simulation_time::SimulationTimeIterator;
 use crate::input::{
@@ -48,7 +49,7 @@ pub(crate) enum HeatBatteryPcmOperationMode {
     Losses,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum ChargingSourceType {
     DirectElectric,
     HeatSourceWet,
@@ -678,7 +679,7 @@ pub struct HeatBatteryPcm {
     detailed_results: Option<Arc<RwLock<Vec<HeatBatteryTimestepResult>>>>,
     flag_1_warning: [bool; 2],
     temp_ref: f64,
-    temp_internal_air_callback: fn() -> f64,
+    pipework: PrimaryPipeworkLossesMixin,
 }
 /// PCM heat battery that can be charged electrically, hydronically, or both.
 /// Models a phase-change-material heat battery that can be charged by electric
@@ -693,7 +694,7 @@ impl HeatBatteryPcm {
         simulation_time: SimulationTimeIterator,
         external_conditions: Arc<ExternalConditions>,
         temp_min_useful: Option<f64>,
-        temp_internal_air_callback: fn() -> f64,
+        temp_internal_air_callback: TempInternalAirFn,
         charge_control: Option<Arc<ChargeControl>>,
         heat_source_data: Option<IndexMap<ArcStr, HeatBatteryChargingSource>>,
         n_layers: Option<usize>,
@@ -701,7 +702,7 @@ impl HeatBatteryPcm {
         initial_inlet_temp: Option<f64>,
         estimated_outlet_temp: Option<f64>,
         output_detailed_results: Option<bool>,
-        _primary_pipework: Option<Vec<Pipework>>, // Todo: not handled the init of this yet.
+        primary_pipework: Option<Vec<Pipework>>,
     ) -> anyhow::Result<Self> {
         // 20secs is the current preferred timestep to run the heat battery iterative calculations
         let hb_time_step = hb_time_step.unwrap_or(DEFAULT_TIME_STEP_SECONDS);
@@ -713,7 +714,11 @@ impl HeatBatteryPcm {
         // Determine charging configuration mode: HeatSource dict with
         // per-source RangeTimeControl vs single ChargeControl + rated_charge_power
         let use_heatsource_data = heat_source_data.is_some();
-
+        let pipework = PrimaryPipeworkLossesMixin::new(
+            primary_pipework.unwrap_or_default(),
+            Arc::new(|| 0.0), // TODO: THis needs thinking about
+            temp_internal_air_callback,
+        );
         // Per-source hysteresis state: tracks whether each source is currently
         // in its active charging band (SOC below upper setpoint after being
         // triggered by SOC falling below lower setpoint)
@@ -904,7 +909,7 @@ impl HeatBatteryPcm {
             detailed_results,
             flag_1_warning: [true; 2],
             temp_ref: temp_min_useful.unwrap_or(0.),
-            temp_internal_air_callback,
+            pipework,
         })
     }
 
@@ -1377,10 +1382,10 @@ impl HeatBatteryPcm {
     ///  Args:
     ///      index: Iteration index over the zones.
     ///      mode: Operation mode selecting the zone calculation.
-    ///      zone_temp_C_dist: Current temperature of each zone, in °C.
-    ///      inlet_temp_C: Temperature entering the battery (the surrounding air
+    ///      zone_temp_c_dist: Current temperature of each zone, in °C.
+    ///      inlet_temp_c: Temperature entering the battery (the surrounding air
     ///    temperature in the losses mode), in °C.
-    ///      inlet_temp_C_Zone: Temperature entering this zone, in °C.
+    ///      inlet_temp_c_zone: Temperature entering this zone, in °C.
     ///      Q_max_kJ: Energy available for transfer over the timestep, in kJ.
     ///      reynold_number_at_1_l_per_min: Reynolds number at 1 litre/minute.
     ///      flow_rate_kg_per_s: Heat exchanger flow rate, in kg/s.
@@ -1429,7 +1434,7 @@ impl HeatBatteryPcm {
                 // NORMAL mode include battery primarily hydraulic charging or discharging with or without simultaneous electric charging
                 let zone_temp_c_start = zone_temp_c_dist[index];
                 let flow_rate_kg_per_s =
-                    (flow_rate_l_per_min / units::SECONDS_PER_MINUTE as f64) * WATER.density();
+                    (flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
                 let effective_a = hex_a.unwrap_or(self.a);
                 let effective_b = hex_b.unwrap_or(self.b);
                 // The A * ln(Re * V) + B correlation returns the UA value for the
@@ -2057,8 +2062,7 @@ impl HeatBatteryPcm {
         time_remaining_current_timestep: f64,
         simtime: &SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Vec<f64>)> {
-        let mut end_of_ts_charge = 0.0;
-        let mut zone_temp_c_after_charging = self.zone_temp_c_dist_initial.read().clone();
+        let zone_temp_c_after_charging = self.zone_temp_c_dist_initial.read().clone();
 
         if self.use_heatsource_data {
             // RangeTimeControl: per-source charging dispatch (SOC or temperature-based).
@@ -2090,7 +2094,7 @@ impl HeatBatteryPcm {
                             }
                         }
                         ChargingSourceType::HeatSourceWet => {
-                            if let Some(heat_source_service) = &source.heat_source_service {
+                            if let Some(_) = &source.heat_source_service {
                                 return self.charge_from_heat_source(
                                     source,
                                     time_remaining_current_timestep,
@@ -2101,13 +2105,107 @@ impl HeatBatteryPcm {
                             }
                         }
                     }
+                } else {
+                    if source.source_type == ChargingSourceType::HeatSourceWet {
+                        // Hydronic source not active — call demand_energy(0) so
+                        // the heat source records a zero-demand service call
+                        // every timestep (ensures consistent detailed results
+                        // without placeholders)
+                        if let HeatBatteryChargingSource {
+                            heat_source_service: Some(heat_source_service),
+                            flow_rate_charging_l_per_min: Some(flow_rate_charging_l_per_min),
+                            hex_a: Some(hex_a),
+                            hex_b: Some(hex_b),
+                            hex_velocity_at_1_l_per_min: Some(hex_velocity_at_1_l_per_min),
+                            hex_capillary_diameter_m: Some(hex_capillary_diameter_m),
+                            ..
+                        } = source
+                        {
+                            let temp_return = self.estimate_return_temp(
+                                heat_source_service,
+                                *flow_rate_charging_l_per_min,
+                                *hex_a,
+                                *hex_b,
+                                *hex_velocity_at_1_l_per_min,
+                                *hex_capillary_diameter_m,
+                            );
+                            match heat_source_service {
+                                HeatSourceWetService::HeatPumpServiceWater(service) => {
+                                    service.demand_energy(
+                                        0.0,
+                                        Some(source.temp_flow_max),
+                                        Some(temp_return),
+                                        *simtime,
+                                    )?;
+                                }
+                                HeatSourceWetService::BoilerServiceWaterRegular(service) => {
+                                    service.demand_energy(
+                                        0.,
+                                        source.temp_flow_max,
+                                        Some(temp_return),
+                                        None,
+                                        None,
+                                        Some(true),
+                                        *simtime,
+                                    )?;
+                                }
+                                HeatSourceWetService::HeatBatteryPCMServiceWaterRegular(
+                                    service,
+                                ) => {
+                                    service.demand_energy(
+                                        0.,
+                                        Some(source.temp_flow_max),
+                                        Some(temp_return),
+                                        Some(true),
+                                        *simtime,
+                                        false,
+                                    )?;
+                                }
+
+                                HeatSourceWetService::HeatBatteryDryCoreServiceWaterRegular(
+                                    service,
+                                ) => {
+                                    service.demand_energy(
+                                        0.,
+                                        Some(source.temp_flow_max),
+                                        temp_return,
+                                        Some(true),
+                                        *simtime,
+                                    )?;
+                                }
+                                HeatSourceWetService::HeatNetworkServiceWaterStorage(service) => {
+                                    service.demand_energy(
+                                        0.,
+                                        source.temp_flow_max,
+                                        Some(temp_return),
+                                        *&simtime,
+                                    )?;
+                                }
+                            };
+                            // Report zero input to pipework loss tracker for event
+                            // boundary detection
+                            self.pipework.calculate_primary_pipework_losses(
+                                0.0,
+                                source.temp_flow_max,
+                                Some(true),
+                                1.,
+                            )?;
+                        }
+                    }
                 }
             }
+            Ok((0., zone_temp_c_after_charging))
+        } else if let Some(charge_control) = &self.charge_control {
+            if charge_control.is_on(simtime) {
+                // ChargeControl: single electric element with temperature-based proxy
+                let pwr_in = self.electric_charge(*simtime);
+                let target = charge_control.target_charge(*simtime, None)?;
+                return self.charge_battery_electric(pwr_in, target);
+            }
+            return Ok((0., zone_temp_c_after_charging));
         } else {
-            // Implement charging logic using ChargeControl data
+            bail!("No charging configuration: neither HeatSource dict nor ChargeControl is configured.")
         }
-
-        todo!("Implement charging logic for the heat battery PCM 1.0.0a9")
     }
 
     fn charge_from_heat_source(
@@ -2132,6 +2230,18 @@ impl HeatBatteryPcm {
     ) -> anyhow::Result<bool> {
         unimplemented!("determine_heat_source_switch_off not implemented")
     }
+    fn estimate_return_temp(
+        &self,
+        heat_source_service: &HeatSourceWetService,
+        flow_rate_charging_l_per_min: f64,
+        hex_a: f64,
+        hex_b: f64,
+        hex_velocity_at_1_l_per_min: f64,
+        hex_capillary_diameter_m: f64,
+    ) -> f64 {
+        unimplemented!("estimate_return_temp not implemented 1.0.0a9")
+    }
+
     fn battery_heat_loss(
         &self,
         simtime: &SimulationTimeIteration,
@@ -2210,7 +2320,7 @@ impl HeatBatteryPcm {
                 reynold_number_at_1_l_per_min,
                 pwr_in.into(),
                 None,
-                0.,   // Todo - temp values as part of 1.0.0a9
+                0.0,  // Todo - temp values as part of 1.0.0a9
                 None, // Todo - temp values as part of 1.0.0a9
                 None, // Todo - temp values as part of 1.0.0a9
             )?;
@@ -2304,7 +2414,7 @@ impl HeatBatteryPcm {
                 flow_rate_kg_per_s,
                 time_step_s,
                 reynold_number_at_1_l_per_min,
-                pwr_in.into(),
+                Some(pwr_in),
                 None,
                 0.0,  // Todo - temp values as part of 1.0.0a9
                 None, // Todo - temp values as part of 1.0.0a9
@@ -2322,8 +2432,7 @@ impl HeatBatteryPcm {
 
             // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
             let energy_delivered_kj = FSum::with_all(&energy_transf_delivered).value();
-            let energy_delivered_ts =
-                energy_delivered_kj / units::KILOJOULES_PER_KILOWATT_HOUR as f64;
+            let energy_delivered_ts = energy_delivered_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
 
             if energy_delivered_kj < 0. || relative_eq!(energy_delivered_kj, 0.0, epsilon = 1e-12) {
                 break;
@@ -2533,7 +2642,7 @@ impl HeatBatteryPcm {
                 Ordering::SeqCst,
             );
 
-            // Track pump running time (only for regular DHW and space heating)
+            // Track pump running time (only for regular DHW and space heating services)
             // Direct DHW services don't use circulation pumps
             match service_type {
                 HeatingServiceType::DomesticHotWaterRegular | HeatingServiceType::Space => {
@@ -4453,7 +4562,7 @@ type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue
 //                 ("hb_after_only_charge_zone_temp4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
 //                 ("hb_after_only_charge_zone_temp5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
 //                 ("hb_after_only_charge_zone_temp6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
-//                 ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![38.82118099093947.into(), 37.64171170047278.into()],
+//                 ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
 //             },
 //             "new_service".into() => indexmap! {
 //                 ("service_name".into(), None) => vec![ResultParamValue::String(arcstr::literal!("new_service")); 2],
@@ -4471,12 +4580,12 @@ type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue
 //                     40.00000000000006.into(),
 //                     38.831074384285536.into(),
 //                 ],
-//                 ("hb_zone_temperatures1".into(), Some("degC".into())) => vec![40.00000000000328.into(), 38.82583473088185.into()],
-//                 ("hb_zone_temperatures2".into(), Some("degC".into())) => vec![40.00000000011253.into(), 38.82317806275455.into()],
+//                 ("hb_zone_temperatures1".into(), Some("degC".into())) => vec![40.00000000000329.into(), 38.82583473088185.into()],
+//                 ("hb_zone_temperatures2".into(), Some("degC".into())) => vec![40.000000000112536.into(), 38.82317806275455.into()],
 //                 ("hb_zone_temperatures3".into(), Some("degC".into())) => vec![40.00000000307894.into(), 38.821831051767305.into()],
-//                 ("hb_zone_temperatures4".into(), Some("degC".into())) => vec![40.00000007433763.into(), 38.82114814418561.into()],
+//                 ("hb_zone_temperatures4".into(), Some("degC".into())) => vec![40.000000074337635.into(), 38.82114814418561.into()],
 //                 ("hb_zone_temperatures5".into(), Some("degC".into())) => vec![40.000001662652714.into(), 38.82080342718701.into()],
-//                 ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![40.00003563483504.into(), 38.82066151993296.into()],
+//                 ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![40.000035634835044.into(), 38.82066151993296.into()],
 //                 ("hb_zone_temperatures7".into(), Some("degC".into())) => vec![40.000735381503034.into(), 38.82126609103635.into()],
 //                 ("current_hb_power".into(), Some("kW".into())) => vec![10.509408477594043.into(), 0.0.into()],
 //             },
@@ -5380,6 +5489,8 @@ type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue
 //                         flow_rate_charging_l_per_min: None,
 //                         temp_flow_max: None,
 //                         hex_a: None,
+//                         schedule_unit: ScheduleUnit::StateOfCharge,
+//                         temp_flow_max: None,
 //                         hex_b: None,
 //                         hex_velocity_at_1_l_per_min: None,
 //                         hex_capillary_diameter_m: None,
@@ -5436,8 +5547,10 @@ type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue
 //                         schedule_unit: ScheduleUnit::StateOfCharge,
 //                         temp_flow_max: None,
 //                         hex_b: None,
-//                         hex_capillary_diameter_m: None,
 //                         hex_velocity_at_1_l_per_min: None,
+//                         hex_capillary_diameter_m: None,
+//                         heat_source_service: Option::<HeatSourceWetService>::None,
+//                         schedule_unit: Default::default(),
 //                     },
 //                 );
 //                 m.insert(
@@ -5452,8 +5565,10 @@ type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue
 //                         schedule_unit: ScheduleUnit::StateOfCharge,
 //                         temp_flow_max: None,
 //                         hex_b: None,
-//                         hex_capillary_diameter_m: None,
 //                         hex_velocity_at_1_l_per_min: None,
+//                         hex_capillary_diameter_m: None,
+//                         heat_source_service: Option::<HeatSourceWetService>::None,
+//                         schedule_unit: Default::default(),
 //                     },
 //                 );
 //                 m
@@ -5482,8 +5597,10 @@ type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue
 //                         schedule_unit: ScheduleUnit::StateOfCharge,
 //                         temp_flow_max: None,
 //                         hex_b: None,
-//                         hex_capillary_diameter_m: None,
 //                         hex_velocity_at_1_l_per_min: None,
+//                         hex_capillary_diameter_m: None,
+//                         heat_source_service: Option::<HeatSourceWetService>::None,
+//                         schedule_unit: Default::default(),
 //                     },
 //                 );
 //                 m
@@ -5525,8 +5642,10 @@ type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue
 //                         schedule_unit: ScheduleUnit::StateOfCharge,
 //                         temp_flow_max: None,
 //                         hex_b: None,
-//                         hex_capillary_diameter_m: None,
 //                         hex_velocity_at_1_l_per_min: None,
+//                         hex_capillary_diameter_m: None,
+//                         heat_source_service: Option::<HeatSourceWetService>::None,
+//                         schedule_unit: Default::default(),
 //                     },
 //                 );
 //                 m.insert(
@@ -5541,8 +5660,10 @@ type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue
 //                         schedule_unit: ScheduleUnit::StateOfCharge,
 //                         temp_flow_max: None,
 //                         hex_b: None,
-//                         hex_capillary_diameter_m: None,
 //                         hex_velocity_at_1_l_per_min: None,
+//                         hex_capillary_diameter_m: None,
+//                         heat_source_service: Option::<HeatSourceWetService>::None,
+//                         schedule_unit: Default::default(),
 //                     },
 //                 );
 //                 m
