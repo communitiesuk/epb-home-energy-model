@@ -714,7 +714,7 @@ pub struct HeatBatteryPcm {
     energy_supply_connections: IndexMap<ArcStr, EnergySupplyConnection>,
     use_heatsource_data: bool,
     heat_source_data: Option<IndexMap<ArcStr, HeatBatteryChargingSource>>,
-    charging_active: IndexMap<ArcStr, bool>,
+    charging_active: Arc<RwLock<IndexMap<ArcStr, bool>>>,
     charge_control: Option<Arc<ChargeControl>>,
     pwr_in: f64,
     max_rated_losses: f64,
@@ -796,13 +796,14 @@ impl HeatBatteryPcm {
         // in its active charging band (SOC below upper setpoint after being
         // triggered by SOC falling below lower setpoint)
         let charging_active = if let Some(heat_source_data) = &heat_source_data {
-            heat_source_data
+            let charging_active: IndexMap<ArcStr, bool> = heat_source_data
                 .iter()
                 .to_owned()
                 .map(|(k, _)| (k.clone(), false))
-                .collect()
+                .collect();
+            Arc::new(RwLock::new(charging_active))
         } else {
-            IndexMap::new()
+            Arc::new(RwLock::new(IndexMap::new()))
         };
 
         // Warn when temperature-based schedules exceed the heat source's flow
@@ -2142,9 +2143,9 @@ impl HeatBatteryPcm {
             // The order of processing heat sources shouldn't matter because
             // their schedules should not overlap.
             for (src, source) in self.heat_source_data.as_ref().unwrap_or(&IndexMap::new()) {
-                self.determine_heat_source_switch_on(source, simtime)?;
+                self.determine_heat_source_switch_on(src, source, simtime)?;
                 self.determine_heat_source_switch_off(source, simtime)?;
-                if *self.charging_active.get(src).unwrap_or(&false) {
+                if *self.charging_active.read().get(src).unwrap_or(&false) {
                     // Use the upper setpoint from the source's RangeTimeControl
                     // as the SOC target for charging. This limits both the
                     // temperature target in zone heat exchange and the energy
@@ -2413,19 +2414,48 @@ impl HeatBatteryPcm {
             bail!("Incomplete heat source configuration, missing required fields. heat_source_service, temp_flow_max, flow_rate_charging_l_per_min, hex_a, hex_b, hex_velocity_at_1_l_per_min, hex_capillary_diameter_m are required.")
         }
     }
+    /// Activate charging for a source when SOC falls to/below the lower setpoint.
+    ///
+    /// Follows StorageTank._determine_heat_source_switch_on pattern. The
+    /// RangeTimeControl provides (lower, upper) setpoints for hysteresis,
+    /// resolved to SOC via __resolve_setpoints (which converts temperature
+    /// setpoints to SOC when schedule_unit="temperature"):
+    /// - Both non-None → active period: start charging when SOC <= lower
+    /// - lower is None, upper non-None → transition period: don't start new
+    ///   charging (existing active state persists until switch-off)
+    /// - Both None → off period: don't start charging
+    ///
+    /// Args:
+    ///     source_name: Key into __charging_active for this source.
+    ///     source: HeatBatteryChargingSource with control and config.
     fn determine_heat_source_switch_on(
         &self,
+        source_name: &str,
         source: &HeatBatteryChargingSource,
         simtime: &SimulationTimeIteration,
-    ) -> anyhow::Result<bool> {
-        unimplemented!("determine_heat_source_switch_on not implemented")
+    ) -> anyhow::Result<()> {
+        let (setpnt_lower, setpnt_upper) = self.resolve_setpoints(source, simtime)?;
+        if setpnt_upper.is_some() {
+            let soc = self.calc_state_of_charge(self.zone_temp_c_dist_initial.read().clone())?;
+            if let Some(setpnt_lower) = setpnt_lower {
+                if soc <= setpnt_lower || relative_eq!(soc, setpnt_lower, epsilon = 1e-10) {
+                    // Active period: start charging when SOC <= lower
+                    self.charging_active
+                        .write()
+                        .insert(source_name.into(), true);
+                    return Ok(());
+                }
+            }
+        }
+        // Off period — control is entirely off, don't start charging
+        Ok(())
     }
     fn determine_heat_source_switch_off(
         &self,
         source: &HeatBatteryChargingSource,
         simtime: &SimulationTimeIteration,
-    ) -> anyhow::Result<bool> {
-        unimplemented!("determine_heat_source_switch_off not implemented")
+    ) -> anyhow::Result<()> {
+        unimplemented!("determine_heat_source_switch_off is not yet implemented")
     }
 
     /// Estimate the return temperature from a single heat exchange pass.
