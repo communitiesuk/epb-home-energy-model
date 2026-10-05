@@ -910,6 +910,7 @@ impl Boiler {
         let maximum_part_load_eff = match fuel_code {
             FuelType::MainsGas => 1.08,
             FuelType::LpgBulk | FuelType::LpgBottled | FuelType::LpgCondition11F => 1.06,
+            FuelType::HeatingOil => 1.04,
             _ => bail!("could not calculate maximum_part_load_eff for fuel_code {fuel_code:?}"),
         };
 
