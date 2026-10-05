@@ -175,7 +175,7 @@ impl HeatSourceControl {
 }
 
 /// An object to model a time-only control with on/off (not modulating) operation
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct OnOffTimeControl {
     /// list of boolean values where true means "on" (one entry per hour)
     schedule: Vec<Option<bool>>,

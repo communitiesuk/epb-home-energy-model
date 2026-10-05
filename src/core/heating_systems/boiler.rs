@@ -17,13 +17,14 @@ use crate::input::{
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use approx::{abs_diff_eq, relative_eq};
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use fsum::FSum;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
+use std::cmp::PartialEq;
 use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -1320,25 +1321,17 @@ impl Boiler {
     /// Calculate boiler fuel demand for all services (excl. auxiliary),
     /// and request this from relevant EnergySupplyConnection
     fn fuel_demand(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
-        // pre-calc max time available outside the loop
-        // (Get max time available from all space heating services to use
-        // as overall time available for all space heating services. Note
-        // that for this assumption to be valid, the space heating
-        // services must be called consecutively, with no services of
-        // another type called in between.)
-        let max_time_available = self
-            .service_results
-            .read()
-            .iter()
-            .filter_map(|x| (x.service_type == ServiceType::Space).then_some(x.time_available))
-            .max_by(|a, b| a.total_cmp(b));
-
         for service_data in self.service_results.read().iter() {
             let service_name = service_data.service_name.as_str();
             let service_type = service_data.service_type;
+            let temp_flow = service_data.temp_flow;
             let temp_return_feed = service_data.temp_return_feed;
             let energy_output_provided = service_data.energy_output_provided;
-            let temp_flow = service_data.temp_flow;
+
+            let combi_boiler_config = match service_type {
+                ServiceType::WaterCombi => &service_data.combi_boiler_config,
+                _ => &None,
+            };
 
             // Aggregate space heating services
             // TODO (from Python) This is only necessary because the model cannot handle an
@@ -1351,10 +1344,27 @@ impl Boiler {
             let (combined_energy_output_required, time_available) = if service_type
                 == ServiceType::Space
             {
+                let combined_energy_output_required =
+                    self.sum_space_heating_service_results_energy_output_provided();
+
+                // Get max time available from all space heating services to use
+                // as overall time available for all space heating services. Note
+                // that for this assumption to be valid, the space heating
+                // services must be called consecutively, with no services of
+                // another type called in between.
+                let time_available = self
+                    .service_results
+                    .read()
+                    .iter()
+                    .filter_map(|x| {
+                        (x.service_type == ServiceType::Space).then_some(x.time_available)
+                    })
+                    .max_by(|a, b| a.total_cmp(b));
+
                 (
-                    self.sum_space_heating_service_results_energy_output_required(),
-                    max_time_available.expect("max_time_available was expected to be some value as there is at least one space service"),
-                )
+                        combined_energy_output_required,
+                        time_available.expect("time_available was expected to be some value as there is at least one space service"),
+                    )
             } else {
                 (
                     service_data.energy_output_required,
@@ -1371,7 +1381,70 @@ impl Boiler {
                     time_available,
                     simtime,
                 )?;
-                energy_output_provided / blr_eff_final
+
+                // if combi keep-hot is on and powered by electricity then
+                // combi losses should be added to a separate energy supply.
+                // if the keep-hot is powered by boiler fuel *and* electricity then
+                // we first check if the combi boiler is firing during this
+                // time step. combi loss is added to boiler fuel on
+                // time steps where the boiler is firing, and electricity
+                // on time steps where the boiler is not firing.
+                let keep_hot_electric_loss: Option<f64> = if service_type == ServiceType::WaterCombi
+                {
+                    match &combi_boiler_config {
+                        Some(CombiBoilerConfig::KeepHot {
+                            combi_loss,
+                            keep_hot_on: true,
+                            keep_hot_fuel,
+                            ..
+                        }) => {
+                            let is_electric = match keep_hot_fuel {
+                                CombiKeepHotFuel::Electricity => true,
+                                CombiKeepHotFuel::Mixed => {
+                                    // Check that the energy output provided for space and water
+                                    // heating (not including combi loss) is greater than zero.
+                                    // Note, this is not the same as a general fuel demand check
+                                    // as this could include such things as pilot lights, etc.
+                                    let total_from_services_firing = self
+                                        .service_results
+                                        .read()
+                                        .iter()
+                                        .map(|x| x.energy_output_provided)
+                                        .sum::<f64>()
+                                        - combi_loss;
+
+                                    total_from_services_firing <= 0.0
+                                }
+                                _ => false,
+                            };
+
+                            is_electric.then_some(*combi_loss)
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+
+                match keep_hot_electric_loss {
+                    Some(combi_loss) => {
+                        // combi losses already include efficiency adjustments so we do not
+                        // want to apply that again here
+                        let energy_output_provided_no_combi_loss =
+                            energy_output_provided - combi_loss;
+                        let fuel_demand_no_combi_loss =
+                            energy_output_provided_no_combi_loss / blr_eff_final;
+
+                        // add combi loss to electricity supply connection
+                        // fuel demand excludes combi loss
+                        self.energy_supply_conn_keephot
+                            .as_ref()
+                            .ok_or_else(|| anyhow!("keep hot energy supply connection is not set"))?
+                            .demand_energy(combi_loss, simtime.index)?;
+                        fuel_demand_no_combi_loss
+                    }
+                    None => energy_output_provided / blr_eff_final,
+                }
             } else {
                 0.0
             };
@@ -1490,7 +1563,7 @@ impl Boiler {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum CombiBoilerConfig {
     Instantaneous {
         combi_loss: f64,
@@ -1507,6 +1580,16 @@ pub(crate) enum CombiBoilerConfig {
         combi_storage_loss_in_test: bool,
         store_volume: f64,
     },
+}
+
+impl CombiBoilerConfig {
+    pub(crate) fn combi_loss(&self) -> f64 {
+        match self {
+            Self::Instantaneous { combi_loss }
+            | Self::KeepHot { combi_loss, .. }
+            | Self::Storage { combi_loss, .. } => *combi_loss,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
