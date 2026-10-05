@@ -5436,12 +5436,6 @@ impl InputForCalcHtcHlp for Input {
     }
 }
 
-#[expect(unused)]
-static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
-    let schema = serde_json::from_str(include_str!("../schemas/core-input.schema.json")).unwrap();
-    jsonschema::validator_for(&schema).unwrap()
-});
-
 #[cfg(test)]
 mod tests {
     use super::*;
