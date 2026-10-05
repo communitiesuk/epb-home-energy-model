@@ -881,7 +881,10 @@ impl Boiler {
                 Ok(MAX_GROSS_EFFICIENCY_NON_CONDENSING_PART_LOAD_LPG)
             }
             FuelType::HeatingOil => Ok(MAX_GROSS_EFFICIENCY_NON_CONDENSING_PART_LOAD_OIL),
-            _ => bail!("Unexpected fuel code {fuel_code:?} encountered for non condensing boiler"),
+            _ => bail!(
+                "Unexpected fuel code {fuel_code:?} encountered for calculating part load \
+                        efficiency of non condensing boiler"
+            ),
         }
     }
 
@@ -893,7 +896,10 @@ impl Boiler {
                 Ok(MAX_GROSS_EFFICIENCY_NON_CONDENSING_FULL_LOAD_LPG)
             }
             FuelType::HeatingOil => Ok(MAX_GROSS_EFFICIENCY_NON_CONDENSING_FULL_LOAD_OIL),
-            _ => bail!("Unexpected fuel code {fuel_code:?} encountered for non condensing boiler"),
+            _ => bail!(
+                "Unexpected fuel code {fuel_code:?} encountered for calculating full load \
+                        efficiency of non condensing boiler"
+            ),
         }
     }
 
