@@ -2214,7 +2214,7 @@ impl HeatBatteryPcm {
                             // boundary detection
                             self.pipework.calculate_primary_pipework_losses(
                                 0.0,
-                                *temp_flow_max,
+                                Some(source.temp_flow_max),
                                 Some(true),
                                 1.,
                             )?;
@@ -2319,7 +2319,7 @@ impl HeatBatteryPcm {
                 )?;
                 self.pipework.calculate_primary_pipework_losses(
                     0.0,
-                    source.temp_flow_max,
+                    Some(source.temp_flow_max),
                     Some(true),
                     1.,
                 )?;
@@ -2337,8 +2337,12 @@ impl HeatBatteryPcm {
             if relative_eq!(energy_max, 0.0, epsilon = 1e-10) {
                 // Heat source has no capacity — call demand_energy(0) for reporting
                 heat_source_service.demand_energy(0., temp_flow, temp_return, simtime)?;
-                self.pipework
-                    .calculate_primary_pipework_losses(0., temp_flow, Some(true), 1.)?;
+                self.pipework.calculate_primary_pipework_losses(
+                    0.,
+                    Some(temp_flow),
+                    Some(true),
+                    1.,
+                )?;
                 return Ok((0., self.zone_temp_c_dist_initial.read().clone()));
             } else if energy_max < 0. {
                 bail!(
@@ -2356,7 +2360,7 @@ impl HeatBatteryPcm {
                 let (pipework_losses_kwh, primary_gains_w) =
                     self.pipework.calculate_primary_pipework_losses(
                         energy_demand_total,
-                        temp_flow,
+                        Some(temp_flow),
                         Some(true),
                         simtime.timestep,
                     )?;

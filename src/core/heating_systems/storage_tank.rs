@@ -6,7 +6,7 @@ use crate::core::controls::time_control::{Control, ControlBehaviour, RangeTimeCo
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::primary_pipework_losses_mixin::PrimaryPipeworkLossesMixin;
 use crate::core::material_properties::{MaterialProperties, WATER};
-use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
+use crate::core::pipework::Pipework;
 use crate::core::units::{Orientation360, MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
 #[cfg(test)]
 use crate::core::water_heat_demand::dhw_demand::tests::HotWaterSourceMockKind;
@@ -114,10 +114,8 @@ pub struct StorageTank {
     rho: f64, // volumic mass in kg/litre
     temp_n: Arc<RwLock<Vec<f64>>>,
     input_energy_adj_prev_timestep: AtomicF64,
-    primary_pipework: Option<Vec<Pipework>>,
     primary_pipework_losses_kwh: AtomicF64,
     storage_losses_kwh: AtomicF64,
-    temp_surrounding_prev_heating_event: Vec<AtomicF64>,
     flag_first_water_heating_event: AtomicBool,
     heat_source_data: IndexMap<ArcStr, PositionedHeatSource>, // heat sources, sorted by heater position
     heating_active: IndexMap<ArcStr, AtomicBool>,
@@ -132,6 +130,7 @@ pub struct StorageTank {
     total_volume_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
     ambient_temperature: f64,
     detailed_results: Option<Arc<RwLock<Vec<Vec<StringOrNumber>>>>>,
+    pipework: PrimaryPipeworkLossesMixin,
 }
 
 impl StorageTank {
@@ -202,36 +201,29 @@ impl StorageTank {
 
         let input_energy_adj_prev_timestep = 0.;
 
-        let (primary_pipework_lst, temp_surrounding_prev_heating_event) =
-            if let Some(primary_pipework_lst) = primary_pipework_lst {
-                let mut primary_pipework = Vec::with_capacity(primary_pipework_lst.len());
-                let mut temp_surrounding_prev_heating_event =
-                    Vec::with_capacity(primary_pipework_lst.len());
+        let mut pipework_lst: Vec<Pipework> = Vec::new();
 
-                for pipework_data in primary_pipework_lst {
-                    let new_pipework: Pipework = pipework_data
-                        .to_owned()
-                        .try_into()
-                        .map_err(anyhow::Error::msg)?;
+        if let Some(primary_pipework_lst) = primary_pipework_lst {
+            for pipework_data in primary_pipework_lst {
+                let new_pipework: Pipework = pipework_data
+                    .to_owned()
+                    .try_into()
+                    .map_err(anyhow::Error::msg)?;
 
-                    // Initialize surrounding temperature for this pipe based on its location
-                    let surrounding_temp = StorageTank::temperature_surrounding_primary_pipework(
-                        external_conditions.clone(),
-                        temp_internal_air_fn.clone(),
-                        &new_pipework,
-                        simulation_time_iteration,
-                    );
+                pipework_lst.push(new_pipework);
+            }
+        };
 
-                    primary_pipework.push(new_pipework);
-                    temp_surrounding_prev_heating_event.push(AtomicF64::from(surrounding_temp));
-                }
+        let temp_external_air_fn = external_conditions
+            .clone()
+            .air_temp(&simulation_time_iteration);
+        let pipework = PrimaryPipeworkLossesMixin::new(
+            pipework_lst,
+            Arc::new(move || temp_external_air_fn),
+            temp_internal_air_fn.clone(),
+        );
 
-                (Some(primary_pipework), temp_surrounding_prev_heating_event)
-            } else {
-                (None, Default::default())
-            };
-
-        // With pre-heatd storage tanks, there could be the situation of tanks without heat sources
+        // With pre-heated storage tanks, there could be the situation of tanks without heat sources
         // They could just get warmed up with WWHRS water.
         let mut heat_source_data = heat_sources.clone();
 
@@ -266,10 +258,8 @@ impl StorageTank {
             rho,
             temp_n,
             input_energy_adj_prev_timestep: input_energy_adj_prev_timestep.into(),
-            primary_pipework: primary_pipework_lst,
             primary_pipework_losses_kwh: primary_pipework_losses_kwh.into(),
             storage_losses_kwh: storage_losses_kwh.into(),
-            temp_surrounding_prev_heating_event,
             flag_first_water_heating_event: true.into(),
             heat_source_data,
             heating_active,
@@ -284,6 +274,7 @@ impl StorageTank {
             total_volume_drawoff: Default::default(),
             ambient_temperature,
             detailed_results: detailed_output.then_some(Default::default()),
+            pipework,
         })
     }
 
@@ -860,11 +851,12 @@ impl StorageTank {
                         heat_source,
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(_))
                     ) {
-                        let (primary_pipework_losses_kwh, _) = self
-                            .calculate_primary_pipework_losses(
+                        let (primary_pipework_losses_kwh, _) =
+                            self.pipework.calculate_primary_pipework_losses(
                                 energy_potential,
                                 temp_flow.into(),
-                                simulation_time,
+                                Some(false),
+                                simulation_time.timestep,
                             )?;
                         energy_potential -= primary_pipework_losses_kwh;
                     }
@@ -1113,11 +1105,12 @@ impl StorageTank {
                 .lock()
                 .demand_energy(input_energy_adj, simulation_time_iteration.index)),
             HeatSource::Wet(ref wet_heat_source) => {
-                let (primary_pipework_losses_kwh, primary_gains) = self
-                    .calculate_primary_pipework_losses(
+                let (primary_pipework_losses_kwh, primary_gains) =
+                    self.pipework.calculate_primary_pipework_losses(
                         input_energy_adj,
                         temp_flow,
-                        simulation_time_iteration,
+                        None,
+                        simulation_time_iteration.timestep,
                     )?;
                 let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
 
@@ -1236,6 +1229,7 @@ impl StorageTank {
         let temp_external_air_fn =
             Arc::new(move || external_conditions.air_temp(&simulation_time_iteration));
 
+        // TODO 1.0.0a9 migration - use self.pipework?
         PrimaryPipeworkLossesMixin::temp_surrounding_pipework(
             pipework_data,
             temp_external_air_fn,
@@ -1690,117 +1684,6 @@ impl StorageTank {
             + primary_gains_timestep
     }
 
-    fn calculate_primary_pipework_losses(
-        &self,
-        input_energy_adj: f64,
-        temp_flow: Option<f64>,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
-        let mut primary_pipework_losses_kwh: f64 = Default::default();
-        let mut primary_gains_w = Default::default();
-        if let Some(primary_pipework) = self.primary_pipework.as_ref() {
-            // start of heating event
-            if input_energy_adj > 0.
-                && relative_eq!(
-                    self.input_energy_adj_prev_timestep.load(Ordering::SeqCst),
-                    0.,
-                    epsilon = 1e-10,
-                    max_relative = 1e-9
-                )
-            {
-                for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
-                    let outside_temperature = StorageTank::temperature_surrounding_primary_pipework(
-                        self.external_conditions.clone(),
-                        self.temp_internal_air_fn.clone(),
-                        pipework_data,
-                        simulation_time_iteration,
-                    );
-                    let cool_down_loss =
-                        pipework_data.calculate_cool_down_loss(temp_flow.ok_or_else(|| anyhow!("temp_flow is required to have a value when calculating cool down loss for primary pipework in storage tank module"))?, outside_temperature);
-
-                    primary_pipework_losses_kwh += cool_down_loss;
-
-                    // Add losses between events as temperature surrounding pipework changes.
-                    if !self.flag_first_water_heating_event.load(Ordering::SeqCst) {
-                        let between_events_loss = pipework_data.calculate_cool_down_loss(
-                            self.temp_surrounding_prev_heating_event[pipe_idx]
-                                .load(Ordering::SeqCst),
-                            outside_temperature,
-                        );
-                        primary_pipework_losses_kwh += between_events_loss;
-                        // Check if pipework location is internal
-                        let location = pipework_data.location();
-                        if matches!(location, PipeworkLocation::Internal) {
-                            primary_gains_w += between_events_loss * WATTS_PER_KILOWATT as f64
-                                / simulation_time_iteration.timestep;
-                        }
-                    }
-                }
-            }
-
-            // during heating event
-            if input_energy_adj > 0. {
-                for pipework_data in primary_pipework {
-                    // Primary losses for the timestep calculated from temperature difference
-
-                    let outside_temperature = StorageTank::temperature_surrounding_primary_pipework(
-                        self.external_conditions.clone(),
-                        self.temp_internal_air_fn.clone(),
-                        pipework_data,
-                        simulation_time_iteration,
-                    );
-                    let primary_pipework_losses_w = pipework_data
-                        .calculate_steady_state_heat_loss(temp_flow.ok_or_else(|| anyhow!("temp_flow is required to have a value when calculating steady state heat loss for primary pipework in storage tank module"))?, outside_temperature);
-
-                    // Check if pipework location is internal
-                    let location = pipework_data.location();
-                    if matches!(location, PipeworkLocation::Internal) {
-                        primary_gains_w += primary_pipework_losses_w
-                    }
-
-                    primary_pipework_losses_kwh += primary_pipework_losses_w
-                        * self.simulation_timestep
-                        / WATTS_PER_KILOWATT as f64
-                }
-            }
-
-            // end of heating event
-            if relative_eq!(input_energy_adj, 0., epsilon = 1e-10, max_relative = 1e-9)
-                && self.input_energy_adj_prev_timestep.load(Ordering::SeqCst) > 0.
-            {
-                for (pipe_idx, pipework_data) in primary_pipework.iter().enumerate() {
-                    let location = pipework_data.location();
-                    let outside_temperature = StorageTank::temperature_surrounding_primary_pipework(
-                        self.external_conditions.clone(),
-                        self.temp_internal_air_fn.clone(),
-                        pipework_data,
-                        simulation_time_iteration,
-                    );
-                    self.temp_surrounding_prev_heating_event[pipe_idx]
-                        .store(outside_temperature, Ordering::SeqCst);
-                    if matches!(location, PipeworkLocation::Internal) {
-                        primary_gains_w += pipework_data.calculate_cool_down_loss(
-                            temp_flow.ok_or_else(|| anyhow!("tbc"))?,
-                            outside_temperature,
-                        ) * WATTS_PER_KILOWATT as f64
-                            / self.simulation_timestep
-                    }
-                }
-
-                if self.flag_first_water_heating_event.load(Ordering::SeqCst) {
-                    self.flag_first_water_heating_event
-                        .store(false, Ordering::SeqCst);
-                }
-            }
-        }
-
-        // keeping primary_pipework_losses_kWh for reporting as part of investigation of issue #31225: FDEV A082
-        self.primary_pipework_losses_kwh
-            .store(primary_pipework_losses_kwh, Ordering::SeqCst);
-
-        Ok((primary_pipework_losses_kwh, primary_gains_w))
-    }
-
     // TODO Python has get_temp_cold_water and draw_off_water defined here
     // which are called but currently unsure where from
 
@@ -2251,11 +2134,14 @@ impl SmartHotWaterTank {
                         heat_source,
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(_))
                     ) {
-                        let (primary_pipework_losses_kwh, _) =
-                            self.storage_tank.calculate_primary_pipework_losses(
+                        let (primary_pipework_losses_kwh, _) = self
+                            .storage_tank
+                            .pipework
+                            .calculate_primary_pipework_losses(
                                 energy_potential,
-                                temp_flow.into(),
-                                simulation_time,
+                                Some(temp_flow),
+                                Some(false),
+                                simulation_time.timestep,
                             )?;
                         energy_potential -= primary_pipework_losses_kwh;
                     }
@@ -3788,13 +3674,14 @@ mod tests {
     };
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::material_properties::WATER;
+    use crate::core::pipework::PipeworkLocation;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::corpus::HeatSource;
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::{FuelType, PipeworkContents};
+    use crate::input::{FuelType, PipeworkContents, WaterPipeworkLocation};
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
@@ -5142,45 +5029,114 @@ mod tests {
         assert_eq!(storage_tank1.internal_gains(), 50.);
     }
 
-    #[rstest]
-    fn test_primary_pipework_losses(
-        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+    #[fixture]
+    fn storage_tank_with_pipework(
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_storage_tank: SimulationTime,
-    ) {
-        let (mut storage_tank1, _) = storage_tank1;
-        let input_energy_adj = 0.0;
-        let setpnt_max = 55.0;
-        let primary_pipework_lst = vec![
-            Pipework::new(
-                PipeworkLocation::Internal,
-                0.024,
-                0.027,
-                2.0,
-                0.035,
-                0.04,
-                false,
-                PipeworkContents::Water,
-            )
-            .unwrap(),
-            Pipework::new(
-                PipeworkLocation::External,
-                0.025,
-                0.027,
-                0.0,
-                0.035,
-                0.038,
-                false,
-                PipeworkContents::Water,
-            )
-            .unwrap(),
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions: Arc<ExternalConditions>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+    ) -> StorageTank {
+        let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
+        let simtime = simulation_time_for_storage_tank.iter().current_iteration();
+
+        let control_min_schedule = vec![
+            Some(52.),
+            None,
+            None,
+            None,
+            Some(52.),
+            Some(52.),
+            Some(52.),
+            Some(52.),
+        ];
+        let control_max_schedule = vec![
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
         ];
 
-        storage_tank1.primary_pipework = Some(primary_pipework_lst);
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "immersion").unwrap();
+
+        let heat_source_imheater = heat_source(
+            simulation_time_for_storage_tank,
+            energy_supply_connection.clone(),
+            50.0,
+            0.1,
+            0.33,
+            control_min_schedule,
+            control_max_schedule,
+        );
+
+        let primary_pipework_lst = vec![
+            WaterPipework {
+                location: WaterPipeworkLocation::Internal,
+                internal_diameter_mm: 24.,
+                external_diameter_mm: 27.,
+                length: 2.,
+                insulation_thermal_conductivity: 0.035,
+                insulation_thickness_mm: 40.,
+                surface_reflectivity: false,
+                pipe_contents: PipeworkContents::Water,
+            },
+            WaterPipework {
+                location: WaterPipeworkLocation::External,
+                internal_diameter_mm: 25.,
+                external_diameter_mm: 27.,
+                length: 0.,
+                insulation_thermal_conductivity: 0.035,
+                insulation_thickness_mm: 38.,
+                surface_reflectivity: false,
+                pipe_contents: PipeworkContents::Water,
+            },
+        ];
+
+        let heat_sources = IndexMap::from([("imheater".into(), heat_source_imheater)]);
+
+        StorageTank::new(
+            150.0,
+            1.68,
+            55.0,
+            cold_feed,
+            simtime,
+            heat_sources,
+            temp_internal_air_fn.clone(),
+            external_conditions.clone(),
+            false,
+            Some(4),
+            Some(&primary_pipework_lst),
+            *WATER,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    fn test_primary_pipework_losses(
+        storage_tank_with_pipework: StorageTank,
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let input_energy_adj = 0.0;
+        let setpnt_max = 55.0;
 
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
-                storage_tank1
-                    .calculate_primary_pipework_losses(input_energy_adj, setpnt_max.into(), t_it)
+                storage_tank_with_pipework
+                    .pipework
+                    .calculate_primary_pipework_losses(
+                        input_energy_adj,
+                        setpnt_max.into(),
+                        None,
+                        t_it.timestep
+                    )
                     .unwrap(),
                 [
                     (0.0, 0.0),
@@ -5198,12 +5154,28 @@ mod tests {
         // With value for input_energy_adj
         let input_energy_adj = 3.;
 
-        for t_it in simulation_time_for_storage_tank.iter() {
+        // First timestep triggers Phase 1 (cool-down) + Phase 2 (steady-state);
+        // subsequent timesteps are Phase 2 only because update_tracking records
+        // the non-zero energy_input within the mixin.
+        let expected_first = (0.04746228058715814, 10.657894331822993);
+        let expected_steady = (0.010657894331822992, 10.657894331822993);
+
+        for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
-                storage_tank1
-                    .calculate_primary_pipework_losses(input_energy_adj, setpnt_max.into(), t_it)
+                storage_tank_with_pipework
+                    .pipework
+                    .calculate_primary_pipework_losses(
+                        input_energy_adj,
+                        setpnt_max.into(),
+                        None,
+                        t_it.timestep
+                    )
                     .unwrap(),
-                (0.04746228058715814, 10.657894331822993),
+                if t_idx == 0 {
+                    expected_first
+                } else {
+                    expected_steady
+                },
             );
         }
     }

@@ -121,11 +121,11 @@ impl PrimaryPipeworkLossesMixin {
     ///         this twice per timestep — exploratory then definitive).
     ///
     /// Returns:
-    ///     Tuple of (pipework_losses_kWh, primary_gains_W).
+    ///     Tuple of (pipework_losses_kwh, primary_gains_w).
     pub(crate) fn calculate_primary_pipework_losses(
         &self,
         energy_input: f64,
-        temp_flow: f64,
+        temp_flow: Option<f64>,
         update_tracking: Option<bool>,
         timestep: f64,
     ) -> anyhow::Result<(f64, f64)> {
@@ -151,7 +151,12 @@ impl PrimaryPipeworkLossesMixin {
                     self.temp_external_air_fn.clone(),
                     self.temp_internal_air_fn.clone(),
                 );
-                let cool_down_loss = pipework.calculate_cool_down_loss(temp_flow, temp_surrounding);
+                let cool_down_loss = pipework.calculate_cool_down_loss(
+                    temp_flow.ok_or_else(|| {
+                        anyhow!("temp_flow required when calling calculate_cool_down_loss")
+                    })?,
+                    temp_surrounding,
+                );
                 pipework_losses_kwh += cool_down_loss;
 
                 // Between-event losses: pipe cooled from previous event's
@@ -180,8 +185,12 @@ impl PrimaryPipeworkLossesMixin {
                     self.temp_external_air_fn.clone(),
                     self.temp_internal_air_fn.clone(),
                 );
-                let steady_state_loss_w =
-                    pipework.calculate_steady_state_heat_loss(temp_flow, temp_surrounding);
+                let steady_state_loss_w = pipework.calculate_steady_state_heat_loss(
+                    temp_flow.ok_or_else(|| {
+                        anyhow!("temp_flow required when calling calculate_steady_state_heat_loss")
+                    })?,
+                    temp_surrounding,
+                );
                 if matches!(pipework.location(), PipeworkLocation::Internal) {
                     primary_gains_w += steady_state_loss_w;
                 }
@@ -202,9 +211,12 @@ impl PrimaryPipeworkLossesMixin {
                 self.temp_surrounding_prev_heating_event
                     .get(pipe_idx).ok_or_else(|| anyhow!("Index ({pipe_idx}) out of bounds for temp_surrounding_prev_heating_event"))?.store(temp_surrounding, Ordering::SeqCst);
                 if matches!(pipework.location(), PipeworkLocation::Internal) {
-                    primary_gains_w += pipework
-                        .calculate_cool_down_loss(temp_flow, temp_surrounding)
-                        * WATTS_PER_KILOWATT as f64
+                    primary_gains_w += pipework.calculate_cool_down_loss(
+                        temp_flow.ok_or_else(|| {
+                            anyhow!("temp_flow required when calling calculate_cool_down_loss")
+                        })?,
+                        temp_surrounding,
+                    ) * WATTS_PER_KILOWATT as f64
                         / timestep;
                 }
             }
@@ -292,7 +304,7 @@ mod tests {
 
         for _ in simtime.iter() {
             (losses, gains) = mixin
-                .calculate_primary_pipework_losses(5., 55., Some(true), simtime.step)
+                .calculate_primary_pipework_losses(5., Some(55.), Some(true), simtime.step)
                 .unwrap();
         }
 
@@ -310,7 +322,7 @@ mod tests {
 
         for _ in simtime.iter() {
             (losses, gains) = mixin
-                .calculate_primary_pipework_losses(0., 55., Some(true), simtime.step)
+                .calculate_primary_pipework_losses(0., Some(55.), Some(true), simtime.step)
                 .unwrap();
         }
 
@@ -331,7 +343,7 @@ mod tests {
         for _ in simtime.iter() {
             results.push(
                 mixin
-                    .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+                    .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
                     .unwrap(),
             );
         }
@@ -355,7 +367,7 @@ mod tests {
         for _ in simtime.iter() {
             results.push(
                 mixin
-                    .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+                    .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
                     .unwrap(),
             );
         }
@@ -376,7 +388,7 @@ mod tests {
         for _ in simtime.iter() {
             results.push(
                 mixin
-                    .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+                    .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
                     .unwrap(),
             );
         }
@@ -398,20 +410,20 @@ mod tests {
 
         // Timestep 0: heating active
         let mut results = vec![mixin
-            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
             .unwrap()];
 
         // Timestep 1: heating ends → Phase 3
         results.push(
             mixin
-                .calculate_primary_pipework_losses(0., 55., Some(true), simtime.step)
+                .calculate_primary_pipework_losses(0., Some(55.), Some(true), simtime.step)
                 .unwrap(),
         );
 
         // Timestep 2: still off
         results.push(
             mixin
-                .calculate_primary_pipework_losses(0., 55., Some(true), simtime.step)
+                .calculate_primary_pipework_losses(0., Some(55.), Some(true), simtime.step)
                 .unwrap(),
         );
 
@@ -438,12 +450,12 @@ mod tests {
 
         // Timestep 0: first heating event starts
         let (losses_first_start, _) = mixin
-            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
             .unwrap();
 
         // Timestep 1: first heating event ends (Phase 3 records surrounding=20)
         mixin
-            .calculate_primary_pipework_losses(0., 55., Some(true), simtime.step)
+            .calculate_primary_pipework_losses(0., Some(55.), Some(true), simtime.step)
             .unwrap();
 
         // Change surrounding temp so between-event cool-down is non-zero
@@ -452,7 +464,7 @@ mod tests {
 
         // Timestep 2: second heating event starts → should include between-event loss
         let (losses_second_start, _) = mixin
-            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
             .unwrap();
 
         // First start: warm_up(20→55) + steady_state_kWh(55→20), no between-event
@@ -473,12 +485,12 @@ mod tests {
 
         // Heat on
         mixin
-            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
             .unwrap();
 
         // Heat off (end of first event, records surrounding=18)
         mixin
-            .calculate_primary_pipework_losses(0., 55., Some(true), simtime.step)
+            .calculate_primary_pipework_losses(0., Some(55.), Some(true), simtime.step)
             .unwrap();
 
         // Surrounding rises to 22°C between events
@@ -487,7 +499,7 @@ mod tests {
 
         // Heat on again — Phase 1 between-event + Phase 2 steady-state
         let (_, gains) = mixin
-            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
             .unwrap();
 
         // Total gains = between_event(18→22) * W/kW / timestep + ss(55→22)
@@ -513,12 +525,12 @@ mod tests {
 
         // Timestep 0: heating active
         mixin
-            .calculate_primary_pipework_losses(3., 55., Some(true), simtime.step)
+            .calculate_primary_pipework_losses(3., Some(55.), Some(true), simtime.step)
             .unwrap();
 
         // Timestep 1: tiny energy (effectively zero) → Phase 3 should fire
         let (_, gains) = mixin
-            .calculate_primary_pipework_losses(1e-11, 55., Some(true), simtime.step)
+            .calculate_primary_pipework_losses(1e-11, Some(55.), Some(true), simtime.step)
             .unwrap();
 
         // Phase 3 cool-down gains + Phase 2 steady-state gains:
@@ -544,7 +556,7 @@ mod tests {
         for _ in simtime.iter() {
             results.push(
                 mixin
-                    .calculate_primary_pipework_losses(3., 55., None, simtime.step)
+                    .calculate_primary_pipework_losses(3., Some(55.), None, simtime.step)
                     .unwrap(),
             );
         }
