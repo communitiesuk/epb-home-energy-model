@@ -2746,9 +2746,6 @@ impl HeatBatteryPcm {
             self.capillary_diameter_m,
         );
 
-        let flow_rate_kg_per_s =
-            (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
-
         let mut energy_delivered_hb = 0.;
         // inlet_temp_c assignment moved down in comparison with Python, as we have to deal with None case
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
@@ -2787,36 +2784,33 @@ impl HeatBatteryPcm {
         let mut time_step_s = 1.;
         let mut time_running_current_service = 0.;
 
-        let mut energy_charged = 0.;
+        let mut energy_charged_electric_service = 0.;
 
         let mut outlet_temp_c = None;
 
         while time_step_s > 0. {
             // Processing HB zones
-            let (
-                outlet_temp_c_new,
-                energy_transf_delivered,
-                energy_charged_during_battery_time_step,
-            ) = self.process_heat_battery_zones(
-                inlet_temp_c,
-                &mut zone_temp_c_dist,
-                flow_rate_kg_per_s,
-                time_step_s,
-                reynold_number_at_1_l_per_min,
-                Some(pwr_in),
-                None,
-                0.0,  // Todo - temp values as part of 1.0.0a9
-                None, // Todo - temp values as part of 1.0.0a9
-                None, // Todo - temp values as part of 1.0.0a9
-            )?;
+            let (outlet_temp_c_new, energy_transf_delivered, energy_charged_electric_substep) =
+                self.process_heat_battery_zones(
+                    inlet_temp_c,
+                    &mut zone_temp_c_dist,
+                    time_step_s,
+                    reynold_number_at_1_l_per_min,
+                    self.flow_rate_l_per_min,
+                    Some(pwr_in),
+                    None,
+                    0.0,
+                    None,
+                    None,
+                )?;
 
             outlet_temp_c = Some(outlet_temp_c_new);
 
             if update_heat_source_state {
                 self.energy_charged_electric
-                    .fetch_add(energy_charged_during_battery_time_step, Ordering::SeqCst);
+                    .fetch_add(energy_charged_electric_substep, Ordering::SeqCst);
             }
-            energy_charged += energy_charged_during_battery_time_step;
+            energy_charged_electric_service += energy_charged_electric_substep;
 
             time_running_current_service += time_step_s;
 
@@ -2831,10 +2825,12 @@ impl HeatBatteryPcm {
                 self.capillary_diameter_m,
             );
 
-            let energy_transf_delivered_sum = FSum::with_all(&energy_transf_delivered).value();
+            let energy_delivered_kj = FSum::with_all(&energy_transf_delivered).value();
 
-            //  We assume the heat battery controls would stop the pump if the HB is absorbing energy from the emitters loop instead of contributing to it
-            if energy_transf_delivered_sum < 0. {
+            //  A negligibly-negative result is floating-point noise, not real
+            //  absorption, so it is treated as zero to keep the stop decision
+            //  identical across platforms.
+            if energy_delivered_kj < 0. {
                 // Break prevents negative energy output by stopping before the current sub-timestep's result
                 // is added to energy_delivered_HB. This occurs when the heat battery zones have cooled to the
                 // point where they would absorb heat from the inlet flow rather than deliver it. By breaking
@@ -2846,7 +2842,7 @@ impl HeatBatteryPcm {
 
             // Equivalent of using Python's math.fsum instead of sum() for better numerical accuracy with floating point arithmetic
             let energy_delivered_ts: f64 =
-                energy_transf_delivered_sum / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                energy_delivered_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
             energy_delivered_hb += energy_delivered_ts; // demand_per_time_step_kwh
                                                         // balance = total_energy - energy_charged
             let max_instant_power = energy_delivered_ts / time_step_s;
@@ -2893,7 +2889,15 @@ impl HeatBatteryPcm {
                         Ordering::SeqCst,
                     );
                 }
-                HeatingServiceType::DomesticHotWaterDirect => (), // Direct DHW doesn't use circulation pump
+                HeatingServiceType::DomesticHotWaterDirect => {
+                    // Direct DHW doesn't use circulation pump but track time
+                    // separately — it uses a different heat exchanger and can
+                    // happen simultaneously with hydronic charging.
+                    self.time_running_direct_current_timestep.fetch_add(
+                        time_running_current_service / SECONDS_PER_HOUR as f64,
+                        Ordering::SeqCst,
+                    );
+                } // Direct DHW doesn't use circulation pump
                 _ => bail!("Unexpected service type: {service_type}"),
             }
 
@@ -2914,7 +2918,8 @@ impl HeatBatteryPcm {
                 energy_delivered_hb: energy_delivered_hb * self.n_units as f64,
                 energy_delivered_backup: 0.,
                 energy_delivered_total: energy_delivered_hb * self.n_units as f64 + 0.,
-                energy_charged_during_service: energy_charged * self.n_units as f64,
+                energy_charged_during_service: energy_charged_electric_service
+                    * self.n_units as f64,
                 hb_zone_temperatures: zone_temp_c_dist,
                 current_hb_power: ResultParamValue::Number(current_hb_power * self.n_units as f64),
             });
