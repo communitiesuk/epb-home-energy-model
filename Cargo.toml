@@ -42,7 +42,7 @@ serde-enum-str = "0.5.0"
 serde_json = { version = "1.0.150", features = ["preserve_order"] }
 serde_repr = "0.1.20"
 serde_with = { version = "3.21.0", features = ["json", "macros"] }
-serde_valid = "2.0.1"
+serde_valid = "3.1.2"
 smartstring = { version = "1.0.1", features = ["arbitrary", "serde"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
