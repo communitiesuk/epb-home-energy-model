@@ -5455,7 +5455,7 @@ fn hot_water_source_from_input(
                 continue;
             };
             if let Some(diverter) = diverter_types.get(energy_supply_name) {
-                if diverter.heat_source.as_str() == &heat_source_name {
+                if diverter.heat_source.as_str() == heat_source_name {
                     let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();
 
                     let positioned_heat_source = &heat_sources.get(&heat_source_name);

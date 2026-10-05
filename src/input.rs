@@ -9,7 +9,6 @@ use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use jsonschema::Validator;
 use monostate::MustBe;
 use serde::{Deserialize, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
@@ -22,7 +21,6 @@ use smartstring::alias::String;
 use std::fmt::{Display, Formatter};
 use std::ops::Index;
 use std::sync::Arc;
-use std::sync::LazyLock;
 
 const HOURS_IN_YEAR: usize = 8760;
 
@@ -5444,6 +5442,7 @@ mod tests {
     use serde::de::DeserializeOwned;
     use std::fs::File;
     use std::io::BufReader;
+    use std::sync::LazyLock;
     use walkdir::{DirEntry, WalkDir};
 
     #[fixture]
