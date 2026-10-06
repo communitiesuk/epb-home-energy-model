@@ -659,11 +659,6 @@ impl ChargeControl {
 
 // this covers the ChargeControlSetPointAdapter logic from Python
 impl ControlBehaviour for ChargeControl {
-    // In Python this is inherited from the BoolTimeControl class
-    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        self.charge_time_control.is_on(simulation_time_iteration)
-    }
-
     fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
@@ -681,6 +676,11 @@ impl ControlBehaviour for ChargeControl {
                     .unwrap(),
             )
         }
+    }
+
+    // In Python this is inherited from the BoolTimeControl class
+    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
+        self.charge_time_control.is_on(simulation_time_iteration)
     }
 }
 
