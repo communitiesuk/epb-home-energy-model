@@ -47,7 +47,7 @@ const STORAGE_TANK_F_STO_M: f64 = 0.75;
 const STORAGE_TANK_TEMP_AMB: f64 = 16.;
 
 // TODO (from Python) - link to zone temp at timestep possibly and location of tank (in or out of heated space)
-const DEFAULT_AMBIENT_TEMPERATURE: f64 = 16.;
+pub(crate) const DEFAULT_AMBIENT_TEMPERATURE: f64 = 16.;
 
 // Primary pipework gains for the timestep
 const DEFAULT_PIPEWORK_PRIMARY_GAINS_FOR_TIMESTEP: f64 = 0.;

@@ -11,7 +11,9 @@ use crate::core::heating_systems::heat_battery_drycore::HeatBatteryDryCoreServic
 use crate::core::heating_systems::heat_network::HeatNetworkServiceWaterStorage;
 use crate::core::heating_systems::heat_pump::HeatPumpServiceWater;
 use crate::core::heating_systems::primary_pipework_losses_mixin::PrimaryPipeworkLossesMixin;
-use crate::core::heating_systems::storage_tank::THERMAL_CONSTANTS_F_STO_M;
+use crate::core::heating_systems::storage_tank::{
+    DEFAULT_AMBIENT_TEMPERATURE, THERMAL_CONSTANTS_F_STO_M,
+};
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
 use crate::core::units::{
@@ -2563,7 +2565,7 @@ impl HeatBatteryPcm {
         // Processing HB zones. The surrounding air temperature is assumed fixed,
         // consistent with the hot water cylinder standby-loss calculation.
         let (_, energy_loss, _) = self.process_heat_battery_zones(
-            22.,
+            DEFAULT_AMBIENT_TEMPERATURE,
             &mut zone_temp_c_dist,
             time_step_s,
             time_step_s,
@@ -2745,7 +2747,9 @@ impl HeatBatteryPcm {
             // heat transfer the core can drive from the return-feed inlet. A negligibly-
             // negative result is floating-point noise and is treated as zero so the stop
             // decision is identical across platforms.
-            if energy_delivered_kj < 0. || relative_eq!(energy_delivered_kj, 0.0, epsilon = 1e-12) {
+            if energy_delivered_kj < 0.
+                && !relative_eq!(energy_delivered_kj, 0.0, epsilon = NEGLIGIBLE_ENERGY_KJ)
+            {
                 break;
             }
 
@@ -3566,7 +3570,7 @@ mod tests {
     }
 
     fn temp_air_int_callback() -> TempInternalAirFn {
-        Arc::new(|| 0.)
+        Arc::new(|| 22.)
     }
     fn create_heat_battery(
         control: Arc<ChargeControl>,
@@ -3697,32 +3701,51 @@ mod tests {
 
     fn create_service_water_regular_with_controls(
         battery_control: Arc<ChargeControl>,
-        simulation_time_iterator: SimulationTimeIterator,
+        force_is_on: Option<bool>,
     ) -> HeatBatteryPcmServiceWaterRegular {
         let heat_battery = create_heat_battery(battery_control, None);
+        let simulation_time = SimulationTime::new(0., 8., 1.);
+        let simulation_time_iterator = simulation_time.iter();
 
+        let shedule_lower_defaults = vec![
+            Some(52.),
+            None,
+            None,
+            None,
+            Some(52.),
+            Some(52.),
+            Some(52.),
+            Some(52.),
+        ];
+        let shedule_upper_defaults = vec![
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+        ];
+        let schedule_lower_always_on = vec![Some(52.); 8];
+        let schedule_upper_always_on = vec![Some(55.); 8];
+        let schedule_always_off = vec![None; 8];
+
+        let (schedule_lower, schedule_upper) = match force_is_on {
+            Some(true) => (
+                schedule_lower_always_on.clone(),
+                schedule_upper_always_on.clone(),
+            ),
+            Some(false) => (schedule_always_off.clone(), schedule_always_off.clone()),
+            None => (
+                shedule_lower_defaults.clone(),
+                shedule_upper_defaults.clone(),
+            ),
+        };
         let range_time_control = Arc::new(
             RangeTimeControl::new(
-                ScheduleOrControl::Schedule(vec![
-                    Some(52.),
-                    None,
-                    None,
-                    None,
-                    Some(52.),
-                    Some(52.),
-                    Some(52.),
-                    Some(52.),
-                ]),
-                ScheduleOrControl::Schedule(vec![
-                    Some(55.),
-                    Some(55.),
-                    Some(55.),
-                    Some(55.),
-                    Some(55.),
-                    Some(55.),
-                    Some(55.),
-                    Some(55.),
-                ]),
+                ScheduleOrControl::Schedule(schedule_lower.clone()),
+                ScheduleOrControl::Schedule(schedule_upper.clone()),
                 simulation_time_iterator,
                 0,
                 1.,
@@ -3746,25 +3769,20 @@ mod tests {
     fn test_service_with_no_service_control_is_always_on_for_water_regular(
         simulation_time_iteration: SimulationTimeIteration,
         battery_control_off: Arc<ChargeControl>,
-        simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let heat_battery_service = create_service_water_regular_with_controls(
-            battery_control_off,
-            simulation_time_iterator,
-        );
+        let heat_battery_service =
+            create_service_water_regular_with_controls(battery_control_off, Some(true));
 
         assert!(heat_battery_service.is_on(simulation_time_iteration));
     }
 
+    // this test accounts for python test test_setpnt_with_range_time_control as we only deal with RTC in Rust
     #[rstest]
     fn test_setpnt_for_water_regular(
         simulation_time_iterator: SimulationTimeIterator,
         battery_control_off: Arc<ChargeControl>,
     ) {
-        let service = create_service_water_regular_with_controls(
-            battery_control_off,
-            simulation_time_iterator.clone(),
-        );
+        let service = create_service_water_regular_with_controls(battery_control_off, None);
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             let (control_min, control_max) = service.setpnt(t_it);
@@ -3837,19 +3855,16 @@ mod tests {
 
     // In Python this is test_energy_output_max_service_on
     #[rstest]
-    #[ignore = "as part of 1.0.0a9 migration"]
+    #[ignore = "as part of 1.0.0a9 migration, this test seems to not make sense any more as there is no value assertion in python"]
 
     fn test_energy_output_max_when_service_control_on_for_water_regular(
         simulation_time_iteration: SimulationTimeIteration,
-        simulation_time_iterator: SimulationTimeIterator,
         battery_control_on: Arc<ChargeControl>,
     ) {
-        let heat_battery_service = create_service_water_regular_with_controls(
-            battery_control_on,
-            simulation_time_iterator,
-        );
+        let heat_battery_service =
+            create_service_water_regular_with_controls(battery_control_on, Some(true));
 
-        let temp_flow = 50.0;
+        let temp_flow = 55.0;
         let temp_return = 40.0;
         let result = heat_battery_service
             // added false to match signature not yet ported for 1.0.0a9
@@ -3860,17 +3875,13 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "as part of 1.0.0a9 migration"]
     fn test_energy_output_max_service_off_for_water_regular(
         // In Python this is test_energy_output_max_service_off
         simulation_time_iteration: SimulationTimeIteration,
-        simulation_time_iterator: SimulationTimeIterator,
         battery_control_off: Arc<ChargeControl>,
     ) {
-        let heat_battery_service = create_service_water_regular_with_controls(
-            battery_control_off,
-            simulation_time_iterator,
-        );
+        let heat_battery_service =
+            create_service_water_regular_with_controls(battery_control_off, Some(false));
 
         let temp_flow = 50.0;
         let temp_return = 40.0;
@@ -3879,7 +3890,7 @@ mod tests {
             .energy_output_max(temp_flow, temp_return, simulation_time_iteration, false)
             .unwrap();
 
-        assert_relative_eq!(result, 28882.5139822234, epsilon = 1e-7);
+        assert_relative_eq!(result, 0., epsilon = 1e-7);
     }
 
     #[rstest]
@@ -4066,30 +4077,29 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_demand_energy(simulation_time: SimulationTime, battery_control_on: Arc<ChargeControl>) {
         let heat_battery = create_heat_battery(battery_control_on, None);
 
         let expected_zone_temp_c_dist = [
             vec![
-                79.71165314809511,
-                79.85379912318692,
-                79.92587158056449,
-                79.96241457173316,
-                79.98094301175232,
-                79.99033751063061,
-                79.99510081553287,
-                79.99751596017077,
+                79.95404545080883,
+                79.95765589934315,
+                79.96098269068034,
+                79.96404811052943,
+                79.96687269370845,
+                79.96947536170435,
+                79.97187354942538,
+                79.97408332199502,
             ], // First timestep
             vec![
-                78.48854379731785,
-                78.76743300209962,
-                78.90934369283018,
-                78.9815529739174,
-                79.01829519996613,
-                79.03699050188325,
-                79.04650298972031,
-                79.05134304583224,
+                78.9034689243783,
+                78.91053402045067,
+                78.91704436349183,
+                78.92304351282773,
+                78.92857160749791,
+                78.93366563481702,
+                78.9383596778487,
+                78.94268514344776,
             ], // Second timestep
         ];
 
@@ -4107,7 +4117,7 @@ mod tests {
                     Some(40.),
                     Some(52.5),
                     true,
-                    Some(1.), // the Python here erroneously uses too many arguments to demand_energy so this is to fake the equivalent in the Rust, for example the Python True is understood as the number 1
+                    Some(1.), // Python passes True positionally as time_start.
                     None,
                     t_it,
                 )
@@ -4115,7 +4125,7 @@ mod tests {
 
             assert_relative_eq!(
                 demand_energy_actual,
-                [0.007714304589733515, 0.007530418147738887][t_idx]
+                [0.0037217831482159714, 0.0036250231710519888][t_idx]
             );
 
             let service_names_in_results = get_service_names_from_results(heat_battery.clone());
