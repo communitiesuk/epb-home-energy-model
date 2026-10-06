@@ -558,10 +558,6 @@ impl HeatBatteryPcmServiceSpace {
             simtime,
         )
     }
-
-    pub(crate) fn timestep_record_for_service() {
-        todo!("timestep_record_for_service is not yet implemented, unsure if this is helpful")
-    }
 }
 
 const DEFAULT_N_LAYERS: usize = 8; // Number of calculation layers in heat battery
@@ -2381,7 +2377,7 @@ impl HeatBatteryPcm {
                         energy_demand_total,
                         Some(temp_flow),
                         Some(true),
-                        &simtime,
+                        simtime,
                     )?;
 
                 // Energy available for the battery is what the heat source can
@@ -3131,10 +3127,13 @@ impl HeatBatteryPcm {
         // post-simulation charging-energy apportionment.
         for result in self.service_results.read().iter() {
             let service_name = &result.service_name;
-            self.energy_delivered_by_service
+            if let Some(energy) = self
+                .energy_delivered_by_service
                 .write()
                 .get_mut(service_name)
-                .map(|f| *f += result.energy_delivered_total);
+            {
+                *energy += result.energy_delivered_total;
+            }
         }
         self.total_time_running_current_timestep
             .store(Default::default(), Ordering::SeqCst);
@@ -3398,2658 +3397,2650 @@ pub(crate) struct OutputDetailedResultsNotEnabledError;
 
 type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue>>;
 
-//#[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::core::common::{MockWaterSupply, VaryingTempWaterSupply};
-//     use crate::core::controls::time_control::{
-//         ChargeControl, Control, ScheduleOrControl, SetpointTimeControl,
-//     };
-//     use crate::core::energy_supply::energy_supply::{
-//         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
-//     };
-//     use crate::core::water_heat_demand::misc::WaterEventResultType;
-//     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-//     use crate::input::{
-//         ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,
-//         HeatSourceWetDetails, PcmBatteryChargingConfiguration,
-//     };
-//     use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
-//     use approx::assert_relative_eq;
-//     use indexmap::indexmap;
-//     use itertools::Itertools;
-//     use parking_lot::RwLock;
-//     use rstest::*;
-//     use serde_json::json;
-//     use std::sync::atomic::Ordering;
-//     use std::sync::Arc;
-
-//     const SERVICE_NAME: &str = "TestService";
-
-//     #[fixture]
-//     fn simulation_time() -> SimulationTime {
-//         SimulationTime::new(0., 2., 1.)
-//     }
-
-//     #[fixture]
-//     fn simulation_time_iterator(simulation_time: SimulationTime) -> SimulationTimeIterator {
-//         simulation_time.iter()
-//     }
-
-//     #[fixture]
-//     fn simulation_time_iteration(
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) -> SimulationTimeIteration {
-//         simulation_time_iterator.current_iteration()
-//     }
-
-//     #[fixture]
-//     fn external_sensor() -> ExternalSensor {
-//         serde_json::from_value(json!({
-//             "correlation": [
-//                 {"temperature": 0.0, "max_charge": 1.0},
-//                 {"temperature": 10.0, "max_charge": 0.9},
-//                 {"temperature": 18.0, "max_charge": 0.0}
-//             ]
-//         }))
-//         .unwrap()
-//     }
-
-//     #[fixture]
-//     fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
-//         ExternalConditions::new(
-//             &simulation_time.iter(),
-//             vec![0.0, 2.5],
-//             vec![3.7, 3.8],
-//             vec![200., 220.].into_iter().map(Into::into).collect(),
-//             vec![333., 610.],
-//             vec![420., 750.],
-//             vec![0.2; 8760],
-//             51.42,
-//             -0.75,
-//             0,
-//             0,
-//             Some(0),
-//             1.,
-//             Some(1),
-//             Some(DaylightSavingsConfig::NotApplicable),
-//             false,
-//             false,
-//             // following shading segments are corrected from upstream Python, which uses angles measured from wrong origin
-//             serde_json::from_value(json!(
-//                 [
-//                     {"start360": 0, "end360": 45},
-//                     {"start360": 45, "end360": 90},
-//                 ]
-//             ))
-//             .unwrap(),
-//         )
-//     }
-
-//     #[fixture]
-//     fn battery_control_off(
-//         external_conditions: ExternalConditions,
-//         external_sensor: ExternalSensor,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) -> Control {
-//         create_control_with_value(
-//             false,
-//             external_conditions,
-//             external_sensor,
-//             simulation_time_iterator,
-//         )
-//     }
-
-//     #[fixture]
-//     fn battery_control_on(
-//         external_conditions: ExternalConditions,
-//         external_sensor: ExternalSensor,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) -> Control {
-//         create_control_with_value(
-//             true,
-//             external_conditions,
-//             external_sensor,
-//             simulation_time_iterator,
-//         )
-//     }
-
-//     fn create_control_with_value(
-//         boolean: bool,
-//         external_conditions: ExternalConditions,
-//         external_sensor: ExternalSensor,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) -> Control {
-//         Control::Charge(
-//             ChargeControl::new(
-//                 ControlLogicType::Manual,
-//                 ScheduleOrControl::Schedule(vec![boolean, boolean]),
-//                 &simulation_time_iterator,
-//                 0,
-//                 1.,
-//                 vec![Some(0.2)],
-//                 None,
-//                 None,
-//                 Some(external_conditions.into()),
-//                 Some(external_sensor),
-//                 None,
-//             )
-//             .unwrap()
-//             .into(),
-//         )
-//     }
-
-//     fn create_heat_battery(
-//         simulation_time_iterator: &SimulationTimeIterator,
-//         control: Control,
-//         output_detailed_results: Option<bool>,
-//     ) -> Arc<RwLock<HeatBatteryPcm>> {
-//         let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
-//             battery: HeatBatteryInput::Pcm {
-//                 energy_supply: "mains elec".into(),
-//                 electricity_circ_pump: 0.06,
-//                 electricity_standby: 0.0244,
-//                 max_rated_losses: 0.1,
-//                 number_of_units: 1,
-//                 charging_config: PcmBatteryChargingConfiguration::ChargeControl {
-//                     control_charge: "hb_charge_control".into(),
-//                     rated_charge_power: 20.0,
-//                 },
-//                 simultaneous_charging_and_discharging: false,
-//                 heat_storage_kj_per_k_above_phase_transition: 381.5,
-//                 heat_storage_kj_per_k_below_phase_transition: 305.2,
-//                 heat_storage_kj_per_k_during_phase_transition: 12317.,
-//                 phase_transition_temperature_upper: 59.,
-//                 phase_transition_temperature_lower: 57.,
-//                 max_temperature: 80.,
-//                 temp_init: 80.,
-//                 velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
-//                 inlet_diameter_mm: 6.5,
-//                 a: 174.33952,
-//                 b: -931.565,
-//                 flow_rate_l_per_min: 10.,
-//             },
-//         };
-
-//         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
-//             EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time_iterator.total_steps())
-//                 .build(),
-//         ));
-
-//         let energy_supply_connection: EnergySupplyConnection =
-//             EnergySupply::connection(energy_supply.clone(), "WaterHeating").unwrap();
-
-//         let heat_battery = Arc::new(RwLock::new(
-//             todo!("as part of 1.0.0a9 migration"), // HeatBatteryPcm::new(
-//                                                    //     heat_battery_details,
-//                                                    //     control,
-//                                                    //     energy_supply,
-//                                                    //     energy_supply_connection,
-//                                                    //     simulation_time_iterator.step_in_hours(),
-//                                                    //     Some(8),
-//                                                    //     Some(20.),
-//                                                    //     None,
-//                                                    //     None,
-//                                                    //     output_detailed_results,
-//                                                    // )
-//         ));
-
-//         HeatBatteryPcm::create_service_connection(heat_battery.clone(), SERVICE_NAME).unwrap();
-
-//         heat_battery
-//     }
-
-//     fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
-//         Control::SetpointTime(
-//             SetpointTimeControl::new(schedule, 0, 1., Default::default(), Default::default(), 1.)
-//                 .into(),
-//         )
-//     }
-
-//     fn get_service_names_from_results(heat_battery: Arc<RwLock<HeatBatteryPcm>>) -> Vec<ArcStr> {
-//         heat_battery
-//             .read()
-//             .service_results
-//             .read()
-//             .iter()
-//             .map(|result| result.service_name.clone())
-//             .collect_vec()
-//     }
-
-//     // in Python this test is called test_service_is_on_with_control
-//     #[rstest]
-//     fn test_service_is_on_when_service_control_is_on(
-//         simulation_time_iteration: SimulationTimeIteration,
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         // Test when controlvent is provided and returns True
-//         let service_control_on: Control =
-//             create_setpoint_time_control(vec![Some(21.0), Some(21.0)]);
-
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-
-//         let heat_battery_service = HeatBatteryPcmServiceSpace::new(
-//             heat_battery.clone(),
-//             SERVICE_NAME.into(),
-//             service_control_on,
-//         );
-
-//         assert!(heat_battery_service.is_on(simulation_time_iteration));
-
-//         let service_control_off: Control = create_setpoint_time_control(vec![None, None]);
-
-//         let heat_battery_service: HeatBatteryPcmServiceSpace =
-//             HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), service_control_off);
-
-//         assert!(!heat_battery_service.is_on(simulation_time_iteration));
-//     }
-
-//     #[fixture]
-//     fn heat_battery_service_water_direct(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) -> HeatBatteryPcmServiceWaterDirect {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
-//         let service_name = "WaterHeating".into();
-
-//         HeatBatteryPcmServiceWaterDirect::new(heat_battery, service_name, 60., mock_cold_feed)
-//     }
-
-//     #[rstest]
-//     fn test_get_cold_water_source_for_water_direct(
-//         heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
-//     ) {
-//         let expected = &WaterSupply::Mock(MockWaterSupply::new(10.));
-
-//         let actual = heat_battery_service_water_direct.get_cold_water_source();
-
-//         if let WaterSupply::Mock(mock) = actual {
-//             assert_eq!(mock, &MockWaterSupply::new(10.));
-//         } else {
-//             panic!("Expected a MockWaterSupply");
-//         }
-//     }
-
-//     #[rstest]
-//     fn test_get_temp_hot_water_for_water_direct(
-//         mut heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
-//         simulation_time_iteration: SimulationTimeIteration,
-//     ) {
-//         heat_battery_service_water_direct.cold_feed = WaterSupply::Mock(MockWaterSupply::new(25.));
-
-//         let expected = vec![(60., 20.)];
-//         let actual = heat_battery_service_water_direct
-//             .get_temp_hot_water(20., None, simulation_time_iteration)
-//             .unwrap();
-
-//         assert_eq!(actual, expected)
-//     }
-
-//     // skipping following python tests due to mocking:
-//     // test_demand_hot_water, test_demand_hot_water_fallback_path
-
-//     fn create_service_water_regular_with_controls(
-//         battery_control: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) -> HeatBatteryPcmServiceWaterRegular {
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control, None);
-
-//         let range_time_control = Arc::new(
-//             RangeTimeControl::new(
-//                 ScheduleOrControl::Schedule(vec![
-//                     Some(52.),
-//                     None,
-//                     None,
-//                     None,
-//                     Some(52.),
-//                     Some(52.),
-//                     Some(52.),
-//                     Some(52.),
-//                 ]),
-//                 ScheduleOrControl::Schedule(vec![
-//                     Some(55.),
-//                     Some(55.),
-//                     Some(55.),
-//                     Some(55.),
-//                     Some(55.),
-//                     Some(55.),
-//                     Some(55.),
-//                     Some(55.),
-//                 ]),
-//                 simulation_time_iterator,
-//                 0,
-//                 1.,
-//                 None,
-//             )
-//             .unwrap(),
-//         );
-
-//         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
-
-//         HeatBatteryPcmServiceWaterRegular::new(
-//             heat_battery,
-//             SERVICE_NAME.into(),
-//             mock_cold_feed,
-//             range_time_control,
-//         )
-//     }
-
-//     // test_service_is_on_without_control
-//     #[rstest]
-//     fn test_service_with_no_service_control_is_always_on_for_water_regular(
-//         simulation_time_iteration: SimulationTimeIteration,
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let heat_battery_service = create_service_water_regular_with_controls(
-//             battery_control_off,
-//             simulation_time_iterator,
-//         );
-
-//         assert!(heat_battery_service.is_on(simulation_time_iteration));
-//     }
-
-//     #[rstest]
-//     fn test_setpnt_for_water_regular(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         simulation_time: SimulationTime,
-//         battery_control_off: Control,
-//     ) {
-//         let service = create_service_water_regular_with_controls(
-//             battery_control_off,
-//             simulation_time_iterator,
-//         );
-
-//         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-//             let (control_min, control_max) = service.setpnt(t_it);
-
-//             assert_eq!(
-//                 control_min,
-//                 [
-//                     Some(52.),
-//                     None,
-//                     None,
-//                     None,
-//                     Some(52.),
-//                     Some(52.),
-//                     Some(52.),
-//                     Some(52.)
-//                 ][t_idx]
-//             );
-//             assert_eq!(control_max, Some(55.));
-//         }
-//     }
-
-//     // In Python this is test_demand_energy_service_off
-//     #[rstest]
-//     fn test_demand_energy_returns_zero_when_service_control_is_off_for_water_regular(
-//         simulation_time_iteration: SimulationTimeIteration,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_on: Control,
-//     ) {
-//         let energy_demand = 10.;
-//         let temp_flow = 55.;
-//         let temp_return = 40.;
-
-//         let range_time_control = Arc::new(
-//             RangeTimeControl::new(
-//                 ScheduleOrControl::Schedule(vec![None]),
-//                 ScheduleOrControl::Schedule(vec![None]),
-//                 simulation_time_iterator.clone(),
-//                 0,
-//                 1.,
-//                 None,
-//             )
-//             .unwrap(),
-//         );
-
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-//         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
-//         let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
-//             HeatBatteryPcmServiceWaterRegular::new(
-//                 heat_battery,
-//                 SERVICE_NAME.into(),
-//                 mock_cold_feed,
-//                 range_time_control,
-//             );
-
-//         let result = heat_battery_service
-//             .demand_energy(
-//                 energy_demand,
-//                 Some(temp_flow),
-//                 Some(temp_return),
-//                 None,
-//                 simulation_time_iteration,
-//                 false,
-//             )
-//             .unwrap();
-
-//         assert_eq!(result, 0.);
-//     }
-
-//     // skipped test_control_off_bypassed_by_ignore_standard_ctrl due to mocking and the minimal complexity of the change
-
-//     // In Python this is test_energy_output_max_service_on
-//     #[rstest]
-//     #[ignore = "as part of 1.0.0a9 migration"]
-
-//     fn test_energy_output_max_when_service_control_on_for_water_regular(
-//         simulation_time_iteration: SimulationTimeIteration,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_on: Control,
-//     ) {
-//         let heat_battery_service = create_service_water_regular_with_controls(
-//             battery_control_on,
-//             simulation_time_iterator,
-//         );
-
-//         let temp_flow = 50.0;
-//         let temp_return = 40.0;
-//         let result = heat_battery_service
-//             // added false to match signature not yet ported for 1.0.0a9
-//             .energy_output_max(temp_flow, temp_return, simulation_time_iteration, false)
-//             .unwrap();
-
-//         assert_relative_eq!(result, 72279.10023958197);
-//     }
-
-//     #[rstest]
-//     #[ignore = "as part of 1.0.0a9 migration"]
-//     fn test_energy_output_max_service_off_for_water_regular(
-//         // In Python this is test_energy_output_max_service_off
-//         simulation_time_iteration: SimulationTimeIteration,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_off: Control,
-//     ) {
-//         let heat_battery_service = create_service_water_regular_with_controls(
-//             battery_control_off,
-//             simulation_time_iterator,
-//         );
-
-//         let temp_flow = 50.0;
-//         let temp_return = 40.0;
-//         let result = heat_battery_service
-//             // added false to match signature not yet ported for 1.0.0a9
-//             .energy_output_max(temp_flow, temp_return, simulation_time_iteration, false)
-//             .unwrap();
-
-//         assert_relative_eq!(result, 28882.5139822234, epsilon = 1e-7);
-//     }
-
-//     #[rstest]
-//     fn test_temp_setpnt_for_space(
-//         simulation_time_iteration: SimulationTimeIteration,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_off: Control,
-//     ) {
-//         let first_scheduled_temp = Some(21.);
-//         let ctrl: Control = create_setpoint_time_control(vec![first_scheduled_temp]);
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let heat_battery_space =
-//             HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
-
-//         assert_eq!(
-//             heat_battery_space.temp_setpnt(simulation_time_iteration),
-//             first_scheduled_temp
-//         );
-//     }
-
-//     #[rstest]
-//     fn test_in_required_period_for_space(
-//         simulation_time_iteration: SimulationTimeIteration,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_off: Control,
-//     ) {
-//         let ctrl: Control = create_setpoint_time_control(vec![Some(21.)]);
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let heat_battery_space =
-//             HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
-
-//         assert_eq!(
-//             heat_battery_space.in_required_period(simulation_time_iteration),
-//             Some(true)
-//         );
-//     }
-
-//     #[rstest]
-//     fn test_demand_energy_service_off_for_space(
-//         simulation_time_iteration: SimulationTimeIteration,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_off: Control,
-//     ) {
-//         let energy_demand = 10.;
-//         let temp_return = 40.;
-//         let temp_flow = 1.;
-//         let time_start = 0.2;
-//         let ctrl: Control = create_setpoint_time_control(vec![None]);
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let heat_battery_space =
-//             HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
-//         let result = heat_battery_space
-//             .demand_energy(
-//                 energy_demand,
-//                 temp_flow,
-//                 temp_return,
-//                 Some(time_start),
-//                 None,
-//                 simulation_time_iteration,
-//             )
-//             .unwrap();
-//         assert_eq!(result, 0.);
-//     }
-
-//     // skipping python's test_energy_output_max_service_on due to mocking
-
-//     // in Python this test is called test_energy_output_max_service_off
-//     #[rstest]
-//     fn test_energy_output_max_service_off_for_space(
-//         battery_control_on: Control,
-//         simulation_time_iteration: SimulationTimeIteration,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let temp_output = 70.;
-//         let temp_return = 40.;
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-//         let service_control_off: Control = create_setpoint_time_control(vec![None]);
-
-//         let heat_battery_service: HeatBatteryPcmServiceSpace =
-//             HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), service_control_off);
-
-//         let result = heat_battery_service
-//             .energy_output_max(temp_output, temp_return, None, simulation_time_iteration)
-//             .unwrap();
-
-//         assert_relative_eq!(result, 0.);
-//     }
-
-//     #[rstest]
-//     fn test_create_service_connection(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_on: Control,
-//     ) {
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-//         let create_connection_result =
-//             HeatBatteryPcm::create_service_connection(heat_battery.clone(), "new service");
-//         assert!(create_connection_result.is_ok());
-//         assert!(heat_battery
-//             .read()
-//             .energy_supply_connections
-//             .contains_key("new service"));
-//         let create_connection_result =
-//             HeatBatteryPcm::create_service_connection(heat_battery, "new service");
-//         assert!(create_connection_result.is_err()) // second attempt to create a service connection with same name should error
-//     }
-
-//     #[rstest]
-//     fn test_create_service_hot_water_direct(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_on: Control,
-//     ) {
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-//         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
-//         let service = HeatBatteryPcm::create_service_hot_water_direct(
-//             heat_battery.clone(),
-//             "new_service",
-//             60.,
-//             mock_cold_feed,
-//         )
-//         .unwrap();
-
-//         let actual = service.get_cold_water_source();
-
-//         if let WaterSupply::Mock(mock) = actual {
-//             assert_eq!(mock, &MockWaterSupply::new(10.));
-//         } else {
-//             panic!("Expected a MockWaterSupply");
-//         }
-
-//         assert!(heat_battery
-//             .read()
-//             .energy_supply_connections
-//             .contains_key("new_service"));
-//     }
-
-//     #[rstest]
-//     fn test_create_service_space_heating(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         simulation_time_iteration: SimulationTimeIteration,
-//         battery_control_off: Control,
-//     ) {
-//         let control = create_setpoint_time_control(vec![Some(21.0)]);
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let service = HeatBatteryPcm::create_service_space_heating(
-//             heat_battery.clone(),
-//             "new_service",
-//             control,
-//         )
-//         .unwrap();
-
-//         assert!(service.is_on(simulation_time_iteration));
-//         assert!(heat_battery
-//             .read()
-//             .energy_supply_connections
-//             .contains_key("new_service"));
-//     }
-
-//     #[rstest]
-//     fn test_electric_charge(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_off: Control,
-//         battery_control_on: Control,
-//     ) {
-//         // electric charge should be 0 when battery control is off
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let simtime = simulation_time_iterator.current_iteration();
-//         assert_relative_eq!(heat_battery.read().electric_charge(simtime), 0.0);
-
-//         // electric charge should be calculated when battery control is on
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-//         assert_relative_eq!(heat_battery.read().electric_charge(simtime), 20.0);
-//     }
-
-//     #[rstest]
-//     fn test_first_call(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_on: Control,
-//         simulation_time: SimulationTime,
-//     ) {
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-//         for t_it in simulation_time.iter() {
-//             heat_battery.read().first_call();
-
-//             assert!(!heat_battery.read().flag_first_call.load(Ordering::SeqCst));
-
-//             heat_battery.read().timestep_end(t_it).unwrap();
-//         }
-//     }
-
-//     #[rstest]
-//     fn test_demand_energy(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         simulation_time: SimulationTime,
-//         battery_control_on: Control,
-//     ) {
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-
-//         let expected_zone_temp_c_dist = [
-//             vec![
-//                 79.71165314809511,
-//                 79.85379912318692,
-//                 79.92587158056449,
-//                 79.96241457173316,
-//                 79.98094301175232,
-//                 79.99033751063061,
-//                 79.99510081553287,
-//                 79.99751596017077,
-//             ], // First timestep
-//             vec![
-//                 78.48854379731785,
-//                 78.76743300209962,
-//                 78.90934369283018,
-//                 78.9815529739174,
-//                 79.01829519996613,
-//                 79.03699050188325,
-//                 79.04650298972031,
-//                 79.05134304583224,
-//             ], // Second timestep
-//         ];
-
-//         let service_name = "new_service";
-//         HeatBatteryPcm::create_service_connection(heat_battery.clone(), service_name).unwrap();
-
-//         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-//             let demand_energy_actual = heat_battery
-//                 .clone()
-//                 .read()
-//                 .demand_energy(
-//                     service_name,
-//                     HeatingServiceType::DomesticHotWaterRegular,
-//                     5.,
-//                     Some(40.),
-//                     Some(52.5),
-//                     true,
-//                     Some(1.), // the Python here erroneously uses too many arguments to demand_energy so this is to fake the equivalent in the Rust, for example the Python True is understood as the number 1
-//                     None,
-//                     t_it,
-//                 )
-//                 .unwrap();
-
-//             assert_relative_eq!(
-//                 demand_energy_actual,
-//                 [0.007714304589733515, 0.007530418147738887][t_idx]
-//             );
-
-//             let service_names_in_results = get_service_names_from_results(heat_battery.clone());
-
-//             assert!(service_names_in_results.contains(&service_name.into()));
-
-//             assert_eq!(heat_battery.read().charge_level, [0.0, 0.0][t_idx]);
-
-//             assert_relative_eq!(
-//                 heat_battery
-//                     .read()
-//                     .total_time_running_current_timestep
-//                     .load(Ordering::SeqCst),
-//                 [0.0002777777777777778, 0.0002777777777777778][t_idx]
-//             );
-
-//             assert_eq!(
-//                 heat_battery.read().zone_temp_c_dist_initial.read().clone(),
-//                 expected_zone_temp_c_dist[t_idx]
-//             );
-
-//             heat_battery.read().timestep_end(t_it).unwrap();
-//         }
-//     }
-
-//     fn create_heat_battery_pcm(
-//         external_sensor: ExternalSensor,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         external_conditions: ExternalConditions,
-//     ) -> Arc<RwLock<HeatBatteryPcm>> {
-//         let control = Control::Charge(
-//             ChargeControl::new(
-//                 ControlLogicType::Manual,
-//                 ScheduleOrControl::Schedule(vec![false]),
-//                 &simulation_time_iterator,
-//                 0,
-//                 1.,
-//                 vec![Some(0.2), Some(0.3)],
-//                 None,
-//                 None,
-//                 Some(external_conditions.into()),
-//                 Some(external_sensor),
-//                 None,
-//             )
-//             .unwrap()
-//             .into(),
-//         );
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, control, None);
-//         HeatBatteryPcm::create_service_connection(heat_battery.clone(), "new_service").unwrap();
-
-//         heat_battery
-//     }
-
-//     // skipping python's test_demand_energy_simultaneous_charging_and_discharging due to mocking
-
-//     #[rstest]
-//     fn test_demand_energy_simultaneous_no_temp_output(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let simtime = simulation_time_iterator.current_iteration();
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .demand_energy(
-//                     SERVICE_NAME,
-//                     HeatingServiceType::DomesticHotWaterRegular,
-//                     0.08,
-//                     Some(40.),
-//                     None,
-//                     true,
-//                     None,
-//                     None,
-//                     simtime
-//                 )
-//                 .unwrap(),
-//             0.08021138263537801
-//         );
-
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .demand_energy(
-//                     SERVICE_NAME,
-//                     HeatingServiceType::DomesticHotWaterRegular,
-//                     0.06,
-//                     Some(40.),
-//                     None,
-//                     true,
-//                     None,
-//                     None,
-//                     simtime
-//                 )
-//                 .unwrap(),
-//             0.06018673551977593
-//         );
-
-//         // Battery losses
-//         assert_eq!(heat_battery.read().get_battery_losses(), 0.);
-//     }
-
-//     #[rstest]
-//     fn test_demand_energy_other(
-//         external_sensor: ExternalSensor,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         external_conditions: ExternalConditions,
-//     ) {
-//         let heat_battery = create_heat_battery_pcm(
-//             external_sensor.clone(),
-//             simulation_time_iterator.clone(),
-//             external_conditions.clone(),
-//         );
-//         let simtime = simulation_time_iterator.current_iteration();
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .demand_energy(
-//                     "new_service",
-//                     HeatingServiceType::DomesticHotWaterRegular,
-//                     0.08,
-//                     Some(40.),
-//                     Some(40.),
-//                     true,
-//                     None,
-//                     None,
-//                     simtime
-//                 )
-//                 .unwrap(),
-//             0.08021138263537801
-//         );
-
-//         let heat_battery = create_heat_battery_pcm(
-//             external_sensor.clone(),
-//             simulation_time_iterator.clone(),
-//             external_conditions.clone(),
-//         );
-//         heat_battery.write().hb_time_step = 119.;
-
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .demand_energy(
-//                     "new_service",
-//                     HeatingServiceType::DomesticHotWaterRegular,
-//                     0.08,
-//                     Some(40.),
-//                     Some(40.),
-//                     true,
-//                     None,
-//                     None,
-//                     simtime
-//                 )
-//                 .unwrap(),
-//             0.08021138263537801
-//         );
-
-//         let heat_battery = create_heat_battery_pcm(
-//             external_sensor.clone(),
-//             simulation_time_iterator.clone(),
-//             external_conditions.clone(),
-//         );
-//         heat_battery.write().hb_time_step = 20.;
-
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .demand_energy(
-//                     "new_service",
-//                     HeatingServiceType::DomesticHotWaterRegular,
-//                     0.08,
-//                     Some(40.),
-//                     Some(80.),
-//                     true,
-//                     None,
-//                     None,
-//                     simtime
-//                 )
-//                 .unwrap(),
-//             0.08021138263537801
-//         );
-
-//         let heat_battery = create_heat_battery_pcm(
-//             external_sensor,
-//             simulation_time_iterator,
-//             external_conditions,
-//         );
-
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .demand_energy(
-//                     "new_service",
-//                     HeatingServiceType::DomesticHotWaterRegular,
-//                     0.08,
-//                     Some(40.),
-//                     Some(79.),
-//                     true,
-//                     None,
-//                     None,
-//                     simtime
-//                 )
-//                 .unwrap(),
-//             0.08021138263537801
-//         );
-//     }
-
-//     #[rstest]
-//     fn test_dhw_service_demand_hot_water(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         simulation_time_iteration: SimulationTimeIteration,
-//     ) {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
-//         let service = HeatBatteryPcm::create_service_hot_water_direct(
-//             heat_battery,
-//             "dhw_complex",
-//             65., // High setpoint
-//             mock_cold_feed,
-//         )
-//         .unwrap();
-
-//         let actual = service.get_cold_water_source();
-
-//         if let WaterSupply::Mock(mock) = actual {
-//             assert_eq!(mock, &MockWaterSupply::new(10.));
-//         } else {
-//             panic!("Expected a MockWaterSupply");
-//         }
-
-//         // Test with usage events
-//         let usage_events = vec![
-//             WaterEventResult {
-//                 event_result_type: WaterEventResultType::Other,
-//                 temperature_warm: 40.0,
-//                 volume_warm: 50.0,
-//                 volume_hot: 8.0,
-//                 event_duration: 0.0,
-//             },
-//             WaterEventResult {
-//                 event_result_type: WaterEventResultType::Other,
-//                 temperature_warm: 35.0,
-//                 volume_warm: 0.0,
-//                 volume_hot: 0.0,
-//                 event_duration: 0.0,
-//             },
-//         ];
-
-//         let energy = service
-//             .demand_hot_water(Some(usage_events), simulation_time_iteration)
-//             .unwrap();
-
-//         assert_eq!(energy, 0.5113777776161836);
-
-//         // Test with no usage events
-//         let energy_no_usage = service
-//             .demand_hot_water(None, simulation_time_iteration)
-//             .unwrap();
-
-//         assert_eq!(energy_no_usage, 0.);
-//     }
-
-//     // Skipping Python's test_calc_auxiliary_energy due to mocking (only assertion uses assert_called_once_with)
-//     // Skipping Python's test_calc_auxiliary_energy_space_heating due to mocking (only assertion uses assert_called_once_with)
-
-//     /// Check heat battery auxiliary energy includes standby power when no services are called
-//     #[rstest]
-//     fn test_calc_auxiliary_energy_no_services(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_on: Control,
-//     ) {
-//         // Don't create any services
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-
-//         let result = heat_battery
-//             .read()
-//             .calc_auxiliary_energy(1.0, 0.5, simulation_time_iterator.current_index())
-//             .unwrap();
-
-//         // Should only have standby power (no pump power since no services were called)
-//         let expected_energy_aux = heat_battery.read().power_standby * 0.5;
-
-//         assert_relative_eq!(result, expected_energy_aux);
-//     }
-
-//     /// Check that direct DHW service doesn't contribute to pump running time
-//     #[rstest]
-//     fn test_calc_auxiliary_energy_direct_dhw_no_pump_contribution(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_on: Control,
-//     ) {
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-//         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
-//         // Create only a direct hot water service
-//         HeatBatteryPcm::create_service_hot_water_direct(
-//             heat_battery.clone(),
-//             "dhw_direct",
-//             60.,
-//             mock_cold_feed,
-//         )
-//         .unwrap();
-
-//         // Simulate demand that sets total_time_running but should not affect pump time
-//         heat_battery
-//             .write()
-//             .total_time_running_current_timestep
-//             .store(0.5, Ordering::SeqCst);
-//         heat_battery
-//             .write()
-//             .pump_running_time_current_timestep
-//             .store(0., Ordering::SeqCst);
-
-//         let result = heat_battery
-//             .read()
-//             .calc_auxiliary_energy(1.0, 0.5, simulation_time_iterator.current_index())
-//             .unwrap();
-
-//         // Only standby power, no pump power since pump time is 0
-//         let expected_energy_aux = heat_battery.read().power_standby * 0.5;
-
-//         assert_relative_eq!(result, expected_energy_aux);
-//     }
-
-//     #[rstest]
-//     fn test_timestep_end(
-//         external_sensor: ExternalSensor,
-//         external_conditions: ExternalConditions,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         // not using the fixture here
-//         // because we need to set different charge_levels
-//         let battery_control_on: Control = Control::Charge(
-//             ChargeControl::new(
-//                 ControlLogicType::Manual,
-//                 ScheduleOrControl::Schedule(vec![true, true, true]),
-//                 &simulation_time_iterator,
-//                 0,
-//                 1.,
-//                 [1.0, 1.5].into_iter().map(Into::into).collect(),
-//                 None,
-//                 None,
-//                 Some(external_conditions.into()),
-//                 Some(external_sensor),
-//                 None,
-//             )
-//             .unwrap()
-//             .into(),
-//         );
-
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-//         let service_name = "new_timestep_end_service";
-//         HeatBatteryPcm::create_service_connection(heat_battery.clone(), service_name).unwrap();
-
-//         let simtime = simulation_time_iterator.current_iteration();
-//         heat_battery
-//             .read()
-//             .demand_energy(
-//                 service_name,
-//                 HeatingServiceType::DomesticHotWaterRegular,
-//                 5.0,
-//                 Some(40.),
-//                 Some(55.),
-//                 true,
-//                 None,
-//                 None,
-//                 simtime,
-//             )
-//             .unwrap();
-
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .total_time_running_current_timestep
-//                 .load(Ordering::SeqCst),
-//             0.25690463025906096
-//         );
-
-//         let service_names_in_results = get_service_names_from_results(heat_battery.clone());
-
-//         assert!(service_names_in_results.contains(&service_name.into()));
-
-//         heat_battery.read().timestep_end(simtime).unwrap();
-
-//         // Assertions to check if the internal state was updated correctly
-//         assert!(heat_battery.read().flag_first_call.load(Ordering::SeqCst)); // Python has double negative here
-
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .total_time_running_current_timestep
-//                 .load(Ordering::SeqCst),
-//             0.0
-//         );
-//         assert_eq!(heat_battery.read().service_results.read().len(), 0);
-//     }
-
-//     #[rstest]
-//     #[ignore = "Fix the energy_output_max call with the new signature for 1.0.0a9"]
-//     fn test_energy_output_max(
-//         external_conditions: ExternalConditions,
-//         external_sensor: ExternalSensor,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         simulation_time: SimulationTime,
-//     ) {
-//         // not using the fixture here
-//         // because we need to set different charge_levels
-//         let battery_control_on: Control = Control::Charge(
-//             ChargeControl::new(
-//                 ControlLogicType::Manual,
-//                 ScheduleOrControl::Schedule(vec![true, true, true]),
-//                 &simulation_time_iterator,
-//                 0,
-//                 1.,
-//                 [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
-//                 None,
-//                 None,
-//                 Some(external_conditions.clone().into()),
-//                 Some(external_sensor.clone()),
-//                 None,
-//             )
-//             .unwrap()
-//             .into(),
-//         );
-
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-
-//         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-//             assert_relative_eq!(
-//                 heat_battery
-//                     .read()
-//                     .energy_output_max(0., 0., None, t_it)
-//                     .unwrap(),
-//                 [108864.87597021714, 124118.95144251334][t_idx],
-//                 max_relative = 1e-7
-//             );
-
-//             heat_battery.read().timestep_end(t_it).unwrap();
-//         }
-
-//         let battery_control_on: Control = Control::Charge(
-//             ChargeControl::new(
-//                 ControlLogicType::Manual,
-//                 ScheduleOrControl::Schedule(vec![true, true, true]),
-//                 &simulation_time_iterator,
-//                 0,
-//                 1.,
-//                 [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
-//                 None,
-//                 None,
-//                 Some(external_conditions.into()),
-//                 Some(external_sensor),
-//                 None,
-//             )
-//             .unwrap()
-//             .into(),
-//         );
-//         let heat_battery = create_heat_battery(&simulation_time_iterator, battery_control_on, None);
-
-//         for t_it in simulation_time.iter() {
-//             // TODO ("Fix the energy_output_max call with the new signature for 1.0.0a9");
-//             // assert_relative_eq!(
-//             //     heat_battery
-//             //         .read()
-//             //         .energy_output_max(0. 90., 0., t_it)
-//             //         .unwrap(),
-//             //     [0., 72281.56558957469][t_idx]
-//             // );
-
-//             heat_battery.read().timestep_end(t_it).unwrap();
-//         }
-//     }
-
-//     #[rstest]
-//     fn test_get_zone_properties_losses(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         // Test that get_zone_properties returns the correct energy_transf with losses model
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let (energy_transf, _, _, _) = heat_battery.read().get_zone_properties(
-//             0,
-//             &HeatBatteryPcmOperationMode::Losses,
-//             &[42., 57., 58., 58., 59., 59., 60., 61.],
-//             40.,
-//             40.,
-//             5.,
-//             414.,
-//             0.16,
-//             20.,
-//         );
-
-//         assert_eq!(energy_transf, 0.625);
-//     }
-
-//     #[rstest]
-//     fn test_get_zone_properties_no_energy_transf(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         // Test that get_zone_properties returns energy_transf as 0 with losses model and higher zone_temp_c_start than inlet_temp_c
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let (energy_transf, _, _, _) = heat_battery.read().get_zone_properties(
-//             0,
-//             &HeatBatteryPcmOperationMode::Losses,
-//             &[42., 57., 58., 58., 59., 59., 60., 61.],
-//             45.,
-//             45.,
-//             5.,
-//             414.,
-//             0.16,
-//             20.,
-//         );
-
-//         assert_eq!(energy_transf, 0.);
-//     }
-
-//     // skipping python's test_get_zone_properties_invalid_mode as mode can't be invalid in rust
-
-//     #[rstest]
-//     fn test_calculate_zone_energy_required(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-
-//         let required = heat_battery.read().calculate_zone_energy_required(50., 80.);
-
-//         assert_relative_eq!(required, -4347.7375);
-
-//         let required = heat_battery.read().calculate_zone_energy_required(58., 80.);
-
-//         assert_relative_eq!(required, -2541.0625);
-
-//         let required = heat_battery.read().calculate_zone_energy_required(60., 80.);
-
-//         assert_relative_eq!(required, -953.75);
-
-//         let required = heat_battery
-//             .read()
-//             .calculate_zone_energy_required(58., 58.5);
-
-//         assert_relative_eq!(required, -769.8125);
-
-//         let required = heat_battery
-//             .read()
-//             .calculate_zone_energy_required(55., 58.5);
-
-//         assert_relative_eq!(required, -2385.7375);
-
-//         let required = heat_battery
-//             .read()
-//             .calculate_zone_energy_required(60., 58.5);
-
-//         assert_relative_eq!(required, 71.53125);
-
-//         let required = heat_battery.read().calculate_zone_energy_required(50., 55.);
-
-//         assert_relative_eq!(required, -190.75);
-
-//         let required = heat_battery.read().calculate_zone_energy_required(58., 55.);
-
-//         assert_relative_eq!(required, 4618.875);
-
-//         let required = heat_battery.read().calculate_zone_energy_required(60., 55.);
-
-//         assert_relative_eq!(required, 238.4375);
-//     }
-
-//     #[rstest]
-//     fn test_process_zone_simultaneous_charging(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-
-//         let (q_max_kj, energy_charged, energy_transf) = heat_battery
-//             .read()
-//             .process_zone_simultaneous_charging(58., 120., -2000., 1900., 0.);
-
-//         assert_relative_eq!(q_max_kj, 0.);
-//         assert_relative_eq!(energy_charged, 0.5555555555555556);
-//         assert_relative_eq!(energy_transf, -100.);
-
-//         let (q_max_kj, energy_charged, energy_transf) = heat_battery
-//             .read()
-//             .process_zone_simultaneous_charging(58., 120., -2000., -1900., 0.);
-
-//         assert_relative_eq!(q_max_kj, 0.);
-//         assert_relative_eq!(energy_charged, 0.5555555555555556);
-//         assert_relative_eq!(energy_transf, -3900.);
-
-//         let (q_max_kj, energy_charged, energy_transf) = heat_battery
-//             .read()
-//             .process_zone_simultaneous_charging(58., 120., -3000., -1900., 0.);
-
-//         assert_relative_eq!(q_max_kj, -451.4375);
-//         assert_relative_eq!(energy_charged, 0.7079340277777778);
-//         assert_relative_eq!(energy_transf, -4448.5625);
-//     }
-
-//     // skipping python's test_process_zone_simultaneous_charging_warning1 and
-//     // test_process_zone_simultaneous_charging_warning2 as we haven't incorporated these warnings
-
-//     #[rstest]
-//     #[case(55., 3000., -23.63695937090432)]
-//     #[case(58., 3000., 18.720183486238533)]
-//     #[case(60., 3000., 57.08244702443777)]
-//     #[case(55., 4000., -49.84927916120577)]
-//     #[case(58., 4000., -7.49213630406291)]
-//     #[case(60., 4000., 34.11500655307995)]
-//     #[case(60., 10., 59.79030144167759)]
-//     #[case(50., -4000., 72.70799475753604)]
-//     #[case(50., -3000., 58.77507509945603)]
-//     #[case(50., -100., 52.62123197903014)]
-//     #[case(58., -2000., 68.65399737876803)]
-//     #[case(58., -1000., 58.64950880896322)]
-//     #[case(60., -1000., 80.96985583224115)]
-//     fn test_calculate_new_zone_temperature(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//         #[case] zone_temp_c_start: f64,
-//         #[case] energy_transf: f64,
-//         #[case] expected: f64,
-//     ) {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let result = heat_battery
-//             .read()
-//             .calculate_new_zone_temperature(zone_temp_c_start, energy_transf);
-
-//         assert_relative_eq!(result, expected);
-//     }
-
-//     #[rstest]
-//     fn test_charge_battery_hydraulic(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let simtime = simulation_time_iterator.current_iteration();
-
-//         assert_relative_eq!(
-//             heat_battery
-//                 .write()
-//                 ._charge_battery_hydraulic(70., simtime)
-//                 .unwrap(),
-//             0.
-//         );
-//         assert_relative_eq!(
-//             heat_battery
-//                 .write()
-//                 ._charge_battery_hydraulic(80., simtime)
-//                 .unwrap(),
-//             -138.85748246864733,
-//             max_relative = 1e-7
-//         );
-//         assert_relative_eq!(
-//             heat_battery
-//                 .write()
-//                 ._charge_battery_hydraulic(90., simtime)
-//                 .unwrap(),
-//             -3814.99999900312,
-//             max_relative = 1e-7
-//         );
-//     }
-
-//     #[rstest]
-//     fn test_get_temp_hot_water(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let simtime = simulation_time_iterator.current_iteration();
-
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .get_temp_hot_water(50., 20., 80., simtime)
-//                 .unwrap(),
-//             79.70798180572169
-//         );
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .get_temp_hot_water(50., 10., 80., simtime)
-//                 .unwrap(),
-//             79.8652529090689
-//         );
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .get_temp_hot_water(40., 10., 80., simtime)
-//                 .unwrap(),
-//             79.81947841211459
-//         );
-//         assert_relative_eq!(
-//             heat_battery
-//                 .read()
-//                 .get_temp_hot_water(60., 1., 65., simtime)
-//                 .unwrap(),
-//             65.
-//         );
-//     }
-
-//     // skipping python's test_energy_output_max_negative as unable to replicate patch object
-
-//     #[fixture]
-//     fn heat_battery_no_service_connection(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_on: Control,
-//     ) -> Arc<RwLock<HeatBatteryPcm>> {
-//         let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
-//             battery: HeatBatteryInput::Pcm {
-//                 energy_supply: "mains elec".into(),
-//                 electricity_circ_pump: 0.06,
-//                 electricity_standby: 0.0244,
-//                 max_rated_losses: 0.1,
-//                 number_of_units: 1,
-//                 charging_config: PcmBatteryChargingConfiguration::ChargeControl {
-//                     control_charge: "hb_charge_control".into(),
-//                     rated_charge_power: 20.0,
-//                 },
-//                 simultaneous_charging_and_discharging: false,
-//                 heat_storage_kj_per_k_above_phase_transition: 381.5,
-//                 heat_storage_kj_per_k_below_phase_transition: 305.2,
-//                 heat_storage_kj_per_k_during_phase_transition: 12317.,
-//                 phase_transition_temperature_upper: 59.,
-//                 phase_transition_temperature_lower: 57.,
-//                 max_temperature: 80.,
-//                 temp_init: 80.,
-//                 velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
-//                 inlet_diameter_mm: 6.5,
-//                 a: 174.33952,
-//                 b: -931.565,
-//                 flow_rate_l_per_min: 10.,
-//             },
-//         };
-
-//         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
-//             EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time_iterator.total_steps())
-//                 .build(),
-//         ));
-
-//         let energy_supply_connection: EnergySupplyConnection =
-//             EnergySupply::connection(energy_supply.clone(), "WaterHeating").unwrap();
-//         todo!("as part of 1.0.0a9 migration");
-//         // Arc::new(RwLock::new(HeatBatteryPcm::new(
-//         //     heat_battery_details,
-//         //     battery_control_on,
-//         //     energy_supply,
-//         //     energy_supply_connection,
-//         //     simulation_time_iterator.step_in_hours(),
-//         //     Some(8),
-//         //     Some(20.),
-//         //     None,
-//         //     None,
-//         //     Some(true),
-//         // )))
-//     }
-
-//     #[rstest]
-//     fn test_output_detailed_results_water_regular(
-//         simulation_time: SimulationTime,
-//         heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
-//     ) {
-//         let heat_battery = heat_battery_no_service_connection;
-//         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
-//         let service_name = "new_service";
-
-//         let range_time_control = RangeTimeControl::new(
-//             ScheduleOrControl::Schedule(vec![]),
-//             ScheduleOrControl::Schedule(vec![]),
-//             simulation_time.iter(),
-//             0,
-//             1.,
-//             None,
-//         )
-//         .unwrap();
-
-//         HeatBatteryPcm::create_service_hot_water_regular(
-//             heat_battery.clone(),
-//             service_name,
-//             mock_cold_feed,
-//             range_time_control.into(),
-//         )
-//         .unwrap();
-
-//         let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
-//             "auxiliary".into() => indexmap! {
-//                 ("energy_aux".into(), Some("kWh".into())) => vec![0.06.into(), 0.02440988888888889.into()],
-//                 ("battery_losses".into(), Some("kWh".into())) => vec![0.1.into(), 0.1.into()],
-//                 ("Temps_after_losses0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 37.65151999372197.into()],
-//                 ("Temps_after_losses1".into(), Some("degC".into())) => vec![38.82044560943972.into(), 37.646280340318285.into()],
-//                 ("Temps_after_losses2".into(), Some("degC".into())) => vec![38.82044560954897.into(), 37.643623672190984.into()],
-//                 ("Temps_after_losses3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 37.64227666120374.into()],
-//                 ("Temps_after_losses4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
-//                 ("Temps_after_losses5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
-//                 ("Temps_after_losses6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
-//                 ("Temps_after_losses7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
-//                 ("total_charge".into(), Some("kWh".into())) => vec![0.0.into(); 2],
-//                 ("end_of_timestep_charge".into(), Some("kWh".into())) => vec![0.0.into(); 2],
-//                 ("hb_after_only_charge_zone_temp0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 37.65151999372197.into()],
-//                 ("hb_after_only_charge_zone_temp1".into(), Some("degC".into())) => vec![38.82044560943972.into(), 37.646280340318285.into()],
-//                 ("hb_after_only_charge_zone_temp2".into(), Some("degC".into())) => vec![38.82044560954897.into(), 37.643623672190984.into()],
-//                 ("hb_after_only_charge_zone_temp3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 37.64227666120374.into()],
-//                 ("hb_after_only_charge_zone_temp4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
-//                 ("hb_after_only_charge_zone_temp5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
-//                 ("hb_after_only_charge_zone_temp6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
-//                 ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
-//             },
-//             "new_service".into() => indexmap! {
-//                 ("service_name".into(), None) => vec![ResultParamValue::String(arcstr::literal!("new_service")); 2],
-//                 ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::DomesticHotWaterRegular.to_string().into()); 2],
-//                 ("service_on".into(), None) => vec![ResultParamValue::Boolean(true); 2],
-//                 ("energy_output_required".into(), Some("kWh".into())) => vec![100.0.into(); 2],
-//                 ("temp_output".into(), Some("degC".into())) => vec![40.000471231805946.into(), 38.82596949192907.into()],
-//                 ("temp_inlet".into(), Some("degC".into())) => vec![40.0.into(); 2],
-//                 ("time_running".into(), Some("secs".into())) => vec![3600.0.into(), 1.0.into()],
-//                 ("energy_delivered_HB".into(), Some("kWh".into())) => vec![10.509408477594043.into(), 0.0.into()],
-//                 ("energy_delivered_backup".into(), Some("kWh".into())) => vec![0.0.into(); 2],
-//                 ("energy_delivered_total".into(), Some("kWh".into())) => vec![10.509408477594043.into(), 0.0.into()],
-//                 ("energy_charged_during_service".into(), Some("kWh".into())) => vec![0.0.into(); 2],
-//                 ("hb_zone_temperatures0".into(), Some("degC".into())) => vec![
-//                     40.00000000000006.into(),
-//                     38.831074384285536.into(),
-//                 ],
-//                 ("hb_zone_temperatures1".into(), Some("degC".into())) => vec![40.00000000000329.into(), 38.82583473088185.into()],
-//                 ("hb_zone_temperatures2".into(), Some("degC".into())) => vec![40.000000000112536.into(), 38.82317806275455.into()],
-//                 ("hb_zone_temperatures3".into(), Some("degC".into())) => vec![40.00000000307894.into(), 38.821831051767305.into()],
-//                 ("hb_zone_temperatures4".into(), Some("degC".into())) => vec![40.000000074337635.into(), 38.82114814418561.into()],
-//                 ("hb_zone_temperatures5".into(), Some("degC".into())) => vec![40.000001662652714.into(), 38.82080342718701.into()],
-//                 ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![40.000035634835044.into(), 38.82066151993296.into()],
-//                 ("hb_zone_temperatures7".into(), Some("degC".into())) => vec![40.000735381503034.into(), 38.82126609103635.into()],
-//                 ("current_hb_power".into(), Some("kW".into())) => vec![10.509408477594043.into(), 0.0.into()],
-//             },
-//         };
-
-//         let expected_results_annual: ResultsAnnual = indexmap! {
-//             "Overall".into() => indexmap! {
-//                 ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
-//                 ("time_running".into(), Some("secs".into())) => 3601.0.into(),
-//                 ("energy_delivered_HB".into(), Some("kWh".into())) => 10.509408477594043.into(),
-//                 ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
-//                 ("energy_delivered_total".into(), Some("kWh".into())) => 10.509408477594043.into(),
-//                 ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
-//             },
-//             "auxiliary".into() => indexmap! {
-//                 ("energy_aux".into(), Some("kWh".into())) => 0.0844098888888889.into(),
-//                 ("battery_losses".into(), Some("kWh".into())) => 0.2.into(),
-//                 ("total_charge".into(), Some("kWh".into())) => 0.0.into(),
-//                 ("end_of_timestep_charge".into(), Some("kWh".into())) => 0.0.into(),
-//             },
-//             "new_service".into() => indexmap! {
-//                 ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
-//                 ("time_running".into(), Some("secs".into())) => 3601.0.into(),
-//                 ("energy_delivered_HB".into(), Some("kWh".into())) => 10.509408477594043.into(),
-//                 ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
-//                 ("energy_delivered_total".into(), Some("kWh".into())) => 10.509408477594043.into(),
-//                 ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
-//             },
-//         };
-
-//         for t_it in simulation_time.iter() {
-//             heat_battery
-//                 .read()
-//                 .demand_energy(
-//                     service_name,
-//                     HeatingServiceType::DomesticHotWaterRegular,
-//                     100.,
-//                     Some(40.),
-//                     Some(55.),
-//                     true,
-//                     None,
-//                     Some(true),
-//                     t_it,
-//                 )
-//                 .unwrap();
-
-//             heat_battery.read().timestep_end(t_it).unwrap();
-//         }
-
-//         let (results_per_timestep, results_annual) = heat_battery
-//             .read()
-//             .output_detailed_results(
-//                 &indexmap! { "hwsname".into() => vec![100.0.into()] },
-//                 &indexmap! { service_name.into() => "hwsname".into()},
-//             )
-//             .unwrap();
-
-//         assert_eq!(
-//             results_per_timestep.keys().collect_vec(),
-//             expected_results_per_timestep.keys().collect_vec()
-//         );
-//         assert_eq!(
-//             results_annual.keys().collect_vec(),
-//             expected_results_annual.keys().collect_vec()
-//         );
-
-//         let assert_value =
-//             |actual: &ResultParamValue, expected: &ResultParamValue| match (actual, expected) {
-//                 (ResultParamValue::Number(actual_num), ResultParamValue::Number(expected_num)) => {
-//                     assert_relative_eq!(actual_num, expected_num, max_relative = 1e-7);
-//                 }
-//                 _ => assert_eq!(actual, expected,),
-//             };
-
-//         for (key, expected_results) in &expected_results_per_timestep {
-//             let actual_results = &results_per_timestep[key];
-
-//             assert_eq!(
-//                 actual_results.keys().collect_vec(),
-//                 expected_results.keys().collect_vec()
-//             );
-
-//             for (inner_key, expected_vec) in expected_results {
-//                 for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
-//                     assert_value(actual, expected);
-//                 }
-//             }
-//         }
-
-//         for (key, expected_results) in &expected_results_annual {
-//             let actual_results = &results_annual[key];
-
-//             assert_eq!(
-//                 actual_results.keys().collect_vec(),
-//                 expected_results.keys().collect_vec()
-//             );
-
-//             for (inner_key, value) in expected_results {
-//                 assert_value(&actual_results[inner_key], value);
-//             }
-//         }
-
-//         // Test case where hot water source is not in hot water energy source data
-//         let (results_per_timestep, results_annual) = heat_battery
-//             .read()
-//             .output_detailed_results(
-//                 &indexmap! { "hwsname".into() => vec![100.0.into()] },
-//                 &indexmap! { service_name.into() => "hwsname_other".into()},
-//             )
-//             .unwrap();
-
-//         assert_eq!(
-//             results_per_timestep.keys().collect_vec(),
-//             expected_results_per_timestep.keys().collect_vec()
-//         );
-//         assert_eq!(
-//             results_annual.keys().collect_vec(),
-//             expected_results_annual.keys().collect_vec()
-//         );
-
-//         for (key, expected_results) in &expected_results_per_timestep {
-//             let actual_results = &results_per_timestep[key];
-
-//             assert_eq!(
-//                 actual_results.keys().collect_vec(),
-//                 expected_results.keys().collect_vec()
-//             );
-
-//             for (inner_key, expected_vec) in expected_results {
-//                 for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
-//                     assert_value(actual, expected);
-//                 }
-//             }
-//         }
-
-//         for (key, expected_results) in &expected_results_annual {
-//             let actual_results = &results_annual[key];
-
-//             assert_eq!(
-//                 actual_results.keys().collect_vec(),
-//                 expected_results.keys().collect_vec()
-//             );
-
-//             for (inner_key, value) in expected_results {
-//                 assert_value(&actual_results[inner_key], value);
-//             }
-//         }
-//     }
-
-//     #[rstest]
-//     fn test_output_detailed_results_space(
-//         simulation_time: SimulationTime,
-//         heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
-//     ) {
-//         let heat_battery = heat_battery_no_service_connection;
-//         let service_name = "new_service";
-//         let control = create_setpoint_time_control(vec![]);
-
-//         HeatBatteryPcm::create_service_space_heating(heat_battery.clone(), service_name, control)
-//             .unwrap();
-
-//         let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
-//             "auxiliary".into() => indexmap! {
-//                 ("energy_aux".into(), Some("kWh".into())) => vec![0.06.into(), 0.02440988888888889.into()],
-//                 ("battery_losses".into(), Some("kWh".into())) => vec![0.1.into(), 0.1.into()],
-//                 ("Temps_after_losses0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 37.65151999372197.into()],
-//                 ("Temps_after_losses1".into(), Some("degC".into())) => vec![38.82044560943972.into(), 37.646280340318285.into()],
-//                 ("Temps_after_losses2".into(), Some("degC".into())) => vec![38.82044560954897.into(), 37.643623672190984.into()],
-//                 ("Temps_after_losses3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 37.64227666120374.into()],
-//                 ("Temps_after_losses4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
-//                 ("Temps_after_losses5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
-//                 ("Temps_after_losses6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
-//                 ("Temps_after_losses7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
-//                 ("total_charge".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
-//                 ("end_of_timestep_charge".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
-//                 ("hb_after_only_charge_zone_temp0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 37.65151999372197.into()],
-//                 ("hb_after_only_charge_zone_temp1".into(), Some("degC".into())) => vec![38.82044560943972.into(), 37.646280340318285.into()],
-//                 ("hb_after_only_charge_zone_temp2".into(), Some("degC".into())) => vec![38.82044560954897.into(), 37.643623672190984.into()],
-//                 ("hb_after_only_charge_zone_temp3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 37.64227666120374.into()],
-//                 ("hb_after_only_charge_zone_temp4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
-//                 ("hb_after_only_charge_zone_temp5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
-//                 ("hb_after_only_charge_zone_temp6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
-//                 ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
-//             },
-//             "new_service".into() => indexmap! {
-//                 ("service_name".into(), None) => vec![ResultParamValue::String("new_service".into()), ResultParamValue::String("new_service".into())],
-//                 ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::Space.to_string().into()), ResultParamValue::String(HeatingServiceType::Space.to_string().into())],
-//                 ("service_on".into(), None) => vec![ResultParamValue::Boolean(true), ResultParamValue::Boolean(true)],
-//                 ("energy_output_required".into(), Some("kWh".into())) => vec![100.0.into(), 100.0.into()],
-//                 ("temp_output".into(), Some("degC".into())) => vec![40.000471231805946.into(), 38.82596949192907.into()],
-//                 ("temp_inlet".into(), Some("degC".into())) => vec![40.0.into(), 40.0.into()],
-//                 ("time_running".into(), Some("secs".into())) => vec![3600.0.into(), 1.0.into()],
-//                 ("energy_delivered_HB".into(), Some("kWh".into())) => vec![10.509408477594043.into(), 0.0.into()],
-//                 ("energy_delivered_backup".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
-//                 ("energy_delivered_total".into(), Some("kWh".into())) => vec![10.509408477594043.into(), 0.0.into()],
-//                 ("energy_charged_during_service".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
-//                 ("hb_zone_temperatures0".into(), Some("degC".into())) => vec![40.00000000000006.into(), 38.831074384285536.into()],
-//                 ("hb_zone_temperatures1".into(), Some("degC".into())) => vec![40.00000000000329.into(), 38.82583473088185.into()],
-//                 ("hb_zone_temperatures2".into(), Some("degC".into())) => vec![40.000000000112536.into(), 38.82317806275455.into()],
-//                 ("hb_zone_temperatures3".into(), Some("degC".into())) => vec![40.00000000307894.into(), 38.821831051767305.into()],
-//                 ("hb_zone_temperatures4".into(), Some("degC".into())) => vec![40.000000074337635.into(), 38.82114814418561.into()],
-//                 ("hb_zone_temperatures5".into(), Some("degC".into())) => vec![40.000001662652714.into(), 38.82080342718701.into()],
-//                 ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![40.000035634835044.into(), 38.82066151993296.into()],
-//                 ("hb_zone_temperatures7".into(), Some("degC".into())) => vec![40.000735381503034.into(), 38.82126609103635.into()],
-//                 ("current_hb_power".into(), Some("kW".into())) => vec![10.509408477594043.into(), 0.0.into()],
-//             },
-//         };
-
-//         let expected_results_annual: ResultsAnnual = indexmap! {
-//             "Overall".into() => indexmap! {
-//                 ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
-//                 ("time_running".into(), Some("secs".into())) => 3601.0.into(),
-//                 ("energy_delivered_HB".into(), Some("kWh".into())) => 10.509408477594043.into(),
-//                 ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
-//                 ("energy_delivered_total".into(), Some("kWh".into())) => 10.509408477594043.into(),
-//                 ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
-//             },
-//             "auxiliary".into() => indexmap! {
-//                 ("energy_aux".into(), Some("kWh".into())) => 0.0844098888888889.into(),
-//                 ("battery_losses".into(), Some("kWh".into())) => 0.2.into(),
-//                 ("total_charge".into(), Some("kWh".into())) => 0.0.into(),
-//                 ("end_of_timestep_charge".into(), Some("kWh".into())) => 0.0.into(),
-//             },
-//             "new_service".into() => indexmap! {
-//                 ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
-//                 ("time_running".into(), Some("secs".into())) => 3601.0.into(),
-//                 ("energy_delivered_HB".into(), Some("kWh".into())) => 10.509408477594043.into(),
-//                 ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
-//                 ("energy_delivered_total".into(), Some("kWh".into())) => 10.509408477594043.into(),
-//                 ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
-//             },
-//         };
-
-//         for t_it in simulation_time.iter() {
-//             heat_battery
-//                 .read()
-//                 .demand_energy(
-//                     service_name,
-//                     HeatingServiceType::Space,
-//                     100.,
-//                     Some(40.),
-//                     Some(55.),
-//                     true,
-//                     None,
-//                     Some(true),
-//                     t_it,
-//                 )
-//                 .unwrap();
-
-//             heat_battery.read().timestep_end(t_it).unwrap();
-//         }
-
-//         let (results_per_timestep, results_annual) = heat_battery
-//             .read()
-//             .output_detailed_results(&indexmap! {}, &indexmap! {})
-//             .unwrap();
-
-//         assert_eq!(
-//             results_per_timestep.keys().collect_vec(),
-//             expected_results_per_timestep.keys().collect_vec()
-//         );
-//         assert_eq!(
-//             results_annual.keys().collect_vec(),
-//             expected_results_annual.keys().collect_vec()
-//         );
-
-//         let assert_value =
-//             |actual: &ResultParamValue, expected: &ResultParamValue| match (actual, expected) {
-//                 (ResultParamValue::Number(actual_num), ResultParamValue::Number(expected_num)) => {
-//                     assert_relative_eq!(actual_num, expected_num, max_relative = 1e-7);
-//                 }
-//                 _ => assert_eq!(actual, expected,),
-//             };
-
-//         for (key, expected_results) in &expected_results_per_timestep {
-//             let actual_results = &results_per_timestep[key];
-
-//             assert_eq!(
-//                 actual_results.keys().collect_vec(),
-//                 expected_results.keys().collect_vec()
-//             );
-
-//             for (inner_key, expected_vec) in expected_results {
-//                 for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
-//                     assert_value(actual, expected);
-//                 }
-//             }
-//         }
-
-//         for (key, expected_results) in &expected_results_annual {
-//             let actual_results = &results_annual[key];
-
-//             assert_eq!(
-//                 actual_results.keys().collect_vec(),
-//                 expected_results.keys().collect_vec()
-//             );
-
-//             for (inner_key, value) in expected_results {
-//                 assert_value(&actual_results[inner_key], value);
-//             }
-//         }
-//     }
-
-//     #[rstest]
-//     fn test_output_detailed_results_none(
-//         simulation_time_iterator: SimulationTimeIterator,
-//         battery_control_on: Control,
-//     ) {
-//         // Test that calling output_detailed_results errors when output_detailed_results on heat_battery is false
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_on, Some(false));
-
-//         assert!(heat_battery
-//             .read()
-//             .output_detailed_results(&indexmap! {}, &indexmap! {})
-//             .is_err());
-//     }
-
-//     #[rstest]
-//     fn test_demand_energy_low_temp_minimum_run_coverage(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let simtime = simulation_time_iterator.current_iteration();
-//         heat_battery
-//             .write()
-//             .energy_supply
-//             .write()
-//             .set_fuel_type(FuelType::MainsGas);
-//         heat_battery.write().hb_time_step = 5.; // Small time step
-//                                                 // Set all zones to high temperature
-//         heat_battery.write().zone_temp_c_dist_initial = Arc::new(RwLock::new(vec![50.2; 8]));
-//         HeatBatteryPcm::create_service_connection(heat_battery.clone(), "test_service").unwrap();
-//         // Very small energy demand that will be satisfied in first loop iteration
-//         // But will need to continue running to meet minimum time
-//         heat_battery
-//             .read()
-//             .demand_energy(
-//                 "test_service",
-//                 HeatingServiceType::DomesticHotWaterRegular,
-//                 0.1,
-//                 Some(40.),
-//                 Some(50.),
-//                 true,
-//                 Some(0.),
-//                 Some(true),
-//                 simtime,
-//             )
-//             .unwrap();
-
-//         //Check that minimum time was enforced
-//         let service_result = heat_battery
-//             .read()
-//             .service_results
-//             .read()
-//             .last()
-//             .unwrap()
-//             .clone();
-
-//         assert_relative_eq!(
-//             service_result.time_running,
-//             51.08689856959955,
-//             max_relative = 1e-7
-//         );
-//     }
-
-//     #[rstest]
-//     fn test_timestep_end_with_uncalled_services(
-//         heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
-//         mut simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let heat_battery = heat_battery_no_service_connection;
-//         let simtime = simulation_time_iterator.current_iteration();
-
-//         // Create three services
-//         let service1 = "water_heating";
-//         let service2 = "space_heating_zone1";
-//         let service3 = "space_heating_zone2";
-
-//         HeatBatteryPcm::create_service_connection(heat_battery.clone(), service1).unwrap();
-//         HeatBatteryPcm::create_service_connection(heat_battery.clone(), service2).unwrap();
-//         HeatBatteryPcm::create_service_connection(heat_battery.clone(), service3).unwrap();
-
-//         // In timestep 1: Call only service1 and service3 (skip service2)
-//         heat_battery
-//             .read()
-//             .demand_energy(
-//                 service1,
-//                 HeatingServiceType::DomesticHotWaterRegular,
-//                 5.,
-//                 Some(40.),
-//                 Some(55.),
-//                 true,
-//                 Some(0.),
-//                 Some(true),
-//                 simtime,
-//             )
-//             .unwrap();
-
-//         heat_battery
-//             .read()
-//             .demand_energy(
-//                 service3,
-//                 HeatingServiceType::Space,
-//                 3.,
-//                 Some(35.),
-//                 Some(50.),
-//                 true,
-//                 Some(0.),
-//                 Some(true),
-//                 simtime,
-//             )
-//             .unwrap();
-
-//         heat_battery.read().timestep_end(simtime).unwrap();
-
-//         simulation_time_iterator.next();
-//         let simtime = simulation_time_iterator.current_iteration();
-
-//         {
-//             let hb_guard = heat_battery.read();
-//             let detailed_results_guard = hb_guard.detailed_results.as_ref().unwrap().read();
-
-//             // Check that detailed results were created
-//             assert_eq!(detailed_results_guard.len(), 1);
-
-//             let timestep_results = &detailed_results_guard[0].results;
-
-//             assert_eq!(timestep_results.len(), 3); // In Python this is 4 (Should have 3 service results + 1 auxiliary result = 4 total)
-
-//             // Check service1 (was called)
-//             assert_eq!(timestep_results[0].service_name, service1);
-//             assert_eq!(
-//                 timestep_results[0].service_type.unwrap(),
-//                 HeatingServiceType::DomesticHotWaterRegular
-//             );
-//             assert!(timestep_results[0].service_on);
-//             assert!(timestep_results[0].time_running > 0.);
-
-//             // Check service2 (was NOT called - should have placeholder values)
-//             assert_eq!(timestep_results[1].service_name, service2);
-//             assert!(timestep_results[1].service_type.is_none());
-//             assert!(!timestep_results[1].service_on);
-//             assert_eq!(timestep_results[1].energy_output_required, 0.);
-//             assert_eq!(timestep_results[1].time_running, 0.);
-//             assert_eq!(timestep_results[1].energy_delivered_hb, 0.);
-//             assert_eq!(timestep_results[1].current_hb_power, 0.);
-
-//             // Check service3 (was called)
-//             assert_eq!(timestep_results[2].service_name, service3);
-//             assert_eq!(
-//                 timestep_results[2].service_type.unwrap(),
-//                 HeatingServiceType::Space
-//             );
-//             assert!(timestep_results[2].service_on);
-//             assert!(timestep_results[2].time_running > 0.);
-
-//             // Check auxiliary results
-//             let summary = &detailed_results_guard[0].summary;
-//             assert!(summary.energy_aux >= 0.);
-//             assert!(summary.battery_losses >= 0.);
-//             assert!(!summary.temps_after_losses.is_empty());
-//             assert!(summary.total_charge >= 0.);
-//             assert!(summary.end_of_timestep_charge >= 0.);
-//             assert!(!summary.hb_after_only_charge_zone_temp.is_empty());
-//         }
-
-//         // In timestep 2: Call only service2 (skip service1 and service3)
-//         heat_battery
-//             .read()
-//             .demand_energy(
-//                 service2,
-//                 HeatingServiceType::Space,
-//                 4.,
-//                 Some(38.),
-//                 Some(52.),
-//                 true,
-//                 Some(0.),
-//                 Some(true),
-//                 simtime,
-//             )
-//             .unwrap();
-
-//         heat_battery.read().timestep_end(simtime).unwrap();
-
-//         {
-//             let hb_guard = heat_battery.read();
-//             let detailed_results_guard = hb_guard.detailed_results.as_ref().unwrap().read();
-
-//             // Check second timestep results
-//             assert_eq!(detailed_results_guard.len(), 2);
-
-//             let timestep2_results = &detailed_results_guard[1].results;
-
-//             // service1 should have placeholder values this time
-//             assert_eq!(timestep2_results[0].service_name, service1);
-//             assert!(timestep2_results[0].service_type.is_none());
-//             assert!(!timestep2_results[0].service_on);
-//             assert_eq!(timestep2_results[0].time_running, 0.);
-
-//             // service2 should have actual values
-//             assert_eq!(timestep2_results[1].service_name, service2);
-//             assert_eq!(
-//                 timestep2_results[1].service_type.unwrap(),
-//                 HeatingServiceType::Space
-//             );
-//             assert!(timestep2_results[1].service_on);
-//             assert!(timestep2_results[1].time_running > 0.);
-
-//             // service3 should have placeholder values
-//             assert_eq!(timestep2_results[2].service_name, service3);
-//             assert!(timestep2_results[2].service_type.is_none());
-//             assert!(!timestep2_results[2].service_on);
-//             assert_eq!(timestep2_results[2].time_running, 0.);
-//         }
-//     }
-
-//     #[rstest]
-//     fn test_timestep_end_no_services_called(
-//         heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         // Test timestep_end when no services are called but services are registered
-//         let heat_battery = heat_battery_no_service_connection;
-//         let simtime = simulation_time_iterator.current_iteration();
-
-//         // Create services but don't call them
-//         let service1 = "water_heating";
-//         let service2 = "space_heating";
-
-//         HeatBatteryPcm::create_service_connection(heat_battery.clone(), service1).unwrap();
-//         HeatBatteryPcm::create_service_connection(heat_battery.clone(), service2).unwrap();
-
-//         // Call timestep_end without calling any services
-//         heat_battery.read().timestep_end(simtime).unwrap();
-
-//         let hb_guard = heat_battery.read();
-//         let detailed_results_guard = hb_guard.detailed_results.as_ref().unwrap().read();
-
-//         //  Check that detailed results were created with placeholder entries
-//         assert_eq!(detailed_results_guard.len(), 1);
-
-//         let timestep_results = &detailed_results_guard[0].results;
-
-//         assert_eq!(timestep_results.len(), 2); // In Python this is 3 (Should have 2 service results + 1 auxiliary result = 3 total)
-
-//         for (i, result) in timestep_results.iter().enumerate() {
-//             assert_eq!(result.service_name, [service1, service2][i]);
-//             assert!(result.service_type.is_none());
-//             assert!(!result.service_on);
-//             assert_eq!(result.energy_output_required, 0.);
-//             assert_eq!(result.time_running, 0.);
-//             assert_eq!(result.energy_delivered_hb, 0.);
-//             assert_eq!(result.current_hb_power, 0.);
-//         }
-//     }
-
-//     #[rstest]
-//     fn test_heat_battery_create_service_connection_already_exists(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-//         let service_name = "test_service";
-//         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
-
-//         let range_time_control = Arc::new(
-//             RangeTimeControl::new(
-//                 ScheduleOrControl::Schedule(vec![]),
-//                 ScheduleOrControl::Schedule(vec![]),
-//                 simulation_time_iterator,
-//                 0,
-//                 1.,
-//                 None,
-//             )
-//             .unwrap(),
-//         );
-
-//         let result = HeatBatteryPcm::create_service_hot_water_regular(
-//             heat_battery.clone(),
-//             service_name,
-//             mock_cold_feed.clone(),
-//             range_time_control.clone(),
-//         );
-
-//         assert!(result.is_ok());
-
-//         let result = HeatBatteryPcm::create_service_hot_water_regular(
-//             heat_battery,
-//             service_name,
-//             mock_cold_feed.clone(),
-//             range_time_control,
-//         );
-
-//         assert!(result.is_err())
-//     }
-
-//     // skipping python's test_heat_battery_edge_case_zero_timestep as function can't return None
-
-//     // skipping python's test_heat_battery_process_zone_edge_cases as function can't return None and does return 4 values
-
-//     // skipping python's test_heat_battery_charge_battery_hydraulic_edge_cases as function can't return None
-
-//     #[rstest]
-//     fn test_heat_battery_energy_output_max_boundary_conditions(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let simtime = simulation_time_iterator.current_iteration();
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-
-//         // Test with very low output temperature
-//         let result = heat_battery
-//             .read()
-//             .energy_output_max(10., 10., Some(0.), simtime)
-//             .unwrap();
-
-//         // The method returns energy based on zone temps, not necessarily 0
-//         assert!(result >= 0.);
-
-//         //Test with temperature at threshold
-//         let result = heat_battery
-//             .read()
-//             .energy_output_max(45., 45., Some(0.), simtime)
-//             .unwrap();
-
-//         assert!(result >= 0.);
-//     }
-
-//     // skipping python's test_heat_battery_service_cold_water_source_not_set as cold feed not optional
-
-//     #[rstest]
-//     fn test_heat_battery_zero_volume_zones(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-
-//         // Test with zero energy transfer
-//         let result = heat_battery.read().calculate_new_zone_temperature(50., 0.);
-
-//         assert_eq!(result, 50.);
-//     }
-
-//     #[rstest]
-//     fn test_heat_battery_all_zones_below_threshold(
-//         battery_control_off: Control,
-//         simulation_time_iterator: SimulationTimeIterator,
-//     ) {
-//         let simtime = simulation_time_iterator.current_iteration();
-//         // Request high output temperature that no zone can provide
-//         let heat_battery =
-//             create_heat_battery(&simulation_time_iterator, battery_control_off, None);
-
-//         let result = heat_battery
-//             .read()
-//             .energy_output_max(80., 80., Some(0.), simtime)
-//             .unwrap();
-
-//         assert_relative_eq!(result, 0., epsilon = 1e-7);
-//     }
-
-//     /// Test DHW service with cold water temperature that varies with volume demanded
-//     #[rstest]
-//     fn test_demand_hot_water_with_varying_cold_temperatures(
-//         battery_control_off: Control,
-//         simulation_time: SimulationTime,
-//     ) {
-//         let simtime = simulation_time.iter().current_iteration();
-//         let heat_battery = create_heat_battery(&simulation_time.iter(), battery_control_off, None);
-
-//         // Set up cold feed to return different temperatures based on volume
-//         // Simulates drawing from a stratified tank or mixed sources
-//         fn varying_temp_by_volume(volume_needed: f64) -> Vec<(f64, f64)> {
-//             let volume = volume_needed;
-
-//             if volume <= 10. {
-//                 // Small volume - warm water from top of tank
-//                 vec![(15.0, volume)]
-//             } else if volume <= 30. {
-//                 // Medium volume - mix of warm and cold
-//                 let warm_portion = 10.;
-//                 let cold_portion = volume - 10.;
-//                 vec![(15.0, warm_portion), (8.0, cold_portion)]
-//             } else {
-//                 // Large volume - mostly cold water
-//                 vec![(15.0, 10.), (8.0, 20.), (5.0, volume - 30.)]
-//             }
-//         }
-
-//         let volumes_container: Arc<RwLock<Vec<f64>>> = Default::default();
-
-//         let mock_cold_feed =
-//             WaterSupply::VaryingTemp(VaryingTempWaterSupply::new(volumes_container.clone()));
-
-//         let service = HeatBatteryPcm::create_service_hot_water_direct(
-//             heat_battery.clone(),
-//             "dhw_varying_temp",
-//             65.0,
-//             mock_cold_feed,
-//         )
-//         .unwrap();
-
-//         // Test with different volume events
-//         let usage_events = vec![
-//             WaterEventResult {
-//                 event_result_type: WaterEventResultType::Other, // the Python uses a nonexistent "HandWash" type here - this is the best equivalent
-//                 temperature_warm: 35.0,
-//                 volume_warm: 5.0,
-//                 volume_hot: 5.0, // Small - should get 15°C
-//                 event_duration: 0.,
-//             },
-//             WaterEventResult {
-//                 event_result_type: WaterEventResultType::Shower,
-//                 temperature_warm: 38.0,
-//                 volume_warm: 40.0,
-//                 volume_hot: 25.0, // Medium - should get mix (15°C and 8°C)
-//                 event_duration: 0.,
-//             },
-//             WaterEventResult {
-//                 event_result_type: WaterEventResultType::Bath,
-//                 temperature_warm: 40.0,
-//                 volume_warm: 80.0,
-//                 volume_hot: 50.0, // Large - should get mix of all three temps
-//                 event_duration: 0.,
-//             },
-//         ];
-
-//         // Execute
-//         let energy = service
-//             .demand_hot_water(usage_events.into(), simtime)
-//             .unwrap();
-
-//         // Varify draw_off_water was called with correct volumes
-//         let draw_volumes = volumes_container.read().clone();
-//         assert_eq!(draw_volumes.len(), 3);
-
-//         assert_eq!(draw_volumes[0], 5.0); // First event volume
-//         assert_eq!(draw_volumes[1], 25.0); // Second event volume
-//         assert_eq!(draw_volumes[2], 50.0); // Third event volume
-
-//         // Energy should be calculated based on varying temperatures
-//         assert_relative_eq!(energy, 5.16607777777131, epsilon = 1e-7);
-
-//         // Test that different volumes give different inlet temperatures
-//         // Reset and test with single large volume
-//         volumes_container.write().clear();
-
-//         let single_large_event = vec![WaterEventResult {
-//             event_result_type: WaterEventResultType::Bath,
-//             temperature_warm: 40.0,
-//             volume_warm: 80.0,
-//             volume_hot: 40.0,
-//             event_duration: 0.,
-//         }];
-
-//         let energy_large = service
-//             .demand_hot_water(single_large_event.into(), simtime)
-//             .unwrap();
-
-//         // For 40L: 10L@15°C + 20L@8°C + 10L@5°C
-//         // Average = (150 + 160 + 50) / 40 = 9°C
-
-//         // Now test with equivalent volume but as small draws
-//         volumes_container.write().clear();
-
-//         let multiple_small_events = vec![
-//             WaterEventResult {
-//                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
-//                 temperature_warm: 40.0,
-//                 volume_warm: 10.0,
-//                 volume_hot: 8.0,
-//                 event_duration: 0.,
-//             },
-//             WaterEventResult {
-//                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
-//                 temperature_warm: 40.0,
-//                 volume_warm: 10.0,
-//                 volume_hot: 8.0,
-//                 event_duration: 0.,
-//             },
-//             WaterEventResult {
-//                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
-//                 temperature_warm: 40.0,
-//                 volume_warm: 10.0,
-//                 volume_hot: 8.0,
-//                 event_duration: 0.,
-//             },
-//             WaterEventResult {
-//                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
-//                 temperature_warm: 40.0,
-//                 volume_warm: 10.0,
-//                 volume_hot: 8.0,
-//                 event_duration: 0.,
-//             },
-//             WaterEventResult {
-//                 event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
-//                 temperature_warm: 40.0,
-//                 volume_warm: 10.0,
-//                 volume_hot: 8.0,
-//                 event_duration: 0.,
-//             },
-//         ];
-
-//         let energy_small_batches = service
-//             .demand_hot_water(multiple_small_events.into(), simtime)
-//             .unwrap();
-
-//         // Small batches all get 15°C water, so should need less energy than large draw
-//         // (less heating required when inlet is 15°C vs 9°C average)
-//         assert!(energy_small_batches < energy_large);
-//         assert_relative_eq!(energy_small_batches, 1.9830605562135022, epsilon = 1e-7);
-//         assert_relative_eq!(energy_large, 2.3443371833916435, epsilon = 1e-7);
-//     }
-
-//     // skipping python's test_demand_hot_water_zero_volume_continue due to mocking
-
-//     /// Tests for validate_no_schedule_overlap (Deviation 3 fix).
-//     /// Uses real RangeTimeControl objects to verify that overlapping active
-//     /// schedules are rejected and non-overlapping schedules are accepted.
-//     mod test_schedule_overlap_validation {
-//         use crate::core::controls::time_control::RangeTimeControl;
-
-//         use super::*;
-
-//         #[derive(Debug, Clone)]
-//         struct MockWaterSupply;
-
-//         //mock all as they don't matter
-//         impl WaterSupplyBehaviour for MockWaterSupply {
-//             fn draw_off_water(
-//                 &self,
-//                 _: f64,
-//                 _: SimulationTimeIteration,
-//             ) -> anyhow::Result<Vec<(f64, f64)>> {
-//                 Ok(vec![])
-//             }
-//             fn get_temp_cold_water(
-//                 &self,
-//                 _: f64,
-//                 _: SimulationTimeIteration,
-//             ) -> anyhow::Result<Vec<(f64, f64)>> {
-//                 Ok(vec![])
-//             }
-//             fn ultimate_cold_water_source(&self) -> Self {
-//                 Self {}
-//             }
-//         }
-
-//         #[fixture]
-//         fn simtime() -> SimulationTime {
-//             SimulationTime::new(0., 4., 1.)
-//         }
-
-//         /// Create a RangeTimeControl with given schedule lists.
-//         fn make_control(
-//             schedule_lower: Vec<Option<f64>>,
-//             schedule_upper: Vec<Option<f64>>,
-//             simtime: SimulationTime,
-//         ) -> Control {
-//             Control::RangeTime(
-//                 RangeTimeControl::new(
-//                     ScheduleOrControl::Schedule(schedule_lower),
-//                     ScheduleOrControl::Schedule(schedule_upper),
-//                     simtime.iter(),
-//                     0,
-//                     1.0,
-//                     None,
-//                 )
-//                 .unwrap()
-//                 .into(),
-//             )
-//         }
-
-//         #[rstest]
-//         fn test_non_overlapping_schedules_pass(simtime: SimulationTime) {
-//             // specify concrete type that satisfies WaterSupplyBehaviour
-//             let ctrl_a = make_control(
-//                 vec![Some(0.2), Some(0.2), None, None],
-//                 vec![Some(0.8), Some(0.8), None, None],
-//                 simtime,
-//             );
-//             let ctrl_b = make_control(
-//                 vec![None, None, Some(0.2), Some(0.2)],
-//                 vec![None, None, Some(0.8), Some(0.8)],
-//                 simtime,
-//             );
-//             let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
-//                 let mut m = IndexMap::new();
-//                 m.insert(
-//                     "electric".into(),
-//                     HeatBatteryChargingSource {
-//                         source_type: ChargingSourceType::DirectElectric,
-//                         control: ctrl_a,
-//                         rated_charge_power: Some(5.0),
-//                         flow_rate_charging_l_per_min: None,
-//                         temp_flow_max: None,
-//                         hex_a: None,
-//                         schedule_unit: ScheduleUnit::StateOfCharge,
-//                         temp_flow_max: None,
-//                         hex_b: None,
-//                         hex_velocity_at_1_l_per_min: None,
-//                         hex_capillary_diameter_m: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         schedule_unit: Default::default(),
-//                     },
-//                 );
-//                 m.insert(
-//                     "hydronic".into(),
-//                     HeatBatteryChargingSource {
-//                         source_type: ChargingSourceType::HeatSourceWet,
-//                         control: ctrl_b,
-//                         temp_flow_max: Some(65.0),
-//                         flow_rate_charging_l_per_min: Some(10.0),
-//                         hex_a: Some(174.33952),
-//                         hex_b: Some(-931.565),
-//                         hex_velocity_at_1_l_per_min: Some(0.035),
-//                         hex_capillary_diameter_m: Some(6.5 / 1000.0),
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         schedule_unit: Default::default(),
-//                         rated_charge_power: None,
-//                     },
-//                 );
-//                 m
-//             };
-//             // Should not raise
-//             validate_no_schedule_overlap(sources, "test_battery", &simtime.iter()).unwrap();
-//         }
-
-//         /// Overlapping schedules (both active at t1) should return an error.
-//         #[rstest]
-//         fn test_overlapping_schedule_raises(simtime: SimulationTime) {
-//             let ctrl_a = make_control(
-//                 vec![Some(0.2), Some(0.2), None, None],
-//                 vec![Some(0.8), Some(0.8), None, None],
-//                 simtime,
-//             );
-//             let ctrl_b = make_control(
-//                 vec![None, Some(0.2), Some(0.2), None],
-//                 vec![None, Some(0.8), Some(0.8), None],
-//                 simtime,
-//             );
-//             let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
-//                 let mut m = IndexMap::new();
-//                 m.insert(
-//                     "electric".into(),
-//                     HeatBatteryChargingSource {
-//                         source_type: ChargingSourceType::DirectElectric,
-//                         control: ctrl_a,
-//                         rated_charge_power: Some(5.0),
-//                         flow_rate_charging_l_per_min: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         hex_a: None,
-//                         schedule_unit: ScheduleUnit::StateOfCharge,
-//                         temp_flow_max: None,
-//                         hex_b: None,
-//                         hex_velocity_at_1_l_per_min: None,
-//                         hex_capillary_diameter_m: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         schedule_unit: Default::default(),
-//                     },
-//                 );
-//                 m.insert(
-//                     "hydronic".into(),
-//                     HeatBatteryChargingSource {
-//                         source_type: ChargingSourceType::HeatSourceWet,
-//                         control: ctrl_b,
-//                         rated_charge_power: Some(3.0),
-//                         flow_rate_charging_l_per_min: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         hex_a: None,
-//                         schedule_unit: ScheduleUnit::StateOfCharge,
-//                         temp_flow_max: None,
-//                         hex_b: None,
-//                         hex_velocity_at_1_l_per_min: None,
-//                         hex_capillary_diameter_m: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         schedule_unit: Default::default(),
-//                     },
-//                 );
-//                 m
-//             };
-//             assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_err());
-//         }
-//         /// Single source can never overlap — validation accepts it.
-//         #[rstest]
-//         fn single_source_always_passes(simtime: SimulationTime) {
-//             let ctrl_a = make_control(
-//                 vec![Some(0.2), Some(0.2), Some(0.2), Some(0.2)],
-//                 vec![Some(0.8), Some(0.8), Some(0.8), Some(0.8)],
-//                 simtime,
-//             );
-//             let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
-//                 let mut m = IndexMap::new();
-//                 m.insert(
-//                     "a".into(),
-//                     HeatBatteryChargingSource {
-//                         source_type: ChargingSourceType::DirectElectric,
-//                         control: ctrl_a,
-//                         rated_charge_power: Some(5.0),
-//                         flow_rate_charging_l_per_min: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         hex_a: None,
-//                         schedule_unit: ScheduleUnit::StateOfCharge,
-//                         temp_flow_max: None,
-//                         hex_b: None,
-//                         hex_velocity_at_1_l_per_min: None,
-//                         hex_capillary_diameter_m: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         schedule_unit: Default::default(),
-//                     },
-//                 );
-//                 m
-//             };
-//             assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_ok());
-//         }
-
-//         // skipped test_simtime_reset_after_validation and test_simtime_reset_on_error
-//         //from Python as we don't have a mutable reference to SimulationTime in Rust.
-
-//         ///Transition period (lower=None, upper=non-null) counts as active for overlap.
-//         /// A transition period means existing charging may continue, so it's an
-//         /// active period from the overlap perspective.
-//         #[rstest]
-//         fn test_transition_period_counts_as_active(simtime: SimulationTime) {
-//             // Source A: fully active all timesteps
-//             let ctrl_a = make_control(
-//                 vec![Some(0.2), Some(0.2), Some(0.2), Some(0.2)],
-//                 vec![Some(0.8), Some(0.8), Some(0.8), Some(0.8)],
-//                 simtime,
-//             );
-//             // Source B: transition at t2 (lower=None, upper=Some(0.8))
-//             let ctrl_b = make_control(
-//                 vec![None, None, None, None],
-//                 vec![None, None, Some(0.8), None],
-//                 simtime,
-//             );
-//             let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
-//                 let mut m = IndexMap::new();
-//                 m.insert(
-//                     "a".into(),
-//                     HeatBatteryChargingSource {
-//                         source_type: ChargingSourceType::DirectElectric,
-//                         control: ctrl_a,
-//                         rated_charge_power: Some(5.0),
-//                         flow_rate_charging_l_per_min: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         hex_a: None,
-//                         schedule_unit: ScheduleUnit::StateOfCharge,
-//                         temp_flow_max: None,
-//                         hex_b: None,
-//                         hex_velocity_at_1_l_per_min: None,
-//                         hex_capillary_diameter_m: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         schedule_unit: Default::default(),
-//                     },
-//                 );
-//                 m.insert(
-//                     "b".into(),
-//                     HeatBatteryChargingSource {
-//                         source_type: ChargingSourceType::DirectElectric,
-//                         control: ctrl_b,
-//                         rated_charge_power: Some(3.0),
-//                         flow_rate_charging_l_per_min: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         hex_a: None,
-//                         schedule_unit: ScheduleUnit::StateOfCharge,
-//                         temp_flow_max: None,
-//                         hex_b: None,
-//                         hex_velocity_at_1_l_per_min: None,
-//                         hex_capillary_diameter_m: None,
-//                         heat_source_service: Option::<HeatSourceWetService>::None,
-//                         schedule_unit: Default::default(),
-//                     },
-//                 );
-//                 m
-//             };
-//             assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_err());
-//         }
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::common::{MockWaterSupply, VaryingTempWaterSupply};
+    use crate::core::controls::time_control::{
+        ChargeControl, Control, ScheduleOrControl, SetpointTimeControl,
+    };
+    use crate::core::energy_supply::energy_supply::{
+        EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
+    };
+    use crate::core::water_heat_demand::misc::WaterEventResultType;
+    use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+    use crate::input::{
+        ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,
+        HeatSourceWetDetails, PcmBatteryChargingConfiguration,
+    };
+    use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
+    use approx::assert_relative_eq;
+    use indexmap::indexmap;
+    use itertools::Itertools;
+    use parking_lot::RwLock;
+    use rstest::*;
+    use serde_json::json;
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+
+    const SERVICE_NAME: &str = "TestService";
+
+    #[fixture]
+    fn simulation_time() -> SimulationTime {
+        SimulationTime::new(0., 2., 1.)
+    }
+
+    #[fixture]
+    fn simulation_time_iterator(simulation_time: SimulationTime) -> SimulationTimeIterator {
+        simulation_time.iter()
+    }
+
+    #[fixture]
+    fn simulation_time_iteration(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) -> SimulationTimeIteration {
+        simulation_time_iterator.current_iteration()
+    }
+
+    #[fixture]
+    fn external_sensor() -> ExternalSensor {
+        serde_json::from_value(json!({
+            "correlation": [
+                {"temperature": 0.0, "max_charge": 1.0},
+                {"temperature": 10.0, "max_charge": 0.9},
+                {"temperature": 18.0, "max_charge": 0.0}
+            ]
+        }))
+        .unwrap()
+    }
+
+    #[fixture]
+    fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
+        ExternalConditions::new(
+            &simulation_time.iter(),
+            vec![0.0, 2.5],
+            vec![3.7, 3.8],
+            vec![200., 220.].into_iter().map(Into::into).collect(),
+            vec![333., 610.],
+            vec![420., 750.],
+            vec![0.2; 8760],
+            51.42,
+            -0.75,
+            0,
+            0,
+            Some(0),
+            1.,
+            Some(1),
+            Some(DaylightSavingsConfig::NotApplicable),
+            false,
+            false,
+            // following shading segments are corrected from upstream Python, which uses angles measured from wrong origin
+            serde_json::from_value(json!(
+                [
+                    {"start360": 0, "end360": 45},
+                    {"start360": 45, "end360": 90},
+                ]
+            ))
+            .unwrap(),
+        )
+    }
+
+    #[fixture]
+    fn battery_control_off(
+        external_conditions: ExternalConditions,
+        external_sensor: ExternalSensor,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) -> Arc<ChargeControl> {
+        create_control_with_value(
+            false,
+            external_conditions,
+            external_sensor,
+            simulation_time_iterator,
+        )
+    }
+
+    #[fixture]
+    fn battery_control_on(
+        external_conditions: ExternalConditions,
+        external_sensor: ExternalSensor,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) -> Arc<ChargeControl> {
+        create_control_with_value(
+            true,
+            external_conditions,
+            external_sensor,
+            simulation_time_iterator,
+        )
+    }
+    #[fixture]
+    fn heat_battery_details() -> HeatSourceWetDetails {
+        HeatSourceWetDetails::HeatBattery {
+            battery: HeatBatteryInput::Pcm {
+                energy_supply: "mains elec".into(),
+                electricity_circ_pump: 0.06,
+                electricity_standby: 0.0244,
+                max_rated_losses: 0.1,
+                number_of_units: 1,
+                charging_config: PcmBatteryChargingConfiguration::ChargeControl {
+                    control_charge: "hb_charge_control".into(),
+                    rated_charge_power: 20.0,
+                },
+                simultaneous_charging_and_discharging: false,
+                heat_storage_kj_per_k_above_phase_transition: 381.5,
+                heat_storage_kj_per_k_below_phase_transition: 305.2,
+                heat_storage_kj_per_k_during_phase_transition: 12317.,
+                phase_transition_temperature_upper: 59.,
+                phase_transition_temperature_lower: 57.,
+                max_temperature: 80.,
+                temp_init: 80.,
+                velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
+                inlet_diameter_mm: 6.5,
+                a: 174.33952,
+                b: -931.565,
+                flow_rate_l_per_min: 10.,
+            },
+        }
+    }
+
+    fn create_control_with_value(
+        boolean: bool,
+        external_conditions: ExternalConditions,
+        external_sensor: ExternalSensor,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) -> Arc<ChargeControl> {
+        ChargeControl::new(
+            ControlLogicType::Manual,
+            ScheduleOrControl::Schedule(vec![boolean, boolean]),
+            &simulation_time_iterator,
+            0,
+            1.,
+            vec![Some(0.2)],
+            None,
+            None,
+            Some(external_conditions.into()),
+            Some(external_sensor),
+            None,
+        )
+        .unwrap()
+        .into()
+    }
+
+    fn temp_air_int_callback() -> TempInternalAirFn {
+        Arc::new(|| 0.)
+    }
+    fn create_heat_battery(
+        control: Arc<ChargeControl>,
+        _output_detailed_results: Option<bool>,
+    ) -> Arc<RwLock<HeatBatteryPcm>> {
+        let simulation_time = simulation_time();
+        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
+        ));
+        let external_conditions = external_conditions(simulation_time);
+        let energy_supply_connection: EnergySupplyConnection =
+            EnergySupply::connection(energy_supply.clone(), "WaterHeating").unwrap();
+
+        let heat_battery = Arc::new(RwLock::new(
+            HeatBatteryPcm::new(
+                &heat_battery_details(),
+                energy_supply.into(),
+                energy_supply_connection,
+                simulation_time.iter(),
+                external_conditions.into(),
+                None,
+                temp_air_int_callback(),
+                Some(control),
+                None,
+                Some(8),
+                Some(20.),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        ));
+
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), SERVICE_NAME).unwrap();
+
+        heat_battery
+    }
+
+    fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
+        Control::SetpointTime(
+            SetpointTimeControl::new(schedule, 0, 1., Default::default(), Default::default(), 1.)
+                .into(),
+        )
+    }
+
+    fn get_service_names_from_results(heat_battery: Arc<RwLock<HeatBatteryPcm>>) -> Vec<ArcStr> {
+        heat_battery
+            .read()
+            .service_results
+            .read()
+            .iter()
+            .map(|result| result.service_name.clone())
+            .collect_vec()
+    }
+
+    // in Python this test is called test_service_is_on_with_control
+    #[rstest]
+    fn test_service_is_on_when_service_control_is_on(
+        simulation_time_iteration: SimulationTimeIteration,
+        battery_control_off: Arc<ChargeControl>,
+    ) {
+        // Test when controlvent is provided and returns True
+        let service_control_on: Control =
+            create_setpoint_time_control(vec![Some(21.0), Some(21.0)]);
+
+        let heat_battery = create_heat_battery(battery_control_off, None);
+
+        let heat_battery_service = HeatBatteryPcmServiceSpace::new(
+            heat_battery.clone(),
+            SERVICE_NAME.into(),
+            service_control_on,
+        );
+
+        assert!(heat_battery_service.is_on(simulation_time_iteration));
+
+        let service_control_off: Control = create_setpoint_time_control(vec![None, None]);
+
+        let heat_battery_service: HeatBatteryPcmServiceSpace =
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), service_control_off);
+
+        assert!(!heat_battery_service.is_on(simulation_time_iteration));
+    }
+
+    #[fixture]
+    fn heat_battery_service_water_direct(
+        battery_control_off: Arc<ChargeControl>,
+    ) -> HeatBatteryPcmServiceWaterDirect {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
+        let service_name = "WaterHeating".into();
+
+        HeatBatteryPcmServiceWaterDirect::new(heat_battery, service_name, 60., mock_cold_feed)
+    }
+
+    #[rstest]
+    fn test_get_cold_water_source_for_water_direct(
+        heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
+    ) {
+        let _expected = &WaterSupply::Mock(MockWaterSupply::new(10.));
+
+        let actual = heat_battery_service_water_direct.get_cold_water_source();
+
+        if let WaterSupply::Mock(mock) = actual {
+            assert_eq!(mock, &MockWaterSupply::new(10.));
+        } else {
+            panic!("Expected a MockWaterSupply");
+        }
+    }
+
+    #[rstest]
+    fn test_get_temp_hot_water_for_water_direct(
+        mut heat_battery_service_water_direct: HeatBatteryPcmServiceWaterDirect,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) {
+        heat_battery_service_water_direct.cold_feed = WaterSupply::Mock(MockWaterSupply::new(25.));
+
+        let expected = vec![(60., 20.)];
+        let actual = heat_battery_service_water_direct
+            .get_temp_hot_water(20., None, simulation_time_iteration)
+            .unwrap();
+
+        assert_eq!(actual, expected)
+    }
+
+    // skipping following python tests due to mocking:
+    // test_demand_hot_water, test_demand_hot_water_fallback_path
+
+    fn create_service_water_regular_with_controls(
+        battery_control: Arc<ChargeControl>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) -> HeatBatteryPcmServiceWaterRegular {
+        let heat_battery = create_heat_battery(battery_control, None);
+
+        let range_time_control = Arc::new(
+            RangeTimeControl::new(
+                ScheduleOrControl::Schedule(vec![
+                    Some(52.),
+                    None,
+                    None,
+                    None,
+                    Some(52.),
+                    Some(52.),
+                    Some(52.),
+                    Some(52.),
+                ]),
+                ScheduleOrControl::Schedule(vec![
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                    Some(55.),
+                ]),
+                simulation_time_iterator,
+                0,
+                1.,
+                None,
+            )
+            .unwrap(),
+        );
+
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
+
+        HeatBatteryPcmServiceWaterRegular::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            mock_cold_feed,
+            range_time_control,
+        )
+    }
+
+    // test_service_is_on_without_control
+    #[rstest]
+    fn test_service_with_no_service_control_is_always_on_for_water_regular(
+        simulation_time_iteration: SimulationTimeIteration,
+        battery_control_off: Arc<ChargeControl>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let heat_battery_service = create_service_water_regular_with_controls(
+            battery_control_off,
+            simulation_time_iterator,
+        );
+
+        assert!(heat_battery_service.is_on(simulation_time_iteration));
+    }
+
+    #[rstest]
+    fn test_setpnt_for_water_regular(
+        simulation_time_iterator: SimulationTimeIterator,
+        battery_control_off: Arc<ChargeControl>,
+    ) {
+        let service = create_service_water_regular_with_controls(
+            battery_control_off,
+            simulation_time_iterator.clone(),
+        );
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let (control_min, control_max) = service.setpnt(t_it);
+
+            assert_eq!(
+                control_min,
+                [
+                    Some(52.),
+                    None,
+                    None,
+                    None,
+                    Some(52.),
+                    Some(52.),
+                    Some(52.),
+                    Some(52.)
+                ][t_idx]
+            );
+            assert_eq!(control_max, Some(55.));
+        }
+    }
+
+    // In Python this is test_demand_energy_service_off
+    #[rstest]
+    fn test_demand_energy_returns_zero_when_service_control_is_off_for_water_regular(
+        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: SimulationTimeIterator,
+        battery_control_on: Arc<ChargeControl>,
+    ) {
+        let energy_demand = 10.;
+        let temp_flow = 55.;
+        let temp_return = 40.;
+
+        let range_time_control = Arc::new(
+            RangeTimeControl::new(
+                ScheduleOrControl::Schedule(vec![None]),
+                ScheduleOrControl::Schedule(vec![None]),
+                simulation_time_iterator.clone(),
+                0,
+                1.,
+                None,
+            )
+            .unwrap(),
+        );
+
+        let heat_battery = create_heat_battery(battery_control_on, None);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
+        let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
+            HeatBatteryPcmServiceWaterRegular::new(
+                heat_battery,
+                SERVICE_NAME.into(),
+                mock_cold_feed,
+                range_time_control,
+            );
+
+        let result = heat_battery_service
+            .demand_energy(
+                energy_demand,
+                Some(temp_flow),
+                Some(temp_return),
+                None,
+                simulation_time_iteration,
+                false,
+            )
+            .unwrap();
+
+        assert_eq!(result, 0.);
+    }
+
+    // skipped test_control_off_bypassed_by_ignore_standard_ctrl due to mocking and the minimal complexity of the change
+
+    // In Python this is test_energy_output_max_service_on
+    #[rstest]
+    #[ignore = "as part of 1.0.0a9 migration"]
+
+    fn test_energy_output_max_when_service_control_on_for_water_regular(
+        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: SimulationTimeIterator,
+        battery_control_on: Arc<ChargeControl>,
+    ) {
+        let heat_battery_service = create_service_water_regular_with_controls(
+            battery_control_on,
+            simulation_time_iterator,
+        );
+
+        let temp_flow = 50.0;
+        let temp_return = 40.0;
+        let result = heat_battery_service
+            // added false to match signature not yet ported for 1.0.0a9
+            .energy_output_max(temp_flow, temp_return, simulation_time_iteration, false)
+            .unwrap();
+
+        assert_relative_eq!(result, 72279.10023958197);
+    }
+
+    #[rstest]
+    #[ignore = "as part of 1.0.0a9 migration"]
+    fn test_energy_output_max_service_off_for_water_regular(
+        // In Python this is test_energy_output_max_service_off
+        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: SimulationTimeIterator,
+        battery_control_off: Arc<ChargeControl>,
+    ) {
+        let heat_battery_service = create_service_water_regular_with_controls(
+            battery_control_off,
+            simulation_time_iterator,
+        );
+
+        let temp_flow = 50.0;
+        let temp_return = 40.0;
+        let result = heat_battery_service
+            // added false to match signature not yet ported for 1.0.0a9
+            .energy_output_max(temp_flow, temp_return, simulation_time_iteration, false)
+            .unwrap();
+
+        assert_relative_eq!(result, 28882.5139822234, epsilon = 1e-7);
+    }
+
+    #[rstest]
+    fn test_temp_setpnt_for_space(
+        simulation_time_iteration: SimulationTimeIteration,
+        battery_control_off: Arc<ChargeControl>,
+    ) {
+        let first_scheduled_temp = Some(21.);
+        let ctrl: Control = create_setpoint_time_control(vec![first_scheduled_temp]);
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let heat_battery_space =
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
+
+        assert_eq!(
+            heat_battery_space.temp_setpnt(simulation_time_iteration),
+            first_scheduled_temp
+        );
+    }
+
+    #[rstest]
+    fn test_in_required_period_for_space(
+        simulation_time_iteration: SimulationTimeIteration,
+        battery_control_off: Arc<ChargeControl>,
+    ) {
+        let ctrl: Control = create_setpoint_time_control(vec![Some(21.)]);
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let heat_battery_space =
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
+
+        assert_eq!(
+            heat_battery_space.in_required_period(simulation_time_iteration),
+            Some(true)
+        );
+    }
+
+    #[rstest]
+    fn test_demand_energy_service_off_for_space(
+        simulation_time_iteration: SimulationTimeIteration,
+
+        battery_control_off: Arc<ChargeControl>,
+    ) {
+        let energy_demand = 10.;
+        let temp_return = 40.;
+        let temp_flow = 1.;
+        let time_start = 0.2;
+        let ctrl: Control = create_setpoint_time_control(vec![None]);
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let heat_battery_space =
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
+        let result = heat_battery_space
+            .demand_energy(
+                energy_demand,
+                temp_flow,
+                temp_return,
+                Some(time_start),
+                None,
+                simulation_time_iteration,
+            )
+            .unwrap();
+        assert_eq!(result, 0.);
+    }
+
+    // skipping python's test_energy_output_max_service_on due to mocking
+
+    // in Python this test is called test_energy_output_max_service_off
+    #[rstest]
+    fn test_energy_output_max_service_off_for_space(
+        battery_control_on: Arc<ChargeControl>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) {
+        let temp_output = 70.;
+        let temp_return = 40.;
+        let heat_battery = create_heat_battery(battery_control_on, None);
+        let service_control_off: Control = create_setpoint_time_control(vec![None]);
+
+        let heat_battery_service: HeatBatteryPcmServiceSpace =
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), service_control_off);
+
+        let result = heat_battery_service
+            .energy_output_max(temp_output, temp_return, None, simulation_time_iteration)
+            .unwrap();
+
+        assert_relative_eq!(result, 0.);
+    }
+
+    #[rstest]
+    fn test_create_service_connection(battery_control_on: Arc<ChargeControl>) {
+        let heat_battery = create_heat_battery(battery_control_on, None);
+        let create_connection_result =
+            HeatBatteryPcm::create_service_connection(heat_battery.clone(), "new service");
+        assert!(create_connection_result.is_ok());
+        assert!(heat_battery
+            .read()
+            .energy_supply_connections
+            .contains_key("new service"));
+        let create_connection_result =
+            HeatBatteryPcm::create_service_connection(heat_battery, "new service");
+        assert!(create_connection_result.is_err()) // second attempt to create a service connection with same name should error
+    }
+
+    #[rstest]
+    fn test_create_service_hot_water_direct(battery_control_on: Arc<ChargeControl>) {
+        let heat_battery = create_heat_battery(battery_control_on, None);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
+        let service = HeatBatteryPcm::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "new_service",
+            60.,
+            mock_cold_feed,
+        )
+        .unwrap();
+
+        let actual = service.get_cold_water_source();
+
+        if let WaterSupply::Mock(mock) = actual {
+            assert_eq!(mock, &MockWaterSupply::new(10.));
+        } else {
+            panic!("Expected a MockWaterSupply");
+        }
+
+        assert!(heat_battery
+            .read()
+            .energy_supply_connections
+            .contains_key("new_service"));
+    }
+
+    #[rstest]
+    fn test_create_service_space_heating(
+        simulation_time_iteration: SimulationTimeIteration,
+        battery_control_off: Arc<ChargeControl>,
+    ) {
+        let control = create_setpoint_time_control(vec![Some(21.0)]);
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let service = HeatBatteryPcm::create_service_space_heating(
+            heat_battery.clone(),
+            "new_service",
+            control,
+        )
+        .unwrap();
+
+        assert!(service.is_on(simulation_time_iteration));
+        assert!(heat_battery
+            .read()
+            .energy_supply_connections
+            .contains_key("new_service"));
+    }
+
+    #[rstest]
+    fn test_electric_charge(
+        simulation_time_iteration: SimulationTimeIteration,
+        battery_control_off: Arc<ChargeControl>,
+        battery_control_on: Arc<ChargeControl>,
+    ) {
+        // electric charge should be 0 when battery control is off
+        let heat_battery = create_heat_battery(battery_control_off, None);
+
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .electric_charge(simulation_time_iteration),
+            0.0
+        );
+
+        // electric charge should be calculated when battery control is on
+        let heat_battery = create_heat_battery(battery_control_on, None);
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .electric_charge(simulation_time_iteration),
+            20.0
+        );
+    }
+
+    #[rstest]
+    fn test_first_call(battery_control_on: Arc<ChargeControl>, simulation_time: SimulationTime) {
+        let heat_battery = create_heat_battery(battery_control_on, None);
+        for t_it in simulation_time.iter() {
+            heat_battery.read().first_call();
+
+            assert!(!heat_battery.read().flag_first_call.load(Ordering::SeqCst));
+
+            heat_battery.read().timestep_end(t_it).unwrap();
+        }
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_demand_energy(simulation_time: SimulationTime, battery_control_on: Arc<ChargeControl>) {
+        let heat_battery = create_heat_battery(battery_control_on, None);
+
+        let expected_zone_temp_c_dist = [
+            vec![
+                79.71165314809511,
+                79.85379912318692,
+                79.92587158056449,
+                79.96241457173316,
+                79.98094301175232,
+                79.99033751063061,
+                79.99510081553287,
+                79.99751596017077,
+            ], // First timestep
+            vec![
+                78.48854379731785,
+                78.76743300209962,
+                78.90934369283018,
+                78.9815529739174,
+                79.01829519996613,
+                79.03699050188325,
+                79.04650298972031,
+                79.05134304583224,
+            ], // Second timestep
+        ];
+
+        let service_name = "new_service";
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service_name).unwrap();
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let demand_energy_actual = heat_battery
+                .clone()
+                .read()
+                .demand_energy(
+                    service_name,
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    5.,
+                    Some(40.),
+                    Some(52.5),
+                    true,
+                    Some(1.), // the Python here erroneously uses too many arguments to demand_energy so this is to fake the equivalent in the Rust, for example the Python True is understood as the number 1
+                    None,
+                    t_it,
+                )
+                .unwrap();
+
+            assert_relative_eq!(
+                demand_energy_actual,
+                [0.007714304589733515, 0.007530418147738887][t_idx]
+            );
+
+            let service_names_in_results = get_service_names_from_results(heat_battery.clone());
+
+            assert!(service_names_in_results.contains(&service_name.into()));
+
+            assert_eq!(heat_battery.read().charge_level, [0.0, 0.0][t_idx]);
+
+            assert_relative_eq!(
+                heat_battery
+                    .read()
+                    .total_time_running_current_timestep
+                    .load(Ordering::SeqCst),
+                [0.0002777777777777778, 0.0002777777777777778][t_idx]
+            );
+
+            assert_eq!(
+                heat_battery.read().zone_temp_c_dist_initial.read().clone(),
+                expected_zone_temp_c_dist[t_idx]
+            );
+
+            heat_battery.read().timestep_end(t_it).unwrap();
+        }
+    }
+
+    fn create_heat_battery_pcm(
+        external_sensor: ExternalSensor,
+        simulation_time_iterator: SimulationTimeIterator,
+        external_conditions: ExternalConditions,
+    ) -> Arc<RwLock<HeatBatteryPcm>> {
+        let control = Arc::new(
+            ChargeControl::new(
+                ControlLogicType::Manual,
+                ScheduleOrControl::Schedule(vec![false]),
+                &simulation_time_iterator,
+                0,
+                1.,
+                vec![Some(0.2), Some(0.3)],
+                None,
+                None,
+                Some(external_conditions.into()),
+                Some(external_sensor),
+                None,
+            )
+            .unwrap(),
+        );
+        let heat_battery = create_heat_battery(control, None);
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), "new_service").unwrap();
+
+        heat_battery
+    }
+
+    // skipping python's test_demand_energy_simultaneous_charging_and_discharging due to mocking
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_demand_energy_simultaneous_no_temp_output(
+        battery_control_off: Arc<ChargeControl>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .demand_energy(
+                    SERVICE_NAME,
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    0.08,
+                    Some(40.),
+                    None,
+                    true,
+                    None,
+                    None,
+                    simulation_time_iteration
+                )
+                .unwrap(),
+            0.08021138263537801
+        );
+
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .demand_energy(
+                    SERVICE_NAME,
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    0.06,
+                    Some(40.),
+                    None,
+                    true,
+                    None,
+                    None,
+                    simulation_time_iteration
+                )
+                .unwrap(),
+            0.06018673551977593
+        );
+
+        // Battery losses
+        assert_eq!(heat_battery.read().get_battery_losses(), 0.);
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_demand_energy_other(
+        external_sensor: ExternalSensor,
+        simulation_time_iterator: SimulationTimeIterator,
+        external_conditions: ExternalConditions,
+    ) {
+        let heat_battery = create_heat_battery_pcm(
+            external_sensor.clone(),
+            simulation_time_iterator.clone(),
+            external_conditions.clone(),
+        );
+        let simtime = simulation_time_iterator.current_iteration();
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .demand_energy(
+                    "new_service",
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    0.08,
+                    Some(40.),
+                    Some(40.),
+                    true,
+                    None,
+                    None,
+                    simtime
+                )
+                .unwrap(),
+            0.08021138263537801
+        );
+
+        let heat_battery = create_heat_battery_pcm(
+            external_sensor.clone(),
+            simulation_time_iterator.clone(),
+            external_conditions.clone(),
+        );
+        heat_battery.write().hb_time_step = 119.;
+
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .demand_energy(
+                    "new_service",
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    0.08,
+                    Some(40.),
+                    Some(40.),
+                    true,
+                    None,
+                    None,
+                    simtime
+                )
+                .unwrap(),
+            0.08021138263537801
+        );
+
+        let heat_battery = create_heat_battery_pcm(
+            external_sensor.clone(),
+            simulation_time_iterator.clone(),
+            external_conditions.clone(),
+        );
+        heat_battery.write().hb_time_step = 20.;
+
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .demand_energy(
+                    "new_service",
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    0.08,
+                    Some(40.),
+                    Some(80.),
+                    true,
+                    None,
+                    None,
+                    simtime
+                )
+                .unwrap(),
+            0.08021138263537801
+        );
+
+        let heat_battery = create_heat_battery_pcm(
+            external_sensor,
+            simulation_time_iterator,
+            external_conditions,
+        );
+
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .demand_energy(
+                    "new_service",
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    0.08,
+                    Some(40.),
+                    Some(79.),
+                    true,
+                    None,
+                    None,
+                    simtime
+                )
+                .unwrap(),
+            0.08021138263537801
+        );
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_dhw_service_demand_hot_water(
+        battery_control_off: Arc<ChargeControl>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
+        let service = HeatBatteryPcm::create_service_hot_water_direct(
+            heat_battery,
+            "dhw_complex",
+            65., // High setpoint
+            mock_cold_feed,
+        )
+        .unwrap();
+
+        let actual = service.get_cold_water_source();
+
+        if let WaterSupply::Mock(mock) = actual {
+            assert_eq!(mock, &MockWaterSupply::new(10.));
+        } else {
+            panic!("Expected a MockWaterSupply");
+        }
+
+        // Test with usage events
+        let usage_events = vec![
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                temperature_warm: 40.0,
+                volume_warm: 50.0,
+                volume_hot: 8.0,
+                event_duration: 0.0,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                temperature_warm: 35.0,
+                volume_warm: 0.0,
+                volume_hot: 0.0,
+                event_duration: 0.0,
+            },
+        ];
+
+        let energy = service
+            .demand_hot_water(Some(usage_events), simulation_time_iteration)
+            .unwrap();
+
+        assert_eq!(energy, 0.5113777776161836);
+
+        // Test with no usage events
+        let energy_no_usage = service
+            .demand_hot_water(None, simulation_time_iteration)
+            .unwrap();
+
+        assert_eq!(energy_no_usage, 0.);
+    }
+
+    // Skipping Python's test_calc_auxiliary_energy due to mocking (only assertion uses assert_called_once_with)
+    // Skipping Python's test_calc_auxiliary_energy_space_heating due to mocking (only assertion uses assert_called_once_with)
+
+    /// Check heat battery auxiliary energy includes standby power when no services are called
+    #[rstest]
+    fn test_calc_auxiliary_energy_no_services(
+        simulation_time_iterator: SimulationTimeIterator,
+        battery_control_on: Arc<ChargeControl>,
+    ) {
+        // Don't create any services
+        let heat_battery = create_heat_battery(battery_control_on, None);
+
+        let result = heat_battery
+            .read()
+            .calc_auxiliary_energy(1.0, 0.5, simulation_time_iterator.current_index())
+            .unwrap();
+
+        // Should only have standby power (no pump power since no services were called)
+        let expected_energy_aux = heat_battery.read().power_standby * 0.5;
+
+        assert_relative_eq!(result, expected_energy_aux);
+    }
+
+    /// Check that direct DHW service doesn't contribute to pump running time
+    #[rstest]
+    fn test_calc_auxiliary_energy_direct_dhw_no_pump_contribution(
+        simulation_time_iterator: SimulationTimeIterator,
+        battery_control_on: Arc<ChargeControl>,
+    ) {
+        let heat_battery = create_heat_battery(battery_control_on, None);
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
+        // Create only a direct hot water service
+        HeatBatteryPcm::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "dhw_direct",
+            60.,
+            mock_cold_feed,
+        )
+        .unwrap();
+
+        // Simulate demand that sets total_time_running but should not affect pump time
+        heat_battery
+            .write()
+            .total_time_running_current_timestep
+            .store(0.5, Ordering::SeqCst);
+        heat_battery
+            .write()
+            .pump_running_time_current_timestep
+            .store(0., Ordering::SeqCst);
+
+        let result = heat_battery
+            .read()
+            .calc_auxiliary_energy(1.0, 0.5, simulation_time_iterator.current_index())
+            .unwrap();
+
+        // Only standby power, no pump power since pump time is 0
+        let expected_energy_aux = heat_battery.read().power_standby * 0.5;
+
+        assert_relative_eq!(result, expected_energy_aux);
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_timestep_end(
+        external_sensor: ExternalSensor,
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        // not using the fixture here
+        // because we need to set different charge_levels
+        let battery_control_on: Arc<ChargeControl> = ChargeControl::new(
+            ControlLogicType::Manual,
+            ScheduleOrControl::Schedule(vec![true, true, true]),
+            &simulation_time_iterator,
+            0,
+            1.,
+            [1.0, 1.5].into_iter().map(Into::into).collect(),
+            None,
+            None,
+            Some(external_conditions.into()),
+            Some(external_sensor),
+            None,
+        )
+        .unwrap()
+        .into();
+
+        let heat_battery = create_heat_battery(battery_control_on, None);
+        let service_name = "new_timestep_end_service";
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service_name).unwrap();
+
+        let simtime = simulation_time_iterator.current_iteration();
+        heat_battery
+            .read()
+            .demand_energy(
+                service_name,
+                HeatingServiceType::DomesticHotWaterRegular,
+                5.0,
+                Some(40.),
+                Some(55.),
+                true,
+                None,
+                None,
+                simtime,
+            )
+            .unwrap();
+
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .total_time_running_current_timestep
+                .load(Ordering::SeqCst),
+            0.25690463025906096
+        );
+
+        let service_names_in_results = get_service_names_from_results(heat_battery.clone());
+
+        assert!(service_names_in_results.contains(&service_name.into()));
+
+        heat_battery.read().timestep_end(simtime).unwrap();
+
+        // Assertions to check if the internal state was updated correctly
+        assert!(heat_battery.read().flag_first_call.load(Ordering::SeqCst)); // Python has double negative here
+
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .total_time_running_current_timestep
+                .load(Ordering::SeqCst),
+            0.0
+        );
+        assert_eq!(heat_battery.read().service_results.read().len(), 0);
+    }
+
+    #[rstest]
+    #[ignore = "Fix the energy_output_max call with the new signature for 1.0.0a9"]
+    fn test_energy_output_max(
+        external_conditions: ExternalConditions,
+        external_sensor: ExternalSensor,
+        simulation_time_iterator: SimulationTimeIterator,
+        simulation_time: SimulationTime,
+    ) {
+        // not using the fixture here
+        // because we need to set different charge_levels
+        let battery_control_on: Arc<ChargeControl> = ChargeControl::new(
+            ControlLogicType::Manual,
+            ScheduleOrControl::Schedule(vec![true, true, true]),
+            &simulation_time_iterator,
+            0,
+            1.,
+            [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
+            None,
+            None,
+            Some(external_conditions.clone().into()),
+            Some(external_sensor.clone()),
+            None,
+        )
+        .unwrap()
+        .into();
+
+        let heat_battery = create_heat_battery(battery_control_on, None);
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                heat_battery
+                    .read()
+                    .energy_output_max(0., 0., None, t_it)
+                    .unwrap(),
+                [108864.87597021714, 124118.95144251334][t_idx],
+                max_relative = 1e-7
+            );
+
+            heat_battery.read().timestep_end(t_it).unwrap();
+        }
+
+        let battery_control_on: Arc<ChargeControl> = ChargeControl::new(
+            ControlLogicType::Manual,
+            ScheduleOrControl::Schedule(vec![true, true, true]),
+            &simulation_time_iterator,
+            0,
+            1.,
+            [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
+            None,
+            None,
+            Some(external_conditions.into()),
+            Some(external_sensor),
+            None,
+        )
+        .unwrap()
+        .into();
+        let heat_battery = create_heat_battery(battery_control_on, None);
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                heat_battery
+                    .read()
+                    .energy_output_max(0., 90., Some(0.), t_it)
+                    .unwrap(),
+                [0., 72281.56558957469][t_idx]
+            );
+
+            heat_battery.read().timestep_end(t_it).unwrap();
+        }
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_get_zone_properties_losses(battery_control_off: Arc<ChargeControl>) {
+        // Test that the losses model scales a zone's loss by its temperature difference.
+        //
+        // The zone's share of the rated loss energy (Q_max_kJ split across the
+        // eight zones) is scaled by the ratio of the zone-to-surroundings
+        // temperature difference to the difference at which the rated loss was
+        // characterised (max_temperature 80 °C minus the 20 °C reference ambient,
+        // i.e. 60 K).
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let (energy_transf, _, _, _) = heat_battery.read().get_zone_properties(
+            0,
+            &HeatBatteryPcmOperationMode::Losses,
+            &[42., 57., 58., 58., 59., 59., 60., 61.],
+            40.,
+            40.,
+            5.,
+            414.,
+            20.,
+            10.,
+            None,
+            None,
+        );
+
+        assert_eq!(energy_transf, 0.625);
+    }
+
+    #[rstest]
+    fn test_get_zone_properties_no_energy_transf(battery_control_off: Arc<ChargeControl>) {
+        // Test that get_zone_properties returns energy_transf as 0 with losses model and higher zone_temp_c_start than inlet_temp_c
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let (energy_transf, _, _, _) = heat_battery.read().get_zone_properties(
+            0,
+            &HeatBatteryPcmOperationMode::Losses,
+            &[42., 57., 58., 58., 59., 59., 60., 61.],
+            45.,
+            45.,
+            5.,
+            414.,
+            20.,
+            10.,
+            None,
+            None,
+        );
+
+        assert_eq!(energy_transf, 0.);
+    }
+
+    // skipping python's test_get_zone_properties_invalid_mode as mode can't be invalid in rust
+
+    #[rstest]
+    fn test_calculate_zone_energy_required(battery_control_off: Arc<ChargeControl>) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+
+        let required = heat_battery.read().calculate_zone_energy_required(50., 80.);
+
+        assert_relative_eq!(required, -4347.7375);
+
+        let required = heat_battery.read().calculate_zone_energy_required(58., 80.);
+
+        assert_relative_eq!(required, -2541.0625);
+
+        let required = heat_battery.read().calculate_zone_energy_required(60., 80.);
+
+        assert_relative_eq!(required, -953.75);
+
+        let required = heat_battery
+            .read()
+            .calculate_zone_energy_required(58., 58.5);
+
+        assert_relative_eq!(required, -769.8125);
+
+        let required = heat_battery
+            .read()
+            .calculate_zone_energy_required(55., 58.5);
+
+        assert_relative_eq!(required, -2385.7375);
+
+        let required = heat_battery
+            .read()
+            .calculate_zone_energy_required(60., 58.5);
+
+        assert_relative_eq!(required, 71.53125);
+
+        let required = heat_battery.read().calculate_zone_energy_required(50., 55.);
+
+        assert_relative_eq!(required, -190.75);
+
+        let required = heat_battery.read().calculate_zone_energy_required(58., 55.);
+
+        assert_relative_eq!(required, 4618.875);
+
+        let required = heat_battery.read().calculate_zone_energy_required(60., 55.);
+
+        assert_relative_eq!(required, 238.4375);
+    }
+
+    #[rstest]
+    fn test_process_zone_simultaneous_charging(battery_control_off: Arc<ChargeControl>) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+
+        let (q_max_kj, energy_charged, energy_transf) = heat_battery
+            .read()
+            .process_zone_simultaneous_charging(58., 120., -2000., 1900., 0.);
+
+        assert_relative_eq!(q_max_kj, 0.);
+        assert_relative_eq!(energy_charged, 0.5555555555555556);
+        assert_relative_eq!(energy_transf, -100.);
+
+        let (q_max_kj, energy_charged, energy_transf) = heat_battery
+            .read()
+            .process_zone_simultaneous_charging(58., 120., -2000., -1900., 0.);
+
+        assert_relative_eq!(q_max_kj, 0.);
+        assert_relative_eq!(energy_charged, 0.5555555555555556);
+        assert_relative_eq!(energy_transf, -3900.);
+
+        let (q_max_kj, energy_charged, energy_transf) = heat_battery
+            .read()
+            .process_zone_simultaneous_charging(58., 120., -3000., -1900., 0.);
+
+        assert_relative_eq!(q_max_kj, -451.4375);
+        assert_relative_eq!(energy_charged, 0.7079340277777778);
+        assert_relative_eq!(energy_transf, -4448.5625);
+    }
+
+    // skipping python's test_process_zone_simultaneous_charging_warning1 and
+    // test_process_zone_simultaneous_charging_warning2 as we haven't incorporated these warnings
+
+    #[rstest]
+    #[case(55., 3000., -23.63695937090432)]
+    #[case(58., 3000., 18.720183486238533)]
+    #[case(60., 3000., 57.08244702443777)]
+    #[case(55., 4000., -49.84927916120577)]
+    #[case(58., 4000., -7.49213630406291)]
+    #[case(60., 4000., 34.11500655307995)]
+    #[case(60., 10., 59.79030144167759)]
+    #[case(50., -4000., 72.70799475753604)]
+    #[case(50., -3000., 58.77507509945603)]
+    #[case(50., -100., 52.62123197903014)]
+    #[case(58., -2000., 68.65399737876803)]
+    #[case(58., -1000., 58.64950880896322)]
+    #[case(60., -1000., 80.96985583224115)]
+    fn test_calculate_new_zone_temperature(
+        battery_control_off: Arc<ChargeControl>,
+        #[case] zone_temp_c_start: f64,
+        #[case] energy_transf: f64,
+        #[case] expected: f64,
+    ) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let result = heat_battery
+            .read()
+            .calculate_new_zone_temperature(zone_temp_c_start, energy_transf);
+
+        assert_relative_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_charge_battery_hydronic(battery_control_off: Arc<ChargeControl>) {
+        let charge = |inlet_temp_c| {
+            let heat_battery = create_heat_battery(battery_control_off.clone(), None);
+            let heat_battery_guard = heat_battery.read();
+            let (energy, _) = heat_battery_guard
+                .charge_battery_hydronic(
+                    inlet_temp_c,
+                    1.0,
+                    10.0,
+                    1.0,
+                    f64::INFINITY,
+                    174.33952,
+                    -931.565,
+                    0.035,
+                    6.5 / 1000.0,
+                )
+                .unwrap();
+            energy
+        };
+
+        assert_relative_eq!(charge(70.0), 0.0);
+        assert_relative_eq!(charge(80.0), 65.72932929968711 / 3600.0);
+        assert_relative_eq!(charge(90.0), 3751.226341395129 / 3600.0);
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_charge_battery_hydronic_energy_limit(battery_control_off: Arc<ChargeControl>) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let (energy, zone_temps) = heat_battery
+            .read()
+            .charge_battery_hydronic(
+                90.0,
+                1.0,
+                10.0,
+                1.0,
+                0.5,
+                174.33952,
+                -931.565,
+                0.035,
+                6.5 / 1000.0,
+            )
+            .unwrap();
+
+        assert_relative_eq!(energy, 0.5);
+        let expected_zone_temps = [
+            85.87275090774999,
+            85.5034629005933,
+            85.15503953386835,
+            84.82654437538658,
+            84.51705558542992,
+            84.22566956638788,
+            83.95150395049762,
+            83.69370000554323,
+        ];
+        assert_eq!(zone_temps.len(), expected_zone_temps.len());
+        for (actual, expected) in zone_temps.iter().zip(expected_zone_temps) {
+            assert_relative_eq!(*actual, expected, epsilon = 1e-10);
+        }
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_get_temp_hot_water(
+        battery_control_off: Arc<ChargeControl>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let simtime = simulation_time_iteration;
+
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .get_temp_hot_water(50., 20., 80., simtime)
+                .unwrap(),
+            79.70798180572169
+        );
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .get_temp_hot_water(50., 10., 80., simtime)
+                .unwrap(),
+            79.8652529090689
+        );
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .get_temp_hot_water(40., 10., 80., simtime)
+                .unwrap(),
+            79.81947841211459
+        );
+        assert_relative_eq!(
+            heat_battery
+                .read()
+                .get_temp_hot_water(60., 1., 65., simtime)
+                .unwrap(),
+            65.
+        );
+    }
+
+    // skipping python's test_energy_output_max_negative as unable to replicate patch object
+
+    #[fixture]
+    fn heat_battery_no_service_connection(
+        simulation_time_iterator: SimulationTimeIterator,
+        battery_control_on: Arc<ChargeControl>,
+        external_conditions: ExternalConditions,
+    ) -> Arc<RwLock<HeatBatteryPcm>> {
+        let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
+            battery: HeatBatteryInput::Pcm {
+                energy_supply: "mains elec".into(),
+                electricity_circ_pump: 0.06,
+                electricity_standby: 0.0244,
+                max_rated_losses: 0.1,
+                number_of_units: 1,
+                charging_config: PcmBatteryChargingConfiguration::ChargeControl {
+                    control_charge: "hb_charge_control".into(),
+                    rated_charge_power: 20.0,
+                },
+                simultaneous_charging_and_discharging: false,
+                heat_storage_kj_per_k_above_phase_transition: 381.5,
+                heat_storage_kj_per_k_below_phase_transition: 305.2,
+                heat_storage_kj_per_k_during_phase_transition: 12317.,
+                phase_transition_temperature_upper: 59.,
+                phase_transition_temperature_lower: 57.,
+                max_temperature: 80.,
+                temp_init: 80.,
+                velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
+                inlet_diameter_mm: 6.5,
+                a: 174.33952,
+                b: -931.565,
+                flow_rate_l_per_min: 10.,
+            },
+        };
+
+        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time_iterator.total_steps())
+                .build(),
+        ));
+
+        let energy_supply_connection: EnergySupplyConnection =
+            EnergySupply::connection(energy_supply.clone(), "WaterHeating").unwrap();
+
+        Arc::new(RwLock::new(
+            HeatBatteryPcm::new(
+                &heat_battery_details,
+                energy_supply.into(),
+                energy_supply_connection,
+                simulation_time_iterator,
+                external_conditions.into(),
+                None,
+                temp_air_int_callback(),
+                battery_control_on.into(),
+                None,
+                Some(8),
+                Some(20.),
+                None,
+                None,
+                Some(true),
+                None,
+            )
+            .unwrap(),
+        ))
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_output_detailed_results_water_regular(
+        simulation_time: SimulationTime,
+        heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
+    ) {
+        let heat_battery = heat_battery_no_service_connection;
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
+        let service_name = "new_service";
+
+        let range_time_control = RangeTimeControl::new(
+            ScheduleOrControl::Schedule(vec![]),
+            ScheduleOrControl::Schedule(vec![]),
+            simulation_time.iter(),
+            0,
+            1.,
+            None,
+        )
+        .unwrap();
+
+        HeatBatteryPcm::create_service_hot_water_regular(
+            heat_battery.clone(),
+            service_name,
+            mock_cold_feed,
+            range_time_control.into(),
+        )
+        .unwrap();
+
+        let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
+            "auxiliary".into() => indexmap! {
+                ("energy_aux".into(), Some("kWh".into())) => vec![0.06.into(), 0.02440988888888889.into()],
+                ("battery_losses".into(), Some("kWh".into())) => vec![0.1.into(), 0.1.into()],
+                ("Temps_after_losses0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 37.65151999372197.into()],
+                ("Temps_after_losses1".into(), Some("degC".into())) => vec![38.82044560943972.into(), 37.646280340318285.into()],
+                ("Temps_after_losses2".into(), Some("degC".into())) => vec![38.82044560954897.into(), 37.643623672190984.into()],
+                ("Temps_after_losses3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 37.64227666120374.into()],
+                ("Temps_after_losses4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
+                ("Temps_after_losses5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
+                ("Temps_after_losses6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
+                ("Temps_after_losses7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
+                ("total_charge".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("end_of_timestep_charge".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("hb_after_only_charge_zone_temp0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 37.65151999372197.into()],
+                ("hb_after_only_charge_zone_temp1".into(), Some("degC".into())) => vec![38.82044560943972.into(), 37.646280340318285.into()],
+                ("hb_after_only_charge_zone_temp2".into(), Some("degC".into())) => vec![38.82044560954897.into(), 37.643623672190984.into()],
+                ("hb_after_only_charge_zone_temp3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 37.64227666120374.into()],
+                ("hb_after_only_charge_zone_temp4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
+                ("hb_after_only_charge_zone_temp5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
+                ("hb_after_only_charge_zone_temp6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
+                ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
+            },
+            "new_service".into() => indexmap! {
+                ("service_name".into(), None) => vec![ResultParamValue::String(arcstr::literal!("new_service")); 2],
+                ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::DomesticHotWaterRegular.to_string().into()); 2],
+                ("service_on".into(), None) => vec![ResultParamValue::Boolean(true); 2],
+                ("energy_output_required".into(), Some("kWh".into())) => vec![100.0.into(); 2],
+                ("temp_output".into(), Some("degC".into())) => vec![40.000471231805946.into(), 38.82596949192907.into()],
+                ("temp_inlet".into(), Some("degC".into())) => vec![40.0.into(); 2],
+                ("time_running".into(), Some("secs".into())) => vec![3600.0.into(), 1.0.into()],
+                ("energy_delivered_HB".into(), Some("kWh".into())) => vec![10.509408477594043.into(), 0.0.into()],
+                ("energy_delivered_backup".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("energy_delivered_total".into(), Some("kWh".into())) => vec![10.509408477594043.into(), 0.0.into()],
+                ("energy_charged_during_service".into(), Some("kWh".into())) => vec![0.0.into(); 2],
+                ("hb_zone_temperatures0".into(), Some("degC".into())) => vec![
+                    40.00000000000006.into(),
+                    38.831074384285536.into(),
+                ],
+                ("hb_zone_temperatures1".into(), Some("degC".into())) => vec![40.00000000000329.into(), 38.82583473088185.into()],
+                ("hb_zone_temperatures2".into(), Some("degC".into())) => vec![40.000000000112536.into(), 38.82317806275455.into()],
+                ("hb_zone_temperatures3".into(), Some("degC".into())) => vec![40.00000000307894.into(), 38.821831051767305.into()],
+                ("hb_zone_temperatures4".into(), Some("degC".into())) => vec![40.000000074337635.into(), 38.82114814418561.into()],
+                ("hb_zone_temperatures5".into(), Some("degC".into())) => vec![40.000001662652714.into(), 38.82080342718701.into()],
+                ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![40.000035634835044.into(), 38.82066151993296.into()],
+                ("hb_zone_temperatures7".into(), Some("degC".into())) => vec![40.000735381503034.into(), 38.82126609103635.into()],
+                ("current_hb_power".into(), Some("kW".into())) => vec![10.509408477594043.into(), 0.0.into()],
+            },
+        };
+
+        let expected_results_annual: ResultsAnnual = indexmap! {
+            "Overall".into() => indexmap! {
+                ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
+                ("time_running".into(), Some("secs".into())) => 3601.0.into(),
+                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
+            },
+            "auxiliary".into() => indexmap! {
+                ("energy_aux".into(), Some("kWh".into())) => 0.0844098888888889.into(),
+                ("battery_losses".into(), Some("kWh".into())) => 0.2.into(),
+                ("total_charge".into(), Some("kWh".into())) => 0.0.into(),
+                ("end_of_timestep_charge".into(), Some("kWh".into())) => 0.0.into(),
+            },
+            "new_service".into() => indexmap! {
+                ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
+                ("time_running".into(), Some("secs".into())) => 3601.0.into(),
+                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
+            },
+        };
+
+        for t_it in simulation_time.iter() {
+            heat_battery
+                .read()
+                .demand_energy(
+                    service_name,
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    100.,
+                    Some(40.),
+                    Some(55.),
+                    true,
+                    None,
+                    Some(true),
+                    t_it,
+                )
+                .unwrap();
+
+            heat_battery.read().timestep_end(t_it).unwrap();
+        }
+
+        let (results_per_timestep, results_annual) = heat_battery
+            .read()
+            .output_detailed_results(
+                &indexmap! { "hwsname".into() => vec![100.0.into()] },
+                &indexmap! { service_name.into() => "hwsname".into()},
+            )
+            .unwrap();
+
+        assert_eq!(
+            results_per_timestep.keys().collect_vec(),
+            expected_results_per_timestep.keys().collect_vec()
+        );
+        assert_eq!(
+            results_annual.keys().collect_vec(),
+            expected_results_annual.keys().collect_vec()
+        );
+
+        let assert_value =
+            |actual: &ResultParamValue, expected: &ResultParamValue| match (actual, expected) {
+                (ResultParamValue::Number(actual_num), ResultParamValue::Number(expected_num)) => {
+                    assert_relative_eq!(actual_num, expected_num, max_relative = 1e-7);
+                }
+                _ => assert_eq!(actual, expected,),
+            };
+
+        for (key, expected_results) in &expected_results_per_timestep {
+            let actual_results = &results_per_timestep[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, expected_vec) in expected_results {
+                for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
+                    assert_value(actual, expected);
+                }
+            }
+        }
+
+        for (key, expected_results) in &expected_results_annual {
+            let actual_results = &results_annual[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, value) in expected_results {
+                assert_value(&actual_results[inner_key], value);
+            }
+        }
+
+        // Test case where hot water source is not in hot water energy source data
+        let (results_per_timestep, results_annual) = heat_battery
+            .read()
+            .output_detailed_results(
+                &indexmap! { "hwsname".into() => vec![100.0.into()] },
+                &indexmap! { service_name.into() => "hwsname_other".into()},
+            )
+            .unwrap();
+
+        assert_eq!(
+            results_per_timestep.keys().collect_vec(),
+            expected_results_per_timestep.keys().collect_vec()
+        );
+        assert_eq!(
+            results_annual.keys().collect_vec(),
+            expected_results_annual.keys().collect_vec()
+        );
+
+        for (key, expected_results) in &expected_results_per_timestep {
+            let actual_results = &results_per_timestep[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, expected_vec) in expected_results {
+                for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
+                    assert_value(actual, expected);
+                }
+            }
+        }
+
+        for (key, expected_results) in &expected_results_annual {
+            let actual_results = &results_annual[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, value) in expected_results {
+                assert_value(&actual_results[inner_key], value);
+            }
+        }
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_output_detailed_results_space(
+        simulation_time: SimulationTime,
+        heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
+    ) {
+        let heat_battery = heat_battery_no_service_connection;
+        let service_name = "new_service";
+        let control = create_setpoint_time_control(vec![]);
+
+        HeatBatteryPcm::create_service_space_heating(heat_battery.clone(), service_name, control)
+            .unwrap();
+
+        let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
+            "auxiliary".into() => indexmap! {
+                ("energy_aux".into(), Some("kWh".into())) => vec![0.06.into(), 0.02440988888888889.into()],
+                ("battery_losses".into(), Some("kWh".into())) => vec![0.1.into(), 0.1.into()],
+                ("Temps_after_losses0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 37.65151999372197.into()],
+                ("Temps_after_losses1".into(), Some("degC".into())) => vec![38.82044560943972.into(), 37.646280340318285.into()],
+                ("Temps_after_losses2".into(), Some("degC".into())) => vec![38.82044560954897.into(), 37.643623672190984.into()],
+                ("Temps_after_losses3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 37.64227666120374.into()],
+                ("Temps_after_losses4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
+                ("Temps_after_losses5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
+                ("Temps_after_losses6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
+                ("Temps_after_losses7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
+                ("total_charge".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+                ("end_of_timestep_charge".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+                ("hb_after_only_charge_zone_temp0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 37.65151999372197.into()],
+                ("hb_after_only_charge_zone_temp1".into(), Some("degC".into())) => vec![38.82044560943972.into(), 37.646280340318285.into()],
+                ("hb_after_only_charge_zone_temp2".into(), Some("degC".into())) => vec![38.82044560954897.into(), 37.643623672190984.into()],
+                ("hb_after_only_charge_zone_temp3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 37.64227666120374.into()],
+                ("hb_after_only_charge_zone_temp4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
+                ("hb_after_only_charge_zone_temp5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
+                ("hb_after_only_charge_zone_temp6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
+                ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
+            },
+            "new_service".into() => indexmap! {
+                ("service_name".into(), None) => vec![ResultParamValue::String("new_service".into()), ResultParamValue::String("new_service".into())],
+                ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::Space.to_string().into()), ResultParamValue::String(HeatingServiceType::Space.to_string().into())],
+                ("service_on".into(), None) => vec![ResultParamValue::Boolean(true), ResultParamValue::Boolean(true)],
+                ("energy_output_required".into(), Some("kWh".into())) => vec![100.0.into(), 100.0.into()],
+                ("temp_output".into(), Some("degC".into())) => vec![40.000471231805946.into(), 38.82596949192907.into()],
+                ("temp_inlet".into(), Some("degC".into())) => vec![40.0.into(), 40.0.into()],
+                ("time_running".into(), Some("secs".into())) => vec![3600.0.into(), 1.0.into()],
+                ("energy_delivered_HB".into(), Some("kWh".into())) => vec![10.509408477594043.into(), 0.0.into()],
+                ("energy_delivered_backup".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+                ("energy_delivered_total".into(), Some("kWh".into())) => vec![10.509408477594043.into(), 0.0.into()],
+                ("energy_charged_during_service".into(), Some("kWh".into())) => vec![0.0.into(), 0.0.into()],
+                ("hb_zone_temperatures0".into(), Some("degC".into())) => vec![40.00000000000006.into(), 38.831074384285536.into()],
+                ("hb_zone_temperatures1".into(), Some("degC".into())) => vec![40.00000000000329.into(), 38.82583473088185.into()],
+                ("hb_zone_temperatures2".into(), Some("degC".into())) => vec![40.000000000112536.into(), 38.82317806275455.into()],
+                ("hb_zone_temperatures3".into(), Some("degC".into())) => vec![40.00000000307894.into(), 38.821831051767305.into()],
+                ("hb_zone_temperatures4".into(), Some("degC".into())) => vec![40.000000074337635.into(), 38.82114814418561.into()],
+                ("hb_zone_temperatures5".into(), Some("degC".into())) => vec![40.000001662652714.into(), 38.82080342718701.into()],
+                ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![40.000035634835044.into(), 38.82066151993296.into()],
+                ("hb_zone_temperatures7".into(), Some("degC".into())) => vec![40.000735381503034.into(), 38.82126609103635.into()],
+                ("current_hb_power".into(), Some("kW".into())) => vec![10.509408477594043.into(), 0.0.into()],
+            },
+        };
+
+        let expected_results_annual: ResultsAnnual = indexmap! {
+            "Overall".into() => indexmap! {
+                ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
+                ("time_running".into(), Some("secs".into())) => 3601.0.into(),
+                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
+            },
+            "auxiliary".into() => indexmap! {
+                ("energy_aux".into(), Some("kWh".into())) => 0.0844098888888889.into(),
+                ("battery_losses".into(), Some("kWh".into())) => 0.2.into(),
+                ("total_charge".into(), Some("kWh".into())) => 0.0.into(),
+                ("end_of_timestep_charge".into(), Some("kWh".into())) => 0.0.into(),
+            },
+            "new_service".into() => indexmap! {
+                ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
+                ("time_running".into(), Some("secs".into())) => 3601.0.into(),
+                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
+            },
+        };
+
+        for t_it in simulation_time.iter() {
+            heat_battery
+                .read()
+                .demand_energy(
+                    service_name,
+                    HeatingServiceType::Space,
+                    100.,
+                    Some(40.),
+                    Some(55.),
+                    true,
+                    None,
+                    Some(true),
+                    t_it,
+                )
+                .unwrap();
+
+            heat_battery.read().timestep_end(t_it).unwrap();
+        }
+
+        let (results_per_timestep, results_annual) = heat_battery
+            .read()
+            .output_detailed_results(&indexmap! {}, &indexmap! {})
+            .unwrap();
+
+        assert_eq!(
+            results_per_timestep.keys().collect_vec(),
+            expected_results_per_timestep.keys().collect_vec()
+        );
+        assert_eq!(
+            results_annual.keys().collect_vec(),
+            expected_results_annual.keys().collect_vec()
+        );
+
+        let assert_value =
+            |actual: &ResultParamValue, expected: &ResultParamValue| match (actual, expected) {
+                (ResultParamValue::Number(actual_num), ResultParamValue::Number(expected_num)) => {
+                    assert_relative_eq!(actual_num, expected_num, max_relative = 1e-7);
+                }
+                _ => assert_eq!(actual, expected,),
+            };
+
+        for (key, expected_results) in &expected_results_per_timestep {
+            let actual_results = &results_per_timestep[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, expected_vec) in expected_results {
+                for (actual, expected) in actual_results[inner_key].iter().zip(expected_vec) {
+                    assert_value(actual, expected);
+                }
+            }
+        }
+
+        for (key, expected_results) in &expected_results_annual {
+            let actual_results = &results_annual[key];
+
+            assert_eq!(
+                actual_results.keys().collect_vec(),
+                expected_results.keys().collect_vec()
+            );
+
+            for (inner_key, value) in expected_results {
+                assert_value(&actual_results[inner_key], value);
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_output_detailed_results_none(battery_control_on: Arc<ChargeControl>) {
+        // Test that calling output_detailed_results errors when output_detailed_results on heat_battery is false
+        let heat_battery = create_heat_battery(battery_control_on, Some(false));
+
+        assert!(heat_battery
+            .read()
+            .output_detailed_results(&indexmap! {}, &indexmap! {})
+            .is_err());
+    }
+
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_demand_energy_low_temp_minimum_run_coverage(
+        battery_control_off: Arc<ChargeControl>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let simtime = simulation_time_iterator.current_iteration();
+        heat_battery
+            .write()
+            .energy_supply
+            .write()
+            .set_fuel_type(FuelType::MainsGas);
+        heat_battery.write().hb_time_step = 5.; // Small time step
+                                                // Set all zones to high temperature
+        heat_battery.write().zone_temp_c_dist_initial = Arc::new(RwLock::new(vec![50.2; 8]));
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), "test_service").unwrap();
+        // Very small energy demand that will be satisfied in first loop iteration
+        // But will need to continue running to meet minimum time
+        heat_battery
+            .read()
+            .demand_energy(
+                "test_service",
+                HeatingServiceType::DomesticHotWaterRegular,
+                0.1,
+                Some(40.),
+                Some(50.),
+                true,
+                Some(0.),
+                Some(true),
+                simtime,
+            )
+            .unwrap();
+
+        //Check that minimum time was enforced
+        let service_result = heat_battery
+            .read()
+            .service_results
+            .read()
+            .last()
+            .unwrap()
+            .clone();
+
+        assert_relative_eq!(
+            service_result.time_running,
+            51.08689856959955,
+            max_relative = 1e-7
+        );
+    }
+
+    #[rstest]
+    fn test_timestep_end_with_uncalled_services(
+        heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
+        mut simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let heat_battery = heat_battery_no_service_connection;
+        let simtime = simulation_time_iterator.current_iteration();
+
+        // Create three services
+        let service1 = "water_heating";
+        let service2 = "space_heating_zone1";
+        let service3 = "space_heating_zone2";
+
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service1).unwrap();
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service2).unwrap();
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service3).unwrap();
+
+        // In timestep 1: Call only service1 and service3 (skip service2)
+        heat_battery
+            .read()
+            .demand_energy(
+                service1,
+                HeatingServiceType::DomesticHotWaterRegular,
+                5.,
+                Some(40.),
+                Some(55.),
+                true,
+                Some(0.),
+                Some(true),
+                simtime,
+            )
+            .unwrap();
+
+        heat_battery
+            .read()
+            .demand_energy(
+                service3,
+                HeatingServiceType::Space,
+                3.,
+                Some(35.),
+                Some(50.),
+                true,
+                Some(0.),
+                Some(true),
+                simtime,
+            )
+            .unwrap();
+
+        heat_battery.read().timestep_end(simtime).unwrap();
+
+        simulation_time_iterator.next();
+        let simtime = simulation_time_iterator.current_iteration();
+
+        {
+            let hb_guard = heat_battery.read();
+            let detailed_results_guard = hb_guard.detailed_results.as_ref().unwrap().read();
+
+            // Check that detailed results were created
+            assert_eq!(detailed_results_guard.len(), 1);
+
+            let timestep_results = &detailed_results_guard[0].results;
+
+            assert_eq!(timestep_results.len(), 3); // In Python this is 4 (Should have 3 service results + 1 auxiliary result = 4 total)
+
+            // Check service1 (was called)
+            assert_eq!(timestep_results[0].service_name, service1);
+            assert_eq!(
+                timestep_results[0].service_type.unwrap(),
+                HeatingServiceType::DomesticHotWaterRegular
+            );
+            assert!(timestep_results[0].service_on);
+            assert!(timestep_results[0].time_running > 0.);
+
+            // Check service2 (was NOT called - should have placeholder values)
+            assert_eq!(timestep_results[1].service_name, service2);
+            assert!(timestep_results[1].service_type.is_none());
+            assert!(!timestep_results[1].service_on);
+            assert_eq!(timestep_results[1].energy_output_required, 0.);
+            assert_eq!(timestep_results[1].time_running, 0.);
+            assert_eq!(timestep_results[1].energy_delivered_hb, 0.);
+            assert_eq!(timestep_results[1].current_hb_power, 0.);
+
+            // Check service3 (was called)
+            assert_eq!(timestep_results[2].service_name, service3);
+            assert_eq!(
+                timestep_results[2].service_type.unwrap(),
+                HeatingServiceType::Space
+            );
+            assert!(timestep_results[2].service_on);
+            assert!(timestep_results[2].time_running > 0.);
+
+            // Check auxiliary results
+            let summary = &detailed_results_guard[0].summary;
+            assert!(summary.energy_aux >= 0.);
+            assert!(summary.battery_losses >= 0.);
+            assert!(!summary.temps_after_losses.is_empty());
+            assert!(summary.total_charge >= 0.);
+            assert!(summary.end_of_timestep_charge >= 0.);
+            assert!(!summary.hb_after_only_charge_zone_temp.is_empty());
+        }
+
+        // In timestep 2: Call only service2 (skip service1 and service3)
+        heat_battery
+            .read()
+            .demand_energy(
+                service2,
+                HeatingServiceType::Space,
+                4.,
+                Some(38.),
+                Some(52.),
+                true,
+                Some(0.),
+                Some(true),
+                simtime,
+            )
+            .unwrap();
+
+        heat_battery.read().timestep_end(simtime).unwrap();
+
+        {
+            let hb_guard = heat_battery.read();
+            let detailed_results_guard = hb_guard.detailed_results.as_ref().unwrap().read();
+
+            // Check second timestep results
+            assert_eq!(detailed_results_guard.len(), 2);
+
+            let timestep2_results = &detailed_results_guard[1].results;
+
+            // service1 should have placeholder values this time
+            assert_eq!(timestep2_results[0].service_name, service1);
+            assert!(timestep2_results[0].service_type.is_none());
+            assert!(!timestep2_results[0].service_on);
+            assert_eq!(timestep2_results[0].time_running, 0.);
+
+            // service2 should have actual values
+            assert_eq!(timestep2_results[1].service_name, service2);
+            assert_eq!(
+                timestep2_results[1].service_type.unwrap(),
+                HeatingServiceType::Space
+            );
+            assert!(timestep2_results[1].service_on);
+            assert!(timestep2_results[1].time_running > 0.);
+
+            // service3 should have placeholder values
+            assert_eq!(timestep2_results[2].service_name, service3);
+            assert!(timestep2_results[2].service_type.is_none());
+            assert!(!timestep2_results[2].service_on);
+            assert_eq!(timestep2_results[2].time_running, 0.);
+        }
+    }
+
+    #[rstest]
+    fn test_timestep_end_no_services_called(
+        heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        // Test timestep_end when no services are called but services are registered
+        let heat_battery = heat_battery_no_service_connection;
+        let simtime = simulation_time_iterator.current_iteration();
+
+        // Create services but don't call them
+        let service1 = "water_heating";
+        let service2 = "space_heating";
+
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service1).unwrap();
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), service2).unwrap();
+
+        // Call timestep_end without calling any services
+        heat_battery.read().timestep_end(simtime).unwrap();
+
+        let hb_guard = heat_battery.read();
+        let detailed_results_guard = hb_guard.detailed_results.as_ref().unwrap().read();
+
+        //  Check that detailed results were created with placeholder entries
+        assert_eq!(detailed_results_guard.len(), 1);
+
+        let timestep_results = &detailed_results_guard[0].results;
+
+        assert_eq!(timestep_results.len(), 2); // In Python this is 3 (Should have 2 service results + 1 auxiliary result = 3 total)
+
+        for (i, result) in timestep_results.iter().enumerate() {
+            assert_eq!(result.service_name, [service1, service2][i]);
+            assert!(result.service_type.is_none());
+            assert!(!result.service_on);
+            assert_eq!(result.energy_output_required, 0.);
+            assert_eq!(result.time_running, 0.);
+            assert_eq!(result.energy_delivered_hb, 0.);
+            assert_eq!(result.current_hb_power, 0.);
+        }
+    }
+
+    #[rstest]
+    fn test_heat_battery_create_service_connection_already_exists(
+        battery_control_off: Arc<ChargeControl>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let service_name = "test_service";
+        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
+
+        let range_time_control = Arc::new(
+            RangeTimeControl::new(
+                ScheduleOrControl::Schedule(vec![]),
+                ScheduleOrControl::Schedule(vec![]),
+                simulation_time_iterator,
+                0,
+                1.,
+                None,
+            )
+            .unwrap(),
+        );
+
+        let result = HeatBatteryPcm::create_service_hot_water_regular(
+            heat_battery.clone(),
+            service_name,
+            mock_cold_feed.clone(),
+            range_time_control.clone(),
+        );
+
+        assert!(result.is_ok());
+
+        let result = HeatBatteryPcm::create_service_hot_water_regular(
+            heat_battery,
+            service_name,
+            mock_cold_feed.clone(),
+            range_time_control,
+        );
+
+        assert!(result.is_err())
+    }
+
+    // skipping python's test_heat_battery_edge_case_zero_timestep as function can't return None
+
+    // skipping python's test_heat_battery_process_zone_edge_cases as function can't return None and does return 4 values
+
+    // skipping python's test_heat_battery_charge_battery_hydraulic_edge_cases as function can't return None
+
+    #[rstest]
+    fn test_heat_battery_energy_output_max_boundary_conditions(
+        battery_control_off: Arc<ChargeControl>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let simtime = simulation_time_iterator.current_iteration();
+        let heat_battery = create_heat_battery(battery_control_off, None);
+
+        // Test with very low output temperature
+        let result = heat_battery
+            .read()
+            .energy_output_max(10., 10., Some(0.), simtime)
+            .unwrap();
+
+        // The method returns energy based on zone temps, not necessarily 0
+        assert!(result >= 0.);
+
+        //Test with temperature at threshold
+        let result = heat_battery
+            .read()
+            .energy_output_max(45., 45., Some(0.), simtime)
+            .unwrap();
+
+        assert!(result >= 0.);
+    }
+
+    // skipping python's test_heat_battery_service_cold_water_source_not_set as cold feed not optional
+
+    #[rstest]
+    fn test_heat_battery_zero_volume_zones(battery_control_off: Arc<ChargeControl>) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
+
+        // Test with zero energy transfer
+        let result = heat_battery.read().calculate_new_zone_temperature(50., 0.);
+
+        assert_eq!(result, 50.);
+    }
+
+    #[rstest]
+    fn test_heat_battery_all_zones_below_threshold(
+        battery_control_off: Arc<ChargeControl>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let simtime = simulation_time_iterator.current_iteration();
+        // Request high output temperature that no zone can provide
+        let heat_battery = create_heat_battery(battery_control_off, None);
+
+        let result = heat_battery
+            .read()
+            .energy_output_max(80., 80., Some(0.), simtime)
+            .unwrap();
+
+        assert_relative_eq!(result, 0., epsilon = 1e-7);
+    }
+
+    /// Test DHW service with cold water temperature that varies with volume demanded
+    #[rstest]
+    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
+    fn test_demand_hot_water_with_varying_cold_temperatures(
+        battery_control_off: Arc<ChargeControl>,
+        simulation_time: SimulationTime,
+    ) {
+        let simtime = simulation_time.iter().current_iteration();
+        let heat_battery = create_heat_battery(battery_control_off, None);
+
+        // Set up cold feed to return different temperatures based on volume
+        // Simulates drawing from a stratified tank or mixed sources
+        fn varying_temp_by_volume(volume_needed: f64) -> Vec<(f64, f64)> {
+            let volume = volume_needed;
+
+            if volume <= 10. {
+                // Small volume - warm water from top of tank
+                vec![(15.0, volume)]
+            } else if volume <= 30. {
+                // Medium volume - mix of warm and cold
+                let warm_portion = 10.;
+                let cold_portion = volume - 10.;
+                vec![(15.0, warm_portion), (8.0, cold_portion)]
+            } else {
+                // Large volume - mostly cold water
+                vec![(15.0, 10.), (8.0, 20.), (5.0, volume - 30.)]
+            }
+        }
+
+        let volumes_container: Arc<RwLock<Vec<f64>>> = Default::default();
+
+        let mock_cold_feed =
+            WaterSupply::VaryingTemp(VaryingTempWaterSupply::new(volumes_container.clone()));
+
+        let service = HeatBatteryPcm::create_service_hot_water_direct(
+            heat_battery.clone(),
+            "dhw_varying_temp",
+            65.0,
+            mock_cold_feed,
+        )
+        .unwrap();
+
+        // Test with different volume events
+        let usage_events = vec![
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // the Python uses a nonexistent "HandWash" type here - this is the best equivalent
+                temperature_warm: 35.0,
+                volume_warm: 5.0,
+                volume_hot: 5.0, // Small - should get 15°C
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Shower,
+                temperature_warm: 38.0,
+                volume_warm: 40.0,
+                volume_hot: 25.0, // Medium - should get mix (15°C and 8°C)
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Bath,
+                temperature_warm: 40.0,
+                volume_warm: 80.0,
+                volume_hot: 50.0, // Large - should get mix of all three temps
+                event_duration: 0.,
+            },
+        ];
+
+        // Execute
+        let energy = service
+            .demand_hot_water(usage_events.into(), simtime)
+            .unwrap();
+
+        // Varify draw_off_water was called with correct volumes
+        let draw_volumes = volumes_container.read().clone();
+        assert_eq!(draw_volumes.len(), 3);
+
+        assert_eq!(draw_volumes[0], 5.0); // First event volume
+        assert_eq!(draw_volumes[1], 25.0); // Second event volume
+        assert_eq!(draw_volumes[2], 50.0); // Third event volume
+
+        // Energy should be calculated based on varying temperatures
+        assert_relative_eq!(energy, 5.16607777777131, epsilon = 1e-7);
+
+        // Test that different volumes give different inlet temperatures
+        // Reset and test with single large volume
+        volumes_container.write().clear();
+
+        let single_large_event = vec![WaterEventResult {
+            event_result_type: WaterEventResultType::Bath,
+            temperature_warm: 40.0,
+            volume_warm: 80.0,
+            volume_hot: 40.0,
+            event_duration: 0.,
+        }];
+
+        let energy_large = service
+            .demand_hot_water(single_large_event.into(), simtime)
+            .unwrap();
+
+        // For 40L: 10L@15°C + 20L@8°C + 10L@5°C
+        // Average = (150 + 160 + 50) / 40 = 9°C
+
+        // Now test with equivalent volume but as small draws
+        volumes_container.write().clear();
+
+        let multiple_small_events = vec![
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
+                temperature_warm: 40.0,
+                volume_warm: 10.0,
+                volume_hot: 8.0,
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
+                temperature_warm: 40.0,
+                volume_warm: 10.0,
+                volume_hot: 8.0,
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
+                temperature_warm: 40.0,
+                volume_warm: 10.0,
+                volume_hot: 8.0,
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
+                temperature_warm: 40.0,
+                volume_warm: 10.0,
+                volume_hot: 8.0,
+                event_duration: 0.,
+            },
+            WaterEventResult {
+                event_result_type: WaterEventResultType::Other, // Python uses nonexistent type "Small" here
+                temperature_warm: 40.0,
+                volume_warm: 10.0,
+                volume_hot: 8.0,
+                event_duration: 0.,
+            },
+        ];
+
+        let energy_small_batches = service
+            .demand_hot_water(multiple_small_events.into(), simtime)
+            .unwrap();
+
+        // Small batches all get 15°C water, so should need less energy than large draw
+        // (less heating required when inlet is 15°C vs 9°C average)
+        assert!(energy_small_batches < energy_large);
+        assert_relative_eq!(energy_small_batches, 1.9830605562135022, epsilon = 1e-7);
+        assert_relative_eq!(energy_large, 2.3443371833916435, epsilon = 1e-7);
+    }
+
+    // skipping python's test_demand_hot_water_zero_volume_continue due to mocking
+
+    /// Tests for validate_no_schedule_overlap (Deviation 3 fix).
+    /// Uses real RangeTimeControl objects to verify that overlapping active
+    /// schedules are rejected and non-overlapping schedules are accepted.
+    mod test_schedule_overlap_validation {
+        use crate::core::controls::time_control::RangeTimeControl;
+
+        use super::*;
+
+        #[derive(Debug, Clone)]
+        struct MockWaterSupply;
+
+        //mock all as they don't matter
+        impl WaterSupplyBehaviour for MockWaterSupply {
+            fn draw_off_water(
+                &self,
+                _: f64,
+                _: SimulationTimeIteration,
+            ) -> anyhow::Result<Vec<(f64, f64)>> {
+                Ok(vec![])
+            }
+            fn get_temp_cold_water(
+                &self,
+                _: f64,
+                _: SimulationTimeIteration,
+            ) -> anyhow::Result<Vec<(f64, f64)>> {
+                Ok(vec![])
+            }
+            fn ultimate_cold_water_source(&self) -> Self {
+                Self {}
+            }
+        }
+
+        #[fixture]
+        fn simtime() -> SimulationTime {
+            SimulationTime::new(0., 4., 1.)
+        }
+
+        /// Create a RangeTimeControl with given schedule lists.
+        fn make_range_time_control(
+            schedule_lower: Vec<Option<f64>>,
+            schedule_upper: Vec<Option<f64>>,
+            simtime: SimulationTime,
+        ) -> Arc<RangeTimeControl> {
+            RangeTimeControl::new(
+                ScheduleOrControl::Schedule(schedule_lower),
+                ScheduleOrControl::Schedule(schedule_upper),
+                simtime.iter(),
+                0,
+                1.0,
+                None,
+            )
+            .unwrap()
+            .into()
+        }
+
+        #[rstest]
+        fn test_non_overlapping_schedules_pass(simtime: SimulationTime) {
+            // specify concrete type that satisfies WaterSupplyBehaviour
+            let ctrl_a = make_range_time_control(
+                vec![Some(0.2), Some(0.2), None, None],
+                vec![Some(0.8), Some(0.8), None, None],
+                simtime,
+            );
+            let ctrl_b = make_range_time_control(
+                vec![None, None, Some(0.2), Some(0.2)],
+                vec![None, None, Some(0.8), Some(0.8)],
+                simtime,
+            );
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
+                let mut m = IndexMap::new();
+                m.insert(
+                    "electric".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::DirectElectric,
+                        control: ctrl_a,
+                        rated_charge_power: Some(5.0),
+                        flow_rate_charging_l_per_min: None,
+                        temp_flow_max: 0.,
+                        hex_a: None,
+                        hex_b: None,
+                        schedule_unit: ScheduleUnit::StateOfCharge,
+                        hex_velocity_at_1_l_per_min: None,
+                        hex_capillary_diameter_m: None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
+                    },
+                );
+                m.insert(
+                    "hydronic".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::HeatSourceWet,
+                        control: ctrl_b,
+                        temp_flow_max: 65.0,
+                        flow_rate_charging_l_per_min: Some(10.0),
+                        hex_a: Some(174.33952),
+                        hex_b: Some(-931.565),
+                        hex_velocity_at_1_l_per_min: Some(0.035),
+                        hex_capillary_diameter_m: Some(6.5 / 1000.0),
+                        heat_source_service: Option::<HeatSourceWetService>::None,
+                        schedule_unit: Default::default(),
+                        rated_charge_power: None,
+                    },
+                );
+                m
+            };
+            // Should not raise
+            validate_no_schedule_overlap(sources, "test_battery", &simtime.iter()).unwrap();
+        }
+
+        /// Overlapping schedules (both active at t1) should return an error.
+        #[rstest]
+        fn test_overlapping_schedule_raises(simtime: SimulationTime) {
+            let ctrl_a = make_range_time_control(
+                vec![Some(0.2), Some(0.2), None, None],
+                vec![Some(0.8), Some(0.8), None, None],
+                simtime,
+            );
+            let ctrl_b = make_range_time_control(
+                vec![None, Some(0.2), Some(0.2), None],
+                vec![None, Some(0.8), Some(0.8), None],
+                simtime,
+            );
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
+                let mut m = IndexMap::new();
+                m.insert(
+                    "electric".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::DirectElectric,
+                        control: ctrl_a,
+                        rated_charge_power: Some(5.0),
+                        flow_rate_charging_l_per_min: None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
+                        hex_a: None,
+                        temp_flow_max: 0.,
+                        hex_b: None,
+                        hex_velocity_at_1_l_per_min: None,
+                        hex_capillary_diameter_m: None,
+                        schedule_unit: Default::default(),
+                    },
+                );
+                m.insert(
+                    "hydronic".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::HeatSourceWet,
+                        control: ctrl_b,
+                        rated_charge_power: Some(3.0),
+                        flow_rate_charging_l_per_min: None,
+                        hex_a: Some(174.33952),
+                        temp_flow_max: 0.,
+                        hex_b: Some(-931.565),
+                        hex_velocity_at_1_l_per_min: Some(0.035),
+                        hex_capillary_diameter_m: Some(6.5 / 1000.0),
+                        heat_source_service: Option::<HeatSourceWetService>::None,
+                        schedule_unit: Default::default(),
+                    },
+                );
+                m
+            };
+            assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_err());
+        }
+        /// Single source can never overlap — validation accepts it.
+        #[rstest]
+        fn single_source_always_passes(simtime: SimulationTime) {
+            let ctrl_a = make_range_time_control(
+                vec![Some(0.2), Some(0.2), Some(0.2), Some(0.2)],
+                vec![Some(0.8), Some(0.8), Some(0.8), Some(0.8)],
+                simtime,
+            );
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
+                let mut m = IndexMap::new();
+                m.insert(
+                    "a".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::DirectElectric,
+                        control: ctrl_a,
+                        rated_charge_power: Some(5.0),
+                        flow_rate_charging_l_per_min: None,
+                        hex_a: None,
+                        temp_flow_max: 0.,
+                        hex_b: None,
+                        hex_velocity_at_1_l_per_min: None,
+                        hex_capillary_diameter_m: None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
+                        schedule_unit: Default::default(),
+                    },
+                );
+                m
+            };
+            assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_ok());
+        }
+
+        // skipped test_simtime_reset_after_validation and test_simtime_reset_on_error
+        //from Python as we don't have a mutable reference to SimulationTime in Rust.
+
+        ///Transition period (lower=None, upper=non-null) counts as active for overlap.
+        /// A transition period means existing charging may continue, so it's an
+        /// active period from the overlap perspective.
+        #[rstest]
+        fn test_transition_period_counts_as_active(simtime: SimulationTime) {
+            // Source A: fully active all timesteps
+            let ctrl_a = make_range_time_control(
+                vec![Some(0.2), Some(0.2), Some(0.2), Some(0.2)],
+                vec![Some(0.8), Some(0.8), Some(0.8), Some(0.8)],
+                simtime,
+            );
+            // Source B: transition at t2 (lower=None, upper=Some(0.8))
+            let ctrl_b = make_range_time_control(
+                vec![None, None, None, None],
+                vec![None, None, Some(0.8), None],
+                simtime,
+            );
+            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
+                let mut m = IndexMap::new();
+                m.insert(
+                    "a".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::DirectElectric,
+                        control: ctrl_a,
+                        rated_charge_power: Some(5.0),
+                        flow_rate_charging_l_per_min: None,
+                        hex_a: None,
+                        temp_flow_max: 0.,
+                        hex_b: None,
+                        hex_velocity_at_1_l_per_min: None,
+                        hex_capillary_diameter_m: None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
+                        schedule_unit: Default::default(),
+                    },
+                );
+                m.insert(
+                    "b".into(),
+                    HeatBatteryChargingSource {
+                        source_type: ChargingSourceType::DirectElectric,
+                        control: ctrl_b,
+                        rated_charge_power: Some(3.0),
+                        flow_rate_charging_l_per_min: None,
+                        hex_a: None,
+                        temp_flow_max: 0.,
+                        hex_b: None,
+                        hex_velocity_at_1_l_per_min: None,
+                        hex_capillary_diameter_m: None,
+                        heat_source_service: Option::<HeatSourceWetService>::None,
+                        schedule_unit: Default::default(),
+                    },
+                );
+                m
+            };
+            assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_err());
+        }
+    }
+}
