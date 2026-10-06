@@ -434,7 +434,7 @@ mod tests {
             1.2.into(),
             0.14.into(),
             None,
-            20.0.into(),
+            20.0,
             None,
         )
         .unwrap()

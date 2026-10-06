@@ -5069,9 +5069,10 @@ fn heat_source_wet_from_input(
                     )
                         })?
                         .clone();
-                    let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
+                    let _energy_supply_conn =
+                        EnergySupply::connection(energy_supply.clone(), name)?; // TODO 1.0.0a9 migration
 
-                    let control_charge = match charging_config {
+                    let _control_charge = match charging_config {
                         PcmBatteryChargingConfiguration::ChargeControl {
                             control_charge, ..
                         } => control_charge,
