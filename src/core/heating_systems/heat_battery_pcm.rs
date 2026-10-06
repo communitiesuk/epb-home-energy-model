@@ -643,6 +643,8 @@ impl HeatBatteryResult {
     }
 }
 
+// Define parameters to output. The third tuple element controls whether each
+// parameter is summed for the annual total.
 const OUTPUT_PARAMETERS: [(&str, Option<&str>, bool); 13] = [
     ("service_name", None, false),
     ("service_type", None, false),
@@ -658,13 +660,14 @@ const OUTPUT_PARAMETERS: [(&str, Option<&str>, bool); 13] = [
     ("hb_zone_temperatures", Some("degC"), false),
     ("current_hb_power", Some("kW"), false),
 ];
-const AUX_PARAMETERS: [(&str, Option<&str>, bool); 6] = [
+const AUX_PARAMETERS: [(&str, Option<&str>, bool); 7] = [
     ("energy_aux", Some("kWh"), true),
     ("battery_losses", Some("kWh"), true),
     ("Temps_after_losses", Some("degC"), false),
     ("total_charge", Some("kWh"), true),
     ("end_of_timestep_charge", Some("kWh"), true),
     ("hb_after_only_charge_zone_temp", Some("degC"), false),
+    ("state_of_charge", Some("ratio"), false),
 ];
 
 #[derive(Debug)]
@@ -675,6 +678,7 @@ struct HeatBatteryTimestepSummary {
     total_charge: f64,
     end_of_timestep_charge: f64,
     hb_after_only_charge_zone_temp: Vec<f64>,
+    state_of_charge: f64,
 }
 
 impl HeatBatteryTimestepSummary {
@@ -684,6 +688,7 @@ impl HeatBatteryTimestepSummary {
             "battery_losses" => self.battery_losses.into(),
             "total_charge" => self.total_charge.into(),
             "end_of_timestep_charge" => self.end_of_timestep_charge.into(),
+            "state_of_charge" => self.state_of_charge.into(),
             _ => panic!("Parameter {param} not recognised"),
         }
     }
@@ -693,6 +698,17 @@ impl HeatBatteryTimestepSummary {
 struct HeatBatteryTimestepResult {
     results: Vec<HeatBatteryResult>,
     summary: HeatBatteryTimestepSummary,
+}
+
+fn timestep_record_for_service<'a>(
+    timestep_service_results: &'a HeatBatteryTimestepResult,
+    service_name: &ArcStr,
+) -> &'a HeatBatteryResult {
+    timestep_service_results
+        .results
+        .iter()
+        .find(|record| &record.service_name == service_name)
+        .expect("each timestep must contain a record for every registered service")
 }
 
 #[derive(Clone, Debug)]
@@ -3135,7 +3151,7 @@ impl HeatBatteryPcm {
         Ok(())
     }
 
-    /// Output detailed results of heat battery calculation
+    /// Output detailed results of heat battery calculation.
     pub(crate) fn output_detailed_results(
         &self,
         _hot_water_energy_output: &IndexMap<ArcStr, Vec<ResultParamValue>>,
@@ -3145,22 +3161,25 @@ impl HeatBatteryPcm {
             .detailed_results
             .as_ref()
             .ok_or(OutputDetailedResultsNotEnabledError)?;
+        let detailed_results = detailed_results.read();
 
         let mut results_per_timestep: ResultsPerTimestep =
             [("auxiliary".into(), Default::default())].into();
 
         // Report auxiliary parameters (not specific to a service)
         for (parameter, param_unit, _) in AUX_PARAMETERS {
+            // Check if the parameter is a list to handle individual elements.
             if ["Temps_after_losses", "hb_after_only_charge_zone_temp"].contains(&parameter) {
                 let mut labels: Option<Vec<ArcStr>> = Default::default();
-                for service_results in detailed_results.read().iter() {
+                for service_results in detailed_results.iter() {
                     let summary = &service_results.summary;
                     let param_values = match parameter {
                         "Temps_after_losses" => &summary.temps_after_losses,
                         "hb_after_only_charge_zone_temp" => &summary.hb_after_only_charge_zone_temp,
                         _ => unreachable!(),
                     };
-                    // Determine the number of elements in the list for this parameter
+                    // Create labels for each element in the list.
+                    // Determine the number of elements in the list for this parameter.
                     if labels.is_none() {
                         labels = Some(
                             param_values
@@ -3170,6 +3189,7 @@ impl HeatBatteryPcm {
                                 .collect(),
                         );
                     }
+                    // Append each element to the respective label.
                     for (label, result) in labels.as_ref().unwrap().iter().zip(param_values) {
                         results_per_timestep["auxiliary"]
                             .entry((label.clone(), param_unit.map(Into::into)))
@@ -3180,7 +3200,7 @@ impl HeatBatteryPcm {
             } else {
                 // Default behaviour for scalar parameters
                 let mut param_results = vec![];
-                for service_results in detailed_results.read().iter() {
+                for service_results in detailed_results.iter() {
                     let result = &service_results.summary.param(parameter);
 
                     param_results.push(result.clone());
@@ -3193,39 +3213,72 @@ impl HeatBatteryPcm {
         }
 
         // For each service, report required output parameters
-        for (service_idx, service_name) in self.energy_supply_connections.keys().enumerate() {
+        for service_name in self.energy_supply_connections.keys() {
             let service_name: ArcStr = service_name.into();
-            let mut current_results: ResultPerTimestep = Default::default();
+            let mut results_for_service: ResultPerTimestep = Default::default();
 
-            // Look up each required parameter
+            // Look up each required parameter. Match the service by name rather than by
+            // position (see _timestep_record_for_service), because services are recorded in
+            // the order they are called, which need not match registration order.
             for (parameter, param_unit, _) in OUTPUT_PARAMETERS {
+                // Create labels for each element in the list using the last timestep.
+                if parameter == "hb_zone_temperatures" {
+                    let last_record = timestep_record_for_service(
+                        detailed_results
+                            .last()
+                            .expect("detailed results must contain a timestep"),
+                        &service_name,
+                    );
+                    let labels = (0..last_record.hb_zone_temperatures.len())
+                        .map(|i| format!("{parameter}{i}").into())
+                        .collect_vec();
+                    for label in labels {
+                        results_for_service.insert(
+                            (label, param_unit.map(|unit| unit.to_string().into())),
+                            Vec::new(),
+                        );
+                    }
+                } else {
+                    results_for_service.insert(
+                        (
+                            parameter.into(),
+                            param_unit.map(|unit| unit.to_string().into()),
+                        ),
+                        Vec::new(),
+                    );
+                }
+
                 // Look up value of required parameter in each timestep
-                for service_results in detailed_results.read().iter() {
-                    let current_result = &service_results.results[service_idx];
+                for service_results in detailed_results.iter() {
+                    let record = timestep_record_for_service(service_results, &service_name);
                     if parameter == "hb_zone_temperatures" {
-                        let labels: Vec<ArcStr> = (0..current_result.hb_zone_temperatures.len())
+                        let labels: Vec<ArcStr> = (0..record.hb_zone_temperatures.len())
                             .map(|i| format!("{parameter}{i}").into())
                             .collect_vec();
-                        for (label, result) in labels
-                            .into_iter()
-                            .zip(current_result.hb_zone_temperatures.iter())
-                        {
-                            current_results
-                                .entry((label.clone(), param_unit.map(|x| x.to_string().into())))
-                                .or_default()
+                        for (label, result) in labels.iter().zip(&record.hb_zone_temperatures) {
+                            let key = (
+                                label.clone(),
+                                param_unit.map(|unit| unit.to_string().into()),
+                            );
+                            results_for_service
+                                .get_mut(&key)
+                                .expect("zone count must match the final timestep")
                                 .push(result.into());
                         }
                     } else {
-                        let result = current_result.param(parameter);
-                        current_results
-                            .entry((parameter.into(), param_unit.map(|x| x.to_string().into())))
-                            .or_default()
+                        let result = record.param(parameter);
+                        results_for_service
+                            .get_mut(&(
+                                parameter.into(),
+                                param_unit.map(|unit| unit.to_string().into()),
+                            ))
+                            .expect("output parameter series must be initialized")
                             .push(result);
                     }
                 }
             }
 
-            results_per_timestep.insert(service_name.clone(), current_results);
+            results_per_timestep.insert(service_name.clone(), results_for_service);
         }
 
         let mut results_annual: ResultsAnnual = [
@@ -3291,8 +3344,7 @@ impl HeatBatteryPcm {
                 }
             }
         }
-        todo!("Method needs updating as part of 1.0.0a9 migration")
-        //Ok((results_per_timestep, results_annual))
+        std::result::Result::Ok((results_per_timestep, results_annual))
     }
 
     fn target_charge(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
