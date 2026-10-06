@@ -12,6 +12,7 @@ use crate::external_conditions::ExternalConditions;
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use crate::input::{FuelType, HeatSourceWetDetails, HotWaterSourceDetails};
 use arcstr::ArcStr;
+use atomic_float::AtomicF64;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -216,6 +217,7 @@ impl DirectElectricBoiler {
         time_start: Option<f64>,
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
+        combi_loss: Option<Arc<RwLock<AtomicF64>>>,
         combi_boiler_config: Option<CombiBoilerConfig>,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         // Account for time control where present. If no control present, assume
@@ -230,6 +232,7 @@ impl DirectElectricBoiler {
         let time_start = time_start.unwrap_or(0.0);
         let hybrid_service_bool = hybrid_service.unwrap_or(false);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
+        let combi_loss = combi_loss.unwrap_or(Arc::new(RwLock::new(AtomicF64::new(0.0))));
 
         let time_available = self.time_available(time_start, time_elapsed_hp);
         let energy_output_provided =
@@ -244,10 +247,10 @@ impl DirectElectricBoiler {
         let time_running_current_service =
             self.time_running(energy_output_provided, time_available);
 
-        let combi_boiler_config = if let ServiceType::WaterCombi = service_type {
-            combi_boiler_config
+        let (combi_boiler_config, combi_loss) = if let ServiceType::WaterCombi = service_type {
+            (combi_boiler_config, combi_loss)
         } else {
-            None
+            (None, Arc::new(RwLock::new(AtomicF64::new(0.))))
         };
 
         if update_heat_source_state {
@@ -264,6 +267,7 @@ impl DirectElectricBoiler {
                 time_available,
                 _time_start: time_start,
                 _time_elapsed_hp: time_elapsed_hp,
+                combi_loss,
                 combi_boiler_config,
             };
 
@@ -610,8 +614,8 @@ mod tests {
                     None,
                     None,
                     None,
+                    Some(Arc::new(RwLock::new(1.2.into()))),
                     Some(CombiBoilerConfig::KeepHot {
-                        combi_loss: 1.2,
                         keep_hot_on: false,
                         keep_hot_fuel: CombiKeepHotFuel::MainBoilerFuel,
                         keep_hot_test_hours: None,
@@ -640,6 +644,7 @@ mod tests {
                     Some(0.),
                     None,
                     None,
+                    None,
                 )
                 .unwrap();
 
@@ -662,6 +667,7 @@ mod tests {
                     Some(true),
                     None,
                     Some(0.5),
+                    None,
                     None,
                     None,
                 )
@@ -705,6 +711,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -721,6 +728,7 @@ mod tests {
                 45.,
                 Some(37.),
                 Some(false),
+                None,
                 None,
                 None,
                 None,
@@ -773,6 +781,7 @@ mod tests {
                 45.,
                 Some(60.),
                 Some(false),
+                None,
                 None,
                 None,
                 None,
