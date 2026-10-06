@@ -118,6 +118,7 @@ pub struct BoilerServiceWaterCombi {
     daily_hot_water_usage: f64,
     simulation_timestep: f64,
     combi_loss: Arc<RwLock<AtomicF64>>,
+    combi_boiler_config: CombiBoilerConfig,
 }
 
 #[derive(Debug)]
@@ -151,7 +152,7 @@ impl BoilerServiceWaterCombi {
         service_name: ArcStr,
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSupply,
-        _keep_hot_control: Option<Arc<OnOffTimeControl>>,
+        keep_hot_control: Option<Arc<OnOffTimeControl>>,
         simulation_timestep: f64,
     ) -> Result<Self, IncorrectBoilerDataType> {
         // TODO (from Python) daily hot water use is currently a single value user input.
@@ -169,11 +170,38 @@ impl BoilerServiceWaterCombi {
                 storage_loss_factor_2,
                 rejected_factor_3,
                 daily_hw_usage: daily_hot_water_usage,
+                combi_type_specific_details,
                 ..
             } => {
                 // TODO temporary fix to match Python.
                 // rejected_energy_1 is not required by the schema but is required here
                 let rejected_energy_1 = rejected_energy_1.unwrap();
+
+                let combi_boiler_config = match combi_type_specific_details {
+                    CombiTypeSpecificDetails::KeepHot {
+                        combi_keep_hot_fuel,
+                        keep_hot_test_hours,
+                        ..
+                    } => CombiBoilerConfig::KeepHot {
+                        keep_hot_on: false,
+                        keep_hot_fuel: combi_keep_hot_fuel,
+                        keep_hot_test_hours: Some(keep_hot_test_hours),
+                        keep_hot_control,
+                    },
+                    CombiTypeSpecificDetails::Storage {
+                        combi_storage_loss_in_test,
+                        store_volume,
+                    } => CombiBoilerConfig::Storage {
+                        // TODO (from Python) storage type input will be needed when storage combis are fully implemented
+                        combi_storage_loss_in_test,
+                        store_volume,
+                        // TODO migration alpha 9:
+                        // if the storage combi is to be treated as a keephot for losses
+                        // then the losses will be provided by the boiler fuel.
+                        // self.__keep_hot_fuel = CombiKeepHotFuel.MAIN_BOILER_FUEL
+                    },
+                    CombiTypeSpecificDetails::Instantaneous => CombiBoilerConfig::Instantaneous,
+                };
 
                 // values derived from tapping profiles in BS EN 13203-2:2018
                 let m_energy = 5.845;
@@ -279,6 +307,7 @@ impl BoilerServiceWaterCombi {
                     cold_feed,
                     simulation_timestep,
                     combi_loss: Arc::new(RwLock::new(Default::default())),
+                    combi_boiler_config,
                 })
             }
             _ => Err(IncorrectBoilerDataType),
