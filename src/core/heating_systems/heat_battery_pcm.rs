@@ -1197,7 +1197,13 @@ impl HeatBatteryPcm {
         let cap_above = self.heat_storage_kj_per_k_above;
 
         let energy_max = HeatBatteryPcm::calculate_layer_energy_stored(
-            temp_lower, temp_ref, temp_lower, temp_upper, cap_below, cap_during, cap_above,
+            self.max_temp_of_charge,
+            temp_ref,
+            temp_lower,
+            temp_upper,
+            cap_below,
+            cap_during,
+            cap_above,
         );
         let energy_target = soc * energy_max;
 
@@ -4228,7 +4234,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_demand_energy_other(
         external_sensor: ExternalSensor,
         simulation_time_iterator: SimulationTimeIterator,
@@ -4255,7 +4260,7 @@ mod tests {
                     simtime
                 )
                 .unwrap(),
-            0.08021138263537801
+            0.0849030119531927
         );
 
         let heat_battery = create_heat_battery_pcm(
@@ -4280,7 +4285,7 @@ mod tests {
                     simtime
                 )
                 .unwrap(),
-            0.08021138263537801
+            0.08691254317474525
         );
 
         let heat_battery = create_heat_battery_pcm(
@@ -4305,7 +4310,7 @@ mod tests {
                     simtime
                 )
                 .unwrap(),
-            0.08021138263537801
+            0.0849030119531927
         );
 
         let heat_battery = create_heat_battery_pcm(
@@ -4329,12 +4334,11 @@ mod tests {
                     simtime
                 )
                 .unwrap(),
-            0.08021138263537801
+            0.0849030119531927
         );
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_dhw_service_demand_hot_water(
         battery_control_off: Arc<ChargeControl>,
         simulation_time_iteration: SimulationTimeIteration,
@@ -4379,7 +4383,7 @@ mod tests {
             .demand_hot_water(Some(usage_events), simulation_time_iteration)
             .unwrap();
 
-        assert_eq!(energy, 0.5113777776161836);
+        assert_eq!(energy, 0.46581279161760664);
 
         // Test with no usage events
         let energy_no_usage = service
