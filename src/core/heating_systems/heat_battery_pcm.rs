@@ -1218,7 +1218,7 @@ impl HeatBatteryPcm {
         );
         if energy_target <= energy_at_lower {
             // Target falls in the below-transition regime
-            temp_lower + (energy_target / cap_below)
+            temp_ref + (energy_target / cap_below)
         } else if energy_target <= energy_at_upper {
             // Target falls in the phase-transition regime
             temp_lower + ((energy_target - energy_at_lower) / cap_during)
@@ -4455,7 +4455,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_timestep_end(
         external_sensor: ExternalSensor,
         external_conditions: ExternalConditions,
@@ -4504,7 +4503,7 @@ mod tests {
                 .read()
                 .total_time_running_current_timestep
                 .load(Ordering::SeqCst),
-            0.25690463025906096
+            0.6256433826572602
         );
 
         let service_names_in_results = get_service_names_from_results(heat_battery.clone());
@@ -4527,7 +4526,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "Fix the energy_output_max call with the new signature for 1.0.0a9"]
     fn test_energy_output_max(
         external_conditions: ExternalConditions,
         external_sensor: ExternalSensor,
@@ -4538,11 +4536,11 @@ mod tests {
         // because we need to set different charge_levels
         let battery_control_on: Arc<ChargeControl> = ChargeControl::new(
             ControlLogicType::Manual,
-            ScheduleOrControl::Schedule(vec![true, true, true]),
+            ScheduleOrControl::Schedule(vec![true, true]),
             &simulation_time_iterator,
             0,
             1.,
-            [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
+            [0.95, 0.99].into_iter().map(Into::into).collect(), // these values change the result
             None,
             None,
             Some(external_conditions.clone().into()),
@@ -4552,45 +4550,41 @@ mod tests {
         .unwrap()
         .into();
 
-        let heat_battery = create_heat_battery(battery_control_on, None);
+        let heat_battery = create_heat_battery(battery_control_on.clone(), None);
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            // Inlet to the heat exchanger is the return-feed temperature, not the
+            // required flow temperature, so the available output reflects the true
+            // temperature difference driving heat transfer. The battery does not
+            // charge while discharging (simultaneous_charging_and_discharging is
+            // False here), matching demand_energy, so the ceiling reflects only the
+            // stored energy.
             assert_relative_eq!(
                 heat_battery
                     .read()
-                    .energy_output_max(0., 0., None, t_it)
+                    .energy_output_max(40., 30., None, t_it)
                     .unwrap(),
-                [108864.87597021714, 124118.95144251334][t_idx],
-                max_relative = 1e-7
+                [9.850915334607903, 9.78071474696652][t_idx],
+                epsilon = 5e-8
             );
 
             heat_battery.read().timestep_end(t_it).unwrap();
         }
 
-        let battery_control_on: Arc<ChargeControl> = ChargeControl::new(
-            ControlLogicType::Manual,
-            ScheduleOrControl::Schedule(vec![true, true, true]),
-            &simulation_time_iterator,
-            0,
-            1.,
-            [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
-            None,
-            None,
-            Some(external_conditions.into()),
-            Some(external_sensor),
-            None,
-        )
-        .unwrap()
-        .into();
         let heat_battery = create_heat_battery(battery_control_on, None);
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            // The required flow temperature does not gate delivery: even when 90 °C
+            // cannot be reached, the battery still transfers heat to the 40 °C return
+            // feed, and energy_output_max counts that full positive delivery just as
+            // demand_energy does.
             assert_relative_eq!(
                 heat_battery
                     .read()
-                    .energy_output_max(0., 90., Some(0.), t_it)
+                    .energy_output_max(90., 40., None, t_it)
                     .unwrap(),
-                [0., 72281.56558957469][t_idx]
+                [7.390489238946976, 7.326317707345256][t_idx],
+                epsilon = 5e-8
             );
 
             heat_battery.read().timestep_end(t_it).unwrap();
