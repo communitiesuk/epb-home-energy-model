@@ -1726,7 +1726,7 @@ mod tests {
     use crate::simulation_time::SimulationTime;
     use rstest::*;
     // In Python there are tests covering the abstract base class BoilerService which we have not
-    // implemented in Rust. Instead we have directly implemented the `is_on` method on the concrete
+    // implemented in Rust. Instead, we have directly implemented the `is_on` method on the concrete
     // BoilerService structs. Subsequently, the tests are in the relevant sections below that cover
     // these three classes/structs. The tests are:
     // test_is_on_with_control_on, test_is_on_with_control_off
@@ -1809,7 +1809,7 @@ mod tests {
         use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{
-            Boiler, BoilerForBoilerService, BoilerServiceWaterCombi,
+            Boiler, BoilerForBoilerService, BoilerServiceWaterCombi, CombiBoilerConfig,
         };
         use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
         use crate::core::water_heat_demand::misc::{WaterEventResult, WaterEventResultType};
@@ -1848,7 +1848,7 @@ mod tests {
             HotWaterSourceDetails::CombiBoiler {
                 combi_type_specific_details: CombiTypeSpecificDetails::Instantaneous,
                 separate_dhw_tests: BoilerHotWaterTest::ML,
-                // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test fixture
+                // fuel_energy_1: 7.099, // fuel_energy_1 doesn't exist, seems to have been added by mistake in the Python test fixture
                 rejected_energy_1: Some(0.0004),
                 storage_loss_factor_1: Some(0.98328),
                 storage_loss_factor_2: Some(0.91574),
@@ -1916,6 +1916,59 @@ mod tests {
                 simulation_time.step,
             )
             .unwrap()
+        }
+
+        #[fixture]
+        fn cold_water_source(simulation_time: SimulationTime) -> ColdWaterSource {
+            ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step)
+        }
+
+        #[rstest]
+        fn test_init_storage_combi(
+            boiler: Boiler,
+            simulation_time: SimulationTime,
+            cold_water_source: ColdWaterSource,
+        ) {
+            let combi_storage_loss_in_test = false;
+            let store_volume = 35.;
+
+            let boiler_data = HotWaterSourceDetails::CombiBoiler {
+                separate_dhw_tests: BoilerHotWaterTest::MS,
+                // fuel_energy_1 field added here in Python seems to be a mistake
+                rejected_energy_1: Some(0.0004),
+                storage_loss_factor_1: Some(0.98328),
+                // fuel_energy_2 field added here in Python seems to be a mistake
+                // rejected_energy_2 field added here in Python seems to be a mistake
+                storage_loss_factor_2: Some(0.91574),
+                rejected_factor_3: Some(0.),
+                daily_hw_usage: 132.5802,
+                setpoint_temp: None,
+                combi_type_specific_details: CombiTypeSpecificDetails::Storage {
+                    combi_storage_loss_in_test,
+                    store_volume,
+                },
+                cold_water_source: Default::default(),
+                heat_source_wet: Default::default(),
+            };
+
+            let boiler_service_water = BoilerServiceWaterCombi::new(
+                BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
+                boiler_data,
+                "boiler_test".into(),
+                20.,
+                WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                None,
+                simulation_time.step,
+            );
+
+            assert!(boiler_service_water.is_ok());
+            assert_eq!(
+                boiler_service_water.unwrap().combi_boiler_config,
+                CombiBoilerConfig::Storage {
+                    combi_storage_loss_in_test,
+                    store_volume
+                }
+            )
         }
 
         #[rstest]
