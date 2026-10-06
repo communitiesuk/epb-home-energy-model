@@ -15,7 +15,6 @@ use crate::corpus::{HeatSource, HotWaterSourceBehaviour, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCollectorLoopLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
-use crate::statistics::np_interp;
 use crate::StringOrNumber;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
@@ -826,6 +825,12 @@ impl StorageTank {
                     .unwrap_or(default_temp_flow);
                 if self.heating_active[heat_source_name].load(Ordering::SeqCst) {
                     // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
+
+                    // The charging deadband (_heating_active) is the authority on
+                    // whether to charge, so bypass the heat source's own minimum-setpoint
+                    // schedule gate: once charging is active it must continue to the
+                    // maximum setpoint even after the minimum-setpoint schedule
+                    // deactivates mid-cycle.
                     let mut energy_potential = match heat_source {
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
                             immersion_heater,
@@ -895,6 +900,7 @@ impl StorageTank {
 
         // STEP 8 Thermal losses and final temperature
         let (q_in_h_w, q_ls, temp_s8_n, q_ls_n) = self.calc_temps_after_thermal_losses(
+            temp_s3_n,
             &temp_s7_n,
             &q_x_in_n,
             q_h_sto_s7,
@@ -959,9 +965,27 @@ impl StorageTank {
         (q_s6, temp_s6_n)
     }
 
-    /// Thermal losses are calculated with respect to the impact of the temperature set point
+    /// Apply standby thermal losses to each layer and clamp to the setpoint.
+    ///
+    /// Both the loss-driving temperature and the final-temperature clamp are limited to
+    /// the setpoint only for layers this heat source actually heated. A layer left above
+    /// the setpoint by an earlier source - one with a higher setpoint, or the same source
+    /// at a higher setpoint in the previous timestep - is not held there by this source,
+    /// so it loses heat, and settles, at its actual temperature.
+    ///
+    /// Args:
+    /// temp_s3_n: Layer temperatures before this source's energy input (°C), used to
+    /// detect which layers this source heated this timestep.
+    /// temp_s7_n: Layer temperatures after energy input and rearrangement (°C).
+    /// Q_x_in_n: Energy input to each layer from this source (kWh).
+    /// Q_h_sto_s7: Stored energy per layer after rearrangement (kWh).
+    /// heater_layer: Index of the layer the heat source feeds.
+    /// Q_ls_n_prev_heat_source: Losses already attributed to earlier sources this
+    /// timestep (kWh), subtracted to avoid double-counting.
+    /// temp_setpntmax: Maximum setpoint of this source (°C), or None when uncontrolled.
     fn calc_temps_after_thermal_losses(
         &self,
+        temp_s3_n: &[f64],
         temp_s7_n: &[f64],
         q_x_in_n: &[f64],
         q_h_sto_s7: Vec<f64>,
@@ -970,6 +994,24 @@ impl StorageTank {
         temp_setpntmax: Option<f64>,
     ) -> (f64, f64, Vec<f64>, Vec<f64>) {
         let q_x_in_adj: f64 = FSum::with_all(q_x_in_n).value();
+
+        // A layer is held at the setpoint by this source only if the source raised its
+        // temperature this timestep. Energy enters at the heater layer and spreads upward by
+        // buoyancy, so the per-layer temperature rise - not the heat-source input, which is
+        // non-zero only at the heater layer - identifies which layers this source heated.
+        let mut layer_warmed_n = Vec::with_capacity(self.number_of_volumes);
+
+        for i in 0..self.number_of_volumes {
+            layer_warmed_n.push(
+                temp_s7_n[i] > temp_s3_n[i]
+                    && !relative_eq!(
+                        temp_s7_n[i],
+                        temp_s3_n[i],
+                        epsilon = 1e-10,
+                        max_relative = 1e-9
+                    ),
+            );
+        }
 
         // standby losses coefficient - W/K
         let h_sto_ls = self.stand_by_losses_coefficient();
@@ -1721,6 +1763,17 @@ struct TemperatureCalculation {
     q_ls_n: Vec<f64>,
 }
 
+#[derive(Debug, PartialEq)]
+struct PartialTemperatureCalculation {
+    temp_s8_n: Vec<f64>,
+    q_s6: f64,
+    temp_s6_n: Vec<f64>,
+    temp_s7_n: Vec<f64>,
+    q_in_h_w: f64,
+    q_ls: f64,
+    q_ls_n: Vec<f64>,
+}
+
 /// A struct to represent a smart hot water storage tank/cylinder
 #[derive(Debug)]
 pub struct SmartHotWaterTank {
@@ -2321,157 +2374,27 @@ impl SmartHotWaterTank {
         Ok(soc)
     }
 
-    /// Calculate energy required to hit target temperature
-    fn energy_req_target_temp(
-        &self,
-        initial_temps: &[f64],
-        energy_available: &[f64],
-        heater_layer: usize,
-        q_ls_n_prev_heat_source: &[f64],
-        temp_setpntmax: Option<f64>,
-    ) -> (f64, Vec<f64>, Vec<f64>) {
-        // Calculate temps with energy_available
-        let (_, temp_after_input) = self
-            .storage_tank
-            .calc_temps_with_energy_input(initial_temps, energy_available);
-
-        // Rearrange tank temperatures
-        let (stored_heat, rearranged_temps) =
-            self.storage_tank.rearrange_temperatures(&temp_after_input);
-
-        let (energy_input, _q_ls, final_temps, q_ls_n) =
-            self.storage_tank.calc_temps_after_thermal_losses(
-                &rearranged_temps,
-                energy_available,
-                stored_heat,
-                heater_layer,
-                q_ls_n_prev_heat_source,
-                temp_setpntmax,
-            );
-
-        (energy_input, final_temps, q_ls_n)
-    }
-
-    fn calculate_energy_for_state_of_charge(
-        &self,
-        heat_source: &HeatSource,
-        initial_temps: &[f64],
-        q_x_in_n: &[f64],
-        heater_layer: usize,
-        q_ls_n_prev_heat_source: &[f64],
-        control_max_diverter: Option<&Control>,
-        simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, Vec<f64>)> {
-        let soc_max = if let Some(control_max_diverter) = control_max_diverter {
-            control_max_diverter.setpnt(&simtime)
-        } else {
-            let (_, soc_max) = self.retrieve_setpnt(heat_source, simtime)?;
-            soc_max
-        };
-
-        let mut temp_layers = initial_temps.to_vec();
-        let mut energy_available = q_x_in_n.to_vec();
-        let mut q_in_h_w = vec![0.; self.storage_tank.vol_n.len()];
-        let mut q_ls_n_already_considered = q_ls_n_prev_heat_source.to_vec();
-
-        for _ in 0..self.storage_tank.vol_n.len() {
-            let sum_energy_available = FSum::with_all(&energy_available).value();
-            if sum_energy_available < 0.
-                || relative_eq!(
-                    sum_energy_available,
-                    0.,
-                    max_relative = 1e-09,
-                    epsilon = 1e-10
-                )
-            {
-                break;
-            }
-
-            // Calculate energy required for usable and max temperatures
-            let (energy_req_usable, temp_simulation_usable, _q_ls_n_usable) = self
-                .energy_req_target_temp(
-                    &temp_layers,
-                    &energy_available,
-                    heater_layer,
-                    &q_ls_n_already_considered,
-                    self.temp_usable.into(),
-                );
-
-            let (energy_req_max, temp_simulation_max, q_ls_n_max) = self.energy_req_target_temp(
-                &temp_layers,
-                &energy_available,
-                heater_layer,
-                &q_ls_n_already_considered,
-                self.temp_setpnt_max.setpnt(&simtime),
-            );
-
-            // Ensure energy required for usable and max temperatures are not negative
-            let energy_req_usable = energy_req_usable.max(0.);
-            let energy_req_max = energy_req_max.max(0.);
-
-            // Calculate state of charge for usable and max temperatures
-            let soc_temp_usable = self.calc_state_of_charge(&temp_simulation_usable, simtime)?;
-
-            let soc_temp_max = self.calc_state_of_charge(&temp_simulation_max, simtime)?;
-            if let Some(soc_max) = soc_max {
-                if soc_temp_usable > soc_max
-                    || relative_eq!(soc_temp_usable, soc_max, max_relative = 1e-09)
-                {
-                    q_in_h_w[heater_layer] += energy_req_usable;
-                    break;
-                } else if soc_temp_max > soc_max {
-                    let energy_required_for_soc = np_interp(
-                        soc_max,
-                        &[soc_temp_usable, soc_temp_max],
-                        &[energy_req_usable, energy_req_max],
-                    );
-                    q_in_h_w[heater_layer] += energy_required_for_soc;
-                    break;
-                }
-            }
-
-            q_ls_n_already_considered = q_ls_n_max
-                .iter()
-                .zip(q_ls_n_already_considered.iter())
-                .map(|(x1, x2)| FSum::with_all([x1 + x2]).value())
-                .collect();
-            q_in_h_w[heater_layer] += energy_req_max;
-            energy_available[heater_layer] -= energy_req_max;
-            temp_layers = temp_simulation_max;
-
-            let energy_req_bottom_layer_to_setpnt = self.storage_tank.rho
-                * self.storage_tank.cp
-                * self.storage_tank.vol_n[0]
-                * temp_layers[0];
-            let sum_energy_available = FSum::with_all(&energy_available).value();
-            if sum_energy_available < energy_req_bottom_layer_to_setpnt
-                || relative_eq!(
-                    sum_energy_available,
-                    energy_req_bottom_layer_to_setpnt,
-                    max_relative = 1e-09
-                )
-            {
-                // Pump partial layer to the top
-                let fraction_to_pump = sum_energy_available / energy_req_bottom_layer_to_setpnt;
-                let volume_to_pump = fraction_to_pump * self.storage_tank.vol_n[0];
-                let mut remaining_vols = self.storage_tank.vol_n.clone();
-                temp_layers =
-                    self.temps_after_pumping(volume_to_pump, &mut remaining_vols, &temp_layers)?;
-            } else {
-                // Pump one layer to the top
-                let temp_pumped_layer = temp_layers.remove(0);
-                temp_layers.push(temp_pumped_layer);
-                let q_ls_layer = q_ls_n_already_considered.remove(0);
-                q_ls_n_already_considered.push(q_ls_layer);
-            }
-        }
-
-        // Calculate total energy required to meet max state of charge
-        let energy_req_for_soc = FSum::with_all(&q_in_h_w).value();
-
-        Ok((energy_req_for_soc, q_in_h_w))
-    }
-
+    /// Charge the storage and return the temperatures and energy for the timestep.
+    ///
+    /// Sizes the charge so the realised state of charge - after the top-up pump and
+    /// thermal losses - meets the target, by solving for it directly, applies it
+    /// through the full charging path, and records the pump energy consumed.
+    ///
+    /// Args:
+    ///     temp_s3_n: storage layer temperatures after volume withdrawal.
+    ///     heat_source: heat source charging the storage this timestep.
+    ///     Q_x_in_n: potential energy input per layer, in kWh.
+    ///     heater_layer: index of the layer the heat source charges.
+    ///     Q_ls_n_prev_heat_source: thermal losses already attributed to earlier
+    ///     heat sources this timestep, per layer.
+    ///     controlmax_diverter: diverter control selecting the maximum state of
+    ///     charge, or None to use the heat source's own maximum.
+    ///
+    /// Returns:
+    ///     Final temperatures, potential energy input, theoretical stored energy
+    ///     after input, temperatures after input, temperatures after pumping and
+    ///     rearrangement, adjusted energy input, total thermal losses, and
+    ///     per-layer thermal losses.
     fn calc_final_temps(
         &self,
         temp_s3_n: &[f64],
@@ -2483,47 +2406,51 @@ impl SmartHotWaterTank {
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<TemperatureCalculation> {
         let temp_setpntmax = self.temp_setpnt_max.setpnt(&simtime);
+        let energy_available = FSum::with_all(q_x_in_n.iter().copied()).value();
 
-        // Tank with energy required for state of charge
-        let (energy_req_for_soc, q_in_h_w_n) = self.calculate_energy_for_state_of_charge(
-            heat_source,
-            temp_s3_n,
-            q_x_in_n.as_slice(),
-            heater_layer,
-            q_ls_n_prev_heat_source,
-            control_max_diverter,
-            simtime,
-        )?;
+        // Target state of charge for the heat source being considered
+        let soc_max = if let Some(control_max_diverter) = control_max_diverter {
+            control_max_diverter.setpnt(&simtime)
+        } else {
+            let (_, soc_max) = self.retrieve_setpnt(heat_source, simtime)?;
 
-        // Calculate temperatures after energy required to hit state of charge input
-        let (q_s6, temp_s6_n) = self
-            .storage_tank
-            .calc_temps_with_energy_input(temp_s3_n, &q_in_h_w_n);
+            soc_max
+        };
 
-        // Rearrange tank
-        let (_q_h_sto_s7, temp_s7_n) = self.storage_tank.rearrange_temperatures(&temp_s6_n);
-
-        // Calculate new temperatures after operation of top up pump
-        let temp_s7_n = self.calc_temps_after_top_up_pump(
-            &temp_s7_n,
-            energy_req_for_soc,
-            heater_layer,
-            simtime,
-        )?;
-
-        // Rearrange tank
-        let (q_h_sto_s7, temp_s7_n) = self.storage_tank.rearrange_temperatures(&temp_s7_n);
-
-        // STEP 8 Thermal losses and final temperature
-        let (q_in_h_w, q_ls, temp_s8_n, q_ls_n) =
-            self.storage_tank.calc_temps_after_thermal_losses(
-                &temp_s7_n,
-                &q_in_h_w_n,
-                q_h_sto_s7,
+        // Size the charge so the realised state of charge - after the top-up pump and
+        // thermal losses - meets the target, by solving for it directly. With no
+        // maximum set the source has no target to charge towards, so it delivers
+        // nothing and the storage only coasts through pumping and losses.
+        let energy_charge = if let Some(soc_max) = soc_max {
+            self.solve_charge_energy_for_state_of_charge(
+                temp_s3_n,
+                soc_max,
+                energy_available,
                 heater_layer,
                 q_ls_n_prev_heat_source,
                 temp_setpntmax,
-            );
+                simtime,
+            )?
+        } else {
+            0.
+        };
+
+        let PartialTemperatureCalculation {
+            temp_s8_n,
+            q_s6,
+            temp_s6_n,
+            temp_s7_n,
+            q_in_h_w,
+            q_ls,
+            q_ls_n,
+        } = self.charge_to_temps(
+            temp_s3_n,
+            energy_charge,
+            heater_layer,
+            q_ls_n_prev_heat_source,
+            temp_setpntmax,
+            simtime,
+        )?;
 
         // Adjust energy input based on actual usage
         let input_energy_adj = q_in_h_w;
@@ -2571,6 +2498,180 @@ impl SmartHotWaterTank {
             q_ls,
             q_ls_n,
         })
+    }
+
+    /// Charge the storage with a heater-layer energy through the full charging path.
+    ///
+    /// Runs energy input, buoyancy rearrangement, the top-up pump, a further
+    /// rearrangement and the thermal-loss step - the sequence that fixes the
+    /// realised storage temperatures for a given charge - so the same path can be
+    /// evaluated both for the chosen charge and when solving for it.
+    ///
+    /// Args:
+    ///     temp_s3_n: storage layer temperatures after volume withdrawal.
+    ///     energy: charge delivered to the heater layer this timestep, in kWh.
+    ///     heater_layer: index of the layer the heat source charges.
+    ///     Q_ls_n_prev_heat_source: thermal losses already attributed to earlier
+    ///     heat sources this timestep, per layer, to avoid double-counting.
+    ///     temp_setpntmax: maximum storage temperature, or None when uncontrolled.
+    ///
+    /// Returns:
+    ///     Final temperatures after thermal losses, theoretical stored energy after
+    ///     input, temperatures after input, temperatures after pumping and
+    ///     rearrangement, adjusted energy input, total thermal losses, and
+    ///     per-layer thermal losses.
+    fn charge_to_temps(
+        &self,
+        temp_s3_n: &[f64],
+        energy: f64,
+        heater_layer: usize,
+        q_ls_n_prev_heat_source: &[f64],
+        temp_setpntmax: Option<f64>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<PartialTemperatureCalculation> {
+        let mut q_x_in_n = vec![0.; self.storage_tank.number_of_volumes];
+        q_x_in_n[heater_layer] = energy;
+
+        let (q_s6, temp_s6_n) = self
+            .storage_tank
+            .calc_temps_with_energy_input(temp_s3_n, &q_x_in_n);
+        let (_, temp_s7_n) = self.storage_tank.rearrange_temperatures(&temp_s6_n);
+        let temp_s7_n =
+            self.calc_temps_after_top_up_pump(&temp_s7_n, energy, heater_layer, simtime)?;
+        let (q_h_sto_s7, temp_s7_n) = self.storage_tank.rearrange_temperatures(&temp_s7_n);
+        let (q_in_h_w, q_ls, temp_s8_n, q_ls_n) =
+            self.storage_tank.calc_temps_after_thermal_losses(
+                temp_s3_n,
+                &temp_s7_n,
+                &q_x_in_n,
+                q_h_sto_s7,
+                heater_layer,
+                q_ls_n_prev_heat_source,
+                temp_setpntmax,
+            );
+
+        Ok(PartialTemperatureCalculation {
+            temp_s8_n,
+            q_s6,
+            temp_s6_n,
+            temp_s7_n,
+            q_in_h_w,
+            q_ls,
+            q_ls_n,
+        })
+    }
+
+    fn realised_state_of_charge(
+        &self,
+        energy: f64,
+        temp_s3_n: &[f64],
+        heater_layer: usize,
+        q_ls_n_prev_heat_source: &[f64],
+        temp_setpntmax: Option<f64>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let temp_s8_n = self
+            .charge_to_temps(
+                temp_s3_n,
+                energy,
+                heater_layer,
+                q_ls_n_prev_heat_source,
+                temp_setpntmax,
+                simtime,
+            )?
+            .temp_s8_n;
+
+        self.calc_state_of_charge(&temp_s8_n, simtime)
+    }
+
+    /// Solve for the smallest heater charge whose realised state of charge meets the target.
+    ///
+    /// The realised state of charge rises with the charge delivered, so the energy
+    /// is found by bisection between no charge and all the energy available this
+    /// timestep. Returns no charge when the target is already met without any
+    /// input, or all the available energy when the target cannot be reached.
+    ///
+    /// Args:
+    ///     temp_s3_n: storage layer temperatures after volume withdrawal.
+    ///     soc_target: state of charge the charge should achieve.
+    ///     energy_available: energy the heat source can deliver this timestep, in kWh.
+    ///     heater_layer: index of the layer the heat source charges.
+    ///     Q_ls_n_prev_heat_source: thermal losses already attributed to earlier
+    ///     heat sources this timestep, per layer.
+    ///     temp_setpntmax: maximum storage temperature, or None when uncontrolled.
+    ///
+    /// Returns:
+    ///     Charge to deliver to the heater layer this timestep, in kWh.
+    fn solve_charge_energy_for_state_of_charge(
+        &self,
+        temp_s3_n: &[f64],
+        soc_target: f64,
+        energy_available: f64,
+        heater_layer: usize,
+        q_ls_n_prev_heat_source: &[f64],
+        temp_setpntmax: Option<f64>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let mut energy_lower = 0.;
+        let mut energy_upper = max_of_2(energy_available, 0.);
+
+        // No interior solution when the target is already met without input or
+        // cannot be reached with all the available energy: return the bound.
+        let soc_lower = self.realised_state_of_charge(
+            energy_lower,
+            temp_s3_n,
+            heater_layer,
+            q_ls_n_prev_heat_source,
+            temp_setpntmax,
+            simtime,
+        )?;
+        if soc_lower > soc_target
+            || relative_eq!(soc_lower, soc_target, epsilon = 1e-10, max_relative = 1e-9)
+        {
+            return Ok(energy_lower);
+        }
+
+        let soc_upper = self.realised_state_of_charge(
+            energy_upper,
+            temp_s3_n,
+            heater_layer,
+            q_ls_n_prev_heat_source,
+            temp_setpntmax,
+            simtime,
+        )?;
+        if soc_upper < soc_target
+            || relative_eq!(soc_upper, soc_target, epsilon = 1e-10, max_relative = 1e-9)
+        {
+            return Ok(energy_upper);
+        }
+
+        // Bisection on the charge: the realised state of charge rises as the charge
+        // increases. energy_lower is the largest charge whose realised state of
+        // charge is still below the target; energy_upper the smallest that reaches
+        // it. 50 halvings settle the charge far below any precision a tank size
+        // needs. Return energy_upper (the smallest charge that reaches the target):
+        // the state of charge steps rather than varying smoothly - it jumps as each
+        // layer crosses the usable temperature - so where the target falls inside a
+        // step it is reached by charging through to the next step rather than
+        // stopping short of it.
+        for _ in 0..50 {
+            let energy_mid = 0.5 * (energy_lower + energy_upper);
+            if self.realised_state_of_charge(
+                energy_mid,
+                temp_s3_n,
+                heater_layer,
+                q_ls_n_prev_heat_source,
+                temp_setpntmax,
+                simtime,
+            )? < soc_target
+            {
+                energy_lower = energy_mid;
+            } else {
+                energy_upper = energy_mid;
+            }
+        }
+
+        Ok(energy_upper)
     }
 
     /// Calculate new temperatures after top up pump of Smart hot water tank
@@ -4750,6 +4851,7 @@ mod tests {
         assert_eq!(
             storage_tank1.calc_temps_after_thermal_losses(
                 &temp_s7_n,
+                &temp_s7_n,
                 &q_x_in_n,
                 q_h_sto_s7,
                 heater_layer,
@@ -6570,24 +6672,14 @@ mod tests {
 
         // NOTE - these are the same expected values as above. Same behaviour in Python
         let expected = TemperatureCalculation {
-            temp_s8_n: vec![50.0, 50.0, 50.0, 50.0],
+            temp_s8_n: vec![10.0, 15.0, 19.97925925925926, 24.953333333333333],
             q_x_in_n: q_x_in_n.clone(),
-            q_s6: 42.10166666666667,
-            temp_s6_n: vec![10.0, 15.0, 433.00191204588907, 25.0],
-            temp_s7_n: vec![
-                229.00095602294454,
-                229.00095602294454,
-                229.00095602294454,
-                229.00095602294454,
-            ],
-            q_in_h_w: 4.824900987654324,
-            q_ls: 0.061468641975308644,
-            q_ls_n: vec![
-                0.015367160493827161,
-                0.015367160493827161,
-                0.015367160493827161,
-                0.015367160493827161,
-            ],
+            q_s6: 6.101666666666667,
+            temp_s6_n: vec![10.0, 15.0, 20.0, 25.0],
+            temp_s7_n: vec![10.0, 15.0, 20.0, 25.0],
+            q_in_h_w: 0.,
+            q_ls: 0.005875679012345679,
+            q_ls_n: vec![0.0, 0.0, 0.0018079012345679013, 0.004067777777777778],
         };
 
         let actual = smart_hot_water_tank
