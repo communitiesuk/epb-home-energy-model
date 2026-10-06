@@ -4208,7 +4208,7 @@ mod tests {
                     simulation_time_iteration
                 )
                 .unwrap(),
-            0.08021138263537801
+            0.0849030119531927
         );
 
         assert_relative_eq!(
@@ -4226,10 +4226,19 @@ mod tests {
                     simulation_time_iteration
                 )
                 .unwrap(),
-            0.06018673551977593
+            0.06506455710564082,
         );
 
-        // Battery losses
+        // With no accumulated losses, nothing is creditable to internal gains
+        // self.assertEqual(self.heatbattery.get_battery_losses(), 0.0)
+        //
+        // Only the recoverable fraction (f_sto_m = 0.75, BS EN 15316-5:2017
+        // Table B.3) of accumulated standing losses is returned for crediting
+        // to internal gains; the remainder escapes the dwelling.
+        // self.heatbattery._HeatBatteryPCM__battery_losses = 1.0  # type: ignore[reportAttributeAccessIssue]
+        // 1.0 kWh raw loss * 1 unit (number_of_units) * 0.75 recovery factor = 0.75 kWh
+        // self.assertEqual(self.heatbattery.get_battery_losses(), 0.75)
+        // The accumulator is reset once read
         assert_eq!(heat_battery.read().get_battery_losses(), 0.);
     }
 
