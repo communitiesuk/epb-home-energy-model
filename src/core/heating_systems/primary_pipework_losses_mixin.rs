@@ -42,8 +42,8 @@ pub(crate) struct PrimaryPipeworkLossesMixin {
     pipework_energy_input_prev_timestep: AtomicF64,
     temp_surrounding_prev_heating_event: Vec<AtomicF64>,
     flag_first_pipework_heating_event: AtomicBool,
-    pub(crate) temp_external_air_fn: Arc<dyn Fn(&SimulationTimeIteration) -> f64 + Send + Sync>,
-    pub(crate) temp_internal_air_fn: TempInternalAirFn,
+    temp_external_air_fn: Arc<dyn Fn(&SimulationTimeIteration) -> f64 + Send + Sync>,
+    temp_internal_air_fn: TempInternalAirFn,
 }
 
 impl std::fmt::Debug for PrimaryPipeworkLossesMixin {
@@ -243,6 +243,18 @@ impl PrimaryPipeworkLossesMixin {
         }
 
         Ok((pipework_losses_kwh, primary_gains_w))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn temp_external_air_fn(
+        &self,
+    ) -> &Arc<dyn Fn(&SimulationTimeIteration) -> f64 + Send + Sync> {
+        &self.temp_external_air_fn
+    }
+
+    #[cfg(test)]
+    pub(crate) fn temp_internal_air_fn(&self) -> &TempInternalAirFn {
+        &self.temp_internal_air_fn
     }
 }
 

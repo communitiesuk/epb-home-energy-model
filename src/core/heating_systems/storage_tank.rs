@@ -221,7 +221,6 @@ impl StorageTank {
             &simulation_time_iteration,
         );
 
-
         // With pre-heated storage tanks, there could be the situation of tanks without heat sources
         // They could just get warmed up with WWHRS water.
         let mut heat_source_data = heat_sources.clone();
@@ -1218,6 +1217,7 @@ impl StorageTank {
     ///     pipework_data: Pipework object to query location from.
     /// Returns:
     ///     Surrounding temperature in °C.
+    #[cfg(test)]
     fn temperature_surrounding_primary_pipework(
         &self,
         pipework_data: &Pipework,
@@ -1225,8 +1225,8 @@ impl StorageTank {
     ) -> f64 {
         PrimaryPipeworkLossesMixin::temp_surrounding_pipework(
             pipework_data,
-            self.pipework.temp_external_air_fn.clone(),
-            self.pipework.temp_internal_air_fn.clone(),
+            self.pipework.temp_external_air_fn().clone(),
+            self.pipework.temp_internal_air_fn().clone(),
             simtime,
         )
     }
