@@ -112,10 +112,8 @@ pub struct StorageTank {
     cp: f64,  // contents (usually water) specific heat in kWh/kg.K
     rho: f64, // volumic mass in kg/litre
     temp_n: Arc<RwLock<Vec<f64>>>,
-    input_energy_adj_prev_timestep: AtomicF64,
     primary_pipework_losses_kwh: AtomicF64,
     storage_losses_kwh: AtomicF64,
-    flag_first_water_heating_event: AtomicBool,
     heat_source_data: IndexMap<ArcStr, PositionedHeatSource>, // heat sources, sorted by heater position
     heating_active: IndexMap<ArcStr, AtomicBool>,
     q_ls_n_prev_heat_source: Arc<RwLock<Vec<f64>>>,
@@ -139,24 +137,19 @@ impl StorageTank {
     ///                                at standardised conditions, in kWh/24h
     /// * `init_temp` - initial temperature required for DHW
     /// * `cold_feed` - reference to ColdWaterSource object
-    /// * `simulation_timestep` - the timestep for the simulation time being used in the calculation
+    /// * `simulation_time_iteration` - reference to SimulationTime iteration
     /// * `heat_sources`     -- hashmap of names and heat source objects
-    /// *  `number_of_volumes` -number of volumes the storage is modelled with
+    /// * `number_of_volumes` -number of volumes the storage is modelled with
     ///              see App.C (C.1.2 selection of the number of volumes to model the storage unit)
     ///              for more details if this wants to be changed.
     /// * `primary_pipework` - optional reference to pipework
-    /// * `energy_supply_connection_unmet_demand` - an energy supply connection representing unmet demand
-    /// * `control_hold_at_setpnt` - reference to Control object with Boolean schedule
-    ///                               defining when the StorageTank should be held at
-    ///                                the setpoint temperature and not allowed to fall
-    ///                               to the minimum before recharging
     /// * `contents` - MaterialProperties object
     pub(crate) fn new(
         volume: f64,
         losses: f64,
         initial_temperature: f64,
         cold_feed: WaterSupply,
-        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iteration: &SimulationTimeIteration,
         heat_sources: IndexMap<ArcStr, PositionedHeatSource>,
         // In Python this is "project" but only temp_internal_air is accessed from it
         temp_internal_air_fn: TempInternalAirFn,
@@ -166,7 +159,7 @@ impl StorageTank {
         primary_pipework_lst: Option<&Vec<WaterPipework>>,
         contents: MaterialProperties,
         ambient_temperature: Option<f64>,
-        pipework_primary_gains_for_timestep: Option<f64>, // TODO check we need this
+        pipework_primary_gains_for_timestep: Option<f64>,
         previous_event_time_end: Option<f64>,
     ) -> anyhow::Result<Self> {
         let q_std_ls_ref = losses;
@@ -198,8 +191,19 @@ impl StorageTank {
         let primary_pipework_losses_kwh = 0.;
         let storage_losses_kwh = 0.;
 
-        let input_energy_adj_prev_timestep = 0.;
+        if !heat_sources.is_empty() {
+            // Disallow multiple heat sources until per-heat-source pipework is modelled.
+            let wet_heat_source_count = heat_sources
+                .values()
+                .filter(|source| matches!(*source.heat_source.lock(), HeatSource::Wet(_)))
+                .count();
+            if wet_heat_source_count > 1 {
+                bail!("Only one wet heat source is allowed on a storage tank")
+            }
+        }
 
+        // Build Pipework objects from raw input data, then initialise the
+        // mixin state (event tracking, surrounding temperatures)
         let mut pipework_lst: Vec<Pipework> = Vec::new();
 
         if let Some(primary_pipework_lst) = primary_pipework_lst {
@@ -218,7 +222,7 @@ impl StorageTank {
             // TODO review 1.0.0a9
             Arc::new(move |simtime| external_conditions.air_temp(simtime)),
             temp_internal_air_fn.clone(),
-            &simulation_time_iteration,
+            simulation_time_iteration,
         );
 
         // With pre-heated storage tanks, there could be the situation of tanks without heat sources
@@ -254,10 +258,8 @@ impl StorageTank {
             cp,
             rho,
             temp_n,
-            input_energy_adj_prev_timestep: input_energy_adj_prev_timestep.into(),
             primary_pipework_losses_kwh: primary_pipework_losses_kwh.into(),
             storage_losses_kwh: storage_losses_kwh.into(),
-            flag_first_water_heating_event: true.into(),
             heat_source_data,
             heating_active,
             q_ls_n_prev_heat_source: Default::default(),
@@ -1119,8 +1121,6 @@ impl StorageTank {
                     temp_flow,
                     simulation_time_iteration,
                 )? - primary_pipework_losses_kwh;
-                self.input_energy_adj_prev_timestep
-                    .store(input_energy_adj, Ordering::SeqCst);
                 self.pipework_primary_gains_for_timestep
                     .store(primary_gains, Ordering::SeqCst);
 
@@ -1783,7 +1783,7 @@ impl SmartHotWaterTank {
             losses,
             init_temp,
             cold_feed,
-            simulation_time_iteration,
+            &simulation_time_iteration,
             heat_sources,
             temp_internal_air_fn,
             external_conditions,
@@ -3884,7 +3884,7 @@ mod tests {
             1.68,
             55.0,
             cold_feed,
-            simtime,
+            &simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
@@ -3956,7 +3956,7 @@ mod tests {
             1.61,
             60.0,
             cold_feed,
-            simtime,
+            &simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
@@ -4092,7 +4092,7 @@ mod tests {
             1.68,
             55.0,
             cold_feed,
-            simtime,
+            &simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions_for_pv_diverter.clone(),
@@ -4319,7 +4319,7 @@ mod tests {
             1.68,
             55.0,
             cold_feed,
-            simulation_time_for_solar_thermal.iter().current_iteration(),
+            &simulation_time_for_solar_thermal.iter().current_iteration(),
             IndexMap::from([(
                 "solthermal".into(),
                 PositionedHeatSource {
@@ -5090,7 +5090,7 @@ mod tests {
             1.68,
             55.0,
             cold_feed,
-            simtime,
+            &simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
@@ -5261,7 +5261,7 @@ mod tests {
             1.68,
             55.0,
             cold_feed,
-            simtime,
+            &simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),
@@ -5317,6 +5317,12 @@ mod tests {
     #[rstest]
     fn test_heat_source_output(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        storage_tank_with_solar_thermal: (
+            StorageTank,
+            Arc<Mutex<SolarThermalSystem>>,
+            SimulationTime,
+            Arc<RwLock<EnergySupply>>,
+        ),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
         let (storage_tank1, _) = storage_tank1;
@@ -5331,7 +5337,19 @@ mod tests {
             43.2
         );
 
-        // Other cases skipped - difficult to replicate
+        let (storage_tank_solar_thermal, _, _, _) = storage_tank_with_solar_thermal;
+        let heat_source = storage_tank_solar_thermal.heat_source_data["solthermal"]
+            .clone()
+            .heat_source;
+
+        assert_eq!(
+            storage_tank1
+                .heat_source_output(&heat_source.lock(), 43.2, 0, iteration, None)
+                .unwrap(),
+            0.
+        );
+
+        // TODO 1.0.0a9 migration can assertion with heat pump heat source now be replicated?
     }
 
     /// Test that when hot water demand exceeds tank capacity, remaining volume is drawn from cold feed (e.g. pre-heat tank).
@@ -5437,7 +5455,7 @@ mod tests {
             1.61,
             52.0,
             cold_feed,
-            simtime,
+            &simtime,
             heat_sources,
             temp_internal_air_fn.clone(),
             external_conditions.clone(),

@@ -5818,7 +5818,7 @@ fn hot_water_source_from_input(
                 details.daily_losses,
                 details.init_temp,
                 cold_water_source,
-                simulation_time.current_iteration(),
+                &simulation_time.current_iteration(),
                 heat_sources.clone(),
                 temp_internal_air_fn,
                 external_conditions,
