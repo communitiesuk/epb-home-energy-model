@@ -19,6 +19,7 @@ use crate::hem_core::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
 use approx::relative_eq;
 use atomic_float::AtomicF64;
+use educe::Educe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -37,19 +38,17 @@ use std::sync::Arc;
 ///     flag_first_pipework_heating_event: True until the first heating event
 ///         completes. Between-event losses are not calculated before the
 ///         first event ends.
+#[derive(Educe)]
+#[educe(Debug)]
 pub(crate) struct PrimaryPipeworkLossesMixin {
     primary_pipework: Vec<Pipework>,
     pipework_energy_input_prev_timestep: AtomicF64,
     temp_surrounding_prev_heating_event: Vec<AtomicF64>,
     flag_first_pipework_heating_event: AtomicBool,
+    #[educe(Debug(ignore))]
     temp_external_air_fn: Arc<dyn Fn(&SimulationTimeIteration) -> f64 + Send + Sync>,
+    #[educe(Debug(ignore))]
     temp_internal_air_fn: TempInternalAirFn,
-}
-
-impl std::fmt::Debug for PrimaryPipeworkLossesMixin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!("Implement Debug for PrimaryPipeworkLossesMixin")
-    }
 }
 
 impl PrimaryPipeworkLossesMixin {
