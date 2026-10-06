@@ -1,9 +1,9 @@
 use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{
     ChargeControl, CombinationTimeControl, CompositeRangeTimeControl, Control, ControlSetPoint,
-    HeatSourceControl, OnOffCostMinimisingTimeControl, OnOffTimeControl, RangeTimeControl,
-    ScheduleOrSetpointControl, SetpointOrCombinationControl, SetpointTimeControl,
-    SmartApplianceControl, TimeControl,
+    HeatSourceControl, OnOffControl, OnOffCostMinimisingTimeControl, OnOffTimeControl,
+    RangeTimeControl, ScheduleOrOnOffControl, ScheduleOrSetpointControl,
+    SetpointOrCombinationControl, SetpointTimeControl, SmartApplianceControl, TimeControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::cooling_systems::space_cool_system_base::SpaceCoolSystem;
@@ -77,13 +77,13 @@ use crate::core::water_heat_demand::dhw_demand::ELECTRIC_SHOWERS_HWS_NAME;
 use crate::core::water_heat_demand::dhw_demand::{DomesticHotWaterDemand, WaterHeatingCalculation};
 use crate::core::water_heat_demand::misc::WaterEventResult;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
-use crate::hem_core::simulation_time::SimulationTime;
+use crate::hem_core::simulation_time::{SimulationTime, HOURS_IN_DAY};
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, BuildingElementHeightWidthInput, ChargeLevel,
     ChargeTargetScheduleOrControlReference, ColdWaterSourceDetails, ColdWaterSourceInput,
-    Control as ControlInput, ControlCombinations, ControlDetails, ControlReferences,
-    EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FlowData, FuelType,
+    Control as ControlInput, ControlCombinations, ControlDetails, ControlLogicType,
+    ControlReferences, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FlowData, FuelType,
     HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
     HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
@@ -165,6 +165,7 @@ fn control_from_input(
     // we should be able to improve it in time
     if let Some(control) = &control_input.hot_water_timer.as_ref() {
         if let Some(ctrl) = single_control_from_details(
+            "hw timer",
             control,
             external_conditions.clone(),
             simulation_time_iterator,
@@ -176,6 +177,7 @@ fn control_from_input(
     }
     if let Some(control) = &control_input.window_opening.as_ref() {
         if let Some(ctrl) = single_control_from_details(
+            "window opening",
             control,
             external_conditions.clone(),
             simulation_time_iterator,
@@ -187,6 +189,7 @@ fn control_from_input(
     }
     for (name, control) in &control_input.extra {
         if let Some(ctrl) = single_control_from_details(
+            name,
             control,
             external_conditions.clone(),
             simulation_time_iterator,
@@ -201,6 +204,7 @@ fn control_from_input(
 }
 
 fn single_control_from_details(
+    name: &str,
     details: &ControlDetails,
     external_conditions: Arc<ExternalConditions>,
     simulation_time_iterator: &SimulationTimeIterator,
@@ -239,7 +243,7 @@ fn single_control_from_details(
                 *start_day,
                 *time_series_step,
                 *setpoint_bounds,
-                *advanced_start,
+                advanced_start.unwrap_or(0.).into(),
                 simulation_time_iterator.step_in_hours(),
             )
             .into(),
@@ -318,12 +322,6 @@ fn single_control_from_details(
             )
             .into()
         }
-        // temporary entry for ChargeTarget with charge target control reference until implemented for 1.0.0a9
-        ControlDetails::ChargeTarget {
-            charge_target_schedule_or_control:
-                ChargeTargetScheduleOrControlReference::ChargeTimeControl(_),
-            ..
-        } => todo!(),
         ControlDetails::OnOffCostMinimising {
             start_day,
             time_series_step,
@@ -400,6 +398,7 @@ fn single_control_from_details(
                             None => return Some(Err(anyhow!("There was a reference to a control with name '{control_name}' that was not provided.")))
                         };
                         let control = match single_control_from_details(
+                            control_name,
                             control_details,
                             external_conditions.clone(),
                             simulation_time_iterator,
@@ -457,7 +456,6 @@ fn single_control_from_details(
             schedule_lower,
             schedule_upper,
         } => {
-            // TODO ensure this is tested
             let schedule_or_control_lower: ScheduleOrSetpointControl = match schedule_lower {
                 NumericScheduleOrControlReference::Schedule(schedule) => {
                     expand_numeric_schedule(schedule).into()
@@ -504,9 +502,88 @@ fn single_control_from_details(
                 simulation_time_iterator.step_in_hours(),
                 *start_day,
                 *time_series_step,
-                *advanced_start,
+                advanced_start.unwrap_or(0.0f64).into(),
             )?;
             Control::RangeTime(range_time_control.into()).into()
+        }
+        // temporary entry for ChargeTarget with charge target control reference until implemented for 1.0.0a9
+        ControlDetails::ChargeTarget {
+            charge_level: charge_level_input,
+            external_sensor,
+            logic_type,
+            temp_charge_cut,
+            temp_charge_cut_delta,
+            charge_calc_time,
+            start_day,
+            time_series_step,
+            charge_target_schedule_or_control: schedule_or_control,
+        } => {
+            let temp_charge_cut_delta = if let Some(temp_charge_cut_delta) = temp_charge_cut_delta {
+                Some(reject_nulls(expand_numeric_schedule(
+                    temp_charge_cut_delta,
+                ))?)
+            } else {
+                None
+            };
+
+            let logic_type = logic_type.unwrap_or(ControlLogicType::Manual);
+
+            // Determine the required length for charge_level
+            let required_length = ((simulation_time_iterator.total_steps() as f64
+                * simulation_time_iterator.step_in_hours())
+            .ceil()
+                / HOURS_IN_DAY as f64
+                + 1.) as usize;
+
+            // Simulating manual charge control
+            // Set charge_level to 1.0 (max) for each day of simulation (plus 1)
+            let mut charge_level = vec![1.0; required_length].into_iter().map(Some).collect();
+
+            // If charge_level is present in the input file overwrite initial vector
+            // User can specify a vector with all days (plus 1), or as a single float value to be used for each day
+            if let Some(charge_level_input) = charge_level_input {
+                charge_level = match charge_level_input {
+                    ChargeLevel::Schedule(schedule) => expand_numeric_schedule(schedule),
+                    ChargeLevel::List(schedule_list) => {
+                        schedule_list.into_iter().cloned().map(Some).collect()
+                    }
+                    ChargeLevel::Single(single_value) => vec![Some(*single_value); required_length],
+                };
+
+                // A list or schedule must supply one value per day of the simulation period.
+                // A shorter sequence is most likely an input error, so reject it. A single
+                // value (handled above) is broadcast to every day.
+                if charge_level.len() < required_length {
+                    bail!("charge_level for control '{name}' has {} value(s) but the simulation requires {required_length} (one per day, plus one). Provide a value for each day, or a single value to apply to all days.", charge_level.len());
+                }
+            }
+
+            let charge_time_control: ScheduleOrOnOffControl = match schedule_or_control {
+                ChargeTargetScheduleOrControlReference::ChargeTimeControl(control_reference) => OnOffControl::from(single_control_from_details(
+                        name,
+                        control_input.get(control_reference.as_str()).ok_or_else(|| anyhow!("Control '{name}' references control '{control_reference}' which is not defined"))?,
+                        external_conditions.clone(),
+                        simulation_time_iterator,
+                        control_input,
+                        obscure_error_reporter,
+                    )?.ok_or_else(|| anyhow!("Control '{name}' references control '{control_reference}' which could not be built"))?).into(),
+                ChargeTargetScheduleOrControlReference::Schedule(schedule) => reject_nulls(expand_boolean_schedule(schedule))?.into(),
+            };
+
+            Some(Control::Charge(Arc::new(ChargeControl::new(
+                logic_type,
+                charge_time_control,
+                simulation_time_iterator,
+                *start_day,
+                *time_series_step,
+                charge_level,
+                *temp_charge_cut,
+                temp_charge_cut_delta,
+                external_conditions.clone().into(),
+                external_sensor.clone(),
+                Some(*charge_calc_time),
+                obscure_error_reporter.clone(),
+            )?)))
         }
     })
 }
@@ -526,6 +603,7 @@ fn get_referenced_control(
         ),
     };
     let control = single_control_from_details(
+        control_name,
         control_details,
         external_conditions.clone(),
         simulation_time_iterator,
