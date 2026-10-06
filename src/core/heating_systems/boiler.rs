@@ -195,7 +195,7 @@ impl BoilerServiceWaterCombi {
                         // TODO (from Python) storage type input will be needed when storage combis are fully implemented
                         combi_storage_loss_in_test,
                         store_volume,
-                        // TODO migration alpha 9:
+                        // TODO review as part of migration alpha 9:
                         // if the storage combi is to be treated as a keephot for losses
                         // then the losses will be provided by the boiler fuel.
                         // self.__keep_hot_fuel = CombiKeepHotFuel.MAIN_BOILER_FUEL
@@ -1816,8 +1816,8 @@ mod tests {
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{
-            BoilerHotWaterTest, BoilerType, CombiTypeSpecificDetails, FuelType, HeatSourceLocation,
-            HeatSourceWetDetails, HotWaterSourceDetails,
+            BoilerHotWaterTest, BoilerType, CombiKeepHotFuel, CombiTypeSpecificDetails, FuelType,
+            HeatSourceLocation, HeatSourceWetDetails, HotWaterSourceDetails,
         };
         use approx::assert_relative_eq;
         use parking_lot::RwLock;
@@ -1967,6 +1967,57 @@ mod tests {
                 CombiBoilerConfig::Storage {
                     combi_storage_loss_in_test,
                     store_volume
+                }
+            )
+        }
+
+        #[rstest]
+        fn test_init_keep_hot(
+            boiler: Boiler,
+            simulation_time: SimulationTime,
+            cold_water_source: ColdWaterSource,
+        ) {
+            let keep_hot_test_hours = 16.;
+            let combi_keep_hot_fuel = CombiKeepHotFuel::Mixed;
+
+            let boiler_data = HotWaterSourceDetails::CombiBoiler {
+                separate_dhw_tests: BoilerHotWaterTest::MS,
+                // fuel_energy_1 field added here in Python seems to be a mistake
+                rejected_energy_1: Some(0.0004),
+                storage_loss_factor_1: Some(0.),
+                // fuel_energy_2 field added here in Python seems to be a mistake
+                // rejected_energy_2 field added here in Python seems to be a mistake
+                storage_loss_factor_2: Some(0.91574),
+                rejected_factor_3: Some(0.),
+                daily_hw_usage: 132.5802,
+                setpoint_temp: None,
+                combi_type_specific_details: CombiTypeSpecificDetails::KeepHot {
+                    keep_hot_test_hours,
+                    combi_keep_hot_fuel,
+                    control_keep_hot: None,
+                },
+                cold_water_source: Default::default(),
+                heat_source_wet: Default::default(),
+            };
+
+            let boiler_service_water = BoilerServiceWaterCombi::new(
+                BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
+                boiler_data,
+                "boiler_test".into(),
+                20.,
+                WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                None,
+                simulation_time.step,
+            );
+
+            assert!(boiler_service_water.is_ok());
+            assert_eq!(
+                boiler_service_water.unwrap().combi_boiler_config,
+                CombiBoilerConfig::KeepHot {
+                    keep_hot_on: false,
+                    keep_hot_fuel: combi_keep_hot_fuel,
+                    keep_hot_test_hours: Some(keep_hot_test_hours),
+                    keep_hot_control: None,
                 }
             )
         }
