@@ -1,6 +1,6 @@
 // This module provides objects to represent the thermal zones in the building,
 // and to calculate the temperatures in the zone and associated building elements.
-use crate::core::controls::time_control::ControlBehaviour;
+use crate::core::controls::time_control::ControlSetPoint;
 use crate::core::material_properties::AIR;
 use crate::core::space_heat_demand::building_element::BuildingElement;
 use crate::core::space_heat_demand::thermal_bridge::{
@@ -75,7 +75,7 @@ pub struct Zone {
     print_heat_balance: bool,
     // Python has a use_fast_solver field that we don't need because we always use the equivalent fast solver in Rust
     _ventilation: Arc<InfiltrationVentilation>,
-    control: Option<Arc<dyn ControlBehaviour>>,
+    control: Option<ControlSetPoint>,
     temp_setpnt_basis: ZoneTemperatureControlBasis,
     /// list of temperatures (nodes and internal air) from
     ///                      previous timestep. Positions in list defined in
@@ -110,7 +110,7 @@ impl Zone {
         temp_ext_air_init: f64,
         temp_setpnt_init: f64,
         temp_setpnt_basis: Option<ZoneTemperatureControlBasis>,
-        control: Option<Arc<dyn ControlBehaviour>>,
+        control: Option<ControlSetPoint>,
         print_heat_balance: bool,
         simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<Self> {
@@ -1910,7 +1910,7 @@ impl HeatBalanceAggregate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::{Control, MockControl};
+    use crate::core::controls::time_control::MockControl;
     use crate::core::space_heat_demand::building_element::{
         BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple,
         BuildingElementGround, BuildingElementOpaque, BuildingElementPartyWall,
@@ -2181,7 +2181,7 @@ mod tests {
 
     fn zone(
         thermal_bridging: ThermalBridging,
-        control: Option<Arc<dyn ControlBehaviour>>,
+        control: Option<ControlSetPoint>,
     ) -> anyhow::Result<Zone> {
         let simulation_time = simulation_time();
         let external_conditions = external_conditions(simulation_time);
@@ -2852,8 +2852,8 @@ mod tests {
         assert_relative_eq!(ach_to_trigger_heating.unwrap(), 0.14);
     }
 
-    fn fake_control_with_setpnt(setpnt: Option<f64>) -> Arc<dyn ControlBehaviour> {
-        Arc::new(Control::Mock(MockControl::with_setpnt(setpnt)))
+    fn fake_control_with_setpnt(setpnt: Option<f64>) -> ControlSetPoint {
+        ControlSetPoint::Mock(MockControl::with_setpnt(setpnt))
     }
 
     #[rstest]

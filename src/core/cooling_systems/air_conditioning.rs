@@ -1,6 +1,6 @@
 use super::space_cool_system_base::SpaceCoolSystem;
 use crate::compare_floats::max_of_2;
-use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
+use crate::core::controls::time_control::ControlSetPoint;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::simulation_time::SimulationTimeIteration;
 
@@ -13,7 +13,7 @@ pub struct AirConditioning {
     frac_convective: f64,
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control: Control,
+    control: ControlSetPoint,
 }
 
 impl AirConditioning {
@@ -32,7 +32,7 @@ impl AirConditioning {
         frac_convective: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
-        control: Control,
+        control: ControlSetPoint,
     ) -> Self {
         Self {
             cooling_capacity_in_kw,
@@ -47,14 +47,14 @@ impl AirConditioning {
 
 impl SpaceCoolSystem for AirConditioning {
     fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        per_control!(&self.control, ctrl => { ctrl.setpnt(simulation_time_iteration) })
+        self.control.setpnt(simulation_time_iteration)
     }
 
     fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
-        per_control!(&self.control, ctrl => { ctrl.in_required_period(simulation_time_iteration) })
+        self.control.in_required_period(simulation_time_iteration)
     }
 
     fn frac_convective(&self) -> f64 {
@@ -125,7 +125,7 @@ mod tests {
                 0.4,
                 energy_supply_conn,
                 simulation_time.step,
-                Control::SetpointTime(control.into()),
+                ControlSetPoint::SetpointTime(control.into()),
             ),
             energy_supply,
         )

@@ -352,7 +352,7 @@ impl DirectElectricBoiler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::{ScheduleOrControl, SetpointTimeControl};
+    use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::units::Orientation360;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -530,8 +530,8 @@ mod tests {
     ) {
         let service_name = "service_hot_water_regular";
         let range_time_control = RangeTimeControl::new(
-            ScheduleOrControl::Schedule(vec![None, None]),
-            ScheduleOrControl::Schedule(vec![None, None]),
+            vec![None, None],
+            vec![None, None],
             simulation_time.iter(),
             0,
             1.,

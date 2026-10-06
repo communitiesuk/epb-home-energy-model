@@ -1,8 +1,8 @@
 use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{
-    ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl,
-    OnOffCostMinimisingTimeControl, OnOffTimeControl, RangeTimeControl, ScheduleOrControl,
-    SetpointOrCombinationControl, SetpointTimeControl, SmartApplianceControl,
+    ChargeControl, CombinationTimeControl, Control, ControlSetPoint, HeatSourceControl,
+    OnOffCostMinimisingTimeControl, OnOffTimeControl, RangeTimeControl, ScheduleOrSetpointControl,
+    SetpointOrCombinationControl, SetpointTimeControl, SmartApplianceControl, TimeControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::cooling_systems::space_cool_system_base::SpaceCoolSystem;
@@ -37,8 +37,9 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
-    HeatSourceWithStorageTank, HotWaterStorageTank, ImmersionHeater, PVDiverter,
-    PositionedHeatSource, SmartHotWaterTank, SolarThermalSystem, StorageTank,
+    control_max_diverter_from_control, HeatSourceWithStorageTank, HotWaterStorageTank,
+    ImmersionHeater, PVDiverter, PositionedHeatSource, SmartHotWaterTank, SolarThermalSystem,
+    StorageTank,
 };
 use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::material_properties::WATER;
@@ -300,7 +301,7 @@ fn single_control_from_details(
             Control::Charge(
                 ChargeControl::new(
                     logic_type,
-                    ScheduleOrControl::Schedule(schedule),
+                    schedule,
                     simulation_time_iterator,
                     *start_day,
                     *time_series_step,
@@ -429,6 +430,20 @@ fn single_control_from_details(
                 obscure_error_reporter,
             )?;
 
+            // a CombinationTimeControl takes control types that can be expressed as a TimeControl
+            // not all controls can, and if any here do not then this is an invalid input
+            let resolved_controls = resolved_controls
+                .into_iter()
+                .map(|(name, control)| {
+                    anyhow::Ok((
+                        name,
+                        Option::<TimeControl>::from(control).ok_or_else(|| {
+                            anyhow!("Provided control type not expressible as TimeControl")
+                        })?,
+                    ))
+                })
+                .try_collect()?;
+
             Control::CombinationTime(
                 CombinationTimeControl::new(combination.clone(), resolved_controls)?.into(),
             )
@@ -442,9 +457,9 @@ fn single_control_from_details(
             schedule_upper,
         } => {
             // TODO ensure this is tested
-            let schedule_or_control_lower: ScheduleOrControl<Option<f64>> = match schedule_lower {
+            let schedule_or_control_lower: ScheduleOrSetpointControl = match schedule_lower {
                 NumericScheduleOrControlReference::Schedule(schedule) => {
-                    ScheduleOrControl::Schedule(expand_numeric_schedule(schedule))
+                    expand_numeric_schedule(schedule).into()
                 }
                 NumericScheduleOrControlReference::ControlReference(control_name) => {
                     let control = get_referenced_control(
@@ -454,13 +469,17 @@ fn single_control_from_details(
                         control_name,
                         obscure_error_reporter,
                     )?;
-                    ScheduleOrControl::Control(control)
+                    ScheduleOrSetpointControl::Control(
+                        Option::<ControlSetPoint>::from(control).ok_or_else(|| {
+                            anyhow!("Control for a range timer needs to be a setpoint control")
+                        })?,
+                    )
                 }
             };
 
-            let schedule_or_control_upper: ScheduleOrControl<Option<f64>> = match schedule_upper {
+            let schedule_or_control_upper: ScheduleOrSetpointControl = match schedule_upper {
                 NumericScheduleOrControlReference::Schedule(schedule) => {
-                    ScheduleOrControl::Schedule(expand_numeric_schedule(schedule))
+                    ScheduleOrSetpointControl::Schedule(expand_numeric_schedule(schedule))
                 }
                 NumericScheduleOrControlReference::ControlReference(control_name) => {
                     let control = get_referenced_control(
@@ -470,7 +489,11 @@ fn single_control_from_details(
                         control_name,
                         obscure_error_reporter,
                     )?;
-                    ScheduleOrControl::Control(control)
+                    ScheduleOrSetpointControl::Control(
+                        Option::<ControlSetPoint>::from(control).ok_or_else(|| {
+                            anyhow!("Control for a range timer needs to be a setpoint control")
+                        })?,
+                    )
                 }
             };
 
@@ -841,8 +864,8 @@ pub struct Corpus {
     timestep_end_calcs: Arc<RwLock<Vec<HeatSystem>>>,
     initial_loop: AtomicBool,
     detailed_output_heating_cooling: bool,
-    vent_adjust_min_control: Option<Control>,
-    vent_adjust_max_control: Option<Control>,
+    vent_adjust_min_control: Option<ControlSetPoint>,
+    vent_adjust_max_control: Option<ControlSetPoint>,
     temp_internal_air_prev: Arc<AtomicF64>,
     smart_appliance_controls: IndexMap<ArcStr, Arc<SmartApplianceControl>>,
     input: Arc<Input>,
@@ -3689,16 +3712,18 @@ impl Controls {
                 control_min,
                 control_max,
             } => {
-                let min = self
+                let min: Option<ControlSetPoint> = self
                     .get_with_string(control_min)
-                    .ok_or_else(|| anyhow!("No control found for reference '{control_min}'"))?;
-                let max = self
+                    .ok_or_else(|| anyhow!("No control found for reference '{control_min}'"))?
+                    .into();
+                let max: Option<ControlSetPoint> = self
                     .get_with_string(control_max)
-                    .ok_or_else(|| anyhow!("No control found for reference '{control_max}'"))?;
+                    .ok_or_else(|| anyhow!("No control found for reference '{control_max}'"))?
+                    .into();
 
                 Ok(RangeTimeControl::new(
-                    ScheduleOrControl::Control(min),
-                    ScheduleOrControl::Control(max),
+                    min.ok_or_else(|| anyhow!("RangeTimeControl '{control_min}' min control was expected to be a type with a setpoint"))?,
+                    max.ok_or_else(|| anyhow!("RangeTimeControl '{control_max}' max control was expected to be a type with a setpoint"))?,
                     simulation_time_iterator.clone(),
                     0, // TODO assuming this is zero for now
                     simulation_time_iterator.step_in_hours(),
@@ -3988,7 +4013,7 @@ fn zone_from_input(
     cool_system_name_for_zone: &mut IndexMap<ArcStr, Vec<ArcStr>>,
     external_conditions: Arc<ExternalConditions>,
     infiltration_ventilation: Arc<InfiltrationVentilation>,
-    window_adjust_control: Option<Arc<dyn ControlBehaviour>>,
+    window_adjust_control: Option<ControlSetPoint>,
     controls: &Controls,
     ventilation_shield_class: &VentilationShieldClass,
     print_heat_balance: bool,
@@ -4093,16 +4118,20 @@ fn infiltration_ventilation_from_input(
     detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<(
     InfiltrationVentilation,
-    Option<Arc<dyn ControlBehaviour>>,
-    Option<Control>,
-    Option<Control>,
+    Option<ControlSetPoint>,
+    Option<ControlSetPoint>,
+    Option<ControlSetPoint>,
 )> {
     let window_adjust_control = input
         .control_window_adjust
         .as_ref()
-        .and_then(|ctrl_name| controls.get_with_string(ctrl_name))
-        .map(|ctrl| Arc::new(ctrl) as Arc<dyn ControlBehaviour>);
-    let (vent_adjust_min_control, vent_adjust_max_control) = if let InfiltrationVentilationInput {
+        .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
+    let window_adjust_control: Option<ControlSetPoint> = window_adjust_control.and_then(Into::into);
+
+    let (vent_adjust_min_control, vent_adjust_max_control): (
+        Option<ControlSetPoint>,
+        Option<ControlSetPoint>,
+    ) = if let InfiltrationVentilationInput {
         vent_adjust_controls:
             VentAdjustControlReferences::Bounded {
                 control_vent_adjust_min,
@@ -4114,14 +4143,17 @@ fn infiltration_ventilation_from_input(
         (
             control_vent_adjust_min
                 .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl)),
+                .and_then(|ctrl| controls.get_with_string(ctrl))
+                .and_then(Into::into),
             control_vent_adjust_max
                 .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl)),
+                .and_then(|ctrl| controls.get_with_string(ctrl))
+                .and_then(Into::into),
         )
     } else {
         unimplemented!() // TODO during 1.0.0a9 migration: handle variant with unified control_vent_adjust
     };
+
     // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
     let ventilation = InfiltrationVentilation::create(
         input,
@@ -4249,18 +4281,21 @@ fn building_element_from_input(
                 height,
                 width,
                 Some(shading.clone()),
-                treatment.as_ref().map(|treatments| {
-                    treatments
-                        .iter()
-                        .map(|t| {
-                            WindowTreatment::from_input(
-                                t,
-                                controls,
-                                simulation_time_iterator.current_hour(),
-                            )
-                        })
-                        .collect_vec()
-                }),
+                treatment
+                    .as_ref()
+                    .map(|treatments| {
+                        treatments
+                            .iter()
+                            .map(|t| {
+                                WindowTreatment::from_input(
+                                    t,
+                                    controls,
+                                    simulation_time_iterator.current_hour(),
+                                )
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .transpose()?,
                 external_conditions,
             ))
         }
@@ -5152,16 +5187,22 @@ fn heat_source_wet_from_input(
                         .clone();
                     let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
-                    WetHeatSource::HeatBattery(HeatBattery::DryCore(HeatBatteryDryCore::new(
-                        battery,
-                        controls
-                            .get_with_string(control_charge)
-                            .unwrap_or_else(|| {
-                                panic!(
+                    let charge_control = if let Control::Charge(control) = controls
+                        .get_with_string(control_charge)
+                        .ok_or_else(|| {
+                            anyhow!(
                                     "expected a control to be registered with the name '{control_charge}'"
                                 )
-                            })
-                            .clone(),
+                        })?
+                        .clone() {
+                        control
+                    } else {
+                        bail!("A dry core heat battery expected its charge control '{control_charge}' to reference a charge control");
+                    };
+
+                    WetHeatSource::HeatBattery(HeatBattery::DryCore(HeatBatteryDryCore::new(
+                        battery,
+                        charge_control,
                         energy_supply,
                         energy_supply_conn,
                         Some(*number_of_units as u32),
@@ -5255,9 +5296,12 @@ fn heat_source_from_input(
         } => {
             let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Solar thermal system references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
-            let control_max = controls
-                .get_with_string(control_max)
-                .ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a SolarThermalSystem object."))?;
+            let control_max = control_max_diverter_from_control(
+                controls
+                    .get_with_string(control_max)
+                    .ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a SolarThermalSystem object."))?
+                )
+                .ok_or_else(|| anyhow!("The control '{control_max}' was expected to be a setpoint time control or a combination control"))?;
 
             let energy_supply_from_environment = energy_supplies
                 .get(ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME)
@@ -5286,7 +5330,7 @@ fn heat_source_from_input(
                         external_conditions.clone(),
                         temp_internal_air_fn,
                         simulation_time_iterator.step_in_hours(),
-                        control_max,
+                        control_max.into(),
                         **contents,
                         Some(energy_supply_from_environment_conn),
                     )),
@@ -5793,7 +5837,10 @@ fn hot_water_source_from_input(
                         .as_immersion_heater();
 
                     if let Some(im) = immersion_heater {
-                        let control_max = controls.get_with_string(&diverter.control_max);
+                        let control_max = controls
+                            .get_with_string(&diverter.control_max)
+                            .and_then(control_max_diverter_from_control)
+                            .ok_or_else(|| anyhow!("PV diverter control '{}' was expected to be a setpoint time control or a combination control", diverter.control_max))?;
                         let pv_diverter = PVDiverter::new(
                             &pre_heated_tank,
                             im,
@@ -5888,6 +5935,13 @@ fn hot_water_source_from_input(
             let pump_source_name = format!("Smart_hot_water_tank_pump: {name}");
             let energy_supply_conn_pump =
                 EnergySupply::connection(energy_supply_pump, &pump_source_name)?;
+
+            let temp_setpnt_max: Arc<SetpointTimeControl> = if let Control::SetpointTime(ctrl) = controls.get_with_string(&details.temp_setpnt_max).ok_or_else(|| anyhow!("A control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object."))? {
+                ctrl.clone()
+            } else {
+                bail!("A setpoint time control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object - control '{}' was passed.", details.temp_setpnt_max)
+            };
+
             let smart_hot_water_tank = Arc::new(RwLock::new(SmartHotWaterTank::new(
                 details.volume,
                 details.daily_losses,
@@ -5895,7 +5949,7 @@ fn hot_water_source_from_input(
                 details.power_pump_kw,
                 details.max_flow_rate_pump_l_per_min,
                 details.temp_usable,
-                controls.get_with_string(&details.temp_setpnt_max).ok_or_else(|| anyhow!("A control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object."))?,
+                temp_setpnt_max,
                 cold_water_source.clone(),
                 simulation_time.current_iteration(),
                 heat_sources.clone(),
@@ -6153,9 +6207,39 @@ fn space_heat_systems_from_input(
 
                         let zone = zones.get(&zone).ok_or_else(|| anyhow!("Space heat system references an undeclared zone '{zone}'."))?.clone();
                         let zone_setpoint_init = zone.setpnt_init();
+                        let control_name = control.clone();
                         let control = controls.get_with_string(control).ok_or_else(|| anyhow!("A control object was expected for an electric storage heater"))?;
+                        let control = if let Control::SetpointTime(control) = control {
+                            control
+                        } else {
+                            bail!("The control '{control_name}' referenced by an electric storage heater was expected to be a setpoint time control");
+                        };
                         let charge_control = controls.get_with_string(control_charger).ok_or_else(|| anyhow!("Space heat system references an invalid charge control name '{control_charger}'"))?;
-                        SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(*pwr_in, *rated_power_instant, *storage_capacity, *air_flow_type, *frac_convective, *fan_pwr, *n_units, zone_setpoint_init, ZoneTempInternalAir(zone).as_fn(), energy_supply_conn, simulation_time, control, charge_control, dry_core_min_output.clone(), dry_core_max_output.clone(), external_conditions.clone(), *state_of_charge_init, Some(detailed_output_heating_cooling))?)
+                        let charge_control = if let Control::Charge(control) = charge_control {
+                            control
+                        } else {
+                            bail!("The control '{control_name}' referenced by an electric storage heater was expected to be a charge control");
+                        };
+                        SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(
+                            *pwr_in,
+                            *rated_power_instant,
+                            *storage_capacity,
+                            *air_flow_type,
+                            *frac_convective,
+                            *fan_pwr,
+                            *n_units,
+                            zone_setpoint_init,
+                            ZoneTempInternalAir(zone).as_fn(),
+                            energy_supply_conn,
+                            simulation_time,
+                            control,
+                            charge_control,
+                            dry_core_min_output.clone(),
+                            dry_core_max_output.clone(),
+                            external_conditions.clone(),
+                            *state_of_charge_init,
+                            Some(detailed_output_heating_cooling))?,
+                        )
                     }
                     SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, flow_data, bypass_fraction_recirculated, heat_source, temp_diff_emit_dsgn, control: control_name, thermal_mass, ecodesign_controller, design_flow_temp, zone, pipework, .. } => {
                         let zone: ArcStr = zone.as_str().into();
@@ -6213,14 +6297,41 @@ fn space_heat_systems_from_input(
                                     SpaceHeatingService::Boiler(heat_source_service)
                                 }
                                 WetHeatSource::Hiu(heat_network) => {
-                                    let heat_source_service = HeatNetwork::create_service_space_heating(heat_network.clone(), &energy_supply_conn_name, control);
+                                    let control: Option<ControlSetPoint> = control.into();
+
+                                    let heat_source_service = HeatNetwork::create_service_space_heating(
+                                        heat_network.clone(),
+                                        &energy_supply_conn_name,
+                                        control.ok_or_else(|| anyhow!("An HIU expected to be passed a control that can be used as a setpoint control"))?,
+                                    );
                                     SpaceHeatingService::HeatNetwork(heat_source_service)
                                 }
                                 WetHeatSource::HeatBattery(heat_battery) => {
                                     SpaceHeatingService::HeatBattery(match heat_battery {
-                                        HeatBattery::DryCore(dry_core) => HeatBatteryServiceSpace::DryCore(HeatBatteryDryCore::create_service_space_heating(dry_core.clone(), &energy_supply_conn_name, control.into())?),
+                                        HeatBattery::DryCore(dry_core) => HeatBatteryServiceSpace::DryCore(
+                                            {
+                                                let control = if let Control::SetpointTime(control) = control {
+                                                    control
+                                                } else {
+                                                    bail!("A dry core heat battery expected to be passed a control that can be used as a setpoint control")
+                                                };
+
+                                                HeatBatteryDryCore::create_service_space_heating(
+                                                    dry_core.clone(),
+                                                    &energy_supply_conn_name,
+                                                    control.into()
+                                                )?
+                                            }
+                                        ),
                                         HeatBattery::Pcm(pcm) =>
-                                            HeatBatteryServiceSpace::Pcm(HeatBatteryPcm::create_service_space_heating(pcm.clone(), &energy_supply_conn_name, control)?)
+                                            HeatBatteryServiceSpace::Pcm(
+                                                HeatBatteryPcm::create_service_space_heating(
+                                                    pcm.clone(),
+                                                    &energy_supply_conn_name,
+                                                    control_max_diverter_from_control(control)
+                                                        .ok_or_else(|| anyhow!("A PCM heat battery expected to be passed a control that was either a setpoint time control or a combination control"))?,
+                                                )?
+                                            )
                                     })
                                 }
                             };
@@ -6338,7 +6449,7 @@ fn space_cool_systems_from_input(
             let energy_supply_conn_name: ArcStr = system_name.into();
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply, energy_supply_conn_name.as_ref()).unwrap();
-            let control = controls.get_with_string(control).ok_or_else(|| anyhow!("The control reference '{control}' was expected to refer to a known control."))?;
+            let control: Option<ControlSetPoint> = controls.get_with_string(control).ok_or_else(|| anyhow!("The control reference '{control}' was expected to refer to a known control."))?.into();
 
             Ok((
                 energy_supply_conn_name,
@@ -6348,7 +6459,7 @@ fn space_cool_systems_from_input(
                     *frac_convective,
                     energy_supply_conn,
                     simulation_time_iterator.step_in_hours(),
-                    control,
+                    control.ok_or_else(|| anyhow!("An air conditioning system expected a control with a setpoint"))?,
                 ),
             ))
         })

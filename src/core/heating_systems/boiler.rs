@@ -1,7 +1,7 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    ControlBehaviour, OnOffTimeControl, RangeTimeControl, SetpointOrCombinationControl,
+    OnOffTimeControl, RangeTimeControl, SetpointOrCombinationControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
@@ -591,7 +591,7 @@ impl BoilerServiceWaterRegular {
 
     /// Return setpoint (not necessarily temperature)
     pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
-        self.control.setpnt_range_time_control(simtime)
+        self.control.setpnt(simtime)
     }
 
     /// Demand energy (in kWh) from the boiler
@@ -2896,7 +2896,7 @@ mod tests {
     }
 
     mod test_boiler_service_water_regular {
-        use crate::core::controls::time_control::{RangeTimeControl, ScheduleOrControl};
+        use crate::core::controls::time_control::{RangeTimeControl, ScheduleOrSetpointControl};
         use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{
@@ -2969,8 +2969,8 @@ mod tests {
             let control_max_schedule = vec![Some(60.), Some(60.), None];
 
             let range_time_control = RangeTimeControl::new(
-                ScheduleOrControl::Schedule(control_min_schedule),
-                ScheduleOrControl::Schedule(control_max_schedule),
+                ScheduleOrSetpointControl::Schedule(control_min_schedule),
+                ScheduleOrSetpointControl::Schedule(control_max_schedule),
                 simulation_time.iter(),
                 0,
                 1.,
@@ -3421,7 +3421,8 @@ mod tests {
     mod test_boiler {
         use crate::core::common::WaterSupply;
         use crate::core::controls::time_control::{
-            RangeTimeControl, ScheduleOrControl, SetpointOrCombinationControl, SetpointTimeControl,
+            RangeTimeControl, ScheduleOrSetpointControl, SetpointOrCombinationControl,
+            SetpointTimeControl,
         };
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
@@ -3663,8 +3664,8 @@ mod tests {
             let control_max_schedule = vec![None, None];
 
             let range_time_control = RangeTimeControl::new(
-                ScheduleOrControl::Schedule(control_min_schedule),
-                ScheduleOrControl::Schedule(control_max_schedule),
+                ScheduleOrSetpointControl::Schedule(control_min_schedule),
+                ScheduleOrSetpointControl::Schedule(control_max_schedule),
                 simulation_time.iter(),
                 0,
                 1.,

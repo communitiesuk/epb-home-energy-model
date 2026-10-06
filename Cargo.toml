@@ -22,6 +22,7 @@ convert_case = "0.12.0"
 csv = "1.4.0"
 delegate = "0.13.5"
 educe = { version = "0.6.0", default-features = false, features = ["Debug", "Default", "PartialEq"] }
+either = "1.19.0"
 eqsolver = "0.4.0"
 erased-serde = "0.4.10"
 formatx = "0.4.1"

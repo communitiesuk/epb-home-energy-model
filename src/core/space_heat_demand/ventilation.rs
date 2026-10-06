@@ -2,7 +2,7 @@
 // The calculations are based on Method 1 of BS EN 16798-7.
 
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::controls::time_control::{Control, ControlBehaviour};
+use crate::core::controls::time_control::{Control, OnOffTimeControl, SetpointTimeControl};
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::AIR;
@@ -576,7 +576,7 @@ impl From<input::MechVentData> for MechVentType {
 pub(crate) struct Window {
     orientation: Orientation360,
     pitch: f64,
-    on_off_ctrl_obj: Option<Control>,
+    on_off_ctrl_obj: Option<Arc<OnOffTimeControl>>,
     _altitude: f64,
     p_a_alt: f64,
     window_parts: Vec<WindowPart>,
@@ -600,7 +600,7 @@ impl Window {
         orientation: Orientation360,
         pitch: f64,
         altitude: f64,
-        on_off_ctrl_obj: Option<Control>,
+        on_off_ctrl_obj: Option<Arc<OnOffTimeControl>>,
         ventilation_zone_base_height: f64,
     ) -> Self {
         Self {
@@ -1361,7 +1361,7 @@ pub(crate) struct MechanicalVentilation {
     _theta_ctrl_sys: Option<f64>,
     vent_data: MechVentData,
     _total_volume: f64,
-    ctrl_intermittent_mev: Option<Arc<dyn ControlBehaviour>>,
+    ctrl_intermittent_mev: Option<Arc<SetpointTimeControl>>,
     sfp: f64,
     energy_supply_conn: EnergySupplyConnection,
     _altitude: f64,
@@ -1426,7 +1426,7 @@ impl MechanicalVentilation {
         total_volume: f64,
         altitude: f64,
         ventilation_zone_base_height: f64,
-        ctrl_intermittent_mev: Option<Arc<dyn ControlBehaviour>>,
+        ctrl_intermittent_mev: Option<Arc<SetpointTimeControl>>,
         mvhr_eff: Option<f64>,
         theta_ctrl_sys: Option<f64>, // Only required if sup_air_temp_ctrl = LOAD_COM
         sfp_in_use_factor: f64,
@@ -1958,7 +1958,7 @@ pub(crate) struct InfiltrationVentilation {
     detailed_output_heating_cooling: bool,
     p_a_alt: f64,
     total_volume: f64,
-    smart_air_brick_control: Option<Control>, // In python this is SetpointTimeControl
+    smart_air_brick_control: Option<Arc<SetpointTimeControl>>,
     vents_open_during_airtightness_test: Option<bool>,
     smart_air_brick_floor_area_fraction: f64,
     detailed_results: Arc<RwLock<Vec<VentilationDetailedResult>>>,
@@ -2016,7 +2016,7 @@ impl InfiltrationVentilation {
         altitude: f64,
         total_volume: f64,
         ventilation_zone_base_height: f64,
-        smart_air_brick_control: Option<Control>, // In python this is SetpointTimeControl
+        smart_air_brick_control: Option<Arc<SetpointTimeControl>>,
         vents_open_during_airtightness_test: Option<bool>,
         smart_air_brick_floor_area_fraction: Option<f64>,
     ) -> Self {
@@ -2872,7 +2872,7 @@ impl InfiltrationVentilation {
         detailed_output_heating_cooling: bool,
         energy_supplies: &IndexMap<ArcStr, Arc<RwLock<EnergySupply>>>,
         controls: &Controls,
-        smart_air_brick_control: Option<Control>, // In Python this is SetpointTimeControl
+        smart_air_brick_control: Option<Arc<SetpointTimeControl>>,
         vents_open_during_airtightness_test: Option<bool>,
         smart_air_brick_floor_area_fraction: Option<f64>,
     ) -> anyhow::Result<Self> {
@@ -2900,7 +2900,13 @@ impl InfiltrationVentilation {
                                 .and_then(|window_openable_control| {
                                     controls.get_with_string(window_openable_control)
                                 })
-                                .filter(|ctrl| matches!(ctrl, Control::OnOffTime(_)));
+                                .and_then(|ctrl| {
+                                    if let Control::OnOffTime(c) = ctrl {
+                                        Some(c)
+                                    } else {
+                                        None
+                                    }
+                                });
                             anyhow::Ok(Window::new(
                                 window_part_list.clone(),
                                 *orientation360,
@@ -3022,12 +3028,19 @@ impl InfiltrationVentilation {
 
         for (mech_vents_name, mech_vents_data) in input.mechanical_ventilation.iter() {
             // Assign the appropriate control object
-            let ctrl_intermittent_mev = mech_vents_data
+            let ctrl_intermittent_mev: Option<Arc<SetpointTimeControl>> = mech_vents_data
                 .control
                 .as_ref()
                 .and_then(|ctrl_name| controls.get_with_string(ctrl_name))
-                .filter(|ctrl| matches!(ctrl, Control::SetpointTime(_)))
-                .map(|ctrl| Arc::new(ctrl) as Arc<dyn ControlBehaviour>);
+                .iter()
+                .filter_map(|ctrl| {
+                    if let Control::SetpointTime(control) = ctrl {
+                        Some(control.clone())
+                    } else {
+                        None
+                    }
+                })
+                .next();
             let sfp_in_use_factor = mech_vents_data.sfp_in_use_factor;
             let energy_supply = energy_supplies
                 .get(&mech_vents_data.energy_supply)
@@ -3416,13 +3429,13 @@ pub struct InternalReferencePressureCalculationError {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::Control::{OnOffTime, SetpointTime};
-    use crate::core::controls::time_control::{MockControl, OnOffTimeControl, SetpointTimeControl};
+    use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::space_heat_demand::ventilation::FacadeDirection::{
         Roof, Roof10, Roof10_30, Roof30, WindSeg2, WindSeg4,
     };
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, ShadingSegment};
-    use crate::input::FuelType;
+    use crate::input::{FuelType, SetpointBoundsInput};
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use parking_lot::lock_api::RwLock;
@@ -4262,7 +4275,7 @@ mod tests {
         ))
     }
 
-    fn create_window(ctrl: Option<Control>, altitude: f64) -> Window {
+    fn create_window(ctrl: Option<Arc<OnOffTimeControl>>, altitude: f64) -> Window {
         Window::new(
             vec![WindowPartInput {
                 mid_height: 1.5,
@@ -4277,22 +4290,19 @@ mod tests {
         )
     }
 
-    fn ctrl_that_is_on(simulation_time_iterator: &SimulationTimeIterator) -> Control {
-        Control::OnOffTime(
-            OnOffTimeControl::new(vec![Some(true)], simulation_time_iterator.current_day(), 1.)
-                .into(),
-        )
+    fn ctrl_that_is_on(simulation_time_iterator: &SimulationTimeIterator) -> Arc<OnOffTimeControl> {
+        OnOffTimeControl::new(vec![Some(true)], simulation_time_iterator.current_day(), 1.).into()
     }
 
-    fn ctrl_that_is_off(simulation_time_iterator: &SimulationTimeIterator) -> Control {
-        Control::OnOffTime(
-            OnOffTimeControl::new(
-                vec![Some(false)],
-                simulation_time_iterator.current_day(),
-                1.,
-            )
-            .into(),
+    fn ctrl_that_is_off(
+        simulation_time_iterator: &SimulationTimeIterator,
+    ) -> Arc<OnOffTimeControl> {
+        OnOffTimeControl::new(
+            vec![Some(false)],
+            simulation_time_iterator.current_day(),
+            1.,
         )
+        .into()
     }
 
     #[rstest]
@@ -4901,9 +4911,35 @@ mod tests {
         assert_eq!(mechanical_ventilation.z_exhaust, Some(5.)); // 2 + 3
     }
 
+    #[fixture]
+    fn ctrl_intermittent_mev(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) -> SetpointTimeControl {
+        SetpointTimeControl::new(
+            vec![
+                21.0.into(),
+                None,
+                None,
+                21.0.into(),
+                None,
+                21.0.into(),
+                25.0.into(),
+                15.0.into(),
+            ],
+            0,
+            simulation_time_iterator.step_in_hours(),
+            SetpointBoundsInput::MinOnly { setpoint_min: 16.0 }.into(),
+            None,
+            1.,
+        )
+    }
+
     // Test that MEV systems only use exhaust position
     #[rstest]
-    fn test_mev_position(energy_supply_connection: EnergySupplyConnection) {
+    fn test_mev_position(
+        energy_supply_connection: EnergySupplyConnection,
+        ctrl_intermittent_mev: SetpointTimeControl,
+    ) {
         let mechvent_mev = MechanicalVentilation::new(
             SupplyAirFlowRateControlType::Oda,
             SupplyAirTemperatureControlType::NoControl,
@@ -4920,7 +4956,7 @@ mod tests {
             250.0,
             0.0,
             3.,
-            Some(Arc::new(Control::Mock(MockControl::default()))),
+            Some(ctrl_intermittent_mev.into()),
             None,
             None,
             1.0,
@@ -4943,7 +4979,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_positive_input_ventilation_position(energy_supply_connection: EnergySupplyConnection) {
+    fn test_positive_input_ventilation_position(
+        energy_supply_connection: EnergySupplyConnection,
+        ctrl_intermittent_mev: SetpointTimeControl,
+    ) {
         let mechvent_piv = MechanicalVentilation::new(
             SupplyAirFlowRateControlType::Oda,
             SupplyAirTemperatureControlType::NoControl,
@@ -4960,7 +4999,7 @@ mod tests {
             250.0,
             0.0,
             3.,
-            Some(Arc::new(Control::Mock(MockControl::default()))),
+            Some(ctrl_intermittent_mev.into()),
             None,
             None,
             1.0,
@@ -5054,12 +5093,6 @@ mod tests {
         assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);
     }
 
-    fn mock_control_with_setpnt(setpnt: Option<f64>) -> Arc<dyn ControlBehaviour> {
-        Arc::new(Control::Mock(
-            crate::core::controls::time_control::MockControl::with_setpnt(setpnt),
-        ))
-    }
-
     #[rstest]
     #[case(0.5)]
     #[should_panic(expected = "Error f_op_v is not between 0 and 1")]
@@ -5067,6 +5100,7 @@ mod tests {
     fn test_f_op_v(
         mut mechanical_ventilation: MechanicalVentilation,
         simulation_time_iterator: SimulationTimeIterator,
+        ctrl_intermittent_mev: SetpointTimeControl,
         #[case] setpoint: f64,
     ) {
         assert_relative_eq!(
@@ -5081,8 +5115,12 @@ mod tests {
             orientation_exhaust: 180.0.into(),
             pitch_exhaust: 90.,
         };
-        mechanical_ventilation.ctrl_intermittent_mev =
-            Some(mock_control_with_setpnt(Some(setpoint)));
+        mechanical_ventilation.ctrl_intermittent_mev = Some(
+            ctrl_intermittent_mev
+                .clone()
+                .with_setpnt(Some(setpoint))
+                .into(),
+        );
         assert_eq!(
             mechanical_ventilation
                 .f_op_v(&simulation_time_iterator.current_iteration())
@@ -5090,15 +5128,23 @@ mod tests {
             0.5
         );
 
-        mechanical_ventilation.ctrl_intermittent_mev =
-            Some(mock_control_with_setpnt(Some(setpoint)));
+        mechanical_ventilation.ctrl_intermittent_mev = Some(
+            ctrl_intermittent_mev
+                .clone()
+                .with_setpnt(Some(setpoint))
+                .into(),
+        );
         mechanical_ventilation
             .f_op_v(&simulation_time_iterator.current_iteration())
             .unwrap();
     }
 
     #[rstest]
-    fn test_fans(energy_supply: EnergySupply, simulation_time_iterator: SimulationTimeIterator) {
+    fn test_fans(
+        energy_supply: EnergySupply,
+        simulation_time_iterator: SimulationTimeIterator,
+        ctrl_intermittent_mev: SetpointTimeControl,
+    ) {
         let simtime = &simulation_time_iterator.current_iteration();
         let energy_supply = Arc::new(RwLock::new(energy_supply));
         let energy_supply_connection =
@@ -5125,7 +5171,7 @@ mod tests {
             250.,
             0.,
             3.,
-            Some(mock_control_with_setpnt(None)),
+            Some(ctrl_intermittent_mev.clone().with_setpnt(None).into()),
             Some(0.),
             Some(1.1),
             1.,
@@ -5172,7 +5218,7 @@ mod tests {
             250.,
             0.,
             3.,
-            Some(mock_control_with_setpnt(None)),
+            Some(ctrl_intermittent_mev.with_setpnt(None).into()),
             Some(0.),
             Some(1.1),
             1.,
@@ -5386,6 +5432,7 @@ mod tests {
     fn test_calc_internal_gains_ductwork_not_mvhr(
         energy_supply_connection: EnergySupplyConnection,
         simulation_time_iterator: SimulationTimeIterator,
+        ctrl_intermittent_mev: SetpointTimeControl,
     ) {
         let mechvent_mev = MechanicalVentilation::new(
             SupplyAirFlowRateControlType::Oda,
@@ -5403,7 +5450,7 @@ mod tests {
             250.0,
             0.,
             3.,
-            Some(Arc::new(Control::Mock(MockControl::default()))),
+            Some(ctrl_intermittent_mev.into()),
             None,
             None,
             1.0,
@@ -6074,7 +6121,7 @@ mod tests {
             simulation_time_iterator: &SimulationTimeIterator,
             combustion_appliances: CombustionAppliances,
             energy_supply: EnergySupply,
-            smart_air_brick: Option<Control>,
+            smart_air_brick: Option<Arc<SetpointTimeControl>>,
             vents_open_during_airtightness_test: Option<bool>,
         ) -> InfiltrationVentilation {
             let ctrl = ctrl_that_is_on(simulation_time_iterator);
@@ -6195,17 +6242,15 @@ mod tests {
             let start_day = 0;
             let time_series_step = 1.;
             let timestep = 1.;
-            let control = Control::SetpointTime(
-                SetpointTimeControl::new(
-                    schedule,
-                    start_day,
-                    time_series_step,
-                    None,
-                    None,
-                    timestep,
-                )
-                .into(),
-            );
+            let control = SetpointTimeControl::new(
+                schedule,
+                start_day,
+                time_series_step,
+                None,
+                None,
+                timestep,
+            )
+            .into();
 
             let infiltration_ventilation_with_patched_smart_air_brick_vents_open =
                 create_infiltration_ventilation_with_smart_air_brick(
@@ -6241,17 +6286,15 @@ mod tests {
             let start_day = 0;
             let time_series_step = 1.;
             let timestep = 1.;
-            let control = Control::SetpointTime(
-                SetpointTimeControl::new(
-                    schedule,
-                    start_day,
-                    time_series_step,
-                    None,
-                    None,
-                    timestep,
-                )
-                .into(),
-            );
+            let control = SetpointTimeControl::new(
+                schedule,
+                start_day,
+                time_series_step,
+                None,
+                None,
+                timestep,
+            )
+            .into();
             let infiltration_ventilation_with_patched_smart_air_brick_no_setpoint =
                 create_infiltration_ventilation_with_smart_air_brick(
                     &simulation_time_iterator,
@@ -6283,17 +6326,15 @@ mod tests {
             let start_day = 0;
             let time_series_step = 1.;
             let timestep = 1.;
-            let control = Control::SetpointTime(
-                SetpointTimeControl::new(
-                    schedule,
-                    start_day,
-                    time_series_step,
-                    None,
-                    None,
-                    timestep,
-                )
-                .into(),
-            );
+            let control = SetpointTimeControl::new(
+                schedule,
+                start_day,
+                time_series_step,
+                None,
+                None,
+                timestep,
+            )
+            .into();
             let infiltration_ventilation_with_patched_smart_air_brick_vents_closed =
                 create_infiltration_ventilation_with_smart_air_brick(
                     &simulation_time_iterator,

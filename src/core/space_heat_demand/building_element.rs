@@ -1,5 +1,4 @@
-use crate::bail;
-use crate::core::controls::time_control::{Control, ControlBehaviour};
+use crate::core::controls::time_control::{ControlSetPoint, OnOffControl, SetpointTimeControl};
 use crate::core::units::{
     average_monthly_to_annual, calculate_thermal_resistance_of_virtual_layer, Orientation360,
     JOULES_PER_KILOJOULE,
@@ -16,7 +15,7 @@ use crate::input::{
     PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
 };
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -726,7 +725,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         u_value: f64,
         psi_wall_floor_junc: f64,
         fallback_shield_fact_location: WindShieldLocation,
-        smart_air_brick_control: Option<Control>, // In python this is SetpointTimeControl
+        smart_air_brick_control: Option<Arc<SetpointTimeControl>>,
         simtime: &SimulationTimeIterator,
     ) -> anyhow::Result<()> {
         self.init_super(None);
@@ -834,7 +833,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                                       u_w,
                                       shield_fact_location: WindShieldLocation,
                                       area_per_perimeter_vent,
-                                      smart_air_brick_control: Option<Control>,
+                                      smart_air_brick_control: Option<Arc<SetpointTimeControl>>,
                                       simtime: &SimulationTimeIteration|
              -> anyhow::Result<f64> {
                 // Characteristic dimension of floor
@@ -2579,7 +2578,7 @@ impl BuildingElementGround {
         psi_wall_floor_junc: f64,
         external_conditions: Arc<ExternalConditions>,
         fallback_shield_fact_location: WindShieldLocation,
-        smart_air_brick_control: Option<Control>, // In python this is SetpointTimeControl
+        smart_air_brick_control: Option<Arc<SetpointTimeControl>>,
         simtime: &SimulationTimeIterator,
     ) -> anyhow::Result<Self> {
         let mut new_ground = Self {
@@ -2931,9 +2930,9 @@ pub(crate) struct WindowTreatment {
     #[allow(dead_code)]
     delta_r: f64,
     trans_red: f64,
-    closing_irradiance_control: Option<Control>,
-    opening_irradiance_control: Option<Control>,
-    open_control: Option<Control>,
+    closing_irradiance_control: Option<ControlSetPoint>,
+    opening_irradiance_control: Option<ControlSetPoint>,
+    open_control: Option<OnOffControl>,
     is_open: AtomicBool,
     opening_delay_hrs: f64,
     time_last_adjusted: AtomicF64,
@@ -2944,8 +2943,8 @@ impl WindowTreatment {
         input: &WindowTreatmentInput,
         controls: &Controls,
         current_hour: u32,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
             _treatment_type: input.treatment_type,
             controls: input.controls.into(),
             delta_r: input.delta_r,
@@ -2953,19 +2952,23 @@ impl WindowTreatment {
             closing_irradiance_control: input
                 .control_closing_irrad
                 .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl)),
+                .and_then(|ctrl| controls.get_with_string(ctrl))
+                .map(Option::<ControlSetPoint>::from)
+                .ok_or_else(|| anyhow!("Control '{}' was expected to be a control with a setpoint for a window treatment", input.control_closing_irrad.as_ref().unwrap()))?,
             opening_irradiance_control: input
                 .control_opening_irrad
                 .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl)),
+                .and_then(|ctrl| controls.get_with_string(ctrl))
+                .map(Option::<ControlSetPoint>::from)
+                .ok_or_else(|| anyhow!("Control '{}' was expected to be a control with a setpoint for a window treatment", input.control_opening_irrad.as_ref().unwrap()))?,
             open_control: input
                 .control_open
                 .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl)),
+                .and_then(|ctrl| controls.get_with_string(ctrl)).map(OnOffControl::from),
             is_open: input.is_open.unwrap_or_default().into(),
             opening_delay_hrs: input.opening_delay_hrs,
             time_last_adjusted: (current_hour as f64).into(),
-        }
+        })
     }
 }
 
@@ -4705,7 +4708,7 @@ mod tests {
             0.5,
             be_without_control.external_conditions.clone(),
             WindShieldLocation::Sheltered,
-            Some(Control::SetpointTime(
+            Some(
                 SetpointTimeControl::new(
                     smart_air_brick_schedule,
                     0,
@@ -4715,7 +4718,7 @@ mod tests {
                     simulation_time_for_ground.step,
                 )
                 .into(),
-            )),
+            ),
             &simulation_time_for_ground.iter(),
         )
         .unwrap();
@@ -5225,8 +5228,8 @@ mod tests {
         );
     }
 
-    fn create_setpoint_time_control(setpnt: f64) -> Control {
-        Control::SetpointTime(
+    fn create_setpoint_time_control(setpnt: f64) -> ControlSetPoint {
+        ControlSetPoint::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(setpnt)], // causes control.setpnt() to return specified value
                 0,
@@ -5245,7 +5248,7 @@ mod tests {
         mut transparent_building_element: BuildingElementTransparent,
     ) {
         // Test that adjust_treatment opens when control is on
-        let control = Control::OnOffTime(
+        let control = OnOffControl::OnOffTime(
             OnOffTimeControl::new(
                 vec![Some(true)], // control is on
                 0,
@@ -5287,7 +5290,7 @@ mod tests {
         mut transparent_building_element: BuildingElementTransparent,
     ) {
         // Test that adjust_treatment doesn't open when control is off
-        let control = Control::OnOffTime(
+        let control = OnOffControl::OnOffTime(
             OnOffTimeControl::new(
                 vec![Some(false)], // control is off
                 0,
@@ -5329,7 +5332,7 @@ mod tests {
         mut transparent_building_element: BuildingElementTransparent,
     ) {
         // Test that adjust_treatment closes when control is off
-        let control = Control::OnOffTime(
+        let control = OnOffControl::OnOffTime(
             OnOffTimeControl::new(
                 vec![Some(false)], // control is off
                 0,
@@ -5375,7 +5378,7 @@ mod tests {
             vec![19.77, 0., 0., 0.], // surface irradiance 29.99986997757254
         );
         // Test that adjust_treatment doesn't close when control is on
-        let control = Control::OnOffTime(
+        let control = OnOffControl::OnOffTime(
             OnOffTimeControl::new(
                 vec![Some(true)], // control is on
                 0,

@@ -2,7 +2,7 @@ use crate::compare_floats::min_of_2;
 /// This module provides object(s) to model the behaviour of heat batteries.
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    per_control, ChargeControl, Control, ControlBehaviour, RangeTimeControl,
+    ChargeControl, CombinationTimeControl, RangeTimeControl, SetpointTimeControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::BoilerServiceWaterRegular;
@@ -35,6 +35,7 @@ use anyhow::{anyhow, bail, Ok};
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
+use either::Either;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -221,7 +222,7 @@ fn validate_no_schedule_overlap(
     for (t_idx, t_it) in simtime_iterator.clone().enumerate() {
         let mut active_sources: Vec<ArcStr> = Vec::new();
         for (src_name, charging_source) in &heat_source_data {
-            if let (_, Some(_)) = charging_source.control.setpnt_range_time_control(&t_it) {
+            if let (_, Some(_)) = charging_source.control.setpnt(&t_it) {
                 active_sources.push(src_name.clone());
             }
         }
@@ -279,8 +280,7 @@ impl HeatBatteryPcmServiceWaterRegular {
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
-        self.control
-            .setpnt_range_time_control(&simulation_time_iteration)
+        self.control.setpnt(&simulation_time_iteration)
     }
 
     /// Demand energy (in kWh) from the heat_battery
@@ -482,7 +482,7 @@ impl HeatBatteryPcmServiceWaterDirect {
 pub struct HeatBatteryPcmServiceSpace {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: ArcStr,
-    control: Control,
+    control: Either<Arc<SetpointTimeControl>, Arc<CombinationTimeControl>>,
 }
 
 /// An object to represent a space heating service provided by a heat_battery to e.g. radiators.
@@ -493,7 +493,7 @@ impl HeatBatteryPcmServiceSpace {
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: ArcStr,
-        control: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control: Either<Arc<SetpointTimeControl>, Arc<CombinationTimeControl>>,
     ) -> Self {
         Self {
             heat_battery,
@@ -503,14 +503,20 @@ impl HeatBatteryPcmServiceSpace {
     }
 
     pub fn temp_setpnt(&self, simulation_time_iteration: SimulationTimeIteration) -> Option<f64> {
-        per_control!(&self.control, ctrl => { ctrl.setpnt(&simulation_time_iteration) })
+        match &self.control {
+            Either::Left(ctrl) => ctrl.setpnt(&simulation_time_iteration),
+            Either::Right(ctrl) => ctrl.setpnt(&simulation_time_iteration),
+        }
     }
 
     pub fn in_required_period(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> Option<bool> {
-        per_control!(&self.control, ctrl => { ctrl.in_required_period(&simulation_time_iteration) })
+        match &self.control {
+            Either::Left(ctrl) => ctrl.in_required_period(&simulation_time_iteration),
+            Either::Right(ctrl) => ctrl.in_required_period(&simulation_time_iteration),
+        }
     }
 
     /// Demand energy (in kWh) from the heat battery
@@ -542,7 +548,10 @@ impl HeatBatteryPcmServiceSpace {
     }
 
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
-        per_control!(&self.control, ctrl => { ctrl.is_on(&simulation_time_iteration) })
+        match &self.control {
+            Either::Left(c) => c.is_on(&simulation_time_iteration),
+            Either::Right(c) => c.is_on(&simulation_time_iteration),
+        }
     }
 
     pub(crate) fn energy_output_max(
@@ -1023,8 +1032,8 @@ impl HeatBatteryPcm {
             )
         }
         let mut temp_observed_max = source.temp_flow_max;
-        for simtime in simtime_iterator.clone() {
-            let (lower, upper) = source.control.setpnt_range_time_control(&simtime);
+        for _ in simtime_iterator.clone() {
+            let (lower, upper) = source.control.setpnt(&simtime_iterator.current_iteration());
             if let Some(lower) = lower {
                 temp_observed_max = lower.max(temp_observed_max);
             }
@@ -1321,7 +1330,7 @@ impl HeatBatteryPcm {
     pub(crate) fn create_service_space_heating(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
-        control: Control, // in Python this is SetpointTimeControl | CombinationTimeControl
+        control: Either<Arc<SetpointTimeControl>, Arc<CombinationTimeControl>>,
     ) -> anyhow::Result<HeatBatteryPcmServiceSpace> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceSpace::new(
@@ -3386,8 +3395,7 @@ impl HeatBatteryPcm {
         source: &HeatBatteryChargingSource,
         simtime: &SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        let (mut setpnt_lower, mut setpnt_upper) =
-            source.control.setpnt_range_time_control(simtime);
+        let (mut setpnt_lower, mut setpnt_upper) = source.control.setpnt(simtime);
         if source.schedule_unit == ScheduleUnit::Temperature {
             if let Some(lower) = setpnt_lower {
                 setpnt_lower = Some(self.temp_to_soc(lower)?);
@@ -3416,9 +3424,7 @@ type ResultPerTimestep = IndexMap<(ArcStr, Option<ArcStr>), Vec<ResultParamValue
 mod tests {
     use super::*;
     use crate::core::common::{MockWaterSupply, VaryingTempWaterSupply};
-    use crate::core::controls::time_control::{
-        ChargeControl, Control, ScheduleOrControl, SetpointTimeControl,
-    };
+    use crate::core::controls::time_control::{ChargeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
@@ -3580,7 +3586,7 @@ mod tests {
     ) -> Arc<ChargeControl> {
         ChargeControl::new(
             ControlLogicType::Manual,
-            ScheduleOrControl::Schedule(vec![boolean, boolean]),
+            vec![boolean, boolean],
             &simulation_time_iterator,
             0,
             1.,
@@ -3671,11 +3677,8 @@ mod tests {
         heat_battery
     }
 
-    fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
-        Control::SetpointTime(
-            SetpointTimeControl::new(schedule, 0, 1., Default::default(), Default::default(), 1.)
-                .into(),
-        )
+    fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Arc<SetpointTimeControl> {
+        SetpointTimeControl::new(schedule, 0, 1., Default::default(), Default::default(), 1.).into()
     }
 
     fn get_service_names_from_results(heat_battery: Arc<RwLock<HeatBatteryPcm>>) -> Vec<ArcStr> {
@@ -3859,23 +3862,25 @@ mod tests {
         battery_control_off: Arc<ChargeControl>,
     ) {
         // Test when controlvent is provided and returns True
-        let service_control_on: Control =
-            create_setpoint_time_control(vec![Some(21.0), Some(21.0)]);
+        let service_control_on = create_setpoint_time_control(vec![Some(21.0), Some(21.0)]);
 
         let heat_battery = create_heat_battery(battery_control_off, None);
 
         let heat_battery_service = HeatBatteryPcmServiceSpace::new(
             heat_battery.clone(),
             SERVICE_NAME.into(),
-            service_control_on,
+            Either::Left(service_control_on),
         );
 
         assert!(heat_battery_service.is_on(simulation_time_iteration));
 
-        let service_control_off: Control = create_setpoint_time_control(vec![None, None]);
+        let service_control_off = create_setpoint_time_control(vec![None, None]);
 
-        let heat_battery_service: HeatBatteryPcmServiceSpace =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), service_control_off);
+        let heat_battery_service: HeatBatteryPcmServiceSpace = HeatBatteryPcmServiceSpace::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            Either::Left(service_control_off),
+        );
 
         assert!(!heat_battery_service.is_on(simulation_time_iteration));
     }
@@ -3969,8 +3974,8 @@ mod tests {
         };
         let range_time_control = Arc::new(
             RangeTimeControl::new(
-                ScheduleOrControl::Schedule(schedule_lower.clone()),
-                ScheduleOrControl::Schedule(schedule_upper.clone()),
+                schedule_lower.clone(),
+                schedule_upper.clone(),
                 simulation_time_iterator,
                 0,
                 1.,
@@ -4042,8 +4047,8 @@ mod tests {
 
         let range_time_control = Arc::new(
             RangeTimeControl::new(
-                ScheduleOrControl::Schedule(vec![None]),
-                ScheduleOrControl::Schedule(vec![None]),
+                vec![None],
+                vec![None],
                 simulation_time_iterator.clone(),
                 0,
                 1.,
@@ -4105,10 +4110,10 @@ mod tests {
         battery_control_off: Arc<ChargeControl>,
     ) {
         let first_scheduled_temp = Some(21.);
-        let ctrl: Control = create_setpoint_time_control(vec![first_scheduled_temp]);
+        let ctrl = create_setpoint_time_control(vec![first_scheduled_temp]);
         let heat_battery = create_heat_battery(battery_control_off, None);
         let heat_battery_space =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), either::Left(ctrl));
 
         assert_eq!(
             heat_battery_space.temp_setpnt(simulation_time_iteration),
@@ -4121,10 +4126,10 @@ mod tests {
         simulation_time_iteration: SimulationTimeIteration,
         battery_control_off: Arc<ChargeControl>,
     ) {
-        let ctrl: Control = create_setpoint_time_control(vec![Some(21.)]);
+        let ctrl = create_setpoint_time_control(vec![Some(21.)]);
         let heat_battery = create_heat_battery(battery_control_off, None);
         let heat_battery_space =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), either::Left(ctrl));
 
         assert_eq!(
             heat_battery_space.in_required_period(simulation_time_iteration),
@@ -4142,10 +4147,10 @@ mod tests {
         let temp_return = 40.;
         let temp_flow = 1.;
         let time_start = 0.2;
-        let ctrl: Control = create_setpoint_time_control(vec![None]);
+        let ctrl = create_setpoint_time_control(vec![None]);
         let heat_battery = create_heat_battery(battery_control_off, None);
         let heat_battery_space =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl);
+            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), either::Left(ctrl));
         let result = heat_battery_space
             .demand_energy(
                 energy_demand,
@@ -4170,10 +4175,13 @@ mod tests {
         let temp_output = 70.;
         let temp_return = 40.;
         let heat_battery = create_heat_battery(battery_control_on, None);
-        let service_control_off: Control = create_setpoint_time_control(vec![None]);
+        let service_control_off = create_setpoint_time_control(vec![None]);
 
-        let heat_battery_service: HeatBatteryPcmServiceSpace =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), service_control_off);
+        let heat_battery_service: HeatBatteryPcmServiceSpace = HeatBatteryPcmServiceSpace::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            either::Left(service_control_off),
+        );
 
         let result = heat_battery_service
             .energy_output_max(temp_output, temp_return, None, simulation_time_iteration)
@@ -4233,7 +4241,7 @@ mod tests {
         let service = HeatBatteryPcm::create_service_space_heating(
             heat_battery.clone(),
             "new_service",
-            control,
+            either::Left(control),
         )
         .unwrap();
 
@@ -4365,7 +4373,7 @@ mod tests {
         let control = Arc::new(
             ChargeControl::new(
                 ControlLogicType::Manual,
-                ScheduleOrControl::Schedule(vec![false]),
+                vec![false],
                 &simulation_time_iterator,
                 0,
                 1.,
@@ -4673,7 +4681,7 @@ mod tests {
         // because we need to set different charge_levels
         let battery_control_on: Arc<ChargeControl> = ChargeControl::new(
             ControlLogicType::Manual,
-            ScheduleOrControl::Schedule(vec![true, true, true]),
+            vec![true, true, true],
             &simulation_time_iterator,
             0,
             1.,
@@ -4746,7 +4754,7 @@ mod tests {
         // because we need to set different charge_levels
         let battery_control_on: Arc<ChargeControl> = ChargeControl::new(
             ControlLogicType::Manual,
-            ScheduleOrControl::Schedule(vec![true, true]),
+            vec![true, true],
             &simulation_time_iterator,
             0,
             1.,
@@ -5256,15 +5264,8 @@ mod tests {
         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
         let service_name = "new_service";
 
-        let range_time_control = RangeTimeControl::new(
-            ScheduleOrControl::Schedule(vec![]),
-            ScheduleOrControl::Schedule(vec![]),
-            simulation_time.iter(),
-            0,
-            1.,
-            None,
-        )
-        .unwrap();
+        let range_time_control =
+            RangeTimeControl::new(vec![], vec![], simulation_time.iter(), 0, 1., None).unwrap();
 
         HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
@@ -5478,8 +5479,12 @@ mod tests {
         let service_name = "new_service";
         let control = create_setpoint_time_control(vec![]);
 
-        HeatBatteryPcm::create_service_space_heating(heat_battery.clone(), service_name, control)
-            .unwrap();
+        HeatBatteryPcm::create_service_space_heating(
+            heat_battery.clone(),
+            service_name,
+            either::Left(control),
+        )
+        .unwrap();
 
         let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
             "auxiliary".into() => indexmap! {
@@ -5885,15 +5890,7 @@ mod tests {
         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
 
         let range_time_control = Arc::new(
-            RangeTimeControl::new(
-                ScheduleOrControl::Schedule(vec![]),
-                ScheduleOrControl::Schedule(vec![]),
-                simulation_time_iterator,
-                0,
-                1.,
-                None,
-            )
-            .unwrap(),
+            RangeTimeControl::new(vec![], vec![], simulation_time_iterator, 0, 1., None).unwrap(),
         );
 
         let result = HeatBatteryPcm::create_service_hot_water_regular(
@@ -6144,7 +6141,7 @@ mod tests {
         let simtime_iterator = simulation_time.iter();
         let control = ChargeControl::new(
             ControlLogicType::Manual,
-            ScheduleOrControl::Schedule(vec![true; simulation_time.total_steps()]),
+            vec![true; simulation_time.total_steps()],
             &simtime_iterator,
             0,
             1.,
@@ -6230,7 +6227,7 @@ mod tests {
         // energy_output_max draws on the charging power in addition to stored energy.
         let battery_control: Arc<ChargeControl> = ChargeControl::new(
             ControlLogicType::Manual,
-            ScheduleOrControl::Schedule(vec![true, true]),
+            vec![true, true],
             &simulation_time_iterator,
             0,
             1.,
@@ -6286,7 +6283,7 @@ mod tests {
         // floating-point precision.
         let battery_control: Arc<ChargeControl> = ChargeControl::new(
             ControlLogicType::Manual,
-            ScheduleOrControl::Schedule(vec![true; simulation_time_iterator.total_steps()]),
+            vec![true; simulation_time_iterator.total_steps()],
             &simulation_time_iterator,
             0,
             1.,
@@ -6707,8 +6704,8 @@ mod tests {
         fn range_time_control(simulation_time: SimulationTime) -> Arc<RangeTimeControl> {
             RangeTimeControl::new(
                 // mock setpnt_for_range_control return value
-                ScheduleOrControl::Schedule(vec![Some(0.2); simulation_time.total_steps()]),
-                ScheduleOrControl::Schedule(vec![Some(0.8); simulation_time.total_steps()]),
+                vec![Some(0.2); simulation_time.total_steps()],
+                vec![Some(0.8); simulation_time.total_steps()],
                 simulation_time.iter(),
                 0,
                 1.0,
@@ -6924,8 +6921,8 @@ mod tests {
             upper: Option<f64>,
         ) -> Arc<RangeTimeControl> {
             RangeTimeControl::new(
-                ScheduleOrControl::Schedule(vec![lower; simulation_time.total_steps()]),
-                ScheduleOrControl::Schedule(vec![upper; simulation_time.total_steps()]),
+                vec![lower; simulation_time.total_steps()],
+                vec![upper; simulation_time.total_steps()],
                 simulation_time.iter(),
                 0,
                 1.0,
@@ -8023,8 +8020,8 @@ mod tests {
             upper: Option<f64>,
         ) -> Arc<RangeTimeControl> {
             RangeTimeControl::new(
-                ScheduleOrControl::Schedule(vec![lower; simulation_time.total_steps()]),
-                ScheduleOrControl::Schedule(vec![upper; simulation_time.total_steps()]),
+                vec![lower; simulation_time.total_steps()],
+                vec![upper; simulation_time.total_steps()],
                 simulation_time.iter(),
                 0,
                 1.0,
@@ -8446,16 +8443,9 @@ mod tests {
             schedule_upper: Vec<Option<f64>>,
             simtime: SimulationTime,
         ) -> Arc<RangeTimeControl> {
-            RangeTimeControl::new(
-                ScheduleOrControl::Schedule(schedule_lower),
-                ScheduleOrControl::Schedule(schedule_upper),
-                simtime.iter(),
-                0,
-                1.0,
-                None,
-            )
-            .unwrap()
-            .into()
+            RangeTimeControl::new(schedule_lower, schedule_upper, simtime.iter(), 0, 1.0, None)
+                .unwrap()
+                .into()
         }
 
         #[rstest]

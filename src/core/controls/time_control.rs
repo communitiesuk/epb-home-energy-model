@@ -14,18 +14,20 @@ use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use bounded_vec_deque::BoundedVecDeque;
+use delegate::delegate;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 use std::iter::repeat;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 // NOTE that these types are based on TimeControlType enum in enums.py
-// _not_ the TimeControl type in time_control.py
+// and exist to express the full set of possible input controls, but is _not_ for use to
+// inject into individual domain models as the full set is too heterogenous.
 #[derive(Clone, Debug)]
 pub(crate) enum Control {
     OnOffTime(Arc<OnOffTimeControl>),
@@ -37,8 +39,99 @@ pub(crate) enum Control {
     #[cfg(test)]
     Mock(MockControl),
 }
-#[derive(Clone, Debug)]
 
+/// The TimeControl is a group of fairly heterogenous controls as defined in the upstream Python.
+/// Typically the variants would be broken out into relevant variants rather than calling a method
+/// on this enum for delegation. (`is_on()` is provided as this is common)
+/// ChargeControl has been added as a possible variant here, as while the typing in the Python suggests
+/// that it is not a possible variant
+#[derive(Clone, Debug)]
+pub(crate) enum TimeControl {
+    OnOff(Arc<OnOffTimeControl>),
+    OnOffCostMinimising(Arc<OnOffCostMinimisingTimeControl>),
+    Setpoint(Arc<SetpointTimeControl>),
+    Combination(Arc<CombinationTimeControl>),
+    Charge(Arc<ChargeControl>),
+}
+
+impl TimeControl {
+    delegate! {
+        to match self {
+            TimeControl::OnOff(control) => control,
+            TimeControl::OnOffCostMinimising(control) => control,
+            TimeControl::Setpoint(control) => control,
+            TimeControl::Combination(control) => control,
+            TimeControl::Charge(control) => control,
+        } {
+            pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool;
+        }
+    }
+}
+
+impl From<Control> for Option<TimeControl> {
+    fn from(control: Control) -> Self {
+        match control {
+            Control::OnOffTime(control) => Some(TimeControl::OnOff(control)),
+            Control::SetpointTime(control) => Some(TimeControl::Setpoint(control)),
+            Control::OnOffMinimisingTime(control) => {
+                Some(TimeControl::OnOffCostMinimising(control))
+            }
+            Control::CombinationTime(control) => Some(TimeControl::Combination(control)),
+            Control::Charge(_) | Control::RangeTime(_) => None,
+            #[cfg(test)]
+            Control::Mock(_) => None,
+        }
+    }
+}
+
+/// An enum containing all controls that can be expressed as on or off.
+// (In the upstream Python this is the equivalent of all controls whose classes have ControlSimple
+// as an ancestor in the class hierarchy, plus RangeTimeControl which has the `is_on` method.)
+// TL;DR: the equivalent Python type is `ControlSimple | RangeTimeControl`
+#[derive(Clone, Debug)]
+pub(crate) enum OnOffControl {
+    OnOffTime(Arc<OnOffTimeControl>),
+    OnOffMinimisingTime(Arc<OnOffCostMinimisingTimeControl>),
+    ControlWithSetpoint(ControlSetPoint),
+    RangeTime(Arc<RangeTimeControl>),
+}
+
+impl OnOffControl {
+    delegate! {
+        to match self {
+            OnOffControl::OnOffTime(control) => control,
+            OnOffControl::OnOffMinimisingTime(control) => control,
+            OnOffControl::ControlWithSetpoint(control) => control,
+            OnOffControl::RangeTime(control) => control,
+        } {
+            pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool;
+            pub(crate) fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool>;
+        }
+    }
+}
+
+impl From<Control> for OnOffControl {
+    fn from(control: Control) -> Self {
+        match control {
+            Control::OnOffTime(control) => OnOffControl::OnOffTime(control),
+            Control::OnOffMinimisingTime(control) => OnOffControl::OnOffMinimisingTime(control),
+            Control::SetpointTime(control) => {
+                OnOffControl::ControlWithSetpoint(ControlSetPoint::SetpointTime(control))
+            }
+            Control::CombinationTime(control) => {
+                OnOffControl::ControlWithSetpoint(ControlSetPoint::CombinationTime(control))
+            }
+            Control::Charge(control) => OnOffControl::ControlWithSetpoint(ControlSetPoint::Charge(
+                ChargeControlSetPointAdapter::new(control),
+            )),
+            Control::RangeTime(control) => OnOffControl::RangeTime(control),
+            #[cfg(test)]
+            Control::Mock(_) => todo!(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum SetpointOrCombinationControl {
     SetpointTime(Arc<SetpointTimeControl>),
     CombinationTime(Arc<CombinationTimeControl>),
@@ -69,83 +162,49 @@ impl SetpointOrCombinationControl {
             }
         }
     }
-
-    #[deprecated]
-    pub(crate) fn into_control(self) -> Control {
-        match self {
-            SetpointOrCombinationControl::SetpointTime(control) => Control::SetpointTime(control),
-            SetpointOrCombinationControl::CombinationTime(control) => {
-                Control::CombinationTime(control)
-            }
-        }
-    }
-}
-// macro so accessing individual controls through the enum isn't so repetitive
-macro_rules! per_control {
-    ($val:expr, $pattern:pat => { $res:expr }) => {
-        match $val {
-            #[allow(noop_method_call)]
-            Control::OnOffTime($pattern) => $res,
-            #[allow(noop_method_call)]
-            Control::Charge($pattern) => $res,
-            #[allow(noop_method_call)]
-            Control::OnOffMinimisingTime($pattern) => $res,
-            #[allow(noop_method_call)]
-            Control::SetpointTime($pattern) => $res,
-            #[allow(noop_method_call)]
-            Control::CombinationTime($pattern) => $res,
-            #[allow(noop_method_call)]
-            Control::RangeTime($pattern) => $res,
-            #[cfg(test)]
-            #[allow(noop_method_call)]
-            Control::Mock($pattern) => $res,
-        }
-    };
 }
 
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::energy_supply::energy_supply::EnergySupply;
 use crate::corpus::ObscureErrorReporter;
-pub(crate) use per_control;
 
-pub(crate) trait ControlBehaviour: Send + Sync {
-    fn in_required_period(
-        &self,
-        _simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
-        None
-    }
+#[derive(Clone, Debug)]
+pub(crate) enum ControlSetPoint {
+    SetpointTime(Arc<SetpointTimeControl>),
+    CombinationTime(Arc<CombinationTimeControl>),
+    Charge(ChargeControlSetPointAdapter),
+    #[cfg(test)]
+    Mock(MockControl),
+}
 
-    fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        None
-    }
-
-    fn is_on(&self, _simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        true
+impl ControlSetPoint {
+    delegate! {
+        to match self {
+            ControlSetPoint::SetpointTime(x) => x,
+            ControlSetPoint::CombinationTime(x) => x,
+            ControlSetPoint::Charge(x) => x,
+            #[cfg(test)]
+            ControlSetPoint::Mock(x) => x,
+        } {
+            pub(crate) fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool>;
+            pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool;
+            pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64>;
+        }
     }
 }
 
-impl Debug for dyn ControlBehaviour {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        // if we can downcast self to e.g. Control (if it is one), which we know is Debug, this would be better
-        write!(f, "A control object")
-    }
-}
-
-impl ControlBehaviour for Control {
-    fn in_required_period(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
-        per_control!(self, c => { c.in_required_period(simulation_time_iteration) })
-    }
-
-    fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        per_control!(self, c => { c.setpnt(simulation_time_iteration) })
-    }
-
-    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        per_control!(self, c => {c.is_on(simulation_time_iteration)})
+impl From<Control> for Option<ControlSetPoint> {
+    fn from(control: Control) -> Self {
+        match control {
+            Control::SetpointTime(control) => ControlSetPoint::SetpointTime(control).into(),
+            Control::CombinationTime(control) => ControlSetPoint::CombinationTime(control).into(),
+            Control::Charge(control) => {
+                ControlSetPoint::Charge(ChargeControlSetPointAdapter(control)).into()
+            }
+            Control::OnOffTime(_) | Control::OnOffMinimisingTime(_) | Control::RangeTime(_) => None,
+            #[cfg(test)]
+            Control::Mock(_) => None,
+        }
     }
 }
 
@@ -196,21 +255,23 @@ impl OnOffTimeControl {
             time_series_step,
         }
     }
-}
 
-impl ControlBehaviour for OnOffTimeControl {
-    fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
             .unwrap_or(false)
+    }
+
+    pub(crate) fn in_required_period(&self, _timestep: &SimulationTimeIteration) -> Option<bool> {
+        None
     }
 }
 
 /// An object to model a control that governs electrical charging of a heat storage device
 /// that can respond to signals from the grid, for example when carbon intensity is low
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct ChargeControl {
     logic_type: ControlLogicType,
-    charge_time_control: Control,
+    charge_time_control: OnOffControl,
     start_day: u32,
     time_series_step: f64,
     charge_level: Vec<Option<f64>>,
@@ -223,7 +284,7 @@ pub(crate) struct ChargeControl {
     obscure_error_reporter: ObscureErrorReporter,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct ChargeControlHeatRetentionFields {
     steps_day: usize,
     demand: Arc<RwLock<BoundedVecDeque<Option<f64>>>>,
@@ -254,7 +315,7 @@ impl ChargeControl {
     ///                             for the next day rather than the current day
     pub(crate) fn new(
         logic_type: ControlLogicType,
-        charge_time_control: ScheduleOrControl<bool>,
+        charge_time_control: impl Into<ScheduleOrOnOffControl>,
         simulation_time_iterator: &SimulationTimeIterator,
         start_day: u32,
         time_series_step: f64,
@@ -266,6 +327,8 @@ impl ChargeControl {
         charge_calc_time: Option<f64>,
         obscure_error_reporter: ObscureErrorReporter,
     ) -> anyhow::Result<Self> {
+        let charge_time_control = charge_time_control.into();
+
         if let Some(ref temp_charge_cut_delta) = temp_charge_cut_delta {
             validate_schedule_length(
                 temp_charge_cut_delta,
@@ -373,14 +436,14 @@ impl ChargeControl {
         };
 
         let charge_time_control = match charge_time_control {
-            ScheduleOrControl::Schedule(schedule) => {
-                Control::OnOffTime(Arc::new(OnOffTimeControl {
+            ScheduleOrOnOffControl::Schedule(schedule) => {
+                OnOffControl::OnOffTime(Arc::new(OnOffTimeControl {
                     schedule: schedule.into_iter().map(Some).collect(),
                     start_day,
                     time_series_step,
                 }))
             }
-            ScheduleOrControl::Control(control) => control,
+            ScheduleOrOnOffControl::Control(control) => control,
         };
 
         Ok(Self {
@@ -657,28 +720,54 @@ impl ChargeControl {
 
         self.obscure_error_reporter.report(anyhow!("Calculation of limiting factor linked to external sensor for automatic control failed.")).and_return(0.)
     }
-}
 
-// this covers the ChargeControlSetPointAdapter logic from Python
-impl ControlBehaviour for ChargeControl {
-    fn in_required_period(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
-        Some(self.is_on(simulation_time_iteration))
+    pub fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool> {
+        Some(self.is_on(simtime))
     }
 
-    fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        if !self.charge_time_control.is_on(simulation_time_iteration) {
+    pub fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
+        if !self.charge_time_control.is_on(simtime) {
             None
         } else {
-            Some(self.target_charge(*simulation_time_iteration, None))
+            Some(self.target_charge(*simtime, None))
         }
     }
 
     // In Python this is inherited from the BoolTimeControl class
-    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
+    pub fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
         self.charge_time_control.is_on(simulation_time_iteration)
+    }
+}
+
+/// Adapter that exposes a ChargeControl as a ControlSetPoint.
+///
+/// Returns the target charge value as the setpoint when the charge
+/// schedule is active, and None when it is not.  This allows a
+/// ChargeControl to be referenced by a RangeTimeControl as either
+/// the upper or lower schedule source.
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub(crate) struct ChargeControlSetPointAdapter(Arc<ChargeControl>);
+
+impl ChargeControlSetPointAdapter {
+    pub(crate) fn new(control: impl Into<Arc<ChargeControl>>) -> Self {
+        Self(control.into())
+    }
+
+    delegate! {
+        to self.0 {
+            pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool;
+
+            #[call(is_on)]
+            #[into]
+            pub(crate) fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool>;
+        }
+    }
+
+    pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
+        self.0
+            .is_on(simtime)
+            .then(|| self.0.target_charge(*simtime, None))
     }
 }
 
@@ -772,25 +861,61 @@ impl OnOffCostMinimisingTimeControl {
             on_off_schedule,
         })
     }
-}
 
-impl ControlBehaviour for OnOffCostMinimisingTimeControl {
     /// Return true if control will allow system to run
     fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.on_off_schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
     }
+
+    pub(crate) fn in_required_period(&self, _timestep: &SimulationTimeIteration) -> Option<bool> {
+        None
+    }
+
+    pub(crate) fn setpnt(&self, _timestep: &SimulationTimeIteration) -> Option<f64> {
+        None
+    }
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum ScheduleOrControl<T> {
-    Schedule(Vec<T>),
-    Control(Control),
+pub(crate) enum ScheduleOrOnOffControl {
+    Schedule(Vec<bool>),
+    Control(OnOffControl),
+}
+
+impl From<Vec<bool>> for ScheduleOrOnOffControl {
+    fn from(vec: Vec<bool>) -> Self {
+        ScheduleOrOnOffControl::Schedule(vec)
+    }
+}
+
+impl From<OnOffControl> for ScheduleOrOnOffControl {
+    fn from(control: OnOffControl) -> Self {
+        ScheduleOrOnOffControl::Control(control)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum ScheduleOrSetpointControl {
+    Schedule(Vec<Option<f64>>),
+    Control(ControlSetPoint),
+}
+
+impl From<Vec<Option<f64>>> for ScheduleOrSetpointControl {
+    fn from(vec: Vec<Option<f64>>) -> Self {
+        ScheduleOrSetpointControl::Schedule(vec)
+    }
+}
+
+impl From<ControlSetPoint> for ScheduleOrSetpointControl {
+    fn from(control: ControlSetPoint) -> Self {
+        ScheduleOrSetpointControl::Control(control)
+    }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct RangeTimeControl {
-    schedule_lower: ScheduleOrControl<Option<f64>>,
-    schedule_upper: ScheduleOrControl<Option<f64>>,
+    schedule_lower: ScheduleOrSetpointControl,
+    schedule_upper: ScheduleOrSetpointControl,
     start_day: u32,
     time_series_step: f64,
     timesteps_advstart: u32,
@@ -798,8 +923,8 @@ pub(crate) struct RangeTimeControl {
 
 impl RangeTimeControl {
     pub fn new(
-        schedule_lower: ScheduleOrControl<Option<f64>>,
-        schedule_upper: ScheduleOrControl<Option<f64>>,
+        schedule_lower: impl Into<ScheduleOrSetpointControl>,
+        schedule_upper: impl Into<ScheduleOrSetpointControl>,
         simulation_time_iterator: SimulationTimeIterator,
         start_day: u32,
         time_series_step: f64,
@@ -807,8 +932,13 @@ impl RangeTimeControl {
     ) -> anyhow::Result<Self> {
         let duration_advanced_start = duration_advanced_start.unwrap_or(0.);
 
-        if let (ScheduleOrControl::Schedule(ref lower), ScheduleOrControl::Schedule(ref upper)) =
-            (&schedule_lower, &schedule_upper)
+        let schedule_lower = schedule_lower.into();
+        let schedule_upper = schedule_upper.into();
+
+        if let (
+            ScheduleOrSetpointControl::Schedule(ref lower),
+            ScheduleOrSetpointControl::Schedule(ref upper),
+        ) = (&schedule_lower, &schedule_upper)
         {
             if lower.len() != upper.len() {
                 bail!("schedule_lower and schedule_upper must be of the same length")
@@ -836,18 +966,20 @@ impl RangeTimeControl {
     fn find_setpnt(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
-        schedule: &ScheduleOrControl<Option<f64>>,
+        schedule: &ScheduleOrSetpointControl,
     ) -> Option<f64> {
         let schedule_idx =
             simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
 
         let setpnt = match schedule {
-            ScheduleOrControl::Schedule(schedule) => schedule[schedule_idx],
-            ScheduleOrControl::Control(control) => control.setpnt(simulation_time_iteration),
+            ScheduleOrSetpointControl::Schedule(schedule) => schedule[schedule_idx],
+            ScheduleOrSetpointControl::Control(control) => {
+                control.setpnt(simulation_time_iteration)
+            }
         };
 
         match (setpnt, schedule) {
-            (None, ScheduleOrControl::Schedule(schedule)) => {
+            (None, ScheduleOrSetpointControl::Schedule(schedule)) => {
                 // Look ahead for duration of warmup period and use setpoint from
                 // start of heating period if found
                 let mut setpnt = None;
@@ -875,9 +1007,7 @@ impl RangeTimeControl {
         }
     }
 
-    // In Python this is setpnt
-    // but that clashes with the setpnt method in the ControlBehaviour trait
-    pub(crate) fn setpnt_range_time_control(
+    pub(crate) fn setpnt(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
@@ -890,10 +1020,8 @@ impl RangeTimeControl {
         }
         (setpnt_lower, setpnt_upper)
     }
-}
 
-impl ControlBehaviour for RangeTimeControl {
-    fn in_required_period(
+    pub(crate) fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
@@ -902,15 +1030,15 @@ impl ControlBehaviour for RangeTimeControl {
 
         // TODO can we avoid unwrap here? in_required_period should always return Some bool
         let setpnt_lower_is_set = match &self.schedule_lower {
-            ScheduleOrControl::Schedule(schedule_lower) => schedule_lower[idx].is_some(),
-            ScheduleOrControl::Control(control) => control
+            ScheduleOrSetpointControl::Schedule(schedule_lower) => schedule_lower[idx].is_some(),
+            ScheduleOrSetpointControl::Control(control) => control
                 .in_required_period(simulation_time_iteration)
                 .unwrap(),
         };
 
         let setpnt_upper_is_set = match &self.schedule_upper {
-            ScheduleOrControl::Schedule(schedule_upper) => schedule_upper[idx].is_some(),
-            ScheduleOrControl::Control(control) => control
+            ScheduleOrSetpointControl::Schedule(schedule_upper) => schedule_upper[idx].is_some(),
+            ScheduleOrSetpointControl::Control(control) => control
                 .in_required_period(simulation_time_iteration)
                 .unwrap(),
         };
@@ -918,13 +1046,7 @@ impl ControlBehaviour for RangeTimeControl {
         Some(setpnt_lower_is_set && setpnt_upper_is_set)
     }
 
-    fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        // this returns a tuple in Python which doesn't match our declaration
-        // so there is a separate method setpnt_range_time_control on RangeTimeControl instead
-        panic!("setpnt method for RangeTimeControl should not be called. Use setpnt_range_time_control instead.")
-    }
-
-    fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
+    pub(crate) fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
         let setpnt_lower = self.find_setpnt(simulation_time_iteration, &self.schedule_lower);
         let setpnt_upper = self.find_setpnt(simulation_time_iteration, &self.schedule_upper);
 
@@ -962,6 +1084,8 @@ pub(crate) struct SetpointTimeControl {
     /// how long before heating period the system
     /// should switch on, in hours
     timesteps_advstart: u32,
+    #[cfg(test)]
+    dummy_setpnt: Option<Option<f64>>,
 }
 
 impl SetpointTimeControl {
@@ -993,11 +1117,24 @@ impl SetpointTimeControl {
             time_series_step, // in Python now part of initialising base class (FloatOrNoneTimeControl > BaseTimeControl)
             setpoint_bounds: setpoint_bounds.into(),
             timesteps_advstart: (duration_advanced_start / timestep).round() as u32,
+            #[cfg(test)]
+            dummy_setpnt: Default::default(),
         }
     }
 
-    // in_required_period method can be found here in Python, in Rust it's part of the
-    // implementation block of ControlBehaviour further down
+    /// Return true if current time is inside specified time for heating/cooling
+    ///
+    /// (not including timesteps where system is only on due to min or max
+    /// setpoint or advanced start)
+    pub(crate) fn in_required_period(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<bool> {
+        let schedule_idx =
+            simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
+        let setpnt = self.schedule[schedule_idx];
+        Some(setpnt.is_some())
+    }
 
     fn is_on_for_timestep_idx(&self, schedule_idx: usize) -> bool {
         let setpnt = self.schedule[schedule_idx];
@@ -1021,6 +1158,87 @@ impl SetpointTimeControl {
 
         // For this type of control, system is always on if min or max are set
         !(setpnt.is_none() && matches!(self.setpoint_bounds, SetpointBounds::NoSetpoints))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_setpnt(mut self, dummy_setpnt_value: Option<f64>) -> Self {
+        self.dummy_setpnt.replace(dummy_setpnt_value);
+
+        self
+    }
+
+    /// Return setpoint for the current timestep
+    pub(crate) fn setpnt(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<f64> {
+        // hook for tests
+        #[cfg(test)]
+        {
+            if let Some(dummy_setpnt) = self.dummy_setpnt {
+                return dummy_setpnt;
+            }
+        }
+
+        let schedule_idx =
+            simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
+
+        let mut setpnt = self.schedule[schedule_idx];
+
+        if setpnt.is_none() {
+            // Look ahead for duration of warmup period and use setpoint from
+            // start of heating period if found
+            for timesteps_ahead in 1..(self.timesteps_advstart + 1) {
+                let timesteps_ahead = timesteps_ahead as usize;
+                if self.schedule.len() <= (schedule_idx + timesteps_ahead) {
+                    // Stop looking ahead if we have reached the end of the schedule
+                    break;
+                }
+                if let Some(s) = self.schedule[schedule_idx + timesteps_ahead] {
+                    // If heating period starts within duration of warmup period
+                    // from now, use setpoint from start of heating period
+                    setpnt = Some(s);
+                }
+            }
+        }
+
+        match (setpnt, self.setpoint_bounds) {
+            // If no setpoint value is in the schedule, use the min/max if set
+            (None, SetpointBounds::NoSetpoints) => None, // Use setpnt None
+            (None, SetpointBounds::MaxOnly { setpoint_max }) => Some(setpoint_max),
+            (None, SetpointBounds::MinOnly { setpoint_min }) => Some(setpoint_min),
+            (
+                None,
+                SetpointBounds::MinAndMax {
+                    setpoint_min,
+                    setpoint_max,
+                    default_to_max,
+                },
+            ) => match default_to_max {
+                true => Some(setpoint_max),
+                false => Some(setpoint_min),
+            },
+            (Some(s), _) => {
+                let mut setpnt = s;
+
+                if let Some(setpoint_max) = self.setpoint_bounds.setpoint_max() {
+                    // If there is a maximum limit, take the lower of this and the schedule value
+                    setpnt = min_of_2(setpoint_max, setpnt);
+                }
+                if let Some(setpoint_min) = self.setpoint_bounds.setpoint_min() {
+                    // If there is a minimum limit, take the higher of this and the schedule value
+                    setpnt = max_of_2(setpoint_min, setpnt);
+                }
+                Some(setpnt)
+            }
+        }
+    }
+
+    /// Return true if control will allow system to run
+    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+        let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
+
+        self.is_on_for_timestep_idx(schedule_idx)
     }
 }
 
@@ -1083,85 +1301,6 @@ impl From<Option<SetpointBoundsInput>> for SetpointBounds {
             },
             None => Self::NoSetpoints,
         }
-    }
-}
-
-impl ControlBehaviour for SetpointTimeControl {
-    /// Return true if current time is inside specified time for heating/cooling
-    ///
-    /// (not including timesteps where system is only on due to min or max
-    /// setpoint or advanced start)
-    fn in_required_period(
-        &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Option<bool> {
-        let schedule_idx =
-            simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
-        let setpnt = self.schedule[schedule_idx];
-        Some(setpnt.is_some())
-    }
-
-    /// Return setpoint for the current timestep
-    fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        let schedule_idx =
-            simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
-
-        let mut setpnt = self.schedule[schedule_idx];
-
-        if setpnt.is_none() {
-            // Look ahead for duration of warmup period and use setpoint from
-            // start of heating period if found
-            for timesteps_ahead in 1..(self.timesteps_advstart + 1) {
-                let timesteps_ahead = timesteps_ahead as usize;
-                if self.schedule.len() <= (schedule_idx + timesteps_ahead) {
-                    // Stop looking ahead if we have reached the end of the schedule
-                    break;
-                }
-                if let Some(s) = self.schedule[schedule_idx + timesteps_ahead] {
-                    // If heating period starts within duration of warmup period
-                    // from now, use setpoint from start of heating period
-                    setpnt = Some(s);
-                }
-            }
-        }
-
-        match (setpnt, self.setpoint_bounds) {
-            // If no setpoint value is in the schedule, use the min/max if set
-            (None, SetpointBounds::NoSetpoints) => None, // Use setpnt None
-            (None, SetpointBounds::MaxOnly { setpoint_max }) => Some(setpoint_max),
-            (None, SetpointBounds::MinOnly { setpoint_min }) => Some(setpoint_min),
-            (
-                None,
-                SetpointBounds::MinAndMax {
-                    setpoint_min,
-                    setpoint_max,
-                    default_to_max,
-                },
-            ) => match default_to_max {
-                true => Some(setpoint_max),
-                false => Some(setpoint_min),
-            },
-            (Some(s), _) => {
-                let mut setpnt = s;
-
-                if let Some(setpoint_max) = self.setpoint_bounds.setpoint_max() {
-                    // If there is a maximum limit, take the lower of this and the schedule value
-                    setpnt = min_of_2(setpoint_max, setpnt);
-                }
-                if let Some(setpoint_min) = self.setpoint_bounds.setpoint_min() {
-                    // If there is a minimum limit, take the higher of this and the schedule value
-                    setpnt = max_of_2(setpoint_min, setpnt);
-                }
-                Some(setpnt)
-            }
-        }
-    }
-
-    /// Return true if control will allow system to run
-    fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
-        let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
-
-        self.is_on_for_timestep_idx(schedule_idx)
     }
 }
 
@@ -1369,13 +1508,11 @@ impl SmartApplianceControl {
     }
 }
 
-impl ControlBehaviour for SmartApplianceControl {}
-
 #[derive(Clone, Debug)]
 /// An object to model a control with nested combinations of other control types
 pub(crate) struct CombinationTimeControl {
     combinations: ControlCombinations,
-    controls: IndexMap<ArcStr, Control>,
+    controls: IndexMap<ArcStr, TimeControl>,
 }
 
 impl CombinationTimeControl {
@@ -1387,14 +1524,16 @@ impl CombinationTimeControl {
     /// * `simulation_time` - reference to SimulationTime object
     pub(crate) fn new(
         combinations: ControlCombinations,
-        controls: IndexMap<ArcStr, Control>,
+        controls: IndexMap<ArcStr, TimeControl>,
     ) -> anyhow::Result<Self> {
         Self::validate_combinations(&combinations)?;
 
-        for control in controls.iter() {
-            let (_, control) = control;
-            if let Control::RangeTime(_range_time_control) = control {
-                bail!("CombinationTimeControl does not accept RangeTimeControl")
+        // combination controls can't contain other combination controls or we will error during a simulation
+        for control in controls.values() {
+            if let TimeControl::Combination(_) = control {
+                return Err(anyhow!(
+                    "CombinationTimeControl can't contain another CombinationTimeControl"
+                ));
             }
         }
 
@@ -1491,13 +1630,15 @@ impl CombinationTimeControl {
     ) -> bool {
         let control = &self.controls[control_name];
         match control {
-            c @ (Control::OnOffTime(_)
-            | Control::Charge(_)
-            | Control::OnOffMinimisingTime(_)) => c.is_on(&simtime),
-            Control::SetpointTime(c) => c
+            TimeControl::OnOff(c) => c.is_on(&simtime),
+            TimeControl::OnOffCostMinimising(c) => c.is_on(&simtime),
+            TimeControl::Setpoint(c) => c
                 .in_required_period(&simtime)
                 .expect("SetpointTimeControl in_required_period() method will always return Some"),
-            _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
+            TimeControl::Combination(_) => {
+                unreachable!("CombinationTimeControl can't contain another CombinationTimeControl")
+            }
+            TimeControl::Charge(c) => c.is_on(&simtime),
         }
     }
 
@@ -1524,12 +1665,12 @@ impl CombinationTimeControl {
             } else {
                 // Track the types of controls for logic enforcement
                 match &self.controls[control] {
-                    Control::OnOffTime(_)
-                    | Control::Charge(_)
-                    | Control::OnOffMinimisingTime(_) => {
+                    TimeControl::OnOff(_)
+                    | TimeControl::Charge(_)
+                    | TimeControl::OnOffCostMinimising(_) => {
                         has_on_off.store(true, Ordering::SeqCst);
                     }
-                    Control::SetpointTime(_) => {
+                    TimeControl::Setpoint(_) => {
                         has_setpoint.store(true, Ordering::SeqCst);
                     }
                     _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
@@ -1596,10 +1737,10 @@ impl CombinationTimeControl {
     ) -> SetpointOrBoolean {
         let control = &self.controls[control_name];
         match control {
-            c @ (Control::OnOffTime(_)
-            | Control::Charge(_)
-            | Control::OnOffMinimisingTime(_)) => SetpointOrBoolean::Boolean(c.is_on(&simtime)),
-            Control::SetpointTime(c) => SetpointOrBoolean::Setpoint(c.setpnt(&simtime)),
+            TimeControl::OnOff(c) => c.is_on(&simtime).into(),
+            TimeControl::OnOffCostMinimising(c) => c.is_on(&simtime).into(),
+            TimeControl::Charge(c) => c.is_on(&simtime).into(),
+            TimeControl::Setpoint(c) => c.setpnt(&simtime).into(),
             _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
         }
     }
@@ -1627,12 +1768,12 @@ impl CombinationTimeControl {
                 } else {
                     // Track the types of controls for logic enforcement
                     match &self.controls.get(control_name).ok_or_else(|| anyhow!("Control '{control_name}' not found"))? {
-                        Control::OnOffTime(_)
-                        | Control::Charge(_)
-                        | Control::OnOffMinimisingTime(_) => {
+                        TimeControl::OnOff(_)
+                        | TimeControl::Charge(_)
+                        | TimeControl::OnOffCostMinimising(_) => {
                             has_on_off.store(true, Ordering::SeqCst);
                         }
-                        Control::SetpointTime(_) => {
+                        TimeControl::Setpoint(_) => {
                             has_setpoint.store(true, Ordering::SeqCst);
                         }
                         _ => unreachable!("CombinationTimeControl only combined OnOffTime, Charge, OnOffMinimisingTime or SetpointTime controls"),
@@ -1758,7 +1899,7 @@ impl CombinationTimeControl {
     ) -> Option<f64> {
         let control = &self.controls[control_name];
 
-        if let Control::Charge(c) = control {
+        if let TimeControl::Charge(c) = control {
             Some(c.target_charge(simtime, temp_air))
         } else {
             None
@@ -1821,18 +1962,16 @@ impl CombinationTimeControl {
     }
 
     #[cfg(test)]
-    fn set_controls(&mut self, controls: IndexMap<ArcStr, Control>) {
+    fn set_controls(&mut self, controls: IndexMap<ArcStr, TimeControl>) {
         self.controls = controls;
     }
-}
 
-impl ControlBehaviour for CombinationTimeControl {
-    fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool> {
+    pub(crate) fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool> {
         self.evaluate_combination_in_req_period(MAIN_REFERENCE, *simtime)
             .ok()
     }
 
-    fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
+    pub(crate) fn setpnt(&self, simtime: &SimulationTimeIteration) -> Option<f64> {
         self.evaluate_combination_setpnt("main", *simtime)
             .ok()
             .and_then(|x| {
@@ -1844,7 +1983,7 @@ impl ControlBehaviour for CombinationTimeControl {
             })
     }
 
-    fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
+    pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
         self.evaluate_combination_is_on(MAIN_REFERENCE, *simtime)
     }
 }
@@ -1885,20 +2024,21 @@ impl MockControl {
             ..Default::default()
         }
     }
-}
 
-#[cfg(test)]
-impl ControlBehaviour for MockControl {
-    fn in_required_period(&self, _simtime: &SimulationTimeIteration) -> Option<bool> {
-        self.canned_in_req_period
+    pub(crate) fn in_required_period(&self, _timestep: &SimulationTimeIteration) -> Option<bool> {
+        None
     }
 
-    fn setpnt(&self, _simtime: &SimulationTimeIteration) -> Option<f64> {
+    pub(crate) fn is_on(&self, _timestep: &SimulationTimeIteration) -> bool {
+        if let Some(is_on) = self.canned_is_on {
+            is_on
+        } else {
+            unreachable!("it's expected that any use of MockControl where is_on was called would have a value set on it")
+        }
+    }
+
+    pub(crate) fn setpnt(&self, _timestep: &SimulationTimeIteration) -> Option<f64> {
         self.canned_setpnt
-    }
-
-    fn is_on(&self, _simtime: &SimulationTimeIteration) -> bool {
-        self.canned_is_on.unwrap_or(true)
     }
 }
 
@@ -1911,6 +2051,12 @@ enum SetpointOrBoolean {
 impl From<f64> for SetpointOrBoolean {
     fn from(t: f64) -> Self {
         SetpointOrBoolean::Setpoint(Some(t))
+    }
+}
+
+impl From<Option<f64>> for SetpointOrBoolean {
+    fn from(t: Option<f64>) -> Self {
+        SetpointOrBoolean::Setpoint(t)
     }
 }
 
@@ -2410,8 +2556,8 @@ mod tests {
             simulation_time().iter()
         }
 
-        fn schedule_lower() -> ScheduleOrControl<Option<f64>> {
-            ScheduleOrControl::Schedule(vec![
+        fn schedule_lower() -> ScheduleOrSetpointControl {
+            vec![
                 Some(21.0),
                 None,
                 None,
@@ -2420,11 +2566,12 @@ mod tests {
                 Some(21.0),
                 Some(25.0),
                 Some(15.0),
-            ])
+            ]
+            .into()
         }
 
-        fn schedule_upper() -> ScheduleOrControl<Option<f64>> {
-            ScheduleOrControl::Schedule(vec![
+        fn schedule_upper() -> ScheduleOrSetpointControl {
+            vec![
                 Some(25.0),
                 None,
                 None,
@@ -2433,13 +2580,14 @@ mod tests {
                 Some(25.0),
                 Some(27.0),
                 Some(17.0),
-            ])
+            ]
+            .into()
         }
 
         fn create_range_time_control(
             simulation_time: SimulationTime,
-            schedule_lower: ScheduleOrControl<Option<f64>>,
-            schedule_upper: ScheduleOrControl<Option<f64>>,
+            schedule_lower: impl Into<ScheduleOrSetpointControl>,
+            schedule_upper: impl Into<ScheduleOrSetpointControl>,
             duration_advanced_start: Option<f64>,
         ) -> RangeTimeControl {
             RangeTimeControl::new(
@@ -2456,7 +2604,7 @@ mod tests {
         #[rstest]
         fn test_init_invalid_schedules() {
             // Test that it raises an error if both schedules are not of the same length
-            let schedule_lower = ScheduleOrControl::Schedule(vec![
+            let schedule_lower = vec![
                 Some(21.0),
                 None,
                 None,
@@ -2465,15 +2613,8 @@ mod tests {
                 Some(21.0),
                 Some(25.0),
                 Some(15.0),
-            ]);
-            let schedule_upper = ScheduleOrControl::Schedule(vec![
-                Some(25.0),
-                None,
-                None,
-                Some(25.0),
-                None,
-                Some(25.0),
-            ]);
+            ];
+            let schedule_upper = vec![Some(25.0), None, None, Some(25.0), None, Some(25.0)];
             let range_time_control = RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
@@ -2485,7 +2626,7 @@ mod tests {
             assert!(range_time_control.is_err());
 
             // Test that it raises an error if a value in schedule_lower is not lower than or equal to the corresponding value in schedule_upper
-            let schedule_lower = ScheduleOrControl::Schedule(vec![
+            let schedule_lower = vec![
                 Some(21.0),
                 None,
                 None,
@@ -2494,8 +2635,8 @@ mod tests {
                 Some(21.0),
                 Some(25.0),
                 Some(15.0),
-            ]);
-            let schedule_upper = ScheduleOrControl::Schedule(vec![
+            ];
+            let schedule_upper = vec![
                 Some(25.0),
                 None,
                 None,
@@ -2504,7 +2645,7 @@ mod tests {
                 Some(25.0),
                 Some(23.0),
                 Some(15.0),
-            ]);
+            ];
             let range_time_control = RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
@@ -2516,7 +2657,7 @@ mod tests {
             assert!(range_time_control.is_err());
 
             // Test that it raises an error if a value in schedule_lower, and its corresponding value in schedule_upper are not of the same type
-            let schedule_lower = ScheduleOrControl::Schedule(vec![
+            let schedule_lower = vec![
                 Some(21.0),
                 None,
                 None,
@@ -2525,8 +2666,8 @@ mod tests {
                 Some(21.0),
                 Some(25.0),
                 Some(15.0),
-            ]);
-            let schedule_upper = ScheduleOrControl::Schedule(vec![
+            ];
+            let schedule_upper = vec![
                 Some(25.0),
                 Some(12.0),
                 None,
@@ -2535,7 +2676,7 @@ mod tests {
                 Some(25.0),
                 Some(23.0),
                 Some(15.0),
-            ]);
+            ];
             let range_time_control = RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
@@ -2592,8 +2733,8 @@ mod tests {
             let schedule_upper = [25.0, 12.0, 12.0, 25.0, 12.0, 25.0, 23.0, 15.0];
             let range_time_control = create_range_time_control(
                 simulation_time(),
-                ScheduleOrControl::Schedule(schedule_lower.to_vec()),
-                ScheduleOrControl::Schedule(schedule_upper.map(Some).to_vec()),
+                schedule_lower.to_vec(),
+                schedule_upper.map(Some).to_vec(),
                 None,
             );
 
@@ -2626,8 +2767,8 @@ mod tests {
             ];
             let range_time_control = create_range_time_control(
                 simulation_time(),
-                ScheduleOrControl::Schedule(schedule_lower.to_vec()),
-                ScheduleOrControl::Schedule(schedule_upper.to_vec()),
+                schedule_lower.to_vec(),
+                schedule_upper.to_vec(),
                 None,
             );
 
@@ -2645,8 +2786,8 @@ mod tests {
             let (expected_lower, expected_upper) =
                 match (schedule_lower.clone(), schedule_upper.clone()) {
                     (
-                        ScheduleOrControl::Schedule(schedule_lower),
-                        ScheduleOrControl::Schedule(schedule_upper),
+                        ScheduleOrSetpointControl::Schedule(schedule_lower),
+                        ScheduleOrSetpointControl::Schedule(schedule_upper),
                     ) => (schedule_lower, schedule_upper),
                     _ => unreachable!("Schedules should be of type ScheduleOrControl::Schedule"),
                 };
@@ -2656,7 +2797,7 @@ mod tests {
 
             for (t_idx, t_it) in simulation_time_iterator().enumerate() {
                 assert_eq!(
-                    range_time_control.setpnt_range_time_control(&t_it),
+                    range_time_control.setpnt(&t_it),
                     (expected_lower[t_idx], expected_upper[t_idx])
                 );
             }
@@ -2722,13 +2863,13 @@ mod tests {
 
             let range_time_control = create_range_time_control(
                 simulation_time(),
-                ScheduleOrControl::Schedule(schedule_lower.to_vec()),
-                ScheduleOrControl::Schedule(schedule_upper.to_vec()),
+                schedule_lower.to_vec(),
+                schedule_upper.to_vec(),
                 Some(30.),
             );
 
             assert_eq!(
-                range_time_control.setpnt_range_time_control(&SimulationTimeIteration {
+                range_time_control.setpnt(&SimulationTimeIteration {
                     index: 0,
                     time: 0.0,
                     timestep: 1.0
@@ -2747,13 +2888,13 @@ mod tests {
             ];
             let range_time_control = create_range_time_control(
                 simulation_time(),
-                ScheduleOrControl::Schedule(schedule_lower.to_vec()),
-                ScheduleOrControl::Schedule(schedule_upper.to_vec()),
+                schedule_lower.to_vec(),
+                schedule_upper.to_vec(),
                 Some(30.),
             );
 
             assert_eq!(
-                range_time_control.setpnt_range_time_control(&SimulationTimeIteration {
+                range_time_control.setpnt(&SimulationTimeIteration {
                     index: 0,
                     time: 0.0,
                     timestep: 1.0
@@ -3182,7 +3323,7 @@ mod tests {
         ) -> anyhow::Result<ChargeControl> {
             ChargeControl::new(
                 logic_type,
-                ScheduleOrControl::Schedule(schedule),
+                schedule,
                 &simulation_time().iter(),
                 0,
                 1.,
@@ -3200,11 +3341,11 @@ mod tests {
             logic_type: ControlLogicType,
             temp_charge_cut: Option<f64>,
             external_conditions: Option<ExternalConditions>,
-            control: Control,
+            control: OnOffControl,
         ) -> anyhow::Result<ChargeControl> {
             ChargeControl::new(
                 logic_type,
-                ScheduleOrControl::Control(control),
+                control,
                 &simulation_time().iter(),
                 0,
                 1.,
@@ -3312,7 +3453,7 @@ mod tests {
         fn test_is_on_separate_control() {
             let simulation_time = SimulationTime::new(0.0, 8.0, 1.0);
             let schedule = [false, true, true, true, false, true, true, true];
-            let control = Control::OnOffTime(Arc::new(OnOffTimeControl::new(
+            let control = OnOffControl::OnOffTime(Arc::new(OnOffTimeControl::new(
                 schedule.into_iter().map(Some).collect(),
                 0,
                 1.,
@@ -3567,7 +3708,7 @@ mod tests {
         fn test_temp_charge_cut_delta_length() {
             let charge_control = ChargeControl::new(
                 ControlLogicType::Automatic,
-                ScheduleOrControl::Schedule(schedule()),
+                schedule(),
                 &simulation_time().iter(),
                 0,
                 1.,
@@ -3597,7 +3738,7 @@ mod tests {
 
             let charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
-                ScheduleOrControl::Schedule(schedule_48_hours()),
+                schedule_48_hours(),
                 &simulation_time.iter(),
                 0,
                 1.,
@@ -3642,7 +3783,7 @@ mod tests {
 
             let mut charge_control = ChargeControl::new(
                 ControlLogicType::Hhrsh,
-                ScheduleOrControl::Schedule(schedule_48_hours()),
+                schedule_48_hours(),
                 &simulation_time.iter(),
                 0,
                 1.,
@@ -3866,7 +4007,7 @@ mod tests {
         ) -> ChargeControl {
             ChargeControl::new(
                 ControlLogicType::Automatic,
-                ScheduleOrControl::Schedule(schedule),
+                schedule,
                 &simulation_time_1.iter(),
                 0,
                 1.,
@@ -3916,51 +4057,7 @@ mod tests {
             ])
         }
 
-        #[rstest]
-        fn test_invalid_controls(simulation_time_1: SimulationTime) {
-            // test that creating a CombinationTimeControl with a RangeTimeControl causes an error
-            let range_time_control = RangeTimeControl::new(
-                ScheduleOrControl::Schedule(
-                    [10.9, 10.9, 10.9, 10.9, 10.9, 10.9, 10.9, 10.9]
-                        .into_iter()
-                        .map(Some)
-                        .collect(),
-                ),
-                ScheduleOrControl::Schedule(
-                    [20.3, 20.3, 20.3, 20.3, 20.3, 20.3, 20.3, 20.3]
-                        .into_iter()
-                        .map(Some)
-                        .collect(),
-                ),
-                simulation_time_1.iter(),
-                0,
-                1.,
-                None,
-            )
-            .unwrap();
-
-            let on_off_time_control = OnOffTimeControl::new(
-                [false, true, true, false, false, false, true, false]
-                    .into_iter()
-                    .map(Some)
-                    .collect(),
-                0,
-                1.,
-            );
-
-            let ctrl1 = Control::RangeTime(range_time_control.into());
-            let ctrl2 = Control::OnOffTime(on_off_time_control.into());
-
-            let result = CombinationTimeControl::new(
-                serde_json::from_value(json!({
-                    "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2"]},
-                }))
-                .unwrap(),
-                IndexMap::from([("ctrl1".into(), ctrl1), ("ctrl2".into(), ctrl2)]),
-            );
-
-            assert!(result.is_err());
-        }
+        // test_invalid_controls from upstream is not expressible as RangeTimeControl cannot be passed to CombinationTimeControl (so test is not needed)
 
         #[rstest]
         fn test_evaluate_boolean_operation_is_on(
@@ -4376,13 +4473,13 @@ mod tests {
             control.set_controls(IndexMap::from([
                 (
                     "ctrl1".into(),
-                    Control::SetpointTime(
+                    TimeControl::Setpoint(
                         SetpointTimeControl::new(vec![Some(20.); 8], 0, 1., None, None, 1.).into(),
                     ),
                 ),
                 (
                     "ctr12".into(),
-                    Control::OnOffTime(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into()),
+                    TimeControl::OnOff(OnOffTimeControl::new(vec![Some(true)], 0, 1.).into()),
                 ),
             ]));
 
@@ -4401,7 +4498,7 @@ mod tests {
             control.set_controls(IndexMap::from([
                 (
                     "ctrl1".into(),
-                    Control::SetpointTime(
+                    TimeControl::Setpoint(
                         SetpointTimeControl::new(
                             vec![45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
                                 .into_iter()
@@ -4418,7 +4515,7 @@ mod tests {
                 ),
                 (
                     "ctr12".into(),
-                    Control::SetpointTime(
+                    TimeControl::Setpoint(
                         SetpointTimeControl::new(
                             vec![45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
                                 .into_iter()
@@ -4450,7 +4547,7 @@ mod tests {
             control.set_controls(IndexMap::from([
                 (
                     "ctrl1".into(),
-                    Control::OnOffTime(
+                    TimeControl::OnOff(
                         OnOffTimeControl::new(
                             vec![false, false, false, true, true, true, true, true]
                                 .into_iter()
@@ -4464,7 +4561,7 @@ mod tests {
                 ),
                 (
                     "ctrl2".into(),
-                    Control::OnOffTime(
+                    TimeControl::OnOff(
                         OnOffTimeControl::new(
                             vec![false, true, false, false, true, false, true, true]
                                 .into_iter()
@@ -4563,10 +4660,10 @@ mod tests {
         fn test_max_min_mean_operations_logic() {
             let simtime_short = SimulationTime::new(0., 4., 1.);
 
-            let controls: IndexMap<ArcStr, Control> = IndexMap::from([
+            let controls: IndexMap<ArcStr, TimeControl> = IndexMap::from([
                 (
                     "ctrl_a".into(),
-                    Control::OnOffTime(
+                    TimeControl::OnOff(
                         OnOffTimeControl::new(
                             vec![false, false, true, true]
                                 .into_iter()
@@ -4580,7 +4677,7 @@ mod tests {
                 ),
                 (
                     "ctrl_b".into(),
-                    Control::OnOffTime(
+                    TimeControl::OnOff(
                         OnOffTimeControl::new(
                             vec![false, false, false, true]
                                 .into_iter()
@@ -4594,7 +4691,7 @@ mod tests {
                 ),
                 (
                     "ctrl_c".into(),
-                    Control::SetpointTime(
+                    TimeControl::Setpoint(
                         SetpointTimeControl::new(
                             vec![None, Some(20.0), None, None],
                             0,
@@ -4718,7 +4815,7 @@ mod tests {
 
         ChargeControl::new(
             ControlLogicType::Automatic,
-            ScheduleOrControl::Schedule(schedule_for_charge_control),
+            schedule_for_charge_control,
             &simulation_time_for_charge_control.iter(),
             0,
             1.,
@@ -4736,12 +4833,12 @@ mod tests {
     #[fixture]
     fn controls_for_combination(
         simulation_time_for_charge_control: SimulationTime,
-    ) -> IndexMap<ArcStr, Control> {
+    ) -> IndexMap<ArcStr, TimeControl> {
         let cost_schedule = vec![
             5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0,
             10.0, 10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
         ];
-        let cost_minimising_control = Control::OnOffMinimisingTime(
+        let cost_minimising_control = TimeControl::OnOffCostMinimising(
             OnOffCostMinimisingTimeControl::new(
                 cost_schedule,
                 &simulation_time_for_charge_control.iter(),
@@ -4756,7 +4853,7 @@ mod tests {
         IndexMap::from([
             (
                 "ctrl1".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [true, true, false, true, true, true, true, true]
                             .into_iter()
@@ -4770,7 +4867,7 @@ mod tests {
             ),
             (
                 "ctrl2".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [false, true, true, false, false, false, true, false]
                             .into_iter()
@@ -4784,7 +4881,7 @@ mod tests {
             ),
             (
                 "ctrl3".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [true, false, true, false, false, false, true, false]
                             .into_iter()
@@ -4798,7 +4895,7 @@ mod tests {
             ),
             (
                 "ctrl4".into(),
-                Control::SetpointTime(
+                TimeControl::Setpoint(
                     SetpointTimeControl::new(
                         [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
                             .into_iter()
@@ -4815,7 +4912,7 @@ mod tests {
             ),
             (
                 "ctrl5".into(),
-                Control::SetpointTime(
+                TimeControl::Setpoint(
                     SetpointTimeControl::new(
                         [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
                             .into_iter()
@@ -4832,7 +4929,7 @@ mod tests {
             ),
             (
                 "ctrl6".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [true, true, false, true, true, true, true, true]
                             .into_iter()
@@ -4846,7 +4943,7 @@ mod tests {
             ),
             (
                 "ctrl7".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [false, true, false, false, false, false, true, false]
                             .into_iter()
@@ -4860,7 +4957,7 @@ mod tests {
             ),
             (
                 "ctrl8".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [true, false, false, true, true, true, true, true]
                             .into_iter()
@@ -4874,7 +4971,7 @@ mod tests {
             ),
             (
                 "ctrl9".into(),
-                Control::SetpointTime(
+                TimeControl::Setpoint(
                     SetpointTimeControl::new(
                         vec![
                             Some(45.0),
@@ -4901,7 +4998,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_on_off(
-        controls_for_combination: IndexMap<ArcStr, Control>,
+        controls_for_combination: IndexMap<ArcStr, TimeControl>,
     ) -> CombinationTimeControl {
         let combination_on_off: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1", "comb2"]},
@@ -4916,7 +5013,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_setpoint(
-        controls_for_combination: IndexMap<ArcStr, Control>,
+        controls_for_combination: IndexMap<ArcStr, TimeControl>,
     ) -> CombinationTimeControl {
         let combination_setpoint: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1"]},
@@ -4929,7 +5026,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_req(
-        controls_for_combination: IndexMap<ArcStr, Control>,
+        controls_for_combination: IndexMap<ArcStr, TimeControl>,
     ) -> CombinationTimeControl {
         let combination_req: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl9", "comb1"]},
@@ -4942,7 +5039,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_on_off_cost(
-        controls_for_combination: IndexMap<ArcStr, Control>,
+        controls_for_combination: IndexMap<ArcStr, TimeControl>,
     ) -> CombinationTimeControl {
         let combination_on_off_cost: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1"]},
@@ -4956,11 +5053,11 @@ mod tests {
     #[fixture]
     fn controls_for_target_charge(
         charge_control_for_combination: ChargeControl,
-    ) -> IndexMap<ArcStr, Control> {
+    ) -> IndexMap<ArcStr, TimeControl> {
         IndexMap::from([
             (
                 "ctrl11".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [true, false, false, true, true, true, true, true]
                             .into_iter()
@@ -4974,11 +5071,11 @@ mod tests {
             ),
             (
                 "ctrl12".into(),
-                Control::Charge(charge_control_for_combination.into()),
+                TimeControl::Charge(charge_control_for_combination.into()),
             ),
             (
                 "ctrl13".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [true, true, false, false, true, false, true, true]
                             .into_iter()
@@ -4995,7 +5092,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_target_charge(
-        controls_for_target_charge: IndexMap<ArcStr, Control>,
+        controls_for_target_charge: IndexMap<ArcStr, TimeControl>,
     ) -> CombinationTimeControl {
         CombinationTimeControl::new(
             serde_json::from_value(json!({
@@ -5009,7 +5106,7 @@ mod tests {
 
     #[fixture]
     fn combination_control_target_charge1(
-        controls_for_target_charge: IndexMap<ArcStr, Control>,
+        controls_for_target_charge: IndexMap<ArcStr, TimeControl>,
     ) -> CombinationTimeControl {
         CombinationTimeControl::new(
             serde_json::from_value(json!({
@@ -5029,11 +5126,11 @@ mod tests {
     #[fixture]
     fn controls_for_invalid_combinations(
         charge_control_for_combination: ChargeControl,
-    ) -> IndexMap<ArcStr, Control> {
+    ) -> IndexMap<ArcStr, TimeControl> {
         IndexMap::from([
             (
                 "ctrl14".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [true, false, false, true, true, true, true, true]
                             .into_iter()
@@ -5047,11 +5144,11 @@ mod tests {
             ),
             (
                 "ctrl15".into(),
-                Control::Charge(charge_control_for_combination.into()),
+                TimeControl::Charge(charge_control_for_combination.into()),
             ),
             (
                 "ctrl16".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [true, true, false, false, true, false, true, true]
                             .into_iter()
@@ -5065,7 +5162,7 @@ mod tests {
             ),
             (
                 "ctrl17".into(),
-                Control::OnOffTime(
+                TimeControl::OnOff(
                     OnOffTimeControl::new(
                         [true, true, false, false, true, false, true, true]
                             .into_iter()
@@ -5083,7 +5180,7 @@ mod tests {
     // this test is introduced in the Rust to test up-front validation of combinations
     #[rstest]
     fn test_invalid_combinations_caught_on_instantiation(
-        controls_for_invalid_combinations: IndexMap<ArcStr, Control>,
+        controls_for_invalid_combinations: IndexMap<ArcStr, TimeControl>,
     ) {
         let invalid_combinations = [
             json!({

@@ -1,8 +1,6 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
-use crate::core::controls::time_control::{
-    per_control, Control, ControlBehaviour, RangeTimeControl,
-};
+use crate::core::controls::time_control::{ControlSetPoint, RangeTimeControl};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
@@ -131,8 +129,7 @@ impl HeatNetworkServiceWaterStorage {
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
-        self.control
-            .setpnt_range_time_control(&simulation_time_iteration)
+        self.control.setpnt(&simulation_time_iteration)
     }
 
     pub fn demand_energy(
@@ -178,14 +175,14 @@ impl HeatNetworkServiceWaterStorage {
 pub struct HeatNetworkServiceSpace {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: ArcStr,
-    control: Control,
+    control: ControlSetPoint,
 }
 
 impl HeatNetworkServiceSpace {
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: ArcStr,
-        control: Control, // in Python this is ControlSetPoint
+        control: ControlSetPoint,
     ) -> Self {
         Self {
             heat_network,
@@ -240,18 +237,18 @@ impl HeatNetworkServiceSpace {
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<f64> {
-        per_control!(&self.control, ctrl => { ctrl.setpnt(simulation_time_iteration) })
+        self.control.setpnt(simulation_time_iteration)
     }
 
     pub fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
-        per_control!(&self.control, ctrl => { ctrl.in_required_period(simulation_time_iteration) })
+        self.control.in_required_period(simulation_time_iteration)
     }
 
     fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        per_control!(&self.control, ctrl => { ctrl.is_on(simulation_time_iteration) })
+        self.control.is_on(simulation_time_iteration)
     }
 }
 
@@ -359,7 +356,7 @@ impl HeatNetwork {
     pub(crate) fn create_service_space_heating(
         heat_network: Arc<Mutex<Self>>,
         service_name: &str,
-        control: Control, // in Python this is ControlSetPoint
+        control: ControlSetPoint,
     ) -> HeatNetworkServiceSpace {
         Self::create_service_connection(heat_network.clone(), service_name).unwrap();
 
@@ -478,7 +475,7 @@ impl HeatNetwork {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::{ScheduleOrControl, SetpointTimeControl};
+    use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
@@ -523,8 +520,8 @@ mod tests {
     ) {
         let control = Arc::from(
             RangeTimeControl::new(
-                ScheduleOrControl::Schedule(vec![Some(21.0), Some(21.0), None]),
-                ScheduleOrControl::Schedule(vec![Some(21.0), Some(21.0), None]),
+                vec![Some(21.0), Some(21.0), None],
+                vec![Some(21.0), Some(21.0), None],
                 two_len_simulation_time.iter(),
                 0,
                 1.,
@@ -729,8 +726,8 @@ mod tests {
 
         let control = Arc::from(
             RangeTimeControl::new(
-                ScheduleOrControl::Schedule(vec![Some(52.), Some(52.), None]),
-                ScheduleOrControl::Schedule(vec![Some(60.), Some(60.), None]),
+                vec![Some(52.), Some(52.), None],
+                vec![Some(60.), Some(60.), None],
                 two_len_simulation_time.iter(),
                 0,
                 1.,
@@ -795,8 +792,8 @@ mod tests {
         // In Python a Control Mock is used (control_mock.is_on.return_value = False)
         let control = Arc::from(
             RangeTimeControl::new(
-                ScheduleOrControl::Schedule(vec![None, None, None]),
-                ScheduleOrControl::Schedule(vec![None, None, None]),
+                vec![None, None, None],
+                vec![None, None, None],
                 two_len_simulation_time.iter(),
                 0,
                 1.,
@@ -834,8 +831,8 @@ mod tests {
         // In Python a Control Mock is used (control_mock.is_on.return_value = False)
         let control = Arc::from(
             RangeTimeControl::new(
-                ScheduleOrControl::Schedule(vec![None, None, None]),
-                ScheduleOrControl::Schedule(vec![None, None, None]),
+                vec![None, None, None],
+                vec![None, None, None],
                 two_len_simulation_time.iter(),
                 0,
                 1.,
@@ -900,7 +897,7 @@ mod tests {
 
         let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
 
-        let control = Control::SetpointTime(
+        let control = ControlSetPoint::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.0), Some(21.0), None],
                 0,
@@ -1148,7 +1145,7 @@ mod tests {
         HeatNetwork::create_service_space_heating(
             heat_network.clone(),
             service_name,
-            Control::SetpointTime(
+            ControlSetPoint::SetpointTime(
                 SetpointTimeControl::new(
                     vec![Some(21.0), Some(21.0), None],
                     0,
@@ -1176,8 +1173,8 @@ mod tests {
     ) {
         let control = Arc::from(
             RangeTimeControl::new(
-                ScheduleOrControl::Schedule(vec![Some(52.), Some(52.), None]),
-                ScheduleOrControl::Schedule(vec![Some(60.), Some(60.), None]),
+                vec![Some(52.), Some(52.), None],
+                vec![Some(60.), Some(60.), None],
                 three_len_simulation_time.iter(),
                 0,
                 1.,
