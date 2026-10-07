@@ -3854,27 +3854,8 @@ mod tests {
     }
 
     // skipped test_control_off_bypassed_by_ignore_standard_ctrl due to mocking and the minimal complexity of the change
-
-    // In Python this is test_energy_output_max_service_on
-    #[rstest]
-    #[ignore = "as part of 1.0.0a9 migration, this test seems to not make sense any more as there is no value assertion in python"]
-
-    fn test_energy_output_max_when_service_control_on_for_water_regular(
-        simulation_time_iteration: SimulationTimeIteration,
-        battery_control_on: Arc<ChargeControl>,
-    ) {
-        let heat_battery_service =
-            create_service_water_regular_with_controls(battery_control_on, Some(true));
-
-        let temp_flow = 55.0;
-        let temp_return = 40.0;
-        let result = heat_battery_service
-            // added false to match signature not yet ported for 1.0.0a9
-            .energy_output_max(temp_flow, temp_return, simulation_time_iteration, false)
-            .unwrap();
-
-        assert_relative_eq!(result, 72279.10023958197);
-    }
+    // skipped test_energy_output_max_when_service_control_on_for_water_regular as the python just tests the
+    // method passes the correct arguments to the next call
 
     #[rstest]
     fn test_energy_output_max_service_off_for_water_regular(
@@ -4596,7 +4577,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_get_zone_properties_losses(battery_control_off: Arc<ChargeControl>) {
         // Test that the losses model scales a zone's loss by its temperature difference.
         //
@@ -4619,8 +4599,8 @@ mod tests {
             None,
             None,
         );
-
-        assert_eq!(energy_transf, 0.625);
+        // 5 / 8 zones * (42 - 40) K / 60 K = 0.0208333...
+        assert_eq!(energy_transf, 0.020833333333333332);
     }
 
     #[rstest]
@@ -4919,7 +4899,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_output_detailed_results_water_regular(
         simulation_time: SimulationTime,
         heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
@@ -4948,26 +4927,26 @@ mod tests {
 
         let expected_results_per_timestep: ResultsPerTimestep = indexmap! {
             "auxiliary".into() => indexmap! {
-                ("energy_aux".into(), Some("kWh".into())) => vec![0.06.into(), 0.02440988888888889.into()],
-                ("battery_losses".into(), Some("kWh".into())) => vec![0.1.into(), 0.1.into()],
-                ("Temps_after_losses0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 37.65151999372197.into()],
-                ("Temps_after_losses1".into(), Some("degC".into())) => vec![38.82044560943972.into(), 37.646280340318285.into()],
-                ("Temps_after_losses2".into(), Some("degC".into())) => vec![38.82044560954897.into(), 37.643623672190984.into()],
-                ("Temps_after_losses3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 37.64227666120374.into()],
-                ("Temps_after_losses4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
-                ("Temps_after_losses5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
-                ("Temps_after_losses6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
-                ("Temps_after_losses7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
+                ("energy_aux".into(), Some("kWh".into())) => vec![0.06.into(), 0.06.into()],
+                ("battery_losses".into(), Some("kWh".into())) => vec![0.06830005082775674.into(), 0.0411152773366954.into()],
+                ("Temps_after_losses0".into(), Some("degC".into())) => vec![52.09705202087361.into(), 39.56966446334649.into()],
+                ("Temps_after_losses1".into(), Some("degC".into())) => vec![57.06703887771538.into(), 39.616910213222845.into()],
+                ("Temps_after_losses2".into(), Some("degC".into())) => vec![57.254259772056514.into(), 39.69421041287997.into()],
+                ("Temps_after_losses3".into(), Some("degC".into())) => vec![57.42527650005248.into(), 39.81901697860602.into()],
+                ("Temps_after_losses4".into(), Some("degC".into())) => vec![57.581399089081124.into(), 40.018095866602636.into()],
+                ("Temps_after_losses5".into(), Some("degC".into())) => vec![57.72384825236103.into(), 40.3327159263897.into()],
+                ("Temps_after_losses6".into(), Some("degC".into())) => vec![57.8537148110231.into(), 40.82647693395094.into()],
+                ("Temps_after_losses7".into(), Some("degC".into())) => vec![57.97201857678866.into(), 41.59642394900029.into()],
                 ("total_charge".into(), Some("kWh".into())) => vec![0.0.into(); 2],
                 ("end_of_timestep_charge".into(), Some("kWh".into())) => vec![0.0.into(); 2],
-                ("hb_after_only_charge_zone_temp0".into(), Some("degC".into())) => vec![38.82044560943649.into(), 37.65151999372197.into()],
-                ("hb_after_only_charge_zone_temp1".into(), Some("degC".into())) => vec![38.82044560943972.into(), 37.646280340318285.into()],
-                ("hb_after_only_charge_zone_temp2".into(), Some("degC".into())) => vec![38.82044560954897.into(), 37.643623672190984.into()],
-                ("hb_after_only_charge_zone_temp3".into(), Some("degC".into())) => vec![38.82044561251537.into(), 37.64227666120374.into()],
-                ("hb_after_only_charge_zone_temp4".into(), Some("degC".into())) => vec![38.82044568377407.into(), 37.64159375362204.into()],
-                ("hb_after_only_charge_zone_temp5".into(), Some("degC".into())) => vec![38.82044727208915.into(), 37.64124903662344.into()],
-                ("hb_after_only_charge_zone_temp6".into(), Some("degC".into())) => vec![38.82048124427148.into(), 37.641107129369395.into()],
-                ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![38.821180990939474.into(), 37.64171170047278.into()],
+                ("hb_after_only_charge_zone_temp0".into(), Some("degC".into())) => vec![52.09705202087361.into(), 39.56966446334649.into()],
+                ("hb_after_only_charge_zone_temp1".into(), Some("degC".into())) => vec![57.06703887771538.into(), 39.616910213222845.into()],
+                ("hb_after_only_charge_zone_temp2".into(), Some("degC".into())) => vec![57.254259772056514.into(), 39.69421041287997.into()],
+                ("hb_after_only_charge_zone_temp3".into(), Some("degC".into())) => vec![57.42527650005248.into(), 39.81901697860602.into()],
+                ("hb_after_only_charge_zone_temp4".into(), Some("degC".into())) => vec![57.581399089081124.into(), 40.018095866602636.into()],
+                ("hb_after_only_charge_zone_temp5".into(), Some("degC".into())) => vec![57.72384825236103.into(), 40.3327159263897.into()],
+                ("hb_after_only_charge_zone_temp6".into(), Some("degC".into())) => vec![57.8537148110231.into(), 40.82647693395094.into()],
+                ("hb_after_only_charge_zone_temp7".into(), Some("degC".into())) => vec![57.97201857678866.into(), 41.59642394900029.into()],
                 ("state_of_charge".into(), Some("ratio".into())) => vec![0.463198529730531.into(), 0.24507891561838296.into()],
             },
             "new_service".into() => indexmap! {
@@ -4975,49 +4954,49 @@ mod tests {
                 ("service_type".into(), None) => vec![ResultParamValue::String(HeatingServiceType::DomesticHotWaterRegular.to_string().into()); 2],
                 ("service_on".into(), None) => vec![ResultParamValue::Boolean(true); 2],
                 ("energy_output_required".into(), Some("kWh".into())) => vec![100.0.into(); 2],
-                ("temp_output".into(), Some("degC".into())) => vec![40.000471231805946.into(), 38.82596949192907.into()],
+                ("temp_output".into(), Some("degC".into())) => vec![48.83495256437514.into(), 40.41092501564586.into()],
                 ("temp_inlet".into(), Some("degC".into())) => vec![40.0.into(); 2],
-                ("time_running".into(), Some("secs".into())) => vec![3600.0.into(), 1.0.into()],
-                ("energy_delivered_HB".into(), Some("kWh".into())) => vec![10.509408477594043.into(), 0.0.into()],
+                ("time_running".into(), Some("secs".into())) => vec![3600.0.into(), 3600.0.into()],
+                ("energy_delivered_HB".into(), Some("kWh".into())) => vec![7.393523697804974.into(), 2.9908624775073656.into()],
                 ("energy_delivered_backup".into(), Some("kWh".into())) => vec![0.0.into(); 2],
-                ("energy_delivered_total".into(), Some("kWh".into())) => vec![10.509408477594043.into(), 0.0.into()],
+                ("energy_delivered_total".into(), Some("kWh".into())) => vec![7.393523697804974.into(), 2.9908624775073656.into()],
                 ("energy_charged_during_service".into(), Some("kWh".into())) => vec![0.0.into(); 2],
                 ("hb_zone_temperatures0".into(), Some("degC".into())) => vec![
-                    40.00000000000006.into(),
-                    38.831074384285536.into(),
+                    52.82092338492856.into(),
+                    40.04231816247777.into(),
                 ],
-                ("hb_zone_temperatures1".into(), Some("degC".into())) => vec![40.00000000000329.into(), 38.82583473088185.into()],
-                ("hb_zone_temperatures2".into(), Some("degC".into())) => vec![40.000000000112536.into(), 38.82317806275455.into()],
-                ("hb_zone_temperatures3".into(), Some("degC".into())) => vec![40.00000000307894.into(), 38.821831051767305.into()],
-                ("hb_zone_temperatures4".into(), Some("degC".into())) => vec![40.000000074337635.into(), 38.82114814418561.into()],
-                ("hb_zone_temperatures5".into(), Some("degC".into())) => vec![40.000001662652714.into(), 38.82080342718701.into()],
-                ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![40.000035634835044.into(), 38.82066151993296.into()],
-                ("hb_zone_temperatures7".into(), Some("degC".into())) => vec![40.000735381503034.into(), 38.82126609103635.into()],
-                ("current_hb_power".into(), Some("kW".into())) => vec![10.509408477594043.into(), 0.0.into()],
+                ("hb_zone_temperatures1".into(), Some("degC".into())) => vec![57.0870536801901.into(), 40.09051135386234.into()],
+                ("hb_zone_temperatures2".into(), Some("degC".into())) => vec![57.27436582019495.into(), 40.169361691213126.into()],
+                ("hb_zone_temperatures3".into(), Some("degC".into())) => vec![57.44546589644598.into(), 40.2966710624016.into()],
+                ("hb_zone_temperatures4".into(), Some("degC".into())) => vec![57.60166457478777.into(), 40.499742174087984.into()],
+                ("hb_zone_temperatures5".into(), Some("degC".into())) => vec![57.74418316337672.into(), 40.820671459672916.into()],
+                ("hb_zone_temperatures6".into(), Some("degC".into())) => vec![57.87411301497617.into(), 41.32433409171734.into()],
+                ("hb_zone_temperatures7".into(), Some("degC".into())) => vec![57.99247443833206.into(), 42.10972122070484.into()],
+                ("current_hb_power".into(), Some("kW".into())) => vec![7.393523697804974.into(), 2.9908624775073656.into()],
             },
         };
 
         let expected_results_annual: ResultsAnnual = indexmap! {
             "Overall".into() => indexmap! {
                 ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
-                ("time_running".into(), Some("secs".into())) => 3601.0.into(),
-                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("time_running".into(), Some("secs".into())) => 7200.0.into(),
+                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.38438617531234.into(),
                 ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
-                ("energy_delivered_total".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.38438617531234.into(),
                 ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
             },
             "auxiliary".into() => indexmap! {
-                ("energy_aux".into(), Some("kWh".into())) => 0.0844098888888889.into(),
-                ("battery_losses".into(), Some("kWh".into())) => 0.2.into(),
+                ("energy_aux".into(), Some("kWh".into())) => 0.12.into(),
+                ("battery_losses".into(), Some("kWh".into())) => 0.10941532816445214.into(),
                 ("total_charge".into(), Some("kWh".into())) => 0.0.into(),
                 ("end_of_timestep_charge".into(), Some("kWh".into())) => 0.0.into(),
             },
             "new_service".into() => indexmap! {
                 ("energy_output_required".into(), Some("kWh".into())) => 200.0.into(),
-                ("time_running".into(), Some("secs".into())) => 3601.0.into(),
-                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("time_running".into(), Some("secs".into())) => 7200.0.into(),
+                ("energy_delivered_HB".into(), Some("kWh".into())) => 10.38438617531234.into(),
                 ("energy_delivered_backup".into(), Some("kWh".into())) => 0.0.into(),
-                ("energy_delivered_total".into(), Some("kWh".into())) => 10.509408477594043.into(),
+                ("energy_delivered_total".into(), Some("kWh".into())) => 10.38438617531234.into(),
                 ("energy_charged_during_service".into(), Some("kWh".into())) => 0.0.into(),
             },
         };
@@ -5142,7 +5121,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_output_detailed_results_space(
         simulation_time: SimulationTime,
         heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
