@@ -3420,7 +3420,7 @@ mod tests {
         HeatSourceWetDetails, PcmBatteryChargingConfiguration,
     };
     use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
-    use approx::assert_relative_eq;
+    use approx::{assert_relative_eq, assert_relative_ne};
     use indexmap::indexmap;
     use itertools::Itertools;
     use parking_lot::RwLock;
@@ -3578,6 +3578,14 @@ mod tests {
         control: Arc<ChargeControl>,
         _output_detailed_results: Option<bool>,
     ) -> Arc<RwLock<HeatBatteryPcm>> {
+        create_heat_battery_with_n_layers(control, _output_detailed_results, 8)
+    }
+
+    fn create_heat_battery_with_n_layers(
+        control: Arc<ChargeControl>,
+        _output_detailed_results: Option<bool>,
+        n_layers: usize,
+    ) -> Arc<RwLock<HeatBatteryPcm>> {
         let simulation_time = simulation_time();
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
@@ -3597,7 +3605,7 @@ mod tests {
                 temp_air_int_callback(),
                 Some(control),
                 None,
-                Some(8),
+                Some(n_layers),
                 Some(20.),
                 None,
                 None,
@@ -3627,6 +3635,67 @@ mod tests {
             .iter()
             .map(|result| result.service_name.clone())
             .collect_vec()
+    }
+
+    #[rstest]
+    fn test_per_zone_conductance_is_total_ua_divided_by_n_layers(
+        battery_control_on: Arc<ChargeControl>,
+    ) {
+        let n_layers = 4; // Example value for the number of layers
+        let heat_battery_lock =
+            create_heat_battery_with_n_layers(battery_control_on.clone(), None, n_layers);
+        let heat_battery = heat_battery_lock.read();
+
+        let pcm_temp_c = 70.;
+        let inlet_temp_c = 40.;
+
+        // get_zone_properties now derives the mass flow internally from the
+        // volumetric flow, so drive the comparison from the same l/min the model
+        // uses and convert it the same way for the manual outlet calculations.
+        let flow_rate_l_per_min = heat_battery.flow_rate_l_per_min;
+        let flow_rate_kg_per_s = flow_rate_l_per_min / 60.0 * WATER.density();
+        let reynold_number_at_1_l_per_min = 1234.0;
+
+        // Whole-exchanger conductance from the correlation, and its per-zone share.
+        let ua_total_kw_per_k = HeatBatteryPcm::calculate_heat_transfer_kw_per_k(
+            heat_battery.a,
+            heat_battery.b,
+            flow_rate_l_per_min,
+            reynold_number_at_1_l_per_min,
+        );
+        let outlet_divided = HeatBatteryPcm::calculate_outlet_temp_c(
+            ua_total_kw_per_k / n_layers as f64,
+            pcm_temp_c,
+            inlet_temp_c,
+            flow_rate_kg_per_s,
+        );
+        let outlet_undivided = HeatBatteryPcm::calculate_outlet_temp_c(
+            ua_total_kw_per_k,
+            pcm_temp_c,
+            inlet_temp_c,
+            flow_rate_kg_per_s,
+        );
+
+        // The split must actually change the answer for n_layers > 1, otherwise
+        // the assertion below would hold even if the division were removed.
+        assert_relative_ne!(outlet_divided, outlet_undivided, epsilon = 1e-3);
+        let mut zone_temp_dist = vec![pcm_temp_c; n_layers];
+        let (_, zone_index, zone_temp_c_start, outlet_temp_c) = heat_battery.get_zone_properties(
+            0,
+            &HeatBatteryPcmOperationMode::Normal,
+            &mut zone_temp_dist,
+            inlet_temp_c,
+            inlet_temp_c,
+            0.,
+            reynold_number_at_1_l_per_min,
+            60.,
+            flow_rate_l_per_min,
+            None,
+            None,
+        );
+        assert_eq!(zone_index, 0);
+        assert_eq!(zone_temp_c_start, pcm_temp_c);
+        assert_relative_eq!(outlet_temp_c, outlet_divided, epsilon = 1e-9);
     }
 
     // in Python this test is called test_service_is_on_with_control
