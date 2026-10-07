@@ -4795,7 +4795,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_get_temp_hot_water(
         battery_control_off: Arc<ChargeControl>,
         simulation_time_iteration: SimulationTimeIteration,
@@ -4808,21 +4807,21 @@ mod tests {
                 .read()
                 .get_temp_hot_water(50., 20., 80., simtime)
                 .unwrap(),
-            79.70798180572169
+            78.79649236439744
         );
         assert_relative_eq!(
             heat_battery
                 .read()
                 .get_temp_hot_water(50., 10., 80., simtime)
                 .unwrap(),
-            79.8652529090689
+            76.27701993478482
         );
         assert_relative_eq!(
             heat_battery
                 .read()
                 .get_temp_hot_water(40., 10., 80., simtime)
                 .unwrap(),
-            79.81947841211459
+            74.84690041657751,
         );
         assert_relative_eq!(
             heat_battery
@@ -5287,7 +5286,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_demand_energy_low_temp_minimum_run_coverage(
         battery_control_off: Arc<ChargeControl>,
         simulation_time_iterator: SimulationTimeIterator,
@@ -5331,7 +5329,7 @@ mod tests {
 
         assert_relative_eq!(
             service_result.time_running,
-            51.08689856959955,
+            105.4442943033978,
             max_relative = 1e-7
         );
     }
@@ -5630,7 +5628,6 @@ mod tests {
 
     /// Test DHW service with cold water temperature that varies with volume demanded
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_demand_hot_water_with_varying_cold_temperatures(
         battery_control_off: Arc<ChargeControl>,
         simulation_time: SimulationTime,
@@ -5709,7 +5706,7 @@ mod tests {
         assert_eq!(draw_volumes[2], 50.0); // Third event volume
 
         // Energy should be calculated based on varying temperatures
-        assert_relative_eq!(energy, 5.16607777777131, epsilon = 1e-7);
+        assert_relative_eq!(energy, 5.0569591506976606, epsilon = 1e-7);
 
         // Test that different volumes give different inlet temperatures
         // Reset and test with single large volume
@@ -5778,8 +5775,8 @@ mod tests {
         // Small batches all get 15°C water, so should need less energy than large draw
         // (less heating required when inlet is 15°C vs 9°C average)
         assert!(energy_small_batches < energy_large);
-        assert_relative_eq!(energy_small_batches, 1.9830605562135022, epsilon = 1e-7);
-        assert_relative_eq!(energy_large, 2.3443371833916435, epsilon = 1e-7);
+        assert_relative_eq!(energy_small_batches, 1.4186641524169479, epsilon = 1e-7);
+        assert_relative_eq!(energy_large, 2.2854792470827485, epsilon = 1e-7);
     }
 
     // skipping python's test_demand_hot_water_zero_volume_continue due to mocking
