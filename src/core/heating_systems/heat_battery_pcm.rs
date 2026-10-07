@@ -1924,12 +1924,11 @@ impl HeatBatteryPcm {
         let n_time_steps = (total_time_s / time_step_s) as usize;
         let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
         let mut energy_absorbed_kj = 0.0;
-        //      # Iterate through sub-timesteps, accumulating energy transferred to
-        //       # the battery. energy_transf from __process_heat_battery_zones is
-        //      # negative when the battery absorbs heat (water loses energy), so
-        //        # we negate the sum to get positive energy_charged_kWh.
-        //        energy_absorbed_kJ = 0.0
-        //        energy_limit_kJ = energy_limit_kWh * units.kJ_per_kWh
+        // Iterate through sub-timesteps, accumulating energy transferred to
+        // the battery. energy_transf from __process_heat_battery_zones is
+        // negative when the battery absorbs heat (water loses energy), so
+        // we negate the sum to get positive energy_charged_kWh.
+        let energy_limit_kj = energy_limit_kwh * units::KILOJOULES_PER_KILOWATT_HOUR as f64;
         for _ in 0..n_time_steps {
             let mut zone_temp_c_dist_prev = zone_temp_c_dist.clone();
             let (outlet_temp_c, energy_transf_charged, _) = self.process_heat_battery_zones(
@@ -1937,9 +1936,9 @@ impl HeatBatteryPcm {
                 &mut zone_temp_c_dist,
                 time_step_s,
                 reynold_number_at_1_l_per_min,
-                self.flow_rate_l_per_min,
+                flow_rate_l_per_min,
                 Some(0.),
-                Some(HeatBatteryPcmOperationMode::OnlyCharging),
+                Some(HeatBatteryPcmOperationMode::Normal),
                 target_charge_fraction,
                 Some(hex_a),
                 Some(hex_b),
@@ -1953,8 +1952,6 @@ impl HeatBatteryPcm {
                 hex_velocity_at_1_l_per_min,
                 hex_capillary_diameter_m,
             );
-
-            let energy_limit_kj = energy_limit_kwh * units::KILOJOULES_PER_KILOWATT_HOUR as f64;
 
             // energy_transf_per_zone values are negative when the battery
             // absorbs heat from hot water (outlet cooler than inlet). Continue
@@ -1984,18 +1981,17 @@ impl HeatBatteryPcm {
                             reynold_number_at_1_l_per_min,
                             flow_rate_l_per_min,
                             Some(0.),
-                            Some(HeatBatteryPcmOperationMode::OnlyCharging),
+                            Some(HeatBatteryPcmOperationMode::Normal),
                             target_charge_fraction,
                             Some(hex_a),
                             Some(hex_b),
                         )?;
-                        self.zone_temp_c_dist_initial
-                            .write()
-                            .clone_from(&zone_temp_c_dist);
+                        zone_temp_c_dist = zone_temp_c_dist_prev;
                         energy_absorbed_kj = energy_limit_kj;
                     }
                     break;
                 }
+            } else {
                 break;
             }
         }
@@ -4187,7 +4183,6 @@ mod tests {
     // skipping python's test_demand_energy_simultaneous_charging_and_discharging due to mocking
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_demand_energy_simultaneous_no_temp_output(
         battery_control_off: Arc<ChargeControl>,
         simulation_time_iteration: SimulationTimeIteration,
@@ -4759,10 +4754,9 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_charge_battery_hydronic(battery_control_off: Arc<ChargeControl>) {
+        let heat_battery = create_heat_battery(battery_control_off, None);
         let charge = |inlet_temp_c| {
-            let heat_battery = create_heat_battery(battery_control_off.clone(), None);
             let heat_battery_guard = heat_battery.read();
             let (energy, _) = heat_battery_guard
                 .charge_battery_hydronic(
@@ -4786,7 +4780,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test yet to be updated as part of 1.0.0a9 migration"]
     fn test_charge_battery_hydronic_energy_limit(battery_control_off: Arc<ChargeControl>) {
         let heat_battery = create_heat_battery(battery_control_off, None);
         let (energy, zone_temps) = heat_battery
