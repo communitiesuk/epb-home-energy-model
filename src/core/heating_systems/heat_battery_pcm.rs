@@ -3760,6 +3760,34 @@ mod tests {
         assert_relative_eq!(energy_16, energy_8, epsilon = 10.0);
     }
 
+    #[rstest]
+    fn test_demand_energy_inlet_hotter_than_battery_delivers_zero(
+        battery_control_on: Arc<ChargeControl>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) {
+        // demand_energy delivers nothing when the return-feed inlet is hotter than the core.
+        //
+        // If the inlet flow is hotter than every battery zone, the sub-timestep would
+        // transfer heat into the battery rather than out of it; demand_energy breaks before
+        // counting any negative contribution, so no energy is delivered.
+        let hb_lock = create_heat_battery(battery_control_on, None);
+        HeatBatteryPcm::create_service_connection(hb_lock.clone(), "hot_inlet_service").unwrap();
+        let hb = hb_lock.read();
+        let delivered = hb
+            .demand_energy(
+                "hot_inlet_service".into(),
+                HeatingServiceType::DomesticHotWaterRegular,
+                5.0,
+                Some(90.0),
+                Some(95.0),
+                true,
+                None,
+                None,
+                simulation_time_iteration,
+            )
+            .unwrap();
+        assert_eq!(delivered, 0.0);
+    }
     // in Python this test is called test_service_is_on_with_control
     #[rstest]
     fn test_service_is_on_when_service_control_is_on(
