@@ -5,7 +5,7 @@ use crate::core::controls::time_control::{
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
-use crate::core::units::WATTS_PER_KILOWATT;
+use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::{
     water_demand_to_kwh, WaterEventResult, WaterEventResultType, FRAC_DHW_ENERGY_INTERNAL_GAINS,
 };
@@ -112,6 +112,8 @@ pub struct BoilerServiceWaterCombi {
     cold_feed: WaterSupply,
     separate_dhw_tests: BoilerHotWaterTest,
     rejected_energy_1_adj: f64,
+    storage_loss_factor_1: Option<f64>,
+    storage_loss_factor_2: Option<f64>,
     storage_loss_factor_1_adj: Option<f64>,
     storage_loss_factor_2_adj: Option<f64>,
     rejected_factor_3: Option<f64>,
@@ -212,87 +214,90 @@ impl BoilerServiceWaterCombi {
                 let m_num_events = 23;
                 let l_num_events = 24;
 
-                let (rejected_energy_1_adj, storage_loss_factor_1_adj, storage_loss_factor_2_adj) =
-                    match separate_dhw_tests {
-                        BoilerHotWaterTest::ML | BoilerHotWaterTest::MS => {
-                            // tapping cycle M and S, or M and L
-                            // TODO temporary fix to match Python.
-                            // rejected_factor_3 is not required by the schema but is required here
-                            // storage_loss_factor_2 is not required by the schema but is required here
-                            let rejected_factor_3 = rejected_factor_3.unwrap();
-                            let storage_loss_factor_2 = storage_loss_factor_2.unwrap();
+                let (
+                    storage_loss_factor_1,
+                    storage_loss_factor_1_adj,
+                    storage_loss_factor_2,
+                    storage_loss_factor_2_adj,
+                    rejected_energy_1_adj,
+                ) = match separate_dhw_tests {
+                    BoilerHotWaterTest::ML | BoilerHotWaterTest::MS => {
+                        // tapping cycle M and S, or M and L
+                        // TODO temporary fix to match Python.
+                        // rejected_factor_3 is not required by the schema but is required here
+                        // storage_loss_factor_2 is not required by the schema but is required here
+                        let rejected_factor_3 = rejected_factor_3.unwrap();
+                        let storage_loss_factor_2 = storage_loss_factor_2.unwrap();
 
-                            // create adjusted loss factors for use with instantaneous type combis.
-                            // currently we can do this just once, during boiler init.
-                            // if, in the future, daily_HW_usage is repeatedly recalculated from HW events
-                            // instead of being a user input of average daily HW usage, then adjustments
-                            // to loss factors for some combis tested to two profiles will also need to be
-                            // repeated.
-                            let daily_vol_factor = Self::get_daily_vol_factor(
-                                daily_hot_water_usage,
-                                &separate_dhw_tests,
-                            );
+                        // create adjusted loss factors for use with instantaneous type combis.
+                        // currently we can do this just once, during boiler init.
+                        // if, in the future, daily_HW_usage is repeatedly recalculated from HW events
+                        // instead of being a user input of average daily HW usage, then adjustments
+                        // to loss factors for some combis tested to two profiles will also need to be
+                        // repeated.
+                        let daily_vol_factor =
+                            Self::get_daily_vol_factor(daily_hot_water_usage, &separate_dhw_tests);
 
-                            // r1 is adjusted to give us a value per event, per degree temp rise,
-                            // per l/min flow rate.
-                            let rejected_energy_1_adj = ((rejected_energy_1
-                                + daily_vol_factor * rejected_factor_3)
-                                * m_energy)
+                        // r1 is adjusted to give us a value per event, per degree temp rise,
+                        // per l/min flow rate.
+                        let rejected_energy_1_adj =
+                            ((rejected_energy_1 + daily_vol_factor * rejected_factor_3) * m_energy)
                                 / (m_num_continuous_events as f64
                                     * m_average_temp_rise
                                     * m_average_hw_flowrate);
 
-                            // making this explicit in Rust version
-                            let storage_loss_factor_1_adj: Option<f64> = None;
+                        // the daily loss factors from the PCDB are divided by the number of HW
+                        // events in the relevant testing profile to give us loss factors per event
+                        let storage_loss_factor_2_adj = match separate_dhw_tests {
+                            BoilerHotWaterTest::MS => storage_loss_factor_2 / s_num_events as f64,
+                            BoilerHotWaterTest::ML => storage_loss_factor_2 / l_num_events as f64,
+                            _ => {
+                                unreachable!()
+                            }
+                        };
 
-                            // the daily loss factors from the PCDB are divided by the number of HW
-                            // events in the relevant testing profile to give us loss factors per event
-                            let storage_loss_factor_2_adj = match separate_dhw_tests {
-                                BoilerHotWaterTest::MS => {
-                                    Some(storage_loss_factor_2 / s_num_events as f64)
-                                }
-                                BoilerHotWaterTest::ML => {
-                                    Some(storage_loss_factor_2 / l_num_events as f64)
-                                }
-                                _ => {
-                                    unreachable!()
-                                }
-                            };
+                        // making this explicit in Rust version
+                        let storage_loss_factor_1: Option<f64> = None;
+                        let storage_loss_factor_1_adj: Option<f64> = None;
 
-                            (
-                                rejected_energy_1_adj,
-                                storage_loss_factor_1_adj,
-                                storage_loss_factor_2_adj,
-                            )
-                        }
-                        BoilerHotWaterTest::MOnly | BoilerHotWaterTest::NoAdditionalTests => {
-                            // tapping cycle M only test results
+                        (
+                            storage_loss_factor_1,
+                            storage_loss_factor_1_adj,
+                            Some(storage_loss_factor_2),
+                            Some(storage_loss_factor_2_adj),
+                            rejected_energy_1_adj,
+                        )
+                    }
+                    BoilerHotWaterTest::MOnly | BoilerHotWaterTest::NoAdditionalTests => {
+                        // tapping cycle M only test results
 
-                            // storage_loss_factor_1 is not required by the schema but is required here
-                            let storage_loss_factor_1 = storage_loss_factor_1.unwrap();
+                        // storage_loss_factor_1 is not required by the schema but is required here
+                        let storage_loss_factor_1 = storage_loss_factor_1.unwrap();
 
-                            // create adjusted loss factors for use with instantaneous type combis
-                            // r1 is adjusted to give us a value per event, per degree temp rise,
-                            // per l/min flow rate.
-                            let rejected_energy_1_adf = (rejected_energy_1 * m_energy)
-                                / (m_num_continuous_events as f64
-                                    * m_average_temp_rise
-                                    * m_average_hw_flowrate);
+                        // create adjusted loss factors for use with instantaneous type combis
+                        // r1 is adjusted to give us a value per event, per degree temp rise,
+                        // per l/min flow rate.
+                        let rejected_energy_1_adf = (rejected_energy_1 * m_energy)
+                            / (m_num_continuous_events as f64
+                                * m_average_temp_rise
+                                * m_average_hw_flowrate);
 
-                            // daily loss factor 1 divided by 23 (events in test profile M)
-                            let storage_loss_factor_1_adj =
-                                Some(storage_loss_factor_1 / m_num_events as f64);
+                        // daily loss factor 1 divided by 23 (events in test profile M)
+                        let storage_loss_factor_1_adj = storage_loss_factor_1 / m_num_events as f64;
 
-                            // making this explicit in Rust version
-                            let storage_loss_factor_2_adj: Option<f64> = None;
+                        // making this explicit in Rust version
+                        let storage_loss_factor_2: Option<f64> = None;
+                        let storage_loss_factor_2_adj: Option<f64> = None;
 
-                            (
-                                rejected_energy_1_adf,
-                                storage_loss_factor_1_adj,
-                                storage_loss_factor_2_adj,
-                            )
-                        }
-                    };
+                        (
+                            Some(storage_loss_factor_1),
+                            Some(storage_loss_factor_1_adj),
+                            storage_loss_factor_2,
+                            storage_loss_factor_2_adj,
+                            rejected_energy_1_adf,
+                        )
+                    }
+                };
 
                 Ok(Self {
                     boiler,
@@ -300,6 +305,8 @@ impl BoilerServiceWaterCombi {
                     temperature_hot_water_in_c,
                     separate_dhw_tests,
                     rejected_energy_1_adj,
+                    storage_loss_factor_1,
+                    storage_loss_factor_2,
                     storage_loss_factor_1_adj,
                     storage_loss_factor_2_adj,
                     rejected_factor_3,
