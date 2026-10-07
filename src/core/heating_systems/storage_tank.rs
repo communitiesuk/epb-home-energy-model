@@ -903,7 +903,7 @@ impl StorageTank {
             temp_s3_n,
             &temp_s7_n,
             &q_x_in_n,
-            q_h_sto_s7,
+            &q_h_sto_s7,
             heater_layer,
             q_ls_n_prev_heat_source,
             setpntmax,
@@ -977,10 +977,10 @@ impl StorageTank {
     /// temp_s3_n: Layer temperatures before this source's energy input (°C), used to
     /// detect which layers this source heated this timestep.
     /// temp_s7_n: Layer temperatures after energy input and rearrangement (°C).
-    /// Q_x_in_n: Energy input to each layer from this source (kWh).
-    /// Q_h_sto_s7: Stored energy per layer after rearrangement (kWh).
+    /// q_x_in_n: Energy input to each layer from this source (kWh).
+    /// q_h_sto_s7: Stored energy per layer after rearrangement (kWh).
     /// heater_layer: Index of the layer the heat source feeds.
-    /// Q_ls_n_prev_heat_source: Losses already attributed to earlier sources this
+    /// q_ls_n_prev_heat_source: Losses already attributed to earlier sources this
     /// timestep (kWh), subtracted to avoid double-counting.
     /// temp_setpntmax: Maximum setpoint of this source (°C), or None when uncontrolled.
     fn calc_temps_after_thermal_losses(
@@ -988,7 +988,7 @@ impl StorageTank {
         temp_s3_n: &[f64],
         temp_s7_n: &[f64],
         q_x_in_n: &[f64],
-        q_h_sto_s7: Vec<f64>,
+        q_h_sto_s7: &[f64],
         heater_layer: usize,
         q_ls_n_prev_heat_source: &[f64],
         temp_setpntmax: Option<f64>,
@@ -1030,10 +1030,12 @@ impl StorageTank {
         // necessary to convert the rate of heat loss to a total heat loss over
         // the time period
         for i in 0..self.vol_n.len() {
-            let temp_before_losses = if let Some(temp_setpntmax) = temp_setpntmax {
-                min_of_2(temp_s7_n[i], temp_setpntmax)
-            } else {
-                temp_s7_n[i]
+            // Cap the loss-driving temperature at the setpoint only for layers this source
+            // warmed this timestep, and therefore holds at the setpoint. An unwarmed layer
+            // above the setpoint was heated earlier and loses heat at its actual temperature.
+            let temp_before_losses = match temp_setpntmax {
+                Some(temp_setpntmax) if layer_warmed_n[i] => min_of_2(temp_s7_n[i], temp_setpntmax),
+                _ => temp_s7_n[i],
             };
 
             let q_ls_n_step = (h_sto_ls * self.rho * self.cp)
@@ -1055,20 +1057,29 @@ impl StorageTank {
         // check temperature compared to set point
         // the temperature for each volume are limited to the set point for any volume controlled
         for i in 0..self.vol_n.len() {
-            // Need to check for heating input below, otherwise temperature will be wrongly
-            // capped at setpntmax in cases where tank temperature already exceeded setpntmax
-            // without any contribution from the heat source. This could happen if the setpntmax
-            // setting is lower in the current timestep than the previous timestep, or if
-            // another heat source has a higher setpntmax (and therefore heated the tank to a
-            // higher temperature) than the heat source currently being considered
-            let temp_s8_n_step = if let (true, Some(temp_setpntmax), true) = (
-                q_x_in_adj > 0.0,
-                temp_setpntmax,
-                temp_setpntmax.is_some_and(|t| temp_s7_n[i] > t),
-            ) {
-                // Case 2 - Temperature exceeding the set point
-                temp_setpntmax
-            } else {
+            // Clamp to the setpoint only for layers this source warmed this timestep, and
+            // therefore holds at the setpoint. Clamping an unwarmed layer would wrongly pull
+            // it down to temp_setpntmax when it already exceeded the setpoint without any
+            // contribution from this source - because the setpoint is lower this timestep than
+            // the previous one, or because another source with a higher setpoint heated it.
+            let temp_s8_n_step = match temp_setpntmax {
+                Some(temp_setpntmax)
+                    if layer_warmed_n[i]
+                        && temp_s7_n[i] > temp_setpntmax
+                        && !relative_eq!(
+                            temp_s7_n[i],
+                            temp_setpntmax,
+                            epsilon = 1e-10,
+                            max_relative = 1e-9
+                        ) =>
+                {
+                    // Case 2 - Temperature exceeding the set point. Compared with a tolerance
+                    // (as for layer_warmed_n) because the source drives the layer temperature
+                    // onto the setpoint, so a last-bit difference would otherwise flip the clamp
+                    // between platforms.
+                    temp_setpntmax
+                }
+                _ =>
                 // Case 1 - Temperature below the set point
                 // TODO (from Python) - spreadsheet accounts for total thermal losses not just layer
 
@@ -1076,7 +1087,9 @@ impl StorageTank {
                 // is reduced due to the effect of the thermal losses
                 // Formula (14) in the standard appears to have error as addition not multiply
                 // and P instead of rho
-                temp_s7_n[i] - (q_ls_n[i] / (self.rho * self.cp * self.vol_n[i]))
+                {
+                    temp_s7_n[i] - (q_ls_n[i] / (self.rho * self.cp * self.vol_n[i]))
+                }
             };
             temp_s8_n.push(temp_s8_n_step);
         }
@@ -1090,14 +1103,20 @@ impl StorageTank {
             //       heat source currently being considered is capable of heating,
             //       i.e. excluding those below the heater position.
             let mut energy_surplus = 0.0;
-            if let (Some(temp_setpntmax), true) = (
-                temp_setpntmax,
-                temp_setpntmax.is_some_and(|t| temp_s7_n[heater_layer] > t),
-            ) {
-                for i in heater_layer..self.number_of_volumes {
-                    energy_surplus += q_h_sto_s7[i]
-                        - q_ls_n[i]
-                        - (self.rho * self.cp * self.vol_n[i] * temp_setpntmax);
+            if let Some(temp_setpntmax) = temp_setpntmax {
+                if temp_s7_n[heater_layer] > temp_setpntmax
+                    && !relative_eq!(
+                        temp_s7_n[heater_layer],
+                        temp_setpntmax,
+                        epsilon = 1e-10,
+                        max_relative = 1e-9
+                    )
+                {
+                    for i in heater_layer..self.number_of_volumes {
+                        energy_surplus += q_h_sto_s7[i]
+                            - q_ls_n[i]
+                            - (self.rho * self.cp * self.vol_n[i] * temp_setpntmax);
+                    }
                 }
             }
             // the thermal energy provided to the system (from heat sources) shall be limited
@@ -1106,7 +1125,15 @@ impl StorageTank {
             // TODO (from Python code) - find in standard - availability of back-up - where is this from?
             // also referred to as electrical power on
             let sto_bu_on = 1.;
-            min_of_2(q_x_in_adj - energy_surplus, q_x_in_adj * sto_bu_on)
+            // BS EN 15316-5 Formula (16) can yield a negative result in multi-source
+            // tanks when a prior heat source has already driven the stored energy above
+            // the setpoint. The standard does not directly address the possible negative
+            // result, but describes this equation as limiting "thermal energy
+            // provided to the system", which cannot be negative, so clamp to zero here.
+            max_of_2(
+                0.,
+                min_of_2(q_x_in_adj - energy_surplus, q_x_in_adj * sto_bu_on),
+            )
         } else {
             0.
         };
@@ -2544,7 +2571,7 @@ impl SmartHotWaterTank {
                 temp_s3_n,
                 &temp_s7_n,
                 &q_x_in_n,
-                q_h_sto_s7,
+                &q_h_sto_s7,
                 heater_layer,
                 q_ls_n_prev_heat_source,
                 temp_setpntmax,
@@ -4840,26 +4867,29 @@ mod tests {
 
     #[rstest]
     fn test_thermal_losses(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+        // The tank has four layers (default nb_vol), so the fixtures supply one value per layer.
         let (storage_tank1, _) = storage_tank1;
-        let temp_s7_n = [12.0, 18.0, 25.0, 32.0, 37.0, 45.0, 49.0, 58.0];
-        let q_x_in_n = [0., 1., 2., 3., 4., 5., 6., 7., 8.];
-        let q_h_sto_s7 = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+        let temp_s7_n = [12.0, 18.0, 25.0, 32.0];
+        let q_x_in_n = [0., 1., 2., 3.];
+        let q_h_sto_s7 = [0.1, 0.2, 0.3, 0.4];
         let heater_layer = 2;
-        let q_ls_n_prev_heat_source = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let q_ls_n_prev_heat_source = [0.0, 0.0, 0.0, 0.0];
         let setpntmax = 55.0;
 
+        // Every layer sits below the setpoint, so the over-setpoint cap never applies and the
+        // loss is independent of any temperature rise; pass temp_s3_n == temp_s7_n.
         assert_eq!(
             storage_tank1.calc_temps_after_thermal_losses(
                 &temp_s7_n,
                 &temp_s7_n,
                 &q_x_in_n,
-                q_h_sto_s7,
+                &q_h_sto_s7,
                 heater_layer,
                 &q_ls_n_prev_heat_source,
                 setpntmax.into()
             ),
             (
-                36.0,
+                6.0,
                 0.012203333333333333,
                 vec![
                     12.0,
@@ -4875,6 +4905,267 @@ mod tests {
                 ]
             )
         );
+    }
+
+    /// When a layer is above the setpoint but this heat source did not warm it, the loss is
+    /// computed at the layer's actual temperature, not the setpoint.
+    ///
+    /// Each layer ends at the same 60°C it started at (temp_s7_n == temp_s3_n), so this source
+    /// did not warm it and is not holding it at the setpoint - the excess pre-dates it. Each
+    /// layer therefore loses heat against (60 - ambient) and cools below 60°C. Were the loss
+    /// capped at the 55°C setpoint it would be underestimated and the layer left too warm. (The
+    /// tank's loss-reference ambient is 16°C, so the loss is proportional to 60 - 16 = 44 K
+    /// rather than 55 - 16 = 39 K.)
+    #[rstest]
+    fn test_thermal_losses_above_setpoint_without_heat_input(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+
+        assert_eq!(
+            storage_tank1.calc_temps_after_thermal_losses(
+                &[60.0, 60.0, 60.0, 60.0],
+                &[60.0, 60.0, 60.0, 60.0],
+                &[0.0, 0.0, 0.0, 0.0],
+                &[0.0, 0.0, 0.0, 0.0],
+                2,
+                &[0.0, 0.0, 0.0, 0.0],
+                Some(55.)
+            ),
+            (
+                0.0,
+                0.07954765432098766,
+                vec![
+                    59.543703703703706,
+                    59.543703703703706,
+                    59.543703703703706,
+                    59.543703703703706
+                ],
+                vec![
+                    0.019886913580246916,
+                    0.019886913580246916,
+                    0.019886913580246916,
+                    0.019886913580246916
+                ]
+            )
+        );
+    }
+
+    /// When this heat source warmed a layer above the setpoint, it is held at the setpoint
+    /// (Case 2) and its loss is computed at the setpoint - unchanged by the fix.
+    ///
+    /// Each layer rose from 10°C to 60°C this timestep (temp_s7_n > temp_s3_n), so the source
+    /// is holding it at the setpoint: each 60°C layer is clamped to the 55°C setpoint and loses
+    /// heat against (55 - ambient), confirming the over-setpoint cap still applies in this case.
+    #[rstest]
+    fn test_thermal_losses_above_setpoint_with_heat_input(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+
+        assert_eq!(
+            storage_tank1.calc_temps_after_thermal_losses(
+                &[10.0, 10.0, 10.0, 10.0],
+                &[60.0, 60.0, 60.0, 60.0],
+                &[0.0, 0.0, 1.0, 0.0],
+                &[0.1, 0.2, 0.3, 0.4],
+                2,
+                &[0.0, 0.0, 0.0, 0.0],
+                Some(55.)
+            ),
+            (
+                1.0,
+                0.07050814814814815,
+                vec![55.0, 55.0, 55.0, 55.0],
+                vec![
+                    0.01762703703703704,
+                    0.01762703703703704,
+                    0.01762703703703704,
+                    0.01762703703703704
+                ]
+            )
+        );
+    }
+
+    /// A warmed layer within tolerance of the setpoint is not clamped to it.
+    ///
+    /// Each layer rose from 10°C this timestep (so it is warmed) and ends a fraction
+    /// above the 55°C setpoint, within abs_tol=1e-10. It is therefore treated as at the
+    /// setpoint and loses heat against its actual temperature (Case 1), settling below
+    /// 55°C - the same as a layer warmed to exactly the setpoint. Without the tolerance
+    /// the layer would be clamped to exactly 55.0 (Case 2), so the result would depend on
+    /// the last bit of the computed layer temperature.
+    #[rstest]
+    fn test_thermal_losses_warmed_within_tolerance_of_setpoint_not_clamped(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+
+        assert_eq!(
+            storage_tank1.calc_temps_after_thermal_losses(
+                &[10.0, 10.0, 10.0, 10.0],
+                &[55.0 + 5e-11, 55.0 + 5e-11, 55.0 + 5e-11, 55.0 + 5e-11],
+                &[0.0, 0.0, 1.0, 0.0],
+                &[0.1, 0.2, 0.3, 0.4],
+                2,
+                &[0.0, 0.0, 0.0, 0.0],
+                Some(55.)
+            ),
+            (
+                1.0,
+                0.07050814814814815,
+                vec![
+                    54.59555555560556,
+                    54.59555555560556,
+                    54.59555555560556,
+                    54.59555555560556
+                ],
+                vec![
+                    0.01762703703703704,
+                    0.01762703703703704,
+                    0.01762703703703704,
+                    0.01762703703703704
+                ]
+            )
+        );
+    }
+
+    /// The uncapped loss is still reduced by losses already attributed to an earlier heat
+    /// source, avoiding double-counting across heat sources.
+    ///
+    /// Each layer ends at the 60°C it started at (temp_s7_n == temp_s3_n), so the loss is taken
+    /// at the actual temperature. The gross loss at 60°C (0.019886... kWh) has the previous heat
+    /// source's per-layer loss (0.01 kWh) subtracted, leaving 0.009886... kWh per layer.
+    #[rstest]
+    fn test_thermal_losses_above_setpoint_prev_heat_source(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+
+        assert_eq!(
+            storage_tank1.calc_temps_after_thermal_losses(
+                &[60.0, 60.0, 60.0, 60.0],
+                &[60.0, 60.0, 60.0, 60.0],
+                &[0.0, 0.0, 0.0, 0.0],
+                &[0.0, 0.0, 0.0, 0.0],
+                2,
+                &[0.01, 0.01, 0.01, 0.01],
+                Some(55.)
+            ),
+            (
+                0.0,
+                0.03954765432098766,
+                vec![
+                    59.773149210395864,
+                    59.773149210395864,
+                    59.773149210395864,
+                    59.773149210395864
+                ],
+                vec![
+                    0.009886913580246915,
+                    0.009886913580246915,
+                    0.009886913580246915,
+                    0.009886913580246915,
+                ]
+            )
+        );
+    }
+
+    /// A single source heating only some layers must not cap the losses of layers it did
+    /// not warm.
+    ///
+    /// The lower two layers rise from 10°C to 55°C this timestep, so this source holds them at
+    /// the 55°C setpoint and they lose heat against (55 - 16) = 39 K. The upper two layers were
+    /// heated to 60°C by an earlier, higher-setpoint source and do not rise here, so this source
+    /// is not holding them at its setpoint: they lose heat against their actual (60 - 16) = 44 K
+    /// and coast below 60°C rather than being pulled down to 55°C. The cap is keyed on each
+    /// layer's own temperature rise, so it applies to the warmed lower layers but not the
+    /// unwarmed upper layers, even though the source adds energy elsewhere in the tank.
+    #[rstest]
+    fn test_thermal_losses_mixed_warmed_and_unwarmed_layers(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+
+        assert_eq!(
+            storage_tank1.calc_temps_after_thermal_losses(
+                &[10.0, 10.0, 60.0, 60.0],
+                &[55.0, 55.0, 60.0, 60.0],
+                &[1.0, 0.0, 0.0, 0.0],
+                &[0.1, 0.2, 0.3, 0.4],
+                0,
+                &[0.0, 0.0, 0.0, 0.0],
+                Some(55.)
+            ),
+            (
+                // Q_in_H_W: 1.0 kWh input, no surplus (heater layer 0 is at the setpoint)
+                1.0,
+                // Total loss: 2 layers at 39 K (0.01762703703703704) + 2 at 44 K (0.019886913580246916)
+                0.0750279012345679,
+                // Warmed layers settle at 55 - loss/(rho*Cp*Vol) = 54.595...; unwarmed layers
+                // coast from 60 at the 44 K loss to 59.543... (not pulled down to the 55 setpoint)
+                vec![
+                    54.595555555555556,
+                    54.595555555555556,
+                    59.543703703703706,
+                    59.543703703703706
+                ],
+                vec![
+                    0.01762703703703704,
+                    0.01762703703703704,
+                    0.019886913580246916,
+                    0.019886913580246916,
+                ]
+            )
+        );
+    }
+
+    /// Q_in_H_W is clamped to zero when a prior source drove the tank above this
+    /// source's setpoint, making BS EN 15316-5 Formula (16) negative.
+    ///
+    /// Layers 2 and 3 are at 65 °C, well above the 55 °C solar-thermal setpoint,
+    /// because an earlier heat source with a higher setpoint heated them. Solar thermal
+    /// contributes only 0.1 kWh. The cumulative stored energy in layers 2–3 produces
+    /// an energy_surplus (~0.96 kWh) far exceeding that 0.1 kWh, so Formula (16) yields
+    /// a value of -6978472/8100000. The test reproduces the unclamped
+    /// Formula (16) result from the returned Q_ls_n values and asserts it equals that
+    /// expected negative value, confirming the scenario genuinely requires the clamp
+    /// before asserting Q_in_H_W is 0.0.
+    #[rstest]
+    fn test_thermal_losses_multi_source_surplus_clamped_to_zero(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+
+        let q_x_in_n = [0.0, 0.0, 0.1, 0.0];
+        let q_h_sto_s7 = vec![2.4, 2.4, 2.9, 2.9];
+        let heater_layer = 2;
+        let temp_setpntmax = 55.0;
+
+        let (q_in_h_w, _, _, q_ls_n) = storage_tank1.calc_temps_after_thermal_losses(
+            &[55.0, 55.0, 65.0, 65.0],
+            &[55.0, 55.0, 65.0, 65.0],
+            &q_x_in_n,
+            &q_h_sto_s7,
+            heater_layer,
+            &[0.; 4],
+            Some(temp_setpntmax),
+        );
+
+        // Reproduce Formula (16) from BS EN 15316-5 using the returned Q_ls_n values.
+        // The unclamped result is exactly -6978472/8100000 ≈ -0.8615397530864198.
+        let q_x_in_adj = q_x_in_n.iter().sum::<f64>();
+        // Note - python uses fsum here but the test passes with sum (cheaper) so using that for now
+        let energy_surplus = (heater_layer..q_h_sto_s7.len())
+            .map(|i| {
+                q_h_sto_s7[i]
+                    - q_ls_n[i]
+                    - storage_tank1.rho * storage_tank1.cp * storage_tank1.vol_n[i] * temp_setpntmax
+            })
+            .sum::<f64>();
+
+        assert_relative_eq!(q_x_in_adj - energy_surplus, -0.8615397530864198);
+        assert_eq!(q_in_h_w, 0.);
     }
 
     #[rstest]
