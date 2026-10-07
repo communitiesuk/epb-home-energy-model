@@ -3698,6 +3698,68 @@ mod tests {
         assert_relative_eq!(outlet_temp_c, outlet_divided, epsilon = 1e-9);
     }
 
+    fn discharge(
+        n_layers: usize,
+        inlet_temp_c: f64,
+        pcm_temp_c: f64,
+        battery_control: Arc<ChargeControl>,
+    ) -> (f64, f64) {
+        let hb_lock = create_heat_battery_with_n_layers(battery_control.clone(), None, n_layers);
+        let mut zone_temp_c_dist = vec![pcm_temp_c; n_layers];
+        let hb = hb_lock.read();
+        // Physical flow and Reynolds number, derived the same way the model
+        // does, so the only thing differing between passes is n_layers.
+        let viscosity =
+            HeatBatteryPcm::calculate_water_kinematic_viscosity_m2_per_s(inlet_temp_c, pcm_temp_c);
+        let reynold_number_at_1_l_per_min = HeatBatteryPcm::calculate_reynold_number_at_1_l_per_min(
+            viscosity,
+            hb.velocity_in_hex_tube,
+            hb.capillary_diameter_m,
+        );
+        let (outlet_temp_c, _, energy_transfer_delivered) = hb
+            .process_heat_battery_zones(
+                inlet_temp_c,
+                &mut zone_temp_c_dist,
+                60.,
+                reynold_number_at_1_l_per_min,
+                hb.flow_rate_l_per_min,
+                None,
+                Some(HeatBatteryPcmOperationMode::Normal),
+                0.,
+                None,
+                None,
+            )
+            .unwrap();
+        (outlet_temp_c, energy_transfer_delivered)
+    }
+    #[rstest]
+    fn test_discharge_outputs_invariant_to_n_layers(battery_control_on: Arc<ChargeControl>) {
+        // Discharge outlet temperature and energy must not depend on n_layers.
+        //
+        // n_layers is a numerical discretisation parameter, so a single discharge
+        // pass through a uniformly charged battery must give the same physical
+        // result whatever value it takes. Splitting the whole-exchanger UA per
+        // layer keeps the total NTU invariant; applying the full UA per layer
+        // inflates NTU by the layer count and makes the result diverge.
+        let inlet_temp_c = 40.0;
+        let pcm_temp_c = 80.0;
+
+        let (outlet_4, energy_4) =
+            discharge(4, inlet_temp_c, pcm_temp_c, battery_control_on.clone());
+        let (outlet_8, energy_8) =
+            discharge(8, inlet_temp_c, pcm_temp_c, battery_control_on.clone());
+        let (outlet_16, energy_16) =
+            discharge(16, inlet_temp_c, pcm_temp_c, battery_control_on.clone());
+
+        // Tolerances sit well below the multi-degree / hundreds-of-kJ spread the
+        // unfixed full-UA-per-layer code produces, but absorb the residual
+        // arithmetic-mean discretisation error between layer counts.
+        assert_relative_eq!(outlet_8, outlet_4, epsilon = 0.1);
+        assert_relative_eq!(outlet_16, outlet_8, epsilon = 0.1);
+        assert_relative_eq!(energy_8, energy_4, epsilon = 10.0);
+        assert_relative_eq!(energy_16, energy_8, epsilon = 10.0);
+    }
+
     // in Python this test is called test_service_is_on_with_control
     #[rstest]
     fn test_service_is_on_when_service_control_is_on(
