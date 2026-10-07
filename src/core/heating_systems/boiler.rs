@@ -334,14 +334,72 @@ impl BoilerServiceWaterCombi {
         vec![(self.temperature_hot_water_in_c, volume_req)]
     }
 
+    fn get_daily_vol_factor(daily_hw_usage: f64, separate_dhw_tests: &BoilerHotWaterTest) -> f64 {
+        // The daily volume factor (DVF) is used in loss factor adjustments for combi boilers tested to two tapping profiles.
+
+        // Equivalent hot water litres at 60C for HW load profiles
+        let hw_litres_s_profile = 36.0;
+        let hw_litres_m_profile = 100.2;
+        let hw_litres_l_profile = 199.8;
+
+        if *separate_dhw_tests == BoilerHotWaterTest::MS && daily_hw_usage < hw_litres_s_profile {
+            64.2
+        } else if (*separate_dhw_tests == BoilerHotWaterTest::ML
+            && daily_hw_usage < hw_litres_m_profile)
+            || (*separate_dhw_tests == BoilerHotWaterTest::MS
+                && daily_hw_usage > hw_litres_m_profile)
+        {
+            0.0
+        } else if *separate_dhw_tests == BoilerHotWaterTest::ML
+            && daily_hw_usage > hw_litres_l_profile
+        {
+            -99.6
+        } else {
+            hw_litres_m_profile - daily_hw_usage
+        }
+    }
+
     /// Demand volume from boiler. Currently combi only
     pub fn demand_hot_water(
-        &self,
+        &mut self,
         usage_events: Vec<WaterEventResult>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let mut energy_demand = 0.;
         self.combi_loss.read().store(0., Ordering::SeqCst);
+
+        // storage combi boilers where the store is less than 55 litres
+        // and the store losses are included in test results can be
+        // treated as keep-hot facilities here.
+        // losses for storage combis that do not meet these conditions
+        // should be calculated elsewhere in HEM depending on other
+        // features (e.g. primary vs. secondary store)
+        // TODO (from Python) storage combis are not yet implemented in the rest of
+        // the HEM code. When they are, the check for storage combis
+        // that can be treated as keep-hot for losses might be best moved
+        // to earlier in the calculation.
+
+        let storage_as_keep_hot = match &self.combi_boiler_config {
+            CombiBoilerConfig::Storage {
+                combi_storage_loss_in_test,
+                store_volume,
+            } => *combi_storage_loss_in_test && *store_volume <= 55.0,
+            _ => false,
+        };
+
+        // get status of timed keep hot facility from control schedule.
+        // if combi does not have keep-hot, or it is not timed, then always on
+        match &mut self.combi_boiler_config {
+            CombiBoilerConfig::KeepHot {
+                keep_hot_control: Some(control),
+                keep_hot_on,
+                ..
+            } => {
+                *keep_hot_on = control.is_on(&simtime);
+                *keep_hot_on
+            }
+            _ => true,
+        };
 
         for event in usage_events {
             if relative_eq!(event.volume_hot, 0.0, epsilon = 1e-10, max_relative = 1e-9) {
@@ -370,18 +428,46 @@ impl BoilerServiceWaterCombi {
             // skip the combi loss calculation for pipeflush events as these
             // are part of the preceeding event and do not cause additional losses
             if event.event_result_type != WaterEventResultType::PipeFlush {
-                // get the required temperature rise and the hot water
-                // flow rate through the combi boiler for calculating combi losses
-                let delta_t = event.temperature_warm - temp_cold_water;
-                let flowrate_hot = event.volume_hot / event.event_duration; // TODO do we have this?
+                // instantaneous combis have a loss per hot water event
+                // also applicable for keep-hot combi when timer is off
+                match &mut self.combi_boiler_config {
+                    CombiBoilerConfig::Instantaneous
+                    | CombiBoilerConfig::KeepHot {
+                        keep_hot_on: false, ..
+                    } => {
+                        // get the required temperature rise and the hot water
+                        // flow rate through the combi boiler for calculating
+                        // instantaneous combi losses
+                        let delta_t = event.temperature_warm - temp_cold_water;
+                        let flowrate_hot = event.volume_hot / event.event_duration;
 
-                let combi_loss =
-                    self.boiler_combi_loss(delta_t, flowrate_hot, event.event_result_type);
-                energy_demand += combi_loss;
-                self.combi_loss
-                    .read()
-                    .fetch_add(combi_loss, Ordering::SeqCst);
+                        let combi_loss =
+                            self.boiler_combi_loss(delta_t, flowrate_hot, event.event_result_type);
+                        energy_demand += combi_loss;
+                        self.combi_loss
+                            .read()
+                            .fetch_add(combi_loss, Ordering::SeqCst);
+                    }
+                    _ => {}
+                }
             }
+        }
+
+        if storage_as_keep_hot
+            || matches!(
+                &self.combi_boiler_config,
+                CombiBoilerConfig::KeepHot {
+                    keep_hot_on: true,
+                    ..
+                }
+            )
+        {
+            // combis with an active keep-hot facility have loss per timestep
+            let combi_loss = self.boiler_combi_loss_storage(self.simulation_timestep)?;
+            energy_demand += combi_loss;
+            self.combi_loss
+                .read()
+                .fetch_add(combi_loss, Ordering::SeqCst);
         }
 
         self.boiler
@@ -396,35 +482,38 @@ impl BoilerServiceWaterCombi {
                 None,
                 None,
                 self.combi_loss.clone().into(),
-                None,
+                Some(self.combi_boiler_config.clone()),
             )
             .map(|res| res.0)
     }
 
-    #[allow(clippy::similar_names)]
-    fn get_daily_vol_factor(daily_hw_usage: f64, separate_dhw_tests: &BoilerHotWaterTest) -> f64 {
-        // The daily volume factor (DVF) is used in loss factor adjustments for combi boilers tested to two tapping profiles.
+    fn boiler_combi_loss_storage(&self, timestep: f64) -> anyhow::Result<f64> {
+        let test_hours = match &self.combi_boiler_config {
+            CombiBoilerConfig::KeepHot {
+                keep_hot_test_hours,
+                ..
+            } => keep_hot_test_hours.ok_or_else(|| {
+                anyhow!("keep-hot test hours must be set for a keep-hot combi boiler")
+            })?,
+            _ => HOURS_PER_DAY as f64,
+        };
 
-        // Equivalent hot water litres at 60C for HW load profiles
-        let hw_litres_s_profile = 36.0;
-        let hw_litres_m_profile = 100.2;
-        let hw_litres_l_profile = 199.8;
+        let combi_loss = match self.separate_dhw_tests {
+            // combi loss calculation with tapping cycle M and S, or M and L
+            BoilerHotWaterTest::ML | BoilerHotWaterTest::MS => {
+                self.storage_loss_factor_2.ok_or_else(|| {
+                    anyhow!("storage_loss_factor_2 expected to be set for ML dhw tests")
+                })? * (timestep / test_hours)
+            }
+            // combi loss calculation with tapping cycle M only test results
+            BoilerHotWaterTest::MOnly | BoilerHotWaterTest::NoAdditionalTests => {
+                self.storage_loss_factor_1.ok_or_else(|| {
+                    anyhow!("storage_loss_factor_1 expected to be set for MOnly dhw tests")
+                })? * (timestep / test_hours)
+            }
+        };
 
-        if *separate_dhw_tests == BoilerHotWaterTest::MS && daily_hw_usage < hw_litres_s_profile {
-            64.2
-        } else if (*separate_dhw_tests == BoilerHotWaterTest::ML
-            && daily_hw_usage < hw_litres_m_profile)
-            || (*separate_dhw_tests == BoilerHotWaterTest::MS
-                && daily_hw_usage > hw_litres_m_profile)
-        {
-            0.0
-        } else if *separate_dhw_tests == BoilerHotWaterTest::ML
-            && daily_hw_usage > hw_litres_l_profile
-        {
-            -99.6
-        } else {
-            hw_litres_m_profile - daily_hw_usage
-        }
+        Ok(combi_loss)
     }
 
     fn boiler_combi_loss(
@@ -2141,7 +2230,7 @@ mod tests {
 
         #[rstest]
         fn test_boiler_service_water(
-            boiler_service: BoilerServiceWaterCombi,
+            mut boiler_service: BoilerServiceWaterCombi,
             simulation_time: SimulationTime,
         ) {
             let usage_events_all_timesteps = [
@@ -2194,9 +2283,91 @@ mod tests {
             }
         }
 
+        #[fixture]
+        fn usage_events_all_timesteps() -> Vec<Vec<WaterEventResult>> {
+            vec![
+                vec![
+                    WaterEventResult {
+                        event_result_type: WaterEventResultType::Other,
+                        temperature_warm: 60.0,
+                        volume_warm: 34.93868988826640,
+                        volume_hot: 34.93868988826640,
+                        event_duration: 5.0,
+                    },
+                    WaterEventResult {
+                        event_result_type: WaterEventResultType::Other,
+                        temperature_warm: 60.0,
+                        volume_warm: 75.65325966014560,
+                        volume_hot: 75.65325966014560,
+                        event_duration: 15.0,
+                    },
+                    WaterEventResult {
+                        event_result_type: WaterEventResultType::Other,
+                        temperature_warm: 60.0,
+                        volume_warm: 0.,
+                        volume_hot: 0.,
+                        event_duration: 0.,
+                    },
+                ],
+                vec![WaterEventResult {
+                    event_result_type: WaterEventResultType::Other,
+                    temperature_warm: 60.,
+                    volume_warm: 32.60190808710678,
+                    volume_hot: 32.60190808710678,
+                    event_duration: 5.0,
+                }],
+            ]
+        }
+
+        #[rstest]
+        /// Test that Boiler object returns correct hot water energy demand
+        fn test_boiler_service_water_storage(
+            boiler: Boiler,
+            cold_water_source: ColdWaterSource,
+            usage_events_all_timesteps: Vec<Vec<WaterEventResult>>,
+            simulation_time: SimulationTime,
+        ) {
+            let boiler_data = HotWaterSourceDetails::CombiBoiler {
+                combi_type_specific_details: CombiTypeSpecificDetails::Storage {
+                    combi_storage_loss_in_test: true,
+                    store_volume: 35.,
+                },
+                separate_dhw_tests: BoilerHotWaterTest::MS,
+                // fuel_energy_1: 7.099, // field does not exist - seems to be a mistake in the test data
+                rejected_energy_1: Some(0.0004),
+                storage_loss_factor_1: Some(0.98328),
+                // fuel_energy_2: 13.078 // field does not exist - seems to be a mistake in the test data
+                // rejected_energy_2: 0.0008 // field does not exist - seems to be a mistake in the test data
+                storage_loss_factor_2: Some(0.91574),
+                rejected_factor_3: Some(0.),
+                setpoint_temp: None,
+                daily_hw_usage: 132.5802,
+                cold_water_source: Default::default(),
+                heat_source_wet: Default::default(),
+            };
+
+            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+                BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
+                boiler_data,
+                "boiler_test".into(),
+                20.,
+                WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                None,
+                simulation_time.step,
+            )
+            .unwrap();
+
+            for (t_idx, simtime) in simulation_time.iter().enumerate() {
+                let result = boiler_service_water
+                    .demand_hot_water(usage_events_all_timesteps[t_idx].clone(), simtime)
+                    .unwrap();
+                assert_eq!(result, [2.4802718392501553, 0.7505002801681526][t_idx])
+            }
+        }
+
         #[rstest]
         fn test_demand_hot_water_with_no_hot_water(
-            boiler_service: BoilerServiceWaterCombi,
+            mut boiler_service: BoilerServiceWaterCombi,
             simulation_time: SimulationTime,
         ) {
             let actual = boiler_service

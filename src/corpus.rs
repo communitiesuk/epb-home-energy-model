@@ -5423,7 +5423,7 @@ fn heat_source_from_input(
 #[derive(Clone, Debug)]
 pub enum HotWaterSource {
     PreHeated(HotWaterStorageTank),
-    CombiBoiler(Arc<BoilerServiceWaterCombi>),
+    CombiBoiler(Arc<RwLock<BoilerServiceWaterCombi>>),
     PointOfUse(Arc<PointOfUse>),
     HeatNetwork(Arc<HeatNetworkServiceWaterDirect>),
     HeatBattery(HeatBatteryHotWaterSource),
@@ -5460,7 +5460,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
     fn get_cold_water_source(&self) -> WaterSupply {
         match self {
             HotWaterSource::PreHeated(source) => source.ultimate_cold_water_source(),
-            HotWaterSource::CombiBoiler(source) => source.get_cold_water_source().clone(),
+            HotWaterSource::CombiBoiler(source) => source.read().get_cold_water_source().clone(),
             HotWaterSource::PointOfUse(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatBattery(source) => source.get_cold_water_source().clone(),
@@ -5479,9 +5479,9 @@ impl HotWaterSourceBehaviour for HotWaterSource {
             HotWaterSource::PreHeated(hot_water_storage_tank) => {
                 hot_water_storage_tank.demand_hot_water(usage_events, simtime)?
             }
-            HotWaterSource::CombiBoiler(boiler_service_water_combi) => {
-                boiler_service_water_combi.demand_hot_water(usage_events, simtime)?
-            }
+            HotWaterSource::CombiBoiler(boiler_service_water_combi) => boiler_service_water_combi
+                .write()
+                .demand_hot_water(usage_events, simtime)?,
             HotWaterSource::PointOfUse(point_of_use) => {
                 point_of_use.demand_hot_water(usage_events, &simtime)?
             }
@@ -5508,6 +5508,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
                 .get_temp_hot_water(volume_required, volume_required_already, simtime),
             HotWaterSource::CombiBoiler(boiler_service_water_combi) => {
                 Ok(boiler_service_water_combi
+                    .read()
                     .get_temp_hot_water(volume_required, Some(volume_required_already)))
             }
             HotWaterSource::PointOfUse(point_of_use) => {
@@ -5541,7 +5542,7 @@ impl HotWaterSourceBehaviour for HotWaterSource {
                 hot_water_storage_tank.internal_gains()
             }
             HotWaterSource::CombiBoiler(boiler_service_water_combi) => {
-                Some(boiler_service_water_combi.internal_gains())
+                Some(boiler_service_water_combi.read().internal_gains())
             }
             HotWaterSource::PointOfUse(_) => None,
             HotWaterSource::HeatNetwork(_) => None,
@@ -5956,7 +5957,7 @@ fn hot_water_source_from_input(
                 None
             };
 
-            HotWaterSource::CombiBoiler(
+            HotWaterSource::CombiBoiler(Arc::from(RwLock::from(
                 heat_source_wet
                     .create_service_hot_water_combi(
                         cloned_input,
@@ -5967,9 +5968,8 @@ fn hot_water_source_from_input(
                         cold_water_source,
                         keep_hot_control,
                     )
-                    .expect("expected to be able to instantiate a combi boiler object")
-                    .into(),
-            )
+                    .expect("expected to be able to instantiate a combi boiler object"),
+            )))
         }
         HotWaterSourceDetails::PointOfUse {
             efficiency,
