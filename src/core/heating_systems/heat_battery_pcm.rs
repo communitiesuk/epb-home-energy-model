@@ -3131,15 +3131,11 @@ impl HeatBatteryPcm {
         // Accumulate the energy delivered to each service this timestep into the running total
         // before __service_results is reset, so the per-service delivery survives for the
         // post-simulation charging-energy apportionment.
+        let mut energy_delivered_by_service = self.energy_delivered_by_service.write();
         for result in self.service_results.read().iter() {
-            let service_name = &result.service_name;
-            if let Some(energy) = self
-                .energy_delivered_by_service
-                .write()
-                .get_mut(service_name)
-            {
-                *energy += result.energy_delivered_total;
-            }
+            *energy_delivered_by_service
+                .entry(result.service_name.clone())
+                .or_default() += result.energy_delivered_total;
         }
         self.total_time_running_current_timestep
             .store(Default::default(), Ordering::SeqCst);
@@ -3586,6 +3582,15 @@ mod tests {
         _output_detailed_results: Option<bool>,
         n_layers: usize,
     ) -> Arc<RwLock<HeatBatteryPcm>> {
+        create_heat_battery_with_setup(control, _output_detailed_results, n_layers, None)
+    }
+
+    fn create_heat_battery_with_setup(
+        control: Arc<ChargeControl>,
+        _output_detailed_results: Option<bool>,
+        n_layers: usize,
+        temp_min_useful: Option<f64>,
+    ) -> Arc<RwLock<HeatBatteryPcm>> {
         let simulation_time = simulation_time();
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
@@ -3601,7 +3606,7 @@ mod tests {
                 energy_supply_connection,
                 simulation_time.iter(),
                 external_conditions.into(),
-                None,
+                temp_min_useful,
                 temp_air_int_callback(),
                 Some(control),
                 None,
@@ -5936,6 +5941,77 @@ mod tests {
         assert!(energy_small_batches < energy_large);
         assert_relative_eq!(energy_small_batches, 1.4186641524169479, epsilon = 1e-7);
         assert_relative_eq!(energy_large, 2.2854792470827485, epsilon = 1e-7);
+    }
+
+    #[rstest]
+    fn test_energy_delivered_by_service(
+        external_conditions: ExternalConditions,
+        external_sensor: ExternalSensor,
+        simulation_time: SimulationTime,
+    ) {
+        let simtime_iterator = simulation_time.iter();
+        let control = ChargeControl::new(
+            ControlLogicType::Manual,
+            ScheduleOrControl::Schedule(vec![true; simulation_time.total_steps()]),
+            &simtime_iterator,
+            0,
+            1.,
+            vec![Some(1.0), Some(1.5)],
+            None,
+            None,
+            Some(external_conditions.into()),
+            Some(external_sensor),
+            None,
+        )
+        .unwrap()
+        .into();
+        let heat_battery = create_heat_battery_with_setup(control, None, 8, Some(30.0));
+
+        assert!(heat_battery.read().energy_delivered_by_service().is_empty());
+
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), "hw_service").unwrap();
+        HeatBatteryPcm::create_service_connection(heat_battery.clone(), "sh_service").unwrap();
+
+        for simtime in simulation_time.iter() {
+            heat_battery
+                .read()
+                .demand_energy(
+                    "hw_service",
+                    HeatingServiceType::DomesticHotWaterRegular,
+                    3.0,
+                    Some(40.0),
+                    Some(55.0),
+                    true,
+                    None,
+                    Some(true),
+                    simtime,
+                )
+                .unwrap();
+            heat_battery
+                .read()
+                .demand_energy(
+                    "sh_service",
+                    HeatingServiceType::Space,
+                    2.0,
+                    Some(40.0),
+                    Some(55.0),
+                    true,
+                    None,
+                    Some(true),
+                    simtime,
+                )
+                .unwrap();
+
+            heat_battery.read().timestep_end(simtime).unwrap();
+            assert!(heat_battery.read().service_results.read().is_empty());
+        }
+
+        let delivered = heat_battery.read().energy_delivered_by_service();
+        let mut service_names: Vec<_> = delivered.keys().map(|name| name.as_str()).collect();
+        service_names.sort_unstable();
+        assert_eq!(service_names, vec!["hw_service", "sh_service"]);
+        assert_relative_eq!(delivered["hw_service"], 6.0, epsilon = 1e-7);
+        assert_relative_eq!(delivered["sh_service"], 4.0, epsilon = 1e-7);
     }
 
     // skipping python's test_demand_hot_water_zero_volume_continue due to mocking
