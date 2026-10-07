@@ -391,14 +391,17 @@ impl BoilerServiceWaterCombi {
         // if combi does not have keep-hot, or it is not timed, then always on
         match &mut self.combi_boiler_config {
             CombiBoilerConfig::KeepHot {
-                keep_hot_control: Some(control),
+                keep_hot_control,
                 keep_hot_on,
                 ..
             } => {
-                *keep_hot_on = control.is_on(&simtime);
-                *keep_hot_on
+                if let Some(control) = keep_hot_control {
+                    *keep_hot_on = control.is_on(&simtime);
+                } else {
+                    *keep_hot_on = true;
+                }
             }
-            _ => true,
+            _ => {}
         };
 
         for event in usage_events {
@@ -2362,6 +2365,50 @@ mod tests {
                     .demand_hot_water(usage_events_all_timesteps[t_idx].clone(), simtime)
                     .unwrap();
                 assert_eq!(result, [2.4802718392501553, 0.7505002801681526][t_idx])
+            }
+        }
+
+        #[rstest]
+        /// Test that Boiler object returns correct hot water energy demand
+        fn test_boiler_service_water_keephot(
+            boiler: Boiler,
+            cold_water_source: ColdWaterSource,
+            usage_events_all_timesteps: Vec<Vec<WaterEventResult>>,
+            simulation_time: SimulationTime,
+        ) {
+            let boiler_data = HotWaterSourceDetails::CombiBoiler {
+                combi_type_specific_details: CombiTypeSpecificDetails::KeepHot {
+                    combi_keep_hot_fuel: CombiKeepHotFuel::Mixed,
+                    keep_hot_test_hours: 16.,
+                    control_keep_hot: Default::default(),
+                },
+                separate_dhw_tests: BoilerHotWaterTest::MS,
+                rejected_energy_1: Some(0.0004),
+                storage_loss_factor_2: Some(0.91574),
+                rejected_factor_3: Some(0.),
+                daily_hw_usage: 132.5802,
+                storage_loss_factor_1: Default::default(),
+                setpoint_temp: Default::default(),
+                cold_water_source: Default::default(),
+                heat_source_wet: Default::default(),
+            };
+
+            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+                BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
+                boiler_data,
+                "boiler_test".into(),
+                20.,
+                WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                None,
+                simulation_time.step,
+            )
+            .unwrap();
+
+            for (t_idx, simtime) in simulation_time.iter().enumerate() {
+                let result = boiler_service_water
+                    .demand_hot_water(usage_events_all_timesteps[t_idx].clone(), simtime)
+                    .unwrap();
+                assert_eq!(result, [2.499349755916822, 0.7695781968348192][t_idx])
             }
         }
 
