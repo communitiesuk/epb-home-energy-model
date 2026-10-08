@@ -1899,6 +1899,7 @@ mod tests {
 
     mod test_boiler_service_water_combi {
         use crate::core::common::WaterSupply;
+        use crate::core::controls::time_control::OnOffTimeControl;
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{
@@ -2656,6 +2657,76 @@ mod tests {
                 .results_by_end_user_single_step(simtime_iteration.index)
                 ["Boiler_auxiliary: Boiler_auxiliary"];
             assert_relative_eq!(keep_hot_demand, 0.05723375);
+        }
+
+        #[rstest]
+        /// Test combi loss with keep-hot timer control that can be turned on/off
+        fn test_boiler_combi_loss_with_keep_hot_timer_control(
+            mut boiler: Boiler,
+            cold_water_source: ColdWaterSource,
+            simulation_time: SimulationTime,
+        ) {
+            // In Python this is a Mock. Instead, we're using a real control here that is on at
+            // every timestep
+
+            let control = Arc::new(OnOffTimeControl::new(
+                vec![Some(true); simulation_time.total_steps()],
+                0,
+                simulation_time.step,
+            ));
+
+            let boiler_data = HotWaterSourceDetails::CombiBoiler {
+                combi_type_specific_details: CombiTypeSpecificDetails::KeepHot {
+                    combi_keep_hot_fuel: CombiKeepHotFuel::Mixed,
+                    keep_hot_test_hours: 16.,
+                    control_keep_hot: Some("keep_hot_control".into()),
+                },
+                separate_dhw_tests: BoilerHotWaterTest::MS,
+                rejected_energy_1: Some(0.0004),
+                storage_loss_factor_2: Some(0.91574),
+                rejected_factor_3: Some(0.),
+                daily_hw_usage: 132.5802,
+                storage_loss_factor_1: Default::default(),
+                setpoint_temp: Default::default(),
+                cold_water_source: Default::default(),
+                heat_source_wet: Default::default(),
+            };
+
+            // Create the service connection first
+            boiler
+                .create_service_connection("boiler_test_control")
+                .unwrap();
+
+            let boiler = Arc::new(RwLock::new(boiler));
+
+            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+                BoilerForBoilerService::Boiler(boiler.clone()),
+                boiler_data,
+                "boiler_test_control".into(),
+                60.,
+                WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                Some(control),
+                simulation_time.step,
+            )
+            .unwrap();
+
+            // Create usage events
+            let usage_events = vec![WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                temperature_warm: 60.,
+                volume_warm: 30.,
+                volume_hot: 30.,
+                event_duration: 5.,
+            }];
+
+            let simtime_iteration = simulation_time.iter().current_iteration();
+            // Call demand_hot_water - this should check control.is_on()
+            let energy_demand = boiler_service_water
+                .demand_hot_water(usage_events, simtime_iteration)
+                .unwrap();
+
+            // Verify energy demand
+            assert_eq!(energy_demand, 2.1143670833333332)
         }
 
         #[rstest]
