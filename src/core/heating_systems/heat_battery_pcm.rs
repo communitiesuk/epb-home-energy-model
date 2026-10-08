@@ -4925,6 +4925,59 @@ mod tests {
         assert_relative_eq!(q_max_kj, -451.4375);
         assert_relative_eq!(energy_charged, 0.7079340277777778);
         assert_relative_eq!(energy_transf, -4448.5625);
+
+        let (q_max_kj, energy_charged, energy_transf) = heat_battery
+            .read()
+            .process_zone_simultaneous_charging(58., 120., -1000., 1900., 0.);
+
+        assert_relative_eq!(q_max_kj, 0.);
+        assert_relative_eq!(energy_charged, 0.2777777777777778);
+        assert_relative_eq!(energy_transf, 900.);
+    }
+
+    #[rstest]
+    fn test_process_zone_simultaneous_charging_partial_recovery(
+        battery_control_off: Arc<ChargeControl>,
+    ) {
+        // Test simultaneous charging when charging power is insufficient to recover all withdrawn energy.
+
+        // energy_transf=1900 (withdrawn), q_max_kj=-500 (charging power)
+        // -q_max_kj=500 < 1900=energy_transf -> partial recovery branch
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let (q_max_kj, energy_charged, energy_transf) = heat_battery
+            .read()
+            .process_zone_simultaneous_charging(58., 120., -500., 1900., 0.);
+
+        // Charging partially recovers: energy_transf += q_max_kj = 1900 + (-500) = 1400
+        assert_relative_eq!(energy_transf, 1400.);
+        // All charging power used: q_max_kj = 0
+        assert_relative_eq!(q_max_kj, 0.);
+        // energy_charged = -q_max_kj / kJ_per_kWh = 500 / 3600
+        assert_relative_eq!(energy_charged, 0.13888888888888888);
+    }
+
+    #[rstest]
+    fn test_process_zone_simultaneous_charging_fully_charged_partial_recovery(
+        battery_control_off: Arc<ChargeControl>,
+    ) {
+        // Test simultaneous charging when the zone starts fully charged and the charging power is insufficient to recover all the energy withdrawn by the inlet water.
+
+        // zone_temp_c_start=58 >= temp_charge_target=20 -> zone starts fully charged,
+        // routing through the fully-charged branch (distinct from the below-target
+        // branch exercised by test_process_zone_simultaneous_charging_partial_recovery).
+        // energy_transf=1900 (withdrawn), q_max_kj=-500 (charging power):
+        // -q_max_kj=500 < 1900=energy_transf -> partial recovery branch.
+        let heat_battery = create_heat_battery(battery_control_off, None);
+        let (q_max_kj, energy_charged, energy_transf) = heat_battery
+            .read()
+            .process_zone_simultaneous_charging(58., 20., -500., 1900., 0.);
+
+        // Charging partially recovers: energy_transf += q_max_kj = 1900 + (-500) = 1400
+        assert_relative_eq!(energy_transf, 1400.);
+        // All charging power used: q_max_kj = 0
+        assert_relative_eq!(q_max_kj, 0.);
+        // energy_charged = -q_max_kj / kJ_per_kWh = 500 / 3600
+        assert_relative_eq!(energy_charged, 0.13888888888888888);
     }
 
     // skipping python's test_process_zone_simultaneous_charging_warning1 and
