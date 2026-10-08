@@ -6647,6 +6647,237 @@ mod tests {
             assert!(error.to_string().contains("State of charge exceeds 1.0"));
         }
     }
+
+    /// Tests constructor state for legacy and per-source charging configurations.
+    mod test_heat_battery_pcm_new_format_constructor {
+        // TODO: consider with how we're currently handling this
+        // These tests don't test anything is enforced regarding the exactly-one-mode constraint.
+        // The exactly-one-mode constraint could be enforced by representing these configurations
+        // as distinct types instead of optional constructor arguments.
+        use super::*;
+
+        #[fixture]
+        fn legacy_heat_battery(
+            battery_control_off: Arc<ChargeControl>,
+        ) -> Arc<RwLock<HeatBatteryPcm>> {
+            create_default_heat_battery_with_overides(
+                battery_control_off,
+                None,
+                HeatBatteryPcmTestOverrides {
+                    temp_min_useful: Some(0.0),
+                    energy_supply_end_usr_name: Some("LegacyTest".to_string()),
+                    ..Default::default()
+                },
+            )
+        }
+
+        #[fixture]
+        fn range_time_control(simulation_time: SimulationTime) -> Arc<RangeTimeControl> {
+            RangeTimeControl::new(
+                ScheduleOrControl::Schedule(vec![Some(0.2); simulation_time.total_steps()]),
+                ScheduleOrControl::Schedule(vec![Some(0.8); simulation_time.total_steps()]),
+                simulation_time.iter(),
+                0,
+                1.0,
+                None,
+            )
+            .unwrap()
+            .into()
+        }
+
+        #[fixture]
+        fn direct_electric_source(
+            range_time_control: Arc<RangeTimeControl>,
+        ) -> HeatBatteryChargingSource {
+            HeatBatteryChargingSource {
+                source_type: ChargingSourceType::DirectElectric,
+                control: range_time_control,
+                rated_charge_power: Some(3.5),
+                heat_source_service: None,
+                temp_flow_max: 0.0,
+                flow_rate_charging_l_per_min: None,
+                hex_a: None,
+                hex_b: None,
+                hex_velocity_at_1_l_per_min: None,
+                hex_capillary_diameter_m: None,
+                schedule_unit: ScheduleUnit::StateOfCharge,
+            }
+        }
+
+        #[fixture]
+        fn hydronic_source(range_time_control: Arc<RangeTimeControl>) -> HeatBatteryChargingSource {
+            HeatBatteryChargingSource {
+                source_type: ChargingSourceType::HeatSourceWet,
+                control: range_time_control,
+                rated_charge_power: None,
+                heat_source_service: None,
+                temp_flow_max: 65.0,
+                flow_rate_charging_l_per_min: Some(10.0),
+                hex_a: Some(174.33952),
+                hex_b: Some(-931.565),
+                hex_velocity_at_1_l_per_min: Some(0.035),
+                hex_capillary_diameter_m: Some(6.5 / 1000.0),
+                schedule_unit: ScheduleUnit::StateOfCharge,
+            }
+        }
+
+        #[fixture]
+        fn new_format_heat_battery(
+            direct_electric_source: HeatBatteryChargingSource,
+            hydronic_source: HeatBatteryChargingSource,
+        ) -> Arc<RwLock<HeatBatteryPcm>> {
+            let simulation_time = simulation_time();
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
+            ));
+            let external_conditions = external_conditions(simulation_time);
+            let energy_supply_connection =
+                EnergySupply::connection(energy_supply.clone(), "NewFmtTest").unwrap();
+            let heat_battery_details = create_heat_battery_details(None, None);
+            let mut heat_source_data = IndexMap::new();
+            heat_source_data.insert("electric_element".into(), direct_electric_source);
+            heat_source_data.insert("heat_pump".into(), hydronic_source);
+
+            Arc::new(RwLock::new(
+                HeatBatteryPcm::new(
+                    &heat_battery_details,
+                    energy_supply.into(),
+                    energy_supply_connection,
+                    simulation_time.iter(),
+                    external_conditions.into(),
+                    Some(0.0),
+                    temp_air_int_callback(),
+                    None,
+                    Some(heat_source_data),
+                    Some(8),
+                    Some(20.0),
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap(),
+            ))
+        }
+
+        #[rstest]
+        fn test_charge_control_mode_sets_use_heatsource_dict_false(
+            legacy_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+        ) {
+            assert!(!legacy_heat_battery.read().use_heatsource_data);
+        }
+
+        #[rstest]
+        fn test_legacy_mode_stores_charge_control(
+            legacy_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+        ) {
+            assert!(legacy_heat_battery.read().charge_control.is_some());
+        }
+
+        #[rstest]
+        fn test_legacy_mode_reads_rated_charge_power(
+            legacy_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+        ) {
+            assert_relative_eq!(legacy_heat_battery.read().pwr_in, 20.0);
+        }
+
+        #[rstest]
+        fn test_range_control_mode_sets_use_heatsource_dict_true(
+            new_format_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+        ) {
+            assert!(new_format_heat_battery.read().use_heatsource_data);
+        }
+
+        #[rstest]
+        fn test_new_format_stores_heat_source_data(
+            new_format_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+        ) {
+            let battery = new_format_heat_battery.read();
+            let sources = battery.heat_source_data.as_ref().unwrap();
+            assert_eq!(sources.len(), 2);
+
+            let electric_source = &sources["electric_element"];
+            assert_eq!(
+                electric_source.source_type,
+                ChargingSourceType::DirectElectric
+            );
+            assert_relative_eq!(electric_source.rated_charge_power.unwrap(), 3.5);
+
+            let hydronic_source = &sources["heat_pump"];
+            assert_eq!(
+                hydronic_source.source_type,
+                ChargingSourceType::HeatSourceWet
+            );
+            assert_relative_eq!(hydronic_source.temp_flow_max, 65.0);
+        }
+
+        #[rstest]
+        fn test_new_format_initialises_charging_active_all_false(
+            new_format_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+        ) {
+            let battery = new_format_heat_battery.read();
+            let active = battery.charging_active.read();
+            assert_eq!(active.len(), 2);
+            assert_eq!(active.get("electric_element"), Some(&false));
+            assert_eq!(active.get("heat_pump"), Some(&false));
+        }
+
+        #[rstest]
+        fn test_new_format_charge_control_is_none(
+            new_format_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+        ) {
+            assert!(new_format_heat_battery.read().charge_control.is_none());
+        }
+
+        #[rstest]
+        fn test_new_format_does_not_use_legacy_charge_power(
+            new_format_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // Rust stores pwr_in as f64; with no legacy ChargeControl, its effective power is zero.
+            assert_relative_eq!(
+                new_format_heat_battery
+                    .read()
+                    .electric_charge(simulation_time_iteration),
+                0.0
+            );
+        }
+
+        #[rstest]
+        fn test_legacy_mode_has_no_heat_source_data(
+            legacy_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+        ) {
+            assert!(legacy_heat_battery.read().heat_source_data.is_none());
+        }
+
+        #[rstest]
+        fn test_legacy_mode_has_empty_charging_active(
+            legacy_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+        ) {
+            assert!(legacy_heat_battery.read().charging_active.read().is_empty());
+        }
+
+        #[rstest]
+        fn test_new_format_timestep_end_does_not_use_legacy_charge(
+            new_format_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            new_format_heat_battery
+                .read()
+                .flag_first_call
+                .store(false, Ordering::SeqCst);
+
+            new_format_heat_battery
+                .read()
+                .timestep_end(simulation_time_iteration)
+                .unwrap();
+
+            let battery = new_format_heat_battery.read();
+            assert!(battery.charge_control.is_none());
+            assert_relative_eq!(battery.energy_charged_electric.load(Ordering::SeqCst), 0.0);
+        }
+    }
+
     /// Tests for validate_no_schedule_overlap (Deviation 3 fix).
     /// Uses real RangeTimeControl objects to verify that overlapping active
     /// schedules are rejected and non-overlapping schedules are accepted.
