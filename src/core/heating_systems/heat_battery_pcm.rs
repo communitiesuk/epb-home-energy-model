@@ -3570,27 +3570,41 @@ mod tests {
     fn temp_air_int_callback() -> TempInternalAirFn {
         Arc::new(|| 22.)
     }
+
+    #[derive(Default)]
+    struct HeatBatteryPcmTestOverrides {
+        n_layers: Option<usize>,
+        hb_time_step: Option<f64>,
+        temp_min_useful: Option<f64>,
+        initial_inlet_temp: Option<f64>,
+        estimated_outlet_temp: Option<f64>,
+        primary_pipework: Option<Vec<Pipework>>,
+    }
+
     fn create_heat_battery(
         control: Arc<ChargeControl>,
         _output_detailed_results: Option<bool>,
     ) -> Arc<RwLock<HeatBatteryPcm>> {
-        create_heat_battery_with_n_layers(control, _output_detailed_results, 8)
+        create_default_heat_battery_with_overides(
+            control,
+            _output_detailed_results,
+            HeatBatteryPcmTestOverrides::default(),
+        )
     }
-
-    fn create_heat_battery_with_n_layers(
+    /// Creates a default heat battery with the given overrides.
+    /// # Arguments
+    ///
+    /// * `control` - The charge control for the heat battery.
+    /// * `_output_detailed_results` - Whether to output detailed results.
+    /// * `overrides` - The overrides for the heat battery configuration.
+    ///     - use Default::default() for any fields not explicitly overridden.
+    fn create_default_heat_battery_with_overides(
         control: Arc<ChargeControl>,
         _output_detailed_results: Option<bool>,
-        n_layers: usize,
+        overrides: HeatBatteryPcmTestOverrides,
     ) -> Arc<RwLock<HeatBatteryPcm>> {
-        create_heat_battery_with_setup(control, _output_detailed_results, n_layers, None)
-    }
-
-    fn create_heat_battery_with_setup(
-        control: Arc<ChargeControl>,
-        _output_detailed_results: Option<bool>,
-        n_layers: usize,
-        temp_min_useful: Option<f64>,
-    ) -> Arc<RwLock<HeatBatteryPcm>> {
+        let n_layers = overrides.n_layers.unwrap_or(8);
+        let hb_time_step = overrides.hb_time_step.unwrap_or(20.);
         let simulation_time = simulation_time();
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
@@ -3606,16 +3620,16 @@ mod tests {
                 energy_supply_connection,
                 simulation_time.iter(),
                 external_conditions.into(),
-                temp_min_useful,
+                overrides.temp_min_useful,
                 temp_air_int_callback(),
                 Some(control),
                 None,
                 Some(n_layers),
-                Some(20.),
+                Some(hb_time_step),
+                overrides.initial_inlet_temp,
+                overrides.estimated_outlet_temp,
                 None,
-                None,
-                None,
-                None,
+                overrides.primary_pipework,
             )
             .unwrap(),
         ));
@@ -3647,8 +3661,14 @@ mod tests {
         battery_control_on: Arc<ChargeControl>,
     ) {
         let n_layers = 4; // Example value for the number of layers
-        let heat_battery_lock =
-            create_heat_battery_with_n_layers(battery_control_on.clone(), None, n_layers);
+        let heat_battery_lock = create_default_heat_battery_with_overides(
+            battery_control_on.clone(),
+            None,
+            HeatBatteryPcmTestOverrides {
+                n_layers: Some(n_layers),
+                ..Default::default()
+            },
+        );
         let heat_battery = heat_battery_lock.read();
 
         let pcm_temp_c = 70.;
@@ -3709,7 +3729,14 @@ mod tests {
         pcm_temp_c: f64,
         battery_control: Arc<ChargeControl>,
     ) -> (f64, f64) {
-        let hb_lock = create_heat_battery_with_n_layers(battery_control.clone(), None, n_layers);
+        let hb_lock = create_default_heat_battery_with_overides(
+            battery_control.clone(),
+            None,
+            HeatBatteryPcmTestOverrides {
+                n_layers: Some(n_layers),
+                ..Default::default()
+            },
+        );
         let mut zone_temp_c_dist = vec![pcm_temp_c; n_layers];
         let hb = hb_lock.read();
         // Physical flow and Reynolds number, derived the same way the model
@@ -5965,7 +5992,14 @@ mod tests {
         )
         .unwrap()
         .into();
-        let heat_battery = create_heat_battery_with_setup(control, None, 8, Some(30.0));
+        let heat_battery = create_default_heat_battery_with_overides(
+            control,
+            None,
+            HeatBatteryPcmTestOverrides {
+                temp_min_useful: Some(30.0),
+                ..Default::default()
+            },
+        );
 
         assert!(heat_battery.read().energy_delivered_by_service().is_empty());
 
