@@ -389,19 +389,16 @@ impl BoilerServiceWaterCombi {
 
         // get status of timed keep hot facility from control schedule.
         // if combi does not have keep-hot, or it is not timed, then always on
-        match &mut self.combi_boiler_config {
-            CombiBoilerConfig::KeepHot {
-                keep_hot_control,
-                keep_hot_on,
-                ..
-            } => {
-                if let Some(control) = keep_hot_control {
-                    *keep_hot_on = control.is_on(&simtime);
-                } else {
-                    *keep_hot_on = true;
-                }
+        if let CombiBoilerConfig::KeepHot {
+            keep_hot_control,
+            keep_hot_on,
+            ..
+        } = &mut self.combi_boiler_config {
+            if let Some(control) = keep_hot_control {
+                *keep_hot_on = control.is_on(&simtime);
+            } else {
+                *keep_hot_on = true;
             }
-            _ => {}
         };
 
         for event in usage_events {
