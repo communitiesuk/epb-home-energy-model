@@ -442,8 +442,11 @@ impl BoilerServiceWaterCombi {
                         let delta_t = event.temperature_warm - temp_cold_water;
                         let flowrate_hot = event.volume_hot / event.event_duration;
 
-                        let combi_loss =
-                            self.boiler_combi_loss(delta_t, flowrate_hot, event.event_result_type);
+                        let combi_loss = self.boiler_combi_loss_event(
+                            delta_t,
+                            flowrate_hot,
+                            event.event_result_type,
+                        );
                         energy_demand += combi_loss;
                         self.combi_loss
                             .read()
@@ -517,7 +520,7 @@ impl BoilerServiceWaterCombi {
         Ok(combi_loss)
     }
 
-    fn boiler_combi_loss(
+    fn boiler_combi_loss_event(
         &self,
         delta_t: f64,
         flowrate: f64,
@@ -528,21 +531,20 @@ impl BoilerServiceWaterCombi {
         let rejected_energy = if event_type == WaterEventResultType::Bath {
             0.0
         } else {
-            self.rejected_energy_1_adj
+            self.rejected_energy_1_adj * delta_t * flowrate
         };
 
         let combi_loss = match self.separate_dhw_tests {
             BoilerHotWaterTest::ML | BoilerHotWaterTest::MS => {
                 // combi loss calculation with tapping cycle M and S, or M and L
-                (rejected_energy * delta_t * flowrate) + self.storage_loss_factor_2_adj.unwrap()
+                rejected_energy + self.storage_loss_factor_2_adj.unwrap()
             }
             BoilerHotWaterTest::MOnly | BoilerHotWaterTest::NoAdditionalTests => {
                 // combi loss calculation with tapping cycle M only test results
-                (rejected_energy * delta_t * flowrate) + self.storage_loss_factor_1_adj.unwrap()
+                rejected_energy + self.storage_loss_factor_1_adj.unwrap()
             }
         };
 
-        self.combi_loss.read().store(combi_loss, Ordering::SeqCst);
         combi_loss
     }
 
@@ -2778,7 +2780,7 @@ mod tests {
         }
 
         #[rstest]
-        fn test_boiler_combi_loss(mut boiler_service: BoilerServiceWaterCombi) {
+        fn test_boiler_combi_loss_event(mut boiler_service: BoilerServiceWaterCombi) {
             boiler_service.rejected_energy_1_adj = 0.001;
             boiler_service.storage_loss_factor_1_adj = Some(0.109);
             boiler_service.storage_loss_factor_2_adj = Some(0.1125);
@@ -2786,22 +2788,35 @@ mod tests {
             // Tested to M and S
             boiler_service.separate_dhw_tests = BoilerHotWaterTest::MS;
             assert_eq!(
-                boiler_service.boiler_combi_loss(20., 1.5, WaterEventResultType::Other),
+                boiler_service.boiler_combi_loss_event(20., 1.5, WaterEventResultType::Other),
                 0.14250000000000002
             );
 
             // Tested to M and L
-            boiler_service.separate_dhw_tests = BoilerHotWaterTest::MS;
+            boiler_service.separate_dhw_tests = BoilerHotWaterTest::ML;
             assert_eq!(
-                boiler_service.boiler_combi_loss(20., 1.5, WaterEventResultType::Bath),
-                0.1125
+                boiler_service.boiler_combi_loss_event(20., 1.5, WaterEventResultType::Other),
+                0.14250000000000002
             );
 
             // M only
             boiler_service.separate_dhw_tests = BoilerHotWaterTest::MOnly;
             assert_eq!(
-                boiler_service.boiler_combi_loss(20., 1.5, WaterEventResultType::Other),
+                boiler_service.boiler_combi_loss_event(20., 1.5, WaterEventResultType::Other),
                 0.139
+            );
+
+            // No additional tests
+            boiler_service.separate_dhw_tests = BoilerHotWaterTest::NoAdditionalTests;
+            assert_eq!(
+                boiler_service.boiler_combi_loss_event(20., 1.5, WaterEventResultType::Other),
+                0.139
+            );
+
+            // Bath event
+            assert_eq!(
+                boiler_service.boiler_combi_loss_event(20., 1.5, WaterEventResultType::Bath),
+                0.109
             );
         }
 
