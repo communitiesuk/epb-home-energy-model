@@ -118,6 +118,7 @@ impl HeatSourceWet {
         energy_demand: f64,
         temp_flow: Option<f64>,
         temperature: Option<f64>,
+        _ignore_standard_ctrl: Option<bool>, // TODO 1.0.0a9 migration
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match self {

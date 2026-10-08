@@ -4485,9 +4485,10 @@ impl HeatSource {
     ) -> anyhow::Result<f64> {
         match self {
             HeatSource::Storage(ref mut storage) => match storage {
-                HeatSourceWithStorageTank::Immersion(imm) => imm
-                    .lock()
-                    .demand_energy(energy_demand, simulation_time_iteration),
+                HeatSourceWithStorageTank::Immersion(imm) => {
+                    imm.lock()
+                        .demand_energy(energy_demand, None, simulation_time_iteration)
+                }
                 HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar
                     .lock()
                     .demand_energy(energy_demand, simulation_time_iteration.index)),
@@ -4496,6 +4497,7 @@ impl HeatSource {
                 energy_demand,
                 None,
                 temp_return.into(),
+                None,
                 simulation_time_iteration,
             ),
         }

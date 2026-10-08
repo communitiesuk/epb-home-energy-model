@@ -777,6 +777,7 @@ impl StorageTank {
         self.calc_final_temps(
             &temp_s3_n,
             heat_source,
+            heat_source_name.into(),
             q_x_in_n,
             heater_layer,
             q_ls_prev_heat_source,
@@ -880,6 +881,7 @@ impl StorageTank {
         &self,
         temp_s3_n: &[f64],
         heat_source: &HeatSource,
+        heat_source_name: ArcStr,
         q_x_in_n: Vec<f64>,
         heater_layer: usize,
         q_ls_n_prev_heat_source: &[f64],
@@ -920,8 +922,15 @@ impl StorageTank {
                 .store(input_energy_adj, Ordering::SeqCst);
         }
 
-        let _heat_source_output =
-            self.heat_source_output(heat_source, input_energy_adj, heater_layer, simtime, None)?;
+        let _heat_source_output = self.heat_source_output(
+            heat_source,
+            heat_source_name,
+            input_energy_adj,
+            heater_layer,
+            simtime,
+            None,
+            Some(control_max_diverter.is_some()),
+        )?;
         // variable is updated in upstream but then never read
         // input_energy_adj -= _heat_source_output;
 
@@ -1142,14 +1151,25 @@ impl StorageTank {
     }
 
     /// Calculates pipework loss before sending on the demand energy
+    ///
+    /// Args:
+    /// heat_source: The heat source to demand energy from.
+    /// input_energy_adj: Adjusted energy input in kWh.
+    /// heater_layer: Index of the heater layer in the tank.
+    /// ignore_standard_ctrl: If True, bypass the standard time control check
+    /// when demanding energy from an ImmersionHeater.
+    /// Set when PV diverter is active.
     fn heat_source_output(
         &self,
         heat_source: &HeatSource,
+        heat_source_name: ArcStr,
         input_energy_adj: f64,
         _heater_layer: usize,
         simulation_time_iteration: SimulationTimeIteration,
         smart_hot_water_tank: Option<&SmartHotWaterTank>, // the temp_flow method might need to be called as a smart hot water tank if this is a storage tank composed by a smart hot water tank
+        ignore_standard_ctrl: Option<bool>,
     ) -> anyhow::Result<f64> {
+        let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
         // if immersion heater, no pipework losses
         // TODO (from Python):  Critical - temp_flow cannot be None for downstream method calculate_primary_pipework_losses
         // but providing a fallback value will change the e2e test results
@@ -1160,15 +1180,37 @@ impl StorageTank {
             }
         };
 
-        // Input energy rounded so that almost zero negative numbers (caused by
+        // Input energy clamped to zero if within 1e-10 of zero
+        // so that almost zero negative numbers (caused by
         // floating point error) do not cause errors in subsequent code
+        let input_energy_adj =
+            if relative_eq!(input_energy_adj, 0.0, epsilon = 1e-10, max_relative = 1e-9) {
+                0.
+            } else {
+                input_energy_adj
+            };
 
-        let input_energy_adj = round_by_precision(input_energy_adj, 1e10);
+        // The charging deadband (_heating_active) - or an active PV diverter - is
+        // the authority on whether to charge, so bypass the heat source's own
+        // minimum-setpoint schedule gate: once charging is active it must continue
+        // to the maximum setpoint even after the minimum-setpoint schedule
+        // deactivates mid-cycle. A heat source absent from _heating_active is not
+        // deadband-active, so it gets no bypass.
+        let bypass_min_ctrl = ignore_standard_ctrl
+            || self
+                .heating_active
+                .get(&heat_source_name)
+                .map(|bool| bool.load(Ordering::SeqCst))
+                .unwrap_or_default();
 
         match heat_source {
-            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => immersion
-                .lock()
-                .demand_energy(input_energy_adj, simulation_time_iteration),
+            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => {
+                immersion.lock().demand_energy(
+                    input_energy_adj,
+                    Some(bypass_min_ctrl),
+                    simulation_time_iteration,
+                )
+            }
             HeatSource::Storage(HeatSourceWithStorageTank::Solar(solar)) => Ok(solar
                 .lock()
                 .demand_energy(input_energy_adj, simulation_time_iteration.index)),
@@ -1180,6 +1222,9 @@ impl StorageTank {
                         None,
                         &simulation_time_iteration,
                     )?;
+                // Save for reporting
+                self.primary_pipework_losses_kwh
+                    .store(primary_pipework_losses_kwh, Ordering::SeqCst);
                 let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
 
                 // TODO Use different temperatures for flow and return in the call to
@@ -1188,6 +1233,7 @@ impl StorageTank {
                     input_energy_adj,
                     temp_flow,
                     temp_flow,
+                    Some(bypass_min_ctrl),
                     simulation_time_iteration,
                 )? - primary_pipework_losses_kwh;
                 self.pipework_primary_gains_for_timestep
@@ -1712,6 +1758,7 @@ impl StorageTank {
         } = self.calc_final_temps(
             &self.temp_n.read(),
             heat_source,
+            heat_source_name.into(),
             q_x_in_n,
             heater_layer,
             &self.q_ls_n_prev_heat_source.read(),
@@ -2131,6 +2178,7 @@ impl SmartHotWaterTank {
         self.calc_final_temps(
             &temp_s3_n,
             heat_source,
+            heat_source_name.into(),
             q_x_in_n,
             heater_layer,
             q_ls_prev_heat_source,
@@ -2262,6 +2310,7 @@ impl SmartHotWaterTank {
         } = self.calc_final_temps(
             &self.storage_tank.temp_n.read(),
             heat_source,
+            heat_source_name.into(),
             q_x_in_n,
             heater_layer,
             &self.storage_tank.q_ls_n_prev_heat_source.read(),
@@ -2426,6 +2475,7 @@ impl SmartHotWaterTank {
         &self,
         temp_s3_n: &[f64],
         heat_source: &HeatSource,
+        heat_source_name: ArcStr,
         q_x_in_n: Vec<f64>,
         heater_layer: usize,
         q_ls_n_prev_heat_source: &[f64],
@@ -2490,10 +2540,12 @@ impl SmartHotWaterTank {
         // Actual heat source output
         let heat_source_output = self.storage_tank.heat_source_output(
             heat_source,
+            heat_source_name,
             input_energy_adj,
             heater_layer,
             simtime,
             Some(self),
+            Some(control_max_diverter.is_some()),
         )?;
 
         // calculate volume pumped using actual heat source output
@@ -3240,8 +3292,10 @@ impl ImmersionHeater {
     pub fn demand_energy(
         &self,
         energy_demand: f64,
+        ignore_standard_ctrl: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
+        let _ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false); // TODO 1.0.0a9 migration
         if energy_demand < 0.0 {
             bail!("Negative energy demand on ImmersionHeater");
         };
@@ -5212,8 +5266,9 @@ mod tests {
         simulation_time_for_storage_tank: SimulationTime,
     ) {
         let (storage_tank1, _) = storage_tank1;
+        let heat_source_name = "imheater";
         let temp_s3_n = vec![10., 15., 20., 25., 25., 30., 35., 50.];
-        let heat_source = storage_tank1.heat_source_data["imheater"]
+        let heat_source = storage_tank1.heat_source_data[heat_source_name]
             .clone()
             .heat_source;
         let q_x_in_n = vec![0., 1., 2., 3., 4., 5., 6., 7., 8.];
@@ -5225,6 +5280,7 @@ mod tests {
                 .calc_final_temps(
                     &temp_s3_n,
                     &heat_source.lock(),
+                    heat_source_name.into(),
                     q_x_in_n,
                     heater_layer,
                     &q_ls_n_prev_heat_source,
@@ -5719,25 +5775,43 @@ mod tests {
         simulation_time_for_storage_tank: SimulationTime,
     ) {
         let (storage_tank1, _) = storage_tank1;
-        let positioned_heat_source = storage_tank1.heat_source_data["imheater"].clone();
+        let heat_source_name = "imheater";
+        let positioned_heat_source = storage_tank1.heat_source_data[heat_source_name].clone();
         let heat_source = &*positioned_heat_source.heat_source.lock();
 
         let iteration = simulation_time_for_storage_tank.iter().current_iteration();
         assert_eq!(
             storage_tank1
-                .heat_source_output(heat_source, 43.2, 0, iteration, None)
+                .heat_source_output(
+                    heat_source,
+                    heat_source_name.into(),
+                    43.2,
+                    0,
+                    iteration,
+                    None,
+                    None
+                )
                 .unwrap(),
             43.2
         );
 
         let (storage_tank_solar_thermal, _, _, _) = storage_tank_with_solar_thermal;
-        let heat_source = storage_tank_solar_thermal.heat_source_data["solthermal"]
+        let heat_source_name = "solthermal";
+        let heat_source = storage_tank_solar_thermal.heat_source_data[heat_source_name]
             .clone()
             .heat_source;
 
         assert_eq!(
             storage_tank1
-                .heat_source_output(&heat_source.lock(), 43.2, 0, iteration, None)
+                .heat_source_output(
+                    &heat_source.lock(),
+                    "solthermal".into(),
+                    43.2,
+                    0,
+                    iteration,
+                    None,
+                    None
+                )
                 .unwrap(),
             0.
         );
@@ -5960,7 +6034,7 @@ mod tests {
         for (t_idx, t_it) in simulation_time_for_immersion_heater.iter().enumerate() {
             assert_eq!(
                 immersion_heater
-                    .demand_energy(energy_inputs[t_idx], t_it)
+                    .demand_energy(energy_inputs[t_idx], None, t_it)
                     .unwrap(),
                 expected_energy[t_idx],
                 "incorrect energy demand calculated"
@@ -5969,6 +6043,7 @@ mod tests {
         assert!(immersion_heater
             .demand_energy(
                 -1.,
+                None,
                 simulation_time_for_immersion_heater
                     .iter()
                     .current_iteration()
@@ -6879,8 +6954,9 @@ mod tests {
         let heater_layer = 2;
         let q_ls_n_prev_heat_source = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 
+        let heat_source_name = "imheater";
         let positioned_heat_source =
-            smart_hot_water_tank.storage_tank.heat_source_data["imheater"].clone();
+            smart_hot_water_tank.storage_tank.heat_source_data[heat_source_name].clone();
         let heat_source = &*positioned_heat_source.heat_source.lock();
 
         let control_max_diverter = Control::SetpointTime(
@@ -6929,6 +7005,7 @@ mod tests {
             .calc_final_temps(
                 &temp_s3_n,
                 heat_source,
+                heat_source_name.into(),
                 q_x_in_n.clone(),
                 heater_layer,
                 &q_ls_n_prev_heat_source,
@@ -6977,6 +7054,7 @@ mod tests {
             .calc_final_temps(
                 &temp_s3_n,
                 heat_source,
+                heat_source_name.into(),
                 q_x_in_n,
                 heater_layer,
                 &q_ls_n_prev_heat_source,
