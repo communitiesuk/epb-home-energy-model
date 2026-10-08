@@ -915,7 +915,7 @@ impl HeatBatteryPcm {
             };
 
         let temp_diff_rated_losses = max_temp_of_charge - TEMP_AMBIENT_RATED_LOSSES_C;
-        if temp_diff_rated_losses < 0.0 {
+        if temp_diff_rated_losses <= 0.0 {
             bail!(
                 "Heat battery max_temperature must exceed the rated-loss reference ambient temperature ({TEMP_AMBIENT_RATED_LOSSES_C} °C)."
             );
@@ -3406,11 +3406,9 @@ mod tests {
     use crate::core::controls::time_control::{
         ChargeControl, Control, ScheduleOrControl, SetpointTimeControl,
     };
-    use crate::core::energy_supply;
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
-    use crate::core::heating_systems::heat_pump::TestLetter::D;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
@@ -3518,6 +3516,7 @@ mod tests {
     }
     fn create_heat_battery_details(
         simultaneuous_charging_and_discharging: Option<bool>,
+        max_temperature: Option<f64>,
     ) -> HeatSourceWetDetails {
         HeatSourceWetDetails::HeatBattery {
             battery: HeatBatteryInput::Pcm {
@@ -3537,7 +3536,7 @@ mod tests {
                 heat_storage_kj_per_k_during_phase_transition: 12317.,
                 phase_transition_temperature_upper: 59.,
                 phase_transition_temperature_lower: 57.,
-                max_temperature: 80.,
+                max_temperature: max_temperature.unwrap_or(80.),
                 temp_init: 80.,
                 velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
                 inlet_diameter_mm: 6.5,
@@ -3618,7 +3617,7 @@ mod tests {
         let energy_supply_connection: EnergySupplyConnection =
             EnergySupply::connection(energy_supply.clone(), &energy_supply_end_usr_name).unwrap();
         let heat_battery_details =
-            create_heat_battery_details(overrides.simultaneuous_charging_and_discharging);
+            create_heat_battery_details(overrides.simultaneuous_charging_and_discharging, None);
 
         let heat_battery = Arc::new(RwLock::new(
             HeatBatteryPcm::new(
@@ -4803,7 +4802,7 @@ mod tests {
 
     #[rstest]
     fn test_get_zone_properties_no_energy_transf(battery_control_off: Arc<ChargeControl>) {
-        // Test that get_zone_properties returns energy_transf as 0 with losses model and higher zone_temp_c_start than inlet_temp_c
+        // Test that the losses model clamps to zero when a zone is at or below the surroundings
         let heat_battery = create_heat_battery(battery_control_off, None);
         let (energy_transf, _, _, _) = heat_battery.read().get_zone_properties(
             0,
@@ -4823,6 +4822,34 @@ mod tests {
     }
 
     // skipping python's test_get_zone_properties_invalid_mode as mode can't be invalid in rust
+
+    #[rstest]
+    fn test_get_zone_properties_losses_at_rated_condition(battery_control_off: Arc<ChargeControl>) {
+        // Test that a zone at the rated condition loses its full equal share of the rated loss.
+        //
+        // When a zone sits at max_temperature (80 °C) and the surroundings are at
+        // the rated reference ambient (20 °C), the temperature-difference ratio is
+        // one, so the zone loses an equal split of the rated loss energy
+        // (Q_max_kJ / number of zones) — the same as the unscaled model.
+        let heat_battery = create_heat_battery(battery_control_off, None);
+
+        let (energy_transf, _, _, _) = heat_battery.read().get_zone_properties(
+            0,
+            &HeatBatteryPcmOperationMode::Losses,
+            &[80., 80., 80., 80., 80., 80., 80., 80.],
+            20.,
+            20.,
+            5.,
+            414.,
+            20.,
+            12.9847456,
+            None,
+            None,
+        );
+
+        // 5 / 8 zones * (80 - 20) K / 60 K = 0.625
+        assert_relative_eq!(energy_transf, 0.625);
+    }
 
     #[rstest]
     fn test_calculate_zone_energy_required(battery_control_off: Arc<ChargeControl>) {
@@ -6061,53 +6088,6 @@ mod tests {
         assert_relative_eq!(delivered["sh_service"], 4.0, epsilon = 1e-7);
     }
 
-    /*+    def test_energy_output_max_simultaneous_charging(self):
-    +        """With simultaneous charging, the ceiling includes charge replenished while discharging.
-    +
-    +        A battery that charges while discharging is held warmer over the timestep, so
-    +        energy_output_max draws on the charging power in addition to stored energy.
-    +        """
-    +        heat_dict = dict(self.heat_dict)
-    +        heat_dict["simultaneous_charging_and_discharging"] = True
-    +        sched = cast(
-    +            list[bool],
-    +            expand_schedule(
-    +                sched_type=bool,
-    +                sched_dict={"main": [{"value": True, "repeat": 2}]},
-    +                sched_main="main",
-    +                nullable=True,
-    +            ),
-    +        )
-    +        ctrl = ChargeControl(
-    +            logic_type=ControlLogicType.MANUAL,
-    +            charge_time_control=sched,
-    +            simulation_time=self.simtime,
-    +            start_day=0,
-    +            time_series_step=1,
-    +            charge_level=[1.5, 1.6],
-    +            extcond=self.extcond,
-    +            external_sensor=self.external_sensor,
-    +        )
-    +        heatbattery = HeatBatteryPCM(
-    +            heat_battery_dict=heat_dict,
-    +            charge_control=ctrl,
-    +            energy_supply=self.energysupply,
-    +            energy_supply_conn=self.energysupply.connection(end_user_name="sim_charge"),
-    +            simulation_time=self.simtime,
-    +            ext_cond=self.extcond,
-    +            n_layers=8,
-    +            hb_time_step=20,
-    +            temp_min_useful=30.0,
-    +            temp_internal_air_callback=lambda: 20.0,
-    +        )
-    +        # Charging during discharge raises the ceiling above the stored-energy-only case
-    +        self.assertAlmostEqual(
-    +            heatbattery._HeatBatteryPCM__energy_output_max(  # type: ignore[reportAttributeAccessIssue]
-    +                temp_output=40.0, temp_return_feed=30.0
-    +            ),
-    +            17.717635418087347,
-    +        ) */
-
     #[rstest]
     fn test_energy_output_max_simultaneous_charging(
         external_sensor: ExternalSensor,
@@ -6155,6 +6135,125 @@ mod tests {
                 .unwrap(),
             17.717635418087347,
             epsilon = 1e-7
+        );
+    }
+
+    #[rstest]
+    fn test_energy_output_max_matches_demand_energy_ceiling(
+        external_sensor: ExternalSensor,
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) {
+        // energy_output_max equals the energy demand_energy delivers at unlimited demand.
+        //
+        // Both integrate the same heat transfer to the water, neither gates on the required
+        // flow temperature, and both run at the same sub-timestep. So giving demand_energy
+        // effectively unlimited demand reaches the energy_output_max ceiling. Under the
+        // per-layer conductance the discharge no longer saturates within the timestep, so
+        // the two integration schemes agree closely (well within 0.1%) but no longer to
+        // floating-point precision.
+        let battery_control: Arc<ChargeControl> = ChargeControl::new(
+            ControlLogicType::Manual,
+            ScheduleOrControl::Schedule(vec![true; simulation_time_iterator.total_steps()]),
+            &simulation_time_iterator,
+            0,
+            1.,
+            [1.5, 1.6].into_iter().map(Into::into).collect(),
+            None,
+            None,
+            Some(external_conditions.into()),
+            Some(external_sensor),
+            None,
+        )
+        .unwrap()
+        .into();
+
+        // Build a fresh battery for each call so both see the identical initial state
+        let energy_max = create_default_heat_battery_with_overides(
+            battery_control.clone(),
+            None,
+            HeatBatteryPcmTestOverrides {
+                temp_min_useful: Some(30.0),
+                energy_supply_end_usr_name: Some("ceiling_max".to_string()),
+                ..Default::default()
+            },
+        )
+        .read()
+        .energy_output_max(40.0, 30.0, None, simulation_time_iteration)
+        .unwrap();
+        let energy_delivered = create_default_heat_battery_with_overides(
+            battery_control,
+            None,
+            HeatBatteryPcmTestOverrides {
+                temp_min_useful: Some(30.0),
+                energy_supply_end_usr_name: Some("ceiling_demand".to_string()),
+                ..Default::default()
+            },
+        )
+        .read()
+        .demand_energy(
+            "ceiling_demand",
+            HeatingServiceType::DomesticHotWaterRegular,
+            1.0e6,
+            Some(30.0),
+            Some(40.0),
+            true,
+            None,
+            Some(false),
+            simulation_time_iteration,
+        )
+        .unwrap();
+
+        assert_relative_eq!(energy_max, 9.850915334607903, epsilon = 1e-7);
+        assert_relative_eq!(energy_delivered, 9.852626311604713, epsilon = 1e-7);
+        // The two integration schemes agree to well within 0.1%; they no longer
+        // coincide to floating-point precision because the discharge does not
+        // saturate the timestep under the per-layer conductance.
+        assert!((energy_max - energy_delivered).abs() <= 0.01);
+    }
+
+    #[rstest]
+    fn test_init_rejects_max_temperature_at_or_below_rated_ambient(
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+        battery_control_on: Arc<ChargeControl>,
+    ) {
+        // Test that construction fails if max_temperature does not exceed the rated-loss ambient.
+        //
+        // The rated temperature difference (max_temperature minus the reference
+        // ambient) is the denominator when scaling standing losses, so a
+        // non-positive difference is a degenerate input that must be rejected.
+
+        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time_iterator.total_steps())
+                .build(),
+        ));
+
+        let energy_supply_connection: EnergySupplyConnection =
+            EnergySupply::connection(energy_supply.clone(), "WaterHeating").unwrap();
+        let heat_data = create_heat_battery_details(None, Some(TEMP_AMBIENT_RATED_LOSSES_C));
+        let heat_battery = HeatBatteryPcm::new(
+            &heat_data,
+            energy_supply.clone().into(),
+            energy_supply_connection,
+            simulation_time_iterator,
+            external_conditions.into(),
+            Some(30.),
+            temp_air_int_callback(),
+            Some(battery_control_on),
+            None,
+            Some(8),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(heat_battery.is_err());
+        assert_eq!(
+            heat_battery.unwrap_err().to_string(),
+            format!("Heat battery max_temperature must exceed the rated-loss reference ambient temperature ({TEMP_AMBIENT_RATED_LOSSES_C} °C).")
         );
     }
 
