@@ -3406,9 +3406,11 @@ mod tests {
     use crate::core::controls::time_control::{
         ChargeControl, Control, ScheduleOrControl, SetpointTimeControl,
     };
+    use crate::core::energy_supply;
     use crate::core::energy_supply::energy_supply::{
         EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
     };
+    use crate::core::heating_systems::heat_pump::TestLetter::D;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
@@ -3514,8 +3516,9 @@ mod tests {
             simulation_time_iterator,
         )
     }
-    #[fixture]
-    fn heat_battery_details() -> HeatSourceWetDetails {
+    fn create_heat_battery_details(
+        simultaneuous_charging_and_discharging: Option<bool>,
+    ) -> HeatSourceWetDetails {
         HeatSourceWetDetails::HeatBattery {
             battery: HeatBatteryInput::Pcm {
                 energy_supply: "mains elec".into(),
@@ -3527,7 +3530,8 @@ mod tests {
                     control_charge: "hb_charge_control".into(),
                     rated_charge_power: 20.0,
                 },
-                simultaneous_charging_and_discharging: false,
+                simultaneous_charging_and_discharging: simultaneuous_charging_and_discharging
+                    .unwrap_or(false),
                 heat_storage_kj_per_k_above_phase_transition: 381.5,
                 heat_storage_kj_per_k_below_phase_transition: 305.2,
                 heat_storage_kj_per_k_during_phase_transition: 12317.,
@@ -3574,11 +3578,9 @@ mod tests {
     #[derive(Default)]
     struct HeatBatteryPcmTestOverrides {
         n_layers: Option<usize>,
-        hb_time_step: Option<f64>,
         temp_min_useful: Option<f64>,
-        initial_inlet_temp: Option<f64>,
-        estimated_outlet_temp: Option<f64>,
-        primary_pipework: Option<Vec<Pipework>>,
+        energy_supply_end_usr_name: Option<String>,
+        simultaneuous_charging_and_discharging: Option<bool>,
     }
 
     fn create_heat_battery(
@@ -3604,18 +3606,23 @@ mod tests {
         overrides: HeatBatteryPcmTestOverrides,
     ) -> Arc<RwLock<HeatBatteryPcm>> {
         let n_layers = overrides.n_layers.unwrap_or(8);
-        let hb_time_step = overrides.hb_time_step.unwrap_or(20.);
+        let hb_time_step = 20.;
+        let energy_supply_end_usr_name = overrides
+            .energy_supply_end_usr_name
+            .unwrap_or_else(|| "WaterHeating".to_string());
         let simulation_time = simulation_time();
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
         ));
         let external_conditions = external_conditions(simulation_time);
         let energy_supply_connection: EnergySupplyConnection =
-            EnergySupply::connection(energy_supply.clone(), "WaterHeating").unwrap();
+            EnergySupply::connection(energy_supply.clone(), &energy_supply_end_usr_name).unwrap();
+        let heat_battery_details =
+            create_heat_battery_details(overrides.simultaneuous_charging_and_discharging);
 
         let heat_battery = Arc::new(RwLock::new(
             HeatBatteryPcm::new(
-                &heat_battery_details(),
+                &heat_battery_details,
                 energy_supply.into(),
                 energy_supply_connection,
                 simulation_time.iter(),
@@ -3626,10 +3633,10 @@ mod tests {
                 None,
                 Some(n_layers),
                 Some(hb_time_step),
-                overrides.initial_inlet_temp,
-                overrides.estimated_outlet_temp,
                 None,
-                overrides.primary_pipework,
+                None,
+                None,
+                None,
             )
             .unwrap(),
         ));
@@ -6052,6 +6059,103 @@ mod tests {
         assert_eq!(service_names, vec!["hw_service", "sh_service"]);
         assert_relative_eq!(delivered["hw_service"], 6.0, epsilon = 1e-7);
         assert_relative_eq!(delivered["sh_service"], 4.0, epsilon = 1e-7);
+    }
+
+    /*+    def test_energy_output_max_simultaneous_charging(self):
+    +        """With simultaneous charging, the ceiling includes charge replenished while discharging.
+    +
+    +        A battery that charges while discharging is held warmer over the timestep, so
+    +        energy_output_max draws on the charging power in addition to stored energy.
+    +        """
+    +        heat_dict = dict(self.heat_dict)
+    +        heat_dict["simultaneous_charging_and_discharging"] = True
+    +        sched = cast(
+    +            list[bool],
+    +            expand_schedule(
+    +                sched_type=bool,
+    +                sched_dict={"main": [{"value": True, "repeat": 2}]},
+    +                sched_main="main",
+    +                nullable=True,
+    +            ),
+    +        )
+    +        ctrl = ChargeControl(
+    +            logic_type=ControlLogicType.MANUAL,
+    +            charge_time_control=sched,
+    +            simulation_time=self.simtime,
+    +            start_day=0,
+    +            time_series_step=1,
+    +            charge_level=[1.5, 1.6],
+    +            extcond=self.extcond,
+    +            external_sensor=self.external_sensor,
+    +        )
+    +        heatbattery = HeatBatteryPCM(
+    +            heat_battery_dict=heat_dict,
+    +            charge_control=ctrl,
+    +            energy_supply=self.energysupply,
+    +            energy_supply_conn=self.energysupply.connection(end_user_name="sim_charge"),
+    +            simulation_time=self.simtime,
+    +            ext_cond=self.extcond,
+    +            n_layers=8,
+    +            hb_time_step=20,
+    +            temp_min_useful=30.0,
+    +            temp_internal_air_callback=lambda: 20.0,
+    +        )
+    +        # Charging during discharge raises the ceiling above the stored-energy-only case
+    +        self.assertAlmostEqual(
+    +            heatbattery._HeatBatteryPCM__energy_output_max(  # type: ignore[reportAttributeAccessIssue]
+    +                temp_output=40.0, temp_return_feed=30.0
+    +            ),
+    +            17.717635418087347,
+    +        ) */
+
+    #[rstest]
+    fn test_energy_output_max_simultaneous_charging(
+        external_sensor: ExternalSensor,
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        // With simultaneous charging, the ceiling includes charge replenished while discharging.
+        //
+        // A battery that charges while discharging is held warmer over the timestep, so
+        // energy_output_max draws on the charging power in addition to stored energy.
+        let battery_control: Arc<ChargeControl> = ChargeControl::new(
+            ControlLogicType::Manual,
+            ScheduleOrControl::Schedule(vec![true, true]),
+            &simulation_time_iterator,
+            0,
+            1.,
+            [1.5, 1.6].into_iter().map(Into::into).collect(),
+            None,
+            None,
+            Some(external_conditions.into()),
+            Some(external_sensor),
+            None,
+        )
+        .unwrap()
+        .into();
+        let heat_battery_lock = create_default_heat_battery_with_overides(
+            battery_control,
+            None,
+            HeatBatteryPcmTestOverrides {
+                temp_min_useful: Some(30.),
+                energy_supply_end_usr_name: Some("sim_charge".to_string()),
+                simultaneuous_charging_and_discharging: Some(true),
+                ..Default::default()
+            },
+        );
+        let heat_battery = heat_battery_lock.read();
+        assert_relative_eq!(
+            heat_battery
+                .energy_output_max(
+                    40.0,
+                    30.0,
+                    None,
+                    simulation_time_iterator.current_iteration()
+                )
+                .unwrap(),
+            17.717635418087347,
+            epsilon = 1e-7
+        );
     }
 
     // skipping python's test_demand_hot_water_zero_volume_continue due to mocking
