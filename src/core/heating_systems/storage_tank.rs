@@ -1361,13 +1361,6 @@ impl StorageTank {
         &self.cold_feed
     }
 
-    /// This is only used to calculate the equivalent volume of water for IES showers
-    /// in order to get the energy content for the internal gains.
-    /// Therefore the actual value used is not critical.
-    /// It has been suggested/considered the use of the top layer of the storage tank
-    /// but this could be similar to the cold feed temperature after big draw-offs
-    /// To avoid any issues in those situations we use the setpoing temperature of the
-    /// tank.
     pub(crate) fn get_temp_hot_water(
         &self,
         volume_req: f64,
@@ -1600,7 +1593,6 @@ impl StorageTank {
 
         Ok(())
     }
-    // NB. there is a testoutput() function here in the Python to output to a test file - will not reimplement unless seen as necessary
 
     /// draw off hot water layers until required volume is provided.
     ///
@@ -1642,13 +1634,12 @@ impl StorageTank {
         for (layer_index, &layer_temp) in self.temp_n.read().iter().enumerate().rev() {
             let layer_vol = remaining_vols[layer_index];
 
-            //  This cannot happen in the preheated tank. Check!
-            //  Skip this layer if its remaining volume is already zero
+            // This cannot happen in the preheated tank. Check!
+            // Skip this layer if its remaining volume is already zero
             // if remaining_vols[layer_index] <= 0.0:
             //     continue
 
             // Volume of water required at this layer
-
             let required_vol;
             if layer_vol < remaining_demanded_volume
                 || relative_eq!(
@@ -1742,6 +1733,7 @@ impl StorageTank {
             self.total_volume_drawoff.load(Ordering::SeqCst),
         ))
     }
+
     fn additional_energy_input(
         &self,
         heat_source: &HeatSource,
