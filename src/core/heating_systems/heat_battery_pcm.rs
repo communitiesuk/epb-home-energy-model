@@ -6359,6 +6359,294 @@ mod tests {
 
     // skipping python's test_demand_hot_water_zero_volume_continue due to mocking
 
+    /// Tests for the energy-based state-of-charge calculation on HeatBatteryPCM.
+    ///
+    /// Uses a battery with 8 layers, phase transition 57–59°C, max temp 80°C,
+    /// and temp_min_useful=10°C. Per-layer heat capacities (total / 8):
+    ///     below:  305.2 / 8 = 38.15  kJ/K
+    ///     during: 12317 / 8 = 1539.625 kJ/K
+    ///     above:  381.5 / 8 = 47.6875 kJ/K
+    mod test_heat_battery_pcm_state_of_charge {
+        use super::*;
+
+        #[fixture]
+        fn heat_battery(battery_control_off: Arc<ChargeControl>) -> Arc<RwLock<HeatBatteryPcm>> {
+            create_default_heat_battery_with_overides(
+                battery_control_off,
+                None,
+                HeatBatteryPcmTestOverrides {
+                    n_layers: Some(8),
+                    temp_min_useful: Some(10.0),
+                    energy_supply_end_usr_name: Some("SOCTest".to_string()),
+                    ..Default::default()
+                },
+            )
+        }
+
+        const CAP_BELOW: f64 = 38.15;
+        const CAP_DURING: f64 = 1539.625;
+        const CAP_ABOVE: f64 = 47.6875;
+        const TEMP_MIN_USEFUL: f64 = 10.0;
+
+        fn calculate_layer_energy_stored(temp_layer: f64, temp_ref: f64) -> f64 {
+            HeatBatteryPcm::calculate_layer_energy_stored(
+                temp_layer, temp_ref, 57.0, 59.0, CAP_BELOW, CAP_DURING, CAP_ABOVE,
+            )
+        }
+
+        #[rstest]
+        fn test_soc_all_layers_at_temp_min_useful(heat_battery: Arc<RwLock<HeatBatteryPcm>>) {
+            // All layers at temp_min_useful should give SOC = 0.0.
+            let zone_temps = vec![TEMP_MIN_USEFUL; 8];
+            assert_relative_eq!(
+                heat_battery
+                    .read()
+                    .calc_state_of_charge(zone_temps)
+                    .unwrap(),
+                0.0,
+                epsilon = 1e-7
+            );
+        }
+
+        #[rstest]
+        fn test_soc_all_layers_at_max_temp(heat_battery: Arc<RwLock<HeatBatteryPcm>>) {
+            // All layers at temp_charge_max should give SOC = 1.0.
+            let zone_temps = vec![80.0; 8];
+            assert_relative_eq!(
+                heat_battery
+                    .read()
+                    .calc_state_of_charge(zone_temps)
+                    .unwrap(),
+                1.0,
+                epsilon = 1e-7
+            );
+        }
+
+        #[rstest]
+        fn test_soc_layers_below_phase_transition(heat_battery: Arc<RwLock<HeatBatteryPcm>>) {
+            // All layers in the sensible-below range (between temp_min_useful and 57°C).
+            //
+            // At 40°C, each layer stores: 38.15 * (40 - 10) = 1144.5 kJ
+            // Max per layer at 80°C:
+            //     below:  38.15 * (57 - 10)  = 1793.05
+            //     during: 1539.625 * (59 - 57) = 3079.25
+            //     above:  47.6875 * (80 - 59) = 1001.4375
+            //     total:  5873.7375
+            // SOC = 1144.5 / 5873.7375
+            let zone_temps = vec![40.0; 8];
+            let expected_soc =
+                (CAP_BELOW * 30.0) / (CAP_BELOW * 47.0 + CAP_DURING * 2.0 + CAP_ABOVE * 21.0);
+            assert_relative_eq!(
+                heat_battery
+                    .read()
+                    .calc_state_of_charge(zone_temps)
+                    .unwrap(),
+                expected_soc,
+                epsilon = 1e-7
+            );
+        }
+
+        #[rstest]
+        fn test_soc_layers_mid_transition(heat_battery: Arc<RwLock<HeatBatteryPcm>>) {
+            // All layers in phase-transition range (58°C, between 57 and 59).
+            //
+            // At 58°C, each layer stores:
+            //     below:  38.15 * (57 - 10) = 1793.05
+            //     during: 1539.625 * (58 - 57) = 1539.625
+            //     total:  3332.675
+            let zone_temps = vec![58.0; 8];
+            let energy_at_58 = CAP_BELOW * 47.0 + CAP_DURING;
+            let energy_at_max = CAP_BELOW * 47.0 + CAP_DURING * 2.0 + CAP_ABOVE * 21.0;
+            let expected_soc = energy_at_58 / energy_at_max;
+            assert_relative_eq!(
+                heat_battery
+                    .read()
+                    .calc_state_of_charge(zone_temps)
+                    .unwrap(),
+                expected_soc,
+                epsilon = 1e-7
+            );
+        }
+
+        #[rstest]
+        fn test_soc_layers_above_transition(heat_battery: Arc<RwLock<HeatBatteryPcm>>) {
+            // All layers above phase transition (70°C).
+            //
+            // At 70°C, each layer stores:
+            //     below:  38.15 * (57 - 10)  = 1793.05
+            //     during: 1539.625 * (59 - 57) = 3079.25
+            //     above:  47.6875 * (70 - 59) = 524.5625
+            //     total:  5396.8625
+            let zone_temps = vec![70.0; 8];
+            let energy_at_70 = CAP_BELOW * 47.0 + CAP_DURING * 2.0 + CAP_ABOVE * 11.0;
+            let energy_at_max = CAP_BELOW * 47.0 + CAP_DURING * 2.0 + CAP_ABOVE * 21.0;
+            let expected_soc = energy_at_70 / energy_at_max;
+            assert_relative_eq!(
+                heat_battery
+                    .read()
+                    .calc_state_of_charge(zone_temps)
+                    .unwrap(),
+                expected_soc,
+                epsilon = 1e-7
+            );
+        }
+
+        #[rstest]
+        fn test_soc_mixed_layer_temperatures(heat_battery: Arc<RwLock<HeatBatteryPcm>>) {
+            // Mixed layer temperatures: some below, during, and above transition.
+            let zone_temps = vec![10.0, 30.0, 50.0, 57.5, 58.0, 59.0, 70.0, 80.0];
+
+            // Calculate energy for each layer individually.
+            let e0 = 0.0;
+            let e1 = CAP_BELOW * (30.0 - TEMP_MIN_USEFUL);
+            let e2 = CAP_BELOW * (50.0 - TEMP_MIN_USEFUL);
+            let e3 = CAP_BELOW * (57.0 - TEMP_MIN_USEFUL) + CAP_DURING * (57.5 - 57.0);
+            let e4 = CAP_BELOW * (57.0 - TEMP_MIN_USEFUL) + CAP_DURING * (58.0 - 57.0);
+            let e5 = CAP_BELOW * (57.0 - TEMP_MIN_USEFUL) + CAP_DURING * (59.0 - 57.0);
+            let e6 = CAP_BELOW * (57.0 - TEMP_MIN_USEFUL)
+                + CAP_DURING * (59.0 - 57.0)
+                + CAP_ABOVE * (70.0 - 59.0);
+            let e7 = CAP_BELOW * (57.0 - TEMP_MIN_USEFUL)
+                + CAP_DURING * (59.0 - 57.0)
+                + CAP_ABOVE * (80.0 - 59.0);
+            let total_stored = e0 + e1 + e2 + e3 + e4 + e5 + e6 + e7;
+            let max_stored = 8.0 * e7;
+            let expected_soc = total_stored / max_stored;
+
+            assert_relative_eq!(
+                heat_battery
+                    .read()
+                    .calc_state_of_charge(zone_temps)
+                    .unwrap(),
+                expected_soc,
+                epsilon = 1e-7
+            );
+        }
+
+        #[rstest]
+        fn test_soc_layers_below_temp_min_useful(heat_battery: Arc<RwLock<HeatBatteryPcm>>) {
+            // Layers below temp_min_useful contribute 0 energy.
+            let zone_temps = vec![5.0, 5.0, 5.0, 5.0, 80.0, 80.0, 80.0, 80.0];
+            // Only the 4 layers at 80°C contribute.
+            let energy_at_max = CAP_BELOW * 47.0 + CAP_DURING * 2.0 + CAP_ABOVE * 21.0;
+            let expected_soc = (4.0 * energy_at_max) / (8.0 * energy_at_max);
+
+            assert_relative_eq!(
+                heat_battery
+                    .read()
+                    .calc_state_of_charge(zone_temps)
+                    .unwrap(),
+                expected_soc,
+                epsilon = 1e-7
+            );
+            assert_relative_eq!(expected_soc, 0.5, epsilon = 1e-7);
+        }
+
+        #[rstest]
+        fn test_calculate_layer_energy_stored_boundary_values() {
+            // Layer at reference temperature -> 0 energy.
+            assert_relative_eq!(
+                calculate_layer_energy_stored(TEMP_MIN_USEFUL, TEMP_MIN_USEFUL),
+                0.0,
+                epsilon = 1e-7
+            );
+
+            // Layer below reference temperature -> 0 energy.
+            assert_relative_eq!(
+                calculate_layer_energy_stored(5.0, TEMP_MIN_USEFUL),
+                0.0,
+                epsilon = 1e-7
+            );
+
+            // Layer at lower phase transition boundary (57°C).
+            let expected = CAP_BELOW * (57.0 - TEMP_MIN_USEFUL);
+            assert_relative_eq!(
+                calculate_layer_energy_stored(57.0, TEMP_MIN_USEFUL),
+                expected,
+                epsilon = 1e-7
+            );
+
+            // Layer at upper phase transition boundary (59°C).
+            let expected = CAP_BELOW * (57.0 - TEMP_MIN_USEFUL) + CAP_DURING * (59.0 - 57.0);
+            assert_relative_eq!(
+                calculate_layer_energy_stored(59.0, TEMP_MIN_USEFUL),
+                expected,
+                epsilon = 1e-7
+            );
+
+            // Layer at maximum temperature (80°C).
+            let expected = CAP_BELOW * (57.0 - TEMP_MIN_USEFUL)
+                + CAP_DURING * (59.0 - 57.0)
+                + CAP_ABOVE * (80.0 - 59.0);
+            assert_relative_eq!(
+                calculate_layer_energy_stored(80.0, TEMP_MIN_USEFUL),
+                expected,
+                epsilon = 1e-7
+            );
+        }
+
+        #[rstest]
+        fn test_layer_energy_both_above_phase_transition() {
+            // Both temp_ref and temp_layer are above phase transition (temp_upper=59).
+            let expected = CAP_ABOVE * (70.0 - 60.0);
+            assert_relative_eq!(
+                calculate_layer_energy_stored(70.0, 60.0),
+                expected,
+                epsilon = 1e-7
+            );
+        }
+
+        #[rstest]
+        fn test_layer_energy_both_in_transition_band() {
+            // Both temp_ref and temp_layer are within the phase transition band.
+            let expected = CAP_DURING * (58.5 - 57.5);
+            assert_relative_eq!(
+                calculate_layer_energy_stored(58.5, 57.5),
+                expected,
+                epsilon = 1e-7
+            );
+        }
+
+        #[rstest]
+        fn test_layer_energy_ref_in_transition_layer_above() {
+            // temp_ref is in transition, temp_layer is above phase transition.
+            let expected = CAP_DURING * (59.0 - 57.5) + CAP_ABOVE * (70.0 - 59.0);
+            assert_relative_eq!(
+                calculate_layer_energy_stored(70.0, 57.5),
+                expected,
+                epsilon = 1e-7
+            );
+        }
+
+        #[rstest]
+        fn test_soc_exceeding_one_raises_error(heat_battery: Arc<RwLock<HeatBatteryPcm>>) {
+            // Zone temperatures significantly above temp_charge_max should raise an error.
+            let zone_temps = vec![90.0; 8];
+            let error = heat_battery
+                .read()
+                .calc_state_of_charge(zone_temps)
+                .unwrap_err();
+            assert!(error.to_string().contains("State of charge exceeds 1.0"));
+        }
+
+        #[rstest]
+        fn test_soc_float_precision_overshoot_clamped(heat_battery: Arc<RwLock<HeatBatteryPcm>>) {
+            // A marginal float overshoot within the 1e-6 tolerance should clamp to 1.0.
+            let zone_temps = vec![80.0 + 1e-9; 8];
+            let soc = heat_battery
+                .read()
+                .calc_state_of_charge(zone_temps)
+                .unwrap();
+            assert_relative_eq!(soc, 1.0, epsilon = 1e-7);
+        }
+
+        #[rstest]
+        fn test_temp_to_soc_exceeding_one_raises_error(heat_battery: Arc<RwLock<HeatBatteryPcm>>) {
+            // A target temperature above temp_charge_max should raise an error.
+            let error = heat_battery.read().temp_to_soc(90.0).unwrap_err();
+            assert!(error.to_string().contains("State of charge exceeds 1.0"));
+        }
+    }
     /// Tests for validate_no_schedule_overlap (Deviation 3 fix).
     /// Uses real RangeTimeControl objects to verify that overlapping active
     /// schedules are rejected and non-overlapping schedules are accepted.
