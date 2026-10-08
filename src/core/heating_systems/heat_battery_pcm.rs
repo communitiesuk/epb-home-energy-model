@@ -6886,30 +6886,6 @@ mod tests {
 
         use super::*;
 
-        #[derive(Debug, Clone)]
-        struct MockWaterSupply;
-
-        //mock all as they don't matter
-        impl WaterSupplyBehaviour for MockWaterSupply {
-            fn draw_off_water(
-                &self,
-                _: f64,
-                _: SimulationTimeIteration,
-            ) -> anyhow::Result<Vec<(f64, f64)>> {
-                Ok(vec![])
-            }
-            fn get_temp_cold_water(
-                &self,
-                _: f64,
-                _: SimulationTimeIteration,
-            ) -> anyhow::Result<Vec<(f64, f64)>> {
-                Ok(vec![])
-            }
-            fn ultimate_cold_water_source(&self) -> Self {
-                Self {}
-            }
-        }
-
         #[fixture]
         fn simtime() -> SimulationTime {
             SimulationTime::new(0., 4., 1.)
