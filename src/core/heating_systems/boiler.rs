@@ -2820,6 +2820,54 @@ mod tests {
             );
         }
 
+        #[rstest]
+        fn test_boiler_combi_loss_storage(mut boiler_service: BoilerServiceWaterCombi) {
+            boiler_service.storage_loss_factor_1 = Some(2.1);
+            boiler_service.storage_loss_factor_2 = Some(2.4);
+            boiler_service.combi_boiler_config = CombiBoilerConfig::KeepHot {
+                keep_hot_test_hours: Some(16.),
+                keep_hot_fuel: Default::default(),
+                keep_hot_control: Default::default(),
+                keep_hot_on: Default::default(),
+            };
+
+            // Tested to M and S
+            boiler_service.separate_dhw_tests = BoilerHotWaterTest::MS;
+            assert_eq!(
+                boiler_service
+                    .boiler_combi_loss_storage(boiler_service.simulation_timestep)
+                    .unwrap(),
+                0.15
+            );
+
+            // Tested to M and L
+            boiler_service.separate_dhw_tests = BoilerHotWaterTest::ML;
+            assert_eq!(
+                boiler_service
+                    .boiler_combi_loss_storage(boiler_service.simulation_timestep)
+                    .unwrap(),
+                0.15
+            );
+
+            // M only
+            boiler_service.separate_dhw_tests = BoilerHotWaterTest::MOnly;
+            assert_eq!(
+                boiler_service
+                    .boiler_combi_loss_storage(boiler_service.simulation_timestep)
+                    .unwrap(),
+                0.13125
+            );
+
+            // No additional tests
+            boiler_service.separate_dhw_tests = BoilerHotWaterTest::NoAdditionalTests;
+            assert_eq!(
+                boiler_service
+                    .boiler_combi_loss_storage(boiler_service.simulation_timestep)
+                    .unwrap(),
+                0.13125
+            );
+        }
+
         // Skipping test_boiler_combi_loss_invalid_separate_dhw_tests as not possible to pass invalid enum variant in Rust
     }
 

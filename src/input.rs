@@ -2147,9 +2147,10 @@ pub enum CombiBoilerType {
     Storage,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str, Default)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum CombiKeepHotFuel {
+    #[default]
     MainBoilerFuel,
     Electricity,
     Mixed,
