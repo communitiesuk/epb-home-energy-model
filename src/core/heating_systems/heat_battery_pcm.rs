@@ -5073,6 +5073,49 @@ mod tests {
     }
 
     #[rstest]
+    fn test_heat_battery_charge_battery_hydronic_edge_cases(
+        battery_control_off: Arc<ChargeControl>,
+    ) {
+        // Test hydronic charging with boundary temperature conditions.
+        let heat_battery = create_heat_battery(battery_control_off, None);
+
+        // Very high inlet temperature -> significant charging
+        let (energy, zones) = heat_battery
+            .read()
+            .charge_battery_hydronic(
+                95.0,
+                1.0,
+                10.0,
+                1.0,
+                f64::INFINITY,
+                174.33952,
+                -931.565,
+                0.035,
+                6.5 / 1000.0,
+            )
+            .unwrap();
+        assert_relative_eq!(energy, 1.5619144113112322);
+        assert_eq!(zones.len(), 8);
+
+        // Inlet at max storage temp - no energy transfer
+        let (energy, _) = heat_battery
+            .read()
+            .charge_battery_hydronic(
+                80.0,
+                1.0,
+                10.0,
+                1.0,
+                f64::INFINITY,
+                174.33952,
+                -931.565,
+                0.035,
+                6.5 / 1000.0,
+            )
+            .unwrap();
+        assert_relative_eq!(energy, 0.0);
+    }
+
+    #[rstest]
     fn test_get_temp_hot_water(
         battery_control_off: Arc<ChargeControl>,
         simulation_time_iteration: SimulationTimeIteration,
@@ -5854,25 +5897,26 @@ mod tests {
         battery_control_off: Arc<ChargeControl>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
+        // Test energy_output_max with boundary temperature conditions
         let simtime = simulation_time_iterator.current_iteration();
         let heat_battery = create_heat_battery(battery_control_off, None);
 
         // Test with very low output temperature
         let result = heat_battery
             .read()
-            .energy_output_max(10., 10., Some(0.), simtime)
+            .energy_output_max(10., 5., Some(0.), simtime)
             .unwrap();
 
         // The method returns energy based on zone temps, not necessarily 0
-        assert!(result >= 0.);
+        assert_relative_eq!(result, 12.689231024029406, epsilon = 1e-7);
 
         //Test with temperature at threshold
         let result = heat_battery
             .read()
-            .energy_output_max(45., 45., Some(0.), simtime)
+            .energy_output_max(45., 40., Some(0.), simtime)
             .unwrap();
 
-        assert!(result >= 0.);
+        assert_relative_eq!(result, 7.390489238946976, epsilon = 1e-7);
     }
 
     // skipping python's test_heat_battery_service_cold_water_source_not_set as cold feed not optional
