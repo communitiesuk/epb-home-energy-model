@@ -1901,7 +1901,7 @@ mod tests {
 
     mod test_boiler_service_water_combi {
         use crate::core::common::WaterSupply;
-        use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+        use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
         use crate::core::heating_systems::boiler::{
             Boiler, BoilerForBoilerService, BoilerServiceWaterCombi, CombiBoilerConfig,
@@ -1986,6 +1986,57 @@ mod tests {
             boiler.create_service_connection("boiler_test").unwrap();
 
             boiler
+        }
+
+        #[fixture]
+        pub fn boiler_and_energy_supply_aux(
+            external_conditions: ExternalConditions,
+            simulation_time: SimulationTime,
+        ) -> (Boiler, Arc<RwLock<EnergySupply>>) {
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
+                    .build(),
+            ));
+            let energy_supply_aux = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
+            ));
+
+            let boiler_data = HeatSourceWetDetails::Boiler {
+                rated_power: 16.85,
+                energy_supply: "mains gas".into(),
+                energy_supply_aux: "mains elec".into(),
+                efficiency_full_load: 0.868,
+                efficiency_part_load: 0.952,
+                boiler_location: HeatSourceLocation::Internal,
+                modulation_load: 1.,
+                electricity_circ_pump: 0.0600,
+                electricity_part_load: 0.0131,
+                electricity_full_load: 0.0388,
+                electricity_standby: 0., // setting this to zero so the energy_supply_connection_aux
+                // it doesn't add to the results_by_end_user
+                boiler_type: BoilerType::default(),
+                pilot_light: None,
+            };
+
+            let mut boiler = Boiler::new(
+                boiler_data,
+                energy_supply,
+                energy_supply_aux.clone(),
+                Arc::new(external_conditions),
+                simulation_time.step,
+                "Boiler_auxiliary",
+            )
+            .unwrap();
+
+            boiler.energy_supply_conn_keephot = Some(boiler.energy_supply_connection_aux.clone());
+
+            boiler.create_service_connection("boiler_test").unwrap();
+
+            (boiler, energy_supply_aux)
         }
 
         #[fixture]
@@ -2473,6 +2524,76 @@ mod tests {
 
             // Verify the boiler processed the demand correctly
             assert_eq!(energy_demand, 2.1346333333333334)
+        }
+
+        #[rstest]
+        /// Test combi loss calculation when keep_hot_fuel is Electricity
+        fn test_boiler_combi_loss_with_electricity_keep_hot_fuel(
+            boiler_and_energy_supply_aux: (Boiler, Arc<RwLock<EnergySupply>>),
+            cold_water_source: ColdWaterSource,
+            simulation_time: SimulationTime,
+        ) {
+            // boiler fixture with an energy_supply_conn_keephot
+            let (mut boiler, energy_supply_aux) = boiler_and_energy_supply_aux;
+            let boiler_data = HotWaterSourceDetails::CombiBoiler {
+                combi_type_specific_details: CombiTypeSpecificDetails::KeepHot {
+                    combi_keep_hot_fuel: CombiKeepHotFuel::Electricity,
+                    keep_hot_test_hours: 16.,
+                    control_keep_hot: Default::default(),
+                },
+                separate_dhw_tests: BoilerHotWaterTest::MS,
+                rejected_energy_1: Some(0.0004),
+                storage_loss_factor_1: Some(0.98328),
+                storage_loss_factor_2: Some(0.91574),
+                rejected_factor_3: Some(0.),
+                daily_hw_usage: 132.5802,
+                setpoint_temp: Default::default(),
+                cold_water_source: Default::default(),
+                heat_source_wet: Default::default(),
+            };
+
+            // Create the service connection first
+            boiler
+                .create_service_connection("boiler_test_electricity")
+                .unwrap();
+
+            let boiler = Arc::new(RwLock::new(boiler));
+
+            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+                BoilerForBoilerService::Boiler(boiler.clone()),
+                boiler_data,
+                "boiler_test_electricity".into(),
+                60.,
+                WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                None,
+                simulation_time.step,
+            )
+            .unwrap();
+
+            // Create usage events that will cause the boiler to fire
+            let usage_events = vec![WaterEventResult {
+                event_result_type: WaterEventResultType::Other,
+                temperature_warm: 60.,
+                volume_warm: 30.,
+                volume_hot: 30.,
+                event_duration: 5.,
+            }];
+
+            let simtime_iteration = simulation_time.iter().current_iteration();
+            // This should trigger the Mixed keep-hot fuel path with boiler firing
+            boiler_service_water
+                .demand_hot_water(usage_events, simtime_iteration)
+                .unwrap();
+            boiler.write().timestep_end(simtime_iteration).unwrap();
+
+            // Python verifies that energy_supply_conn_keephot was called for keep hot losses by
+            // using a Mock. In Rust we cannot use that approach so we're instead asserting against
+            // the results stored on the energy supply
+            let keep_hot_demand = energy_supply_aux
+                .read()
+                .results_by_end_user_single_step(simtime_iteration.index)
+                ["Boiler_auxiliary: Boiler_auxiliary"];
+            assert_relative_eq!(keep_hot_demand, 0.05723375);
         }
 
         #[rstest]
