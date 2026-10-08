@@ -5976,6 +5976,8 @@ mod tests {
         external_sensor: ExternalSensor,
         simulation_time: SimulationTime,
     ) {
+        // Two services share the battery, as hot water and space heating do in production; the
+        // accessor must keep their delivered energy separate for the per-service apportionment.
         let simtime_iterator = simulation_time.iter();
         let control = ChargeControl::new(
             ControlLogicType::Manual,
@@ -6000,12 +6002,13 @@ mod tests {
                 ..Default::default()
             },
         );
+        // No timestep has ended yet, so nothing has been accumulated.
 
         assert!(heat_battery.read().energy_delivered_by_service().is_empty());
 
         HeatBatteryPcm::create_service_connection(heat_battery.clone(), "hw_service").unwrap();
         HeatBatteryPcm::create_service_connection(heat_battery.clone(), "sh_service").unwrap();
-
+        // Demand 3.0 kWh for hot water and 2.0 kWh for space heating in each of two timesteps.
         for simtime in simulation_time.iter() {
             heat_battery
                 .read()
@@ -6043,6 +6046,9 @@ mod tests {
         let delivered = heat_battery.read().energy_delivered_by_service();
         let mut service_names: Vec<_> = delivered.keys().map(|name| name.as_str()).collect();
         service_names.sort_unstable();
+
+        // Both demands are fully met each timestep, so the running totals are the per-service
+        // demand summed over the two timesteps: 3.0 x 2 and 2.0 x 2, kept separate by service.
         assert_eq!(service_names, vec!["hw_service", "sh_service"]);
         assert_relative_eq!(delivered["hw_service"], 6.0, epsilon = 1e-7);
         assert_relative_eq!(delivered["sh_service"], 4.0, epsilon = 1e-7);
