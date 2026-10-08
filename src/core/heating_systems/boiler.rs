@@ -393,7 +393,8 @@ impl BoilerServiceWaterCombi {
             keep_hot_control,
             keep_hot_on,
             ..
-        } = &mut self.combi_boiler_config {
+        } = &mut self.combi_boiler_config
+        {
             if let Some(control) = keep_hot_control {
                 *keep_hot_on = control.is_on(&simtime);
             } else {
@@ -2578,6 +2579,69 @@ mod tests {
 
             let simtime_iteration = simulation_time.iter().current_iteration();
             // This should trigger the Mixed keep-hot fuel path with boiler firing
+            boiler_service_water
+                .demand_hot_water(usage_events, simtime_iteration)
+                .unwrap();
+            boiler.write().timestep_end(simtime_iteration).unwrap();
+
+            // Python verifies that energy_supply_conn_keephot was called for keep hot losses by
+            // using a Mock. In Rust we cannot use that approach so we're instead asserting against
+            // the results stored on the energy supply
+            let keep_hot_demand = energy_supply_aux
+                .read()
+                .results_by_end_user_single_step(simtime_iteration.index)
+                ["Boiler_auxiliary: Boiler_auxiliary"];
+            assert_relative_eq!(keep_hot_demand, 0.05723375);
+        }
+
+        #[rstest]
+        // Test combi loss when keep_hot_fuel is Mixed and boiler is not firing
+        fn test_boiler_combi_loss_with_mixed_keep_hot_fuel_not_firing(
+            boiler_and_energy_supply_aux: (Boiler, Arc<RwLock<EnergySupply>>),
+            cold_water_source: ColdWaterSource,
+            simulation_time: SimulationTime,
+        ) {
+            // boiler fixture with an energy_supply_conn_keephot
+            let (mut boiler, energy_supply_aux) = boiler_and_energy_supply_aux;
+            let boiler_data = HotWaterSourceDetails::CombiBoiler {
+                combi_type_specific_details: CombiTypeSpecificDetails::KeepHot {
+                    combi_keep_hot_fuel: CombiKeepHotFuel::Mixed,
+                    keep_hot_test_hours: 16.,
+                    control_keep_hot: Default::default(),
+                },
+                separate_dhw_tests: BoilerHotWaterTest::MS,
+                rejected_energy_1: Some(0.0004),
+                storage_loss_factor_2: Some(0.91574),
+                rejected_factor_3: Some(0.),
+                daily_hw_usage: 132.5802,
+                storage_loss_factor_1: Default::default(),
+                setpoint_temp: Default::default(),
+                cold_water_source: Default::default(),
+                heat_source_wet: Default::default(),
+            };
+
+            // Create the service connection first
+            boiler
+                .create_service_connection("boiler_test_mixed_not_firing")
+                .unwrap();
+
+            let boiler = Arc::new(RwLock::new(boiler));
+
+            let mut boiler_service_water = BoilerServiceWaterCombi::new(
+                BoilerForBoilerService::Boiler(boiler.clone()),
+                boiler_data,
+                "boiler_test_mixed_not_firing".into(),
+                60.,
+                WaterSupply::ColdWaterSource(Arc::new(cold_water_source)),
+                None,
+                simulation_time.step,
+            )
+            .unwrap();
+
+            // Create empty usage events (no water demand, only keep-hot loss)
+            let usage_events = vec![];
+
+            let simtime_iteration = simulation_time.iter().current_iteration();
             boiler_service_water
                 .demand_hot_water(usage_events, simtime_iteration)
                 .unwrap();
