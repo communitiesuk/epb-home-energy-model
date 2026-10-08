@@ -5932,20 +5932,23 @@ mod tests {
     }
 
     #[rstest]
-    fn test_heat_battery_all_zones_below_threshold(
+    fn test_energy_output_max_not_gated_by_unreachable_flow_temp(
         battery_control_off: Arc<ChargeControl>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let simtime = simulation_time_iterator.current_iteration();
-        // Request high output temperature that no zone can provide
+        // An unreachable flow temperature does not gate the deliverable maximum.
+        // Even when no zone can supply 80 °C, the battery still transfers heat to the 40 °C
+        // return feed, so energy_output_max reports that full positive delivery rather than
+        // zero, matching demand_energy which likewise does not gate on the flow temperature.
         let heat_battery = create_heat_battery(battery_control_off, None);
 
         let result = heat_battery
             .read()
-            .energy_output_max(80., 80., Some(0.), simtime)
+            .energy_output_max(80., 40., Some(0.), simtime)
             .unwrap();
 
-        assert_relative_eq!(result, 0., epsilon = 1e-7);
+        assert_relative_eq!(result, 7.390489238946976, epsilon = 1e-7);
     }
 
     /// Test DHW service with cold water temperature that varies with volume demanded
