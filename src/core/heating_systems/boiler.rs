@@ -2335,6 +2335,7 @@ mod tests {
         }
 
         #[fixture]
+        #[allow(clippy::excessive_precision)]
         fn usage_events_all_timesteps() -> Vec<Vec<WaterEventResult>> {
             vec![
                 vec![

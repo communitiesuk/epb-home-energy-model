@@ -3622,7 +3622,7 @@ mod tests {
         let heat_battery = Arc::new(RwLock::new(
             HeatBatteryPcm::new(
                 &heat_battery_details,
-                energy_supply.into(),
+                energy_supply,
                 energy_supply_connection,
                 simulation_time.iter(),
                 external_conditions.into(),
@@ -3710,11 +3710,11 @@ mod tests {
         // The split must actually change the answer for n_layers > 1, otherwise
         // the assertion below would hold even if the division were removed.
         assert_relative_ne!(outlet_divided, outlet_undivided, epsilon = 1e-3);
-        let mut zone_temp_dist = vec![pcm_temp_c; n_layers];
+        let zone_temp_dist = vec![pcm_temp_c; n_layers];
         let (_, zone_index, zone_temp_c_start, outlet_temp_c) = heat_battery.get_zone_properties(
             0,
             &HeatBatteryPcmOperationMode::Normal,
-            &mut zone_temp_dist,
+            &zone_temp_dist,
             inlet_temp_c,
             inlet_temp_c,
             0.,
@@ -3813,7 +3813,7 @@ mod tests {
         let hb = hb_lock.read();
         let delivered = hb
             .demand_energy(
-                "hot_inlet_service".into(),
+                "hot_inlet_service",
                 HeatingServiceType::DomesticHotWaterRegular,
                 5.0,
                 Some(90.0),
@@ -5198,8 +5198,8 @@ mod tests {
 
         Arc::new(RwLock::new(
             HeatBatteryPcm::new(
-                &heat_battery_details,
-                energy_supply.into(),
+                heat_battery_details,
+                energy_supply,
                 energy_supply_connection,
                 simulation_time_iterator,
                 external_conditions.into(),
@@ -6332,7 +6332,7 @@ mod tests {
         let heat_data = create_heat_battery_details(None, Some(TEMP_AMBIENT_RATED_LOSSES_C));
         let heat_battery = HeatBatteryPcm::new(
             &heat_data,
-            energy_supply.clone().into(),
+            energy_supply.clone(),
             energy_supply_connection,
             simulation_time_iterator,
             external_conditions.into(),
