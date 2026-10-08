@@ -1275,13 +1275,24 @@ impl StorageTank {
         thermostat_layer: usize,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
-        let (setpntmin, _) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
-        if setpntmin.is_some_and(|setpntmin| {
+        let (setpntmin, setpntmax) =
+            self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
+
+        // In an off period (no setpoint) deactivate a source left active by a
+        // previous timestep, before the charging block, so _heating_active stays
+        // consistent with the schedule and a stale active flag cannot drive
+        // charging across the on-to-off transition. The temperature cut-out is
+        // in _determine_heat_source_switch_off, evaluated on the post-charge
+        // temperatures, to preserve the min/max charging hysteresis.
+        if setpntmax.is_none() {
+            self.heating_active[heat_source_name].store(false, Ordering::SeqCst);
+        } else if setpntmin.is_some_and(|setpntmin| {
             temp_s3_n[thermostat_layer] < setpntmin
                 || relative_eq!(temp_s3_n[thermostat_layer], setpntmin, max_relative = 1e-09)
         }) {
             self.heating_active[heat_source_name].store(true, Ordering::SeqCst);
         };
+
         Ok(())
     }
 
@@ -5986,6 +5997,79 @@ mod tests {
     }
 
     // Skipping Python's test_primary_pipework_losses_between_events due to mocking of calculate_cool_down_loss return value
+
+    /// A source left active by a previous timestep is switched off on entering
+    /// an off period, before any charging.
+    ///
+    /// When the schedule has no setpoint (off period) _determine_heat_source_switch_on
+    /// deactivates a source that was active in the previous timestep, before the
+    /// charging block runs. Without this the source would charge for one extra
+    /// timestep across the on-to-off transition. _heating_active is the method's
+    /// only output, so it is asserted directly.
+    #[rstest]
+    fn test_determine_heat_source_switch_on_off_period_deactivates(
+        cold_water_source: Arc<ColdWaterSource>,
+        simulation_time_for_storage_tank: SimulationTime,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions: Arc<ExternalConditions>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+    ) {
+        // Controls with no setpoint at every timestep represent an off period
+        let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
+        let simtime = simulation_time_for_storage_tank.iter().current_iteration();
+
+        let control_off = vec![None; 8];
+        let heat_source_name = "immersion_off";
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), heat_source_name).unwrap();
+
+        let heat_source_imheater = heat_source(
+            simulation_time_for_storage_tank,
+            energy_supply_connection.clone(),
+            50.0,
+            0.1,
+            0.33,
+            control_off.clone(),
+            control_off,
+        );
+
+        let heat_sources =
+            IndexMap::from([(heat_source_name.into(), heat_source_imheater.clone())]);
+
+        let tank = StorageTank::new(
+            150.0,
+            1.68,
+            55.0,
+            cold_feed,
+            &simtime,
+            heat_sources,
+            temp_internal_air_fn.clone(),
+            external_conditions.clone(),
+            false,
+            Some(4),
+            None,
+            *WATER,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        // Source was left active by the previous (on) timestep
+        tank.heating_active[heat_source_name].store(true, Ordering::SeqCst);
+
+        tank.determine_heat_source_switch_on(
+            &vec![55.; tank.number_of_volumes],
+            heat_source_name,
+            &heat_source_imheater.heat_source.lock(),
+            (0.1 * tank.number_of_volumes as f64) as usize,
+            (0.33 * tank.number_of_volumes as f64) as usize,
+            simulation_time_for_storage_tank.iter().current_iteration(),
+        )
+        .unwrap();
+
+        assert!(!tank.heating_active[heat_source_name].load(Ordering::SeqCst));
+    }
 
     #[fixture]
     fn simulation_time_for_immersion_heater() -> SimulationTime {
