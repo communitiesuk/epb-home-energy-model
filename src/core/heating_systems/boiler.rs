@@ -797,10 +797,9 @@ impl Boiler {
             }
         }
 
-        let aux_supply_name = format!("Boiler_auxiliary: {name}");
         let energy_supply_conn_aux = EnergySupply::connection(
             energy_supply_aux,
-            format!("Boiler_auxiliary: {aux_supply_name}").as_str(),
+            format!("Boiler_auxiliary: {name}").as_str(),
         )?;
 
         match boiler_data {
