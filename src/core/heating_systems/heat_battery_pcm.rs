@@ -6984,6 +6984,58 @@ mod tests {
             (make_battery(simulation_time, sources, temp_init), source)
         }
 
+        fn make_test_hydronic_battery(
+            simulation_time: SimulationTime,
+            battery_control_off: Arc<ChargeControl>,
+            temp_init: f64,
+            service_lower: Option<f64>,
+            service_upper: Option<f64>,
+        ) -> (Arc<RwLock<HeatBatteryPcm>>, HeatBatteryChargingSource) {
+            let control = make_range_time_control(simulation_time, Some(0.2), Some(0.8));
+            let service_control =
+                make_range_time_control(simulation_time, service_lower, service_upper);
+            let source_heat_battery = create_default_heat_battery_with_overides(
+                battery_control_off,
+                None,
+                HeatBatteryPcmTestOverrides {
+                    energy_supply_end_usr_name: Some("HydronicChargeSource".to_string()),
+                    ..Default::default()
+                },
+            );
+            let cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.0));
+            let heat_source_service = HeatBatteryPcmServiceWaterRegular::new(
+                source_heat_battery.clone(),
+                "hydronic_charge_source_service".into(),
+                cold_feed,
+                service_control,
+            );
+            HeatBatteryPcm::create_service_connection(
+                source_heat_battery,
+                "hydronic_charge_source_service",
+            )
+            .unwrap();
+
+            let source = HeatBatteryChargingSource {
+                source_type: ChargingSourceType::HeatSourceWet,
+                control,
+                rated_charge_power: None,
+                heat_source_service: Some(HeatSourceWetService::HeatBatteryPCMServiceWaterRegular(
+                    heat_source_service,
+                )),
+                temp_flow_max: 65.0,
+                flow_rate_charging_l_per_min: Some(10.0),
+                hex_a: Some(174.33952),
+                hex_b: Some(-931.565),
+                hex_velocity_at_1_l_per_min: Some(0.035),
+                hex_capillary_diameter_m: Some(6.5 / 1000.0),
+                schedule_unit: ScheduleUnit::StateOfCharge,
+            };
+            let mut sources = IndexMap::new();
+            sources.insert("hp".into(), source.clone());
+
+            (make_battery(simulation_time, sources, temp_init), source)
+        }
+
         #[rstest]
         fn test_calculate_charge_energy_demand_at_zero_soc(simulation_time: SimulationTime) {
             // Battery at 10°C (= temp_min_useful) means SOC=0.0, so the demand
@@ -7050,6 +7102,148 @@ mod tests {
 
             assert_relative_eq!(demand, 9.66163888888889, epsilon = 1e-7);
             assert_relative_eq!(full_demand, 13.05275, epsilon = 1e-7);
+        }
+
+        #[rstest]
+        fn test_charge_from_heat_source_delivers_energy(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+            battery_control_off: Arc<ChargeControl>,
+        ) {
+            // charge_from_heat_source() calls energy_output_max for capacity check,
+            // then demand_energy once for actual delivery, and charges the battery.
+            //
+            // Uses physics-based return temperature estimate (from heat exchange
+            // simulation) rather than conservative min(zone_temps).
+            let (battery, source) = make_test_hydronic_battery(
+                simulation_time,
+                battery_control_off,
+                10.0,
+                Some(0.2),
+                Some(0.8),
+            );
+            let (energy, zones_after) = battery
+                .read()
+                .charge_from_heat_source(&source, 1.0, 1.0, &simulation_time_iteration)
+                .unwrap();
+
+            // Energy should be positive (battery absorbed heat).
+            assert_relative_eq!(energy, 5.768540233780334, epsilon = 1e-7);
+            // Zones should be warmer.
+            let expected_zones = [
+                57.808286418709336,
+                57.706545069307516,
+                57.61606829402523,
+                57.53564191192898,
+                57.46424081651613,
+                57.40086248381049,
+                57.344715369779124,
+                57.29500918474782,
+            ];
+            for (actual, expected) in zones_after.iter().zip(expected_zones) {
+                assert_relative_eq!(*actual, expected, epsilon = 1e-7);
+            }
+            // skips some python assertions about mocks being called
+        }
+
+        #[rstest]
+        fn test_charge_from_heat_source_zero_capacity(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+            battery_control_off: Arc<ChargeControl>,
+        ) {
+            // charge_from_heat_source() returns 0 when heat source has no capacity.
+            let (battery, source) =
+                make_test_hydronic_battery(simulation_time, battery_control_off, 10.0, None, None);
+            let (energy, _) = battery
+                .read()
+                .charge_from_heat_source(&source, 1.0, 1.0, &simulation_time_iteration)
+                .unwrap();
+
+            assert_relative_eq!(energy, 0.0, epsilon = 1e-7);
+            // skips some python assertions about mocks being called
+        }
+
+        #[rstest]
+        fn test_charge_from_heat_source_fully_charged(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+            battery_control_off: Arc<ChargeControl>,
+        ) {
+            // charge_from_heat_source() returns 0 when battery is already fully charged.
+            let (battery, source) = make_test_hydronic_battery(
+                simulation_time,
+                battery_control_off,
+                80.0,
+                Some(0.2),
+                Some(0.8),
+            );
+            let zones_before = battery.read().zone_temp_c_dist_initial.read().clone();
+            let (energy, zones_after) = battery
+                .read()
+                .charge_from_heat_source(&source, 1.0, 1.0, &simulation_time_iteration)
+                .unwrap();
+
+            assert_relative_eq!(energy, 0.0, epsilon = 1e-7);
+            assert_eq!(zones_after, zones_before);
+            // skips some python assertions about mocks being called
+        }
+
+        #[rstest]
+        fn test_estimate_return_temp_cold_battery(simulation_time: SimulationTime) {
+            // With all zones at 10°C and flow at 65°C, the return temperature
+            // should lie between the zone and flow temperatures.
+            let (battery, _) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.2),
+                Some(0.8),
+                10.0,
+            );
+            let temp_return = battery
+                .read()
+                .estimate_return_temp(65.0, 10.0, 174.33952, -931.565, 0.035, 6.5 / 1000.0)
+                .unwrap();
+
+            // Return temp should be between zone temp and flow temp
+            assert_relative_eq!(temp_return, 38.581032623801555, epsilon = 1e-7);
+        }
+
+        #[rstest]
+        fn test_estimate_return_temp_hot_battery(simulation_time: SimulationTime) {
+            // __estimate_return_temp returns near flow temp when battery is hot.
+            // With zones at max temp (80°C) and flow at 65°C, the water actually
+            // gains heat — return temp approaches or exceeds flow temp since zones
+            // are hotter than the incoming water.
+            let (battery, _) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.2),
+                Some(0.8),
+                80.0,
+            );
+            let temp_return = battery
+                .read()
+                .estimate_return_temp(65.0, 10.0, 174.33952, -931.565, 0.035, 6.5 / 1000.0)
+                .unwrap();
+            // Battery is hotter than flow — water gains heat, return temp >= flow
+            assert_relative_eq!(temp_return, 72.2051729207814, epsilon = 1e-7);
+        }
+
+        #[rstest]
+        fn test_estimate_return_temp_is_non_mutating(simulation_time: SimulationTime) {
+            let (battery, _) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.2),
+                Some(0.8),
+                10.0,
+            );
+            let zones_before = battery.read().zone_temp_c_dist_initial.read().clone();
+            battery
+                .read()
+                .estimate_return_temp(65.0, 10.0, 174.33952, -931.565, 0.035, 6.5 / 1000.0)
+                .unwrap();
+            let zones_after = battery.read().zone_temp_c_dist_initial.read().clone();
+
+            assert_eq!(zones_before, zones_after);
         }
 
         #[rstest]
