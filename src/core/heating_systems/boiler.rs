@@ -534,7 +534,7 @@ impl BoilerServiceWaterCombi {
             self.rejected_energy_1_adj * delta_t * flowrate
         };
 
-        let combi_loss = match self.separate_dhw_tests {
+        match self.separate_dhw_tests {
             BoilerHotWaterTest::ML | BoilerHotWaterTest::MS => {
                 // combi loss calculation with tapping cycle M and S, or M and L
                 rejected_energy + self.storage_loss_factor_2_adj.unwrap()
@@ -543,9 +543,7 @@ impl BoilerServiceWaterCombi {
                 // combi loss calculation with tapping cycle M only test results
                 rejected_energy + self.storage_loss_factor_1_adj.unwrap()
             }
-        };
-
-        combi_loss
+        }
     }
 
     pub(crate) fn internal_gains(&self) -> f64 {

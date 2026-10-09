@@ -6741,7 +6741,7 @@ mod tests {
             Arc::new(RwLock::new(
                 HeatBatteryPcm::new(
                     &heat_battery_details,
-                    energy_supply.into(),
+                    energy_supply,
                     energy_supply_connection,
                     simulation_time.iter(),
                     external_conditions.into(),
