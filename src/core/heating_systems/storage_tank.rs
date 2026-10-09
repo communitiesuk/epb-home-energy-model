@@ -832,7 +832,7 @@ impl StorageTank {
                             immersion_heater,
                         )) => immersion_heater
                             .lock()
-                            .energy_output_max(simulation_time, false),
+                            .energy_output_max(simulation_time, Some(true)),
                         HeatSource::Storage(HeatSourceWithStorageTank::Solar(_)) => unreachable!(), // this case was already covered in the first arm of this if let clause, so can't repeat here
                         HeatSource::Wet(heat_source_wet) => {
                             // TODO (from Python) Use different temperatures for flow and return in the call to
@@ -841,6 +841,7 @@ impl StorageTank {
                             heat_source_wet.energy_output_max(
                                 temp_flow,
                                 temp_flow,
+                                Some(true),
                                 simulation_time,
                             )?
                         }
@@ -2235,7 +2236,7 @@ impl SmartHotWaterTank {
                             immersion_heater,
                         )) => immersion_heater
                             .lock()
-                            .energy_output_max(simulation_time, false),
+                            .energy_output_max(simulation_time, Some(true)),
                         HeatSource::Storage(HeatSourceWithStorageTank::Solar(_)) => unreachable!(), // this case was already covered in the first arm of this if let clause, so can't repeat here
                         HeatSource::Wet(heat_source_wet) => {
                             // TODO Use different temperatures for flow and return in the call to
@@ -2244,6 +2245,7 @@ impl SmartHotWaterTank {
                             heat_source_wet.energy_output_max(
                                 temp_flow,
                                 temp_flow,
+                                Some(true),
                                 simulation_time,
                             )?
                         }
@@ -3345,23 +3347,30 @@ impl ImmersionHeater {
     }
 
     /// Demand energy (in kWh) from the heater
+    /// ignore_standard_ctrl: If True, bypass the standard time control check.
+    ///     Used when PV diverter is running.
     pub fn demand_energy(
         &self,
         energy_demand: f64,
         ignore_standard_ctrl: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let _ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false); // TODO 1.0.0a9 migration
+        let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
         if energy_demand < 0.0 {
             bail!("Negative energy demand on ImmersionHeater");
         };
 
-        let energy_supplied =
-            if self.control.is_none() || self.control.as_ref().unwrap().is_on(&simtime) {
-                min_of_2(energy_demand, self.pwr * self.simulation_timestep)
-            } else {
-                0.
-            };
+        // TODO 1.0.0a9 migration - review control logic matches, min and max were removed previously in rust so this check should suffice?
+        let energy_supplied = if ignore_standard_ctrl
+            || self
+                .control
+                .as_ref()
+                .is_none_or(|control| control.is_on(&simtime))
+        {
+            min_of_2(energy_demand, self.pwr * self.simulation_timestep)
+        } else {
+            0.
+        };
 
         // If there is a diverter to this immersion heater, then any heating
         // capacity already in use is not available to the diverter.
@@ -3379,11 +3388,21 @@ impl ImmersionHeater {
     pub fn energy_output_max(
         &self,
         simtime: SimulationTimeIteration,
-        ignore_standard_control: bool,
+        ignore_standard_ctrl: Option<bool>,
     ) -> f64 {
-        if self.control.is_some() && self.control.as_ref().unwrap().is_on(&simtime)
-            || ignore_standard_control
+        let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
+
+        // Account for time control where present. If no control present, assume
+        // system is always active (except for basic thermostatic control, which
+        // is implicit in demand calculation).
+        // TODO 1.0.0a9 migration - review control logic matches, min and max were removed previously in rust so this check should suffice?
+        if ignore_standard_ctrl
+            || self
+                .control
+                .as_ref()
+                .is_none_or(|control| control.is_on(&simtime))
         {
+            // Energy that heater is able to supply is limited by power rating
             self.pwr * self.simulation_timestep
         } else {
             0.
@@ -3606,7 +3625,7 @@ impl SurplusDiverting for PVDiverter {
         let imm_heater_max_capacity_spare = self
             .immersion_heater
             .lock()
-            .energy_output_max(simulation_time_iteration, true)
+            .energy_output_max(simulation_time_iteration, Some(true))
             - self.capacity_used.load(Ordering::SeqCst);
 
         // Calculate the maximum energy that could be diverted
@@ -3853,6 +3872,14 @@ impl SolarThermalSystem {
         }
 
         self.inlet_temp.store(inlet_temp2, Ordering::SeqCst);
+
+        let (_, setpntmax) = self.setpnt(simulation_time);
+        if setpntmax.is_none() {
+            // No active charging target this timestep: the collector loop still ran
+            // above (keeping its own state fresh, as it does when a defined setpoint
+            // is already met), but none of its output is available to storage.
+            return 0.;
+        }
 
         self.heat_output_collector_loop.load(Ordering::SeqCst)
     }
@@ -6188,7 +6215,7 @@ mod tests {
     ) {
         for t_it in simulation_time_for_immersion_heater.iter() {
             assert_eq!(
-                immersion_heater.energy_output_max(t_it, true), // In Python another parameter (return_temp = 55.0) is passed in to energy_output_max but never used so we have skipped this in Rust
+                immersion_heater.energy_output_max(t_it, Some(true)), // In Python another parameter (return_temp = 55.0) is passed in to energy_output_max but never used so we have skipped this in Rust
                 50.,
                 "incorrect energy output max calculated"
             );
@@ -6196,7 +6223,7 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time_for_immersion_heater.iter().enumerate() {
             assert_eq!(
-                immersion_heater.energy_output_max(t_it, false), // In Python another parameter (return_temp = 40.0) is passed in to energy_output_max but never used so we have skipped this in Rust
+                immersion_heater.energy_output_max(t_it, Some(false)), // In Python another parameter (return_temp = 40.0) is passed in to energy_output_max but never used so we have skipped this in Rust
                 [50.0, 50.0, 0.0, 50.0][t_idx],
                 "incorrect energy output max calculated"
             );
