@@ -6674,6 +6674,7 @@ mod tests {
         #[fixture]
         fn range_time_control(simulation_time: SimulationTime) -> Arc<RangeTimeControl> {
             RangeTimeControl::new(
+                // mock setpnt_for_range_control return value
                 ScheduleOrControl::Schedule(vec![Some(0.2); simulation_time.total_steps()]),
                 ScheduleOrControl::Schedule(vec![Some(0.8); simulation_time.total_steps()]),
                 simulation_time.iter(),
@@ -6785,6 +6786,7 @@ mod tests {
         fn test_range_control_mode_sets_use_heatsource_dict_true(
             new_format_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         ) {
+            // Tests that the presence of heat source data sets use_heatsource_data to true
             assert!(new_format_heat_battery.read().use_heatsource_data);
         }
 
@@ -6826,6 +6828,7 @@ mod tests {
         fn test_new_format_charge_control_is_none(
             new_format_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         ) {
+            // Test may be redundant as it doesn't test anything is enforced
             assert!(new_format_heat_battery.read().charge_control.is_none());
         }
 
@@ -6847,6 +6850,7 @@ mod tests {
         fn test_legacy_mode_has_no_heat_source_data(
             legacy_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         ) {
+            // Test may be redundant as it doesn't test anything is enforced
             assert!(legacy_heat_battery.read().heat_source_data.is_none());
         }
 
@@ -6854,6 +6858,7 @@ mod tests {
         fn test_legacy_mode_has_empty_charging_active(
             legacy_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         ) {
+            // Test may be redundant as it doesn't test anything is enforced
             assert!(legacy_heat_battery.read().charging_active.read().is_empty());
         }
 
