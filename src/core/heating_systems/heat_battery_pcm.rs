@@ -6985,6 +6985,74 @@ mod tests {
         }
 
         #[rstest]
+        fn test_calculate_charge_energy_demand_at_zero_soc(simulation_time: SimulationTime) {
+            // Battery at 10°C (= temp_min_useful) means SOC=0.0, so the demand
+            // should equal the full energy capacity of the battery.
+            let (battery, _) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.2),
+                Some(0.8),
+                10.0,
+            );
+            let demand = battery
+                .read()
+                .calculate_charge_energy_demand(None, 1.0)
+                .unwrap();
+
+            // SOC=0 → demand = full battery capacity (positive kWh)
+            assert_relative_eq!(demand, 13.05275, epsilon = 1e-7);
+        }
+
+        #[rstest]
+        fn test_calculate_charge_energy_demand_at_full_soc(simulation_time: SimulationTime) {
+            // Battery at max_temp (80°C) means SOC=1.0, so no energy is needed.
+            let (battery, _) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.2),
+                Some(0.8),
+                80.0,
+            );
+            let demand = battery
+                .read()
+                .calculate_charge_energy_demand(None, 1.0)
+                .unwrap();
+
+            assert_relative_eq!(demand, 0.0, epsilon = 1e-7);
+        }
+
+        #[rstest]
+        fn test_calculate_charge_energy_demand_partial_soc(simulation_time: SimulationTime) {
+            // Battery at 50°C (partially charged, below phase transition). Demand
+            // should be between 0 and full capacity.
+            let (battery, _) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.2),
+                Some(0.8),
+                50.0,
+            );
+            let demand = battery
+                .read()
+                .calculate_charge_energy_demand(None, 1.0)
+                .unwrap();
+
+            // Full capacity when at 10°C — use a separate battery to get the
+            // full-demand reference value.
+            let (battery_empty, _) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.2),
+                Some(0.8),
+                10.0,
+            );
+            let full_demand = battery_empty
+                .read()
+                .calculate_charge_energy_demand(None, 1.0)
+                .unwrap();
+
+            assert_relative_eq!(demand, 9.66163888888889, epsilon = 1e-7);
+            assert_relative_eq!(full_demand, 13.05275, epsilon = 1e-7);
+        }
+
+        #[rstest]
         fn test_switch_on_activates_when_soc_below_lower(
             simulation_time: SimulationTime,
             simulation_time_iteration: SimulationTimeIteration,
