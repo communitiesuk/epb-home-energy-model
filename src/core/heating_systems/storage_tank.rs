@@ -69,11 +69,6 @@ fn is_sorted(vec: &[f64]) -> bool {
     vec.windows(2).all(|w| w[0] <= w[1])
 }
 
-// utility method for rounding
-fn round_by_precision(src: f64, precision: f64) -> f64 {
-    (precision * src).round() / precision
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct PositionedHeatSource {
     pub heat_source: Arc<Mutex<HeatSource>>,
@@ -4042,13 +4037,13 @@ mod tests {
         rated_power: f64,
         heater_position: f64,
         thermostat_position: Option<f64>,
-        control_min_schedule: Vec<Option<f64>>,
-        control_max_schedule: Vec<Option<f64>>,
+        control_min_schedule: &[Option<f64>],
+        control_max_schedule: &[Option<f64>],
     ) -> PositionedHeatSource {
         let simulation_timestep = simulation_time_for_storage_tank.step;
-        let control_min = ScheduleOrControl::Schedule(control_min_schedule);
+        let control_min = ScheduleOrControl::Schedule(control_min_schedule.into());
 
-        let control_max = ScheduleOrControl::Schedule(control_max_schedule);
+        let control_max = ScheduleOrControl::Schedule(control_max_schedule.into());
 
         let immersion_heater = ImmersionHeater::new(
             rated_power,
@@ -4087,7 +4082,7 @@ mod tests {
         let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
         let simtime = simulation_time_for_storage_tank.iter().current_iteration();
 
-        let control_min_schedule = vec![
+        let control_min_schedule = [
             Some(52.),
             None,
             None,
@@ -4097,7 +4092,7 @@ mod tests {
             Some(52.),
             Some(52.),
         ];
-        let control_max_schedule = vec![
+        let control_max_schedule = [
             Some(55.),
             Some(55.),
             Some(55.),
@@ -4117,8 +4112,8 @@ mod tests {
             50.0,
             0.1,
             Some(0.33),
-            control_min_schedule,
-            control_max_schedule,
+            &control_min_schedule,
+            &control_max_schedule,
         );
 
         let heat_sources = IndexMap::from([("imheater".into(), heat_source_imheater)]);
@@ -4151,7 +4146,7 @@ mod tests {
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
     ) -> (StorageTank, Arc<RwLock<EnergySupply>>) {
-        let control_min_schedule = vec![
+        let control_min_schedule = [
             Some(52.),
             None,
             None,
@@ -4161,7 +4156,7 @@ mod tests {
             Some(52.),
             Some(52.),
         ];
-        let control_max_schedule = vec![
+        let control_max_schedule = [
             Some(60.),
             Some(60.),
             Some(60.),
@@ -4186,8 +4181,8 @@ mod tests {
             5.0,
             0.6,
             Some(0.6),
-            control_min_schedule,
-            control_max_schedule,
+            &control_min_schedule,
+            &control_max_schedule,
         );
 
         let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
@@ -5536,7 +5531,7 @@ mod tests {
         let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
         let simtime = simulation_time_for_storage_tank.iter().current_iteration();
 
-        let control_min_schedule = vec![
+        let control_min_schedule = [
             Some(52.),
             None,
             None,
@@ -5546,7 +5541,7 @@ mod tests {
             Some(52.),
             Some(52.),
         ];
-        let control_max_schedule = vec![
+        let control_max_schedule = [
             Some(55.),
             Some(55.),
             Some(55.),
@@ -5566,8 +5561,8 @@ mod tests {
             50.0,
             0.1,
             Some(0.33),
-            control_min_schedule,
-            control_max_schedule,
+            &control_min_schedule,
+            &control_max_schedule,
         );
 
         let primary_pipework_lst = vec![
@@ -5733,7 +5728,7 @@ mod tests {
             )
             .build(),
         ));
-        let control_min_schedule = vec![
+        let control_min_schedule = [
             Some(52.),
             None,
             None,
@@ -5743,7 +5738,7 @@ mod tests {
             Some(52.),
             Some(52.),
         ];
-        let control_max_schedule = vec![
+        let control_max_schedule = [
             Some(55.),
             Some(55.),
             Some(55.),
@@ -5761,8 +5756,8 @@ mod tests {
             50.0,
             0.1,
             Some(0.33),
-            control_min_schedule,
-            control_max_schedule,
+            &control_min_schedule,
+            &control_max_schedule,
         );
         let simtime = simulation_time_for_storage_tank.iter().current_iteration();
         let heat_sources = IndexMap::from([("imheater".into(), heat_source)]);
@@ -5943,7 +5938,7 @@ mod tests {
         let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
         let simtime = simulation_time_for_storage_tank.iter().current_iteration();
 
-        let control_min_schedule = vec![
+        let control_min_schedule = [
             Some(52.),
             None,
             None,
@@ -5953,7 +5948,7 @@ mod tests {
             Some(52.),
             Some(52.),
         ];
-        let control_max_schedule = vec![
+        let control_max_schedule = [
             Some(55.),
             Some(55.),
             Some(55.),
@@ -5973,8 +5968,8 @@ mod tests {
             50.0,
             0.1,
             Some(0.33),
-            control_min_schedule,
-            control_max_schedule,
+            &control_min_schedule,
+            &control_max_schedule,
         );
 
         let heat_sources = IndexMap::from([("imheater3".into(), imheater3)]);
@@ -6068,7 +6063,7 @@ mod tests {
         let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
         let simtime = simulation_time_for_storage_tank.iter().current_iteration();
 
-        let control_off = vec![None; 8];
+        let control_off = [None; 8];
         let heat_source_name = "immersion_off";
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), heat_source_name).unwrap();
@@ -6079,8 +6074,8 @@ mod tests {
             50.0,
             0.1,
             Some(0.33),
-            control_off.clone(),
-            control_off,
+            &control_off,
+            &control_off,
         );
 
         let heat_sources =
@@ -7262,8 +7257,8 @@ mod tests {
     }
 
     fn create_smart_hot_water_tank_custom_controls(
-        control_min_sched: Vec<Option<f64>>,
-        control_max_sched: Vec<Option<f64>>,
+        control_min_sched: &[Option<f64>],
+        control_max_sched: &[Option<f64>],
         heat_source_name: &str,
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_smart_hot_water_tank: SimulationTime,
@@ -7359,8 +7354,8 @@ mod tests {
         let heat_source_name = "immersion_off";
         let tank = create_smart_hot_water_tank_custom_controls(
             // Controls with no setpoint at every timestep represent an off period
-            vec![None; 8],
-            vec![None; 8],
+            &[None; 8],
+            &[None; 8],
             heat_source_name,
             cold_water_source,
             simulation_time_for_smart_hot_water_tank,
@@ -7409,8 +7404,8 @@ mod tests {
         let heat_source_name = "immersion_max_met";
         let tank = create_smart_hot_water_tank_custom_controls(
             // Minimum state of charge 0.3, maximum 0.5 (minimum must not exceed maximum)
-            vec![Some(0.3); 8],
-            vec![Some(0.5); 8],
+            &[Some(0.3); 8],
+            &[Some(0.5); 8],
             heat_source_name,
             cold_water_source,
             simulation_time_for_smart_hot_water_tank,
@@ -7460,8 +7455,8 @@ mod tests {
         let heat_source_name = "immersion_within_band";
         let tank = create_smart_hot_water_tank_custom_controls(
             // Minimum state of charge 0.3, maximum 0.9
-            vec![Some(0.3); 8],
-            vec![Some(0.9); 8],
+            &[Some(0.3); 8],
+            &[Some(0.9); 8],
             heat_source_name,
             cold_water_source,
             simulation_time_for_smart_hot_water_tank,
