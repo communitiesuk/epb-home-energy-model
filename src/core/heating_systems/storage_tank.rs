@@ -7261,30 +7261,22 @@ mod tests {
         // But we can't replicate that easily in Rust
     }
 
-    /// A source left active by a previous timestep is switched off on entering
-    /// an off period, before any charging.
-    /// When the schedule has no setpoint (off period) _determine_heat_source_switch_on
-    /// deactivates a source that was active in the previous timestep, before the
-    /// charging block runs. Without this the source would charge for one extra
-    /// timestep across the on-to-off transition. _heating_active is the method's
-    /// only output, so it is asserted directly.
-    #[rstest]
-    fn test_determine_heat_source_switch_on_off_period_deactivates_for_smart_hot_water_tank(
+    fn create_smart_hot_water_tank_custom_controls(
+        control_min_sched: Vec<Option<f64>>,
+        control_max_sched: Vec<Option<f64>>,
+        heat_source_name: &str,
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_smart_hot_water_tank: SimulationTime,
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_for_smart_hot_water_tank_pump: Arc<RwLock<EnergySupply>>,
-    ) {
+    ) -> SmartHotWaterTank {
         let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
         let simtime = simulation_time_for_smart_hot_water_tank
             .iter()
             .current_iteration();
 
-        // Controls with no setpoint at every timestep represent an off period
-        let control_off = vec![None; 8];
-        let heat_source_name = "immersion_off";
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), heat_source_name).unwrap();
 
@@ -7294,8 +7286,8 @@ mod tests {
             5.0,
             0.6,
             None,
-            control_off.clone(),
-            control_off,
+            control_min_sched,
+            control_max_sched,
         );
 
         let heat_sources =
@@ -7325,7 +7317,7 @@ mod tests {
             EnergySupply::connection(energy_supply_for_smart_hot_water_tank_pump.clone(), "pump")
                 .unwrap(); // N.B. this is a MagicMock in Python
 
-        let tank = SmartHotWaterTank::new(
+        SmartHotWaterTank::new(
             300.,
             1.68,
             50.,
@@ -7344,7 +7336,39 @@ mod tests {
             energy_supply_conn_pump,
             None,
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    /// A source left active by a previous timestep is switched off on entering
+    /// an off period, before any charging.
+    /// When the schedule has no setpoint (off period) _determine_heat_source_switch_on
+    /// deactivates a source that was active in the previous timestep, before the
+    /// charging block runs. Without this the source would charge for one extra
+    /// timestep across the on-to-off transition. _heating_active is the method's
+    /// only output, so it is asserted directly.
+    #[rstest]
+    // this is called test_determine_heat_source_switch_on_off_period_deactivates in the python
+    fn test_determine_heat_source_switch_on_off_period_deactivates_smart(
+        cold_water_source: Arc<ColdWaterSource>,
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions: Arc<ExternalConditions>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_for_smart_hot_water_tank_pump: Arc<RwLock<EnergySupply>>,
+    ) {
+        let heat_source_name = "immersion_off";
+        let tank = create_smart_hot_water_tank_custom_controls(
+            // Controls with no setpoint at every timestep represent an off period
+            vec![None; 8],
+            vec![None; 8],
+            heat_source_name,
+            cold_water_source,
+            simulation_time_for_smart_hot_water_tank,
+            temp_internal_air_fn,
+            external_conditions,
+            energy_supply,
+            energy_supply_for_smart_hot_water_tank_pump,
+        );
 
         // Source was left active by the previous (on) timestep
         tank.storage_tank.heating_active[heat_source_name].store(true, Ordering::SeqCst);
@@ -7352,10 +7376,14 @@ mod tests {
         tank.determine_heat_source_switch_on(
             &[50.; 4],
             heat_source_name,
-            &heat_source_imheater.heat_source.lock(),
+            &tank.storage_tank.heat_source_data[heat_source_name]
+                .heat_source
+                .lock(),
             (0.6 * 4.) as usize,
             None,
-            simtime,
+            simulation_time_for_smart_hot_water_tank
+                .iter()
+                .current_iteration(),
         )
         .unwrap();
 
@@ -7370,7 +7398,7 @@ mod tests {
     /// in _determine_heat_source_switch_off could act. _heating_active is the
     /// method's only output, so it is asserted directly.
     #[rstest]
-    fn test_determine_heat_source_switch_on_deactivates_when_max_already_met_for_smart_hot_water_tank(
+    fn test_determine_heat_source_switch_on_deactivates_when_max_already_met(
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_smart_hot_water_tank: SimulationTime,
         temp_internal_air_fn: TempInternalAirFn,
@@ -7378,75 +7406,19 @@ mod tests {
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_for_smart_hot_water_tank_pump: Arc<RwLock<EnergySupply>>,
     ) {
-        let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
-        let simtime = simulation_time_for_smart_hot_water_tank
-            .iter()
-            .current_iteration();
-
-        // Minimum state of charge 0.3, maximum 0.5 (minimum must not exceed maximum)
-        let control_min = vec![Some(0.3); 8];
-        let control_max = vec![Some(0.5); 8];
         let heat_source_name = "immersion_max_met";
-        let energy_supply_connection =
-            EnergySupply::connection(energy_supply.clone(), heat_source_name).unwrap();
-
-        let heat_source_imheater = heat_source(
+        let tank = create_smart_hot_water_tank_custom_controls(
+            // Minimum state of charge 0.3, maximum 0.5 (minimum must not exceed maximum)
+            vec![Some(0.3); 8],
+            vec![Some(0.5); 8],
+            heat_source_name,
+            cold_water_source,
             simulation_time_for_smart_hot_water_tank,
-            energy_supply_connection.clone(),
-            5.0,
-            0.6,
-            None,
-            control_min,
-            control_max,
+            temp_internal_air_fn,
+            external_conditions,
+            energy_supply,
+            energy_supply_for_smart_hot_water_tank_pump,
         );
-
-        let heat_sources =
-            IndexMap::from([(heat_source_name.into(), heat_source_imheater.clone())]);
-        let temp_setpnt_max = Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![
-                    Some(50.0),
-                    Some(40.0),
-                    Some(30.0),
-                    Some(20.0),
-                    Some(50.0),
-                    Some(50.0),
-                    Some(50.0),
-                    Some(50.0),
-                ],
-                0,
-                1.,
-                None,
-                None,
-                1.,
-            )
-            .into(),
-        );
-
-        let energy_supply_conn_pump =
-            EnergySupply::connection(energy_supply_for_smart_hot_water_tank_pump.clone(), "pump")
-                .unwrap(); // N.B. this is a MagicMock in Python
-
-        let tank = SmartHotWaterTank::new(
-            300.,
-            1.68,
-            50.,
-            5.,
-            1000.,
-            40.,
-            temp_setpnt_max,
-            cold_feed,
-            simtime,
-            heat_sources,
-            temp_internal_air_fn.clone(),
-            external_conditions.clone(),
-            None,
-            Some(4),
-            None,
-            energy_supply_conn_pump,
-            None,
-        )
-        .unwrap();
 
         // Source was left active by the previous timestep
         tank.storage_tank.heating_active[heat_source_name].store(true, Ordering::SeqCst);
@@ -7458,14 +7430,70 @@ mod tests {
         tank.determine_heat_source_switch_on(
             &[50.; 4],
             heat_source_name,
-            &heat_source_imheater.heat_source.lock(),
+            &tank.storage_tank.heat_source_data[heat_source_name]
+                .heat_source
+                .lock(),
             (0.6 * 4.) as usize,
             None,
-            simtime,
+            simulation_time_for_smart_hot_water_tank
+                .iter()
+                .current_iteration(),
         )
         .unwrap();
 
         assert!(!tank.storage_tank.heating_active[heat_source_name].load(Ordering::SeqCst));
+    }
+
+    /// A source active mid-charge stays on when the pre-charge state of charge
+    /// lies between the minimum and maximum.
+    /// The pre-charge cut-out must not disturb the charging hysteresis: a source
+    /// whose state of charge has not yet reached the maximum keeps charging.
+    #[rstest]
+    fn test_determine_heat_source_switch_on_active_source_stays_on_within_band(
+        cold_water_source: Arc<ColdWaterSource>,
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions: Arc<ExternalConditions>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        energy_supply_for_smart_hot_water_tank_pump: Arc<RwLock<EnergySupply>>,
+    ) {
+        let heat_source_name = "immersion_within_band";
+        let tank = create_smart_hot_water_tank_custom_controls(
+            // Minimum state of charge 0.3, maximum 0.9
+            vec![Some(0.3); 8],
+            vec![Some(0.9); 8],
+            heat_source_name,
+            cold_water_source,
+            simulation_time_for_smart_hot_water_tank,
+            temp_internal_air_fn,
+            external_conditions,
+            energy_supply,
+            energy_supply_for_smart_hot_water_tank_pump,
+        );
+
+        // Source was left active by the previous timestep
+        tank.storage_tank.heating_active[heat_source_name].store(true, Ordering::SeqCst);
+
+        // Two layers at the max-charge temperature and two below the usable
+        // temperature give a state of charge of 0.5 at timestep 0 (only the two
+        // hot layers contribute: soc = 2 x (1 + (50-40)/(40-10)) x 0.25 / (1 +
+        // (50-40)/(40-10)) = 0.5), between the 0.3 minimum and 0.9 maximum, so the
+        // source keeps charging.
+        tank.determine_heat_source_switch_on(
+            &[10.0, 10.0, 50.0, 50.0],
+            heat_source_name,
+            &tank.storage_tank.heat_source_data[heat_source_name]
+                .heat_source
+                .lock(),
+            (0.6 * 4.) as usize,
+            None,
+            simulation_time_for_smart_hot_water_tank
+                .iter()
+                .current_iteration(),
+        )
+        .unwrap();
+
+        assert!(tank.storage_tank.heating_active[heat_source_name].load(Ordering::SeqCst));
     }
 
     #[rstest]
