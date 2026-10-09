@@ -823,9 +823,13 @@ impl HeatBatteryPcm {
         // Warn when temperature-based schedules exceed the heat source's flow
         // temperature limit — the battery cannot reach those targets, so
         // charging will cycle inefficiently and may degrade performance.
-        for (_, src) in &heat_source_data.clone().unwrap_or_default() {
+        for (source_name, src) in &heat_source_data.clone().unwrap_or_default() {
             if src.schedule_unit == ScheduleUnit::Temperature {
-                HeatBatteryPcm::warn_if_schedule_exceeds_flow_temp(src, &simulation_time)?;
+                HeatBatteryPcm::warn_if_schedule_exceeds_flow_temp(
+                    &source_name.to_string(),
+                    src,
+                    &simulation_time,
+                )?;
             }
         }
 
@@ -1003,6 +1007,7 @@ impl HeatBatteryPcm {
     }
 
     fn warn_if_schedule_exceeds_flow_temp(
+        source_name: &str,
         source: &HeatBatteryChargingSource,
         simtime_iterator: &SimulationTimeIterator,
     ) -> anyhow::Result<()> {
@@ -1022,10 +1027,13 @@ impl HeatBatteryPcm {
             }
         }
         if temp_observed_max > source.temp_flow_max {
-            tracing::warn!(
-                schedule_temperature_max = temp_observed_max,
-                temp_flow_max = source.temp_flow_max,
-                "Heat battery temperature schedule exceeds the heat source's temp_flow_max"
+            bail!(
+                "Heat battery charging source '{source_name}': schedule contains \
+                temperature setpoints up to {temp_observed_max}°C, which exceeds \
+                temp_flow_limit_upper ({}°C). The heat source cannot deliver heat \
+                at temperatures above its flow limit, which may severely degrade \
+                charging performance.",
+                source.temp_flow_max
             );
         }
         Ok(())
@@ -7606,11 +7614,32 @@ mod tests {
                     schedule_unit,
                 }
             }
-            fn make_battery(
+            fn make_heat_source_wet_source(
+                simulation_time: SimulationTime,
+                lower: Option<f64>,
+                upper: Option<f64>,
+                schedule_unit: ScheduleUnit,
+            ) -> HeatBatteryChargingSource {
+                HeatBatteryChargingSource {
+                    source_type: ChargingSourceType::HeatSourceWet,
+                    control: make_range_time_control(simulation_time, lower, upper),
+                    rated_charge_power: None,
+                    heat_source_service: None,
+                    temp_flow_max: 65.0,
+                    flow_rate_charging_l_per_min: Some(10.0),
+                    hex_a: Some(174.33952),
+                    hex_b: Some(-931.565),
+                    hex_velocity_at_1_l_per_min: Some(0.035),
+                    hex_capillary_diameter_m: Some(6.5 / 1000.0),
+                    schedule_unit,
+                }
+            }
+
+            fn try_make_battery(
                 simulation_time: SimulationTime,
                 sources: IndexMap<ArcStr, HeatBatteryChargingSource>,
                 temp_init: f64,
-            ) -> Arc<RwLock<HeatBatteryPcm>> {
+            ) -> anyhow::Result<HeatBatteryPcm> {
                 // Create a battery in new-format mode with given sources and initial temp.
                 let energy_supply = Arc::new(RwLock::new(
                     EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps())
@@ -7622,25 +7651,32 @@ mod tests {
                 let heat_battery_details =
                     create_heat_battery_details_with_temp_init(None, None, temp_init);
 
+                HeatBatteryPcm::new(
+                    &heat_battery_details,
+                    energy_supply.into(),
+                    energy_supply_connection,
+                    simulation_time.iter(),
+                    external_conditions.into(),
+                    Some(10.0),
+                    temp_air_int_callback(),
+                    None,
+                    Some(sources),
+                    Some(8),
+                    Some(20.0),
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            }
+
+            fn make_battery(
+                simulation_time: SimulationTime,
+                sources: IndexMap<ArcStr, HeatBatteryChargingSource>,
+                temp_init: f64,
+            ) -> Arc<RwLock<HeatBatteryPcm>> {
                 Arc::new(RwLock::new(
-                    HeatBatteryPcm::new(
-                        &heat_battery_details,
-                        energy_supply.into(),
-                        energy_supply_connection,
-                        simulation_time.iter(),
-                        external_conditions.into(),
-                        Some(10.0),
-                        temp_air_int_callback(),
-                        None,
-                        Some(sources),
-                        Some(8),
-                        Some(20.0),
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
-                    .unwrap(),
+                    try_make_battery(simulation_time, sources, temp_init).unwrap(),
                 ))
             }
             #[rstest]
@@ -7864,6 +7900,102 @@ mod tests {
                 assert_eq!(
                     battery.read().charging_active.read().get("el"),
                     Some(&false)
+                );
+            }
+
+            #[rstest]
+            fn test_rejects_schedule_when_upper_exceeds_flow_temp(simulation_time: SimulationTime) {
+                // A 70°C upper setpoint exceeds the hydronic source's 65°C limit.
+                let source = make_heat_source_wet_source(
+                    simulation_time,
+                    Some(50.0),
+                    Some(70.0),
+                    ScheduleUnit::Temperature,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("hp".into(), source.clone());
+                let error = try_make_battery(simulation_time, sources, 10.0).unwrap_err();
+
+                let message = error.to_string();
+                assert!(message.contains("hp"), "{message}");
+                assert!(message.contains("70"), "{message}");
+                assert!(message.contains("65"), "{message}");
+                assert!(
+                    message.contains(&source.temp_flow_max.to_string()),
+                    "{message}"
+                );
+            }
+
+            #[rstest]
+            fn test_rejects_schedule_when_lower_exceeds_flow_temp(simulation_time: SimulationTime) {
+                // Both setpoints exceed the limit; the maximum offending value is 75°C.
+                let source = make_heat_source_wet_source(
+                    simulation_time,
+                    Some(70.0),
+                    Some(75.0),
+                    ScheduleUnit::Temperature,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("hp".into(), source);
+                let error = try_make_battery(simulation_time, sources, 10.0).unwrap_err();
+
+                let message = error.to_string();
+                assert!(message.contains("75"), "{message}");
+                assert!(message.contains("65"), "{message}");
+            }
+
+            #[rstest]
+            fn test_accepts_temperature_schedule_within_flow_temp(simulation_time: SimulationTime) {
+                let source = make_heat_source_wet_source(
+                    simulation_time,
+                    Some(40.0),
+                    Some(60.0),
+                    ScheduleUnit::Temperature,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("hp".into(), source);
+
+                assert!(try_make_battery(simulation_time, sources, 10.0).is_ok());
+            }
+
+            #[rstest]
+            fn test_soc_schedule_is_not_checked_as_temperature(simulation_time: SimulationTime) {
+                // Large SOC values must not be interpreted as temperature limits.
+                let source = make_heat_source_wet_source(
+                    simulation_time,
+                    Some(70.0),
+                    Some(75.0),
+                    ScheduleUnit::StateOfCharge,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("hp".into(), source);
+
+                assert!(try_make_battery(simulation_time, sources, 10.0).is_ok());
+            }
+
+            #[rstest]
+            fn test_schedule_validation_rejects_iterator_after_start(
+                simulation_time: SimulationTime,
+            ) {
+                let source = make_heat_source_wet_source(
+                    simulation_time,
+                    Some(50.0),
+                    Some(60.0),
+                    ScheduleUnit::Temperature,
+                );
+                let mut simulation_time_iterator = simulation_time.iter();
+                simulation_time_iterator.next();
+                simulation_time_iterator.next();
+
+                let error = HeatBatteryPcm::warn_if_schedule_exceeds_flow_temp(
+                    "hp".into(),
+                    &source,
+                    &simulation_time_iterator,
+                )
+                .unwrap_err();
+                assert_eq!(
+                    error.to_string(),
+                    "warn_if_schedule_exceeds_flow_temp must not be called after the simulation has started, as it resets simulation_time."
                 );
             }
         }
