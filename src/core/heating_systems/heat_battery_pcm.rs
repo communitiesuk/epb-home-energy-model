@@ -1012,16 +1012,21 @@ impl HeatBatteryPcm {
             )
         }
         let mut temp_observed_max = source.temp_flow_max;
-        for _ in simtime_iterator.clone().enumerate() {
-            let (lower, upper) = source
-                .control
-                .setpnt_range_time_control(&simtime_iterator.current_iteration());
+        for simtime in simtime_iterator.clone() {
+            let (lower, upper) = source.control.setpnt_range_time_control(&simtime);
             if let Some(lower) = lower {
                 temp_observed_max = lower.max(temp_observed_max);
             }
             if let Some(upper) = upper {
                 temp_observed_max = upper.max(temp_observed_max);
             }
+        }
+        if temp_observed_max > source.temp_flow_max {
+            tracing::warn!(
+                schedule_temperature_max = temp_observed_max,
+                temp_flow_max = source.temp_flow_max,
+                "Heat battery temperature schedule exceeds the heat source's temp_flow_max"
+            );
         }
         Ok(())
     }
@@ -7567,6 +7572,299 @@ mod tests {
             ];
             for (actual, expected) in zones_after.iter().zip(expected_zones) {
                 assert_relative_eq!(*actual, expected, epsilon = 1e-7);
+            }
+        }
+
+        mod temperature_schedule {
+            // Tests for temperature-based schedule support (Option A).
+            //
+            // When schedule_unit=ScheduleUnit.TEMPERATURE, RangeTimeControl setpoints are
+            // temperatures (°C) that get converted to SOC for comparison against
+            // the battery's current state. A warning is emitted when any schedule
+            // temperature exceeds temp_flow_max.
+            //
+            // Uses a battery with 8 layers, temp_min_useful=10°C, max_temp=80°C.
+            use super::*;
+            fn make_direct_electric_source(
+                simulation_time: SimulationTime,
+                lower: Option<f64>,
+                upper: Option<f64>,
+                schedule_unit: ScheduleUnit,
+            ) -> HeatBatteryChargingSource {
+                let control = make_range_time_control(simulation_time, lower, upper);
+                HeatBatteryChargingSource {
+                    source_type: ChargingSourceType::DirectElectric,
+                    control,
+                    rated_charge_power: None,
+                    heat_source_service: None,
+                    temp_flow_max: 80.,
+                    flow_rate_charging_l_per_min: None,
+                    hex_a: None,
+                    hex_b: None,
+                    hex_velocity_at_1_l_per_min: None,
+                    hex_capillary_diameter_m: None,
+                    schedule_unit,
+                }
+            }
+            fn make_battery(
+                simulation_time: SimulationTime,
+                sources: IndexMap<ArcStr, HeatBatteryChargingSource>,
+                temp_init: f64,
+            ) -> Arc<RwLock<HeatBatteryPcm>> {
+                // Create a battery in new-format mode with given sources and initial temp.
+                let energy_supply = Arc::new(RwLock::new(
+                    EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps())
+                        .build(),
+                ));
+                let external_conditions = external_conditions(simulation_time);
+                let energy_supply_connection =
+                    EnergySupply::connection(energy_supply.clone(), "SOCCtrl").unwrap();
+                let heat_battery_details =
+                    create_heat_battery_details_with_temp_init(None, None, temp_init);
+
+                Arc::new(RwLock::new(
+                    HeatBatteryPcm::new(
+                        &heat_battery_details,
+                        energy_supply.into(),
+                        energy_supply_connection,
+                        simulation_time.iter(),
+                        external_conditions.into(),
+                        Some(10.0),
+                        temp_air_int_callback(),
+                        None,
+                        Some(sources),
+                        Some(8),
+                        Some(20.0),
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .unwrap(),
+                ))
+            }
+            #[rstest]
+            fn test_temp_to_soc_at_boundaries(simulation_time: SimulationTime) {
+                // temp_to_soc returns 0.0 at temp_min_useful and 1.0 at max_temperature.
+                let source = make_direct_electric_source(
+                    simulation_time,
+                    Some(0.2),
+                    Some(0.8),
+                    ScheduleUnit::StateOfCharge,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("el".into(), source);
+                let battery = make_battery(simulation_time, sources, 10.0);
+
+                assert_relative_eq!(
+                    battery.read().temp_to_soc(10.0).unwrap(),
+                    0.0,
+                    epsilon = 1e-7
+                );
+                assert_relative_eq!(
+                    battery.read().temp_to_soc(80.0).unwrap(),
+                    1.0,
+                    epsilon = 1e-7
+                );
+            }
+
+            #[rstest]
+            fn test_temp_to_soc_intermediate(simulation_time: SimulationTime) {
+                // temp_to_soc returns intermediate SOC for temperatures between boundaries.
+                let source = make_direct_electric_source(
+                    simulation_time,
+                    Some(0.2),
+                    Some(0.8),
+                    ScheduleUnit::StateOfCharge,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("el".into(), source);
+                let battery = make_battery(simulation_time, sources, 10.0);
+
+                assert_relative_eq!(
+                    battery.read().temp_to_soc(50.0).unwrap(),
+                    0.25980051032243096,
+                    epsilon = 1e-7
+                );
+                assert_relative_eq!(
+                    battery.read().temp_to_soc(65.0).unwrap(),
+                    0.8782185107863605,
+                    epsilon = 1e-7
+                );
+            }
+
+            #[rstest]
+            fn test_soc_to_temp_at_boundaries(simulation_time: SimulationTime) {
+                // soc_to_temp returns temp_ref at SOC 0 and temp_charge_max at SOC 1.
+                let source = make_direct_electric_source(
+                    simulation_time,
+                    Some(0.2),
+                    Some(0.8),
+                    ScheduleUnit::StateOfCharge,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("el".into(), source);
+                let battery = make_battery(simulation_time, sources, 10.0);
+                let battery = battery.read();
+
+                assert_relative_eq!(battery.soc_to_temp(0.0), 10.0, epsilon = 1e-7);
+                assert_relative_eq!(battery.soc_to_temp(1.0), 80.0, epsilon = 1e-7);
+                // Beyond boundaries: clamp
+                assert_relative_eq!(battery.soc_to_temp(-0.1), 10.0, epsilon = 1e-7);
+                assert_relative_eq!(battery.soc_to_temp(1.5), 80.0, epsilon = 1e-7);
+            }
+
+            #[rstest]
+            fn test_soc_to_temp_roundtrip_all_regimes(simulation_time: SimulationTime) {
+                // soc_to_temp(temp_to_soc(T)) == T for temperatures across all three regimes.
+                //
+                // Tests below phase transition (20, 40, 56°C), during phase transition
+                // (57.5, 58°C), and above phase transition (60, 70, 80°C).
+                let source = make_direct_electric_source(
+                    simulation_time,
+                    Some(0.2),
+                    Some(0.8),
+                    ScheduleUnit::StateOfCharge,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("el".into(), source);
+                let battery = make_battery(simulation_time, sources, 10.0);
+                let battery = battery.read();
+                // Temperatures spanning: below transition (10–57), during (57–59), above (59–80)
+                for temp in [
+                    10.0, 20.0, 40.0, 56.0, 57.0, 57.5, 58.0, 59.0, 60.0, 70.0, 80.0,
+                ] {
+                    let soc = battery.temp_to_soc(temp).unwrap();
+                    assert_relative_eq!(battery.soc_to_temp(soc), temp, epsilon = 1e-7);
+                }
+            }
+
+            #[rstest]
+            fn test_temp_to_soc_roundtrip_from_soc(simulation_time: SimulationTime) {
+                // temp_to_soc(soc_to_temp(S)) == S for various SOC values.
+                let source = make_direct_electric_source(
+                    simulation_time,
+                    Some(0.2),
+                    Some(0.8),
+                    ScheduleUnit::StateOfCharge,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("el".into(), source);
+                let battery = make_battery(simulation_time, sources, 10.0);
+                let battery = battery.read();
+
+                for soc in [0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0] {
+                    let temp = battery.soc_to_temp(soc);
+                    assert_relative_eq!(battery.temp_to_soc(temp).unwrap(), soc, epsilon = 1e-7);
+                }
+            }
+
+            #[rstest]
+            fn test_resolve_setpoints_converts_temperature_to_soc(
+                simulation_time: SimulationTime,
+                simulation_time_iteration: SimulationTimeIteration,
+            ) {
+                // resolve_setpoints converts temperature setpoints to SOC.
+                let source = make_direct_electric_source(
+                    simulation_time,
+                    Some(50.0),
+                    Some(65.0),
+                    ScheduleUnit::Temperature,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("el".into(), source.clone());
+                let battery = make_battery(simulation_time, sources, 10.0);
+                let (lower, upper) = battery
+                    .read()
+                    .resolve_setpoints(&source, &simulation_time_iteration)
+                    .unwrap();
+                // Both should be SOC values between 0 and 1
+                assert!(lower.unwrap() >= 0.0 && lower.unwrap() <= 1.0);
+                assert!(upper.unwrap() >= 0.0 && upper.unwrap() <= 1.0);
+
+                assert_relative_eq!(lower.unwrap(), 0.25980051032243096, epsilon = 1e-10);
+                assert_relative_eq!(upper.unwrap(), 0.8782185107863605, epsilon = 1e-10);
+            }
+
+            #[rstest]
+            fn test_resolve_setpoints_passthrough_for_soc_unit(
+                simulation_time: SimulationTime,
+                simulation_time_iteration: SimulationTimeIteration,
+            ) {
+                // resolve_setpoints returns SOC values unchanged when schedule_unit="soc"
+                let source = make_direct_electric_source(
+                    simulation_time,
+                    Some(0.3),
+                    Some(0.8),
+                    ScheduleUnit::StateOfCharge,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("el".into(), source.clone());
+                let battery = make_battery(simulation_time, sources, 10.0);
+                let (lower, upper) = battery
+                    .read()
+                    .resolve_setpoints(&source, &simulation_time_iteration)
+                    .unwrap();
+
+                assert_relative_eq!(lower.unwrap(), 0.3, epsilon = 1e-10);
+                assert_relative_eq!(upper.unwrap(), 0.8, epsilon = 1e-10);
+            }
+
+            #[rstest]
+            fn test_switch_on_with_temperature_schedule(
+                simulation_time: SimulationTime,
+                simulation_time_iteration: SimulationTimeIteration,
+            ) {
+                // Charging activates when battery temp is below the lower temperature setpoint.
+                //
+                // Battery at 10°C (SOC=0), schedule lower=50°C → SOC for 50°C is above 0,
+                // so the battery's SOC (0.0) is below the converted threshold.
+                let source = make_direct_electric_source(
+                    simulation_time,
+                    Some(50.0),
+                    Some(65.0),
+                    ScheduleUnit::Temperature,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("el".into(), source.clone());
+                let battery = make_battery(simulation_time, sources, 10.0);
+                battery
+                    .read()
+                    .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                    .unwrap();
+
+                assert_eq!(battery.read().charging_active.read().get("el"), Some(&true));
+            }
+
+            #[rstest]
+            fn test_switch_off_with_temperature_schedule(
+                simulation_time: SimulationTime,
+                simulation_time_iteration: SimulationTimeIteration,
+            ) {
+                // At 80°C (SOC=1), the 65°C upper threshold is below the battery's SOC.
+                let source = make_direct_electric_source(
+                    simulation_time,
+                    Some(50.0),
+                    Some(65.0),
+                    ScheduleUnit::Temperature,
+                );
+                let mut sources = IndexMap::new();
+                sources.insert("el".into(), source.clone());
+                let battery = make_battery(simulation_time, sources, 80.0);
+                battery
+                    .read()
+                    .charging_active
+                    .write()
+                    .insert("el".into(), true);
+                battery
+                    .read()
+                    .determine_heat_source_switch_off("el", &source, &simulation_time_iteration)
+                    .unwrap();
+
+                assert_eq!(
+                    battery.read().charging_active.read().get("el"),
+                    Some(&false)
+                );
             }
         }
     }
