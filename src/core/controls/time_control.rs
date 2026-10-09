@@ -105,6 +105,7 @@ macro_rules! per_control {
 
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::energy_supply::energy_supply::EnergySupply;
+use crate::corpus::ObscureErrorReporter;
 pub(crate) use per_control;
 
 pub(crate) trait ControlBehaviour: Send + Sync {
@@ -219,6 +220,7 @@ pub(crate) struct ChargeControl {
     external_sensor: Option<ExternalSensor>,
     heat_retention_data: Option<ChargeControlHeatRetentionFields>,
     charge_calc_time: f64,
+    obscure_error_reporter: ObscureErrorReporter,
 }
 
 #[derive(Debug)]
@@ -262,6 +264,7 @@ impl ChargeControl {
         external_conditions: Option<Arc<ExternalConditions>>,
         external_sensor: Option<ExternalSensor>,
         charge_calc_time: Option<f64>,
+        obscure_error_reporter: ObscureErrorReporter,
     ) -> anyhow::Result<Self> {
         if let Some(ref temp_charge_cut_delta) = temp_charge_cut_delta {
             validate_schedule_length(
@@ -392,6 +395,7 @@ impl ChargeControl {
             external_sensor,
             heat_retention_data,
             charge_calc_time,
+            obscure_error_reporter,
         })
     }
 
@@ -405,7 +409,7 @@ impl ChargeControl {
         &self,
         simtime: SimulationTimeIteration,
         temp_air: Option<f64>,
-    ) -> anyhow::Result<f64> {
+    ) -> f64 {
         // Calculate target charge nominal when unit is on
         let mut target_charge_nominal = if self.is_on(&simtime) {
             self.charge_level
@@ -416,7 +420,7 @@ impl ChargeControl {
             0.
         };
 
-        let target_charge = match self.logic_type {
+        match self.logic_type {
             ControlLogicType::Manual => target_charge_nominal,
             _ => {
                 // automatic, celect and hhrsh control include temperature charge cut logic
@@ -449,7 +453,7 @@ impl ChargeControl {
                             self.external_conditions.as_ref(),
                         ) {
                             let limit =
-                                self.get_limit_factor(external_conditions.air_temp(&simtime))?;
+                                self.get_limit_factor(external_conditions.air_temp(&simtime));
                             target_charge_nominal * limit
                         } else {
                             target_charge_nominal
@@ -471,7 +475,7 @@ impl ChargeControl {
                             self.external_conditions.as_ref(),
                         ) {
                             let limit =
-                                self.get_limit_factor(external_conditions.air_temp(&simtime))?;
+                                self.get_limit_factor(external_conditions.air_temp(&simtime));
                             target_charge_nominal * limit
                         } else {
                             target_charge_nominal
@@ -492,9 +496,7 @@ impl ChargeControl {
                     ControlLogicType::Manual => unreachable!(),
                 }
             }
-        };
-
-        Ok(target_charge)
+        }
     }
 
     pub(crate) fn energy_to_store(
@@ -589,7 +591,7 @@ impl ChargeControl {
         Some(total_hdh)
     }
 
-    fn get_limit_factor(&self, external_temperature: f64) -> anyhow::Result<f64> {
+    fn get_limit_factor(&self, external_temperature: f64) -> f64 {
         let correlation = &self.external_sensor.as_ref().expect("get_limit_factor should not be called on ChargeControl when there is no external sensor").correlation;
 
         // Edge cases: If temperature is below the first point or above the last point
@@ -607,7 +609,7 @@ impl ChargeControl {
                 max_relative = 1e-9
             )
         {
-            return Ok(first_correlation.max_charge);
+            return first_correlation.max_charge;
         } else if external_temperature > last_correlation.temperature
             || relative_eq!(
                 external_temperature,
@@ -616,7 +618,7 @@ impl ChargeControl {
                 max_relative = 1e-9
             )
         {
-            return Ok(last_correlation.max_charge);
+            return last_correlation.max_charge;
         }
 
         // Linear interpolation
@@ -649,11 +651,11 @@ impl ChargeControl {
                 // perform linear interpolation
                 let slope = (max_charge_2 - max_charge_1) / (temp_2 - temp_1);
                 let limit = max_charge_1 + slope * (external_temperature - temp_1);
-                return Ok(limit);
+                return limit;
             }
         }
 
-        bail!("Calculation of limiting factor linked to external sensor for automatic control failed.")
+        self.obscure_error_reporter.report(anyhow!("Calculation of limiting factor linked to external sensor for automatic control failed.")).and_return(0.)
     }
 }
 
@@ -670,11 +672,7 @@ impl ControlBehaviour for ChargeControl {
         if !self.charge_time_control.is_on(simulation_time_iteration) {
             None
         } else {
-            // TODO can we avoid unwrap here?
-            Some(
-                self.target_charge(*simulation_time_iteration, None)
-                    .unwrap(),
-            )
+            Some(self.target_charge(*simulation_time_iteration, None))
         }
     }
 
@@ -1757,13 +1755,14 @@ impl CombinationTimeControl {
         control_name: &str,
         simtime: SimulationTimeIteration,
         temp_air: Option<f64>,
-    ) -> anyhow::Result<Option<f64>> {
+    ) -> Option<f64> {
         let control = &self.controls[control_name];
-        Ok(if let Control::Charge(c) = control {
-            Some(c.target_charge(simtime, temp_air)?)
+
+        if let Control::Charge(c) = control {
+            Some(c.target_charge(simtime, temp_air))
         } else {
             None
-        })
+        }
     }
 
     /// Evaluate the combination for target charge
@@ -1789,7 +1788,7 @@ impl CombinationTimeControl {
                         temp_air,
                     )?)
                 } else {
-                    self.evaluate_control_target_charge(control_name, simtime, temp_air)?
+                    self.evaluate_control_target_charge(control_name, simtime, temp_air)
                 })
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
@@ -3193,6 +3192,7 @@ mod tests {
                 external_conditions.map(Arc::new),
                 Some(external_sensor()),
                 None,
+                Default::default(),
             )
         }
 
@@ -3214,6 +3214,7 @@ mod tests {
                 external_conditions.map(Arc::new),
                 Some(external_sensor()),
                 None,
+                Default::default(),
             )
         }
 
@@ -3393,14 +3394,14 @@ mod tests {
 
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_eq!(
-                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    charge_control_1.target_charge(t_it, Some(12.5)),
                     expected_target_charges.0[t_idx],
                     "incorrect target charge returned"
                 );
             }
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_eq!(
-                    charge_control_1.target_charge(t_it, Some(19.5)).unwrap(),
+                    charge_control_1.target_charge(t_it, Some(19.5)),
                     expected_target_charges.1[t_idx],
                     "incorrect target charge returned"
                 );
@@ -3419,7 +3420,7 @@ mod tests {
 
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_eq!(
-                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    charge_control_1.target_charge(t_it, Some(12.5)),
                     expected_target_charges[t_idx],
                     "incorrect target charge returned"
                 );
@@ -3460,7 +3461,7 @@ mod tests {
 
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_eq!(
-                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    charge_control_1.target_charge(t_it, Some(12.5)),
                     expected_target_charges[t_idx],
                     "incorrect target charge returned"
                 );
@@ -3480,7 +3481,7 @@ mod tests {
 
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_eq!(
-                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    charge_control_1.target_charge(t_it, Some(12.5)),
                     expected_target_charges[t_idx],
                     "incorrect target charge returned"
                 );
@@ -3500,7 +3501,7 @@ mod tests {
 
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_eq!(
-                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    charge_control_1.target_charge(t_it, Some(12.5)),
                     expected_target_charges[t_idx],
                     "incorrect target charge returned"
                 );
@@ -3519,7 +3520,7 @@ mod tests {
 
             for (t_idx, t_it) in simulation_time.iter().enumerate() {
                 assert_eq!(
-                    charge_control_1.target_charge(t_it, Some(12.5)).unwrap(),
+                    charge_control_1.target_charge(t_it, Some(12.5)),
                     expected_target_charges[t_idx],
                     "incorrect target charge returned"
                 );
@@ -3576,6 +3577,7 @@ mod tests {
                 Some(Arc::new(external_conditions())),
                 Some(external_sensor()),
                 None,
+                Default::default(),
             );
 
             assert!(charge_control.is_err());
@@ -3605,6 +3607,7 @@ mod tests {
                 Some(Arc::new(external_conditions)),
                 Some(external_sensor()),
                 None,
+                Default::default(),
             );
 
             let expected: Vec<Option<f64>> = [
@@ -3649,6 +3652,7 @@ mod tests {
                 Some(Arc::new(external_conditions)),
                 Some(external_sensor()),
                 None,
+                Default::default(),
             )
             .unwrap();
 
@@ -3671,7 +3675,11 @@ mod tests {
 
         #[rstest]
         fn test_get_limit_factor_invalid(charge_control_1: ChargeControl) {
-            assert!(charge_control_1.get_limit_factor(f64::NAN).is_err())
+            charge_control_1.get_limit_factor(f64::NAN);
+            assert!(charge_control_1
+                .obscure_error_reporter
+                .found_error()
+                .is_some());
         }
 
         // the below tests are from Test_ChargeControlSetPointAdapter in Python
@@ -3728,9 +3736,7 @@ mod tests {
             )
             .unwrap();
 
-            let target_charge = charge_control
-                .target_charge(simulation_time_iteration, None)
-                .unwrap();
+            let target_charge = charge_control.target_charge(simulation_time_iteration, None);
             let setpnt = charge_control.setpnt(&simulation_time_iteration);
 
             assert_eq!(setpnt, Some(target_charge));
@@ -3870,6 +3876,7 @@ mod tests {
                 Some(Arc::new(external_conditions)),
                 Some(external_sensor),
                 None,
+                Default::default(),
             )
             .unwrap()
         }
@@ -4721,6 +4728,7 @@ mod tests {
             Some(external_conditions.into()),
             Some(external_sensor),
             None,
+            Default::default(),
         )
         .unwrap()
     }

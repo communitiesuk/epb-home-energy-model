@@ -306,7 +306,7 @@ impl HeatStorageDryCore {
         );
 
         // Charging: determine the maximum power available for charging
-        let target_charge = self.target_electric_charge(*simtime)?;
+        let target_charge = self.target_electric_charge(*simtime);
         let (charge_rate, soc_max) = if target_charge > 0. {
             (self.pwr_in, target_charge)
         } else {
@@ -476,7 +476,7 @@ impl HeatStorageDryCore {
         };
 
         // Charging: determine the maximum power available for charging
-        let target_charge = self.target_electric_charge(*simtime)?;
+        let target_charge = self.target_electric_charge(*simtime);
         let (charge_rate, soc_max) = if target_charge > 0.
             && !relative_eq!(target_charge, 0.0, max_relative = 1e-9, epsilon = 1e-10)
         {
@@ -614,7 +614,7 @@ impl HeatStorageDryCore {
     pub(crate) fn target_electric_charge(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
+    ) -> f64 {
         // Calculates target charge from potential to charge system
 
         let charge_control = match &self.charge_control {
@@ -691,7 +691,7 @@ impl HeatStorageDryCore {
                 // is treated as an upper limit for target charge
                 charge_control
                     .target_charge(simulation_time_iteration, None)
-                    .map(|tc| tc.min(target_charge_hhrsh))
+                    .min(target_charge_hhrsh)
             }
             ControlLogicType::HeatBattery => {
                 // Implements the "HEAT_BATTERY" control logic
@@ -733,7 +733,7 @@ impl HeatStorageDryCore {
                 // is treated as an upper limit for target charge
                 charge_control
                     .target_charge(simulation_time_iteration, None)
-                    .map(|target_charge| target_charge.min(target_charge_hb))
+                    .min(target_charge_hb)
             }
         }
     }
@@ -2112,6 +2112,7 @@ mod tests {
                 external_conditions.into(),
                 external_sensor.into(),
                 None,
+                Default::default(),
             )
             .unwrap()
             .into(),
@@ -2138,6 +2139,7 @@ mod tests {
                 external_conditions.into(),
                 external_sensor.into(),
                 None,
+                Default::default(),
             )
             .unwrap()
             .into(),
@@ -2745,11 +2747,7 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         for t_it in simulation_time.iter() {
-            let target_charge = heat_battery
-                .storage
-                .read()
-                .target_electric_charge(t_it)
-                .unwrap();
+            let target_charge = heat_battery.storage.read().target_electric_charge(t_it);
 
             // Should be a valid charge value between 0 and 1
             assert!(target_charge >= 0.);

@@ -2246,7 +2246,7 @@ impl HeatBatteryPcm {
             if charge_control.is_on(simtime) {
                 // ChargeControl: single electric element with temperature-based proxy
                 let pwr_in = self.electric_charge(*simtime);
-                let target = charge_control.target_charge(*simtime, None)?;
+                let target = charge_control.target_charge(*simtime, None);
                 return self.charge_battery_electric(pwr_in, target);
             }
             Ok((0., zone_temp_c_after_charging))
@@ -3342,7 +3342,7 @@ impl HeatBatteryPcm {
         std::result::Result::Ok((results_per_timestep, results_annual))
     }
 
-    fn target_charge(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+    fn target_charge(&self, simtime: SimulationTimeIteration) -> f64 {
         if let Some(charge) = &self.charge_control {
             charge.target_charge(simtime, None)
         } else {
@@ -3571,6 +3571,7 @@ mod tests {
             Some(external_conditions.into()),
             Some(external_sensor),
             None,
+            Default::default(),
         )
         .unwrap()
         .into()
@@ -4355,6 +4356,7 @@ mod tests {
                 Some(external_conditions.into()),
                 Some(external_sensor),
                 None,
+                Default::default(),
             )
             .unwrap(),
         );
@@ -4662,6 +4664,7 @@ mod tests {
             Some(external_conditions.into()),
             Some(external_sensor),
             None,
+            Default::default(),
         )
         .unwrap()
         .into();
@@ -4734,6 +4737,7 @@ mod tests {
             Some(external_conditions.clone().into()),
             Some(external_sensor.clone()),
             None,
+            Default::default(),
         )
         .unwrap()
         .into();
@@ -6131,6 +6135,7 @@ mod tests {
             Some(external_conditions.into()),
             Some(external_sensor),
             None,
+            Default::default(),
         )
         .unwrap()
         .into();
@@ -6216,6 +6221,7 @@ mod tests {
             Some(external_conditions.into()),
             Some(external_sensor),
             None,
+            Default::default(),
         )
         .unwrap()
         .into();
@@ -6271,6 +6277,7 @@ mod tests {
             Some(external_conditions.into()),
             Some(external_sensor),
             None,
+            Default::default(),
         )
         .unwrap()
         .into();

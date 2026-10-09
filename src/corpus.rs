@@ -153,6 +153,7 @@ fn control_from_input(
     control_input: &ControlInput,
     external_conditions: Arc<ExternalConditions>,
     simulation_time_iterator: &SimulationTimeIterator,
+    obscure_error_reporter: &ObscureErrorReporter,
 ) -> anyhow::Result<Controls> {
     let mut core: Vec<HeatSourceControl> = Default::default();
     let mut extra: IndexMap<ArcStr, Control> = Default::default();
@@ -166,6 +167,7 @@ fn control_from_input(
             external_conditions.clone(),
             simulation_time_iterator,
             control_input,
+            obscure_error_reporter,
         )? {
             core.push(HeatSourceControl::HotWaterTimer(ctrl));
         }
@@ -176,6 +178,7 @@ fn control_from_input(
             external_conditions.clone(),
             simulation_time_iterator,
             control_input,
+            obscure_error_reporter,
         )? {
             core.push(HeatSourceControl::WindowOpening(ctrl));
         }
@@ -186,6 +189,7 @@ fn control_from_input(
             external_conditions.clone(),
             simulation_time_iterator,
             control_input,
+            obscure_error_reporter,
         )? {
             extra.insert(name.to_string().into(), ctrl);
         }
@@ -199,6 +203,7 @@ fn single_control_from_details(
     external_conditions: Arc<ExternalConditions>,
     simulation_time_iterator: &SimulationTimeIterator,
     control_input: &ControlInput,
+    obscure_error_reporter: &ObscureErrorReporter,
 ) -> anyhow::Result<Option<Control>> {
     Ok(match details {
         ControlDetails::OnOffTimer {
@@ -305,6 +310,7 @@ fn single_control_from_details(
                     Some(external_conditions.clone()),
                     external_sensor.clone(),
                     Some(*charge_calc_time),
+                    obscure_error_reporter.clone(),
                 )?
                 .into(),
             )
@@ -349,6 +355,7 @@ fn single_control_from_details(
                 control_input: &ControlInput,
                 external_conditions: Arc<ExternalConditions>,
                 simulation_time_iterator: &SimulationTimeIterator,
+                obscure_error_reporter: &ObscureErrorReporter,
             ) -> anyhow::Result<IndexMap<ArcStr, Control>> {
                 let mut empty_set: IndexSet<ArcStr> = Default::default();
                 let visited = visited.unwrap_or(&mut empty_set);
@@ -372,6 +379,7 @@ fn single_control_from_details(
                                     control_input,
                                     external_conditions.clone(),
                                     simulation_time_iterator,
+                                    obscure_error_reporter,
                                 )?
                                 .keys()
                                 .cloned(),
@@ -394,6 +402,7 @@ fn single_control_from_details(
                             external_conditions.clone(),
                             simulation_time_iterator,
                             control_input,
+                            obscure_error_reporter,
                         ) {
                             Ok(c) => c,
                             Err(_) => return Some(Err(anyhow!("The control name '{control_name}' refers to a control that cannot be included as part of a combination.")))
@@ -417,6 +426,7 @@ fn single_control_from_details(
                 control_input,
                 external_conditions,
                 simulation_time_iterator,
+                obscure_error_reporter,
             )?;
 
             Control::CombinationTime(
@@ -442,6 +452,7 @@ fn single_control_from_details(
                         simulation_time_iterator,
                         control_input,
                         control_name,
+                        obscure_error_reporter,
                     )?;
                     ScheduleOrControl::Control(control)
                 }
@@ -457,6 +468,7 @@ fn single_control_from_details(
                         simulation_time_iterator,
                         control_input,
                         control_name,
+                        obscure_error_reporter,
                     )?;
                     ScheduleOrControl::Control(control)
                 }
@@ -480,6 +492,7 @@ fn get_referenced_control(
     simulation_time_iterator: &SimulationTimeIterator,
     control_input: &ControlInput,
     control_name: &ArcStr,
+    obscure_error_reporter: &ObscureErrorReporter,
 ) -> anyhow::Result<Control> {
     // TODO avoid circular references
     let control_details = match control_input.get(control_name) {
@@ -493,6 +506,7 @@ fn get_referenced_control(
         external_conditions.clone(),
         simulation_time_iterator,
         control_input,
+        obscure_error_reporter,
     )?;
 
     if control.is_none() {
@@ -588,7 +602,10 @@ fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f
 
 /// Calculate heat transfer coefficient (HTC) and heat loss parameter (HLP)
 /// according to the SAP10.2 specification
-pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCalculation> {
+pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(
+    input: &T,
+    obscure_error_reporter: Option<&ObscureErrorReporter>,
+) -> anyhow::Result<HtcHlpCalculation> {
     let simtime = input.simulation_time();
     let external_conditions = Arc::from(create_external_conditions(
         (*input.external_conditions()).clone(),
@@ -610,10 +627,13 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
         );
     }
 
+    let obscure_error_reporter = obscure_error_reporter.cloned().unwrap_or_default();
+
     let controls = control_from_input(
         input.control(),
         external_conditions.clone(),
         &simtime.iter(),
+        &obscure_error_reporter,
     )?;
     // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
     let ventilation = InfiltrationVentilation::create(
@@ -826,6 +846,7 @@ pub struct Corpus {
     temp_internal_air_prev: Arc<AtomicF64>,
     smart_appliance_controls: IndexMap<ArcStr, Arc<SmartApplianceControl>>,
     input: Arc<Input>,
+    obscure_error_reporter: ObscureErrorReporter,
 }
 
 impl Corpus {
@@ -844,6 +865,8 @@ impl Corpus {
                 &simulation_time_iterator,
             )?,
         });
+
+        let obscure_error_reporter = ObscureErrorReporter::default();
 
         let diverter_types: DiverterTypes = input
             .energy_supply
@@ -871,6 +894,7 @@ impl Corpus {
             &input.control,
             external_conditions.clone(),
             simulation_time_iterator.clone().as_ref(),
+            &obscure_error_reporter,
         )?;
 
         let event_schedules = event_schedules_from_input(
@@ -1243,6 +1267,7 @@ impl Corpus {
             temp_internal_air_prev,
             smart_appliance_controls,
             input,
+            obscure_error_reporter,
         })
     }
 
@@ -2543,6 +2568,11 @@ impl Corpus {
                 t_it,
             )?;
 
+            // if there were any obscure errors here reported via the reporter, report them up
+            if let Some(error) = self.obscure_error_reporter.found_error() {
+                return Err(anyhow!(error));
+            }
+
             // Perform calculations that can only be done after all heating
             // services have been calculated
             for system in self.timestep_end_calcs.read().iter() {
@@ -2987,7 +3017,7 @@ impl Corpus {
             total_htc: heat_trans_coeff,
             total_hlp: heat_loss_param,
             ..
-        } = calc_htc_hlp(self.input.as_ref())?;
+        } = calc_htc_hlp(self.input.as_ref(), (&self.obscure_error_reporter).into())?;
 
         let heat_capacity_param = self.calc_hcp();
         let heat_loss_form_factor = self.calc_hlff();
@@ -6465,6 +6495,44 @@ struct RequiredVentData {
     schedule: Vec<Option<f64>>,
     start_day: u32,
     time_series_step: f64,
+}
+
+/// A reporter that can be passed into individual models and used to report up obscure/ unlikely errors.
+/// This means that a method that would be expected to return without erroring can indicate an error without
+/// necessitating passing a result all the way up the call stack, including through methods that one would not
+/// expect to be fallible. Should be used sparingly; an exception (get it?) rather than a rule.
+///
+/// Typical usage at the end of a method:
+///
+/// ```
+/// self.error_reporter.report(err).and_return(f64::default())
+/// ```
+#[derive(Clone, Debug, Default)]
+pub struct ObscureErrorReporter(Arc<Mutex<Option<Box<dyn std::error::Error + Send + Sync>>>>);
+
+impl ObscureErrorReporter {
+    pub fn report(
+        &self,
+        error: impl Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+    ) -> AndReturn {
+        let mut lock = self.0.lock();
+        lock.replace(error.into());
+
+        AndReturn
+    }
+
+    pub(crate) fn found_error(&self) -> Option<Box<dyn std::error::Error + Send + Sync>> {
+        self.0.lock().take()
+    }
+}
+
+/// simple empty struct that provides a pass-through and_return method
+pub struct AndReturn;
+
+impl AndReturn {
+    pub fn and_return<T>(self, value: T) -> T {
+        value
+    }
 }
 
 #[cfg(test)]

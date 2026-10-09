@@ -382,7 +382,7 @@ impl ElecStorageHeater {
     pub(crate) fn target_electric_charge(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
+    ) -> f64 {
         let storage = self.storage.read();
         storage.target_electric_charge(simulation_time_iteration)
     }
@@ -566,6 +566,7 @@ mod tests {
                 Some(external_conditions),
                 Some(external_sensor),
                 None,
+                Default::default(),
             )
             .unwrap()
             .into(),
@@ -941,7 +942,7 @@ mod tests {
         ]; // Expected target charge for each timestep
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
-            let target_elec_charge = elec_storage_heater.target_electric_charge(t_it).unwrap();
+            let target_elec_charge = elec_storage_heater.target_electric_charge(t_it);
             assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
         }
     }
@@ -967,6 +968,7 @@ mod tests {
                 Some(external_conditions.clone()),
                 Some(external_sensor),
                 None,
+                Default::default(),
             )
             .unwrap()
             .into(),
@@ -986,7 +988,7 @@ mod tests {
         ];
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            let target_elec_charge = heater.target_electric_charge(t_it).unwrap();
+            let target_elec_charge = heater.target_electric_charge(t_it);
 
             assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
         }
@@ -1013,6 +1015,7 @@ mod tests {
                 Some(external_conditions.clone()),
                 Some(external_sensor),
                 None,
+                Default::default(),
             )
             .unwrap()
             .into(),
@@ -1032,7 +1035,7 @@ mod tests {
         ];
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            let target_elec_charge = heater.target_electric_charge(t_it).unwrap();
+            let target_elec_charge = heater.target_electric_charge(t_it);
 
             assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
         }
@@ -1059,6 +1062,7 @@ mod tests {
                 Some(external_conditions.clone()),
                 Some(external_sensor),
                 None,
+                Default::default(),
             )
             .unwrap()
             .into(),
@@ -1078,7 +1082,7 @@ mod tests {
         ];
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            let target_elec_charge = heater.target_electric_charge(t_it).unwrap();
+            let target_elec_charge = heater.target_electric_charge(t_it);
 
             assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
         }
@@ -1105,6 +1109,7 @@ mod tests {
                 Some(external_conditions.clone()),
                 Some(external_sensor),
                 None,
+                Default::default(),
             )
             .unwrap()
             .into(),
@@ -1128,7 +1133,7 @@ mod tests {
         ];
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            let target_elec_charge = heater.target_electric_charge(t_it).unwrap();
+            let target_elec_charge = heater.target_electric_charge(t_it);
 
             assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
         }
@@ -1155,6 +1160,7 @@ mod tests {
                 Some(external_conditions.clone()),
                 Some(external_sensor),
                 None,
+                Default::default(),
             )
             .unwrap()
             .into(),
