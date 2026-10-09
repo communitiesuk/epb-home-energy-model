@@ -3034,9 +3034,10 @@ impl HeatBatteryPcm {
                 .load(Ordering::SeqCst);
         // Direct DHW uses a separate heat exchanger from hydronic charging,
         // so time spent on direct DHW is still available for charging.
-        let time_remaining_for_charging = self
+        let time_running_direct = self
             .time_running_direct_current_timestep
-            .fetch_add(time_remaining_current_timestep, Ordering::SeqCst);
+            .load(Ordering::SeqCst);
+        let time_remaining_for_charging = time_remaining_current_timestep + time_running_direct;
 
         if self.flag_first_call.load(Ordering::SeqCst) {
             self.first_call();
@@ -3053,15 +3054,8 @@ impl HeatBatteryPcm {
         // Charging battery for the remaining of the timestep. Direct DHW
         // time is added back because it uses a separate heat exchanger and
         // can happen simultaneously with hydronic charging.
-        let (end_of_ts_charge, zone_temp_c_after_charging) = if self
-            .charge_control
-            .clone()
-            .is_some_and(|cc| cc.is_on(&simtime))
-        {
-            self.charge_battery(time_remaining_for_charging, &simtime)?
-        } else {
-            (0., self.zone_temp_c_dist_initial.read().clone())
-        };
+        let (end_of_ts_charge, zone_temp_c_after_charging) =
+            self.charge_battery(time_remaining_for_charging, &simtime)?;
 
         self.energy_supply_connection.demand_energy(
             self.energy_charged_electric.load(Ordering::SeqCst) * self.n_units as f64,
@@ -7155,6 +7149,156 @@ mod tests {
                 battery.read().charging_active.read().get("el"),
                 Some(&false)
             );
+        }
+
+        #[rstest]
+        fn test_timestep_end_dispatches_electric_charging(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // timestep_end() dispatches electric charging when the source is active.
+            //
+            // Battery starts at 10°C (SOC=0) with lower setpoint 0.5. Charging
+            // should activate and raise zone temperatures above 10°C.
+            let (battery, _) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.5),
+                Some(0.9),
+                10.0,
+            );
+            battery
+                .read()
+                .timestep_end(simulation_time_iteration)
+                .unwrap();
+
+            let zones_after = battery.read().zone_temp_c_dist_initial.read().clone();
+            let expected_zones = [
+                10.0,
+                10.0,
+                10.0,
+                10.0,
+                57.225937322399936,
+                67.68285714285715,
+                67.68285714285715,
+                67.68285714285715,
+            ];
+            assert_eq!(zones_after.len(), expected_zones.len());
+            for (actual, expected) in zones_after.iter().zip(expected_zones) {
+                assert_relative_eq!(*actual, expected, epsilon = 1e-7);
+            }
+        }
+
+        #[rstest]
+        fn test_timestep_end_no_charging_when_soc_above_upper(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // timestep_end() does not charge when SOC is already above upper setpoint.
+            //
+            // Battery at 80°C (SOC=1.0) with upper setpoint 0.8. Zone temps should
+            // only change due to standing losses, not charging.
+            let (battery, _) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.2),
+                Some(0.8),
+                80.0,
+            );
+            battery
+                .read()
+                .timestep_end(simulation_time_iteration)
+                .unwrap();
+
+            let zones_after = battery.read().zone_temp_c_dist_initial.read().clone();
+            // All zones are uniformly affected by losses only.
+            let expected_zones = [78.99344692005242; 8];
+            assert_eq!(zones_after.len(), expected_zones.len());
+            for (actual, expected) in zones_after.iter().zip(expected_zones) {
+                assert_relative_eq!(*actual, expected, epsilon = 1e-7);
+            }
+        }
+
+        #[rstest]
+        fn test_timestep_end_hydronic_charges_with_heat_source_service(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+            battery_control_off: Arc<ChargeControl>,
+        ) {
+            // timestep_end() dispatches to hydronic charging when a heat source service is set.
+            //
+            // Battery starts at 10°C (SOC=0, below lower setpoint 0.2). The real
+            // heat-battery service used as a source can provide energy, causing the
+            // tested battery's zone temperatures to rise.
+            //
+            // The flow temperature is the target charge temperature plus the
+            // heat-exchanger approach difference, bounded by the source maximum:
+            // min(temp_flow_max, soc_to_temp(0.8) + 5.0) is below 65°C.
+            let range_control = make_range_time_control(simulation_time, Some(0.2), Some(0.8));
+            let source_heat_battery = create_default_heat_battery_with_overides(
+                battery_control_off,
+                None,
+                HeatBatteryPcmTestOverrides {
+                    energy_supply_end_usr_name: Some("HydronicSource".to_string()),
+                    ..Default::default()
+                },
+            );
+            let cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.0));
+            let heat_source_service = HeatBatteryPcmServiceWaterRegular::new(
+                source_heat_battery.clone(),
+                "hydronic_source_service".into(),
+                cold_feed,
+                range_control.clone(),
+            );
+            HeatBatteryPcm::create_service_connection(
+                source_heat_battery.clone(),
+                "hydronic_source_service",
+            )
+            .unwrap();
+
+            let source = HeatBatteryChargingSource {
+                source_type: ChargingSourceType::HeatSourceWet,
+                control: range_control,
+                rated_charge_power: None,
+                heat_source_service: Some(HeatSourceWetService::HeatBatteryPCMServiceWaterRegular(
+                    heat_source_service,
+                )),
+                temp_flow_max: 65.0,
+                flow_rate_charging_l_per_min: Some(10.0),
+                hex_a: Some(174.33952),
+                hex_b: Some(-931.565),
+                hex_velocity_at_1_l_per_min: Some(0.035),
+                hex_capillary_diameter_m: Some(6.5 / 1000.0),
+                schedule_unit: ScheduleUnit::StateOfCharge,
+            };
+            let mut sources = IndexMap::new();
+            sources.insert("hp".into(), source);
+            let battery = make_battery(simulation_time, sources, 10.0);
+
+            battery
+                .read()
+                .timestep_end(simulation_time_iteration)
+                .unwrap();
+
+            let zones_after = battery.read().zone_temp_c_dist_initial.read().clone();
+            // Charged towards the 58.887°C target charge temperature, with the
+            // energy demand capped at the target SOC so the store does not exceed
+            // it. The 63.887°C flow temperature (target plus the 5°C approach
+            // difference, below the source's 65°C maximum) supplies the driving
+            // temperature difference; from a 10°C cold start the zones reach only
+            // ~57.7°C within this timestep, limited by the heat transfer rate, then
+            // are reduced slightly by standing losses.
+            let expected_zones = [
+                57.672357076106344,
+                57.585434636639235,
+                57.508370400919596,
+                57.44004851998791,
+                57.379541567492396,
+                57.32597832766934,
+                57.27862734089481,
+                57.236840376849635,
+            ];
+            for (actual, expected) in zones_after.iter().zip(expected_zones) {
+                assert_relative_eq!(*actual, expected, epsilon = 1e-7);
+            }
         }
     }
     /// Tests for validate_no_schedule_overlap (Deviation 3 fix).
