@@ -3518,6 +3518,18 @@ mod tests {
         simultaneuous_charging_and_discharging: Option<bool>,
         max_temperature: Option<f64>,
     ) -> HeatSourceWetDetails {
+        create_heat_battery_details_with_temp_init(
+            simultaneuous_charging_and_discharging,
+            max_temperature,
+            80.0,
+        )
+    }
+
+    fn create_heat_battery_details_with_temp_init(
+        simultaneuous_charging_and_discharging: Option<bool>,
+        max_temperature: Option<f64>,
+        temp_init: f64,
+    ) -> HeatSourceWetDetails {
         HeatSourceWetDetails::HeatBattery {
             battery: HeatBatteryInput::Pcm {
                 energy_supply: "mains elec".into(),
@@ -3537,7 +3549,7 @@ mod tests {
                 phase_transition_temperature_upper: 59.,
                 phase_transition_temperature_lower: 57.,
                 max_temperature: max_temperature.unwrap_or(80.),
-                temp_init: 80.,
+                temp_init,
                 velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
                 inlet_diameter_mm: 6.5,
                 a: 174.33952,
@@ -6883,6 +6895,268 @@ mod tests {
         }
     }
 
+    mod test_heat_battery_pcm_soc_charging_control {
+        use super::*;
+
+        fn make_range_time_control(
+            simulation_time: SimulationTime,
+            lower: Option<f64>,
+            upper: Option<f64>,
+        ) -> Arc<RangeTimeControl> {
+            RangeTimeControl::new(
+                ScheduleOrControl::Schedule(vec![lower; simulation_time.total_steps()]),
+                ScheduleOrControl::Schedule(vec![upper; simulation_time.total_steps()]),
+                simulation_time.iter(),
+                0,
+                1.0,
+                None,
+            )
+            .unwrap()
+            .into()
+        }
+
+        fn make_direct_electric_source(
+            control: Arc<RangeTimeControl>,
+        ) -> HeatBatteryChargingSource {
+            HeatBatteryChargingSource {
+                source_type: ChargingSourceType::DirectElectric,
+                control,
+                rated_charge_power: Some(5.0),
+                heat_source_service: None,
+                temp_flow_max: 0.0,
+                flow_rate_charging_l_per_min: None,
+                hex_a: None,
+                hex_b: None,
+                hex_velocity_at_1_l_per_min: None,
+                hex_capillary_diameter_m: None,
+                schedule_unit: ScheduleUnit::StateOfCharge,
+            }
+        }
+
+        fn make_battery(
+            simulation_time: SimulationTime,
+            sources: IndexMap<ArcStr, HeatBatteryChargingSource>,
+            temp_init: f64,
+        ) -> Arc<RwLock<HeatBatteryPcm>> {
+            // Create a battery in new-format mode with given sources and initial temp.
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
+            ));
+            let external_conditions = external_conditions(simulation_time);
+            let energy_supply_connection =
+                EnergySupply::connection(energy_supply.clone(), "SOCCtrl").unwrap();
+            let heat_battery_details =
+                create_heat_battery_details_with_temp_init(None, None, temp_init);
+
+            Arc::new(RwLock::new(
+                HeatBatteryPcm::new(
+                    &heat_battery_details,
+                    energy_supply.into(),
+                    energy_supply_connection,
+                    simulation_time.iter(),
+                    external_conditions.into(),
+                    Some(10.0),
+                    temp_air_int_callback(),
+                    None,
+                    Some(sources),
+                    Some(8),
+                    Some(20.0),
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap(),
+            ))
+        }
+
+        fn make_test_electric_battery_with_setpoints(
+            simulation_time: SimulationTime,
+            lower: Option<f64>,
+            upper: Option<f64>,
+            temp_init: f64,
+        ) -> (Arc<RwLock<HeatBatteryPcm>>, HeatBatteryChargingSource) {
+            let range_time_control = make_range_time_control(simulation_time, lower, upper);
+            let source = make_direct_electric_source(range_time_control);
+            let mut sources = IndexMap::new();
+            sources.insert("el".into(), source.clone());
+            (make_battery(simulation_time, sources, temp_init), source)
+        }
+
+        #[rstest]
+        fn test_switch_on_activates_when_soc_below_lower(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // Charging activates when SOC <= lower setpoint (active period).
+            let (battery, source) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.5),
+                Some(0.9),
+                10.0,
+            );
+            let mut sources: IndexMap<String, HeatBatteryChargingSource> = IndexMap::new();
+            sources.insert("el".into(), source.clone());
+
+            // The battery at temp_init=10°C has SOC=0.0, below the lower setpoint of 0.5.
+            battery
+                .read()
+                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .unwrap();
+
+            assert_eq!(battery.read().charging_active.read().get("el"), Some(&true));
+        }
+
+        #[rstest]
+        fn test_switch_on_does_not_activate_when_soc_above_lower(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // Charging does not activate when SOC > lower setpoint.
+            let (battery, source) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.5),
+                Some(0.9),
+                80.0,
+            );
+
+            // At 80°C the battery has SOC=1.0, above the lower setpoint of 0.5.
+            battery
+                .read()
+                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .unwrap();
+
+            assert_eq!(
+                battery.read().charging_active.read().get("el"),
+                Some(&false)
+            );
+        }
+
+        #[rstest]
+        fn test_switch_on_off_period_does_not_activate(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // Off period (both setpoints None) does not activate charging.
+            let (battery, source) =
+                make_test_electric_battery_with_setpoints(simulation_time, None, None, 10.0);
+
+            battery
+                .read()
+                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .unwrap();
+
+            assert_eq!(
+                battery.read().charging_active.read().get("el"),
+                Some(&false)
+            );
+        }
+
+        #[rstest]
+        fn test_switch_on_transition_period_preserves_existing_state(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // Transition period (lower=None, upper=non-None) preserves existing state.
+            let (battery, source) =
+                make_test_electric_battery_with_setpoints(simulation_time, None, Some(0.9), 10.0);
+            // Pre-set charging_active to True (simulating it was already on)
+            battery
+                .read()
+                .charging_active
+                .write()
+                .insert("el".into(), true);
+
+            battery
+                .read()
+                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .unwrap();
+            // Should remain True — transition period doesn't change state
+            assert_eq!(battery.read().charging_active.read().get("el"), Some(&true));
+        }
+
+        #[rstest]
+        fn test_switch_off_deactivates_when_soc_above_upper(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // Charging deactivates when SOC >= upper setpoint.
+            // SOC=1.0 at 80°C, above upper=0.8.
+            let (battery, source) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.2),
+                Some(0.8),
+                80.0,
+            );
+            battery
+                .read()
+                .charging_active
+                .write()
+                .insert("el".into(), true);
+
+            battery
+                .read()
+                .determine_heat_source_switch_off("el", &source, &simulation_time_iteration)
+                .unwrap();
+
+            assert_eq!(
+                battery.read().charging_active.read().get("el"),
+                Some(&false)
+            );
+        }
+
+        #[rstest]
+        fn test_switch_off_keeps_active_when_soc_below_upper(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // Charging stays active when SOC < upper setpoint.
+            // SOC=0.0 at 10°C, below upper=0.8
+            let (battery, source) = make_test_electric_battery_with_setpoints(
+                simulation_time,
+                Some(0.2),
+                Some(0.8),
+                10.0,
+            );
+            battery
+                .read()
+                .charging_active
+                .write()
+                .insert("el".into(), true);
+
+            battery
+                .read()
+                .determine_heat_source_switch_off("el", &source, &simulation_time_iteration)
+                .unwrap();
+
+            assert_eq!(battery.read().charging_active.read().get("el"), Some(&true));
+        }
+
+        #[rstest]
+        fn test_switch_off_deactivates_during_off_period(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // Off period (upper=None) deactivates charging.
+            let (battery, source) =
+                make_test_electric_battery_with_setpoints(simulation_time, None, None, 10.0);
+            battery
+                .read()
+                .charging_active
+                .write()
+                .insert("el".into(), true);
+
+            battery
+                .read()
+                .determine_heat_source_switch_off("el", &source, &simulation_time_iteration)
+                .unwrap();
+
+            assert_eq!(
+                battery.read().charging_active.read().get("el"),
+                Some(&false)
+            );
+        }
+    }
     /// Tests for validate_no_schedule_overlap (Deviation 3 fix).
     /// Uses real RangeTimeControl objects to verify that overlapping active
     /// schedules are rejected and non-overlapping schedules are accepted.
