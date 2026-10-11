@@ -1363,7 +1363,7 @@ pub struct HeatPumpServiceWater {
     service_name: ArcStr,
     control: Arc<RangeTimeControl>,
     temp_limit_upper_in_k: f64,
-    cold_feed: Arc<WaterSupply>,
+    cold_feed: Option<Arc<WaterSupply>>,
     hybrid_boiler_service: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
 }
 
@@ -1372,7 +1372,7 @@ impl HeatPumpServiceWater {
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: ArcStr,
         temp_limit_upper_in_c: f64,
-        cold_feed: Arc<WaterSupply>,
+        cold_feed: Option<Arc<WaterSupply>>,
         control: Arc<RangeTimeControl>,
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
     ) -> Self {
@@ -1402,6 +1402,23 @@ impl HeatPumpServiceWater {
             .setpnt_range_time_control(simulation_time_iteration))
     }
 
+    fn check_temp_flow_within_operating_limit(&self, temp_flow: f64) -> anyhow::Result<()> {
+        // Reject a flow temperature above the heat pump's upper operating limit.
+        // A flow temperature above the heat pump's upper operating temperature limit
+        // cannot be reached by the heat pump. Capping it at the limit could leave the flow
+        // temperature below the return temperature in the maximum-output estimate, implying
+        // cooling rather than heating, which cannot be resolved consistently without an
+        // iterative flow/return calculation. The misconfiguration is therefore rejected
+        // rather than modelled.
+
+        let temp_flow_k = celsius_to_kelvin(temp_flow)?;
+        if temp_flow_k > self.temp_limit_upper_in_k && (temp_flow_k - self.temp_limit_upper_in_k).abs() > 1e-10 {
+            bail!("Flow temperature ({} °C) for service '{}' exceeds the heat pump's upper operating limit ({} °C).", temp_flow, self.service_name, kelvin_to_celsius(self.temp_limit_upper_in_k)?);
+        }
+
+        Ok(())
+    }
+
     const SERVICE_TYPE: HeatingServiceType = HeatingServiceType::DomesticHotWaterRegular;
 
     /// Calculate the maximum energy output of the HP, accounting for time
@@ -1412,10 +1429,13 @@ impl HeatPumpServiceWater {
         temp_return: f64, // optional in upstream Python, but declaring as non-optional is simpler and more accurate (nothing calls this with an option)
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<BufferTankEmittersDataWithResult>)> {
-        let temp_return_k = celsius_to_kelvin(temp_return)?;
         if !self.is_on(simulation_time_iteration) {
             return Ok((0.0, None));
         }
+
+        self.check_temp_flow_within_operating_limit(temp_flow)?;
+
+        let temp_return_k = celsius_to_kelvin(temp_return)?;
         let temp_flow_k = celsius_to_kelvin(temp_flow)?;
         let design_flow_temp_op_cond = temp_flow_k;
 
@@ -1442,8 +1462,9 @@ impl HeatPumpServiceWater {
         temp_flow: Option<f64>,
         temp_return: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
+        ignore_standard_ctrl: bool,
     ) -> anyhow::Result<f64> {
-        let service_on = self.is_on(simulation_time_iteration);
+        let service_on = self.is_on(simulation_time_iteration) || ignore_standard_ctrl;
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
         if (temp_flow.is_none() || temp_return.is_none())
@@ -1457,13 +1478,20 @@ impl HeatPumpServiceWater {
 
         let design_flow_temp_op_cond = temp_flow_k;
 
-        // TODO (from Python) Arbitrary volume used here for reference cold water temperature
-        let list_temp_vol = self
-            .cold_feed
-            .get_temp_cold_water(1., simulation_time_iteration)?;
-        let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
-        let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value();
-        let temp_cold_water = celsius_to_kelvin(sum_t_by_v / sum_v)?;
+        // Reference cold water temperature for HP performance scaling.
+        // When no cold feed is available (e.g. closed-loop PCM charging),
+        // fall back to the return temperature.
+        let temp_cold_water = if let Some(cold_feed) = &self.cold_feed {
+            // TODO (from Python) Arbitrary volume used here for reference cold water temperature
+            let list_temp_vol = cold_feed
+                .get_temp_cold_water(1., simulation_time_iteration)?;
+            let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
+            let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value();
+            celsius_to_kelvin(sum_t_by_v / sum_v)?
+        } else {
+            // TODO can we guarantee this is Some?
+            temp_return_k.unwrap()
+        };
 
         self.heat_pump.lock().demand_energy(
             &self.service_name,
@@ -1580,11 +1608,17 @@ impl HeatPumpServiceSpace {
         }
 
         let temp_output_k = celsius_to_kelvin(temp_output)?;
+        // Cap the output temperature at the heat pump's upper operating limit, mirroring
+        // demand_energy, so the maximum-output estimate uses an achievable flow temperature.
+        let temp_output_k = min_of_2(temp_output_k, self.temp_limit_upper_in_k);
+
+        let temp_return_feed_k = celsius_to_kelvin(temp_return_feed)?;
+
         let mut heat_pump = self.heat_pump.lock();
         let source_type = heat_pump.source_type;
         heat_pump.energy_output_max(
             temp_output_k,
-            temp_return_feed,
+            temp_return_feed_k,
             self.design_flow_temp_op_cond,
             self.hybrid_boiler_service
                 .as_ref()
@@ -1728,6 +1762,21 @@ impl HeatPumpServiceSpace {
             },
         )
     }
+}
+
+fn timestep_record_for_service<'a>(timestep_service_results: &'a [ServiceResult], service_name: &'a str) -> Option<&'a Box<HeatPumpEnergyCalculation>> {
+    // Return a named service's record from one timestep's service results.
+    // Within a timestep, services are recorded in the order they are called, which need
+    // not match the order they were registered (for example when a declared zone
+    // processing order differs from the input order), so a service's record is found by
+    // name rather than by position.
+    timestep_service_results
+        .iter()
+        .filter_map(|r| match r {
+            ServiceResult::Full(heat_pump_energy_calculation) => Some(heat_pump_energy_calculation),
+            _ => None,
+        })
+        .find(|hpec| hpec.service_name == service_name)
 }
 
 /// An object to represent a warm air space heating system provided by a heat pump.
@@ -2314,7 +2363,7 @@ impl HeatPump {
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
         temp_limit_upper_in_c: f64,
-        cold_feed: Arc<WaterSupply>,
+        cold_feed: Option<Arc<WaterSupply>>,
         // We have consolidatated controls into one field to match the validation logic Python has
         control: Arc<RangeTimeControl>,
     ) -> anyhow::Result<HeatPumpServiceWater> {
@@ -2753,7 +2802,12 @@ impl HeatPump {
             temp_output,
             temp_output.is_some_and(|temp_output| temp_output > temp_limit_upper),
         ) {
-            if temp_output == temp_used_for_scaling {
+            // If flow and return temps are equal there is no temperature difference
+            // to scale the output by, so return the unscaled output. Compared with a
+            // tolerance because both temperatures are computed values: a last-bit
+            // difference would otherwise send a zero temperature difference into the
+            // else branch and flip the result between platforms.
+            if (temp_output - temp_used_for_scaling).abs() <= 1e-10 {
                 energy_output_required
             } else {
                 let flow_temp = temp_limit_upper - temp_used_for_scaling;
@@ -2810,12 +2864,17 @@ impl HeatPump {
                 epsilon = 1e-10
             );
 
+        // The maximum is an allowable temperature, so a return feed at the
+        // maximum is within limits: a value within tolerance of the maximum is
+        // treated as not above it. This both honours the inclusive limit and
+        // stops the decision flipping on a last-bit difference between platforms.
         let above_temp_return_feed_max = match self.sink_type {
             HeatPumpSinkType::Water | HeatPumpSinkType::Glycol25 => {
+                let temp_return_feed_max = self.temp_return_feed_max
+                    .expect("a temp return feed max was expected to have been set");
                 temp_return_feed
-                    > self
-                        .temp_return_feed_max
-                        .expect("a temp return feed max was expected to have been set")
+                    > temp_return_feed_max
+                && (temp_return_feed - temp_return_feed_max).abs() > 1e-10
             }
             HeatPumpSinkType::Air => false,
         };
@@ -3104,6 +3163,8 @@ impl HeatPump {
         // TODO (from Python) Consider moving some of these checks earlier or to HeatPumpService
         //      classes. May be able to skip a lot of the calculation.
         let mut boiler_eff = boiler_eff;
+
+        // TODO (from Python) Remove possibility of temp_output being None
         if let (Some(temp_output), Some(_), Some(boiler)) =
             (temp_output, &hybrid_boiler_service, &self.boiler)
         {
@@ -3747,17 +3808,20 @@ impl HeatPump {
         time_remaining_current_timestep_part_load: f64,
         timestep_idx: usize,
     ) -> anyhow::Result<(f64, f64, f64)> {
-        // Retrieve control settings for this timestep
+        // Retrieve control settings for this timestep. The heat pump is treated as on for
+        // space (or water) heating if any of its space (or water) heating services is on;
+        // aggregate across services rather than keeping only the last one, which would
+        // otherwise depend on the order the services happen to be processed in.
         let mut heating_profile_on = false;
         let mut water_profile_on = false;
         for service_data in self.service_results.read().iter() {
             if let ServiceResult::Full(calculation) = service_data {
                 match calculation.service_type {
                     HeatingServiceType::Space => {
-                        heating_profile_on = calculation.service_on;
+                        heating_profile_on = heating_profile_on || calculation.service_on;
                     }
                     HeatingServiceType::DomesticHotWaterRegular => {
-                        water_profile_on = calculation.service_on;
+                        water_profile_on = water_profile_on || calculation.service_on;
                     }
                     _ => bail!("Service type should be either DomesticHotWaterRegular or Space"),
                 }
@@ -3859,14 +3923,42 @@ impl HeatPump {
 
         // If detailed results are to be output, save the results from the current timestep
         if let Some(ref mut detailed_results) = self.detailed_results {
-            self.service_results
-                .write()
+
+            //  Build ordered results ensuring every registered service has an
+            // entry. Services that called demand_energy (including demand_energy(0)
+            // for idle timesteps) already have entries in __service_results;
+            // any remaining uncalled services get placeholders.
+
+            let service_results = self.service_results.read();
+
+            let services_called: IndexMap<ArcStr, &HeatPumpEnergyCalculation> = service_results
+                    .iter()
+                    .filter_map(|service_result| match service_result {
+                        ServiceResult::Full(heat_pump_energy_calculation) => Some(heat_pump_energy_calculation),
+                        _ => None,
+                    })
+                    .map(|heat_pump_energy_calculation| (heat_pump_energy_calculation.service_name.clone(), heat_pump_energy_calculation.as_ref()))
+                    .collect();
+
+
+            let mut ordered_service_results: Vec<ServiceResult> = vec![];
+
+            for svc_name in self.energy_supply_connections.keys() {
+                if services_called.contains_key(svc_name) {
+                    let item = services_called[svc_name];
+                    let service_result = ServiceResult::Full(Box::new(item.clone()));
+                    ordered_service_results.push(service_result);
+                }
+            }
+
+            ordered_service_results
                 .push(ServiceResult::Aux(AuxiliaryParameters {
                     energy_standby,
                     energy_crankcase_heater_mode,
                     energy_off_mode,
                 }));
-            detailed_results.push(self.service_results.clone());
+            
+            detailed_results.push(Arc::new(ordered_service_results.into()));
         }
 
         // Variables below need to be reset at the end of each timestep.
@@ -3909,7 +4001,7 @@ impl HeatPump {
         let energy_supply_connections = self.energy_supply_connections.clone();
 
         // For each service, report required output parameters
-        for (service_idx, service_name) in energy_supply_connections.keys().enumerate() {
+        for (_service_idx, service_name) in energy_supply_connections.keys().enumerate() {
             let service_name: ArcStr = service_name.to_string().into();
             let results_entry = results_per_timestep
                 .entry(service_name.clone())
@@ -3919,28 +4011,27 @@ impl HeatPump {
                 let param_entry = results_entry
                     .entry((parameter.into(), param_unit.map(Into::into)))
                     .or_default();
-                // Look up value of required parameter in each timestep
+                // Look up value of required parameter in each timestep, matching the
+                // service by name rather than by position (see timestep_record_for_service)
                 for service_results in self
                     .detailed_results
                     .as_ref()
                     .expect("Detailed results are expected to have been initialised")
                     .iter()
                 {
-                    let result = match &service_results.read()[service_idx] {
-                        ServiceResult::Full(calc) => calc.param(parameter),
-                        ServiceResult::Aux(_) => unreachable!(),
-                    };
+                    let service_results = service_results.read();
+                    let record = timestep_record_for_service(&service_results, &service_name);
+                    let result = record.expect("HeatPumpEnergyCalculation expected").param(parameter);
                     param_entry.push(result);
                 }
             }
             // For water heating service, record hot water energy delivered from tank
+            let first_detailed_results = &self.detailed_results.as_ref().unwrap()[0].read();
+            let record = timestep_record_for_service(&first_detailed_results, &service_name).expect("HeatPumpEnergyCalculation expected");
             if matches!(
-                match &self.detailed_results.as_ref().unwrap()[0].read()[service_idx] {
-                    ServiceResult::Full(calc) => calc.service_type,
-                    ServiceResult::Aux(_) => unreachable!(),
-                },
+                record.service_type,
                 HeatingServiceType::DomesticHotWaterRegular
-            ) {
+            ) && hot_water_source_name_for_heat_pump_service.contains_key(&service_name) {
                 let energy_delivered_total_len = results_per_timestep[&service_name]
                     [&("energy_delivered_total".into(), Some("kWh".into()))]
                     .len();
@@ -4207,10 +4298,11 @@ impl HeatPump {
         ) {
             (None, ResultParamValue::from(0.))
         } else if cop_h5_numerator == ResultParamValue::Empty {
-            let cop_h5_note = "Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank";
+            let cop_h5_note = "Note: Cannot calculate CoP (H5) when HP is heating a pre-heat tank or PCM Heat Battery";
 
             (Some(cop_h5_note.into()), ResultParamValue::Empty)
-        } else {
+        }
+         else {
             let cop_h5_note =
                 "Note: For water heating services, only valid when HP is only heat source";
 
@@ -6086,7 +6178,7 @@ mod tests {
             Arc::new(Mutex::new(heat_pump)),
             "new_service".into(),
             30.,
-            Arc::new(cold_feed),
+            Some(Arc::new(cold_feed)),
             range_time_control.into(),
             None,
         )
@@ -7475,7 +7567,7 @@ mod tests {
             heat_pump.clone(),
             service_name,
             60.,
-            cold_feed.clone().into(),
+            Some(cold_feed.clone().into()),
             range_time_control.clone(),
         )
         .unwrap();
@@ -7499,7 +7591,7 @@ mod tests {
             heat_pump_with_boiler.into(),
             service_name,
             60.,
-            cold_feed.into(),
+            Some(cold_feed.into()),
             range_time_control,
         )
         .unwrap();

@@ -159,7 +159,7 @@ impl HeatSourceWet {
                 battery.demand_energy(energy_demand, temp_flow, temperature, None, simtime)
             }
             HeatSourceWet::HeatPumpWater(water) => {
-                water.demand_energy(energy_demand, temp_flow, temperature, simtime)
+                water.demand_energy(energy_demand, temp_flow, temperature, simtime, false)
             }
             HeatSourceWet::HeatPumpWaterOnly(water_only) => Ok(water_only.demand_energy(
                 energy_demand,

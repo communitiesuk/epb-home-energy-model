@@ -134,7 +134,7 @@ impl HeatSourceWetService {
     ) -> anyhow::Result<f64> {
         match self {
             Self::HeatPumpServiceWater(service) => {
-                service.demand_energy(energy_demand, Some(temp_flow), Some(temp_return), *simtime)
+                service.demand_energy(energy_demand, Some(temp_flow), Some(temp_return), *simtime, false)
             }
             Self::BoilerServiceWaterRegular(service) => Ok(service
                 .demand_energy(

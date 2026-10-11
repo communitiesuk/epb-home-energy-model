@@ -5325,7 +5325,7 @@ fn heat_source_from_input(
                             heat_pump.clone(),
                             &energy_supply_conn_name,
                             temp_flow_limit_upper.ok_or_else(|| anyhow!("A temp_flow_limit_upper is needed for heat pump with the name '{name}'"))?,
-                            Arc::new(cold_water_source.clone()),
+                            Some(Arc::new(cold_water_source.clone())),
                             range_time_control,
                         )?),
                     )),
