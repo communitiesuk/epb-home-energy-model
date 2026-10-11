@@ -5396,6 +5396,7 @@ fn heat_source_from_input(
             energy_supply,
             controls: control_refs,
             in_use_factor_mismatch,
+            tank_is_integral,
             ..
         } => {
             let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Heat pump (hot water only) references an undeclared energy supply '{energy_supply}'."))?.clone();
@@ -5424,7 +5425,7 @@ fn heat_source_from_input(
                         *daily_losses_declared,
                         simulation_time_iterator.step_in_hours(),
                         range_time_control,
-                        todo!(), // TODO: update as part of 1.0.0a9 migration
+                        *tank_is_integral,
                     ),
                 ))),
                 energy_supply_conn_name: energy_supply_conn_name.into(),
