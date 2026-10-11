@@ -7,7 +7,7 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::pipework::Pipework;
-use crate::core::solvers::solve_ivp::{SharedIvpSolveFunction, TerminatingEvent};
+use crate::core::solvers::solve_ivp::TerminatingEvent;
 use crate::core::solvers::{
     bisect::bisect, fsolve, root, solve_ivp::solve_ivp, solve_ivp::OdeResult,
 };
@@ -31,7 +31,6 @@ use atomic_float::AtomicF64;
 use educe::Educe;
 use fsum::FSum;
 use itertools::Itertools;
-use ndarray::{array, Array1};
 use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
 use std::fmt::Debug;
@@ -732,7 +731,7 @@ impl Emitters {
     pub(crate) fn func_temp_emitter_change_rate(
         &self,
         power_input: f64,
-    ) -> impl Fn(f64, &Array1<f64>) -> Array1<f64> {
+    ) -> impl Fn(f64, &[f64; 1]) -> [f64; 1] {
         /*
             Differential eqn for change rate of emitter temperature, to be solved iteratively
 
@@ -779,9 +778,9 @@ impl Emitters {
         c_n_pairs: Vec<(f64, f64)>,
         thermal_mass: Option<f64>,
         power_input: f64,
-    ) -> impl Fn(f64, &Array1<f64>) -> Array1<f64> {
-        move |_t, temp_diff: &Array1<f64>| -> Array1<f64> {
-            array![(power_input
+    ) -> impl Fn(f64, &[f64; 1]) -> [f64; 1] {
+        move |_t, temp_diff: &[f64; 1]| -> [f64; 1] {
+            [(power_input
                 - c_n_pairs
                 .iter()
                 .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
@@ -828,45 +827,34 @@ impl Emitters {
         // Calculate emitter temp at start of timestep
         let temp_diff_start = temp_emitter_start - temp_rm;
 
-        let events: Option<TerminatingEvent> = temp_emitter_max.map(|temp_emitter_max| {
+        let event_func = temp_emitter_max.map(|temp_emitter_max| {
             let temp_diff_max = temp_emitter_max - temp_rm;
 
-            TerminatingEvent::new(
-                Arc::new(move |_t: f64, y: &Array1<f64>| -> f64 { y[0] - temp_diff_max }),
-                None,
-            )
+            move |_t: f64, y: &[f64; 1]| -> f64 { y[0] - temp_diff_max }
         });
-
-        let terminating_events = events.into_iter().collect_vec();
+        let terminating_events = event_func
+            .as_ref()
+            .map(|event_func| TerminatingEvent::new(event_func, None));
 
         // Get function representing change rate equation and solve iteratively
-        let func_temp_emitter_change_rate: SharedIvpSolveFunction = Arc::new(
-            Self::func_temp_emitter_change_rate_pure(c_n_pairs, thermal_mass, power_input),
-        );
+        let func_temp_emitter_change_rate =
+            Self::func_temp_emitter_change_rate_pure(c_n_pairs, thermal_mass, power_input);
 
         let temp_diff_emitter_rm_results = solve_ivp(
-            &func_temp_emitter_change_rate,
+            func_temp_emitter_change_rate,
             (time_start, time_end),
-            &array![temp_diff_start],
-            Some(&terminating_events),
+            [temp_diff_start],
+            terminating_events.as_slice(),
             None,
             None,
         )?;
 
         // Get time at which emitters reach max. temp
-        let OdeResult { y, t_events, .. } = temp_diff_emitter_rm_results;
+        let OdeResult { y, event, .. } = temp_diff_emitter_rm_results;
 
-        let time_temp_diff_max_reached: Option<f64> = if let Some(ref t_events) = t_events {
-            t_events
-                .first()
-                .and_then(|t_events| t_events.iter().copied().last())
-        } else {
-            None
-        };
+        let time_temp_diff_max_reached: Option<f64> = event.map(|(_, t)| t);
 
-        let temp_diff_emitter_rm_final = y.last().ok_or_else(|| {
-            anyhow!("y ndarray field of solve_ivp result was empty when this was not expected")
-        })?[0];
+        let temp_diff_emitter_rm_final = y[0];
         let temp_emitter = temp_rm + temp_diff_emitter_rm_final;
 
         Ok((temp_emitter, time_temp_diff_max_reached))

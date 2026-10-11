@@ -233,300 +233,105 @@ pub(crate) fn root<const ARGCOUNT: usize>(
 }
 
 /// direct port of scipy.integrate.solve_ivp but only including areas used in this library
+///
+/// The state is a fixed-size array so that the integration loop never touches the heap.
 pub mod solve_ivp {
-    use crate::core::solvers::solve_ivp::base_solver::{DenseOutput, Status};
-    use anyhow::Error;
     use argmin::core::{CostFunction, Executor};
     use argmin::solver::brent::BrentRoot;
-    use ndarray::{s, Array, Array1, Axis, Dimension, Zip};
-    use std::cmp::Ordering;
-    use std::sync::Arc;
     use thiserror::Error;
 
-    pub type SharedIvpSolveFunction = Arc<dyn Fn(f64, &Array1<f64>) -> Array1<f64> + Send + Sync>;
-    pub type SharedIvpEventFunction = Arc<dyn Fn(f64, &Array1<f64>) -> f64 + Send + Sync>;
-
-    pub fn solve_ivp(
-        func: &SharedIvpSolveFunction,
+    /// Integrate `fun` over `t_span` from `y0` using the RK45 method.
+    ///
+    /// All events are terminal, so integration stops at the first event that occurs, and only
+    /// the final state is returned (which is all that callers in this library use).
+    pub fn solve_ivp<const N: usize>(
+        mut fun: impl FnMut(f64, &[f64; N]) -> [f64; N],
         t_span: (f64, f64),
-        y0: &Array1<f64>,
-        events: Option<&[TerminatingEvent]>,
+        y0: [f64; N],
+        events: &[TerminatingEvent<'_, N>],
         rtol: Option<f64>,
         atol: Option<f64>,
-    ) -> Result<OdeResult, SolverError> {
+    ) -> Result<OdeResult<N>, SolverError> {
         let (t0, tf) = t_span;
 
-        let mut solver = rk45::Rk45Solver::new(func, t0, y0, tf, rtol, atol);
+        let mut solver = rk45::Rk45Solver::new(&mut fun, t0, y0, tf, rtol, atol);
 
-        let mut ts = vec![t0];
-        let mut ys = vec![y0.to_owned()];
+        // allocated once per solve and reused on every step
+        let mut g: Vec<f64> = events.iter().map(|event| (event.func)(t0, &y0)).collect();
+        let mut g_new = g.clone();
 
-        let mut event_data: Option<EventData> = events.map(|events| {
-            let (max_events, event_dir) = prepare_events(events);
+        loop {
+            let finished = solver.step(&mut fun)?;
 
-            EventData {
-                t_events: vec![vec![]; events.len()],
-                y_events: vec![vec![]; events.len()],
-                events,
-                max_events,
-                event_dir,
-                event_count: Array1::zeros(events.len()),
-                g: events.iter().map(|event| (event.func)(t0, y0)).collect(),
-            }
-        });
+            if !events.is_empty() {
+                let (t_old, t) = (solver.t_old, solver.t);
 
-        let mut _status: Option<i8> = None;
+                for (g_new_val, event) in g_new.iter_mut().zip(events) {
+                    *g_new_val = (event.func)(t, &solver.y);
+                }
 
-        while _status.is_none() {
-            solver
-                .step()
-                .map_err(|e| SolverError::MainSolver(e.into()))?;
+                // equivalent of np.argsort over the roots of the active events (reversed when
+                // integrating backwards) and then taking the first, as all events are terminal
+                let reverse = t <= t_old;
+                let sol = solver.dense_output();
+                let mut first_event: Option<(usize, f64)> = None;
 
-            if solver.status == Status::Finished {
-                _status = Some(0);
-            } else if solver.status == Status::Failed {
-                _status = Some(-1);
-                break;
-            }
-
-            let t_old = solver
-                .t_old
-                .expect("t_old is expected to have been initialised after the first step");
-            let mut t = solver.t;
-            let mut y = solver.y.clone();
-
-            let mut sol: Option<Arc<dyn DenseOutput>> = None;
-
-            if let Some(EventData {
-                events,
-                ref event_dir,
-                ref mut g,
-                ref mut event_count,
-                ref max_events,
-                ref mut t_events,
-                ref mut y_events,
-                ..
-            }) = event_data
-            {
-                let g_new: Array1<f64> = events.iter().map(|event| (event.func)(t, &y)).collect();
-                let active_events = find_active_events(g, &g_new, event_dir);
-                if !active_events.is_empty() {
-                    if sol.is_none() {
-                        sol = solver.dense_output().into();
+                for (i, event) in events.iter().enumerate() {
+                    if !is_active_event(g[i], g_new[i], event.direction) {
+                        continue;
                     }
 
-                    let sol = &sol.unwrap();
+                    let root = solve_event_equation(event.func, &sol, t_old, t)?;
 
-                    for active_event in active_events.iter() {
-                        event_count[*active_event] += 1;
-                    }
-                    let (root_indices, roots, terminate) = handle_events(
-                        sol,
-                        events,
-                        active_events,
-                        event_count,
-                        max_events,
-                        t_old,
-                        t,
-                    )?;
-
-                    for (&e, &te) in root_indices.iter().zip(roots.iter()) {
-                        t_events[e].push(te);
-                        y_events[e].push(sol.call_impl(te));
-                    }
-
-                    if terminate {
-                        _status = 1.into();
-                        t = roots.last().copied().unwrap();
-                        y = sol.call_impl(t);
+                    let is_first = match first_event {
+                        None => true,
+                        Some((_, first_root)) if reverse => root >= first_root,
+                        Some((_, first_root)) => root < first_root,
+                    };
+                    if is_first {
+                        first_event = Some((i, root));
                     }
                 }
-                *g = g_new;
+
+                if let Some((i, t_event)) = first_event {
+                    return Ok(OdeResult {
+                        t: t_event,
+                        y: sol.call(t_event),
+                        event: Some((i, t_event)),
+                    });
+                }
+
+                std::mem::swap(&mut g, &mut g_new);
             }
 
-            ts.push(t);
-            ys.push(y);
+            if finished {
+                return Ok(OdeResult {
+                    t: solver.t,
+                    y: solver.y,
+                    event: None,
+                });
+            }
         }
-
-        let (t_events, _y_events): (Option<TEvents>, Option<YEvents>) = if let Some(EventData {
-            ref t_events,
-            ref y_events,
-            ..
-        }) = event_data
-        {
-            (
-                Some(
-                    t_events
-                        .iter()
-                        .map(|te| te.iter().copied().collect())
-                        .collect(),
-                ),
-                Some(
-                    y_events
-                        .iter()
-                        .map(|ye| ye.iter().map(|ye| ye.to_owned()).collect())
-                        .collect(),
-                ),
-            )
-        } else {
-            (None, None)
-        };
-
-        let ts = Array1::from_vec(ts);
-        let (ys, _) = Array1::from_vec(ys)
-            .insert_axis(Axis(1))
-            .into_raw_vec_and_offset();
-
-        Ok(OdeResult {
-            t: ts,
-            y: ys,
-            t_events,
-            success: true,
-        })
     }
 
-    struct EventData<'a> {
-        t_events: Vec<Vec<f64>>,
-        y_events: YEvents,
-        events: &'a [TerminatingEvent],
-        max_events: Array1<f64>,
-        event_dir: Array1<TerminateDirection>,
-        event_count: Array1<usize>,
-        g: Array1<f64>,
-    }
+    fn is_active_event(g: f64, g_new: f64, direction: TerminateDirection) -> bool {
+        let up = g <= 0.0 && g_new >= 0.0;
+        let down = g >= 0.0 && g_new <= 0.0;
 
-    type TEvents = Vec<Array1<f64>>;
-    type YEvents = Vec<Vec<Array1<f64>>>;
-
-    fn prepare_events(events: &[TerminatingEvent]) -> (Array1<f64>, Array1<TerminateDirection>) {
-        let mut max_events = Array1::zeros(events.len());
-        let mut event_dir = Array1::from_elem(events.len(), TerminateDirection::Both);
-
-        for (i, event) in events.iter().enumerate() {
-            max_events[i] = if event.is_terminal() {
-                1.0
-            } else {
-                f64::INFINITY
-            };
-            event_dir[i] = event.direction;
+        match direction {
+            TerminateDirection::Both => up || down,
+            TerminateDirection::Positive => up,
+            TerminateDirection::Negative => down,
         }
-
-        (max_events, event_dir)
     }
 
-    fn handle_events(
-        sol: &Arc<dyn DenseOutput>,
-        events: &[TerminatingEvent],
-        mut active_events: Array1<usize>,
-        event_count: &Array1<usize>,
-        max_events: &Array1<f64>,
-        t_old: f64,
-        t: f64,
-    ) -> Result<(Array1<usize>, Array1<f64>, bool), SolverError> {
-        let mut roots: Array1<f64> = events
-            .iter()
-            .enumerate()
-            .filter(|(i, _event)| {
-                active_events
-                    .as_slice()
-                    .is_some_and(|slice| slice.contains(i))
-            })
-            .map(|(_i, event)| solve_event_equation(&event.func, sol, t_old, t))
-            .collect::<Result<_, _>>()?;
-
-        let terminate = active_events
-            .iter()
-            .any(|active_event| event_count[*active_event] >= max_events[*active_event] as usize);
-
-        if terminate {
-            let order = argsort(
-                &roots,
-                t.partial_cmp(&t_old).ok_or_else(|| {
-                    SolverError::Event(NotANumberEncounteredDuringEventHandling.into())
-                })? != Ordering::Greater,
-            );
-            active_events = order.iter().map(|&i| active_events[i]).collect();
-            roots = order.iter().map(|&i| roots[i]).collect();
-
-            let count_view = event_count.select(Axis(0), active_events.as_slice().unwrap());
-            let max_view = max_events.select(Axis(0), active_events.as_slice().unwrap());
-            let t = Zip::indexed(&count_view)
-                .and(&max_view)
-                .fold(None, |acc, idx, &count, &max| {
-                    if acc.is_some() {
-                        acc
-                    } else if count as f64 >= max {
-                        Some(idx)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap();
-
-            active_events = active_events.slice(s![..t + 1]).to_owned();
-            roots = roots.slice(s![..t + 1]).to_owned();
-        }
-
-        Ok((active_events, roots, terminate))
-    }
-
-    #[derive(Debug, Error)]
-    #[error("A NaN value was encountered during event handling for either t or t_old")]
-    struct NotANumberEncounteredDuringEventHandling;
-
-    /// Perform equivalent of `np.argsort`. NB. will panic if passed an empty array.
-    fn argsort<T>(arr: &Array1<T>, reverse: bool) -> Array1<usize>
-    where
-        T: PartialOrd,
-    {
-        let mut indices: Vec<usize> = (0..arr.len()).collect();
-
-        indices.sort_by(|&a, &b| arr[a].partial_cmp(&arr[b]).unwrap());
-
-        if reverse {
-            indices.reverse();
-        }
-
-        Array1::from_vec(indices)
-    }
-
-    fn find_active_events(
-        g: &Array1<f64>,
-        g_new: &Array1<f64>,
-        direction: &Array1<TerminateDirection>,
-    ) -> Array1<usize> {
-        let mut indices = Vec::new();
-
-        Zip::indexed(g)
-            .and(g_new)
-            .and(direction)
-            .for_each(|idx, &g_val, &g_new_val, &dir_val| {
-                let up = g_val <= 0.0 && g_new_val >= 0.0;
-                let down = g_val >= 0.0 && g_new_val <= 0.0;
-                let either = up || down;
-
-                let mask = (up && dir_val > TerminateDirection::Both)
-                    || (down && dir_val < TerminateDirection::Both)
-                    || (either && dir_val == TerminateDirection::Both);
-
-                if mask {
-                    indices.push(idx);
-                }
-            });
-
-        Array1::from(indices)
-    }
-
-    fn solve_event_equation(
-        event: &SharedIvpEventFunction,
-        sol: &Arc<dyn DenseOutput>,
+    fn solve_event_equation<const N: usize>(
+        event: &dyn Fn(f64, &[f64; N]) -> f64,
+        sol: &rk45::RkDenseOutput<N>,
         t_old: f64,
         t: f64,
     ) -> Result<f64, SolverError> {
-        let problem = EventRootFunction {
-            event: Arc::clone(event),
-            sol: Arc::clone(sol),
-        };
+        let problem = EventRootFunction { event, sol };
 
         let solver = BrentRoot::new(t_old, t, 1e-8);
 
@@ -541,21 +346,21 @@ pub mod solve_ivp {
         }
     }
 
-    struct EventRootFunction {
-        event: SharedIvpEventFunction,
-        sol: Arc<dyn DenseOutput>,
+    struct EventRootFunction<'a, const N: usize> {
+        event: &'a dyn Fn(f64, &[f64; N]) -> f64,
+        sol: &'a rk45::RkDenseOutput<N>,
     }
 
     #[derive(Debug, Error)]
     #[error("No root found for IVP solving event equation")]
     struct NoRootFoundError;
 
-    impl CostFunction for EventRootFunction {
+    impl<const N: usize> CostFunction for EventRootFunction<'_, N> {
         type Param = f64;
         type Output = f64;
 
-        fn cost(&self, t: &Self::Param) -> Result<Self::Output, Error> {
-            Ok((self.event)(*t, &(self.sol).call_impl(*t)))
+        fn cost(&self, t: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
+            Ok((self.event)(*t, &self.sol.call(*t)))
         }
     }
 
@@ -564,220 +369,129 @@ pub mod solve_ivp {
         #[error("Error when solving events: {0}")]
         Event(Box<dyn std::error::Error + Send + Sync>),
         #[error("Error in main IVP solver: {0}")]
-        MainSolver(Box<dyn std::error::Error + Send + Sync>),
-        #[error("Error happened during event termination")]
-        Termination,
+        MainSolver(#[from] rk45::Rk45SolverError),
     }
 
-    pub struct TerminatingEvent {
-        func: SharedIvpEventFunction,
+    pub struct TerminatingEvent<'a, const N: usize> {
+        func: &'a dyn Fn(f64, &[f64; N]) -> f64,
         direction: TerminateDirection,
     }
 
-    impl TerminatingEvent {
-        pub fn new(func: SharedIvpEventFunction, direction: Option<TerminateDirection>) -> Self {
+    impl<'a, const N: usize> TerminatingEvent<'a, N> {
+        pub fn new(
+            func: &'a dyn Fn(f64, &[f64; N]) -> f64,
+            direction: Option<TerminateDirection>,
+        ) -> Self {
             Self {
                 func,
                 direction: direction.unwrap_or_default(),
             }
         }
-
-        pub fn is_terminal(&self) -> bool {
-            true
-        }
     }
 
-    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, PartialOrd)]
+    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
     pub enum TerminateDirection {
         #[default]
-        Both = 0,
-        Positive = 1,
-        Negative = -1,
+        Both,
+        Positive,
+        Negative,
     }
 
-    pub struct OdeResult {
-        pub y: Vec<Array1<f64>>,
-        pub t_events: Option<Vec<Array1<f64>>>,
-        pub t: Array1<f64>,
-        pub success: bool,
+    pub struct OdeResult<const N: usize> {
+        /// final time reached (the time of the terminating event, if one occurred)
+        pub t: f64,
+        /// final state
+        pub y: [f64; N],
+        /// index of the event that terminated integration, and the time at which it occurred
+        pub event: Option<(usize, f64)>,
     }
 
     /// module to do with the RK45 method for scipy
     mod rk45 {
         #![allow(clippy::unreadable_literal)]
 
-        use crate::core::solvers::solve_ivp::base_solver::{DefaultDenseOutput, DenseOutput};
-        use crate::core::solvers::solve_ivp::{select_initial_step, SharedIvpSolveFunction};
-        use ndarray::{array, concatenate, s, Array1, Array2, Axis, Zip};
-        use std::sync::{Arc, LazyLock};
+        use super::select_initial_step;
         use thiserror::Error;
 
-        #[allow(clippy::many_single_char_names)]
-        fn rk_step(
-            fun: &SharedIvpSolveFunction,
-            t: f64,
-            y: &Array1<f64>,
-            f: &Array1<f64>,
-            h: f64,
-            a: &Array2<f64>,
-            b: &Array1<f64>,
-            c: &Array1<f64>,
-            k: &mut Array2<f64>,
-        ) -> (Array1<f64>, Array1<f64>) {
-            // 1. K[0] = f
-            // Assigning a 1D vector to a specific row of our 2D matrix
-            k.row_mut(0).assign(f);
-
-            let n_stages = b.len();
-
-            // 2. Loop over the intermediate stages
-            for s in 1..n_stages {
-                let c = c[s];
-
-                // Extract a slice of the coefficients up to index s: a[:s]
-                let a_slice = a.slice(s![s, ..s]);
-
-                // Extract a slice of previous K stages up to row s: K[:s]
-                // In Python: np.dot(K[:s].T, a[:s])
-                // In Rust: We match the matrix multiplication mechanics:
-                // Transposing rows into columns with .t(), then computing a matrix-vector dot product
-                let k_slice = k.slice(s![..s, ..]);
-                let dy = k_slice.t().dot(&a_slice) * h;
-
-                // K[s] = fun(t + c * h, y + dy)
-                let next_stage_y = y + &dy;
-                let f_stage = fun(t + c * h, &next_stage_y);
-                k.row_mut(s).assign(&f_stage);
-            }
-
-            // 3. Compute final y prediction
-            // Python: y_new = y + h * np.dot(K[:-1].T, B)
-            let k_all_stages = k.slice(s![..n_stages, ..]);
-            let y_new = y + (k_all_stages.t().dot(b) * h);
-
-            // 4. Compute final f derivative evaluation
-            // f_new = fun(t + h, y_new)
-            let f_new = fun(t + h, &y_new);
-
-            // 5. K[-1] = f_new
-            // Assigning the last row of the K matrix
-            let last_row_idx = k.nrows() - 1;
-            k.row_mut(last_row_idx).assign(&f_new);
-
-            (y_new, f_new)
-        }
-
-        #[derive(Clone)]
-        pub(super) struct Rk45Solver {
-            n: usize,
-            pub(crate) status: super::base_solver::Status,
-            t_bound: f64,
-            direction: i8,
-            pub(crate) t: f64,
-            pub(crate) y: Array1<f64>,
-            pub(crate) t_old: Option<f64>,
-            step_size: Option<f64>,
-            nfev: usize,
-            fun: SharedIvpSolveFunction,
-            y_old: Option<Array1<f64>>,
-            max_step: f64,
-            rtol: f64,
-            atol: f64,
-            f: Array1<f64>,
-            h_abs: f64,
-            k: Array2<f64>,
-            h_previous: Option<f64>,
-        }
-
-        const ORDER: usize = 5;
         const ERROR_ESTIMATOR_ORDER: usize = 4;
         const N_STAGES: usize = 6;
-        static C: LazyLock<Array1<f64>> =
-            LazyLock::new(|| array![0.0, 1.0 / 5.0, 3.0 / 10.0, 4.0 / 5.0, 8.0 / 9.0, 1.0]);
-        static A: LazyLock<Array2<f64>> = LazyLock::new(|| {
-            array!(
-                [0., 0., 0., 0., 0.],
-                [1. / 5., 0., 0., 0., 0.],
-                [3. / 40., 9. / 40., 0., 0., 0.],
-                [44. / 45., -56. / 15., 32. / 9., 0., 0.],
-                [
-                    19372. / 6561.,
-                    -25360. / 2187.,
-                    64448. / 6561.,
-                    -212. / 729.,
-                    0.
-                ],
-                [
-                    9017. / 3168.,
-                    -355. / 33.,
-                    46732. / 5247.,
-                    49. / 176.,
-                    -5103. / 18656.
-                ]
-            )
-        });
-        static B: LazyLock<Array1<f64>> = LazyLock::new(|| {
-            array![
-                35. / 384.,
+        const C: [f64; N_STAGES] = [0.0, 1.0 / 5.0, 3.0 / 10.0, 4.0 / 5.0, 8.0 / 9.0, 1.0];
+        const A: [[f64; N_STAGES - 1]; N_STAGES] = [
+            [0., 0., 0., 0., 0.],
+            [1. / 5., 0., 0., 0., 0.],
+            [3. / 40., 9. / 40., 0., 0., 0.],
+            [44. / 45., -56. / 15., 32. / 9., 0., 0.],
+            [
+                19372. / 6561.,
+                -25360. / 2187.,
+                64448. / 6561.,
+                -212. / 729.,
                 0.,
-                500. / 1113.,
-                125. / 192.,
-                -2187. / 6784.,
-                11. / 84.
-            ]
-        });
-        static E: LazyLock<Array1<f64>> = LazyLock::new(|| {
-            array![
-                -71. / 57600.,
+            ],
+            [
+                9017. / 3168.,
+                -355. / 33.,
+                46732. / 5247.,
+                49. / 176.,
+                -5103. / 18656.,
+            ],
+        ];
+        const B: [f64; N_STAGES] = [
+            35. / 384.,
+            0.,
+            500. / 1113.,
+            125. / 192.,
+            -2187. / 6784.,
+            11. / 84.,
+        ];
+        const E: [f64; N_STAGES + 1] = [
+            -71. / 57600.,
+            0.,
+            71. / 16695.,
+            -71. / 1920.,
+            17253. / 339200.,
+            -22. / 525.,
+            1. / 40.,
+        ];
+        const P: [[f64; 4]; N_STAGES + 1] = [
+            [
+                1.,
+                -8048581381. / 2820520608.,
+                8663915743. / 2820520608.,
+                -12715105075. / 11282082432.,
+            ],
+            [0., 0., 0., 0.],
+            [
                 0.,
-                71. / 16695.,
-                -71. / 1920.,
-                17253. / 339200.,
-                -22. / 525.,
-                1. / 40.
-            ]
-        });
-        static P: LazyLock<Array2<f64>> = LazyLock::new(|| {
-            array![
-                [
-                    1.,
-                    -8048581381. / 2820520608.,
-                    8663915743. / 2820520608.,
-                    -12715105075. / 11282082432.
-                ],
-                [0., 0., 0., 0.],
-                [
-                    0.,
-                    131558114200. / 32700410799.,
-                    -68118460800. / 10900136933.,
-                    87487479700. / 32700410799.
-                ],
-                [
-                    0.,
-                    -1754552775. / 470086768.,
-                    14199869525. / 1410260304.,
-                    -10690763975. / 1880347072.
-                ],
-                [
-                    0.,
-                    127303824393. / 49829197408.,
-                    -318862633887. / 49829197408.,
-                    701980252875. / 199316789632.
-                ],
-                [
-                    0.,
-                    -282668133. / 205662961.,
-                    2019193451. / 616988883.,
-                    -1453857185. / 822651844.
-                ],
-                [
-                    0.,
-                    40617522. / 29380423.,
-                    -110615467. / 29380423.,
-                    69997945. / 29380423.
-                ]
-            ]
-        });
+                131558114200. / 32700410799.,
+                -68118460800. / 10900136933.,
+                87487479700. / 32700410799.,
+            ],
+            [
+                0.,
+                -1754552775. / 470086768.,
+                14199869525. / 1410260304.,
+                -10690763975. / 1880347072.,
+            ],
+            [
+                0.,
+                127303824393. / 49829197408.,
+                -318862633887. / 49829197408.,
+                701980252875. / 199316789632.,
+            ],
+            [
+                0.,
+                -282668133. / 205662961.,
+                2019193451. / 616988883.,
+                -1453857185. / 822651844.,
+            ],
+            [
+                0.,
+                40617522. / 29380423.,
+                -110615467. / 29380423.,
+                69997945. / 29380423.,
+            ],
+        ];
         const ERROR_EXPONENT: f64 = -1. / (ERROR_ESTIMATOR_ORDER as f64 + 1.);
 
         // Multiply steps computed from asymptotic behaviour of errors by this.
@@ -789,144 +503,169 @@ pub mod solve_ivp {
         // Maximum allowed increase in a step size.
         const MAX_FACTOR: f64 = 10.;
 
-        impl Rk45Solver {
+        #[allow(clippy::many_single_char_names)]
+        fn rk_step<const N: usize>(
+            fun: &mut impl FnMut(f64, &[f64; N]) -> [f64; N],
+            t: f64,
+            y: &[f64; N],
+            f: &[f64; N],
+            h: f64,
+            k: &mut [[f64; N]; N_STAGES + 1],
+        ) -> ([f64; N], [f64; N]) {
+            // K[0] = f
+            k[0] = *f;
+
+            for s in 1..N_STAGES {
+                // dy = np.dot(K[:s].T, a[:s]) * h
+                // K[s] = fun(t + c * h, y + dy)
+                let mut y_stage = *y;
+                for i in 0..N {
+                    let mut dy = 0.;
+                    for j in 0..s {
+                        dy += k[j][i] * A[s][j];
+                    }
+                    y_stage[i] += dy * h;
+                }
+                k[s] = fun(t + C[s] * h, &y_stage);
+            }
+
+            // y_new = y + h * np.dot(K[:-1].T, B)
+            let mut y_new = *y;
+            for i in 0..N {
+                let mut dy = 0.;
+                for j in 0..N_STAGES {
+                    dy += k[j][i] * B[j];
+                }
+                y_new[i] += dy * h;
+            }
+
+            // f_new = fun(t + h, y_new)
+            let f_new = fun(t + h, &y_new);
+
+            // K[-1] = f_new
+            k[N_STAGES] = f_new;
+
+            (y_new, f_new)
+        }
+
+        pub(super) struct Rk45Solver<const N: usize> {
+            t_bound: f64,
+            direction: f64,
+            pub(super) t: f64,
+            pub(super) y: [f64; N],
+            pub(super) t_old: f64,
+            y_old: [f64; N],
+            max_step: f64,
+            rtol: f64,
+            atol: f64,
+            f: [f64; N],
+            h_abs: f64,
+            k: [[f64; N]; N_STAGES + 1],
+        }
+
+        impl<const N: usize> Rk45Solver<N> {
             pub(super) fn new(
-                fun: &SharedIvpSolveFunction,
+                fun: &mut impl FnMut(f64, &[f64; N]) -> [f64; N],
                 t0: f64,
-                y0: &Array1<f64>,
+                y0: [f64; N],
                 t_bound: f64,
                 rtol: Option<f64>,
                 atol: Option<f64>,
             ) -> Self {
-                let f = fun(t0, y0);
-                let t = t0;
-                let y = y0.to_owned();
+                let f = fun(t0, &y0);
                 let max_step = f64::INFINITY;
-                let direction = if t_bound != t0 { sign(t_bound - t0) } else { 1 };
+                let direction = if t_bound != t0 {
+                    sign(t_bound - t0)
+                } else {
+                    1.
+                };
                 let rtol = rtol.unwrap_or(1e-3);
                 let atol = atol.unwrap_or(1e-6);
                 let h_abs = select_initial_step(
                     fun,
                     t0,
-                    y0,
+                    &y0,
                     t_bound,
                     max_step,
                     &f,
-                    direction as f64,
+                    direction,
                     ERROR_ESTIMATOR_ORDER,
                     rtol,
                     atol,
                 );
-                let n = y.len();
 
                 Self {
-                    n,
-                    status: Default::default(),
                     t_bound,
                     direction,
-                    t,
-                    y,
-                    t_old: None,
-                    step_size: None,
-                    nfev: 0,
-                    fun: fun.clone(),
-                    y_old: None,
+                    t: t0,
+                    y: y0,
+                    t_old: t0,
+                    y_old: y0,
                     max_step,
                     rtol,
                     atol,
                     f,
                     h_abs,
-                    k: Array2::zeros((N_STAGES + 1, n)),
-                    h_previous: None,
+                    k: [[0.; N]; N_STAGES + 1],
                 }
             }
 
-            fn step_size(&self) -> Option<f64> {
-                self.t_old.map(|t_old| (self.t - t_old).abs())
-            }
-
-            pub(crate) fn step(&mut self) -> Result<(), Rk45SolverError> {
-                if self.status != super::base_solver::Status::Running {
-                    panic!("Attempt to step on a failed or finished solver.");
-                }
-
-                if self.n == 0 || self.t == self.t_bound {
+            /// Advance one step, returning whether the solver has finished (reached t_bound).
+            pub(super) fn step(
+                &mut self,
+                fun: &mut impl FnMut(f64, &[f64; N]) -> [f64; N],
+            ) -> Result<bool, Rk45SolverError> {
+                if N == 0 || self.t == self.t_bound {
                     // Handle corner cases of empty solver or no integration.
-                    self.t_old = self.t.into();
+                    self.t_old = self.t;
                     self.t = self.t_bound;
-                    self.status = super::base_solver::Status::Finished;
 
-                    Ok(())
-                } else {
-                    let t = self.t;
-                    let result = self.step_impl();
-                    if result.is_err() {
-                        self.status = super::base_solver::Status::Failed;
-                    } else {
-                        self.t_old = t.into();
-                        if self.direction as f64 * (self.t - self.t_bound) >= 0. {
-                            self.status = super::base_solver::Status::Finished;
-                        }
-                    }
-
-                    result
+                    return Ok(true);
                 }
+
+                let t = self.t;
+                self.step_impl(fun)?;
+                self.t_old = t;
+
+                Ok(self.direction * (self.t - self.t_bound) >= 0.)
             }
 
-            fn step_impl(&mut self) -> Result<(), Rk45SolverError> {
+            fn step_impl(
+                &mut self,
+                fun: &mut impl FnMut(f64, &[f64; N]) -> [f64; N],
+            ) -> Result<(), Rk45SolverError> {
                 let t = self.t;
-                let y = &self.y;
+                let y = self.y;
 
-                let max_step = self.max_step;
-                let rtol = self.rtol;
-                let atol = self.atol;
+                let min_step = 10. * f64::abs(nextafter(t, self.direction * f64::INFINITY) - t);
 
-                let min_step =
-                    10. * f64::abs(nextafter(t, self.direction as f64 * f64::INFINITY) - t);
-
-                let mut h_abs = if self.h_abs > max_step {
-                    max_step
+                let mut h_abs = if self.h_abs > self.max_step {
+                    self.max_step
                 } else if self.h_abs < min_step {
                     min_step
                 } else {
                     self.h_abs
                 };
 
-                let mut step_accepted = false;
                 let mut step_rejected = false;
 
-                let mut h = f64::default();
-                let mut f_new = Array1::zeros(y.dim());
-                let mut y_new = Array1::zeros(y.dim());
-
-                let mut t_new = f64::default();
-
-                while !step_accepted {
+                let (t_new, y_new, f_new) = loop {
                     if h_abs < min_step {
                         return Err(Rk45SolverError::TooSmallStep);
                     }
 
-                    h = h_abs * self.direction as f64;
-                    t_new = t + h;
+                    let mut t_new = t + h_abs * self.direction;
 
-                    if self.direction as f64 * (t_new - self.t_bound) > 0. {
+                    if self.direction * (t_new - self.t_bound) > 0. {
                         t_new = self.t_bound;
                     }
 
-                    h = t_new - t;
+                    let h = t_new - t;
                     h_abs = f64::abs(h);
 
-                    let (y_new_step, f_new_step) =
-                        rk_step(&self.fun, t, y, &self.f, h, &A, &B, &C, &mut self.k);
-                    (y_new, f_new) = (y_new_step, f_new_step);
+                    let (y_new, f_new) = rk_step(fun, t, &y, &self.f, h, &mut self.k);
 
-                    let mut scale = Array1::<f64>::zeros(y_new.dim());
-                    Zip::from(&mut scale).and(y).and(&y_new).for_each(
-                        |scale_val, y_val, y_new_val| {
-                            *scale_val = atol + y_val.abs().max(y_new_val.abs()) * rtol;
-                        },
-                    );
-                    let error_norm = self.estimate_error_norm(&self.k, h, &scale);
+                    let error_norm = self.estimate_error_norm(h, &y, &y_new);
 
                     if error_norm < 1.0 {
                         let mut factor = if error_norm == 0.0 {
@@ -941,15 +680,14 @@ pub mod solve_ivp {
 
                         h_abs *= factor;
 
-                        step_accepted = true;
+                        break (t_new, y_new, f_new);
                     } else {
                         h_abs *= MIN_FACTOR.max(SAFETY * error_norm.powf(ERROR_EXPONENT));
                         step_rejected = true;
                     }
-                }
+                };
 
-                self.h_previous = h.into();
-                self.y_old = y.to_owned().into();
+                self.y_old = y;
 
                 self.t = t_new;
                 self.y = y_new;
@@ -960,45 +698,36 @@ pub mod solve_ivp {
                 Ok(())
             }
 
-            pub(crate) fn dense_output(&self) -> Arc<dyn DenseOutput> {
-                if self.n == 0 || self.t_old.is_some_and(|t_old| self.t == t_old) {
-                    Arc::new(
-                        crate::core::solvers::solve_ivp::base_solver::ConstantDenseOutput::new(
-                            self.t_old
-                                .expect("Expected to be past the first step with t_old set"),
-                            self.t,
-                            self.y.clone(),
-                        ),
-                    )
-                } else {
-                    Arc::new(self.dense_output_impl())
+            /// norm(np.dot(K.T, E) * h / scale)
+            fn estimate_error_norm(&self, h: f64, y: &[f64; N], y_new: &[f64; N]) -> f64 {
+                super::norm((0..N).map(|i| {
+                    let scale = self.atol + y[i].abs().max(y_new[i].abs()) * self.rtol;
+                    let mut error = 0.;
+                    for (k_row, e) in self.k.iter().zip(E) {
+                        error += k_row[i] * e;
+                    }
+                    error * h / scale
+                }))
+            }
+
+            pub(super) fn dense_output(&self) -> RkDenseOutput<N> {
+                // Q = K.T.dot(P)
+                let mut q = [[0.; 4]; N];
+                for (i, q_row) in q.iter_mut().enumerate() {
+                    for (col, q_val) in q_row.iter_mut().enumerate() {
+                        for (k_row, p_row) in self.k.iter().zip(P) {
+                            *q_val += k_row[i] * p_row[col];
+                        }
+                    }
                 }
-            }
 
-            fn estimate_error(&self, k: &Array2<f64>, h: f64) -> Array1<f64> {
-                let e: &Array1<f64> = &E;
-
-                k.t().dot(e) * h
-            }
-
-            fn estimate_error_norm(&self, k: &Array2<f64>, h: f64, scale: &Array1<f64>) -> f64 {
-                super::norm(&(self.estimate_error(k, h) / scale))
-            }
-
-            fn dense_output_impl(&self) -> impl super::base_solver::DenseOutput {
-                let p: &Array2<f64> = &P;
-                let q = self.k.t().dot(p);
-
-                RkDenseOutput::new(
-                    self.t_old.expect(
-                        "t_old expects to have been initialised before emitting a dense output",
-                    ),
-                    self.t,
-                    self.y_old.clone().expect(
-                        "y_old expects to have been initialised before emitting a dense output",
-                    ),
+                RkDenseOutput {
+                    t_old: self.t_old,
+                    h: self.t - self.t_old,
                     q,
-                )
+                    y_old: self.y_old,
+                    y: self.y,
+                }
             }
         }
 
@@ -1019,82 +748,60 @@ pub mod solve_ivp {
             }
         }
 
-        struct RkDenseOutput {
-            _default: DefaultDenseOutput,
+        pub(super) struct RkDenseOutput<const N: usize> {
+            t_old: f64,
             h: f64,
-            q: Array2<f64>,
-            order: usize,
-            y_old: Array1<f64>,
+            q: [[f64; 4]; N],
+            y_old: [f64; N],
+            y: [f64; N],
         }
 
-        impl RkDenseOutput {
-            fn new(t_old: f64, t: f64, y_old: Array1<f64>, q: Array2<f64>) -> Self {
-                let order = q.shape()[1] - 1;
-
-                Self {
-                    _default: super::base_solver::dense_output_init(t_old, t),
-                    h: t - t_old,
-                    q,
-                    order,
-                    y_old,
-                }
-            }
-
-            fn t_old(&self) -> f64 {
-                self._default.t_old
-            }
-        }
-
-        impl DenseOutput for RkDenseOutput {
-            fn call_impl(&self, t: f64) -> Array1<f64> {
-                let t = array![t];
-                let x = (&t - self.t_old()) / self.h;
-
-                let p = if t.ndim() == 0 {
-                    let p = x.broadcast((self.order + 1, x.len())).unwrap();
-                    p.flatten().cumprod(Axis(0))
-                } else {
-                    let views = vec![x.view(); self.order + 1];
-                    let p = concatenate(Axis(0), &views).unwrap();
-                    p.flatten().cumprod(Axis(0))
-                };
-
-                let mut y = self.h * self.q.dot(&p);
-                if y.ndim() == 2 {
-                    let new_line = self.y_old.clone().insert_axis(Axis(1));
-                    y += &new_line;
-                } else {
-                    y += &self.y_old;
+        impl<const N: usize> RkDenseOutput<N> {
+            pub(super) fn call(&self, t: f64) -> [f64; N] {
+                if self.h == 0. {
+                    // equivalent of ConstantDenseOutput, used when no step has been taken
+                    return self.y;
                 }
 
-                y
+                let x = (t - self.t_old) / self.h;
+
+                // p = np.cumprod(np.tile(x, order + 1))
+                let x2 = x * x;
+                let x3 = x2 * x;
+                let p = [x, x2, x3, x3 * x];
+
+                std::array::from_fn(|i| {
+                    let q = &self.q[i];
+                    self.h * (q[0] * p[0] + q[1] * p[1] + q[2] * p[2] + q[3] * p[3]) + self.y_old[i]
+                })
             }
         }
 
-        fn sign(value: f64) -> i8 {
+        fn sign(value: f64) -> f64 {
             if value < 0. {
-                -1
+                -1.
             } else if value == 0. {
-                0
+                0.
             } else {
-                1
+                1.
             }
         }
     }
 
-    fn select_initial_step(
-        fun: &SharedIvpSolveFunction,
+    #[allow(clippy::too_many_arguments)]
+    fn select_initial_step<const N: usize>(
+        fun: &mut impl FnMut(f64, &[f64; N]) -> [f64; N],
         t0: f64,
-        y0: &Array1<f64>,
+        y0: &[f64; N],
         t_bound: f64,
         max_step: f64,
-        f0: &Array1<f64>,
+        f0: &[f64; N],
         direction: f64,
         order: usize,
         rtol: f64,
         atol: f64,
     ) -> f64 {
-        if y0.is_empty() {
+        if N == 0 {
             return f64::INFINITY;
         }
 
@@ -1103,10 +810,10 @@ pub mod solve_ivp {
             return 0.0;
         }
 
-        let scale: Array1<f64> = y0.iter().map(|&y| (y.abs() * rtol) + atol).collect();
+        let scale: [f64; N] = std::array::from_fn(|i| (y0[i].abs() * rtol) + atol);
 
-        let d0 = norm(&(y0 / &scale));
-        let d1 = norm(&(f0 / &scale));
+        let d0 = norm((0..N).map(|i| y0[i] / scale[i]));
+        let d1 = norm((0..N).map(|i| f0[i] / scale[i]));
 
         let h0 = if d0 < 1e-5 || d1 < 1e-5 {
             1e-6
@@ -1116,9 +823,9 @@ pub mod solve_ivp {
 
         // Check t0+h0*direction doesn't take us beyond t_bound
         let h0 = h0.min(interval_length);
-        let y1 = y0 + h0 * direction * f0;
+        let y1: [f64; N] = std::array::from_fn(|i| y0[i] + h0 * direction * f0[i]);
         let f1 = fun(t0 + h0 * direction, &y1);
-        let d2 = norm(&((f1 - f0) / &scale)) / h0;
+        let d2 = norm((0..N).map(|i| (f1[i] - f0[i]) / scale[i])) / h0;
 
         let h1 = if d1 <= 1e-15 && d2 <= 1e-15 {
             1e-6_f64.max(h0 * 1e-3)
@@ -1133,64 +840,9 @@ pub mod solve_ivp {
     }
 
     // functional equivalent of the common norm function inside scipy.integrate ivp library
-    fn norm<D: Dimension>(arr: &Array<f64, D>) -> f64 {
-        numpy_linalg_norm_equivalent(arr) / (arr.len() as f64).powf(0.5)
-    }
-
-    fn numpy_linalg_norm_equivalent<D: Dimension>(arr: &Array<f64, D>) -> f64 {
-        arr.iter().map(|&x| x * x).sum::<f64>().sqrt()
-    }
-
-    mod base_solver {
-        use ndarray::Array1;
-
-        #[derive(Clone, Copy, Debug, Default, PartialEq)]
-        pub enum Status {
-            #[default]
-            Running,
-            Finished,
-            Failed,
-        }
-
-        pub trait DenseOutput {
-            fn call_impl(&self, t: f64) -> Array1<f64>;
-        }
-
-        pub struct DefaultDenseOutput {
-            pub(super) t_old: f64,
-            t: f64,
-            t_min: f64,
-            t_max: f64,
-        }
-
-        pub struct ConstantDenseOutput {
-            _default: DefaultDenseOutput,
-            value: Array1<f64>,
-        }
-
-        impl ConstantDenseOutput {
-            pub fn new(t_old: f64, t: f64, value: Array1<f64>) -> Self {
-                Self {
-                    _default: dense_output_init(t_old, t),
-                    value,
-                }
-            }
-        }
-
-        pub(super) fn dense_output_init(t_old: f64, t: f64) -> DefaultDenseOutput {
-            DefaultDenseOutput {
-                t_old,
-                t,
-                t_min: t.min(t_old),
-                t_max: t.max(t_old),
-            }
-        }
-
-        impl DenseOutput for ConstantDenseOutput {
-            fn call_impl(&self, _t: f64) -> Array1<f64> {
-                self.value.clone()
-            }
-        }
+    fn norm(values: impl ExactSizeIterator<Item = f64>) -> f64 {
+        let len = values.len();
+        values.map(|x| x * x).sum::<f64>().sqrt() / (len as f64).powf(0.5)
     }
 }
 
@@ -1214,4 +866,65 @@ pub fn interp1d(
 pub enum Interp1dFillValue {
     Extrapolate,
     FillValues((f64, f64)),
+}
+
+/// Equivalent of `interp::interp` with `InterpMode::Extrapolate`, but with the slopes and
+/// intercepts precomputed so that repeated evaluation (e.g. inside an ODE function) does not
+/// allocate.
+#[derive(Clone, Debug)]
+pub struct LinearInterpolator {
+    x: Vec<f64>,
+    y_limits: (f64, f64),
+    slopes: Vec<f64>,
+    intercepts: Vec<f64>,
+}
+
+impl LinearInterpolator {
+    pub fn new(x: &[f64], y: &[f64]) -> Self {
+        // as with `interp`, ignore any excess entries in either x or y
+        let min_len = x.len().min(y.len());
+
+        let slopes: Vec<f64> = (1..min_len)
+            .map(|i| (y[i] - y[i - 1]) / (x[i] - x[i - 1]))
+            .collect();
+        let intercepts = slopes
+            .iter()
+            .enumerate()
+            .map(|(i, m)| y[i] - x[i] * m)
+            .collect();
+        let y_limits = match min_len {
+            0 => (0., 0.),
+            _ => (y[0], y[min_len - 1]),
+        };
+
+        Self {
+            x: x[..min_len].to_vec(),
+            y_limits,
+            slopes,
+            intercepts,
+        }
+    }
+
+    pub fn interp(&self, xp: f64) -> f64 {
+        match self.x.len() {
+            0 => 0.,
+            1 => self.y_limits.0,
+            len => {
+                if xp == self.x[0] {
+                    return self.y_limits.0;
+                }
+                if xp == self.x[len - 1] {
+                    return self.y_limits.1;
+                }
+
+                let i = self
+                    .x
+                    .partition_point(|&probe| probe < xp)
+                    .saturating_sub(1)
+                    .min(len - 2);
+
+                self.slopes[i] * xp + self.intercepts[i]
+            }
+        }
+    }
 }
