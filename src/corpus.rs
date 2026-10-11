@@ -4527,7 +4527,7 @@ impl HeatSource {
                 energy_demand,
                 None,
                 temp_return.into(),
-                None,
+                false, // TODO check this is correct for 1.0.0a9 migration
                 simulation_time_iteration,
             ),
         }
@@ -5402,29 +5402,11 @@ fn heat_source_from_input(
             let energy_supply_conn_name = name;
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name)?;
-            let (control_min, control_max, _control) = match control_refs {
-                Some(control_refs) => match control_refs {
-                    ControlReferences::Unified { control } => {
-                        let control = controls
-                            .get_with_string(control)
-                            .ok_or_else(|| anyhow!("No control found for reference '{control}'"))?;
-                        (None, None, Some(control))
-                    }
-                    ControlReferences::Bounded {
-                        control_min,
-                        control_max,
-                    } => {
-                        let min = controls.get_with_string(control_min).ok_or_else(|| {
-                            anyhow!("No control found for reference '{control_min}'")
-                        })?;
-                        let max = controls.get_with_string(control_max).ok_or_else(|| {
-                            anyhow!("No control found for reference '{control_max}'")
-                        })?;
-                        (Some(min), Some(max), None)
-                    }
-                },
-                None => (None, None, None),
-            };
+            let control_refs = control_refs
+                .clone()
+                .ok_or_else(|| anyhow!("Missing control for {name}"))?;
+            let range_time_control =
+                controls.get_range_time_control(&control_refs, simulation_time_iterator)?;
 
             Ok(HeatSourceFromInput {
                 heat_source: HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
@@ -5435,14 +5417,14 @@ fn heat_source_from_input(
                         *vol_hw_daily_average,
                         volume,
                         daily_losses,
-                        heat_exchanger_surface_area.ok_or(anyhow!("A heat exchanger surface_area is expected for a HeatPumpHotWaterOnly heat source"))?,
+                        Some(heat_exchanger_surface_area.ok_or(anyhow!("A heat exchanger surface_area is expected for a HeatPumpHotWaterOnly heat source"))?),
                         *in_use_factor_mismatch,
                         *tank_volume_declared,
                         *heat_exchanger_surface_area_declared,
                         *daily_losses_declared,
                         simulation_time_iterator.step_in_hours(),
-                        control_min.unwrap(), // TODO: update as part of 1.0.0a9 migration
-                        control_max.unwrap(), // TODO: update as part of 1.0.0a9 migration
+                        range_time_control,
+                        todo!(), // TODO: update as part of 1.0.0a9 migration
                     ),
                 ))),
                 energy_supply_conn_name: energy_supply_conn_name.into(),

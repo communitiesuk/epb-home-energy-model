@@ -787,7 +787,7 @@ pub(crate) enum ScheduleOrControl<T> {
     Control(Control),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct RangeTimeControl {
     schedule_lower: ScheduleOrControl<Option<f64>>,
     schedule_upper: ScheduleOrControl<Option<f64>>,

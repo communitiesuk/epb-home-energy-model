@@ -71,7 +71,7 @@ impl HeatSourceWet {
         &self,
         temp_flow: f64,
         temperature: f64,
-        _ignore_standard_ctrl: Option<bool>, // TODO 1.0.0a9 migration
+        ignore_standard_ctrl: bool,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match self {
@@ -109,7 +109,7 @@ impl HeatSourceWet {
                 .energy_output_max(temp_flow, temperature, simtime)
                 .map(|x| x.0),
             HeatSourceWet::HeatPumpWaterOnly(hp_water_only) => {
-                Ok(hp_water_only.energy_output_max(temperature, simtime))
+                Ok(hp_water_only.energy_output_max(temperature, ignore_standard_ctrl, simtime))
             }
         }
     }
@@ -119,7 +119,7 @@ impl HeatSourceWet {
         energy_demand: f64,
         temp_flow: Option<f64>,
         temperature: Option<f64>,
-        _ignore_standard_ctrl: Option<bool>, // TODO 1.0.0a9 migration
+        ignore_standard_ctrl: bool,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match self {
@@ -165,6 +165,7 @@ impl HeatSourceWet {
                 energy_demand,
                 Default::default(),
                 temperature,
+                ignore_standard_ctrl,
                 simtime,
             )),
         }

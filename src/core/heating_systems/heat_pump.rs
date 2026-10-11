@@ -4049,6 +4049,20 @@ impl HeatPump {
                         }
                     },
                 );
+            } else if matches!(
+                record.service_type,
+                HeatingServiceType::DomesticHotWaterRegular
+            ) {
+                // DHW service not mapped to a hot water source (e.g. PCM
+                // battery charging) — do not report H5 COP as the definition
+                // is uncertain without a cylinder.
+                let num_timesteps = results_per_timestep[&service_name]
+                    [&("energy_delivered_total".into(), Some("kWh".into()))]
+                    .len();
+                results_per_timestep.get_mut(&service_name).unwrap().insert(
+                    ("energy_delivered_H5".into(), Some("kWh".into())),
+                    vec![ResultParamValue::Empty; num_timesteps]
+                );
             } else {
                 let energy_delivered_total_results = results_per_timestep[&service_name]
                     [&("energy_delivered_total".into(), Some("kWh".into()))]
@@ -4497,16 +4511,16 @@ pub struct HeatPumpHotWaterOnly {
     power_in_kw: f64,
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control_min: Control,
-    control_max: Control,
+    control: Arc<RangeTimeControl>,
     initial_efficiency: f64,
     tank_volume: f64,
     daily_losses: f64,
-    heat_exchanger_surface_area: f64,
+    heat_exchanger_surface_area: Option<f64>,
     in_use_factor_mismatch: f64,
     tank_volume_declared: f64,
     heat_exchanger_surface_area_declared: Option<f64>,
     daily_losses_declared: f64,
+    tank_is_integral: bool,
 }
 
 impl HeatPumpHotWaterOnly {
@@ -4517,14 +4531,14 @@ impl HeatPumpHotWaterOnly {
         vol_daily_average: f64,
         tank_volume: f64,
         daily_losses: f64,
-        heat_exchanger_surface_area: f64,
+        heat_exchanger_surface_area: Option<f64>,
         in_use_factor_mismatch: f64,
         tank_volume_declared: f64,
         heat_exchanger_surface_area_declared: Option<f64>,
         daily_losses_declared: f64,
         simulation_timestep: f64,
-        control_min: Control, // in Python this is TimeControl
-        control_max: Control, // in Python this is TimeControl
+        control: Arc<RangeTimeControl>,
+        tank_is_integral: bool,
     ) -> Self {
         let efficiencies = Efficiencies {
             l: test_data.l.as_ref().map(|profile_data| {
@@ -4565,8 +4579,7 @@ impl HeatPumpHotWaterOnly {
             power_in_kw: power_max_in_kw,
             energy_supply_connection,
             simulation_timestep,
-            control_min,
-            control_max,
+            control,
             initial_efficiency: Self::init_efficiency(&efficiencies, vol_daily_average),
             tank_volume,
             daily_losses,
@@ -4575,6 +4588,7 @@ impl HeatPumpHotWaterOnly {
             tank_volume_declared,
             heat_exchanger_surface_area_declared,
             daily_losses_declared,
+            tank_is_integral
         }
     }
 
@@ -4633,11 +4647,17 @@ impl HeatPumpHotWaterOnly {
 
     /// Calculate efficiency after applying in use factor if entered tank characteristics
     /// do not meet criteria of data in database.
+    /// The heat-exchanger comparison is skipped when the tank is integral to the heat pump
+    /// (tested together to EN 16147); the tank-volume and standing-loss comparisons still apply.
     fn calc_efficiency(&self) -> f64 {
+        let heat_exchanger_mismatch = if self.tank_is_integral {
+            false
+        } else {
+            self.heat_exchanger_surface_area_declared.is_none() || self.heat_exchanger_surface_area.is_none() || self.heat_exchanger_surface_area.unwrap() < self.heat_exchanger_surface_area_declared.unwrap()
+        };
+
         let in_use_factor_mismatch = if self.tank_volume < self.tank_volume_declared
-            || self
-                .heat_exchanger_surface_area_declared
-                .is_none_or(|declared| self.heat_exchanger_surface_area < declared)
+            || heat_exchanger_mismatch
             || self.daily_losses > self.daily_losses_declared
         {
             self.in_use_factor_mismatch
@@ -4653,19 +4673,7 @@ impl HeatPumpHotWaterOnly {
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        // TODO review - this check may be able to be removed in future if we validate control earlier
-        match (&self.control_min, &self.control_max) {
-            (
-                Control::CombinationTime { .. } | Control::SetpointTime { .. },
-                Control::CombinationTime { .. } | Control::SetpointTime { .. },
-            ) => Ok((
-                self.control_min.setpnt(&simulation_time_iteration),
-                self.control_max.setpnt(&simulation_time_iteration),
-            )),
-            _ => bail!(
-                "Expected control_min and control_max to be combination or setpoint time controls"
-            ),
-        }
+        Ok(self.control.setpnt_range_time_control(&simulation_time_iteration))
     }
 
     /// Demand energy (in kWh) from the heat pump
@@ -4674,11 +4682,15 @@ impl HeatPumpHotWaterOnly {
         energy_demand: f64,
         _temp_flow: f64,
         _temp_return: Option<f64>,
+        ignore_standard_ctrl: bool,
         simtime: SimulationTimeIteration,
     ) -> f64 {
-        // Account for time control. In the Python they also check here whether control_min is None
-        // but this is not possible as it's a required field for a HeatPumpHotWaterOnly object.
-        let energy_supplied = if self.control_min.is_on(&simtime) {
+        // Account for time control where present. If no control present, assume
+        // system is always active (except for basic thermostatic control, which
+        // is implicit in demand calculation).
+
+
+        let energy_supplied = if ignore_standard_ctrl || self.control.is_on(&simtime) {
             min_of_2(energy_demand, self.power_in_kw * self.simulation_timestep)
         } else {
             0.0
@@ -4693,10 +4705,11 @@ impl HeatPumpHotWaterOnly {
     }
 
     /// Calculate the maximum energy output (in kWh) from the heater
-    pub fn energy_output_max(&self, _temp_return: f64, simtime: SimulationTimeIteration) -> f64 {
-        // Account for time control. In the Python they also check here whether control_min is None
-        // but this is not possible as it's a required field for a HeatPumpHotWaterOnly object.
-        if self.control_min.is_on(&simtime) {
+    pub fn energy_output_max(&self, _temp_return: f64, ignore_standard_ctrl: bool, simtime: SimulationTimeIteration) -> f64 {
+        // Account for time control where present. If no control present, assume
+        // system is always active (except for basic thermostatic control, which
+        // is implicit in demand calculation).
+        if ignore_standard_ctrl || self.control.is_on(&simtime) {
             self.power_in_kw * self.simulation_timestep
         } else {
             0.0
@@ -12094,6 +12107,8 @@ mod tests {
         let control_max =
             create_setpoint_time_control(vec![Some(60.), Some(60.), Some(60.), Some(60.)]);
 
+        let range_time_control = Arc::new(RangeTimeControl::new(control_min.clone(), control_max.clone()).unwrap());
+
         HeatPumpHotWaterOnly::new(
             power_max,
             energy_supply_connection,
@@ -12101,14 +12116,14 @@ mod tests {
             vol_daily_average,
             tank_volume,
             daily_losses,
-            heat_exchanger_surface_area,
+            Some(heat_exchanger_surface_area),
             in_use_factor_mismatch,
             tank_volume_declared,
             heat_exchanger_surface_area_declared,
             daily_losses_declared,
             1.,
-            control_min,
-            control_max,
+            range_time_control,
+            false,
         )
     }
 
