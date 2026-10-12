@@ -2578,6 +2578,7 @@ impl HeatPump {
                     kelvin_to_celsius(temp_output)?,
                     kelvin_to_celsius(temp_return_feed)?,
                     time_elapsed_hp,
+                    None,
                     simtime,
                 )
             }

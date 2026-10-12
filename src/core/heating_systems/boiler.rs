@@ -648,14 +648,24 @@ impl BoilerServiceWaterRegular {
         )
     }
 
+    /// Calculate the maximum energy output of the boiler
+    /// Args:
+    /// * `temp_flow` - flow temperature, in deg C
+    /// * `temp_return` - return temperature, in deg C
+    /// * `time_elapsed_hp` - heat pump running time already used this timestep, in hours
+    /// * `ignore_standard_ctrl` - if True, bypass the minimum-setpoint time-control
+    ///                            gate because the storage tank's charging deadband has already
+    ///                            authorised heating.
     pub fn energy_output_max(
         &self,
         _temp_flow: f64,
         _temp_return: f64,
         time_elapsed_hp: Option<f64>,
+        ignore_standard_ctrl: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> f64 {
-        if !self.is_on(simtime) {
+        let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
+        if !self.is_on(simtime) || ignore_standard_ctrl {
             return 0.;
         }
 
@@ -3041,6 +3051,9 @@ mod tests {
             }
         }
 
+        // skipping test_temp_setpnt_with_range_time_control as we have consolidated controls
+        // into RangeTimeControls in Rust
+
         #[rstest]
         fn test_demand_energy(
             boiler_service: BoilerServiceWaterRegular,
@@ -3118,9 +3131,37 @@ mod tests {
         ) {
             let simulation_time_iteration = simulation_time.iter().next().unwrap();
             assert_eq!(
-                boiler_service.energy_output_max(20., 20., None, simulation_time_iteration),
+                boiler_service.energy_output_max(20., 20., None, None, simulation_time_iteration),
                 24.
             );
+        }
+
+        /// energy_output_max is the ceiling demand_energy reaches with unlimited demand.
+        /// Both derive from the same boiler power over the available time, so for the
+        /// same parameters they return the same value. A trial demand_energy call
+        /// leaves the boiler state untouched for the comparison.
+        #[rstest]
+        fn test_energy_output_max_matches_demand_energy_ceiling(
+            boiler_service: BoilerServiceWaterRegular,
+            simulation_time: SimulationTime,
+        ) {
+            let simulation_time_iteration = simulation_time.iter().next().unwrap();
+            let energy_max =
+                boiler_service.energy_output_max(55., 30., None, None, simulation_time_iteration);
+            let energy_delivered = boiler_service
+                .demand_energy(
+                    1.0e6,
+                    55.,
+                    Some(30.),
+                    None,
+                    None,
+                    Some(false),
+                    None,
+                    simulation_time_iteration,
+                )
+                .unwrap();
+            assert_eq!(energy_max, 24.); // rated power 24 kW over the 1 h timestep
+            assert_eq!(energy_max, energy_delivered.0);
         }
 
         #[rstest]
@@ -3133,7 +3174,7 @@ mod tests {
                 timestep: 1.,
             };
             assert_eq!(
-                boiler_service.energy_output_max(20., 20., None, simulation_time_iteration),
+                boiler_service.energy_output_max(20., 20., None, None, simulation_time_iteration),
                 0.
             );
         }

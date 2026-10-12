@@ -111,7 +111,7 @@ impl HeatSourceWetService {
                 .energy_output_max(temp_flow, temp_return, *simtime)?
                 .0),
             Self::BoilerServiceWaterRegular(service) => {
-                Ok(service.energy_output_max(temp_flow, temp_return, None, *simtime))
+                Ok(service.energy_output_max(temp_flow, temp_return, None, None, *simtime))
             }
             Self::HeatBatteryPCMServiceWaterRegular(service) => {
                 service.energy_output_max(temp_flow, temp_return, *simtime, false)

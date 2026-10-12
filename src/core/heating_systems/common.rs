@@ -83,6 +83,7 @@ impl HeatSourceWet {
                         Default::default(),
                         Default::default(),
                         None,
+                        Some(ignore_standard_ctrl),
                         simtime,
                     ),
                 )
