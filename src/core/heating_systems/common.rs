@@ -134,6 +134,7 @@ impl HeatSourceWet {
                     None,
                     None,
                     None,
+                    Some(ignore_standard_ctrl),
                     simtime,
                 )
                 .map(|x| x.0),

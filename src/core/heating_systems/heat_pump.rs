@@ -3568,6 +3568,7 @@ impl HeatPump {
                         Some(is_hybrid_service),
                         time_elapsed_hp,
                         Some(update_heat_source_state),
+                        None,
                         simtime,
                     )?
                 }

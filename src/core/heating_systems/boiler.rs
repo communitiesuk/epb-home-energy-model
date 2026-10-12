@@ -595,20 +595,35 @@ impl BoilerServiceWaterRegular {
     }
 
     /// Demand energy (in kWh) from the boiler
+    /// Args:
+    /// * `energy_demand` - energy demand, in kWh
+    /// * `temp_flow` - flow temperature, in deg C
+    /// * `temp_return` - return temperature, in deg C
+    /// * `hybrid_service` - if True, the boiler is backing up a heat pump and the
+    ///                      heat pump running time is returned alongside the energy supplied
+    /// * `time_elapsed_hp` - heat pump running time already used this timestep, in hours
+    /// * `update_heat_source_state` - if True, persist the boiler state updated by
+    ///                                this call (set False for trial calculations)
+    /// * `ignore_standard_ctrl` - if True, treat the service as on regardless of the
+    ///                            minimum setpoint time-control gate, because the storage tank's
+    ///                            charging deadband has already authorised heating.
     pub fn demand_energy(
         &self,
         mut energy_demand: f64,
         temp_flow: f64,
         temp_return: Option<f64>,
-        hybrid_service_bool: Option<bool>,
+        hybrid_service: Option<bool>,
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
+        ignore_standard_ctrl: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<f64>)> {
-        let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
+        let hybrid_service_bool = hybrid_service.unwrap_or(false);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
+        let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
 
-        if !self.is_on(simtime) {
+        let service_on = !self.is_on(simtime) || ignore_standard_ctrl;
+        if service_on {
             energy_demand = 0.;
         }
 
@@ -2960,6 +2975,9 @@ mod tests {
             .unwrap()
         }
 
+        // skipping test_init_with_invalid_values because not we've made it impossible
+        // to pass invalid control values in Rust
+
         #[rstest]
         fn test_is_on_with_control_on(boiler_service: BoilerServiceWaterRegular) {
             // Python uses MagicMock for the control - we can simulate control being off using the correct simulation time iteration according to the control schedule
@@ -2988,18 +3006,22 @@ mod tests {
             boiler_service: BoilerServiceWaterRegular,
             simulation_time: SimulationTime,
         ) {
+            let energy_output_required = [0.7241412, 0.1748878];
+            let temp_flow = [55.0, 65.0];
             let temp_return_feed = [51.05, 60.00];
+
             for (idx, t_it) in simulation_time.iter().enumerate() {
                 assert_relative_eq!(
                     boiler_service
                         .demand_energy(
-                            [0.7241412, 0.1748878][idx],
-                            Default::default(),
+                            energy_output_required[idx],
+                            temp_flow[idx],
                             Some(temp_return_feed[idx]),
                             None,
                             None,
                             None,
-                            t_it
+                            None,
+                            t_it,
                         )
                         .unwrap()
                         .0,
@@ -3034,6 +3056,7 @@ mod tests {
                         None,
                         None,
                         None,
+                        None,
                         simulation_time_iteration
                     )
                     .unwrap(),
@@ -3048,7 +3071,16 @@ mod tests {
         ) {
             let simulation_time_iteration = simulation_time.iter().next().unwrap();
             assert!(boiler_service
-                .demand_energy(100., 20., None, None, None, None, simulation_time_iteration)
+                .demand_energy(
+                    100.,
+                    20.,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    simulation_time_iteration
+                )
                 .is_err());
         }
 
@@ -3068,6 +3100,7 @@ mod tests {
                         100.,
                         20.,
                         Some(20.),
+                        None,
                         None,
                         None,
                         None,
