@@ -8173,7 +8173,6 @@ mod tests {
         // test_charge_from_heat_source_with_pipework_adjusts_demand: as python mocks the result
 
         #[rstest]
-        /// Ending a heating event reports internal pipe cool-down as dwelling gains.
         fn test_end_of_event_records_surrounding_temp(
             simulation_time: SimulationTime,
             simulation_time_iteration: SimulationTimeIteration,
@@ -8272,11 +8271,11 @@ mod tests {
         use super::*;
 
         #[rstest]
-        /// schedule_lower=0.3 with schedule_upper=None raises ValueError.
         fn test_lower_nonnull_upper_null_raises_valueerror(
             simulation_time: SimulationTime,
             simulation_time_iteration: SimulationTimeIteration,
         ) {
+            // schedule_lower=0.3 with schedule_upper=None raises ValueError.
             // Invalid: lower set but upper null
             let (battery, source) =
                 make_test_electric_battery_with_setpoints(simulation_time, Some(0.3), None, 10.0);
@@ -8290,11 +8289,11 @@ mod tests {
         }
 
         #[rstest]
-        /// Both setpoints null (off period) does not raise — valid combination.
         fn test_both_null_does_not_raise(
             simulation_time: SimulationTime,
             simulation_time_iteration: SimulationTimeIteration,
         ) {
+            //Both setpoints null (off period) does not raise — valid combination.
             let (battery, source) =
                 make_test_electric_battery_with_setpoints(simulation_time, None, None, 10.0);
 
@@ -8306,11 +8305,11 @@ mod tests {
         }
 
         #[rstest]
-        /// Transition period (lower=None, upper=non-null) does not raise.
         fn test_lower_null_upper_nonnull_does_not_raise(
             simulation_time: SimulationTime,
             simulation_time_iteration: SimulationTimeIteration,
         ) {
+            //  Transition period (lower=None, upper=non-null) does not raise.
             let (battery, source) =
                 make_test_electric_battery_with_setpoints(simulation_time, None, Some(0.8), 10.0);
             // Should not raise
@@ -8318,6 +8317,112 @@ mod tests {
                 .read()
                 .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
                 .unwrap();
+        }
+    }
+
+    // skipping test_temp_min_useful_used_for_soc_reference, due to mocks
+    // similar behaviour tested elsewhere (test_soc_all_layers_at_temp_min_useful)
+
+    mod test_heat_battery_pcm_max_temp_validation {
+        use super::*;
+
+        fn try_make_battery(
+            max_temperature: f64,
+            temp_min_useful: f64,
+            simulation_time_iterator: SimulationTimeIterator,
+            external_conditions: ExternalConditions,
+            battery_control: Arc<ChargeControl>,
+        ) -> anyhow::Result<HeatBatteryPcm> {
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(
+                    FuelType::MainsGas,
+                    simulation_time_iterator.total_steps(),
+                )
+                .build(),
+            ));
+            let energy_supply_connection =
+                EnergySupply::connection(energy_supply.clone(), "MaxTempValidation").unwrap();
+            let heat_battery_details = create_heat_battery_details_with_temp_init(
+                None,
+                Some(max_temperature),
+                max_temperature.min(80.0),
+            );
+
+            HeatBatteryPcm::new(
+                &heat_battery_details,
+                energy_supply,
+                energy_supply_connection,
+                simulation_time_iterator,
+                external_conditions.into(),
+                Some(temp_min_useful),
+                temp_air_int_callback(),
+                Some(battery_control),
+                None,
+                Some(8),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+        }
+
+        // Test that constructor rejects max_temperature <= temp_ref.
+        // Skipped test_max_temp_equal_to_default_temp_ref_raises
+        // this would be rejected by the rated-ambient guard
+
+        #[rstest]
+        fn test_max_temp_below_explicit_temp_min_useful_raises(
+            simulation_time_iterator: SimulationTimeIterator,
+            external_conditions: ExternalConditions,
+            battery_control_off: Arc<ChargeControl>,
+        ) {
+            // max_temperature below an explicit temp_min_useful gives zero capacity.
+            let battery = try_make_battery(
+                50.0,
+                60.0,
+                simulation_time_iterator,
+                external_conditions,
+                battery_control_off,
+            );
+
+            assert!(battery.is_err());
+        }
+
+        #[rstest]
+        fn test_max_temp_equal_to_explicit_temp_min_useful_raises(
+            simulation_time_iterator: SimulationTimeIterator,
+            external_conditions: ExternalConditions,
+            battery_control_off: Arc<ChargeControl>,
+        ) {
+            // max_temperature equal to temp_min_useful gives zero capacity.
+            let battery = try_make_battery(
+                60.0,
+                60.0,
+                simulation_time_iterator,
+                external_conditions,
+                battery_control_off,
+            );
+
+            assert!(battery.is_err());
+        }
+
+        #[rstest]
+        fn test_max_temp_above_temp_ref_succeeds(
+            simulation_time_iterator: SimulationTimeIterator,
+            external_conditions: ExternalConditions,
+            battery_control_off: Arc<ChargeControl>,
+        ) {
+            // max_temperature above temp_ref should construct without error.
+            let battery = try_make_battery(
+                80.0,
+                20.0,
+                simulation_time_iterator,
+                external_conditions,
+                battery_control_off,
+            );
+
+            assert!(battery.is_ok());
         }
     }
 
