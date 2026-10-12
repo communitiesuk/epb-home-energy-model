@@ -853,7 +853,7 @@ impl Boiler {
                     if let Some(pilot_light) = pilot_light {
                         let energy_supply_connection_pilot_light = EnergySupply::connection(
                             energy_supply.clone(),
-                            format!("Boiler_pilotLight : {name}").as_str(),
+                            format!("Boiler_pilotLight: {name}").as_str(),
                         )?;
 
                         let pilot_light_gains_fraction =
@@ -3431,8 +3431,8 @@ mod tests {
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{
-            BoilerType, CombiKeepHotFuel, FuelType, HeatSourceLocation, HeatSourceWetDetails,
-            HotWaterSourceDetails,
+            BoilerPilotLight, BoilerType, CombiKeepHotFuel, FuelType, HeatSourceLocation,
+            HeatSourceWetDetails, HotWaterSourceDetails,
         };
         use approx::assert_relative_eq;
         use itertools::Itertools;
@@ -3487,6 +3487,37 @@ mod tests {
                 Arc::new(external_conditions),
                 simulation_time.step,
                 "Boiler_auxiliary",
+            )
+            .unwrap();
+            boiler.create_service_connection("boiler_test").unwrap();
+
+            (boiler, energy_supply)
+        }
+
+        fn create_boiler_with_energy_supply(
+            boiler_data: HeatSourceWetDetails,
+            external_conditions: ExternalConditions,
+            simulation_time: SimulationTime,
+        ) -> (Boiler, Arc<RwLock<EnergySupply>>) {
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
+                    .build(),
+            ));
+            let energy_supply_aux = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
+            ));
+
+            let mut boiler = Boiler::new(
+                boiler_data,
+                energy_supply.clone(),
+                energy_supply_aux,
+                Arc::new(external_conditions),
+                simulation_time.step,
+                "Boiler",
             )
             .unwrap();
             boiler.create_service_connection("boiler_test").unwrap();
@@ -3936,7 +3967,8 @@ mod tests {
             }
         }
 
-        // Skipping test_calc_boiler_eff_with_invalid_location as in Rust it's an enum that won't allow any values other than the valid ones
+        // Skipping test_calc_boiler_eff_invalid_boiler_type & test_calc_boiler_eff_with_invalid_location
+        // as in Rust we only allow valid values
 
         #[rstest]
         fn test_calc_energy_output_provided(
@@ -4147,6 +4179,46 @@ mod tests {
                 0.0
             );
             assert!(boiler.service_results.read().is_empty());
+        }
+
+        /// Test that energy is used for pilot light at timestep end
+        #[rstest]
+        fn test_timestep_end_pilot_light(
+            external_conditions: ExternalConditions,
+            simulation_time: SimulationTime,
+        ) {
+            let boiler_data = HeatSourceWetDetails::Boiler {
+                energy_supply: "mains gas".into(),
+                energy_supply_aux: "mains elec".into(),
+                rated_power: 24.0,
+                efficiency_full_load: 0.88,
+                efficiency_part_load: 0.986,
+                boiler_location: HeatSourceLocation::Internal,
+                modulation_load: 0.2,
+                electricity_circ_pump: 0.0600,
+                electricity_part_load: 0.0131,
+                electricity_full_load: 0.0388,
+                electricity_standby: 0.0244,
+                boiler_type: BoilerType::default(),
+                pilot_light: Some(BoilerPilotLight {
+                    power: 0.1,
+                    gains_fraction: Some(0.8),
+                }),
+            };
+
+            let (mut boiler, energy_supply) =
+                create_boiler_with_energy_supply(boiler_data, external_conditions, simulation_time);
+
+            boiler
+                .timestep_end(simulation_time.iter().next().unwrap())
+                .unwrap();
+
+            assert_eq!(
+                energy_supply.read().results_by_end_user()["Boiler_pilotLight: Boiler"]
+                    .iter()
+                    .sum::<f64>(),
+                0.1
+            );
         }
 
         #[rstest]
