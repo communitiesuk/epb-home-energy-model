@@ -622,8 +622,8 @@ impl BoilerServiceWaterRegular {
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
 
-        let service_on = !self.is_on(simtime) || ignore_standard_ctrl;
-        if service_on {
+        let service_on = self.is_on(simtime) || ignore_standard_ctrl;
+        if !service_on {
             energy_demand = 0.;
         }
 
@@ -665,7 +665,8 @@ impl BoilerServiceWaterRegular {
         simtime: SimulationTimeIteration,
     ) -> f64 {
         let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
-        if !self.is_on(simtime) || ignore_standard_ctrl {
+        let is_on = self.is_on(simtime) || ignore_standard_ctrl;
+        if !is_on {
             return 0.;
         }
 
@@ -3176,6 +3177,51 @@ mod tests {
             assert_eq!(
                 boiler_service.energy_output_max(20., 20., None, None, simulation_time_iteration),
                 0.
+            );
+        }
+
+        /// Test that an off control is bypassed when ignore_standard_ctrl is True.
+        /// The storage tank's charging deadband authorises heating, so output must
+        /// continue even when the minimum-setpoint schedule has deactivated. The
+        /// delivered energy matches the control-on case (24), not the control-off case (0).
+        #[rstest]
+        fn test_control_off_bypassed_by_ignore_standard_ctrl(
+            boiler_service: BoilerServiceWaterRegular,
+        ) {
+            // Python uses a Control Mock with a return value of false for is_on
+            // Instead, we simulate the control being off by using a simulation time iteration
+            // when the control is off
+            let simulation_time_iteration = SimulationTimeIteration {
+                index: 0,
+                time: 2., // control is off at this time
+                timestep: 1.,
+            };
+
+            assert_eq!(
+                boiler_service.energy_output_max(
+                    20.,
+                    20.,
+                    None,
+                    Some(true),
+                    simulation_time_iteration
+                ),
+                24.
+            );
+            assert_eq!(
+                boiler_service
+                    .demand_energy(
+                        100.,
+                        20.,
+                        Some(20.),
+                        None,
+                        None,
+                        None,
+                        Some(true),
+                        simulation_time_iteration,
+                    )
+                    .unwrap()
+                    .0,
+                24.
             );
         }
     }
