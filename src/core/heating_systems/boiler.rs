@@ -1215,7 +1215,7 @@ impl Boiler {
 
         standing_loss
             * ton_toff
-            * ((temperature_return_feed - temperature_boiler_loc) / (self.temp_rise_standby_loss))
+            * ((temperature_boiler - temperature_boiler_loc) / (self.temp_rise_standby_loss))
                 .powf(self.standby_loss_index)
     }
 
@@ -3494,6 +3494,53 @@ mod tests {
             (boiler, energy_supply)
         }
 
+        #[fixture]
+        fn boiler_non_condensing(
+            external_conditions: ExternalConditions,
+            simulation_time: SimulationTime,
+        ) -> (Boiler, Arc<RwLock<EnergySupply>>, Arc<RwLock<EnergySupply>>) {
+            let boiler_data = HeatSourceWetDetails::Boiler {
+                energy_supply: "mains gas".into(),
+                energy_supply_aux: "mains elec".into(),
+                rated_power: 24.0,
+                efficiency_full_load: 0.81,
+                efficiency_part_load: 0.85,
+                boiler_location: HeatSourceLocation::Internal,
+                modulation_load: 0.2,
+                electricity_circ_pump: 0.0600,
+                electricity_part_load: 0.0131,
+                electricity_full_load: 0.0388,
+                electricity_standby: 0.0244,
+                boiler_type: BoilerType::NonCondensing,
+                pilot_light: None,
+            };
+
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
+                    .build(),
+            ));
+            let energy_supply_aux = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
+            ));
+
+            let mut boiler = Boiler::new(
+                boiler_data,
+                energy_supply.clone(),
+                energy_supply_aux.clone(),
+                Arc::new(external_conditions),
+                simulation_time.step,
+                "test",
+            )
+            .unwrap();
+            boiler.create_service_connection("boiler_test").unwrap();
+
+            (boiler, energy_supply, energy_supply_aux)
+        }
+
         #[rstest]
         fn test_create_service_connection(
             #[from(boiler_with_energy_supply)] (mut boiler, _energy_supply): (
@@ -3645,6 +3692,24 @@ mod tests {
                 0.015905414575341014,
                 max_relative = 1e-7
             );
+        }
+
+        /// Test cycling adjustment returns 0 when boiler location is hotter than return feed
+        #[rstest]
+        fn test_cycling_adjustment_when_boiler_loc_hotter_than_return(
+            #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+        ) {
+            // Can occur for an external boiler in mild weather; the negative base would
+            // otherwise be raised to the fractional sby_loss_idx, giving a complex number
+            assert_eq!(boiler.cycling_adjustment(35.0, 30.0, 0.05, 0.5, 35.), 0.,);
+        }
+
+        /// Test cycling adjustment returns 0 when boiler location equals return feed
+        #[rstest]
+        fn test_cycling_adjustment_when_boiler_loc_equals_return(
+            #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+        ) {
+            assert_eq!(boiler.cycling_adjustment(40.0, 30.0, 0.05, 0.5, 30.), 0.,);
         }
 
         #[rstest]
@@ -3809,6 +3874,63 @@ mod tests {
                         .calc_boiler_eff(false, 45., 37., 3., None, Some(0.), t_it)
                         .unwrap(),
                     [0.8537436763973477, 0.855177537866697][t_idx],
+                    max_relative = 1e-7
+                );
+            }
+        }
+
+        #[rstest]
+        fn test_calc_boiler_eff_non_condensing(
+            #[from(boiler_non_condensing)] (boiler, energy_supply, energy_supply_aux): (
+                Boiler,
+                Arc<RwLock<EnergySupply>>,
+                Arc<RwLock<EnergySupply>>,
+            ),
+            simulation_time: SimulationTime,
+            external_conditions: ExternalConditions,
+        ) {
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_relative_eq!(
+                    boiler
+                        .calc_boiler_eff(false, 45., 37., 3., None, Some(0.), t_it)
+                        .unwrap(),
+                    [0.8374994211605314, 0.8374994211605314][t_idx],
+                    max_relative = 1e-7
+                );
+            }
+
+            let boiler_data_external = HeatSourceWetDetails::Boiler {
+                energy_supply: "mains gas".into(),
+                energy_supply_aux: "mains elec".into(),
+                rated_power: 24.0,
+                efficiency_full_load: 0.88,
+                efficiency_part_load: 0.986,
+                boiler_location: HeatSourceLocation::External,
+                modulation_load: 0.2,
+                electricity_circ_pump: 0.0600,
+                electricity_part_load: 0.0131,
+                electricity_full_load: 0.0388,
+                electricity_standby: 0.0244,
+                boiler_type: BoilerType::NonCondensing,
+                pilot_light: None,
+            };
+
+            let boiler_external = Boiler::new(
+                boiler_data_external,
+                energy_supply,
+                energy_supply_aux,
+                Arc::new(external_conditions),
+                simulation_time.step,
+                "Boiler_external",
+            )
+            .unwrap();
+
+            for (t_idx, t_it) in simulation_time.iter().enumerate() {
+                assert_relative_eq!(
+                    boiler_external
+                        .calc_boiler_eff(false, 45., 37., 3., None, Some(0.), t_it)
+                        .unwrap(),
+                    [0.8387028287998732, 0.8415692422923274][t_idx],
                     max_relative = 1e-7
                 );
             }
