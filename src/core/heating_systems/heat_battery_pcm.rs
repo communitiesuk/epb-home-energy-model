@@ -133,9 +133,13 @@ impl HeatSourceWetService {
         simtime: &SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match self {
-            Self::HeatPumpServiceWater(service) => {
-                service.demand_energy(energy_demand, Some(temp_flow), Some(temp_return), *simtime, false)
-            }
+            Self::HeatPumpServiceWater(service) => service.demand_energy(
+                energy_demand,
+                Some(temp_flow),
+                Some(temp_return),
+                *simtime,
+                false,
+            ),
             Self::BoilerServiceWaterRegular(service) => Ok(service
                 .demand_energy(
                     energy_demand,
@@ -8085,7 +8089,7 @@ mod tests {
             ))
         }
 
-        fn make_test_electric_battery_with_setpoints(
+        pub(super) fn make_test_electric_battery_with_setpoints(
             simulation_time: SimulationTime,
             lower: Option<f64>,
             upper: Option<f64>,
@@ -8257,6 +8261,63 @@ mod tests {
             // Python mocks the returns so assertions for losses here are skipped.
             // We do expect only zero gains from external pipework
             assert_relative_eq!(gains, 0.0);
+        }
+    }
+
+    mod test_setpoint_combinations {
+        // Tests that __determine_heat_source_switch_on rejects schedule_lower
+        // non-null with schedule_upper null, per StorageTank._retrieve_setpnt()
+        // convention (Deviation 2 fix).
+        use super::test_heat_battery_pcm_primary_pipework_losses::make_test_electric_battery_with_setpoints;
+        use super::*;
+
+        #[rstest]
+        /// schedule_lower=0.3 with schedule_upper=None raises ValueError.
+        fn test_lower_nonnull_upper_null_raises_valueerror(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            // Invalid: lower set but upper null
+            let (battery, source) =
+                make_test_electric_battery_with_setpoints(simulation_time, Some(0.3), None, 10.0);
+
+            let result = battery.read().determine_heat_source_switch_on(
+                "el",
+                &source,
+                &simulation_time_iteration,
+            );
+            assert!(result.is_err());
+        }
+
+        #[rstest]
+        /// Both setpoints null (off period) does not raise — valid combination.
+        fn test_both_null_does_not_raise(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            let (battery, source) =
+                make_test_electric_battery_with_setpoints(simulation_time, None, None, 10.0);
+
+            // Should not raise
+            battery
+                .read()
+                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .unwrap();
+        }
+
+        #[rstest]
+        /// Transition period (lower=None, upper=non-null) does not raise.
+        fn test_lower_null_upper_nonnull_does_not_raise(
+            simulation_time: SimulationTime,
+            simulation_time_iteration: SimulationTimeIteration,
+        ) {
+            let (battery, source) =
+                make_test_electric_battery_with_setpoints(simulation_time, None, Some(0.8), 10.0);
+            // Should not raise
+            battery
+                .read()
+                .determine_heat_source_switch_on("el", &source, &simulation_time_iteration)
+                .unwrap();
         }
     }
 
