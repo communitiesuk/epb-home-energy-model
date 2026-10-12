@@ -3425,13 +3425,14 @@ mod tests {
         };
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
-        use crate::core::heating_systems::boiler::ServiceType;
         use crate::core::heating_systems::boiler::{Boiler, BoilerServiceSpace};
+        use crate::core::heating_systems::boiler::{CombiBoilerConfig, ServiceType};
         use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
         use crate::hem_core::external_conditions::ExternalConditions;
         use crate::hem_core::simulation_time::SimulationTime;
         use crate::input::{
-            BoilerType, FuelType, HeatSourceLocation, HeatSourceWetDetails, HotWaterSourceDetails,
+            BoilerType, CombiKeepHotFuel, FuelType, HeatSourceLocation, HeatSourceWetDetails,
+            HotWaterSourceDetails,
         };
         use approx::assert_relative_eq;
         use itertools::Itertools;
@@ -3516,8 +3517,37 @@ mod tests {
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
         ) {
             let service_name = "service_hot_water_combi";
-            let cold_feed = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
+            let cold_feed = Arc::new(ColdWaterSource::new(vec![1.0, 1.2], 0, 1.));
             let temp_hot_water = 50.;
+            let boiler_data: HotWaterSourceDetails = serde_json::from_value(json!({
+                "type": "CombiBoiler",
+                "combi_boiler_type": "KeepHot",
+                "ColdWaterSource": "mains water",
+                "HeatSourceWet": "hp",
+                "separate_DHW_tests": "M&L",
+                "rejected_energy_1": 0.0004,
+                "storage_loss_factor_2": 0.91574,
+                "rejected_factor_3": 0,
+                "daily_HW_usage": 120,
+                "setpoint_temp": 60.0,
+                "combi_keep_hot_fuel": CombiKeepHotFuel::Mixed,
+                "keep_hot_test_hours": 24.,
+            }))
+            .unwrap();
+
+            let boiler = Arc::new(RwLock::new(boiler));
+
+            let boiler_service_result = Boiler::create_service_hot_water_combi(
+                boiler.clone(),
+                boiler_data,
+                service_name,
+                temp_hot_water,
+                WaterSupply::ColdWaterSource(cold_feed.clone()),
+                None,
+            );
+            assert!(boiler_service_result.is_ok());
+
+            // Test that "combi_boiler_type" defaults to "Instantaneous"
             let boiler_data: HotWaterSourceDetails = serde_json::from_value(json!({
                 "type": "CombiBoiler",
                 "ColdWaterSource": "mains water",
@@ -3527,21 +3557,22 @@ mod tests {
                 "storage_loss_factor_2": 0.91574,
                 "rejected_factor_3": 0,
                 "daily_HW_usage": 120,
-                "setpoint_temp": 60.0
+                "setpoint_temp": 60.0,
             }))
             .unwrap();
-
-            let boiler = Arc::new(RwLock::new(boiler));
 
             let boiler_service_result = Boiler::create_service_hot_water_combi(
                 boiler,
                 boiler_data,
-                service_name,
+                "default_combi_type",
                 temp_hot_water,
-                WaterSupply::ColdWaterSource(Arc::new(cold_feed)),
+                WaterSupply::ColdWaterSource(cold_feed),
                 None,
             );
-            assert!(boiler_service_result.is_ok());
+            assert!(matches!(
+                boiler_service_result.unwrap().combi_boiler_config,
+                CombiBoilerConfig::Instantaneous
+            ));
         }
 
         #[rstest]
