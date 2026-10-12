@@ -2231,6 +2231,12 @@ impl SmartHotWaterTank {
                     .unwrap_or(default_temp_flow);
                 if self.storage_tank.heating_active[heat_source_name].load(Ordering::SeqCst) {
                     // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
+
+                    // The charging deadband (_heating_active) is the authority on
+                    // whether to charge, so bypass the heat source's own minimum-setpoint
+                    // schedule gate: once charging is active it must continue to the
+                    // maximum setpoint even after the minimum-setpoint schedule
+                    // deactivates mid-cycle.
                     let mut energy_potential = match heat_source {
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
                             immersion_heater,
@@ -2245,7 +2251,7 @@ impl SmartHotWaterTank {
                             heat_source_wet.energy_output_max(
                                 temp_flow,
                                 temp_flow,
-                            true,
+                                true,
                                 simulation_time,
                             )?
                         }
