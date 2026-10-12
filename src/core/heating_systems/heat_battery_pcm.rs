@@ -7659,7 +7659,7 @@ mod tests {
 
                 HeatBatteryPcm::new(
                     &heat_battery_details,
-                    energy_supply.into(),
+                    energy_supply,
                     energy_supply_connection,
                     simulation_time.iter(),
                     external_conditions.into(),
@@ -7994,7 +7994,7 @@ mod tests {
                 simulation_time_iterator.next();
 
                 let error = HeatBatteryPcm::warn_if_schedule_exceeds_flow_temp(
-                    "hp".into(),
+                    "hp",
                     &source,
                     &simulation_time_iterator,
                 )
