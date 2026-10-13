@@ -226,7 +226,6 @@ impl StorageTank {
 
         let pipework = PrimaryPipeworkLossesMixin::new(
             pipework_lst,
-            // TODO review 1.0.0a9
             Arc::new(move |simtime| external_conditions.air_temp(simtime)),
             temp_internal_air_fn.clone(),
             simulation_time_iteration,
