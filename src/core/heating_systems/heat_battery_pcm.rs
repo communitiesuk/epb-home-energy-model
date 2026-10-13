@@ -121,7 +121,7 @@ impl HeatSourceWetService {
                 service.energy_output_max(temp_flow, temp_return, *simtime)
             }
             Self::HeatNetworkServiceWaterStorage(service) => {
-                Ok(service.energy_output_max(temp_flow, temp_return, simtime))
+                Ok(service.energy_output_max(temp_flow, temp_return, None, simtime))
             }
         }
     }

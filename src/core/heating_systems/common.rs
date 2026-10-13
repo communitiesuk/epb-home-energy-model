@@ -100,7 +100,7 @@ impl HeatSourceWet {
             }
             HeatSourceWet::HeatNetworkWaterStorage(storage) => {
                 // passing default for _temp_flow and _temp_return as they are unused
-                Ok(storage.energy_output_max(Default::default(), Default::default(), &simtime))
+                Ok(storage.energy_output_max(Default::default(), Default::default(), Some(ignore_standard_ctrl), &simtime))
             }
             HeatSourceWet::HeatBatteryHotWater(battery) => {
                 // passing default for _temp_return as it is unused

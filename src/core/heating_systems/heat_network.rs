@@ -166,13 +166,22 @@ impl HeatNetworkServiceWaterStorage {
         )
     }
 
+    /// Calculate the maximum energy output of the heat network
+    /// Args:
+    /// * `temp_flow`: flow temperature, in deg C
+    /// * `temp_return`: return temperature, in deg C
+    /// * `ignore_standard_ctrl`: if True, bypass the minimum-setpoint time-control
+    ///                           gate because the storage tank's charging deadband has already
+    ///                           authorised heating.
     pub fn energy_output_max(
         &self,
         _temp_flow: f64,
         _temp_return: f64,
+        ignore_standard_ctrl: Option<bool>,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> f64 {
-        if !self.is_on(simulation_time_iteration) {
+        let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
+        if !self.is_on(simulation_time_iteration) && !ignore_standard_ctrl {
             return 0.;
         }
 
@@ -789,6 +798,7 @@ mod tests {
                 heat_network_service_water_storage.energy_output_max(
                     temp_flow[t_idx],
                     temp_return[t_idx],
+                    None,
                     &t_it
                 ),
                 [7.0, 7.0][t_idx]
@@ -865,6 +875,7 @@ mod tests {
             heat_network_service_water_storage.energy_output_max(
                 10.,
                 10.,
+                None,
                 &two_len_simulation_time.iter().current_iteration()
             ),
             0.
