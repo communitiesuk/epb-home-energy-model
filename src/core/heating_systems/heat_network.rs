@@ -963,6 +963,61 @@ mod tests {
         );
     }
 
+    /// Test that an off control is bypassed when ignore_standard_ctrl is True.
+    ///
+    /// The storage tank's charging deadband authorises heating, so output must
+    /// continue even when the minimum-setpoint schedule has deactivated - the
+    /// result matches the control-on case, not the zero of the control-off case.
+    #[rstest]
+    fn test_control_off_bypassed_by_ignore_standard_ctrl(
+        heat_network_for_water_storage: HeatNetwork,
+        two_len_simulation_time: SimulationTime,
+    ) {
+        // In Python a Control Mock is used (control_mock.is_on.return_value = False)
+        let control = Arc::from(
+            RangeTimeControl::new(
+                vec![None, None, None],
+                vec![None, None, None],
+                two_len_simulation_time.step,
+                0,
+                1.,
+                None,
+            )
+            .unwrap(),
+        );
+        let heat_network = Arc::new(Mutex::new(heat_network_for_water_storage));
+        // create service connection so it doesn't error
+        let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
+
+        let heat_network_service_water_storage =
+            HeatNetworkServiceWaterStorage::new(heat_network, "heat_network_test".into(), control);
+
+        // Heat network max output is 7.0 kWh (5 kW over the 1 h timestep less the
+        // daily standing loss), as in test_energy_output_max with the control on.
+        assert_eq!(
+            heat_network_service_water_storage.energy_output_max(
+                15.,
+                10.,
+                Some(true),
+                &two_len_simulation_time.iter().current_iteration()
+            ),
+            7.
+        );
+
+        assert_eq!(
+            heat_network_service_water_storage
+                .demand_energy(
+                    10.,
+                    15.,
+                    Some(10.),
+                    Some(true),
+                    &two_len_simulation_time.iter().current_iteration()
+                )
+                .unwrap(),
+            7.
+        );
+    }
+
     #[fixture]
     fn three_len_simulation_time() -> SimulationTime {
         SimulationTime::new(0., 3., 1.)
