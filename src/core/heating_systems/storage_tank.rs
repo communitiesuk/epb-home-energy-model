@@ -6866,7 +6866,6 @@ mod tests {
         }
     }
 
-    #[ignore = "Update as part of migration 1.0.0a9"]
     #[rstest]
     fn test_demand_hot_water_for_smart_hot_water_tank(
         simulation_time_for_smart_hot_water_tank: SimulationTime,
@@ -6936,79 +6935,88 @@ mod tests {
             60.,
         );
 
+        // Expected results for the unit test. The charge is sized so the realised
+        // state of charge meets the target, so a target that energy can reach is
+        // reached (e.g. the first timestep fills to the maximum) and a partial
+        // target is no longer overshot.
         let event_data = get_event_data_immersion();
-
+        // The maximum setpoint drops for an off period, during which a layer the source does not
+        // warm but which sits above the lowered setpoint loses heat at its actual temperature
+        // rather than being capped at the setpoint. The tank therefore holds less stored energy
+        // when the setpoint returns: the state of charge falls back to the switch-on target and
+        // the immersion recharges over the following on-period. Immersion electricity over the run
+        // rises and the tank ends warmer - the extra energy is recovered standby loss and stored
+        // heat, not waste.
         let expected_temperatures_1 = &[
-            vec![42.06412979639594, 50.0, 50.0, 50.0],
+            vec![50.0, 50.0, 50.0, 50.0],
             vec![
-                26.168457194735883,
-                45.942228008024884,
-                49.87555555555556,
-                49.87555555555556,
-            ],
-            vec![
-                26.115731861133547,
-                45.86963541543229,
-                49.802962962962965,
-                49.802962962962965,
-            ],
-            vec![
-                17.336010881790145,
-                34.751355008536194,
-                47.57251929648306,
-                49.782222222222224,
-            ],
-            vec![31.875588805820787, 50.0, 50.0, 50.0],
-            vec![
-                20.717353598198578,
-                40.20747289529573,
+                30.15024592592593,
+                49.82370370370371,
                 49.82370370370371,
                 49.82370370370371,
             ],
             vec![
-                20.69289324620792,
-                40.08195266546827,
+                30.076874280384093,
+                49.64832153635117,
                 49.64832153635117,
                 49.64832153635117,
             ],
             vec![
-                20.668559725672026,
-                39.95708328127696,
-                49.47384875801453,
-                49.47384875801453,
+                19.019605015583057,
+                38.4926157117321,
+                49.473848758014526,
+                49.473848758014526,
+            ],
+            vec![23.7158871431369, 42.120000000000005, 50.0, 50.0],
+            vec![50.0, 50.0, 50.0, 50.0],
+            vec![
+                49.82370370370371,
+                49.82370370370371,
+                49.82370370370371,
+                49.82370370370371,
+            ],
+            vec![
+                49.64832153635117,
+                49.64832153635117,
+                49.64832153635117,
+                49.64832153635117,
             ],
         ];
 
+        // Heater at 0.6 height does not reach the lowest layer. Where the layers above the heater
+        // coast above the lowered setpoint without being warmed by the source, they lose heat at
+        // their actual temperature; at t4 the recharge therefore ends marginally cooler and needs
+        // slightly less energy than if those layers had been capped at the setpoint.
         let expected_temperatures_2 = [
             vec![
                 10.0,
                 24.55607367670878,
-                50.03631427851564,
-                59.092295619623506,
+                50.03434314796818,
+                59.026038201778064,
             ],
             vec![
-                10.057665043481068,
-                16.16115527929868,
-                35.205810167360966,
-                53.69978967126601,
+                10.057743135577246,
+                16.149868828925097,
+                35.18522633984916,
+                53.56537718883935,
             ],
             vec![
-                10.057665043481068,
-                16.160011275772792,
-                35.10642745131158,
-                53.60040695521663,
+                10.057743135577246,
+                16.148804945262974,
+                35.04903491830085,
+                53.29870938780746,
             ],
             vec![
-                10.381386078348926,
-                11.69403406025759,
-                21.212174941529444,
-                40.037268379332176,
+                10.383688597355796,
+                11.659662743092648,
+                21.083131489696846,
+                39.67931478129679,
             ],
             vec![
-                11.520424219588156,
-                48.63806146445693,
-                48.63806146445693,
-                48.63806146445693,
+                11.372044379219052,
+                47.373333333333356,
+                47.373333333333356,
+                47.373333333333356,
             ],
             vec![50.0, 50.0, 50.0, 50.0],
             vec![
@@ -7025,14 +7033,30 @@ mod tests {
             ],
         ];
 
-        let expected_results_by_end_user_1 =
-            [2.2101151057, 0.0, 0.0, 0.0, 2.0951108105, 0.0, 0.0, 0.0];
+        let expected_results_by_end_user_1 = [
+            1.6439618484205436,
+            0.0,
+            0.0,
+            0.0,
+            0.7629561950049695,
+            0.39706676543209873,
+            0.0,
+            0.0,
+        ];
 
-        let expected_results_by_end_user_2 =
-            [0.0, 0.0, 0.0, 0.0, 4.5043354264, 0.1956556236, 0.0, 0.0];
+        let expected_results_by_end_user_2 = [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            4.307385532344297,
+            0.3499946131687208,
+            0.0,
+            0.0,
+        ];
 
         for (t_idx, t_it) in simulation_time_for_smart_hot_water_tank.iter().enumerate() {
-            // # Convert usage events based on HW temp of 55 to equivalent 50:
+            // Convert usage events based on HW temp of 55 to equivalent 50:
             let usage_events = event_data[t_idx].clone();
             let temp_hot = if t_idx == 0 {
                 50.
