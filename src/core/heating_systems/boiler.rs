@@ -197,10 +197,6 @@ impl BoilerServiceWaterCombi {
                         // TODO (from Python) storage type input will be needed when storage combis are fully implemented
                         combi_storage_loss_in_test,
                         store_volume,
-                        // TODO review as part of migration alpha 9:
-                        // if the storage combi is to be treated as a keephot for losses
-                        // then the losses will be provided by the boiler fuel.
-                        // self.__keep_hot_fuel = CombiKeepHotFuel.MAIN_BOILER_FUEL
                     },
                     CombiTypeSpecificDetails::Instantaneous => CombiBoilerConfig::Instantaneous,
                 };
@@ -972,7 +968,7 @@ impl Boiler {
                 let mains_gas_dewpoint = 52.2;
                 let lpg_dewpoint = 48.3;
                 let oil_dewpoint = 45.1;
-                // TODO: add remaining fuels
+                // TODO (from Python): add remaining fuels
                 let theoretical_eff = match fuel_code {
                     FuelType::MainsGas => {
                         if return_temp < mains_gas_dewpoint {
@@ -1485,7 +1481,6 @@ impl Boiler {
                     // do nothing
                 }
                 ServiceType::DomesticHotWaterDirect => {
-                    // TODO Python errors here - check this is correct
                     bail!("Unexpected service type - ServiceType::DomesticHotWaterDirect");
                 }
             }
@@ -4539,7 +4534,7 @@ mod tests {
                 simulation_time.step,
                 "test",
             );
-            
+
             let error = boiler.unwrap_err().to_string();
             assert!(error.contains("Boiler requires a gas or liquid fuel energy supply"));
         }
