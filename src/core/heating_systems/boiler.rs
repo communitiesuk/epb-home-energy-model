@@ -4501,10 +4501,8 @@ mod tests {
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
         ) {
             assert_eq!(Boiler::net_to_gross(&boiler.fuel_code).unwrap(), 0.901);
-
             assert_eq!(Boiler::net_to_gross(&FuelType::LpgBulk).unwrap(), 0.921);
-
-            // Python here has a check for handling bad fuel codes, which are inexpressible in Rust due to use of enum (good thing!)
+            assert_eq!(Boiler::net_to_gross(&FuelType::HeatingOil).unwrap(), 0.937);
         }
     }
 }
