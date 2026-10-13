@@ -4309,6 +4309,7 @@ mod tests {
         ) {
             let external_conditions = Arc::new(external_conditions);
 
+            // test_mains_gas_efficiency_below_dewpoint
             let efficiency = boiler
                 .boiler_efficiency_over_return_temperatures(50., 0.5)
                 .unwrap();
@@ -4316,12 +4317,14 @@ mod tests {
                 (-0.0000686 * 50.0f64.powi(2) + 0.00175 * 50. + 0.97845) - 0.5;
             assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
 
+            // test_mains_gas_efficiency_above_dewpoint
             let efficiency = boiler
                 .boiler_efficiency_over_return_temperatures(60., 0.5)
                 .unwrap();
             let expected_efficiency = (-0.000619 * 60.0 + 0.91250229) - 0.5;
             assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
 
+            // test_lpg_efficiency_below_dewpoint
             let energy_supply = Arc::new(RwLock::new(
                 EnergySupplyBuilder::new(FuelType::LpgBulk, simulation_time.iter().total_steps())
                     .build(),
@@ -4333,7 +4336,7 @@ mod tests {
                 energy_supply,
                 external_conditions.clone(),
                 simulation_time.step,
-                "boiler_lpg_bulk",
+                "test5",
             )
             .unwrap();
 
@@ -4344,14 +4347,45 @@ mod tests {
                 (-0.00006118 * 45.0f64.powi(2) + 0.00126 * 45. + 0.98586) - 0.5;
             assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
 
+            // test_lpg_efficiency_above_dewpoint
             let efficiency = boiler_lpg
                 .boiler_efficiency_over_return_temperatures(50., 0.5)
                 .unwrap();
             let expected_efficiency = (-0.00062 * 50.0 + 0.9332) - 0.5;
             assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
 
-            // Python here has a check for handling bad fuel codes, which are inexpressible in Rust due to use of enum (good thing!)
+            // test_oil_efficiency_below_dewpoint
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(
+                    FuelType::HeatingOil,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
+            ));
+            let boiler_lpg = Boiler::new(
+                boiler_data.clone(),
+                energy_supply.clone(),
+                energy_supply,
+                external_conditions.clone(),
+                simulation_time.step,
+                "test effvsreturntemp",
+            )
+            .unwrap();
+            let efficiency = boiler_lpg
+                .boiler_efficiency_over_return_temperatures(45., 0.5)
+                .unwrap();
+            let expected_efficiency =
+                (-0.0000573 * 45.0_f64.powf(2.) + 0.000991 * 45. + 0.98956) - 0.5;
+            assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
 
+            // test_oil_efficiency_above_dewpoint
+            let efficiency = boiler_lpg
+                .boiler_efficiency_over_return_temperatures(50., 0.5)
+                .unwrap();
+            let expected_efficiency = (-0.000619 * 50. + 0.9454) - 0.5;
+            assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
+
+            // test_efficiency_without_offset
             let energy_supply = Arc::new(RwLock::new(
                 EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
                     .build(),
@@ -4362,7 +4396,7 @@ mod tests {
                 energy_supply,
                 external_conditions.clone(),
                 simulation_time.step,
-                "boiler_lpg_bulk",
+                "test6",
             )
             .unwrap();
             assert_relative_eq!(
