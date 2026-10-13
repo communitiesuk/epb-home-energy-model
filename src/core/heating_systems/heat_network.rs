@@ -115,6 +115,7 @@ impl HeatNetworkServiceWaterStorage {
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: ArcStr,
+        // we have consolidated the upstream control fields into one in Rust
         control: Arc<RangeTimeControl>,
     ) -> Self {
         Self {
@@ -132,17 +133,29 @@ impl HeatNetworkServiceWaterStorage {
         self.control.setpnt(&simulation_time_iteration)
     }
 
+    /// Demand energy (in kWh) from the heat network
+    /// Args:
+    /// * `energy_demand` - energy demand, in kWh
+    /// * `temp_flow` - flow temperature, in deg C
+    /// * `temp_return` - return temperature, in deg C
+    /// * `ignore_standard_ctrl` - if True, bypass the minimum-setpoint time-control
+    ///                            gate because the storage tank's charging deadband has already
+    ///                            authorised heating.
     pub fn demand_energy(
         &self,
         energy_demand: f64,
         _temp_flow: f64,
         _temp_return: Option<f64>,
+        ignore_standard_ctrl: Option<bool>,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        if !self.is_on(simulation_time_iteration) {
+        let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
+
+        if !self.is_on(simulation_time_iteration) && !ignore_standard_ctrl {
             return Ok(0.);
         }
 
+        // Calculate energy needed to cover losses
         self.heat_network.lock().demand_energy(
             &self.service_name,
             HeatingServiceType::DomesticHotWaterRegular,
@@ -754,7 +767,7 @@ mod tests {
         for (t_idx, t_it) in two_len_simulation_time.iter().enumerate() {
             assert_eq!(
                 heat_network_service_water_storage
-                    .demand_energy(energy_demanded[t_idx], 60., Some(60.), &t_it)
+                    .demand_energy(energy_demanded[t_idx], 60., Some(60.), None, &t_it)
                     .unwrap(),
                 [7.0, 2.0][t_idx]
             );
@@ -812,8 +825,9 @@ mod tests {
             heat_network_service_water_storage
                 .demand_energy(
                     10.,
-                    0.,       // Python passes None here but the parameter is unused
-                    Some(0.), // Python passes None here but the parameter is unused
+                    0., // Python passes None here but the parameter is unused
+                    None,
+                    None,
                     &two_len_simulation_time.iter().current_iteration()
                 )
                 .unwrap(),

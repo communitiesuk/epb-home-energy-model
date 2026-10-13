@@ -169,7 +169,7 @@ impl HeatSourceWetService {
                 *simtime,
             ),
             Self::HeatNetworkServiceWaterStorage(service) => {
-                service.demand_energy(energy_demand, temp_flow, Some(temp_return), simtime)
+                service.demand_energy(energy_demand, temp_flow, Some(temp_return), None, simtime)
             }
         }
     }

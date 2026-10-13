@@ -155,6 +155,7 @@ impl HeatSourceWet {
                 energy_demand,
                 Default::default(),
                 temperature,
+                Some(ignore_standard_ctrl),
                 &simtime,
             ),
             HeatSourceWet::HeatBatteryHotWater(battery) => {
