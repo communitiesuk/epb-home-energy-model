@@ -747,15 +747,8 @@ mod tests {
     }
 
     #[fixture]
-    fn heat_network_service_water_storage(
-        heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
-        two_len_simulation_time: SimulationTime,
-    ) -> HeatNetworkServiceWaterStorage {
-        let heat_network = heat_network_for_water_storage;
-
-        let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
-
-        let control = Arc::from(
+    fn range_time_control(two_len_simulation_time: SimulationTime) -> Arc<RangeTimeControl> {
+        Arc::from(
             RangeTimeControl::new(
                 vec![Some(52.), Some(52.), None],
                 vec![Some(60.), Some(60.), None],
@@ -765,13 +758,41 @@ mod tests {
                 None,
             )
             .unwrap(),
-        );
+        )
+    }
+
+    #[fixture]
+    fn heat_network_service_water_storage(
+        heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
+        range_time_control: Arc<RangeTimeControl>,
+    ) -> HeatNetworkServiceWaterStorage {
+        let heat_network = heat_network_for_water_storage;
+
+        let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
 
         HeatNetworkServiceWaterStorage::new(
             heat_network.clone(),
             "heat_network_test".into(),
-            control,
+            range_time_control,
         )
+    }
+
+    // skipping test_init_with_invalid_values as inexpressible in Rust
+    #[rstest]
+    fn test_setpnt_with_range_time_control(
+        two_len_simulation_time: SimulationTime,
+        range_time_control: Arc<RangeTimeControl>,
+        heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
+    ) {
+        let water_storage = HeatNetwork::create_service_hot_water_storage(
+            heat_network_for_water_storage.clone(),
+            "heat_network_test3",
+            range_time_control,
+        );
+        assert_eq!(
+            water_storage.setpnt(two_len_simulation_time.iter().current_iteration()),
+            (Some(52.), Some(60.))
+        );
     }
 
     #[rstest]
