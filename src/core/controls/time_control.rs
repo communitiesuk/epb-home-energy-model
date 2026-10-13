@@ -925,7 +925,7 @@ impl RangeTimeControl {
     pub fn new(
         schedule_lower: impl Into<ScheduleOrSetpointControl>,
         schedule_upper: impl Into<ScheduleOrSetpointControl>,
-        simulation_time_iterator: SimulationTimeIterator,
+        simulation_timestep: f64,
         start_day: u32,
         time_series_step: f64,
         duration_advanced_start: Option<f64>,
@@ -951,8 +951,7 @@ impl RangeTimeControl {
             }
         }
 
-        let timesteps_advstart =
-            (duration_advanced_start / simulation_time_iterator.step_in_hours()).round() as u32;
+        let timesteps_advstart = (duration_advanced_start / simulation_timestep).round() as u32;
 
         Ok(Self {
             schedule_lower,
@@ -2593,7 +2592,7 @@ mod tests {
             RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
-                simulation_time.iter(),
+                simulation_time.step,
                 0,
                 1.,
                 duration_advanced_start,
@@ -2618,7 +2617,7 @@ mod tests {
             let range_time_control = RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
-                simulation_time().iter(),
+                simulation_time().step,
                 0,
                 1.,
                 None,
@@ -2649,7 +2648,7 @@ mod tests {
             let range_time_control = RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
-                simulation_time().iter(),
+                simulation_time().step,
                 0,
                 1.,
                 None,
@@ -2680,7 +2679,7 @@ mod tests {
             let range_time_control = RangeTimeControl::new(
                 schedule_lower,
                 schedule_upper,
-                simulation_time().iter(),
+                simulation_time().step,
                 0,
                 1.,
                 None,

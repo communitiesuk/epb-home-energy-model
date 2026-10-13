@@ -532,7 +532,7 @@ mod tests {
         let range_time_control = RangeTimeControl::new(
             vec![None, None],
             vec![None, None],
-            simulation_time.iter(),
+            simulation_time.step,
             0,
             1.,
             None,

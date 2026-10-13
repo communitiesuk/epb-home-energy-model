@@ -2966,7 +2966,7 @@ mod tests {
             let range_time_control = RangeTimeControl::new(
                 ScheduleOrSetpointControl::Schedule(control_min_schedule),
                 ScheduleOrSetpointControl::Schedule(control_max_schedule),
-                simulation_time.iter(),
+                simulation_time.step,
                 0,
                 1.,
                 None,
@@ -3661,7 +3661,7 @@ mod tests {
             let range_time_control = RangeTimeControl::new(
                 ScheduleOrSetpointControl::Schedule(control_min_schedule),
                 ScheduleOrSetpointControl::Schedule(control_max_schedule),
-                simulation_time.iter(),
+                simulation_time.step,
                 0,
                 1.,
                 None,

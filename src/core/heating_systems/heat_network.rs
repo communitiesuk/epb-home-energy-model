@@ -553,7 +553,7 @@ mod tests {
             RangeTimeControl::new(
                 vec![Some(21.0), Some(21.0), None],
                 vec![Some(21.0), Some(21.0), None],
-                two_len_simulation_time.iter(),
+                two_len_simulation_time.step,
                 0,
                 1.,
                 None,
@@ -759,7 +759,7 @@ mod tests {
             RangeTimeControl::new(
                 vec![Some(52.), Some(52.), None],
                 vec![Some(60.), Some(60.), None],
-                two_len_simulation_time.iter(),
+                two_len_simulation_time.step,
                 0,
                 1.,
                 None,
@@ -826,7 +826,7 @@ mod tests {
             RangeTimeControl::new(
                 vec![None, None, None],
                 vec![None, None, None],
-                two_len_simulation_time.iter(),
+                two_len_simulation_time.step,
                 0,
                 1.,
                 None,
@@ -866,7 +866,7 @@ mod tests {
             RangeTimeControl::new(
                 vec![None, None, None],
                 vec![None, None, None],
-                two_len_simulation_time.iter(),
+                two_len_simulation_time.step,
                 0,
                 1.,
                 None,
@@ -1209,7 +1209,7 @@ mod tests {
             RangeTimeControl::new(
                 vec![Some(52.), Some(52.), None],
                 vec![Some(60.), Some(60.), None],
-                three_len_simulation_time.iter(),
+                three_len_simulation_time.step,
                 0,
                 1.,
                 None,

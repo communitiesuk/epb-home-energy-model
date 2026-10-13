@@ -4108,7 +4108,7 @@ mod tests {
                 RangeTimeControl::new(
                     control_min_schedule.to_vec(),
                     control_max_schedule.to_vec(),
-                    simulation_time_for_storage_tank.iter(),
+                    simulation_time_for_storage_tank.step,
                     0,
                     1.,
                     None,
@@ -6200,7 +6200,7 @@ mod tests {
             RangeTimeControl::new(
                 control_min,
                 control_max,
-                simulation_time_for_immersion_heater.iter(),
+                simulation_time_for_immersion_heater.step,
                 0,
                 1.,
                 None,
@@ -6573,7 +6573,7 @@ mod tests {
             RangeTimeControl::new(
                 control_min,
                 control_max,
-                simulation_time_for_smart_hot_water_tank.iter(),
+                simulation_time_for_smart_hot_water_tank.step,
                 0,
                 1.,
                 None,

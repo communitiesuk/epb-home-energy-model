@@ -500,7 +500,7 @@ fn single_control_from_details(
             let range_time_control = RangeTimeControl::new(
                 schedule_or_control_lower,
                 schedule_or_control_upper,
-                simulation_time_iterator.clone(),
+                simulation_time_iterator.step_in_hours(),
                 *start_day,
                 *time_series_step,
                 *advanced_start,
@@ -3724,7 +3724,7 @@ impl Controls {
                 Ok(RangeTimeControl::new(
                     min.ok_or_else(|| anyhow!("RangeTimeControl '{control_min}' min control was expected to be a type with a setpoint"))?,
                     max.ok_or_else(|| anyhow!("RangeTimeControl '{control_max}' max control was expected to be a type with a setpoint"))?,
-                    simulation_time_iterator.clone(),
+                    simulation_time_iterator.step_in_hours(),
                     0, // TODO assuming this is zero for now
                     simulation_time_iterator.step_in_hours(),
                     None,

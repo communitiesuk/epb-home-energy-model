@@ -3935,7 +3935,7 @@ mod tests {
     ) -> HeatBatteryPcmServiceWaterRegular {
         let heat_battery = create_heat_battery(battery_control, None);
         let simulation_time = SimulationTime::new(0., 8., 1.);
-        let simulation_time_iterator = simulation_time.iter();
+        let simulation_time_iterator = simulation_time.step;
 
         let shedule_lower_defaults = vec![
             Some(52.),
@@ -4049,7 +4049,7 @@ mod tests {
             RangeTimeControl::new(
                 vec![None],
                 vec![None],
-                simulation_time_iterator.clone(),
+                simulation_time_iterator.step_in_hours(),
                 0,
                 1.,
                 None,
@@ -5265,7 +5265,7 @@ mod tests {
         let service_name = "new_service";
 
         let range_time_control =
-            RangeTimeControl::new(vec![], vec![], simulation_time.iter(), 0, 1., None).unwrap();
+            RangeTimeControl::new(vec![], vec![], simulation_time.step, 0, 1., None).unwrap();
 
         HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
@@ -5890,7 +5890,15 @@ mod tests {
         let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
 
         let range_time_control = Arc::new(
-            RangeTimeControl::new(vec![], vec![], simulation_time_iterator, 0, 1., None).unwrap(),
+            RangeTimeControl::new(
+                vec![],
+                vec![],
+                simulation_time_iterator.step_in_hours(),
+                0,
+                1.,
+                None,
+            )
+            .unwrap(),
         );
 
         let result = HeatBatteryPcm::create_service_hot_water_regular(
@@ -6706,7 +6714,7 @@ mod tests {
                 // mock setpnt_for_range_control return value
                 vec![Some(0.2); simulation_time.total_steps()],
                 vec![Some(0.8); simulation_time.total_steps()],
-                simulation_time.iter(),
+                simulation_time.step,
                 0,
                 1.0,
                 None,
@@ -6923,7 +6931,7 @@ mod tests {
             RangeTimeControl::new(
                 vec![lower; simulation_time.total_steps()],
                 vec![upper; simulation_time.total_steps()],
-                simulation_time.iter(),
+                simulation_time.step,
                 0,
                 1.0,
                 None,
@@ -8022,7 +8030,7 @@ mod tests {
             RangeTimeControl::new(
                 vec![lower; simulation_time.total_steps()],
                 vec![upper; simulation_time.total_steps()],
-                simulation_time.iter(),
+                simulation_time.step,
                 0,
                 1.0,
                 None,
@@ -8443,7 +8451,7 @@ mod tests {
             schedule_upper: Vec<Option<f64>>,
             simtime: SimulationTime,
         ) -> Arc<RangeTimeControl> {
-            RangeTimeControl::new(schedule_lower, schedule_upper, simtime.iter(), 0, 1.0, None)
+            RangeTimeControl::new(schedule_lower, schedule_upper, simtime.step, 0, 1.0, None)
                 .unwrap()
                 .into()
         }
