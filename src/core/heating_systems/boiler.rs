@@ -813,11 +813,11 @@ impl Boiler {
         simulation_timestep: f64,
         name: &str,
     ) -> anyhow::Result<Self> {
-        let fuel_category = energy_supply.read().fuel_type().category();
-        match fuel_category {
+        let fuel_type = energy_supply.read().fuel_type();
+        match fuel_type.category() {
             FuelCategory::Gaseous | FuelCategory::Liquid => {}
             _ => {
-                bail!("Boiler requires a gas or liquid fuel energy supply; got {fuel_category}")
+                bail!("Boiler requires a gas or liquid fuel energy supply; got '{fuel_type}'")
             }
         }
 
@@ -4503,6 +4503,45 @@ mod tests {
             assert_eq!(Boiler::net_to_gross(&boiler.fuel_code).unwrap(), 0.901);
             assert_eq!(Boiler::net_to_gross(&FuelType::LpgBulk).unwrap(), 0.921);
             assert_eq!(Boiler::net_to_gross(&FuelType::HeatingOil).unwrap(), 0.937);
+        }
+
+        // Python here has tests for handling bad fuel codes, which are inexpressible in Rust
+        // due to use of enum (good thing!). The tests are:
+        // test_non_condensing_full_load_max_gross_efficiency_with_invalid_fuel
+        // test_non_condensing_part_load_max_gross_efficiency_with_invalid_fuel
+
+        /// Boiler must reject energy supplies that are not gas or liquid fuel.
+        #[rstest]
+        fn test_init_raises_for_invalid_fuel_type(
+            boiler_data: HeatSourceWetDetails,
+            simulation_time: SimulationTime,
+            external_conditions: ExternalConditions,
+        ) {
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
+            ));
+            let energy_supply_aux = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
+            ));
+            let boiler = Boiler::new(
+                boiler_data,
+                energy_supply,
+                energy_supply_aux,
+                Arc::from(external_conditions.clone()),
+                simulation_time.step,
+                "test",
+            );
+            
+            let error = boiler.unwrap_err().to_string();
+            assert!(error.contains("Boiler requires a gas or liquid fuel energy supply"));
         }
     }
 }
