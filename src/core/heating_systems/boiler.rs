@@ -4472,6 +4472,16 @@ mod tests {
                 0.992758,
                 max_relative = 1e-5
             );
+
+            assert_eq!(
+                Boiler::high_value_correction_part_load(&FuelType::HeatingOil, 5.).unwrap(),
+                1.04
+            );
+            assert_relative_eq!(
+                Boiler::high_value_correction_part_load(&FuelType::HeatingOil, 1.).unwrap(),
+                0.992758,
+                max_relative = 1e-5
+            );
         }
 
         // Skipping test_effvsreturntemp_with_invalid_fuel & test_high_value_correction_part_load_with_invalid_fuel
