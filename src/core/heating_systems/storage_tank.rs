@@ -6192,26 +6192,31 @@ mod tests {
             EnergySupply::connection(Arc::new(RwLock::new(energy_supply)), "shower").unwrap();
         let timestep = simulation_time_for_immersion_heater.step;
 
-        let control_min = vec![Some(52.), Some(52.), None, Some(52.)];
-        let control_max = vec![Some(60.), Some(60.), Some(60.), Some(60.)];
+        let control_min = Arc::new(SetpointTimeControl::new(
+            vec![Some(52.), Some(52.), None, Some(52.)],
+            0,
+            1.0,
+            None,
+            None,
+            1.0,
+        ));
+        let control_max = Arc::new(SetpointTimeControl::new(
+            vec![Some(60.), Some(60.), Some(60.), Some(60.)],
+            0,
+            1.0,
+            None,
+            None,
+            1.0,
+        ));
 
-        let control = Some(
-            RangeTimeControl::new(
-                control_min,
-                control_max,
-                simulation_time_for_immersion_heater.step,
-                0,
-                1.,
-                None,
-            )
-            .unwrap()
-            .into(),
-        );
+        let control = Some(CompositeRangeTimeControl::MinMax {
+            control_min: control_min.into(),
+            control_max: control_max.into(),
+        });
 
         ImmersionHeater::new(rated_power, energy_supply_connection, timestep, control)
     }
 
-    #[ignore = "Update as part of migration 1.0.0a9"]
     #[rstest]
     fn test_demand_energy_for_immersion_heater(
         immersion_heater: ImmersionHeater,
@@ -6239,7 +6244,6 @@ mod tests {
             .is_err());
     }
 
-    #[ignore = "Update as part of migration 1.0.0a9"]
     #[rstest]
     fn test_energy_output_max_for_immersion_heater(
         immersion_heater: ImmersionHeater,
