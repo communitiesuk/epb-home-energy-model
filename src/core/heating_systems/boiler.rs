@@ -4415,6 +4415,40 @@ mod tests {
             );
         }
 
+        /// Check boiler efficiency returned at different return temperatures
+        #[rstest]
+        fn test_effvsreturntemp_non_condensing(
+            #[from(boiler_non_condensing)] (mut boiler_non_condensing, _, _): (
+                Boiler,
+                Arc<RwLock<EnergySupply>>,
+                Arc<RwLock<EnergySupply>>,
+            ),
+        ) {
+            let efficiency = boiler_non_condensing
+                .boiler_efficiency_over_return_temperatures(50., 0.5)
+                .unwrap();
+            assert_relative_eq!(efficiency, 0.83);
+
+            let efficiency = boiler_non_condensing
+                .boiler_efficiency_over_return_temperatures(60., 0.5)
+                .unwrap();
+            assert_relative_eq!(efficiency, 0.828);
+
+            // Test with LPG which has a lower part load max efficiency
+            boiler_non_condensing.fuel_code = FuelType::LpgBottled;
+            let efficiency = boiler_non_condensing
+                .boiler_efficiency_over_return_temperatures(50., 0.5)
+                .unwrap();
+            assert_relative_eq!(efficiency, 0.824055);
+
+            // Test with heating oil
+            boiler_non_condensing.fuel_code = FuelType::HeatingOil;
+            let efficiency = boiler_non_condensing
+                .boiler_efficiency_over_return_temperatures(50., 0.5)
+                .unwrap();
+            assert_relative_eq!(efficiency, 0.83);
+        }
+
         #[rstest]
         fn test_high_value_correction_part_load(
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
