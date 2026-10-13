@@ -4329,11 +4329,18 @@ mod tests {
                 EnergySupplyBuilder::new(FuelType::LpgBulk, simulation_time.iter().total_steps())
                     .build(),
             ));
+            let energy_supply_aux = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    simulation_time.iter().total_steps(),
+                )
+                .build(),
+            ));
 
             let boiler_lpg = Boiler::new(
                 boiler_data.clone(),
                 energy_supply.clone(),
-                energy_supply,
+                energy_supply_aux.clone(),
                 external_conditions.clone(),
                 simulation_time.step,
                 "test5",
@@ -4365,7 +4372,7 @@ mod tests {
             let boiler_lpg = Boiler::new(
                 boiler_data.clone(),
                 energy_supply.clone(),
-                energy_supply,
+                energy_supply_aux.clone(),
                 external_conditions.clone(),
                 simulation_time.step,
                 "test effvsreturntemp",
@@ -4393,7 +4400,7 @@ mod tests {
             let boiler = Boiler::new(
                 boiler_data,
                 energy_supply.clone(),
-                energy_supply,
+                energy_supply_aux,
                 external_conditions.clone(),
                 simulation_time.step,
                 "test6",
