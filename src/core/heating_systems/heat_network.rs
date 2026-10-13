@@ -861,6 +861,33 @@ mod tests {
         }
     }
 
+    /// energy_output_max is the ceiling demand_energy reaches with unlimited demand.
+    /// demand_energy returns min(demand, energy_output_max), both derived from the
+    /// same maximum network power over the available time, so an effectively
+    /// unlimited demand reaches exactly the energy_output_max ceiling.
+    #[rstest]
+    fn test_energy_output_max_matches_demand_energy_ceiling(
+        heat_network_service_water_storage: HeatNetworkServiceWaterStorage,
+    ) {
+        let simulation_time_iteration = &SimulationTime::new(0., 2., 1.).iter().next().unwrap();
+        let energy_max = heat_network_service_water_storage.energy_output_max(
+            15.,
+            10.,
+            None,
+            simulation_time_iteration,
+        );
+        let energy_delivered = heat_network_service_water_storage.demand_energy(
+            1.0e6,
+            0.,
+            None,
+            None,
+            simulation_time_iteration,
+        );
+
+        assert_relative_eq!(energy_max, 7.0); // power_max 7 kW over the 1 h timestep
+        assert_relative_eq!(energy_max, energy_delivered.unwrap());
+    }
+
     #[rstest]
     fn test_demand_energy_if_off_for_water_storage(
         heat_network_for_water_storage: HeatNetwork,
