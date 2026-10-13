@@ -720,10 +720,7 @@ mod tests {
     }
 
     #[fixture]
-    #[once]
-    fn heat_network_for_water_storage(
-        two_len_simulation_time: SimulationTime,
-    ) -> Arc<Mutex<HeatNetwork>> {
+    fn heat_network_for_water_storage(two_len_simulation_time: SimulationTime) -> HeatNetwork {
         let energy_supply = EnergySupplyBuilder::new(
             FuelType::Custom,
             two_len_simulation_time.iter().total_steps(),
@@ -733,7 +730,7 @@ mod tests {
         let energy_supply_conn_name_building_level_distribution_losses =
             "HeatNetwork_building_level_distribution_losses";
 
-        Arc::new(Mutex::new(HeatNetwork::new(
+        HeatNetwork::new(
             7.0,
             1.0,
             0.,
@@ -743,7 +740,7 @@ mod tests {
             energy_supply_conn_name_auxiliary.into(),
             energy_supply_conn_name_building_level_distribution_losses.into(),
             two_len_simulation_time.step,
-        )))
+        )
     }
 
     #[fixture]
@@ -762,11 +759,30 @@ mod tests {
     }
 
     #[fixture]
+    fn service_water_storage_with_heat_network(
+        heat_network_for_water_storage: HeatNetwork,
+        range_time_control: Arc<RangeTimeControl>,
+    ) -> (HeatNetworkServiceWaterStorage, Arc<Mutex<HeatNetwork>>) {
+        let heat_network = Arc::new(Mutex::new(heat_network_for_water_storage));
+
+        let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
+
+        (
+            HeatNetworkServiceWaterStorage::new(
+                heat_network.clone(),
+                "heat_network_test".into(),
+                range_time_control,
+            ),
+            heat_network,
+        )
+    }
+
+    #[fixture]
     fn heat_network_service_water_storage(
-        heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
+        heat_network_for_water_storage: HeatNetwork,
         range_time_control: Arc<RangeTimeControl>,
     ) -> HeatNetworkServiceWaterStorage {
-        let heat_network = heat_network_for_water_storage;
+        let heat_network = Arc::new(Mutex::new(heat_network_for_water_storage));
 
         let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
 
@@ -782,10 +798,12 @@ mod tests {
     fn test_setpnt_with_range_time_control(
         two_len_simulation_time: SimulationTime,
         range_time_control: Arc<RangeTimeControl>,
-        heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
+        heat_network_for_water_storage: HeatNetwork,
     ) {
+        let heat_network = Arc::new(Mutex::new(heat_network_for_water_storage));
+
         let water_storage = HeatNetwork::create_service_hot_water_storage(
-            heat_network_for_water_storage.clone(),
+            heat_network,
             "heat_network_test3",
             range_time_control,
         );
@@ -798,10 +816,13 @@ mod tests {
     #[rstest]
     fn test_heat_network_service_water_storage(
         two_len_simulation_time: SimulationTime,
-        heat_network_service_water_storage: HeatNetworkServiceWaterStorage,
-        heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
+        service_water_storage_with_heat_network: (
+            HeatNetworkServiceWaterStorage,
+            Arc<Mutex<HeatNetwork>>,
+        ),
     ) {
-        let heat_network = heat_network_for_water_storage.clone();
+        let (heat_network_service_water_storage, heat_network) =
+            service_water_storage_with_heat_network;
         let energy_demanded = [10.0, 2.0];
         for (t_idx, t_it) in two_len_simulation_time.iter().enumerate() {
             assert_eq!(
@@ -817,10 +838,13 @@ mod tests {
     #[rstest]
     fn test_energy_output_max_for_water_storage(
         two_len_simulation_time: SimulationTime,
-        heat_network_service_water_storage: HeatNetworkServiceWaterStorage,
-        heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
+        service_water_storage_with_heat_network: (
+            HeatNetworkServiceWaterStorage,
+            Arc<Mutex<HeatNetwork>>,
+        ),
     ) {
-        let heat_network = heat_network_for_water_storage.clone();
+        let (heat_network_service_water_storage, heat_network) =
+            service_water_storage_with_heat_network;
         let temp_flow = [15.0, 20.0];
         let temp_return = [10.0, 15.0];
         for (t_idx, t_it) in two_len_simulation_time.iter().enumerate() {
@@ -839,7 +863,7 @@ mod tests {
 
     #[rstest]
     fn test_demand_energy_if_off_for_water_storage(
-        heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
+        heat_network_for_water_storage: HeatNetwork,
         two_len_simulation_time: SimulationTime,
     ) {
         // In Python a Control Mock is used (control_mock.is_on.return_value = False)
@@ -856,7 +880,7 @@ mod tests {
         );
 
         let heat_network_service_water_storage = HeatNetworkServiceWaterStorage::new(
-            heat_network_for_water_storage.clone(),
+            Arc::new(Mutex::new(heat_network_for_water_storage)),
             "heat_network_test".into(),
             control,
         );
@@ -877,7 +901,7 @@ mod tests {
 
     #[rstest]
     fn test_energy_output_max_if_off_for_water_storage(
-        heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
+        heat_network_for_water_storage: HeatNetwork,
         two_len_simulation_time: SimulationTime,
     ) {
         // In Python a Control Mock is used (control_mock.is_on.return_value = False)
@@ -896,7 +920,7 @@ mod tests {
         );
 
         let heat_network_service_water_storage = HeatNetworkServiceWaterStorage::new(
-            heat_network_for_water_storage.clone(),
+            Arc::new(Mutex::new(heat_network_for_water_storage)),
             "heat_network_test".into(),
             control,
         );
