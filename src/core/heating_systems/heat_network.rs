@@ -365,6 +365,15 @@ impl HeatNetwork {
         )
     }
 
+    /// Return a HeatNetworkSeriviceWaterStorage object and create an EnergySupplyConnection for it
+    /// Arguments:
+    /// * `service_name` - name of the service demanding energy from the heat network
+    /// * `controlmin` - reference to a control object which must select current
+    ///                  the minimum timestep temperature
+    /// * `controlmax` - reference to a control object which must select current
+    ///                  the maximum timestep temperature
+    /// * `control` - reference to a RangeTimeControl object, combining controlmax and controlmin.
+    ///               Takes precedence if set.
     pub(crate) fn create_service_hot_water_storage(
         heat_network: Arc<Mutex<Self>>,
         service_name: &str,
