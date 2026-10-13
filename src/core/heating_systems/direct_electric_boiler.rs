@@ -1,7 +1,7 @@
 use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{
-    OnOffTimeControl, RangeTimeControl, SetpointOrCombinationControl,
+    CompositeRangeTimeControl, OnOffTimeControl, SetpointOrCombinationControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{
@@ -128,7 +128,7 @@ impl DirectElectricBoiler {
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
         // We have consolidatated controls into one field to match the validation logic Python has
-        control: Arc<RangeTimeControl>,
+        control: CompositeRangeTimeControl,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
         BoilerServiceWaterRegular::new(
@@ -352,7 +352,7 @@ impl DirectElectricBoiler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::controls::time_control::{RangeTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::units::Orientation360;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;

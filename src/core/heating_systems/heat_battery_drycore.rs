@@ -3,7 +3,9 @@
 //! that is shared between Electric Storage Heaters and Dry Core Heat Batteries.
 
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
-use crate::core::controls::time_control::{ChargeControl, RangeTimeControl, SetpointTimeControl};
+use crate::core::controls::time_control::{
+    ChargeControl, CompositeRangeTimeControl, SetpointTimeControl,
+};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::material_properties::WATER;
@@ -831,25 +833,24 @@ pub(crate) trait HeatBatteryDryCoreCommonBehaviour: Send + Sync {
 
 #[derive(Clone, Debug)]
 pub(crate) struct HeatBatteryDryCoreService {
-    control: Option<Either<Arc<SetpointTimeControl>, Arc<RangeTimeControl>>>,
+    control: Option<Either<CompositeRangeTimeControl, Arc<SetpointTimeControl>>>,
 }
 
 impl HeatBatteryDryCoreService {
     pub(crate) fn new(
-        control: Option<Either<Arc<SetpointTimeControl>, Arc<RangeTimeControl>>>,
+        control: Option<Either<CompositeRangeTimeControl, Arc<SetpointTimeControl>>>,
     ) -> Self {
         Self { control }
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        if let Some(control) = &self.control {
-            match control {
-                Either::Left(control) => control.is_on(&simtime),
-                Either::Right(control) => control.is_on(&simtime),
-            }
-        } else {
-            true
-        }
+        self.control
+            .as_ref()
+            .map(|control| match control {
+                Either::Left(c) => c.is_on(&simtime),
+                Either::Right(c) => c.is_on(&simtime),
+            })
+            .unwrap_or(true)
     }
 }
 
@@ -863,8 +864,7 @@ pub(crate) struct HeatBatteryDryCoreServiceWaterRegular {
     heat_battery: Arc<HeatBatteryDryCore>,
     service_name: ArcStr,
     cold_feed: WaterSupply,
-    control_min: Arc<SetpointTimeControl>,
-    control_max: Arc<SetpointTimeControl>,
+    control: CompositeRangeTimeControl,
 }
 
 impl HeatBatteryDryCoreServiceWaterRegular {
@@ -872,24 +872,19 @@ impl HeatBatteryDryCoreServiceWaterRegular {
         heat_battery: Arc<HeatBatteryDryCore>,
         service_name: ArcStr,
         cold_feed: WaterSupply,
-        control_min: Arc<SetpointTimeControl>,
-        control_max: Arc<SetpointTimeControl>,
+        control: CompositeRangeTimeControl,
     ) -> Self {
         Self {
-            core_service: HeatBatteryDryCoreService::new(Some(Either::Left(control_min.clone()))),
+            core_service: HeatBatteryDryCoreService::new(either::Left(control.clone()).into()),
             heat_battery,
             service_name,
             cold_feed,
-            control_min,
-            control_max,
+            control,
         }
     }
 
     pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
-        (
-            self.control_min.setpnt(&simtime),
-            self.control_max.setpnt(&simtime),
-        )
+        self.control.setpnt(&simtime)
     }
 
     pub(crate) fn demand_energy(
@@ -1091,7 +1086,7 @@ impl HeatBatteryDryCoreServiceSpace {
         control: Option<Arc<SetpointTimeControl>>,
     ) -> Self {
         Self {
-            core_service: HeatBatteryDryCoreService::new(control.clone().map(either::Left)),
+            core_service: HeatBatteryDryCoreService::new(control.clone().map(either::Right)),
             heat_battery,
             service_name: service_name.into(),
             control,
@@ -1286,8 +1281,7 @@ impl HeatBatteryDryCore {
         battery: Arc<Self>,
         service_name: &str,
         cold_feed: WaterSupply,
-        control_min: Arc<SetpointTimeControl>,
-        control_max: Arc<SetpointTimeControl>,
+        control: CompositeRangeTimeControl,
     ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterRegular> {
         battery.create_service_connection(service_name)?;
 
@@ -1295,8 +1289,7 @@ impl HeatBatteryDryCore {
             battery.clone(),
             service_name.into(),
             cold_feed,
-            control_min,
-            control_max,
+            control,
         ))
     }
 
@@ -2315,31 +2308,31 @@ mod tests {
         mock_control_dhw_off: Arc<SetpointTimeControl>,
         simulation_time: SimulationTime,
     ) {
-        let control_min = SetpointTimeControl::new(
+        let control_min = Arc::new(SetpointTimeControl::new(
             vec![Some(45.), Some(46.), Some(46.), Some(46.), Some(46.)],
             0,
             1.,
             None,
             None,
             simulation_time.step,
-        )
-        .into();
-        let control_max: Arc<SetpointTimeControl> = SetpointTimeControl::new(
+        ));
+        let control_max: Arc<SetpointTimeControl> = Arc::new(SetpointTimeControl::new(
             vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
             0,
             1.,
             None,
             None,
             simulation_time.step,
-        )
-        .into();
+        ));
         let mock_cold_feed = mock_cold_feed(None); // we can just set up a mock cold water source here - it isn't used
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
             "dhw_service",
             mock_cold_feed.clone(),
-            control_min,
-            control_max.clone(),
+            CompositeRangeTimeControl::MinMax {
+                control_min: control_min.clone().into(),
+                control_max: control_max.clone().into(),
+            },
         )
         .unwrap();
 
@@ -2365,8 +2358,10 @@ mod tests {
             heat_battery,
             "dhw_service1",
             mock_cold_feed.clone(),
-            mock_control_dhw_off,
-            control_max,
+            CompositeRangeTimeControl::MinMax {
+                control_min: mock_control_dhw_off.into(),
+                control_max: control_max.into(),
+            },
         )
         .unwrap();
         // Demand energy
@@ -2488,8 +2483,10 @@ mod tests {
             heat_battery.clone(),
             "test_service",
             mock_cold_feed,
-            mock_control_dhw,
-            default_control_max,
+            CompositeRangeTimeControl::MinMax {
+                control_min: mock_control_dhw.into(),
+                control_max: default_control_max.into(),
+            },
         )
         .unwrap();
 
@@ -3130,8 +3127,10 @@ mod tests {
             heat_battery.clone(),
             "dhw1",
             mock_cold_feed(None),
-            mock_control_dhw,
-            default_control_max,
+            CompositeRangeTimeControl::MinMax {
+                control_min: mock_control_dhw.into(),
+                control_max: default_control_max.into(),
+            },
         );
 
         // Test services work correctly (i.e. we can access them

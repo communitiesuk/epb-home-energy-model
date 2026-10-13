@@ -1,8 +1,9 @@
 use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{
-    ChargeControl, CombinationTimeControl, Control, ControlSetPoint, HeatSourceControl,
-    OnOffCostMinimisingTimeControl, OnOffTimeControl, RangeTimeControl, ScheduleOrSetpointControl,
-    SetpointOrCombinationControl, SetpointTimeControl, SmartApplianceControl, TimeControl,
+    ChargeControl, CombinationTimeControl, CompositeRangeTimeControl, Control, ControlSetPoint,
+    HeatSourceControl, OnOffCostMinimisingTimeControl, OnOffTimeControl, RangeTimeControl,
+    ScheduleOrSetpointControl, SetpointOrCombinationControl, SetpointTimeControl,
+    SmartApplianceControl, TimeControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::cooling_systems::space_cool_system_base::SpaceCoolSystem;
@@ -3689,8 +3690,7 @@ impl Controls {
     pub(crate) fn get_range_time_control(
         &self,
         control_refs: &ControlReferences,
-        simulation_time_iterator: &SimulationTimeIterator,
-    ) -> anyhow::Result<Arc<RangeTimeControl>> {
+    ) -> anyhow::Result<CompositeRangeTimeControl> {
         match control_refs {
             ControlReferences::Unified {
                 control: control_name,
@@ -3700,7 +3700,7 @@ impl Controls {
                     .ok_or_else(|| anyhow!("No control found for reference '{control_name}'"))?;
 
                 if let Control::RangeTime(range_time_control) = control {
-                    Ok(range_time_control)
+                    Ok(range_time_control.into())
                 } else {
                     bail!(
                         "Control {} was expected to be a RangeTimeControl",
@@ -3721,15 +3721,10 @@ impl Controls {
                     .ok_or_else(|| anyhow!("No control found for reference '{control_max}'"))?
                     .into();
 
-                Ok(RangeTimeControl::new(
-                    min.ok_or_else(|| anyhow!("RangeTimeControl '{control_min}' min control was expected to be a type with a setpoint"))?,
-                    max.ok_or_else(|| anyhow!("RangeTimeControl '{control_max}' max control was expected to be a type with a setpoint"))?,
-                    simulation_time_iterator.step_in_hours(),
-                    0, // TODO assuming this is zero for now
-                    simulation_time_iterator.step_in_hours(),
-                    None,
-                )?
-                .into())
+                Ok(CompositeRangeTimeControl::MinMax {
+                    control_min: min.ok_or_else(|| anyhow!("RangeTimeControl '{control_min}' min control was expected to be a type with a setpoint"))?,
+                    control_max: max.ok_or_else(|| anyhow!("RangeTimeControl '{control_max}' max control was expected to be a type with a setpoint"))?,
+                })
             }
         }
     }
@@ -5258,7 +5253,7 @@ fn heat_source_from_input(
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
             let range_time_control = if let Some(control_refs) = control_refs {
-                Some(controls.get_range_time_control(control_refs, simulation_time_iterator)?)
+                Some(controls.get_range_time_control(control_refs)?)
             } else {
                 None
             };
@@ -5357,8 +5352,7 @@ fn heat_source_from_input(
             let control_refs = control_refs
                 .clone()
                 .ok_or_else(|| anyhow!("Missing control for {name}"))?;
-            let range_time_control =
-                controls.get_range_time_control(&control_refs, simulation_time_iterator)?;
+            let range_time_control = controls.get_range_time_control(&control_refs)?;
 
             let mut heat_source_wet_clone = heat_source_wet.clone();
 
@@ -5403,14 +5397,13 @@ fn heat_source_from_input(
                         HeatSourceWet::HeatBatteryHotWater(match battery {
                             HeatBattery::DryCore(_dry_core) => HeatBatteryWaterService::DryCore(
                                 {
-                                    let (control_min, control_max) = todo!();
+                                    let control = todo!();
 
                                     HeatBatteryDryCore::create_service_hot_water_regular(
                                         _dry_core,
                                         &energy_supply_conn_name,
                                         cold_water_source.clone(),
-                                        control_min, // TODO: update as part of 1.0.0a9 migration
-                                        control_max, // TODO: update as part of 1.0.0a9 migration
+                                        control, // TODO: update as part of 1.0.0a9 migration
                                     )?
                                 }
                             ),
@@ -5450,8 +5443,7 @@ fn heat_source_from_input(
             let control_refs = control_refs
                 .clone()
                 .ok_or_else(|| anyhow!("Missing control for {name}"))?;
-            let range_time_control =
-                controls.get_range_time_control(&control_refs, simulation_time_iterator)?;
+            let range_time_control = controls.get_range_time_control(&control_refs)?;
 
             Ok(HeatSourceFromInput {
                 heat_source: HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(

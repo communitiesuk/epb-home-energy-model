@@ -1,6 +1,6 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
-use crate::core::controls::time_control::{ControlSetPoint, RangeTimeControl};
+use crate::core::controls::time_control::{CompositeRangeTimeControl, ControlSetPoint};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
@@ -103,7 +103,7 @@ impl HeatNetworkServiceWaterDirect {
 pub struct HeatNetworkServiceWaterStorage {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: ArcStr,
-    control: Arc<RangeTimeControl>,
+    control: CompositeRangeTimeControl,
 }
 
 impl HeatNetworkServiceWaterStorage {
@@ -116,7 +116,7 @@ impl HeatNetworkServiceWaterStorage {
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: ArcStr,
         // we have consolidated the upstream control fields into one in Rust
-        control: Arc<RangeTimeControl>,
+        control: CompositeRangeTimeControl,
     ) -> Self {
         Self {
             heat_network,
@@ -377,7 +377,7 @@ impl HeatNetwork {
     pub(crate) fn create_service_hot_water_storage(
         heat_network: Arc<Mutex<Self>>,
         service_name: &str,
-        control: Arc<RangeTimeControl>,
+        control: CompositeRangeTimeControl,
     ) -> HeatNetworkServiceWaterStorage {
         Self::create_service_connection(heat_network.clone(), service_name).unwrap();
 
@@ -506,7 +506,7 @@ impl HeatNetwork {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::controls::time_control::{RangeTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
@@ -565,12 +565,15 @@ mod tests {
         let heat_network_service = HeatNetworkServiceWaterStorage::new(
             dummy_heat_network.clone(),
             SERVICE_NAME.into(),
-            control.clone(),
+            control.clone().into(),
         );
         assert!(heat_network_service.is_on(&two_len_simulation_time.iter().next().unwrap()));
 
-        let heat_network_service_no_control =
-            HeatNetworkServiceWaterStorage::new(dummy_heat_network, SERVICE_NAME.into(), control);
+        let heat_network_service_no_control = HeatNetworkServiceWaterStorage::new(
+            dummy_heat_network,
+            SERVICE_NAME.into(),
+            control.into(),
+        );
         assert!(
             heat_network_service_no_control.is_on(&two_len_simulation_time.iter().next().unwrap())
         );
@@ -771,7 +774,7 @@ mod tests {
             HeatNetworkServiceWaterStorage::new(
                 heat_network.clone(),
                 "heat_network_test".into(),
-                range_time_control,
+                range_time_control.into(),
             ),
             heat_network,
         )
@@ -789,7 +792,7 @@ mod tests {
         HeatNetworkServiceWaterStorage::new(
             heat_network.clone(),
             "heat_network_test".into(),
-            range_time_control,
+            range_time_control.into(),
         )
     }
 
@@ -805,7 +808,7 @@ mod tests {
         let water_storage = HeatNetwork::create_service_hot_water_storage(
             heat_network,
             "heat_network_test3",
-            range_time_control,
+            range_time_control.into(),
         );
         assert_eq!(
             water_storage.setpnt(two_len_simulation_time.iter().current_iteration()),
@@ -909,7 +912,7 @@ mod tests {
         let heat_network_service_water_storage = HeatNetworkServiceWaterStorage::new(
             Arc::new(Mutex::new(heat_network_for_water_storage)),
             "heat_network_test".into(),
-            control,
+            control.into(),
         );
 
         assert_eq!(
@@ -949,7 +952,7 @@ mod tests {
         let heat_network_service_water_storage = HeatNetworkServiceWaterStorage::new(
             Arc::new(Mutex::new(heat_network_for_water_storage)),
             "heat_network_test".into(),
-            control,
+            control.into(),
         );
 
         assert_eq!(
@@ -989,8 +992,11 @@ mod tests {
         // create service connection so it doesn't error
         let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
 
-        let heat_network_service_water_storage =
-            HeatNetworkServiceWaterStorage::new(heat_network, "heat_network_test".into(), control);
+        let heat_network_service_water_storage = HeatNetworkServiceWaterStorage::new(
+            heat_network,
+            "heat_network_test".into(),
+            control.into(),
+        );
 
         // Heat network max output is 7.0 kWh (5 kW over the 1 h timestep less the
         // daily standing loss), as in test_energy_output_max with the control on.
@@ -1344,8 +1350,11 @@ mod tests {
             .unwrap(),
         );
 
-        let water_storage =
-            HeatNetwork::create_service_hot_water_storage(heat_network.clone(), "name", control);
+        let water_storage = HeatNetwork::create_service_hot_water_storage(
+            heat_network.clone(),
+            "name",
+            control.into(),
+        );
         assert_eq!(
             water_storage.setpnt(three_len_simulation_time.iter().current_iteration()),
             (Some(52.), Some(60.))

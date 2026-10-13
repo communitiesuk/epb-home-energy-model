@@ -5,7 +5,7 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    OnOffTimeControl, RangeTimeControl, SetpointOrCombinationControl,
+    CompositeRangeTimeControl, OnOffTimeControl, SetpointOrCombinationControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -1361,7 +1361,7 @@ const TIME_CONSTANT_WATER: f64 = 1560.;
 pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: ArcStr,
-    control: Arc<RangeTimeControl>,
+    control: CompositeRangeTimeControl,
     temp_limit_upper_in_k: f64,
     cold_feed: Option<Arc<WaterSupply>>,
     hybrid_boiler_service: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
@@ -1373,7 +1373,7 @@ impl HeatPumpServiceWater {
         service_name: ArcStr,
         temp_limit_upper_in_c: f64,
         cold_feed: Option<Arc<WaterSupply>>,
-        control: Arc<RangeTimeControl>,
+        control: CompositeRangeTimeControl,
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
     ) -> Self {
         Self {
@@ -2368,7 +2368,7 @@ impl HeatPump {
         temp_limit_upper_in_c: f64,
         cold_feed: Option<Arc<WaterSupply>>,
         // We have consolidatated controls into one field to match the validation logic Python has
-        control: Arc<RangeTimeControl>,
+        control: CompositeRangeTimeControl,
     ) -> anyhow::Result<HeatPumpServiceWater> {
         Self::create_service_connection(heat_pump.clone(), service_name)?;
         let boiler_service = heat_pump
@@ -4523,7 +4523,7 @@ pub struct HeatPumpHotWaterOnly {
     power_in_kw: f64,
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control: Arc<RangeTimeControl>,
+    control: CompositeRangeTimeControl,
     initial_efficiency: f64,
     tank_volume: f64,
     daily_losses: f64,
@@ -4549,7 +4549,7 @@ impl HeatPumpHotWaterOnly {
         heat_exchanger_surface_area_declared: Option<f64>,
         daily_losses_declared: f64,
         simulation_timestep: f64,
-        control: Arc<RangeTimeControl>,
+        control: CompositeRangeTimeControl,
         tank_is_integral: bool,
     ) -> Self {
         let efficiencies = Efficiencies {
@@ -4704,7 +4704,7 @@ impl HeatPumpHotWaterOnly {
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
 
-        let energy_supplied = if ignore_standard_ctrl || self.control.is_on(&simtime) {
+        let energy_supplied = if ignore_standard_ctrl || self.control.assume_system_on(&simtime) {
             min_of_2(energy_demand, self.power_in_kw * self.simulation_timestep)
         } else {
             0.0
@@ -4728,7 +4728,7 @@ impl HeatPumpHotWaterOnly {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
-        if ignore_standard_ctrl || self.control.is_on(&simtime) {
+        if ignore_standard_ctrl || self.control.assume_system_on(&simtime) {
             self.power_in_kw * self.simulation_timestep
         } else {
             0.0
@@ -4748,7 +4748,7 @@ mod tests {
 
     use super::*;
     use crate::core::controls::time_control::{
-        ControlSetPoint, SetpointOrCombinationControl, SetpointTimeControl,
+        ControlSetPoint, RangeTimeControl, SetpointOrCombinationControl, SetpointTimeControl,
     };
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::heating_systems::boiler::BoilerForBoilerService;
@@ -7597,7 +7597,7 @@ mod tests {
             service_name,
             60.,
             Some(cold_feed.clone().into()),
-            range_time_control.clone(),
+            range_time_control.clone().into(),
         )
         .unwrap();
 
@@ -7621,7 +7621,7 @@ mod tests {
             service_name,
             60.,
             Some(cold_feed.into()),
-            range_time_control,
+            range_time_control.into(),
         )
         .unwrap();
 
@@ -12145,7 +12145,7 @@ mod tests {
             heat_exchanger_surface_area_declared,
             daily_losses_declared,
             1.,
-            range_time_control,
+            range_time_control.into(),
             false,
         )
     }
@@ -12236,17 +12236,16 @@ mod tests {
             SetpointTimeControl::new(vec![None, None, None], 0, 1.0, None, None, 1.0).into(),
         );
         let control_max = control_min.clone();
-        heat_pump.control = Arc::new(
-            RangeTimeControl::new(
-                control_min,
-                control_max,
-                simulation_time_for_heat_pump.step,
-                0,
-                1.0,
-                None,
-            )
-            .unwrap(),
-        );
+        heat_pump.control = RangeTimeControl::new(
+            control_min,
+            control_max,
+            simulation_time_for_heat_pump.step,
+            0,
+            1.0,
+            None,
+        )
+        .unwrap()
+        .into();
 
         assert_relative_eq!(
             heat_pump.demand_energy(10., 50., Some(40.), false, simtime),
@@ -12279,17 +12278,16 @@ mod tests {
             1.0,
         )));
         let control_max = control_min.clone();
-        heat_pump.control = Arc::new(
-            RangeTimeControl::new(
-                control_min,
-                control_max,
-                simulation_time_for_heat_pump.step,
-                0,
-                1.0,
-                None,
-            )
-            .unwrap(),
-        );
+        heat_pump.control = RangeTimeControl::new(
+            control_min,
+            control_max,
+            simulation_time_for_heat_pump.step,
+            0,
+            1.0,
+            None,
+        )
+        .unwrap()
+        .into();
 
         assert_relative_eq!(heat_pump.energy_output_max(50., false, simtime), 0.);
     }

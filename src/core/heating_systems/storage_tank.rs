@@ -3,7 +3,7 @@ use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::MockWaterSupply;
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    CombinationTimeControl, Control, RangeTimeControl, SetpointTimeControl,
+    CombinationTimeControl, CompositeRangeTimeControl, Control, SetpointTimeControl,
 };
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::primary_pipework_losses_mixin::PrimaryPipeworkLossesMixin;
@@ -3323,7 +3323,7 @@ pub struct ImmersionHeater {
     pwr: f64, // rated power
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control: Option<Arc<RangeTimeControl>>,
+    control: Option<CompositeRangeTimeControl>,
     diverter: ArcSwapOption<RwLock<PVDiverter>>,
 }
 
@@ -3345,7 +3345,7 @@ impl ImmersionHeater {
         rated_power: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
-        control: Option<Arc<RangeTimeControl>>,
+        control: Option<CompositeRangeTimeControl>,
     ) -> Self {
         Self {
             pwr: rated_power,
@@ -3386,12 +3386,11 @@ impl ImmersionHeater {
             bail!("Negative energy demand on ImmersionHeater");
         };
 
-        // TODO 1.0.0a9 migration - review control logic matches, min and max were removed previously in rust so this check should suffice?
         let energy_supplied = if ignore_standard_ctrl
             || self
                 .control
                 .as_ref()
-                .is_none_or(|control| control.is_on(&simtime))
+                .is_none_or(|control| control.assume_system_on(&simtime))
         {
             min_of_2(energy_demand, self.pwr * self.simulation_timestep)
         } else {
@@ -3421,12 +3420,11 @@ impl ImmersionHeater {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
-        // TODO 1.0.0a9 migration - review control logic matches, min and max were removed previously in rust so this check should suffice?
         if ignore_standard_ctrl
             || self
                 .control
                 .as_ref()
-                .is_none_or(|control| control.is_on(&simtime))
+                .is_none_or(|control| control.assume_system_on(&simtime))
         {
             // Energy that heater is able to supply is limited by power rating
             self.pwr * self.simulation_timestep
@@ -3961,7 +3959,7 @@ impl SolarThermalSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::controls::time_control::{RangeTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::material_properties::WATER;
     use crate::core::pipework::PipeworkLocation;
@@ -4104,7 +4102,7 @@ mod tests {
             rated_power,
             energy_supply_connection.clone(),
             simulation_timestep,
-            Some(Arc::from(
+            Some(
                 RangeTimeControl::new(
                     control_min_schedule.to_vec(),
                     control_max_schedule.to_vec(),
@@ -4113,8 +4111,9 @@ mod tests {
                     1.,
                     None,
                 )
-                .unwrap(),
-            )),
+                .unwrap()
+                .into(),
+            ),
         );
 
         PositionedHeatSource {
@@ -6196,7 +6195,7 @@ mod tests {
         let control_min = vec![Some(52.), Some(52.), None, Some(52.)];
         let control_max = vec![Some(60.), Some(60.), Some(60.), Some(60.)];
 
-        let control = Some(Arc::from(
+        let control = Some(
             RangeTimeControl::new(
                 control_min,
                 control_max,
@@ -6205,8 +6204,9 @@ mod tests {
                 1.,
                 None,
             )
-            .unwrap(),
-        ));
+            .unwrap()
+            .into(),
+        );
 
         ImmersionHeater::new(rated_power, energy_supply_connection, timestep, control)
     }
@@ -6569,7 +6569,7 @@ mod tests {
             Some(0.8),
         ];
 
-        let control = Some(Arc::from(
+        let control = Some(
             RangeTimeControl::new(
                 control_min,
                 control_max,
@@ -6578,8 +6578,9 @@ mod tests {
                 1.,
                 None,
             )
-            .unwrap(),
-        ));
+            .unwrap()
+            .into(),
+        );
         let immersion_heater = ImmersionHeater::new(5., energy_supply_connection, 1., control);
         let heat_source = HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(
             Mutex::new(immersion_heater),

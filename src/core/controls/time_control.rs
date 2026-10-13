@@ -208,6 +208,12 @@ impl From<Control> for Option<ControlSetPoint> {
     }
 }
 
+impl From<Arc<SetpointTimeControl>> for ControlSetPoint {
+    fn from(control: Arc<SetpointTimeControl>) -> Self {
+        ControlSetPoint::SetpointTime(control)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum HeatSourceControl {
     HotWaterTimer(Control),
@@ -1067,6 +1073,71 @@ impl RangeTimeControl {
         };
 
         self.is_on(&previous_simulation_time_iteration)
+    }
+}
+
+/// Some parts of the model take an optional set of control/control_min/control_max controls where
+/// control is a `RangeTimeControl`, and control_min/control_max are `ControlSetPoint`s. This enum
+/// abstracts the slightly different behaviour at play for each of these variants.
+#[derive(Clone, Debug)]
+pub(crate) enum CompositeRangeTimeControl {
+    Unified(Arc<RangeTimeControl>),
+    MinMax {
+        control_min: ControlSetPoint,
+        control_max: ControlSetPoint,
+    },
+}
+
+impl CompositeRangeTimeControl {
+    pub(crate) fn setpnt(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> (Option<f64>, Option<f64>) {
+        match self {
+            CompositeRangeTimeControl::Unified(control) => {
+                control.setpnt(simulation_time_iteration)
+            }
+            CompositeRangeTimeControl::MinMax {
+                control_min,
+                control_max,
+            } => (
+                control_min.setpnt(simulation_time_iteration),
+                control_max.setpnt(simulation_time_iteration),
+            ),
+        }
+    }
+
+    pub(crate) fn assume_system_on(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> bool {
+        match self {
+            CompositeRangeTimeControl::Unified(control) => control.is_on(simulation_time_iteration),
+            CompositeRangeTimeControl::MinMax { control_min, .. } => {
+                control_min.is_on(simulation_time_iteration)
+            }
+        }
+    }
+
+    pub(crate) fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
+        match self {
+            CompositeRangeTimeControl::Unified(control) => control.is_on(simulation_time_iteration),
+            CompositeRangeTimeControl::MinMax { control_min, .. } => {
+                control_min.is_on(simulation_time_iteration)
+            }
+        }
+    }
+}
+
+impl From<RangeTimeControl> for CompositeRangeTimeControl {
+    fn from(control: RangeTimeControl) -> Self {
+        CompositeRangeTimeControl::Unified(Arc::new(control))
+    }
+}
+
+impl From<Arc<RangeTimeControl>> for CompositeRangeTimeControl {
+    fn from(control: Arc<RangeTimeControl>) -> Self {
+        CompositeRangeTimeControl::Unified(control)
     }
 }
 

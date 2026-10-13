@@ -2,7 +2,8 @@ use crate::compare_floats::min_of_2;
 /// This module provides object(s) to model the behaviour of heat batteries.
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    ChargeControl, CombinationTimeControl, RangeTimeControl, SetpointTimeControl,
+    ChargeControl, CombinationTimeControl, CompositeRangeTimeControl, RangeTimeControl,
+    SetpointTimeControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::BoilerServiceWaterRegular;
@@ -247,7 +248,7 @@ pub(crate) struct HeatBatteryPcmServiceWaterRegular {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: ArcStr,
     cold_feed: WaterSupply,
-    control: Arc<RangeTimeControl>,
+    control: CompositeRangeTimeControl,
 }
 
 impl HeatBatteryPcmServiceWaterRegular {
@@ -265,7 +266,7 @@ impl HeatBatteryPcmServiceWaterRegular {
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: ArcStr,
         cold_feed: WaterSupply,
-        control: Arc<RangeTimeControl>,
+        control: CompositeRangeTimeControl,
     ) -> Self {
         Self {
             heat_battery,
@@ -1288,7 +1289,7 @@ impl HeatBatteryPcm {
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         cold_feed: WaterSupply,
-        control: Arc<RangeTimeControl>,
+        control: CompositeRangeTimeControl,
     ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterRegular::new(
@@ -3990,7 +3991,7 @@ mod tests {
             heat_battery,
             SERVICE_NAME.into(),
             mock_cold_feed,
-            range_time_control,
+            range_time_control.into(),
         )
     }
 
@@ -4064,7 +4065,7 @@ mod tests {
                 heat_battery,
                 SERVICE_NAME.into(),
                 mock_cold_feed,
-                range_time_control,
+                range_time_control.into(),
             );
 
         let result = heat_battery_service
@@ -5905,7 +5906,7 @@ mod tests {
             heat_battery.clone(),
             service_name,
             mock_cold_feed.clone(),
-            range_time_control.clone(),
+            range_time_control.clone().into(),
         );
 
         assert!(result.is_ok());
@@ -5914,7 +5915,7 @@ mod tests {
             heat_battery,
             service_name,
             mock_cold_feed.clone(),
-            range_time_control,
+            range_time_control.into(),
         );
 
         assert!(result.is_err())
@@ -7031,7 +7032,7 @@ mod tests {
                 source_heat_battery.clone(),
                 "hydronic_charge_source_service".into(),
                 cold_feed,
-                service_control,
+                service_control.into(),
             );
             HeatBatteryPcm::create_service_connection(
                 source_heat_battery,
@@ -7539,7 +7540,7 @@ mod tests {
                 source_heat_battery.clone(),
                 "hydronic_source_service".into(),
                 cold_feed,
-                range_control.clone(),
+                range_control.clone().into(),
             );
             HeatBatteryPcm::create_service_connection(
                 source_heat_battery.clone(),
