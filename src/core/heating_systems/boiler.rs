@@ -4221,6 +4221,41 @@ mod tests {
             );
         }
 
+        /// Test that internal gains returns the correct gains
+        #[rstest]
+        fn test_internal_gains(
+            external_conditions: ExternalConditions,
+            simulation_time: SimulationTime,
+        ) {
+            let boiler_data = HeatSourceWetDetails::Boiler {
+                energy_supply: "mains gas".into(),
+                energy_supply_aux: "mains elec".into(),
+                rated_power: 24.0,
+                efficiency_full_load: 0.88,
+                efficiency_part_load: 0.986,
+                boiler_location: HeatSourceLocation::Internal,
+                modulation_load: 0.2,
+                electricity_circ_pump: 0.0600,
+                electricity_part_load: 0.0131,
+                electricity_full_load: 0.0388,
+                electricity_standby: 0.0244,
+                boiler_type: BoilerType::default(),
+                pilot_light: Some(BoilerPilotLight {
+                    power: 0.1,
+                    gains_fraction: Some(0.5),
+                }),
+            };
+
+            let (mut boiler, _) =
+                create_boiler_with_energy_supply(boiler_data, external_conditions, simulation_time);
+
+            boiler
+                .timestep_end(simulation_time.iter().next().unwrap())
+                .unwrap();
+
+            assert_eq!(boiler.internal_gains(), 0.05);
+        }
+
         #[rstest]
         fn test_energy_output_max(
             #[from(boiler_with_energy_supply)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
