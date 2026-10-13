@@ -579,7 +579,7 @@ impl BoilerServiceWaterRegular {
     pub(crate) fn new(
         boiler: BoilerForBoilerService,
         service_name: ArcStr,
-        // We have consolidatated controls into one field to match the validation logic Python has
+        // We have consolidated controls into one field to match the validation logic Python has
         control: Arc<RangeTimeControl>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -1153,7 +1153,7 @@ impl Boiler {
     pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        // We have consolidatated controls into one field to match the validation logic Python has
+        // We have consolidated controls into one field to match the validation logic Python has
         control: Arc<RangeTimeControl>,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler.write().create_service_connection(service_name)?;
