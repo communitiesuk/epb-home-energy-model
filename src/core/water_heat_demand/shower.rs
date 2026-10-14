@@ -130,9 +130,7 @@ impl MixerShower {
                 simtime,
             )?;
             let wwhrs_cyl_feed_temperature = wwhrs_result.t_cyl_feed;
-            volume_hot_water = wwhrs_result.flowrate_hot.ok_or_else(|| {
-                anyhow!("Flowrate hot water not available from WWHRS calculation")
-            })? * total_shower_duration;
+            volume_hot_water = wwhrs_result.flowrate_hot * total_shower_duration;
 
             // Register pre-heated water availability for the hot water system.
 

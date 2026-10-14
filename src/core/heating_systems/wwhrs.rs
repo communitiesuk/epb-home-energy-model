@@ -61,7 +61,7 @@ pub struct WwhrsInstantaneous {
 
 pub(crate) struct PerformanceCalculationResult {
     pub(crate) t_cyl_feed: f64,
-    pub(crate) flowrate_hot: Option<f64>,
+    pub(crate) flowrate_hot: f64,
 }
 
 impl WwhrsInstantaneous {
@@ -238,7 +238,7 @@ impl WwhrsInstantaneous {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<PerformanceCalculationResult> {
         if self.system_a_utilisation_factor.is_none() {
-            anyhow::bail!("system_a_utilisation_factor is required for System A calculation");
+            bail!("system_a_utilisation_factor is required for System A calculation");
         }
 
         let list_temp_vol = self
@@ -264,9 +264,9 @@ impl WwhrsInstantaneous {
         // For System A: m_hot = flowrate_waste_water * (T_target - T_pre_A) / (temp_hot - T_pre_A)
         let flowrate_hot = if relative_eq!(temp_hot, temp_pre, epsilon = 1e-10, max_relative = 1e-9)
         {
-            None
+            0.
         } else {
-            Some(flowrate_waste_water * (temp_target - temp_pre) / (temp_hot - temp_pre))
+            flowrate_waste_water * (temp_target - temp_pre) / (temp_hot - temp_pre)
         };
 
         // For System A, both shower and cylinder are fed with pre-heated water
@@ -296,7 +296,7 @@ impl WwhrsInstantaneous {
             Some(_) => {
                 // Approach 1: Pre-corrected System B data
                 if self.system_b_utilisation_factor.is_none() {
-                    anyhow::bail!(
+                    bail!(
                         "system_b_utilisation_factor is required when using system_b_efficiencies"
                     );
                 }
@@ -312,7 +312,7 @@ impl WwhrsInstantaneous {
                 if self.system_b_utilisation_factor.is_none()
                     || self.system_b_efficiency_factor.is_none()
                 {
-                    anyhow::bail!("Both system_b_utilisation_factor and system_b_efficiency_factor are required when converting from System A data");
+                    bail!("Both system_b_utilisation_factor and system_b_efficiency_factor are required when converting from System A data");
                 }
 
                 let base_efficiency = self.get_efficiency_from_flowrate(
@@ -340,9 +340,9 @@ impl WwhrsInstantaneous {
         // For System B: m_hot = flowrate_waste_water * (T_target - T_pre_B) / (temp_hot - T_pre_B)
         let flowrate_hot = if relative_eq!(temp_hot, temp_pre, epsilon = 1e-10, max_relative = 1e-9)
         {
-            None
+            0.
         } else {
-            Some(flowrate_waste_water * (temp_target - temp_pre) / (temp_hot - temp_pre))
+            flowrate_waste_water * (temp_target - temp_pre) / (temp_hot - temp_pre)
         };
 
         Ok(PerformanceCalculationResult {
@@ -370,7 +370,7 @@ impl WwhrsInstantaneous {
             Some(_) => {
                 // Approach 1: Pre-corrected System C data
                 if self.system_c_utilisation_factor.is_none() {
-                    anyhow::bail!(
+                    bail!(
                         "system_c_utilisation_factor is required when using system_c_efficiencies"
                     )
                 }
@@ -386,7 +386,7 @@ impl WwhrsInstantaneous {
                 if self.system_c_utilisation_factor.is_none()
                     || self.system_c_efficiency_factor.is_none()
                 {
-                    anyhow::bail!("Both system_c_utilisation_factor and system_c_efficiency_factor are required when converting from System A data")
+                    bail!("Both system_c_utilisation_factor and system_c_efficiency_factor are required when converting from System A data")
                 }
                 let base_efficiency = self.get_efficiency_from_flowrate(
                     flowrate_waste_water,
@@ -414,9 +414,9 @@ impl WwhrsInstantaneous {
         // For System C: m_hot = flowrate_waste_water * (T_target - T_main) / (temp_hot - T_main)
         let flowrate_hot =
             if relative_eq!(temp_hot, temp_main, epsilon = 1e-10, max_relative = 1e-9) {
-                None
+                0.
             } else {
-                Some(flowrate_waste_water * (temp_target - temp_main) / (temp_hot - temp_main))
+                flowrate_waste_water * (temp_target - temp_main) / (temp_hot - temp_main)
             };
 
         Ok(PerformanceCalculationResult {
@@ -1006,7 +1006,7 @@ mod tests {
 
         // For System B, both shower and cylinder get pre-heated water
         assert_eq!(result.t_cyl_feed, 17.); // Same as cold water
-        assert!(result.flowrate_hot.is_some());
+        assert_ne!(result.flowrate_hot, 0.);
     }
 
     #[rstest]
@@ -1042,7 +1042,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(result.flowrate_hot.unwrap(), 8.); // Equal to flowrate_waste_water
+        assert_eq!(result.flowrate_hot, 8.); // Equal to flowrate_waste_water
     }
 
     #[rstest]
@@ -1080,7 +1080,7 @@ mod tests {
 
         // For System C, only cylinder gets pre-heated water
         assert_eq!(result.t_cyl_feed, 22.601422933333335);
-        assert!(result.flowrate_hot.is_some());
+        assert_ne!(result.flowrate_hot, 0.);
     }
 
     #[rstest]
@@ -1444,7 +1444,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(result.flowrate_hot.unwrap(), 3.297999789473684); // Should use provided value
+        assert_eq!(result.flowrate_hot, 3.297999789473684); // Should use provided value
     }
 
     #[test]
@@ -1488,12 +1488,11 @@ mod tests {
             )
             .unwrap();
 
-        assert!(result.flowrate_hot.is_none())
+        assert_eq!(result.flowrate_hot, 0.)
     }
 
     // skipping test_system_b_missing_temp_hot as we decided to type temp_hot as required (not as an Option)
     // skipping test_system_b_temp_hot_equals_temp_pre as patch difficult to replicate in Rust
-    // skipping test_system_c_missing_temp_hot as we decided to type temp_hot as required (not as an Option)
 
     #[rstest]
     fn test_system_c_temp_hot_equals_temp_main(
@@ -1530,7 +1529,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(result.flowrate_hot.is_none())
+        assert_eq!(result.flowrate_hot, 0.)
     }
 
     #[rstest]
@@ -1897,9 +1896,9 @@ mod tests {
                 results.insert(system, result);
             }
 
-            assert!(results[0].flowrate_hot.is_some());
-            assert!(results[1].flowrate_hot.is_some());
-            assert!(results[2].flowrate_hot.is_some());
+            assert_ne!(results[0].flowrate_hot, 0.);
+            assert_ne!(results[1].flowrate_hot, 0.);
+            assert_ne!(results[2].flowrate_hot, 0.);
         }
 
         #[rstest]
