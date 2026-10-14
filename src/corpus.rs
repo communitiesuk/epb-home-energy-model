@@ -545,7 +545,7 @@ fn single_control_from_details(
                 charge_level = match charge_level_input {
                     ChargeLevel::Schedule(schedule) => expand_numeric_schedule(schedule),
                     ChargeLevel::List(schedule_list) => {
-                        schedule_list.into_iter().cloned().map(Some).collect()
+                        schedule_list.iter().cloned().map(Some).collect()
                     }
                     ChargeLevel::Single(single_value) => vec![Some(*single_value); required_length],
                 };
@@ -3577,7 +3577,7 @@ fn energy_supply_from_input(
 
         if let Some(tariff) = input.tariff.as_ref() {
             builder = builder.with_tariff_info(EnergySupplyTariffInfo {
-                tariff: *tariff,
+                tariff: tariff.clone(),
                 threshold_charges: input
                     .threshold_charges
                     .map(|threshold_charges| threshold_charges.to_vec()),

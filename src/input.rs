@@ -1223,7 +1223,7 @@ pub struct EnergySupplyDetails {
     #[validate(exclusive_minimum = 0.)]
     pub(crate) power_limit_export: Option<f64>,
 
-    pub(crate) tariff: Option<EnergySupplyTariff>,
+    pub(crate) tariff: Option<ArcStr>,
 
     pub(crate) tariff_export: Option<ArcStr>,
 }
@@ -1344,25 +1344,6 @@ pub(crate) fn validate_power_limit_export_requires_export_capable(
         );
     }
     Ok(())
-}
-
-#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str, Eq, Hash)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum EnergySupplyTariff {
-    #[serde(rename = "Standard Tariff")]
-    Standard,
-
-    #[serde(rename = "7-Hour Off Peak Tariff")]
-    SevenHourOffPeak,
-
-    #[serde(rename = "10-Hour Off Peak Tariff")]
-    TenHourOffPeak,
-
-    #[serde(rename = "Variable Time of Day Tariff")]
-    VariableTimeOfDay,
-
-    #[serde(rename = "Export Tariff")]
-    ExportTariff,
 }
 
 // It's not completely clear at the moment what the difference between fuel type and energy supply type is,

@@ -2,7 +2,6 @@ use crate::core::schedule::{
     expand_numeric_schedule, reject_nulls, validate_schedule_length, NumericSchedule,
 };
 use crate::hem_core::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
-use crate::input::EnergySupplyTariff;
 use anyhow::anyhow;
 use arcstr::ArcStr;
 use indexmap::IndexMap;
@@ -14,7 +13,7 @@ use std::io::Read;
 pub struct TariffData {
     start_day: Option<u32>,
     time_series_step: f64,
-    electricity_prices: IndexMap<EnergySupplyTariff, Vec<f64>>,
+    electricity_prices: IndexMap<ArcStr, Vec<f64>>,
 }
 
 impl TariffData {
@@ -22,7 +21,7 @@ impl TariffData {
         simulation_time: &SimulationTimeIterator,
         start_day: Option<u32>,
         time_series_step: f64,
-        electricity_prices: IndexMap<EnergySupplyTariff, Vec<f64>>,
+        electricity_prices: IndexMap<ArcStr, Vec<f64>>,
     ) -> anyhow::Result<Self> {
         let expected_length = match start_day {
             Some(start_day) => {
@@ -43,27 +42,27 @@ impl TariffData {
     }
 
     pub(crate) fn expand_prices_schedule(
-        prices: IndexMap<EnergySupplyTariff, NumericSchedule>,
-    ) -> anyhow::Result<IndexMap<EnergySupplyTariff, Vec<f64>>> {
+        prices: IndexMap<ArcStr, NumericSchedule>,
+    ) -> anyhow::Result<IndexMap<ArcStr, Vec<f64>>> {
         prices
             .iter()
             .map(|(name, schedule)| {
                 let prices = reject_nulls(expand_numeric_schedule(schedule))?;
 
-                Ok((*name, prices))
+                Ok((name.clone(), prices))
             })
             .collect()
     }
 
     pub(crate) fn load_data_from_file(
         csv: impl Read,
-    ) -> anyhow::Result<IndexMap<EnergySupplyTariff, NumericSchedule>> {
+    ) -> anyhow::Result<IndexMap<ArcStr, NumericSchedule>> {
         let mut reader = csv::Reader::from_reader(csv);
         let headers = reader.headers()?.clone();
         if !headers.iter().any(|h| h == "timestep") {
             anyhow::bail!("Tariff CSV must contain a 'timestep' column");
         }
-        let mut electricity_prices: IndexMap<EnergySupplyTariff, Vec<f64>> = IndexMap::new();
+        let mut electricity_prices: IndexMap<ArcStr, Vec<f64>> = IndexMap::new();
 
         for row in reader.records().flatten() {
             for (tariff, price) in headers.iter().zip(row.iter()) {
@@ -71,11 +70,12 @@ impl TariffData {
                     continue;
                 }
 
-                if let Ok(tariff) = tariff.parse::<EnergySupplyTariff>() {
-                    let price: f64 = price.parse()?;
+                let price: f64 = price.parse()?;
 
-                    electricity_prices.entry(tariff).or_default().push(price);
-                }
+                electricity_prices
+                    .entry(tariff.into())
+                    .or_default()
+                    .push(price);
             }
         }
 
@@ -90,7 +90,7 @@ impl TariffData {
     /// Merge the prices from the CSV and the JSON files.
     /// If the same tariff name is found, prices from the CSV will take precedence.
     pub(super) fn merge_prices_from_files(
-        prices_from_csv: IndexMap<EnergySupplyTariff, NumericSchedule>,
+        prices_from_csv: IndexMap<ArcStr, NumericSchedule>,
         prices_from_json: IndexMap<ArcStr, NumericSchedule>,
     ) -> IndexMap<ArcStr, NumericSchedule> {
         let mut merged_prices = prices_from_json;
@@ -105,7 +105,7 @@ impl TariffData {
 
     pub(super) fn price(
         &self,
-        tariff: &EnergySupplyTariff,
+        tariff: &str,
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let prices = self
@@ -129,6 +129,7 @@ impl TariffData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::energy_supply::energy_supply::EnergySupplyTariff;
     use crate::hem_core::simulation_time::SimulationTime;
     use rstest::*;
     use serde_json::json;
@@ -140,7 +141,7 @@ mod tests {
     }
 
     #[fixture]
-    fn loaded_prices() -> IndexMap<EnergySupplyTariff, NumericSchedule> {
+    fn loaded_prices() -> IndexMap<ArcStr, NumericSchedule> {
         let data = BufReader::new(Cursor::new(include_str!(
             "../../../examples/tariff_data/tariff_data_demo_files_24timesteps.csv"
         )));
@@ -150,7 +151,7 @@ mod tests {
 
     #[fixture]
     fn tariff_data(
-        loaded_prices: IndexMap<EnergySupplyTariff, NumericSchedule>,
+        loaded_prices: IndexMap<ArcStr, NumericSchedule>,
         simulation_time: SimulationTimeIterator,
     ) -> TariffData {
         let prices = TariffData::expand_prices_schedule(loaded_prices).unwrap();
@@ -160,7 +161,7 @@ mod tests {
 
     #[fixture]
     fn tariff_data_no_start_day(
-        loaded_prices: IndexMap<EnergySupplyTariff, NumericSchedule>,
+        loaded_prices: IndexMap<ArcStr, NumericSchedule>,
         simulation_time: SimulationTimeIterator,
     ) -> TariffData {
         let prices = TariffData::expand_prices_schedule(loaded_prices).unwrap();
@@ -174,25 +175,25 @@ mod tests {
             if t_idx == 0 {
                 assert_eq!(
                     tariff_data
-                        .price(&EnergySupplyTariff::Standard, t_it)
+                        .price(EnergySupplyTariff::Standard.into(), t_it)
                         .unwrap(),
                     25.16
                 );
                 assert_eq!(
                     tariff_data
-                        .price(&EnergySupplyTariff::SevenHourOffPeak, t_it)
+                        .price(EnergySupplyTariff::SevenHourOffPeak.into(), t_it)
                         .unwrap(),
                     14.6
                 );
                 assert_eq!(
                     tariff_data
-                        .price(&EnergySupplyTariff::TenHourOffPeak, t_it)
+                        .price(EnergySupplyTariff::TenHourOffPeak.into(), t_it)
                         .unwrap(),
                     16.04
                 );
                 assert_eq!(
                     tariff_data
-                        .price(&EnergySupplyTariff::VariableTimeOfDay, t_it)
+                        .price(EnergySupplyTariff::VariableTimeOfDay.into(), t_it)
                         .unwrap(),
                     10.87017271
                 );
@@ -200,25 +201,25 @@ mod tests {
             if t_idx == 23 {
                 assert_eq!(
                     tariff_data
-                        .price(&EnergySupplyTariff::Standard, t_it)
+                        .price(EnergySupplyTariff::Standard.into(), t_it)
                         .unwrap(),
                     25.16
                 );
                 assert_eq!(
                     tariff_data
-                        .price(&EnergySupplyTariff::SevenHourOffPeak, t_it)
+                        .price(EnergySupplyTariff::SevenHourOffPeak.into(), t_it)
                         .unwrap(),
                     29.8
                 );
                 assert_eq!(
                     tariff_data
-                        .price(&EnergySupplyTariff::TenHourOffPeak, t_it)
+                        .price(EnergySupplyTariff::TenHourOffPeak.into(), t_it)
                         .unwrap(),
                     35.01
                 );
                 assert_eq!(
                     tariff_data
-                        .price(&EnergySupplyTariff::VariableTimeOfDay, t_it)
+                        .price(EnergySupplyTariff::VariableTimeOfDay.into(), t_it)
                         .unwrap(),
                     23.91911304
                 );
@@ -235,25 +236,25 @@ mod tests {
             if t_idx == 0 {
                 assert_eq!(
                     tariff_data_no_start_day
-                        .price(&EnergySupplyTariff::Standard, t_it)
+                        .price(EnergySupplyTariff::Standard.into(), t_it)
                         .unwrap(),
                     25.16
                 );
                 assert_eq!(
                     tariff_data_no_start_day
-                        .price(&EnergySupplyTariff::SevenHourOffPeak, t_it)
+                        .price(EnergySupplyTariff::SevenHourOffPeak.into(), t_it)
                         .unwrap(),
                     14.6
                 );
                 assert_eq!(
                     tariff_data_no_start_day
-                        .price(&EnergySupplyTariff::TenHourOffPeak, t_it)
+                        .price(EnergySupplyTariff::TenHourOffPeak.into(), t_it)
                         .unwrap(),
                     16.04
                 );
                 assert_eq!(
                     tariff_data_no_start_day
-                        .price(&EnergySupplyTariff::VariableTimeOfDay, t_it)
+                        .price(EnergySupplyTariff::VariableTimeOfDay.into(), t_it)
                         .unwrap(),
                     10.87017271
                 );
@@ -261,25 +262,25 @@ mod tests {
             if t_idx == 23 {
                 assert_eq!(
                     tariff_data_no_start_day
-                        .price(&EnergySupplyTariff::Standard, t_it)
+                        .price(EnergySupplyTariff::Standard.into(), t_it)
                         .unwrap(),
                     25.16
                 );
                 assert_eq!(
                     tariff_data_no_start_day
-                        .price(&EnergySupplyTariff::SevenHourOffPeak, t_it)
+                        .price(EnergySupplyTariff::SevenHourOffPeak.into(), t_it)
                         .unwrap(),
                     29.8
                 );
                 assert_eq!(
                     tariff_data_no_start_day
-                        .price(&EnergySupplyTariff::TenHourOffPeak, t_it)
+                        .price(EnergySupplyTariff::TenHourOffPeak.into(), t_it)
                         .unwrap(),
                     35.01
                 );
                 assert_eq!(
                     tariff_data_no_start_day
-                        .price(&EnergySupplyTariff::VariableTimeOfDay, t_it)
+                        .price(EnergySupplyTariff::VariableTimeOfDay.into(), t_it)
                         .unwrap(),
                     23.91911304
                 );
@@ -291,7 +292,7 @@ mod tests {
 
     #[rstest]
     /// Test merge_prices_from_files warns of overlaps and favours prices from CSV
-    fn test_merge_prices_from_files(loaded_prices: IndexMap<EnergySupplyTariff, NumericSchedule>) {
+    fn test_merge_prices_from_files(loaded_prices: IndexMap<ArcStr, NumericSchedule>) {
         let prices_from_csv = loaded_prices;
         let prices_from_json: IndexMap<ArcStr, NumericSchedule> = serde_json::from_value(json!({"Standard Tariff": {"main": [1.0, 2.0, 3.0]},"Other Tariff": {"main": [1.0, 2.0, 3.0]}})).unwrap();
 

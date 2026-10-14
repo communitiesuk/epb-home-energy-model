@@ -3,7 +3,7 @@ use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::heating_systems::storage_tank::SurplusDiverting;
 use crate::errors::NotImplementedError;
-use crate::input::{EnergySupplyTariff, FuelType};
+use crate::input::FuelType;
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use approx::relative_eq;
@@ -14,6 +14,8 @@ use fsum::FSum;
 use indexmap::{indexmap, IndexMap};
 use itertools::Itertools;
 use parking_lot::RwLock;
+#[cfg(test)]
+use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -81,14 +83,14 @@ impl EnergySupplyConnection {
 
 #[derive(Debug)]
 pub struct EnergySupplyTariffInfo {
-    pub(crate) tariff: EnergySupplyTariff,
+    pub(crate) tariff: ArcStr,
     pub(crate) threshold_charges: Option<Vec<f64>>,
     pub(crate) threshold_prices: Option<Vec<f64>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct EnergySupplyExportTariff {
-    pub(crate) tariff_export: EnergySupplyTariff,
+    pub(crate) tariff_export: ArcStr,
     pub(crate) threshold_charges_export: Option<Vec<f64>>,
     pub(crate) threshold_prices_export: Option<Vec<f64>>,
 }
@@ -607,7 +609,7 @@ impl EnergySupply {
                             |threshold_prices_export| threshold_prices_export.get(month).copied(),
                         );
                     (
-                        Some(export_tariff.tariff_export),
+                        Some(export_tariff.tariff_export.clone()),
                         threshold_charge_export,
                         threshold_price_export,
                     )
@@ -677,7 +679,11 @@ impl EnergySupply {
                     .threshold_prices
                     .as_ref()
                     .and_then(|threshold_prices| threshold_prices.get(month).copied());
-                (Some(tariff_info.tariff), threshold_charge, threshold_price)
+                (
+                    Some(tariff_info.tariff.clone()),
+                    threshold_charge,
+                    threshold_price,
+                )
             }
             None => (None, None, None),
         };
@@ -1196,6 +1202,46 @@ fn init_demand_list(timestep_count: usize) -> Vec<AtomicF64> {
         .collect::<Vec<_>>()
 }
 
+/// Common values used in tests
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str, Eq, Hash)]
+#[cfg(test)]
+pub(crate) enum EnergySupplyTariff {
+    #[serde(rename = "Standard Tariff")]
+    Standard,
+
+    #[serde(rename = "7-Hour Off Peak Tariff")]
+    SevenHourOffPeak,
+
+    #[serde(rename = "10-Hour Off Peak Tariff")]
+    TenHourOffPeak,
+
+    #[serde(rename = "Variable Time of Day Tariff")]
+    VariableTimeOfDay,
+
+    #[serde(rename = "Export Tariff")]
+    ExportTariff,
+}
+
+#[cfg(test)]
+impl From<EnergySupplyTariff> for ArcStr {
+    fn from(tariff: EnergySupplyTariff) -> Self {
+        ArcStr::from(tariff.to_string())
+    }
+}
+
+#[cfg(test)]
+impl From<EnergySupplyTariff> for &'static str {
+    fn from(tariff: EnergySupplyTariff) -> Self {
+        match tariff {
+            EnergySupplyTariff::Standard => "Standard Tariff",
+            EnergySupplyTariff::SevenHourOffPeak => "7-Hour Off Peak Tariff",
+            EnergySupplyTariff::TenHourOffPeak => "10-Hour Off Peak Tariff",
+            EnergySupplyTariff::VariableTimeOfDay => "Variable Time of Day Tariff",
+            EnergySupplyTariff::ExportTariff => "Export Tariff",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1284,7 +1330,7 @@ mod tests {
         let threshold_prices = vec![16., 16., 16., 20., 20., 20., 20., 20., 20., 20., 20., 20.];
 
         EnergySupplyTariffInfo {
-            tariff: EnergySupplyTariff::VariableTimeOfDay,
+            tariff: EnergySupplyTariff::VariableTimeOfDay.into(),
             threshold_charges: Some(threshold_charges),
             threshold_prices: Some(threshold_prices),
         }
@@ -1296,7 +1342,7 @@ mod tests {
         prices: [f64; 12],
     ) -> EnergySupplyTariffInfo {
         EnergySupplyTariffInfo {
-            tariff,
+            tariff: tariff.into(),
             threshold_charges: Some(charges.to_vec()),
             threshold_prices: Some(prices.to_vec()),
         }
@@ -1305,7 +1351,7 @@ mod tests {
     #[fixture]
     fn export_tariff() -> EnergySupplyExportTariff {
         EnergySupplyExportTariff {
-            tariff_export: EnergySupplyTariff::ExportTariff,
+            tariff_export: EnergySupplyTariff::ExportTariff.into(),
             threshold_charges_export: Some([0.8; 12].to_vec()),
             threshold_prices_export: Some([5.; 12].to_vec()),
         }
@@ -1313,7 +1359,7 @@ mod tests {
 
     fn create_export_tariff(charges: [f64; 12], prices: [f64; 12]) -> EnergySupplyExportTariff {
         EnergySupplyExportTariff {
-            tariff_export: EnergySupplyTariff::ExportTariff,
+            tariff_export: EnergySupplyTariff::ExportTariff.into(),
             threshold_charges_export: Some(charges.to_vec()),
             threshold_prices_export: Some(prices.to_vec()),
         }
