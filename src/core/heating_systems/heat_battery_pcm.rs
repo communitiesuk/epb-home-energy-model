@@ -1023,7 +1023,7 @@ impl HeatBatteryPcm {
     }
 
     fn warn_if_schedule_exceeds_flow_temp(
-        source_name: &str,
+        _source_name: &str,
         source: &HeatBatteryChargingSource,
         simtime_iterator: &SimulationTimeIterator,
     ) -> anyhow::Result<()> {
@@ -7937,7 +7937,9 @@ mod tests {
             }
 
             #[rstest]
-            fn test_no_warning_temperature_schedule_within_flow_temp(simulation_time: SimulationTime) {
+            fn test_no_warning_temperature_schedule_within_flow_temp(
+                simulation_time: SimulationTime,
+            ) {
                 // No warning is emitted when all temperature schedule values are within flow limit.
                 let source = make_heat_source_wet_source(
                     simulation_time,

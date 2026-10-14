@@ -277,7 +277,7 @@ impl Emitters {
                                 .expect("length must be specified when using thermal_mass_per_m"),
                     ),
                     None => {
-                        radiators_without_mass = radiators_without_mass + 1;
+                        radiators_without_mass += 1;
                         *emitter_thermal_mass
                     }
                 };
