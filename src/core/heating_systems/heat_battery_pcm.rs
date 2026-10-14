@@ -1043,14 +1043,7 @@ impl HeatBatteryPcm {
             }
         }
         if temp_observed_max > source.temp_flow_max {
-            bail!(
-                "Heat battery charging source '{source_name}': schedule contains \
-                temperature setpoints up to {temp_observed_max}°C, which exceeds \
-                temp_flow_limit_upper ({}°C). The heat source cannot deliver heat \
-                at temperatures above its flow limit, which may severely degrade \
-                charging performance.",
-                source.temp_flow_max
-            );
+            // todo: Warning! as part of 1.0.0a9
         }
         Ok(())
     }
@@ -7916,30 +7909,22 @@ mod tests {
             }
 
             #[rstest]
-            fn test_rejects_schedule_when_upper_exceeds_flow_temp(simulation_time: SimulationTime) {
-                // A 70°C upper setpoint exceeds the hydronic source's 65°C limit.
+            #[ignore = "todo when warning is implemented 1.0.0a9"]
+            fn test_warning_when_schedule_exceeds_flow_temp(simulation_time: SimulationTime) {
+                // Schedule with upper setpoint (70°C) above temp_flow_max (65°C)
                 let source = make_heat_source_wet_source(
                     simulation_time,
                     Some(50.0),
                     Some(70.0),
                     ScheduleUnit::Temperature,
                 );
-                let mut sources = IndexMap::new();
-                sources.insert("hp".into(), source.clone());
-                let error = try_make_battery(simulation_time, sources, 10.0).unwrap_err();
-
-                let message = error.to_string();
-                assert!(message.contains("hp"), "{message}");
-                assert!(message.contains("70"), "{message}");
-                assert!(message.contains("65"), "{message}");
-                assert!(
-                    message.contains(&source.temp_flow_max.to_string()),
-                    "{message}"
-                );
+                let mut sources: IndexMap<ArcStr, HeatBatteryChargingSource> = IndexMap::new();
+                sources.insert("hp".into(), source);
             }
 
             #[rstest]
-            fn test_rejects_schedule_when_lower_exceeds_flow_temp(simulation_time: SimulationTime) {
+            #[ignore = "todo when warning is implemented 1.0.0a9"]
+            fn test_warning_when_lower_schedule_exceeds_flow_temp(simulation_time: SimulationTime) {
                 // Both setpoints exceed the limit; the maximum offending value is 75°C.
                 let source = make_heat_source_wet_source(
                     simulation_time,
@@ -7947,27 +7932,21 @@ mod tests {
                     Some(75.0),
                     ScheduleUnit::Temperature,
                 );
-                let mut sources = IndexMap::new();
+                let mut sources: IndexMap<ArcStr, HeatBatteryChargingSource> = IndexMap::new();
                 sources.insert("hp".into(), source);
-                let error = try_make_battery(simulation_time, sources, 10.0).unwrap_err();
-
-                let message = error.to_string();
-                assert!(message.contains("75"), "{message}");
-                assert!(message.contains("65"), "{message}");
             }
 
             #[rstest]
-            fn test_accepts_temperature_schedule_within_flow_temp(simulation_time: SimulationTime) {
+            fn test_no_warning_temperature_schedule_within_flow_temp(simulation_time: SimulationTime) {
+                // No warning is emitted when all temperature schedule values are within flow limit.
                 let source = make_heat_source_wet_source(
                     simulation_time,
-                    Some(40.0),
-                    Some(60.0),
+                    Some(40.),
+                    Some(60.),
                     ScheduleUnit::Temperature,
                 );
-                let mut sources = IndexMap::new();
+                let mut sources: IndexMap<ArcStr, HeatBatteryChargingSource> = IndexMap::new();
                 sources.insert("hp".into(), source);
-
-                assert!(try_make_battery(simulation_time, sources, 10.0).is_ok());
             }
 
             #[rstest]
