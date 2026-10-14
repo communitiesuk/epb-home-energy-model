@@ -1,4 +1,4 @@
-on: [ push ]
+on: [push]
 
 name: CI
 
@@ -8,8 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain
-      - uses: Swatinem/rust-cache
-      - uses: extractions/setup-just
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: extractions/setup-just@v4
       - run: cargo test --lib
       - run: cargo rustc --no-default-features -- -Awarnings
