@@ -10,6 +10,7 @@ use crate::{
     simulation_time::{SimulationTimeIteration, SimulationTimeIterator},
 };
 use anyhow::bail;
+use approx::relative_eq;
 use educe::Educe;
 use nalgebra::{Vector1, Vector3};
 use parking_lot::RwLock;
@@ -252,8 +253,18 @@ impl ElecStorageHeater {
         current_profile.energy_charged = energy_charged;
 
         let mut q_released_max: Option<f64> = None;
-
-        if q_released_min > energy_demand {
+        if q_released_min > energy_demand
+            || relative_eq!(
+                q_released_min,
+                energy_demand,
+                epsilon = 1e-10,
+                max_relative = 1e-9
+            )
+        {
+            // A demand at or below the minimum (passive) discharge is already met by
+            // that discharge, so deliver the minimum rather than running the active
+            // solver to hit the requested value. The isclose guard keeps a demand
+            // exactly equal to the minimum on this passive path.
             // Deliver at least the minimum energy
             current_profile.energy_delivered = q_released_min;
             self.storage.write().set_demand_met(q_released_min);
