@@ -943,8 +943,7 @@ pub struct Corpus {
     timestep_end_calcs: Arc<RwLock<Vec<HeatSystem>>>,
     initial_loop: AtomicBool,
     detailed_output_heating_cooling: bool,
-    vent_adjust_min_control: Option<ControlSetPoint>,
-    vent_adjust_max_control: Option<ControlSetPoint>,
+    vent_adjust_control: VentAdjustControl,
     temp_internal_air_prev: Arc<AtomicF64>,
     smart_appliance_controls: IndexMap<ArcStr, Arc<SmartApplianceControl>>,
     input: Arc<Input>,
@@ -1042,18 +1041,14 @@ impl Corpus {
         let mut cool_system_name_for_zone: IndexMap<ArcStr, Vec<ArcStr>> = Default::default();
 
         // infiltration ventilation
-        let (
-            infiltration_ventilation,
-            window_adjust_control,
-            vent_adjust_min_control,
-            vent_adjust_max_control,
-        ) = infiltration_ventilation_from_input(
-            &input.zone,
-            &input.infiltration_ventilation,
-            &controls,
-            &mut energy_supplies,
-            output_options.detailed_output_heating_cooling,
-        )?;
+        let (infiltration_ventilation, window_adjust_control, vent_adjust_control) =
+            infiltration_ventilation_from_input(
+                &input.zone,
+                &input.infiltration_ventilation,
+                &controls,
+                &mut energy_supplies,
+                output_options.detailed_output_heating_cooling,
+            )?;
 
         let infiltration_ventilation = Arc::from(infiltration_ventilation);
 
@@ -1396,8 +1391,7 @@ impl Corpus {
             timestep_end_calcs,
             initial_loop: AtomicBool::new(false),
             detailed_output_heating_cooling: output_options.detailed_output_heating_cooling,
-            vent_adjust_min_control,
-            vent_adjust_max_control,
+            vent_adjust_control,
             temp_internal_air_prev,
             smart_appliance_controls,
             input,
@@ -1781,14 +1775,7 @@ impl Corpus {
         let wind_direction = self.external_conditions.wind_direction(simtime);
         let temp_ext_air = self.external_conditions.air_temp(&simtime);
         let temp_int_air = self.temp_internal_air_prev_timestep();
-        let ach_min = self
-            .vent_adjust_min_control
-            .as_ref()
-            .and_then(|c| c.setpnt(&simtime));
-        let ach_max = self
-            .vent_adjust_max_control
-            .as_ref()
-            .and_then(|c| c.setpnt(&simtime));
+        let (ach_min, ach_max) = self.vent_adjust_control.setpnt(&simtime);
         // Calculate timestep in seconds
         let delta_t = delta_t_h * SECONDS_PER_HOUR as f64;
 
@@ -4208,8 +4195,7 @@ fn infiltration_ventilation_from_input(
 ) -> anyhow::Result<(
     InfiltrationVentilation,
     Option<ControlSetPoint>,
-    Option<ControlSetPoint>,
-    Option<ControlSetPoint>,
+    VentAdjustControl,
 )> {
     let window_adjust_control = input
         .control_window_adjust
@@ -4217,33 +4203,34 @@ fn infiltration_ventilation_from_input(
         .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
     let window_adjust_control: Option<ControlSetPoint> = window_adjust_control.and_then(Into::into);
 
-    let (vent_adjust_min_control, vent_adjust_max_control): (
-        Option<ControlSetPoint>,
-        Option<ControlSetPoint>,
-    ) = if let InfiltrationVentilationInput {
-        vent_adjust_controls:
-            VentAdjustControlReferences::Bounded {
-                control_vent_adjust_min,
-                control_vent_adjust_max,
-            },
-        ..
-    } = input
-    {
-        (
-            control_vent_adjust_min
+    let vent_adjust_control = match &input.vent_adjust_controls {
+        VentAdjustControlReferences::Unified {
+            control_vent_adjust,
+        } => {
+            let control = controls.get_with_string(control_vent_adjust).ok_or_else(|| anyhow!("Referenced control '{control_vent_adjust}' for vent adjusting was not provided"))?;
+            let range_time_control = if let Control::RangeTime(range_time_control) = control {
+                range_time_control
+            } else {
+                bail!("Control '{control_vent_adjust}' for vent adjusting is not a range time control");
+            };
+
+            VentAdjustControl::Unified(range_time_control)
+        }
+        VentAdjustControlReferences::Bounded {
+            control_vent_adjust_min,
+            control_vent_adjust_max,
+        } => VentAdjustControl::MinMax {
+            control_min: control_vent_adjust_min
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl))
                 .and_then(Into::into),
-            control_vent_adjust_max
+            control_max: control_vent_adjust_max
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl))
                 .and_then(Into::into),
-        )
-    } else {
-        unimplemented!() // TODO during 1.0.0a9 migration: handle variant with unified control_vent_adjust
+        },
     };
 
-    // TODO: Added None values temporarily as placeholders durung migration to 1.0.0a9
     let ventilation = InfiltrationVentilation::create(
         input,
         zones,
@@ -4255,12 +4242,32 @@ fn infiltration_ventilation_from_input(
         None,
     )?;
 
-    Ok((
-        ventilation,
-        window_adjust_control,
-        vent_adjust_min_control,
-        vent_adjust_max_control,
-    ))
+    Ok((ventilation, window_adjust_control, vent_adjust_control))
+}
+
+/// A variant of CompositeRangeTimeControl just used for vent adjust where the min/max variants can be optional.
+#[derive(Clone, Debug)]
+enum VentAdjustControl {
+    Unified(Arc<RangeTimeControl>),
+    MinMax {
+        control_min: Option<ControlSetPoint>,
+        control_max: Option<ControlSetPoint>,
+    },
+}
+
+impl VentAdjustControl {
+    fn setpnt(&self, simtime: &SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
+        match self {
+            Self::Unified(control) => control.setpnt(simtime),
+            Self::MinMax {
+                control_min,
+                control_max,
+            } => (
+                control_min.as_ref().and_then(|c| c.setpnt(simtime)),
+                control_max.as_ref().and_then(|c| c.setpnt(simtime)),
+            ),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
