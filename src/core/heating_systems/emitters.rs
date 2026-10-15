@@ -253,8 +253,9 @@ impl Emitters {
 
         let mut model_emitters: Vec<Option<Arc<WetEmitter>>> = vec![None; emitters.len()];
 
-        let mut thermal_mass = thermal_mass;
+        let thermal_mass_before_processing_emitters = thermal_mass;
 
+        let mut thermal_mass = thermal_mass;
         let mut radiators_without_mass: usize = Default::default();
 
         // 1. process radiators first
@@ -276,10 +277,7 @@ impl Emitters {
                             * length
                                 .expect("length must be specified when using thermal_mass_per_m"),
                     ),
-                    None => {
-                        radiators_without_mass += 1;
-                        *emitter_thermal_mass
-                    }
+                    None => *emitter_thermal_mass,
                 };
 
                 // we should have either constant or constant_per_m with a length
@@ -290,6 +288,8 @@ impl Emitters {
 
                 if let Some(emitter_thermal_mass) = emitter_thermal_mass {
                     thermal_mass = Some(thermal_mass.unwrap_or(0.) + emitter_thermal_mass);
+                } else {
+                    radiators_without_mass += 1;
                 }
 
                 model_emitters[i].replace(Arc::new(WetEmitter::Radiator {
@@ -316,7 +316,7 @@ impl Emitters {
             // input is required - including only the thermal mass of the radiators.
         }
 
-        if thermal_mass.is_none() && radiators_without_mass > 0 {
+        if thermal_mass_before_processing_emitters.is_none() && radiators_without_mass > 0 {
             bail!(
                 "Some radiators do not specify thermal_mass (or thermal_mass_per_m), 
                 and no top-level thermal_mass is set on the distribution system to cover them.
@@ -2446,6 +2446,51 @@ mod tests {
         )
         .is_err());
 
+        // Test that the constructor throws when some radiators specify thermal_mass but
+        // others don't and no top-level thermal_mass is provided to cover the gap
+        let emitters_partial_mass = [
+            WetEmitterInput::Radiator {
+                constant: Some(0.08),
+                length: None,
+                constant_per_m: None,
+                exponent: 1.2,
+                frac_convective: 0.4,
+                thermal_mass: Some(0.14),
+                thermal_mass_per_m: None,
+            },
+            WetEmitterInput::Radiator {
+                constant: Some(0.08),
+                length: None,
+                constant_per_m: None,
+                exponent: 1.2,
+                frac_convective: 0.4,
+                thermal_mass: None,
+                thermal_mass_per_m: None,
+            },
+        ];
+        assert!(Emitters::new(
+            None,
+            &emitters_partial_mass,
+            &[],
+            10.0,
+            true,
+            Some(3.),
+            Some(3.),
+            Some(6.),
+            None,
+            Arc::new(RwLock::new(heat_source.clone())),
+            zone.clone(),
+            Arc::new(external_conditions.clone()),
+            ecodesign_controller,
+            55.0,
+            20.,
+            simulation_time.total_steps(),
+            None,
+            Some(true),
+            None,
+        )
+        .is_err());
+
         // Test that the thermal mass can be None for a UFH type
         let emitters = [WetEmitterInput::Ufh {
             equivalent_specific_thermal_mass: 0.,
@@ -3856,7 +3901,7 @@ mod tests {
                 Some(true),
                 Some(false),
                 None,
-                todo!("energy_output_min as part of 1.0.0a9 migration"),
+                0.,
             )
             .unwrap();
 
