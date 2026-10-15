@@ -8,6 +8,7 @@ use crate::core::controls::time_control::{
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::common::HeatingServiceType;
+use crate::core::heating_systems::storage_tank::THERMAL_CONSTANTS_F_STO_M;
 use crate::core::material_properties::WATER;
 use crate::core::solvers::solve_ivp::{SharedIvpSolveFunction, TerminatingEvent};
 use crate::core::solvers::{
@@ -1240,6 +1241,7 @@ pub(crate) struct HeatBatteryDryCore {
     power_standby: f64,
     detailed_results: Option<Arc<RwLock<Vec<DetailedResult>>>>,
     service_results: Arc<RwLock<Vec<ServiceResult>>>,
+    energy_delivered_by_service: Arc<RwLock<IndexMap<ArcStr, f64>>>,
     total_time_running_current_timestep: AtomicF64,
     pump_running_time_current_timestep: AtomicF64,
     flag_first_call: AtomicBool,
@@ -1308,6 +1310,11 @@ impl HeatBatteryDryCore {
             dry_core_max_output.clone(),
             *state_of_charge_init,
         )?));
+        // Cumulative energy delivered to each service over the whole calculation, in kWh
+        // (across all units). Unlike __service_results this is never reset at timestep end; it
+        // is read after the simulation to apportion the battery's charging energy between the
+        // services it feeds in proportion to the output each received.
+        let energy_delivered_by_service = Arc::new(RwLock::new(IndexMap::new()));
 
         let battery = Arc::new(Self {
             storage: storage.clone(),
@@ -1320,6 +1327,7 @@ impl HeatBatteryDryCore {
             power_standby: *power_standby,
             detailed_results: output_detailed_results.then_some(Arc::new(RwLock::new(vec![]))),
             service_results: Arc::new(RwLock::new(Vec::new())),
+            energy_delivered_by_service,
             total_time_running_current_timestep: Default::default(),
             pump_running_time_current_timestep: Default::default(),
             flag_first_call: AtomicBool::new(true),
@@ -1398,14 +1406,42 @@ impl HeatBatteryDryCore {
         ))
     }
 
+    /// Return the recoverable fraction of standing losses creditable as internal gains.
+    ///
+    /// Only the share of standing losses that reaches the heated space is
+    /// returned, given by the thermal loss recovery factor f_sto_m
+    /// (BS EN 15316-5:2017 Table B.3). This matches StorageTank, whose
+    /// recoverable storage losses already carry f_sto_m, so centralised
+    /// storage technologies are compared on a consistent basis. The remaining
+    /// losses escape the dwelling.
+    ///
+    /// Returns:
+    ///     Recoverable standing losses across all units, in kWh.
     pub(crate) fn get_battery_losses(&self) -> f64 {
-        let battery_losses = self.battery_losses.load(Ordering::SeqCst) * self.n_units() as f64;
+        let battery_losses = self.battery_losses.load(Ordering::SeqCst)
+            * self.n_units() as f64
+            * THERMAL_CONSTANTS_F_STO_M;
         self.battery_losses.store(0.0, Ordering::SeqCst);
         battery_losses
     }
 
     fn n_units(&self) -> u32 {
         self.storage.read().n_units
+    }
+
+    /// Return cumulative energy delivered to each service over the calculation.
+    ///
+    /// A running total, accumulated across timesteps and never reset, of the energy the
+    /// battery delivers to each service (keyed by energy supply connection name). It is read
+    /// after the simulation to apportion the battery's charging energy — metered on a single
+    /// connection rather than per service — between the services in proportion to the output
+    /// each received.
+    ///
+    /// Returns:
+    ///     Mapping of service connection name to cumulative delivered energy (kWh), across all
+    ///     units.
+    fn energy_delivered_by_service(&self) -> IndexMap<ArcStr, f64> {
+        self.energy_delivered_by_service.read().clone()
     }
 
     fn time_available(&self, time_start: f64, timestep: f64) -> f64 {

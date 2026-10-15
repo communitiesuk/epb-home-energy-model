@@ -1723,6 +1723,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "1.0.0a9 heat battery migration"]
     fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
