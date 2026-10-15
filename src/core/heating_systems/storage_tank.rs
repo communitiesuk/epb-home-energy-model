@@ -853,7 +853,7 @@ impl StorageTank {
                             heat_source_wet.energy_output_max(
                                 temp_flow,
                                 temp_flow,
-                                true,
+                                true.into(),
                                 simulation_time,
                             )?
                         }
@@ -1244,7 +1244,7 @@ impl StorageTank {
                     input_energy_adj,
                     temp_flow,
                     temp_flow,
-                    bypass_min_ctrl,
+                    bypass_min_ctrl.into(),
                     simulation_time_iteration,
                 )? - primary_pipework_losses_kwh;
                 self.pipework_primary_gains_for_timestep
@@ -2266,7 +2266,7 @@ impl SmartHotWaterTank {
                             heat_source_wet.energy_output_max(
                                 temp_flow,
                                 temp_flow,
-                                true,
+                                true.into(),
                                 simulation_time,
                             )?
                         }

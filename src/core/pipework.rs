@@ -32,6 +32,12 @@ pub enum PipeworkLocation {
 
 impl From<WaterPipeworkLocation> for PipeworkLocation {
     fn from(value: WaterPipeworkLocation) -> Self {
+        (&value).into()
+    }
+}
+
+impl From<&WaterPipeworkLocation> for PipeworkLocation {
+    fn from(value: &WaterPipeworkLocation) -> Self {
         match value {
             WaterPipeworkLocation::Internal => PipeworkLocation::Internal,
             WaterPipeworkLocation::External => PipeworkLocation::External,

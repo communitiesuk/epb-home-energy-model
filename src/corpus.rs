@@ -30,7 +30,8 @@ use crate::core::heating_systems::heat_battery_drycore::{
     HeatBatteryDryCore, HeatBatteryDryCoreServiceWaterDirect,
 };
 use crate::core::heating_systems::heat_battery_pcm::{
-    HeatBatteryChargingSource, HeatBatteryPcm, HeatBatteryPcmServiceWaterDirect,
+    validate_no_schedule_overlap, ChargingSourceTypeSpecificData, HeatBatteryChargingSource,
+    HeatBatteryPcm, HeatBatteryPcmServiceWaterDirect,
 };
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
 use crate::core::heating_systems::heat_pump::{
@@ -44,6 +45,7 @@ use crate::core::heating_systems::storage_tank::{
 };
 use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::material_properties::WATER;
+use crate::core::pipework::Pipework;
 use crate::core::schedule::{
     expand_boolean_schedule, expand_events, expand_numeric_schedule, reject_nones, reject_nulls,
     ScheduleEvent, TypedScheduleEvent,
@@ -67,8 +69,8 @@ use crate::core::space_heat_demand::zone::{
     HeatBalanceNodeType, Zone, ZoneTempInternalAir,
 };
 use crate::core::units::{
-    kelvin_to_celsius, Orientation360, DAYS_PER_YEAR, HOURS_PER_DAY, SECONDS_PER_HOUR,
-    WATTS_PER_KILOWATT,
+    kelvin_to_celsius, Orientation360, DAYS_PER_YEAR, HOURS_PER_DAY, MILLIMETRES_IN_METRE,
+    SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 #[cfg(test)]
@@ -101,7 +103,8 @@ use crate::input::{
     MAIN_REFERENCE, PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
 };
 use crate::input_dependency_resolvers::{
-    build_preheated_water_source_dependency_graph, topological_sort_preheated_water_sources,
+    build_heat_battery_charging_dependency_graph, build_preheated_water_source_dependency_graph,
+    topological_sort_heat_battery_charging, topological_sort_preheated_water_sources,
 };
 use crate::output::{
     Output, OutputCop, OutputCore, OutputHeatingCoolingSystem, OutputHotWaterSystems, OutputStatic,
@@ -932,6 +935,8 @@ pub struct Corpus {
     pub(crate) heat_sources_wet: IndexMap<ArcStr, WetHeatSource>,
     pub(crate) hot_water_sources: IndexMap<ArcStr, HotWaterSource>,
     pub(crate) heat_sources_wet_with_buffer_tank: Vec<ArcStr>,
+    heat_source_wet_boilers: Vec<Arc<RwLock<Boiler>>>,
+    charging_connection_names_for_heat_battery: IndexMap<ArcStr, Vec<ArcStr>>,
     pub(crate) space_heat_systems: IndexMap<ArcStr, Arc<Mutex<SpaceHeatSystem>>>,
     pub(crate) space_cool_systems: IndexMap<ArcStr, AirConditioning>,
     pub(crate) on_site_generation: IndexMap<ArcStr, PhotovoltaicSystem>,
@@ -1190,11 +1195,16 @@ impl Corpus {
         // (battery_name, charging_source_obj, source_input_data)
         // The charging_source_obj is the mutable HeatBatteryChargingSource dataclass
         // that needs its heat_source_service field set.
-        let _pcm_hydronic_charging_pending: Vec<(
+        let mut pcm_hydronic_charging_pending: Vec<(
             ArcStr,
-            HeatBatteryChargingSource,
+            Arc<HeatBatteryChargingSource>,
             HeatBatteryPcmChargingSource,
         )> = Default::default();
+
+        let mut heat_source_wet_boilers: Vec<Arc<RwLock<Boiler>>> = Default::default();
+
+        let mut charging_connection_names_for_heat_battery: IndexMap<ArcStr, Vec<ArcStr>> =
+            Default::default();
 
         let mut heat_sources_wet_with_buffer_tank: Vec<ArcStr> = vec![];
         let mechanical_ventilations = infiltration_ventilation.mech_vents();
@@ -1215,7 +1225,8 @@ impl Corpus {
                     heat_source,
                     internal_gains_from_heat_source_wet,
                     timestep_end_calcs_from_heat_sources,
-                    heat_source_wet_boilers: _, // TODO: hook up to corpus
+                    heat_source_wet_boilers: heat_source_wet_boilers_from_heat_source,
+                    pcm_hydronic_charging_pending: pcm_hydronic_charging_pending_from_heat_source,
                 } = heat_source_wet_from_input(
                     name,
                     (*heat_source_wet_details).clone(),
@@ -1234,11 +1245,13 @@ impl Corpus {
                 for (name, internal_gains_item) in internal_gains_from_heat_source_wet {
                     internal_gains.insert(name, Gains::Internal(internal_gains_item));
                 }
+
                 for timestep_end_calc_heat_source in timestep_end_calcs_from_heat_sources {
                     timestep_end_calcs
                         .write()
                         .push(HeatSystem::WetSystem(timestep_end_calc_heat_source));
                 }
+
                 if let HeatSourceWetDetails::HeatPump {
                     buffer_tank: Some(_),
                     ..
@@ -1246,6 +1259,16 @@ impl Corpus {
                 {
                     heat_sources_wet_with_buffer_tank.push(name.into());
                 }
+
+                heat_source_wet_boilers.extend(heat_source_wet_boilers_from_heat_source);
+
+                if let Some(pcm_hydronic_charging_pending_from_heat_source) =
+                    pcm_hydronic_charging_pending_from_heat_source
+                {
+                    pcm_hydronic_charging_pending
+                        .extend(pcm_hydronic_charging_pending_from_heat_source);
+                }
+
                 anyhow::Ok((name.into(), heat_source))
             })
             .collect::<anyhow::Result<IndexMap<_, WetHeatSource>>>()?;
@@ -1255,7 +1278,106 @@ impl Corpus {
         // reference a heat pump that appears later in the input dict.
         // Sort by dependency order so that if battery B charges battery A,
         // B is connected first. Also detects circular charging dependencies.
-        // TODO: code to hook up goes here
+        if !pcm_hydronic_charging_pending.is_empty() {
+            let dep_graph =
+                build_heat_battery_charging_dependency_graph(&pcm_hydronic_charging_pending)?;
+            let sorted_names = topological_sort_heat_battery_charging(&dep_graph)?;
+            let name_order = sorted_names
+                .into_iter()
+                .enumerate()
+                .map(|(i, name)| (name, i))
+                .collect::<IndexMap<_, _>>();
+            pcm_hydronic_charging_pending.sort_by_key(|(entry_name, _, _)| name_order[entry_name]);
+        }
+        for (battery_name, charging_source, src_data) in pcm_hydronic_charging_pending {
+            // charging source is always expected to be hydronic here
+            let HeatBatteryPcmChargingSource::Hydronic {
+                name,
+                temp_flow_limit_upper,
+                ..
+            } = src_data
+            else {
+                unreachable!("charging source is always expected to be hydronic here")
+            };
+            let heat_source_wet_name = name.clone();
+            let heat_source_wet = heat_sources_wet.get(&heat_source_wet_name).ok_or_else(|| {
+                anyhow!("HeatBattery {battery_name} references unknown HeatSourceWet {heat_source_wet_name}")
+            })?;
+            let service_name = format!("{heat_source_wet_name}_pcm_charging: {battery_name}");
+
+            let service: HeatSourceWet = match heat_source_wet {
+                WetHeatSource::HeatPump(heat_pump) => {
+                    HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
+                        heat_pump.clone(),
+                        &service_name,
+                        temp_flow_limit_upper,
+                        None,
+                        charging_source.as_ref().control.clone().into(),
+                    )?)
+                }
+                WetHeatSource::Boiler(boiler) => {
+                    HeatSourceWet::WaterRegular(Boiler::create_service_hot_water_regular(
+                        boiler.clone(),
+                        &service_name,
+                        charging_source.as_ref().control.clone().into(),
+                    )?)
+                }
+                WetHeatSource::DirectElectricBoiler(boiler) => HeatSourceWet::WaterRegular(
+                    DirectElectricBoiler::create_service_hot_water_regular(
+                        boiler.clone(),
+                        &service_name,
+                        charging_source.as_ref().control.clone().into(),
+                    )?,
+                ),
+                WetHeatSource::HeatBattery(battery) => match battery {
+                    HeatBattery::DryCore(battery) => {
+                        HeatSourceWet::HeatBatteryHotWater(HeatBatteryWaterService::DryCore(
+                            HeatBatteryDryCore::create_service_hot_water_regular(
+                                battery.clone(),
+                                &service_name,
+                                charging_source.as_ref().control.clone().into(),
+                            )?,
+                        ))
+                    }
+                    HeatBattery::Pcm(battery) => {
+                        HeatSourceWet::HeatBatteryHotWater(HeatBatteryWaterService::Pcm(
+                            HeatBatteryPcm::create_service_hot_water_regular(
+                                battery.clone(),
+                                &service_name,
+                                charging_source.as_ref().control.clone().into(),
+                            )?,
+                        ))
+                    }
+                },
+                WetHeatSource::Hiu(heat_network) => HeatSourceWet::HeatNetworkWaterStorage(
+                    HeatNetwork::create_service_hot_water_storage(
+                        heat_network.clone(),
+                        &service_name,
+                        charging_source.as_ref().control.clone().into(),
+                    ),
+                ),
+            };
+
+            // Set the service on the mutable HeatBatteryChargingSource —
+            // same object the battery holds, so this establishes the connection
+            charging_source
+                .as_ref()
+                .heat_source_service
+                .set(service)
+                .expect(
+                    "The heat_source_service on this battery should not have already been set.",
+                );
+
+            // The wet source records the energy it consumes to charge this battery on the
+            // charging service connection, separate from the battery's own connection.
+            // Add it so __charging_energy_for_indirect_sources() folds the charging energy
+            // into the CoP denominator of every service the battery supplies; otherwise
+            // the denominator omits the charging energy and the CoP is implausibly high.
+            charging_connection_names_for_heat_battery
+                .entry(battery_name)
+                .or_default()
+                .push(service_name.into());
+        }
 
         let mut energy_supply_conn_names_for_hot_water_source: IndexMap<ArcStr, Vec<ArcStr>> =
             Default::default();
@@ -1444,6 +1566,8 @@ impl Corpus {
             heat_sources_wet,
             hot_water_sources,
             heat_sources_wet_with_buffer_tank,
+            heat_source_wet_boilers,
+            charging_connection_names_for_heat_battery,
             space_heat_systems,
             space_cool_systems,
             on_site_generation,
@@ -4719,31 +4843,6 @@ impl HeatSource {
             HeatSource::Wet(ref heat_source) => heat_source.setpnt(simtime),
         }
     }
-    pub(crate) fn _demand_energy(
-        &mut self,
-        energy_demand: f64,
-        temp_return: f64,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        match self {
-            HeatSource::Storage(ref mut storage) => match storage {
-                HeatSourceWithStorageTank::Immersion(imm) => {
-                    imm.lock()
-                        .demand_energy(energy_demand, None, simulation_time_iteration)
-                }
-                HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar
-                    .lock()
-                    .demand_energy(energy_demand, simulation_time_iteration.index)),
-            },
-            HeatSource::Wet(ref mut wet) => wet.demand_energy(
-                energy_demand,
-                None,
-                temp_return.into(),
-                false, // TODO check this is correct for 1.0.0a9 migration
-                simulation_time_iteration,
-            ),
-        }
-    }
 
     pub fn as_immersion_heater(&self) -> Option<Arc<Mutex<ImmersionHeater>>> {
         match self {
@@ -5085,6 +5184,13 @@ struct HeatSourceWetDataFromInput {
     internal_gains_from_heat_source_wet: Vec<(ArcStr, InternalGains)>,
     timestep_end_calcs_from_heat_sources: Vec<WetHeatSource>,
     heat_source_wet_boilers: Vec<Arc<RwLock<Boiler>>>,
+    pcm_hydronic_charging_pending: Option<
+        Vec<(
+            ArcStr,
+            Arc<HeatBatteryChargingSource>,
+            HeatBatteryPcmChargingSource,
+        )>,
+    >,
 }
 
 fn heat_source_wet_from_input(
@@ -5104,6 +5210,7 @@ fn heat_source_wet_from_input(
     let mut internal_gains_from_heat_source_wet = vec![];
     let mut timestep_end_calcs = vec![];
     let mut heat_source_wet_boilers = vec![];
+    let mut pcm_hydronic_charging_pending = None;
     let wet_heat_source = match &input {
         HeatSourceWetDetails::HeatPump {
             source_type,
@@ -5339,40 +5446,194 @@ fn heat_source_wet_from_input(
                     )
                         })?
                         .clone();
-                    let _energy_supply_conn =
-                        EnergySupply::connection(energy_supply.clone(), name)?; // TODO 1.0.0a9 migration
+                    let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
-                    let _control_charge = match charging_config {
-                        PcmBatteryChargingConfiguration::ChargeControl {
-                            control_charge, ..
-                        } => control_charge,
-                        PcmBatteryChargingConfiguration::RangeControl { .. } => {
-                            todo!("as part of migration to alpha9")
-                        }
-                    };
+                    // Store hydronic source input data for post-processing after
+                    // all heat_sources_wet are created (forward reference resolution)
+                    let mut pcm_hydronic_sources: Vec<(ArcStr, HeatBatteryPcmChargingSource)> =
+                        vec![];
+                    let (heat_source_data, pcm_charge_control): (_, Option<Arc<ChargeControl>>) =
+                        match charging_config {
+                            PcmBatteryChargingConfiguration::RangeControl {
+                                heat_source, ..
+                            } => {
+                                let heat_source_data: IndexMap<ArcStr, Arc<HeatBatteryChargingSource>> =
+                                heat_source
+                                    .iter()
+                                    .map(|(source_name, source)| {
+                                        let (control_reference, schedule_unit) = match source {
+                                            HeatBatteryPcmChargingSource::Electric {
+                                                control,
+                                                schedule_unit,
+                                                ..
+                                            } => (control, schedule_unit),
+                                            HeatBatteryPcmChargingSource::Hydronic {
+                                                control,
+                                                schedule_unit,
+                                                ..
+                                            } => (control, schedule_unit),
+                                        };
 
-                    WetHeatSource::HeatBattery(HeatBattery::Pcm(Arc::new(RwLock::new(
-                        todo!("as part of migration to 1.0.0a9"),
-                        // HeatBatteryPcm::new(
-                        //     // &input,
-                        //     // controls
-                        //     //     .get_with_string(control_charge)
-                        //     //     .unwrap_or_else(|| {
-                        //     //         panic!(
-                        //     //             "expected a control to be registered with the name '{control_charge}'"
-                        //     //         )
-                        //     //     })
-                        //     //     .clone(),
-                        //     // energy_supply,
-                        //     // energy_supply_conn,
-                        //     // simulation_time.step_in_hours(),
-                        //     // None,
-                        //     // None,
-                        //     // None,
-                        //     // None,
-                        //     // Some(detailed_output_heating_cooling),
-                        // ),
-                    ))))
+                                        let range_time_control = if let Control::RangeTime(
+                                            range_time_control,
+                                        ) =
+                                            controls.get_with_string(control_reference).ok_or_else(
+                                                || anyhow!("Control not found for PCM heat source"),
+                                            )? {
+                                            range_time_control.clone()
+                                        } else {
+                                            return Err(anyhow!(
+                                                "Expected RangeTime control for PCM heat source"
+                                            ));
+                                        };
+
+                                        let heat_source = (
+                                            source_name.clone(),
+                                            Arc::new(HeatBatteryChargingSource {
+                                                type_data: match source {
+                                                    HeatBatteryPcmChargingSource::Electric { rated_charge_power, .. } => {
+                                                        ChargingSourceTypeSpecificData::DirectElectric { rated_charge_power: *rated_charge_power }
+                                                    },
+                                                    HeatBatteryPcmChargingSource::Hydronic {  temp_flow_limit_upper,  flow_rate_charging_l_per_min, a, b, velocity_in_hex_tube_at_1_l_per_min_m_per_s, inlet_diameter_mm, .. } => {
+                                                        ChargingSourceTypeSpecificData::HeatSourceWet {
+                                                            temp_flow_max: *temp_flow_limit_upper,
+                                                            flow_rate_charging_l_per_min: *flow_rate_charging_l_per_min,
+                                                            hex_a: *a,
+                                                            hex_b: *b,
+                                                            hex_velocity_at_1_l_per_min: *velocity_in_hex_tube_at_1_l_per_min_m_per_s,
+                                                            hex_capillary_diameter_m: *inlet_diameter_mm / MILLIMETRES_IN_METRE as f64,
+                                                        }
+                                                    }
+                                                },
+                                                control: range_time_control,
+                                                heat_source_service: Default::default(),
+                                                schedule_unit: *schedule_unit,
+                                            }),
+                                        );
+
+                                        if matches!(source, HeatBatteryPcmChargingSource::Hydronic { .. }) {
+                                            pcm_hydronic_sources.push((source_name.clone(), source.clone()));
+                                        }
+
+                                        Ok(heat_source)
+                                    })
+                                    .collect::<Result<_, _>>()?;
+
+                                let pcm_charge_control = None;
+
+                                // Validate that charging source schedules don't overlap.
+                                // The methodology requires non-overlapping active periods
+                                // to prevent simultaneous charging from multiple sources.
+                                if pcm_hydronic_sources.len() > 1 {
+                                    validate_no_schedule_overlap(
+                                        &heat_source_data,
+                                        name,
+                                        simulation_time.as_ref(),
+                                    )?;
+                                }
+
+                                (Some(heat_source_data), pcm_charge_control)
+                            }
+                            PcmBatteryChargingConfiguration::ChargeControl {
+                                control_charge,
+                                ..
+                            } => {
+                                let charge_control = controls.get_with_string(control_charge).ok_or_else(|| anyhow!("The control '{control_charge}' referenced by a PCM heat battery is not provided"))?;
+
+                                let charge_control = if let Control::Charge(charge_control) =
+                                    charge_control
+                                {
+                                    charge_control
+                                } else {
+                                    bail!("The control '{control_charge}' referenced by a PCM heat battery is not a charge control");
+                                };
+
+                                (None, Some(charge_control))
+                            }
+                        };
+
+                    let primary_pipework: Vec<Pipework> =
+                        if let PcmBatteryChargingConfiguration::RangeControl {
+                            primary_pipework: Some(primary_pipework),
+                            ..
+                        } = charging_config
+                        {
+                            primary_pipework
+                                .iter()
+                                .map(|pw_data| {
+                                    let WaterPipework {
+                                        location,
+                                        internal_diameter_mm,
+                                        external_diameter_mm,
+                                        length,
+                                        insulation_thermal_conductivity,
+                                        insulation_thickness_mm,
+                                        surface_reflectivity,
+                                        pipe_contents,
+                                    } = pw_data;
+
+                                    Pipework::new(
+                                        location.into(),
+                                        *internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
+                                        *external_diameter_mm / MILLIMETRES_IN_METRE as f64,
+                                        *length,
+                                        *insulation_thermal_conductivity,
+                                        *insulation_thickness_mm / MILLIMETRES_IN_METRE as f64,
+                                        *surface_reflectivity,
+                                        *pipe_contents,
+                                    )
+                                })
+                                .collect::<Result<_, _>>()?
+                        } else {
+                            Default::default()
+                        };
+
+                    let heat_source = HeatBatteryPcm::new(
+                        &input,
+                        energy_supply,
+                        energy_supply_conn,
+                        simulation_time.as_ref(),
+                        external_conditions.clone(),
+                        if let PcmBatteryChargingConfiguration::RangeControl {
+                            temp_min_useful,
+                            ..
+                        } = charging_config
+                        {
+                            Some(*temp_min_useful)
+                        } else {
+                            None
+                        },
+                        temp_internal_air_fn.clone(),
+                        pcm_charge_control,
+                        heat_source_data.clone(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        detailed_output_heating_cooling.into(),
+                        primary_pipework.into(),
+                    )?;
+
+                    // Queue hydronic sources for post-processing connection.
+                    // HeatBatteryChargingSource values are wrapped in `Arc`s, so
+                    // setting heat_source_service on them later updates the
+                    // same objects the battery holds.
+                    if let Some(heat_source_data) = &heat_source_data {
+                        let name = ArcStr::from(name);
+                        let collected_pcm_hydronic_sources = pcm_hydronic_sources
+                            .iter()
+                            .map(|(src_name, src_data)| {
+                                (
+                                    name.clone(),
+                                    heat_source_data[src_name].clone(),
+                                    src_data.clone(),
+                                )
+                            })
+                            .collect();
+                        pcm_hydronic_charging_pending.replace(collected_pcm_hydronic_sources);
+                    }
+
+                    WetHeatSource::HeatBattery(HeatBattery::Pcm(Arc::new(RwLock::new(heat_source))))
                 }
                 HeatBatteryInput::DryCore {
                     control_charge,
@@ -5426,6 +5687,7 @@ fn heat_source_wet_from_input(
         internal_gains_from_heat_source_wet,
         timestep_end_calcs_from_heat_sources: timestep_end_calcs,
         heat_source_wet_boilers,
+        pcm_hydronic_charging_pending,
     })
 }
 
@@ -5610,7 +5872,6 @@ fn heat_source_from_input(
                                     HeatBatteryDryCore::create_service_hot_water_regular(
                                         _dry_core,
                                         &energy_supply_conn_name,
-                                        cold_water_source.clone(),
                                         control, // TODO: update as part of 1.0.0a9 migration
                                     )?
                                 }
@@ -5619,8 +5880,7 @@ fn heat_source_from_input(
                                 HeatBatteryPcm::create_service_hot_water_regular(
                                     pcm,
                                     &energy_supply_conn_name,
-                                    cold_water_source.clone(),
-                                    range_time_control, // TODO: update as part of 1.0.0a9 migration
+                                    range_time_control,
                                 )?,
                             ),
                         }),

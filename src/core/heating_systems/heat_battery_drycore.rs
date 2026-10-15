@@ -907,7 +907,6 @@ pub(crate) struct HeatBatteryDryCoreServiceWaterRegular {
     core_service: HeatBatteryDryCoreService,
     heat_battery: Arc<HeatBatteryDryCore>,
     service_name: ArcStr,
-    cold_feed: WaterSupply,
     control: CompositeRangeTimeControl,
 }
 
@@ -915,14 +914,12 @@ impl HeatBatteryDryCoreServiceWaterRegular {
     pub(crate) fn new(
         heat_battery: Arc<HeatBatteryDryCore>,
         service_name: ArcStr,
-        cold_feed: WaterSupply,
         control: CompositeRangeTimeControl,
     ) -> Self {
         Self {
             core_service: HeatBatteryDryCoreService::new(either::Left(control.clone()).into()),
             heat_battery,
             service_name,
-            cold_feed,
             control,
         }
     }
@@ -1353,7 +1350,6 @@ impl HeatBatteryDryCore {
     pub(crate) fn create_service_hot_water_regular(
         battery: Arc<Self>,
         service_name: &str,
-        cold_feed: WaterSupply,
         control: CompositeRangeTimeControl,
     ) -> anyhow::Result<HeatBatteryDryCoreServiceWaterRegular> {
         battery.create_service_connection(service_name)?;
@@ -1361,7 +1357,6 @@ impl HeatBatteryDryCore {
         Ok(HeatBatteryDryCoreServiceWaterRegular::new(
             battery.clone(),
             service_name.into(),
-            cold_feed,
             control,
         ))
     }
@@ -2440,11 +2435,9 @@ mod tests {
             None,
             simulation_time.step,
         ));
-        let mock_cold_feed = mock_cold_feed(None); // we can just set up a mock cold water source here - it isn't used
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
             "dhw_service",
-            mock_cold_feed.clone(),
             CompositeRangeTimeControl::MinMax {
                 control_min: control_min.clone().into(),
                 control_max: control_max.clone().into(),
@@ -2475,7 +2468,6 @@ mod tests {
         let service1 = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery,
             "dhw_service1",
-            mock_cold_feed.clone(),
             CompositeRangeTimeControl::MinMax {
                 control_min: mock_control_dhw_off.into(),
                 control_max: control_max.into(),
@@ -2527,7 +2519,6 @@ mod tests {
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery_without_instant_backup,
             "dhw_ceiling",
-            mock_cold_feed(Some(70.)),
             CompositeRangeTimeControl::MinMax {
                 control_min: control_min.into(),
                 control_max: control_max.into(),
@@ -2568,7 +2559,6 @@ mod tests {
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery,
             "dhw_bypass",
-            mock_cold_feed(Some(70.)),
             CompositeRangeTimeControl::MinMax {
                 control_min: mock_control_dhw_off.into(),
                 control_max: control_max.into(),
@@ -2618,7 +2608,6 @@ mod tests {
         let service = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery,
             "dhw_range",
-            mock_cold_feed(None),
             range_time_control.into(),
         )
         .unwrap();
@@ -2730,13 +2719,10 @@ mod tests {
         default_control_max: Arc<SetpointTimeControl>,
         mock_control_space: Arc<SetpointTimeControl>,
     ) {
-        let mock_cold_feed = mock_cold_feed(None); // we can just set up a normal cold water source here - it isn't used
-
         // Create first service
         HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
             "test_service",
-            mock_cold_feed,
             CompositeRangeTimeControl::MinMax {
                 control_min: mock_control_dhw.into(),
                 control_max: default_control_max.into(),
@@ -2965,15 +2951,7 @@ mod tests {
         heat_battery: Arc<HeatBatteryDryCore>,
         simulation_time: SimulationTime,
     ) {
-        let control = SetpointTimeControl::new(
-            vec![Some(21.); 5],
-            0,
-            1.0,
-            None,
-            None,
-            1.0,
-        )
-        .into();
+        let control = SetpointTimeControl::new(vec![Some(21.); 5], 0, 1.0, None, None, 1.0).into();
         let service = HeatBatteryDryCore::create_service_space_heating(
             heat_battery.clone(),
             "space_service",
@@ -3429,7 +3407,6 @@ mod tests {
         let service2 = HeatBatteryDryCore::create_service_hot_water_regular(
             heat_battery.clone(),
             "dhw1",
-            mock_cold_feed(None),
             CompositeRangeTimeControl::MinMax {
                 control_min: mock_control_dhw.into(),
                 control_max: default_control_max.into(),
@@ -3630,7 +3607,7 @@ mod tests {
 
         //  With no accumulated losses, nothing is creditable to internal gains
         assert_eq!(heat_battery.get_battery_losses(), 0.0);
-     
+
         // Only the recoverable fraction (f_sto_m = 0.75, BS EN 15316-5:2017
         // Table B.3) of accumulated standing losses is returned for crediting
         // to internal gains; the remainder escapes the dwelling.

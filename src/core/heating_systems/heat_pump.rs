@@ -1462,8 +1462,10 @@ impl HeatPumpServiceWater {
         temp_flow: Option<f64>,
         temp_return: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
-        ignore_standard_ctrl: bool,
+        ignore_standard_ctrl: Option<bool>,
     ) -> anyhow::Result<f64> {
+        let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
+
         let service_on = self.is_on(simulation_time_iteration) || ignore_standard_ctrl;
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 

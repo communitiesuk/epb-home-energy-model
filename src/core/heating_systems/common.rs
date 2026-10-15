@@ -71,7 +71,7 @@ impl HeatSourceWet {
         &self,
         temp_flow: f64,
         temperature: f64,
-        ignore_standard_ctrl: bool,
+        ignore_standard_ctrl: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match self {
@@ -82,7 +82,7 @@ impl HeatSourceWet {
                     Default::default(),
                     Default::default(),
                     None,
-                    Some(ignore_standard_ctrl),
+                    ignore_standard_ctrl,
                     simtime,
                 ))
             }
@@ -101,7 +101,7 @@ impl HeatSourceWet {
                 Ok(storage.energy_output_max(
                     Default::default(),
                     Default::default(),
-                    Some(ignore_standard_ctrl),
+                    ignore_standard_ctrl,
                     &simtime,
                 ))
             }
@@ -112,9 +112,11 @@ impl HeatSourceWet {
             HeatSourceWet::HeatPumpWater(hp_water) => hp_water
                 .energy_output_max(temp_flow, temperature, simtime)
                 .map(|x| x.0),
-            HeatSourceWet::HeatPumpWaterOnly(hp_water_only) => {
-                Ok(hp_water_only.energy_output_max(temperature, ignore_standard_ctrl, simtime))
-            }
+            HeatSourceWet::HeatPumpWaterOnly(hp_water_only) => Ok(hp_water_only.energy_output_max(
+                temperature,
+                ignore_standard_ctrl.unwrap_or(false),
+                simtime,
+            )),
         }
     }
 
@@ -123,7 +125,7 @@ impl HeatSourceWet {
         energy_demand: f64,
         temp_flow: Option<f64>,
         temperature: Option<f64>,
-        ignore_standard_ctrl: bool,
+        ignore_standard_ctrl: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         match self {
@@ -138,7 +140,7 @@ impl HeatSourceWet {
                     None,
                     None,
                     None,
-                    Some(ignore_standard_ctrl),
+                    ignore_standard_ctrl,
                     simtime,
                 )
                 .map(|x| x.0),
@@ -158,20 +160,20 @@ impl HeatSourceWet {
                 energy_demand,
                 Default::default(),
                 temperature,
-                Some(ignore_standard_ctrl),
+                ignore_standard_ctrl,
                 &simtime,
             ),
             HeatSourceWet::HeatBatteryHotWater(battery) => {
                 battery.demand_energy(energy_demand, temp_flow, temperature, None, simtime)
             }
             HeatSourceWet::HeatPumpWater(water) => {
-                water.demand_energy(energy_demand, temp_flow, temperature, simtime, false)
+                water.demand_energy(energy_demand, temp_flow, temperature, simtime, None)
             }
             HeatSourceWet::HeatPumpWaterOnly(water_only) => Ok(water_only.demand_energy(
                 energy_demand,
                 Default::default(),
                 temperature,
-                ignore_standard_ctrl,
+                ignore_standard_ctrl.unwrap_or(false),
                 simtime,
             )),
         }

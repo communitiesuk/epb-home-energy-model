@@ -5493,7 +5493,7 @@ pub enum HeatSourceLocation {
 }
 
 /// Unit for interpreting control schedule setpoints on a heat battery.
-#[derive(Clone, Debug, PartialEq, Validate, Serialize, Deserialize, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Validate, Serialize, Deserialize, Default)]
 pub enum ScheduleUnit {
     #[default]
     #[serde(rename = "soc")]

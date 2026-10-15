@@ -7,7 +7,7 @@ use crate::core::controls::time_control::{
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::BoilerServiceWaterRegular;
-use crate::core::heating_systems::common::HeatingServiceType;
+use crate::core::heating_systems::common::{HeatSourceWet, HeatingServiceType};
 use crate::core::heating_systems::heat_battery_drycore::HeatBatteryDryCoreServiceWaterRegular;
 use crate::core::heating_systems::heat_network::HeatNetworkServiceWaterStorage;
 use crate::core::heating_systems::heat_pump::HeatPumpServiceWater;
@@ -43,7 +43,7 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug)]
@@ -93,90 +93,13 @@ pub(crate) enum HeatSourceWetService {
     HeatBatteryDryCoreServiceWaterRegular(HeatBatteryDryCoreServiceWaterRegular),
     HeatNetworkServiceWaterStorage(HeatNetworkServiceWaterStorage),
 }
-// Set to be ergonomic for current use cases by providing a unified interface for all heat source services.
-// may need to be more flexible in the future
-impl HeatSourceWetService {
-    fn energy_output_max(
-        &self,
-        temp_flow: f64,
-        temp_return: f64,
-        simtime: &SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        match self {
-            Self::HeatPumpServiceWater(service) => Ok(service
-                .energy_output_max(temp_flow, temp_return, *simtime)?
-                .0),
-            Self::BoilerServiceWaterRegular(service) => {
-                Ok(service.energy_output_max(temp_flow, temp_return, None, None, *simtime))
-            }
-            Self::HeatBatteryPCMServiceWaterRegular(service) => {
-                service.energy_output_max(temp_flow, temp_return, *simtime, false)
-            }
-            Self::HeatBatteryDryCoreServiceWaterRegular(service) => {
-                service.energy_output_max(temp_flow, temp_return, *simtime, None)
-            }
-            Self::HeatNetworkServiceWaterStorage(service) => {
-                Ok(service.energy_output_max(temp_flow, temp_return, None, simtime))
-            }
-        }
-    }
 
-    fn demand_energy(
-        &self,
-        energy_demand: f64,
-        temp_flow: f64,
-        temp_return: f64,
-        simtime: &SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
-        match self {
-            Self::HeatPumpServiceWater(service) => service.demand_energy(
-                energy_demand,
-                Some(temp_flow),
-                Some(temp_return),
-                *simtime,
-                false,
-            ),
-            Self::BoilerServiceWaterRegular(service) => Ok(service
-                .demand_energy(
-                    energy_demand,
-                    temp_flow,
-                    Some(temp_return),
-                    None,
-                    None,
-                    Some(true),
-                    None,
-                    *simtime,
-                )?
-                .0),
-            Self::HeatBatteryPCMServiceWaterRegular(service) => service.demand_energy(
-                energy_demand,
-                Some(temp_flow),
-                Some(temp_return),
-                Some(true),
-                *simtime,
-                false,
-            ),
-            Self::HeatBatteryDryCoreServiceWaterRegular(service) => service.demand_energy(
-                energy_demand,
-                Some(temp_flow),
-                temp_return,
-                Some(true),
-                *simtime,
-                None,
-            ),
-            Self::HeatNetworkServiceWaterStorage(service) => {
-                service.demand_energy(energy_demand, temp_flow, Some(temp_return), None, simtime)
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct HeatBatteryChargingSource {
-    control: Arc<RangeTimeControl>,
-    heat_source_service: Option<HeatSourceWetService>,
-    schedule_unit: ScheduleUnit,
-    type_data: ChargingSourceTypeSpecificData,
+    pub(crate) control: Arc<RangeTimeControl>,
+    pub(crate) heat_source_service: OnceLock<HeatSourceWet>,
+    pub(crate) schedule_unit: ScheduleUnit,
+    pub(crate) type_data: ChargingSourceTypeSpecificData,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -210,8 +133,8 @@ pub(crate) enum ChargingSourceTypeSpecificData {
 ///        battery_name: Name of the heat battery, for error messages.
 ///        simtime: Shared SimulationTime iterator used to advance through
 ///            timesteps for per-step schedule evaluation.
-fn validate_no_schedule_overlap(
-    heat_source_data: IndexMap<ArcStr, HeatBatteryChargingSource>,
+pub(crate) fn validate_no_schedule_overlap(
+    heat_source_data: &IndexMap<ArcStr, Arc<HeatBatteryChargingSource>>,
     battery_name: &str,
     simtime_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<()> {
@@ -225,7 +148,7 @@ fn validate_no_schedule_overlap(
 
     for (t_idx, t_it) in simtime_iterator.clone().enumerate() {
         let mut active_sources: Vec<ArcStr> = Vec::new();
-        for (src_name, charging_source) in &heat_source_data {
+        for (src_name, charging_source) in heat_source_data {
             if let (_, Some(_)) = charging_source.control.setpnt(&t_it) {
                 active_sources.push(src_name.clone());
             }
@@ -250,7 +173,6 @@ fn validate_no_schedule_overlap(
 pub(crate) struct HeatBatteryPcmServiceWaterRegular {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: ArcStr,
-    cold_feed: WaterSupply,
     control: CompositeRangeTimeControl,
 }
 
@@ -268,13 +190,11 @@ impl HeatBatteryPcmServiceWaterRegular {
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: ArcStr,
-        cold_feed: WaterSupply,
         control: CompositeRangeTimeControl,
     ) -> Self {
         Self {
             heat_battery,
             service_name,
-            cold_feed,
             control,
         }
     }
@@ -745,7 +665,7 @@ pub struct HeatBatteryPcm {
     external_conditions: Arc<ExternalConditions>,
     energy_supply_connections: IndexMap<ArcStr, EnergySupplyConnection>,
     use_heatsource_data: bool,
-    heat_source_data: Option<IndexMap<ArcStr, HeatBatteryChargingSource>>,
+    heat_source_data: Option<IndexMap<ArcStr, Arc<HeatBatteryChargingSource>>>,
     charging_active: Arc<RwLock<IndexMap<ArcStr, bool>>>,
     charge_control: Option<Arc<ChargeControl>>,
     pwr_in: f64,
@@ -795,12 +715,12 @@ impl HeatBatteryPcm {
         heat_battery_details: &HeatSourceWetDetails,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
-        simulation_time: SimulationTimeIterator,
+        simulation_time: &SimulationTimeIterator,
         external_conditions: Arc<ExternalConditions>,
         temp_min_useful: Option<f64>,
         temp_internal_air_callback: TempInternalAirFn,
         charge_control: Option<Arc<ChargeControl>>,
-        heat_source_data: Option<IndexMap<ArcStr, HeatBatteryChargingSource>>,
+        heat_source_data: Option<IndexMap<ArcStr, Arc<HeatBatteryChargingSource>>>,
         n_layers: Option<usize>,
         hb_time_step: Option<f64>,
         initial_inlet_temp: Option<f64>,
@@ -847,13 +767,13 @@ impl HeatBatteryPcm {
                 type_data: ChargingSourceTypeSpecificData::HeatSourceWet { temp_flow_max, .. },
                 schedule_unit: ScheduleUnit::Temperature,
                 ..
-            } = src
+            } = &**src
             {
                 HeatBatteryPcm::warn_if_schedule_exceeds_flow_temp(
                     &source_name.to_string(),
-                    src,
+                    src.as_ref(),
                     *temp_flow_max,
-                    &simulation_time,
+                    simulation_time,
                 )?;
             }
             if src.schedule_unit == ScheduleUnit::Temperature {}
@@ -938,11 +858,7 @@ impl HeatBatteryPcm {
         };
 
         let detailed_results: Option<Arc<RwLock<Vec<HeatBatteryTimestepResult>>>> =
-            if output_detailed_results {
-                Some(Default::default())
-            } else {
-                None
-            };
+            output_detailed_results.then_some(Default::default());
 
         let temp_diff_rated_losses = max_temp_of_charge - TEMP_AMBIENT_RATED_LOSSES_C;
         if temp_diff_rated_losses <= 0.0 {
@@ -1054,8 +970,9 @@ impl HeatBatteryPcm {
             }
         }
         if temp_observed_max > temp_flow_max {
-            // todo: Warning! as part of 1.0.0a9
+            // TODO: pass out warning to explicit calculation result
         }
+
         Ok(())
     }
     /// Calculate energy stored in a single layer above a reference temperature.
@@ -1292,14 +1209,12 @@ impl HeatBatteryPcm {
     pub(crate) fn create_service_hot_water_regular(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
-        cold_feed: WaterSupply,
         control: CompositeRangeTimeControl,
     ) -> anyhow::Result<HeatBatteryPcmServiceWaterRegular> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceWaterRegular::new(
             heat_battery,
             service_name.into(),
-            cold_feed,
             control,
         ))
     }
@@ -2215,7 +2130,7 @@ impl HeatBatteryPcm {
                             return self.charge_battery_electric(rated_charge_power, target_soc);
                         }
                         ChargingSourceTypeSpecificData::HeatSourceWet { .. } => {
-                            if source.heat_source_service.is_some() {
+                            if source.heat_source_service.get().is_some() {
                                 return self.charge_from_heat_source(
                                     source,
                                     time_remaining_current_timestep,
@@ -2238,10 +2153,17 @@ impl HeatBatteryPcm {
                                 hex_velocity_at_1_l_per_min,
                                 hex_capillary_diameter_m,
                             },
-                        heat_source_service: Some(heat_source_service), // we're assuming here that heat source service is set - better for this to be enforced elsewhere
+                        heat_source_service, // we're assuming here that heat source service is set - better for this to be enforced elsewhere
                         ..
-                    } = source
+                    } = &**source
                     {
+                        let heat_source_service =
+                            if let Some(heat_source_service) = heat_source_service.get() {
+                                heat_source_service
+                            } else {
+                                bail!("Heat source service was expected to have been set");
+                            };
+
                         // Hydronic source not active — call demand_energy(0) so
                         // the heat source records a zero-demand service call
                         // every timestep (ensures consistent detailed results
@@ -2257,9 +2179,10 @@ impl HeatBatteryPcm {
 
                         heat_source_service.demand_energy(
                             0.0,
-                            *temp_flow_max,
-                            temp_return,
-                            simtime,
+                            Some(*temp_flow_max),
+                            Some(temp_return),
+                            None,
+                            *simtime,
                         )?;
                         // Report zero input to pipework loss tracker for event
                         // boundary detection
@@ -2314,7 +2237,7 @@ impl HeatBatteryPcm {
         simtime: &SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Vec<f64>)> {
         if let HeatBatteryChargingSource {
-            heat_source_service: Some(heat_source_service),
+            heat_source_service,
             type_data:
                 ChargingSourceTypeSpecificData::HeatSourceWet {
                     temp_flow_max,
@@ -2327,6 +2250,12 @@ impl HeatBatteryPcm {
             ..
         } = source
         {
+            let heat_source_service = if let Some(heat_source_service) = heat_source_service.get() {
+                heat_source_service
+            } else {
+                bail!("Heat source service was expected to have been set");
+            };
+
             // Charge at the flow temperature needed to reach the SOC target plus a
             // heat-exchanger approach difference, not the source's peak.
             // __soc_to_temp gives the uniform PCM temperature for the target charge
@@ -2363,7 +2292,13 @@ impl HeatBatteryPcm {
                 // No charging needed — still call demand_energy(0) so the heat
                 // source records a zero-demand service call, and run pipework loss
                 // calc to detect end-of-event transition.
-                heat_source_service.demand_energy(0., *temp_flow_max, temp_return, simtime)?;
+                heat_source_service.demand_energy(
+                    0.,
+                    Some(*temp_flow_max),
+                    Some(temp_return),
+                    None,
+                    *simtime,
+                )?;
                 self.pipework.calculate_primary_pipework_losses(
                     0.0,
                     Some(*temp_flow_max),
@@ -2379,11 +2314,17 @@ impl HeatBatteryPcm {
             // temperatures. This is side-effect-free (no energy consumption
             // recorded), giving the maximum energy the heat source can deliver.
             let energy_max =
-                heat_source_service.energy_output_max(temp_flow, temp_return, simtime)?;
+                heat_source_service.energy_output_max(temp_flow, temp_return, None, *simtime)?;
 
             if relative_eq!(energy_max, 0.0, epsilon = 1e-10) {
                 // Heat source has no capacity — call demand_energy(0) for reporting
-                heat_source_service.demand_energy(0., temp_flow, temp_return, simtime)?;
+                heat_source_service.demand_energy(
+                    0.,
+                    temp_flow.into(),
+                    temp_return.into(),
+                    None,
+                    *simtime,
+                )?;
                 self.pipework.calculate_primary_pipework_losses(
                     0.,
                     Some(temp_flow),
@@ -2440,9 +2381,10 @@ impl HeatBatteryPcm {
                 let energy_hp_demand = energy_charged * self.n_units as f64 + pipework_losses_kwh;
                 heat_source_service.demand_energy(
                     energy_hp_demand,
-                    temp_flow,
-                    temp_return,
-                    simtime,
+                    temp_flow.into(),
+                    temp_return.into(),
+                    None,
+                    *simtime,
                 )?;
 
                 // Accumulate internal pipework gains for return via get_battery_losses().
@@ -3441,6 +3383,7 @@ mod tests {
     use parking_lot::RwLock;
     use rstest::*;
     use serde_json::json;
+    use std::fmt::Debug;
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
 
@@ -3656,7 +3599,7 @@ mod tests {
                 &heat_battery_details,
                 energy_supply,
                 energy_supply_connection,
-                simulation_time.iter(),
+                &simulation_time.iter(),
                 external_conditions.into(),
                 overrides.temp_min_useful,
                 temp_air_int_callback(),
@@ -3984,12 +3927,9 @@ mod tests {
             .unwrap(),
         );
 
-        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
-
         HeatBatteryPcmServiceWaterRegular::new(
             heat_battery,
             SERVICE_NAME.into(),
-            mock_cold_feed,
             range_time_control.into(),
         )
     }
@@ -4058,12 +3998,10 @@ mod tests {
         );
 
         let heat_battery = create_heat_battery(battery_control_on, None);
-        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
         let heat_battery_service: HeatBatteryPcmServiceWaterRegular =
             HeatBatteryPcmServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
-                mock_cold_feed,
                 range_time_control.into(),
             );
 
@@ -5238,7 +5176,7 @@ mod tests {
                 heat_battery_details,
                 energy_supply,
                 energy_supply_connection,
-                simulation_time_iterator,
+                &simulation_time_iterator,
                 external_conditions.into(),
                 None,
                 temp_air_int_callback(),
@@ -5261,7 +5199,6 @@ mod tests {
         heat_battery_no_service_connection: Arc<RwLock<HeatBatteryPcm>>,
     ) {
         let heat_battery = heat_battery_no_service_connection;
-        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
         let service_name = "new_service";
 
         let range_time_control =
@@ -5270,7 +5207,6 @@ mod tests {
         HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
             service_name,
-            mock_cold_feed,
             range_time_control.into(),
         )
         .unwrap();
@@ -5887,7 +5823,6 @@ mod tests {
     ) {
         let heat_battery = create_heat_battery(battery_control_off, None);
         let service_name = "test_service";
-        let mock_cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.));
 
         let range_time_control = Arc::new(
             RangeTimeControl::new(
@@ -5904,7 +5839,6 @@ mod tests {
         let result = HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery.clone(),
             service_name,
-            mock_cold_feed.clone(),
             range_time_control.clone().into(),
         );
 
@@ -5913,7 +5847,6 @@ mod tests {
         let result = HeatBatteryPcm::create_service_hot_water_regular(
             heat_battery,
             service_name,
-            mock_cold_feed.clone(),
             range_time_control.into(),
         );
 
@@ -6374,7 +6307,7 @@ mod tests {
             &heat_data,
             energy_supply.clone(),
             energy_supply_connection,
-            simulation_time_iterator,
+            &simulation_time_iterator,
             external_conditions.into(),
             Some(30.),
             temp_air_int_callback(),
@@ -6732,7 +6665,7 @@ mod tests {
                     rated_charge_power: 3.5,
                 },
                 control: range_time_control,
-                heat_source_service: None,
+                heat_source_service: Default::default(),
                 schedule_unit: ScheduleUnit::StateOfCharge,
             }
         }
@@ -6749,7 +6682,7 @@ mod tests {
                     hex_capillary_diameter_m: 6.5 / 1000.0,
                 },
                 control: range_time_control,
-                heat_source_service: None,
+                heat_source_service: Default::default(),
                 schedule_unit: ScheduleUnit::StateOfCharge,
             }
         }
@@ -6768,15 +6701,15 @@ mod tests {
                 EnergySupply::connection(energy_supply.clone(), "NewFmtTest").unwrap();
             let heat_battery_details = create_heat_battery_details(None, None);
             let mut heat_source_data = IndexMap::new();
-            heat_source_data.insert("electric_element".into(), direct_electric_source);
-            heat_source_data.insert("heat_pump".into(), hydronic_source);
+            heat_source_data.insert("electric_element".into(), direct_electric_source.into());
+            heat_source_data.insert("heat_pump".into(), hydronic_source.into());
 
             Arc::new(RwLock::new(
                 HeatBatteryPcm::new(
                     &heat_battery_details,
                     energy_supply,
                     energy_supply_connection,
-                    simulation_time.iter(),
+                    &simulation_time.iter(),
                     external_conditions.into(),
                     Some(0.0),
                     temp_air_int_callback(),
@@ -6903,8 +6836,33 @@ mod tests {
         #[rstest]
         fn test_new_format_timestep_end_does_not_use_legacy_charge(
             new_format_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
-            simulation_time_iteration: SimulationTimeIteration,
+            mut simulation_time_iterator: SimulationTimeIterator,
         ) {
+            new_format_heat_battery.write().heat_source_data.replace(
+                [(
+                    arcstr::literal!("el"),
+                    HeatBatteryChargingSource {
+                        control: RangeTimeControl::new(
+                            vec![Some(50.); simulation_time_iterator.total_steps()],
+                            vec![Some(60.); simulation_time_iterator.total_steps()],
+                            simulation_time_iterator.step_in_hours(),
+                            0,
+                            1.0,
+                            None,
+                        )
+                        .unwrap()
+                        .into(),
+                        heat_source_service: Default::default(),
+                        schedule_unit: Default::default(),
+                        type_data: ChargingSourceTypeSpecificData::DirectElectric {
+                            rated_charge_power: 5.0,
+                        },
+                    }
+                    .into(),
+                )]
+                .into(),
+            );
+
             new_format_heat_battery
                 .read()
                 .flag_first_call
@@ -6912,7 +6870,7 @@ mod tests {
 
             new_format_heat_battery
                 .read()
-                .timestep_end(simulation_time_iteration)
+                .timestep_end(simulation_time_iterator.next().unwrap())
                 .unwrap();
 
             let battery = new_format_heat_battery.read();
@@ -6921,8 +6879,15 @@ mod tests {
         }
     }
 
+    fn as_once_lock<T: Debug>(value: T) -> OnceLock<T> {
+        let lock = OnceLock::new();
+        lock.set(value).unwrap();
+        lock
+    }
+
     mod test_heat_battery_pcm_soc_charging_control {
         use super::*;
+        use crate::core::heating_systems::common::HeatBatteryWaterService;
 
         fn make_range_time_control(
             simulation_time: SimulationTime,
@@ -6949,14 +6914,14 @@ mod tests {
                     rated_charge_power: 5.0,
                 },
                 control,
-                heat_source_service: None,
+                heat_source_service: Default::default(),
                 schedule_unit: ScheduleUnit::StateOfCharge,
             }
         }
 
         fn make_battery(
             simulation_time: SimulationTime,
-            sources: IndexMap<ArcStr, HeatBatteryChargingSource>,
+            sources: IndexMap<ArcStr, Arc<HeatBatteryChargingSource>>,
             temp_init: f64,
         ) -> Arc<RwLock<HeatBatteryPcm>> {
             // Create a battery in new-format mode with given sources and initial temp.
@@ -6974,7 +6939,7 @@ mod tests {
                     &heat_battery_details,
                     energy_supply,
                     energy_supply_connection,
-                    simulation_time.iter(),
+                    &simulation_time.iter(),
                     external_conditions.into(),
                     Some(10.0),
                     temp_air_int_callback(),
@@ -6996,9 +6961,9 @@ mod tests {
             lower: Option<f64>,
             upper: Option<f64>,
             temp_init: f64,
-        ) -> (Arc<RwLock<HeatBatteryPcm>>, HeatBatteryChargingSource) {
+        ) -> (Arc<RwLock<HeatBatteryPcm>>, Arc<HeatBatteryChargingSource>) {
             let range_time_control = make_range_time_control(simulation_time, lower, upper);
-            let source = make_direct_electric_source(range_time_control);
+            let source = Arc::from(make_direct_electric_source(range_time_control));
             let mut sources = IndexMap::new();
             sources.insert("el".into(), source.clone());
             (make_battery(simulation_time, sources, temp_init), source)
@@ -7010,7 +6975,7 @@ mod tests {
             temp_init: f64,
             service_lower: Option<f64>,
             service_upper: Option<f64>,
-        ) -> (Arc<RwLock<HeatBatteryPcm>>, HeatBatteryChargingSource) {
+        ) -> (Arc<RwLock<HeatBatteryPcm>>, Arc<HeatBatteryChargingSource>) {
             let control = make_range_time_control(simulation_time, Some(0.2), Some(0.8));
             let service_control =
                 make_range_time_control(simulation_time, service_lower, service_upper);
@@ -7022,11 +6987,9 @@ mod tests {
                     ..Default::default()
                 },
             );
-            let cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.0));
             let heat_source_service = HeatBatteryPcmServiceWaterRegular::new(
                 source_heat_battery.clone(),
                 "hydronic_charge_source_service".into(),
-                cold_feed,
                 service_control.into(),
             );
             HeatBatteryPcm::create_service_connection(
@@ -7035,7 +6998,7 @@ mod tests {
             )
             .unwrap();
 
-            let source = HeatBatteryChargingSource {
+            let source = Arc::from(HeatBatteryChargingSource {
                 type_data: ChargingSourceTypeSpecificData::HeatSourceWet {
                     temp_flow_max: 65.0,
                     flow_rate_charging_l_per_min: 10.0,
@@ -7045,12 +7008,11 @@ mod tests {
                     hex_capillary_diameter_m: 6.5 / 1000.0,
                 },
                 control,
-                heat_source_service: Some(HeatSourceWetService::HeatBatteryPCMServiceWaterRegular(
-                    heat_source_service,
+                heat_source_service: as_once_lock(HeatSourceWet::HeatBatteryHotWater(
+                    HeatBatteryWaterService::Pcm(heat_source_service),
                 )),
-
                 schedule_unit: ScheduleUnit::StateOfCharge,
-            };
+            });
             let mut sources = IndexMap::new();
             sources.insert("hp".into(), source.clone());
 
@@ -7279,8 +7241,6 @@ mod tests {
                 Some(0.9),
                 10.0,
             );
-            let mut sources: IndexMap<String, HeatBatteryChargingSource> = IndexMap::new();
-            sources.insert("el".into(), source.clone());
 
             // The battery at temp_init=10°C has SOC=0.0, below the lower setpoint of 0.5.
             battery
@@ -7531,11 +7491,9 @@ mod tests {
                     ..Default::default()
                 },
             );
-            let cold_feed = WaterSupply::Mock(MockWaterSupply::new(10.0));
             let heat_source_service = HeatBatteryPcmServiceWaterRegular::new(
                 source_heat_battery.clone(),
                 "hydronic_source_service".into(),
-                cold_feed,
                 range_control.clone().into(),
             );
             HeatBatteryPcm::create_service_connection(
@@ -7554,13 +7512,13 @@ mod tests {
                     hex_capillary_diameter_m: 6.5 / 1000.0,
                 },
                 control: range_control,
-                heat_source_service: Some(HeatSourceWetService::HeatBatteryPCMServiceWaterRegular(
-                    heat_source_service,
+                heat_source_service: as_once_lock(HeatSourceWet::HeatBatteryHotWater(
+                    HeatBatteryWaterService::Pcm(heat_source_service),
                 )),
                 schedule_unit: ScheduleUnit::StateOfCharge,
             };
             let mut sources = IndexMap::new();
-            sources.insert("hp".into(), source);
+            sources.insert("hp".into(), source.into());
             let battery = make_battery(simulation_time, sources, 10.0);
 
             battery
@@ -7619,7 +7577,7 @@ mod tests {
                         rated_charge_power,
                     },
                     control,
-                    heat_source_service: None,
+                    heat_source_service: Default::default(),
                     schedule_unit: schedule_unit.unwrap_or_default(),
                 }
             }
@@ -7640,14 +7598,14 @@ mod tests {
                         hex_capillary_diameter_m: 6.5 / 1000.0,
                     },
                     control: make_range_time_control(simulation_time, lower, upper),
-                    heat_source_service: None,
+                    heat_source_service: Default::default(),
                     schedule_unit,
                 }
             }
 
             fn try_make_battery(
                 simulation_time: SimulationTime,
-                sources: IndexMap<ArcStr, HeatBatteryChargingSource>,
+                sources: IndexMap<ArcStr, Arc<HeatBatteryChargingSource>>,
                 temp_init: f64,
             ) -> anyhow::Result<HeatBatteryPcm> {
                 // Create a battery in new-format mode with given sources and initial temp.
@@ -7665,7 +7623,7 @@ mod tests {
                     &heat_battery_details,
                     energy_supply,
                     energy_supply_connection,
-                    simulation_time.iter(),
+                    &simulation_time.iter(),
                     external_conditions.into(),
                     Some(10.0),
                     temp_air_int_callback(),
@@ -7682,7 +7640,7 @@ mod tests {
 
             fn make_battery(
                 simulation_time: SimulationTime,
-                sources: IndexMap<ArcStr, HeatBatteryChargingSource>,
+                sources: IndexMap<ArcStr, Arc<HeatBatteryChargingSource>>,
                 temp_init: f64,
             ) -> Arc<RwLock<HeatBatteryPcm>> {
                 Arc::new(RwLock::new(
@@ -7695,7 +7653,7 @@ mod tests {
                 // temp_to_soc returns 0.0 at temp_min_useful and 1.0 at max_temperature.
                 let source = make_direct_electric_source(simulation_time, None, None, 5.0, None);
                 let mut sources = IndexMap::new();
-                sources.insert("el".into(), source);
+                sources.insert("el".into(), source.into());
                 let battery = make_battery(simulation_time, sources, 10.0);
 
                 assert_relative_eq!(
@@ -7715,7 +7673,7 @@ mod tests {
                 // temp_to_soc returns intermediate SOC for temperatures between boundaries.
                 let source = make_direct_electric_source(simulation_time, None, None, 5.0, None);
                 let mut sources = IndexMap::new();
-                sources.insert("el".into(), source);
+                sources.insert("el".into(), source.into());
                 let battery = make_battery(simulation_time, sources, 10.0);
 
                 assert_relative_eq!(
@@ -7735,7 +7693,7 @@ mod tests {
                 // soc_to_temp returns temp_ref at SOC 0 and temp_charge_max at SOC 1.
                 let source = make_direct_electric_source(simulation_time, None, None, 5.0, None);
                 let mut sources = IndexMap::new();
-                sources.insert("el".into(), source);
+                sources.insert("el".into(), source.into());
                 let battery = make_battery(simulation_time, sources, 10.0);
                 let battery = battery.read();
 
@@ -7754,7 +7712,7 @@ mod tests {
                 // (57.5, 58°C), and above phase transition (60, 70, 80°C).
                 let source = make_direct_electric_source(simulation_time, None, None, 5.0, None);
                 let mut sources = IndexMap::new();
-                sources.insert("el".into(), source);
+                sources.insert("el".into(), source.into());
                 let battery = make_battery(simulation_time, sources, 10.0);
                 let battery = battery.read();
                 // Temperatures spanning: below transition (10–57), during (57–59), above (59–80)
@@ -7771,7 +7729,7 @@ mod tests {
                 // temp_to_soc(soc_to_temp(S)) == S for various SOC values.
                 let source = make_direct_electric_source(simulation_time, None, None, 5.0, None);
                 let mut sources = IndexMap::new();
-                sources.insert("el".into(), source);
+                sources.insert("el".into(), source.into());
                 let battery = make_battery(simulation_time, sources, 10.0);
                 let battery = battery.read();
 
@@ -7787,13 +7745,13 @@ mod tests {
                 simulation_time_iteration: SimulationTimeIteration,
             ) {
                 // resolve_setpoints converts temperature setpoints to SOC.
-                let source = make_direct_electric_source(
+                let source = Arc::new(make_direct_electric_source(
                     simulation_time,
                     Some(50.0),
                     Some(65.0),
                     5.0,
                     ScheduleUnit::Temperature.into(),
-                );
+                ));
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source.clone());
                 let battery = make_battery(simulation_time, sources, 10.0);
@@ -7815,13 +7773,13 @@ mod tests {
                 simulation_time_iteration: SimulationTimeIteration,
             ) {
                 // resolve_setpoints returns SOC values unchanged when schedule_unit="soc"
-                let source = make_direct_electric_source(
+                let source = Arc::new(make_direct_electric_source(
                     simulation_time,
                     Some(0.3),
                     Some(0.8),
                     5.0,
                     ScheduleUnit::StateOfCharge.into(),
-                );
+                ));
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source.clone());
                 let battery = make_battery(simulation_time, sources, 10.0);
@@ -7843,13 +7801,13 @@ mod tests {
                 //
                 // Battery at 10°C (SOC=0), schedule lower=50°C → SOC for 50°C is above 0,
                 // so the battery's SOC (0.0) is below the converted threshold.
-                let source = make_direct_electric_source(
+                let source = Arc::new(make_direct_electric_source(
                     simulation_time,
                     Some(50.0),
                     Some(65.0),
                     5.0,
                     ScheduleUnit::Temperature.into(),
-                );
+                ));
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source.clone());
                 let battery = make_battery(simulation_time, sources, 10.0);
@@ -7867,13 +7825,13 @@ mod tests {
                 simulation_time_iteration: SimulationTimeIteration,
             ) {
                 // At 80°C (SOC=1), the 65°C upper threshold is below the battery's SOC.
-                let source = make_direct_electric_source(
+                let source = Arc::new(make_direct_electric_source(
                     simulation_time,
                     Some(50.0),
                     Some(65.0),
                     5.0,
                     ScheduleUnit::Temperature.into(),
-                );
+                ));
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source.clone());
                 let battery = make_battery(simulation_time, sources, 80.0);
@@ -7946,7 +7904,7 @@ mod tests {
                     ScheduleUnit::StateOfCharge,
                 );
                 let mut sources = IndexMap::new();
-                sources.insert("hp".into(), source);
+                sources.insert("hp".into(), source.into());
 
                 assert!(try_make_battery(simulation_time, sources, 10.0).is_ok());
             }
@@ -8015,14 +7973,14 @@ mod tests {
                     rated_charge_power: 5.0,
                 },
                 control,
-                heat_source_service: None,
+                heat_source_service: Default::default(),
                 schedule_unit: ScheduleUnit::StateOfCharge,
             }
         }
 
         fn make_battery_with_pipework(
             simulation_time: SimulationTime,
-            sources: IndexMap<ArcStr, HeatBatteryChargingSource>,
+            sources: IndexMap<ArcStr, Arc<HeatBatteryChargingSource>>,
             temp_init: f64,
             primary_pipework: Vec<Pipework>,
             temp_internal_air_callback: TempInternalAirFn,
@@ -8041,7 +7999,7 @@ mod tests {
                     &heat_battery_details,
                     energy_supply,
                     energy_supply_connection,
-                    simulation_time.iter(),
+                    &simulation_time.iter(),
                     external_conditions.into(),
                     Some(10.0),
                     temp_internal_air_callback,
@@ -8063,9 +8021,9 @@ mod tests {
             lower: Option<f64>,
             upper: Option<f64>,
             temp_init: f64,
-        ) -> (Arc<RwLock<HeatBatteryPcm>>, HeatBatteryChargingSource) {
+        ) -> (Arc<RwLock<HeatBatteryPcm>>, Arc<HeatBatteryChargingSource>) {
             let control = make_range_time_control(simulation_time, lower, upper);
-            let source = make_direct_electric_source(control);
+            let source = Arc::from(make_direct_electric_source(control));
             let mut sources = IndexMap::new();
             sources.insert("el".into(), source.clone());
             (
@@ -8156,7 +8114,7 @@ mod tests {
                 Some(0.2),
                 Some(0.8),
             ));
-            let sources = IndexMap::from([("el".into(), source)]);
+            let sources = IndexMap::from([("el".into(), source.into())]);
             let battery = make_battery_with_pipework(
                 simulation_time,
                 sources,
@@ -8206,7 +8164,7 @@ mod tests {
                 Some(0.2),
                 Some(0.8),
             ));
-            let sources = IndexMap::from([("el".into(), source)]);
+            let sources = IndexMap::from([("el".into(), source.into())]);
             let battery = make_battery_with_pipework(
                 simulation_time,
                 sources,
@@ -8321,7 +8279,7 @@ mod tests {
                 &heat_battery_details,
                 energy_supply,
                 energy_supply_connection,
-                simulation_time_iterator,
+                &simulation_time_iterator,
                 external_conditions.into(),
                 Some(temp_min_useful),
                 temp_air_int_callback(),
@@ -8432,7 +8390,7 @@ mod tests {
                 vec![None, None, Some(0.8), Some(0.8)],
                 simtime,
             );
-            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
+            let sources: IndexMap<ArcStr, Arc<HeatBatteryChargingSource>> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "electric".into(),
@@ -8442,8 +8400,9 @@ mod tests {
                         },
                         control: ctrl_a,
                         schedule_unit: ScheduleUnit::StateOfCharge,
-                        heat_source_service: Option::<HeatSourceWetService>::None,
-                    },
+                        heat_source_service: Default::default(),
+                    }
+                    .into(),
                 );
                 m.insert(
                     "hydronic".into(),
@@ -8456,15 +8415,16 @@ mod tests {
                             hex_velocity_at_1_l_per_min: 0.035,
                             hex_capillary_diameter_m: 6.5 / 1000.0,
                         },
-                        heat_source_service: None,
+                        heat_source_service: Default::default(),
                         control: ctrl_b,
                         schedule_unit: Default::default(),
-                    },
+                    }
+                    .into(),
                 );
                 m
             };
             // Should not raise
-            validate_no_schedule_overlap(sources, "test_battery", &simtime.iter()).unwrap();
+            validate_no_schedule_overlap(&sources, "test_battery", &simtime.iter()).unwrap();
         }
 
         /// Overlapping schedules (both active at t1) should return an error.
@@ -8480,7 +8440,7 @@ mod tests {
                 vec![None, Some(0.8), Some(0.8), None],
                 simtime,
             );
-            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
+            let sources: IndexMap<ArcStr, Arc<HeatBatteryChargingSource>> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "electric".into(),
@@ -8489,9 +8449,10 @@ mod tests {
                             rated_charge_power: 5.0,
                         },
                         control: ctrl_a,
-                        heat_source_service: None,
+                        heat_source_service: Default::default(),
                         schedule_unit: Default::default(),
-                    },
+                    }
+                    .into(),
                 );
                 m.insert(
                     "hydronic".into(),
@@ -8505,13 +8466,14 @@ mod tests {
                             hex_capillary_diameter_m: 6.5 / 1000.0,
                         },
                         control: ctrl_b,
-                        heat_source_service: None,
+                        heat_source_service: Default::default(),
                         schedule_unit: Default::default(),
-                    },
+                    }
+                    .into(),
                 );
                 m
             };
-            assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_err());
+            assert!(validate_no_schedule_overlap(&sources, "test", &simtime.iter()).is_err());
         }
         /// Single source can never overlap — validation accepts it.
         #[rstest]
@@ -8521,7 +8483,7 @@ mod tests {
                 vec![Some(0.8), Some(0.8), Some(0.8), Some(0.8)],
                 simtime,
             );
-            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
+            let sources: IndexMap<ArcStr, Arc<HeatBatteryChargingSource>> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "a".into(),
@@ -8530,13 +8492,14 @@ mod tests {
                             rated_charge_power: 5.0,
                         },
                         control: ctrl_a,
-                        heat_source_service: Option::<HeatSourceWetService>::None,
+                        heat_source_service: Default::default(),
                         schedule_unit: Default::default(),
-                    },
+                    }
+                    .into(),
                 );
                 m
             };
-            assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_ok());
+            assert!(validate_no_schedule_overlap(&sources, "test", &simtime.iter()).is_ok());
         }
 
         // skipped test_simtime_reset_after_validation and test_simtime_reset_on_error
@@ -8559,7 +8522,7 @@ mod tests {
                 vec![None, None, Some(0.8), None],
                 simtime,
             );
-            let sources: IndexMap<ArcStr, HeatBatteryChargingSource> = {
+            let sources: IndexMap<ArcStr, Arc<HeatBatteryChargingSource>> = {
                 let mut m = IndexMap::new();
                 m.insert(
                     "a".into(),
@@ -8568,9 +8531,10 @@ mod tests {
                             rated_charge_power: 5.0,
                         },
                         control: ctrl_a,
-                        heat_source_service: None,
+                        heat_source_service: Default::default(),
                         schedule_unit: Default::default(),
-                    },
+                    }
+                    .into(),
                 );
                 m.insert(
                     "b".into(),
@@ -8579,13 +8543,14 @@ mod tests {
                             rated_charge_power: 3.0,
                         },
                         control: ctrl_b,
-                        heat_source_service: Option::<HeatSourceWetService>::None,
+                        heat_source_service: Default::default(),
                         schedule_unit: Default::default(),
-                    },
+                    }
+                    .into(),
                 );
                 m
             };
-            assert!(validate_no_schedule_overlap(sources, "test", &simtime.iter()).is_err());
+            assert!(validate_no_schedule_overlap(&sources, "test", &simtime.iter()).is_err());
         }
     }
 }

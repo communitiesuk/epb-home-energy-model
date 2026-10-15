@@ -2,7 +2,7 @@ pub mod controls;
 pub mod energy_supply;
 pub mod heating_systems;
 pub mod material_properties;
-mod pipework;
+pub mod pipework;
 
 pub mod common;
 pub mod cooling_systems;
