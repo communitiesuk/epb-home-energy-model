@@ -1,5 +1,5 @@
 use crate::core::material_properties::WATER;
-use crate::core::schedule::WaterScheduleEventType;
+use crate::core::water_heat_demand::dhw_demand::OutletType;
 use crate::hem_core::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use approx::relative_eq;
@@ -31,12 +31,12 @@ impl WaterEventResultType {
     }
 }
 
-impl From<WaterScheduleEventType> for WaterEventResultType {
-    fn from(value: WaterScheduleEventType) -> Self {
+impl From<OutletType> for WaterEventResultType {
+    fn from(value: OutletType) -> Self {
         match value {
-            WaterScheduleEventType::Shower => WaterEventResultType::Shower,
-            WaterScheduleEventType::Bath => WaterEventResultType::Bath,
-            WaterScheduleEventType::Other => WaterEventResultType::Other,
+            OutletType::Shower => WaterEventResultType::Shower,
+            OutletType::Bath => WaterEventResultType::Bath,
+            OutletType::Other => WaterEventResultType::Other,
         }
     }
 }

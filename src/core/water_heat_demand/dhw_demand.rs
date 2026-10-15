@@ -3,7 +3,7 @@ use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnec
 use crate::core::heating_systems::storage_tank::HotWaterStorageTank;
 use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
-use crate::core::schedule::{TypedScheduleEvent, WaterScheduleEventType};
+use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::{MILLIMETRES_IN_METRE, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::bath::Bath;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -97,7 +97,7 @@ impl TappingPoint<'_> {
     }
 }
 
-#[derive(Eq, Hash, PartialEq, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum OutletType {
     Shower,
     Bath,
@@ -380,7 +380,7 @@ impl DomesticHotWaterDemand {
     ) -> (TappingPoint<'_>, OutletType, ArcStr) {
         // TODO Results instead of panics
         match event.event_type {
-            WaterScheduleEventType::Shower => {
+            OutletType::Shower => {
                 let shower = self
                     .showers
                     .get(&*event.name)
@@ -391,7 +391,7 @@ impl DomesticHotWaterDemand {
                     event.name.into(),
                 )
             }
-            WaterScheduleEventType::Bath => {
+            OutletType::Bath => {
                 let bath = self
                     .baths
                     .get(&*event.name)
@@ -402,7 +402,7 @@ impl DomesticHotWaterDemand {
                     event.name.into(),
                 )
             }
-            WaterScheduleEventType::Other => {
+            OutletType::Other => {
                 let other = self
                     .other
                     .get(&*event.name)
@@ -1264,7 +1264,7 @@ pub mod tests {
                     duration: Some(6.),
                     temperature: 41.0,
                     name: "IES".to_string(),
-                    event_type: WaterScheduleEventType::Shower,
+                    event_type: OutletType::Shower,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -1274,7 +1274,7 @@ pub mod tests {
                     duration: Some(6.),
                     temperature: 41.0,
                     name: "IES".to_string(),
-                    event_type: WaterScheduleEventType::Shower,
+                    event_type: OutletType::Shower,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -1287,7 +1287,7 @@ pub mod tests {
                     duration: Some(6.),
                     temperature: 41.0,
                     name: "IES".to_string(),
-                    event_type: WaterScheduleEventType::Shower,
+                    event_type: OutletType::Shower,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -1298,7 +1298,7 @@ pub mod tests {
                     // duration: Some(1.), // set duration to Some to avoid unwrap error
                     temperature: 41.0,
                     name: "medium".to_string(),
-                    event_type: WaterScheduleEventType::Bath,
+                    event_type: OutletType::Bath,
                     volume: Some(100.0),
                     warm_volume: None,
                     pipework_volume: None,
@@ -1310,7 +1310,7 @@ pub mod tests {
                     duration: Some(6.),
                     temperature: 41.0,
                     name: "mixer".to_string(),
-                    event_type: WaterScheduleEventType::Shower,
+                    event_type: OutletType::Shower,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -1320,7 +1320,7 @@ pub mod tests {
                     duration: Some(1.),
                     temperature: 41.0,
                     name: "other".to_string(),
-                    event_type: WaterScheduleEventType::Other,
+                    event_type: OutletType::Other,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -1332,7 +1332,7 @@ pub mod tests {
                     duration: Some(6.),
                     temperature: 41.0,
                     name: "mixer".to_string(),
-                    event_type: WaterScheduleEventType::Shower,
+                    event_type: OutletType::Shower,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -1342,7 +1342,7 @@ pub mod tests {
                     duration: Some(3.),
                     temperature: 41.0,
                     name: "medium".to_string(),
-                    event_type: WaterScheduleEventType::Bath,
+                    event_type: OutletType::Bath,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -1966,7 +1966,7 @@ pub mod tests {
                 duration: None,
                 temperature: 90.,
                 name: "medium".into(),
-                event_type: WaterScheduleEventType::Bath,
+                event_type: OutletType::Bath,
                 volume: Some(100.),
                 warm_volume: None,
                 pipework_volume: None,
@@ -1976,7 +1976,7 @@ pub mod tests {
                 duration: Some(6.),
                 temperature: 70.,
                 name: "mixer".into(),
-                event_type: WaterScheduleEventType::Shower,
+                event_type: OutletType::Shower,
                 volume: None,
                 warm_volume: None,
                 pipework_volume: None,
@@ -1986,7 +1986,7 @@ pub mod tests {
                 duration: Some(1.),
                 temperature: 80.,
                 name: "other".into(),
-                event_type: WaterScheduleEventType::Other,
+                event_type: OutletType::Other,
                 volume: None,
                 warm_volume: None,
                 pipework_volume: None,
@@ -3050,7 +3050,7 @@ pub mod tests {
                 duration: Some(2.),
                 temperature: 38.,
                 name: "other".into(),
-                event_type: WaterScheduleEventType::Other,
+                event_type: OutletType::Other,
                 volume: None,
                 warm_volume: None,
                 pipework_volume: None,
@@ -3136,7 +3136,7 @@ pub mod tests {
                 duration: Some(5.),
                 temperature: 43.,
                 name: "mixer".into(),
-                event_type: WaterScheduleEventType::Shower,
+                event_type: OutletType::Shower,
                 volume: None,
                 warm_volume: None,
                 pipework_volume: None,
@@ -3221,7 +3221,7 @@ pub mod tests {
                     duration: Some(3.),
                     temperature: 42.,
                     name: "mixer".into(),
-                    event_type: WaterScheduleEventType::Shower,
+                    event_type: OutletType::Shower,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -3231,7 +3231,7 @@ pub mod tests {
                     duration: Some(3.),
                     temperature: 42.,
                     name: "mixer".into(),
-                    event_type: WaterScheduleEventType::Shower,
+                    event_type: OutletType::Shower,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,

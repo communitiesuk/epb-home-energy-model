@@ -3271,14 +3271,6 @@ pub struct WaterHeatingEvent {
     pub temperature: f64,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum WaterHeatingEventType {
-    Shower,
-    Bath,
-    Other,
-}
-
 pub type SpaceHeatSystem = IndexMap<ArcStr, SpaceHeatSystemDetails>;
 
 #[skip_serializing_none]

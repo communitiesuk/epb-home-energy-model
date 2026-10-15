@@ -46,7 +46,7 @@ use crate::core::heating_systems::wwhrs::WwhrsInstantaneous;
 use crate::core::material_properties::WATER;
 use crate::core::schedule::{
     expand_boolean_schedule, expand_events, expand_numeric_schedule, reject_nones, reject_nulls,
-    ScheduleEvent, TypedScheduleEvent, WaterScheduleEventType,
+    ScheduleEvent, TypedScheduleEvent,
 };
 use crate::core::space_heat_demand::building_element::{
     calculate_cavity_resistance, convert_uvalue_to_resistance, BuildingElement,
@@ -73,8 +73,8 @@ use crate::core::units::{
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 #[cfg(test)]
 use crate::core::water_heat_demand::dhw_demand::tests::HotWaterSourceMockKind;
-use crate::core::water_heat_demand::dhw_demand::ELECTRIC_SHOWERS_HWS_NAME;
 use crate::core::water_heat_demand::dhw_demand::{DomesticHotWaterDemand, WaterHeatingCalculation};
+use crate::core::water_heat_demand::dhw_demand::{OutletType, ELECTRIC_SHOWERS_HWS_NAME};
 use crate::core::water_heat_demand::misc::WaterEventResult;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::hem_core::simulation_time::{SimulationTime, HOURS_IN_DAY};
@@ -3998,7 +3998,7 @@ fn event_schedules_from_input(
         schedule = schedule_event_from_input(
             events.iter().collect(),
             name.as_str(),
-            WaterScheduleEventType::Shower,
+            OutletType::Shower,
             schedule,
             simulation_time_iterator,
             event_schedules_start_day,
@@ -4009,7 +4009,7 @@ fn event_schedules_from_input(
         schedule = schedule_event_from_input(
             events.iter().collect(),
             name.as_str(),
-            WaterScheduleEventType::Bath,
+            OutletType::Bath,
             schedule,
             simulation_time_iterator,
             event_schedules_start_day,
@@ -4020,7 +4020,7 @@ fn event_schedules_from_input(
         schedule = schedule_event_from_input(
             events.iter().collect(),
             name.as_str(),
-            WaterScheduleEventType::Other,
+            OutletType::Other,
             schedule,
             simulation_time_iterator,
             event_schedules_start_day,
@@ -4033,7 +4033,7 @@ fn event_schedules_from_input(
 fn schedule_event_from_input(
     events_input: Vec<&WaterHeatingEvent>,
     name: &str,
-    event_type: WaterScheduleEventType,
+    event_type: OutletType,
     existing_schedule: EventSchedule,
     simulation_time_iterator: &SimulationTimeIterator,
     event_schedules_start_day: Option<u32>,

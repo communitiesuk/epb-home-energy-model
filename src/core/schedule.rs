@@ -1,4 +1,4 @@
-use crate::input::{WaterHeatingEvent, WaterHeatingEventType};
+use crate::input::WaterHeatingEvent;
 use anyhow::{anyhow, bail};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 #[cfg(test)]
@@ -45,23 +45,13 @@ pub enum WaterScheduleEventType {
     Other,
 }
 
-impl From<WaterHeatingEventType> for WaterScheduleEventType {
-    fn from(value: WaterHeatingEventType) -> Self {
-        match value {
-            WaterHeatingEventType::Shower => Self::Shower,
-            WaterHeatingEventType::Bath => Self::Bath,
-            WaterHeatingEventType::Other => Self::Other,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypedScheduleEvent {
     pub(crate) start: f64,
     pub(crate) duration: Option<f64>,
     pub(crate) temperature: f64,
     pub(crate) name: String,
-    pub(crate) event_type: WaterScheduleEventType,
+    pub(crate) event_type: OutletType,
     pub(crate) volume: Option<f64>,
     pub(crate) warm_volume: Option<f64>,
     pub(crate) pipework_volume: Option<f64>,
@@ -71,7 +61,7 @@ impl TypedScheduleEvent {
     pub fn from_simple_event(
         event: ScheduleEvent,
         name: String,
-        event_type: WaterScheduleEventType,
+        event_type: OutletType,
     ) -> anyhow::Result<Self> {
         let ScheduleEvent {
             start,
@@ -144,7 +134,7 @@ pub(crate) fn expand_events_from_json_values(
     simulation_timestep: f64,
     total_timesteps: usize,
     name: &str,
-    event_type: WaterScheduleEventType,
+    event_type: OutletType,
     schedule: Vec<Option<Vec<TypedScheduleEvent>>>,
 ) -> anyhow::Result<Vec<Option<Vec<TypedScheduleEvent>>>> {
     expand_events(
@@ -177,7 +167,7 @@ pub fn expand_events(
     simulation_timestep: f64,
     total_timesteps: usize,
     name: &str,
-    event_type: WaterScheduleEventType,
+    event_type: OutletType,
     mut schedule: Vec<Option<Vec<TypedScheduleEvent>>>,
     offset: usize,
 ) -> anyhow::Result<Vec<Option<Vec<TypedScheduleEvent>>>> {
@@ -463,6 +453,7 @@ pub(crate) mod input {
     }
 }
 
+use crate::core::water_heat_demand::dhw_demand::OutletType;
 pub(crate) use input::BooleanSchedule;
 pub use input::NumericSchedule;
 
@@ -665,7 +656,7 @@ mod tests {
                     duration: Some(6.0),
                     temperature: 52.0,
                     name: "name".to_string(),
-                    event_type: WaterScheduleEventType::Shower,
+                    event_type: OutletType::Shower,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -675,7 +666,7 @@ mod tests {
                     duration: Some(6.0),
                     temperature: 52.0,
                     name: "name".to_string(),
-                    event_type: WaterScheduleEventType::Shower,
+                    event_type: OutletType::Shower,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -685,7 +676,7 @@ mod tests {
                     duration: Some(6.0),
                     temperature: 52.0,
                     name: "name".to_string(),
-                    event_type: WaterScheduleEventType::Shower,
+                    event_type: OutletType::Shower,
                     volume: None,
                     warm_volume: None,
                     pipework_volume: None,
@@ -697,7 +688,7 @@ mod tests {
                 duration: Some(6.0),
                 temperature: 52.0,
                 name: "name".to_string(),
-                event_type: WaterScheduleEventType::Shower,
+                event_type: OutletType::Shower,
                 volume: None,
                 warm_volume: None,
                 pipework_volume: None,
@@ -722,7 +713,7 @@ mod tests {
                 simulation_timestep,
                 total_timesteps,
                 "name",
-                WaterScheduleEventType::Shower,
+                OutletType::Shower,
                 schedule_to_test
             )
             .unwrap(),
