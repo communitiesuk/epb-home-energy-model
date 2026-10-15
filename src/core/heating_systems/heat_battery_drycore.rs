@@ -1777,7 +1777,11 @@ impl HeatBatteryDryCore {
         let timestep = self.simulation_timestep;
         let time_remaining = self.time_available(time_start, timestep);
 
-        // First, get the base storage calculation which includes charging logic
+        // # Report the energy net of the standing (MIN-output) loss, using the same
+        // Report the energy net of the standing (MIN-output) loss, using the same
+        // delivery calculation as __demand_energy. The MAX power curve includes the
+        // case loss that leaves the core regardless, so integrating it gross would
+        // overstate the deliverable ceiling that __demand_energy can ever reach.
         let (q_released_max, _, _, _) = self.storage.read().energy_output(
             OutputMode::Max,
             time_remaining.into(),
@@ -1846,6 +1850,17 @@ impl HeatBatteryDryCore {
                 non_service_energy_lost: final_losses * n_units,
                 non_service_charge: energy_charged * n_units,
             });
+        }
+
+        // Accumulate the energy delivered to each service this timestep into the running total
+        // before __service_results is reset, so the per-service delivery survives for the
+        // post-simulation charging-energy apportionment.
+        for result in self.service_results.read().iter() {
+            *self
+                .energy_delivered_by_service
+                .write()
+                .entry(result.service_name.clone())
+                .or_insert(0.0) += result.energy_delivered_total;
         }
 
         self.total_time_running_current_timestep
