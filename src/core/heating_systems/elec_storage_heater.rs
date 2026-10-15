@@ -1270,6 +1270,102 @@ mod tests {
         }
     }
 
+    #[ignore = "Ignore until HeatBattery DryCore has been migrated to alpha 9"]
+    #[rstest]
+    /// Charging accumulates to pwr_in × timestep regardless of how much discharge is requested.
+    ///
+    /// With pwr_in = 3.5 kW, storage_capacity = 10 kWh, charge target SOC = 0.5,
+    /// initial SOC = 0.1, and a 1-hour timestep:
+    ///     q_min ≈ 0.011 kWh  (passive minimum output over the full hour)
+    ///     q_max ≈ 0.736 kWh  (maximum output over the full hour)
+    ///
+    /// Three distinct code paths are exercised:
+    ///   - Passive path (demand <= q_min):  MIN ODE runs for the full hour.
+    ///   - Active target path (q_min < demand <= q_max): MAX ODE runs until the demand
+    ///     is satisfied, then passive continuation charges for the remainder of the hour.
+    ///   - Full-max path (demand > q_max):  MAX ODE runs for the full hour.
+    ///
+    /// All three paths should accumulate energy_charged ≈ 3.5 kWh because the charge
+    /// target SOC of 0.5 is not reached during any of them (final SOC ≈ 0.11–0.45).
+    fn test_charging_continues_for_full_timestep(
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        control: Arc<SetpointTimeControl>,
+        charge_control_schedule: Vec<bool>,
+    ) {
+        let simtime_iterator = &simulation_time.iter();
+        let charge_control: Arc<ChargeControl> = ChargeControl::new(
+            ControlLogicType::Manual,
+            charge_control_schedule,
+            simtime_iterator,
+            0,
+            1.,
+            [0.5, 0.5].into_iter().map(Into::into).collect(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Default::default(),
+        )
+        .unwrap()
+        .into();
+
+        let make_heater = || {
+            let energy_supply = Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(FuelType::Electricity, simtime_iterator.total_steps())
+                    .build(),
+            ));
+            let energy_supply_conn =
+                EnergySupply::connection(energy_supply, "storage_heater").unwrap();
+
+            let heater = ElecStorageHeater::new(
+                3.5,
+                2.5,
+                10.0,
+                ElectricStorageHeaterAirFlowType::FanAssisted,
+                0.7,
+                11.,
+                1,
+                21.,
+                Arc::new(|| 20.),
+                energy_supply_conn,
+                simtime_iterator,
+                control.clone(),
+                charge_control.clone(),
+                DRY_CORE_MIN_OUTPUT.to_vec(),
+                DRY_CORE_MAX_OUTPUT.to_vec(),
+                external_conditions.clone(),
+                0.0,
+                None,
+            )
+            .unwrap();
+            heater.storage.write().set_state_of_charge(0.1);
+            heater
+        };
+
+        // (demand_kWh, expected_energy_charged_kWh)
+        let test_cases = [
+            // (0.0, 3.50), // passive path
+            (0.011, 3.50), // ≈ q_min, active target path
+                           // (0.022, 3.50), // active target path
+                           // (0.055, 3.50), // active target path
+                           // (0.220, 3.50), // active target path
+                           // (0.549, 3.50), // active target path
+                           // (0.80, 3.50),  // full-max path (0.80 > q_max ≈ 0.736)
+        ];
+
+        let simtime = simtime_iterator.current_iteration();
+
+        for (demand, expected_charged) in test_cases {
+            let heater = make_heater();
+            heater.demand_energy(demand, &simtime).unwrap();
+            let energy_charged = heater.energy_charged();
+
+            assert_relative_eq!(energy_charged, expected_charged, max_relative = 1e-7,);
+        }
+    }
+
     #[rstest]
     fn test_demand_energy_detailed_results(
         simulation_time: SimulationTime,
