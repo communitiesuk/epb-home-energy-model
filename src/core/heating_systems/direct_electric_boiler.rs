@@ -33,8 +33,8 @@ pub struct DirectElectricBoiler {
 }
 impl DirectElectricBoiler {
     /// Construct a Boiler object
-    fn new(
-        boiler_data: HeatSourceWetDetails,
+    pub(crate) fn new(
+        boiler_data: &HeatSourceWetDetails,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_conn_name_auxiliary: &str,
         simulation_timestep: f64,
@@ -62,9 +62,9 @@ impl DirectElectricBoiler {
                 energy_supply_connections: Default::default(),
                 energy_supply_connection_aux,
                 service_results: Default::default(),
-                boiler_power: rated_power,
-                power_circ_pump: electricity_circ_pump,
-                power_standby: electricity_standby,
+                boiler_power: *rated_power,
+                power_circ_pump: *electricity_circ_pump,
+                power_standby: *electricity_standby,
                 total_time_running_current_timestep: 0.,
             }),
             _ => Err(IncorrectBoilerDataType)?,
@@ -454,7 +454,7 @@ mod tests {
         external_conditions: ExternalConditions,
     ) -> DirectElectricBoiler {
         DirectElectricBoiler::new(
-            boiler_data,
+            &boiler_data,
             Arc::new(RwLock::new(
                 EnergySupplyBuilder::new(
                     FuelType::Electricity,
@@ -824,7 +824,7 @@ mod tests {
         external_conditions: ExternalConditions,
     ) {
         let result = DirectElectricBoiler::new(
-            boiler_data,
+            &boiler_data,
             Arc::new(RwLock::new(
                 EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.iter().total_steps())
                     .build(),

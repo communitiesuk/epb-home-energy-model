@@ -1215,6 +1215,7 @@ impl Corpus {
                     heat_source,
                     internal_gains_from_heat_source_wet,
                     timestep_end_calcs_from_heat_sources,
+                    heat_source_wet_boilers: _, // TODO: hook up to corpus
                 } = heat_source_wet_from_input(
                     name,
                     (*heat_source_wet_details).clone(),
@@ -5083,6 +5084,7 @@ struct HeatSourceWetDataFromInput {
     heat_source: WetHeatSource,
     internal_gains_from_heat_source_wet: Vec<(ArcStr, InternalGains)>,
     timestep_end_calcs_from_heat_sources: Vec<WetHeatSource>,
+    heat_source_wet_boilers: Vec<Arc<RwLock<Boiler>>>,
 }
 
 fn heat_source_wet_from_input(
@@ -5101,6 +5103,7 @@ fn heat_source_wet_from_input(
 ) -> anyhow::Result<HeatSourceWetDataFromInput> {
     let mut internal_gains_from_heat_source_wet = vec![];
     let mut timestep_end_calcs = vec![];
+    let mut heat_source_wet_boilers = vec![];
     let wet_heat_source = match &input {
         HeatSourceWetDetails::HeatPump {
             source_type,
@@ -5173,6 +5176,7 @@ fn heat_source_wet_from_input(
                     simulation_time.step_in_hours(),
                     name,
                 )?));
+                heat_source_wet_boilers.push(boiler.clone());
 
                 timestep_end_calcs.push(WetHeatSource::Boiler(boiler.clone()));
 
@@ -5222,16 +5226,39 @@ fn heat_source_wet_from_input(
                 .clone();
             let energy_supply_aux = energy_supplies.get(energy_supply_auxiliary).ok_or_else(|| anyhow!("Boiler references undeclared auxiliary energy supply '{energy_supply_auxiliary}'."))?.clone();
 
-            let heat_source = WetHeatSource::Boiler(Arc::new(RwLock::new(
-                Boiler::new(
-                    input,
+            let heat_source = Arc::new(RwLock::new(Boiler::new(
+                input,
+                energy_supply,
+                energy_supply_aux,
+                external_conditions.clone(),
+                simulation_time.step_in_hours(),
+                name,
+            )?));
+
+            heat_source_wet_boilers.push(heat_source.clone());
+
+            let heat_source = WetHeatSource::Boiler(heat_source);
+
+            timestep_end_calcs.push(heat_source.clone());
+
+            heat_source
+        }
+        HeatSourceWetDetails::DirectElectricBoiler { energy_supply, .. } => {
+            let energy_supply = energy_supplies
+                .get(energy_supply)
+                .ok_or_else(|| {
+                    anyhow!("HIU references an undeclared energy supply '{energy_supply}'.")
+                })?
+                .clone();
+            let energy_supply_conn_name_auxiliary = ["Boiler_auxiliary: ", name].concat();
+            let heat_source = WetHeatSource::DirectElectricBoiler(Arc::new(RwLock::new(
+                DirectElectricBoiler::new(
+                    &input,
                     energy_supply,
-                    energy_supply_aux,
-                    external_conditions.clone(),
+                    energy_supply_conn_name_auxiliary.as_str(),
                     simulation_time.step_in_hours(),
-                    name,
-                )
-                .expect("could not construct boiler value from provided data"),
+                    external_conditions.clone(),
+                )?,
             )));
 
             timestep_end_calcs.push(heat_source.clone());
@@ -5392,13 +5419,13 @@ fn heat_source_wet_from_input(
 
             heat_source
         }
-        HeatSourceWetDetails::DirectElectricBoiler { .. } => todo!("As part of 1.0.0a9 migration"),
     };
 
     Ok(HeatSourceWetDataFromInput {
         heat_source: wet_heat_source,
         internal_gains_from_heat_source_wet,
         timestep_end_calcs_from_heat_sources: timestep_end_calcs,
+        heat_source_wet_boilers,
     })
 }
 
