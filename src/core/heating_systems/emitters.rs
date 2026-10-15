@@ -3937,8 +3937,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "Part of 1.0.0a9 migration"]
-
     fn test_return_temp_from_flow_rate_above_max(
         emitters_with_flow_rate_above_max: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
@@ -3951,7 +3949,7 @@ mod tests {
                 50.,
                 30.,
                 simulation_time_iterator.current_iteration(),
-                todo!("energy_output_min as part of 1.0.0a9 migration"),
+                0.,
             )
             .unwrap();
 
@@ -3987,8 +3985,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "Part of 1.0.0a9 migration"]
-
     fn test_return_temp_from_flow_rate_non_variable_flow(
         emitters_with_non_variable_flow: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
@@ -4001,7 +3997,7 @@ mod tests {
                 50.,
                 30.,
                 simulation_time_iterator.current_iteration(),
-                todo!("energy_output_min as part of 1.0.0a9 migration"),
+                0.,
             )
             .unwrap();
 
@@ -4011,8 +4007,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "Part of 1.0.0a9 migration"]
-
     fn test_return_temp_from_flow_rate_non_variable_flow_no_energy(
         emitters_with_non_variable_flow: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
@@ -4025,7 +4019,7 @@ mod tests {
                 50.,
                 30.,
                 simulation_time_iterator.current_iteration(),
-                todo!("energy_output_min as part of 1.0.0a9 migration"),
+                0.,
             )
             .unwrap();
 
@@ -4061,8 +4055,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "Part of 1.0.0a9 migration"]
-
     fn test_return_temp_from_flow_rate_recirculated(
         emitters_with_flow_rate_recirculated: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
@@ -4075,7 +4067,7 @@ mod tests {
                 50.,
                 30.,
                 simulation_time_iterator.current_iteration(),
-                todo!("energy_output_min as part of 1.0.0a9 migration"),
+                0.,
             )
             .unwrap();
 
@@ -4085,8 +4077,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "Part of 1.0.0a9 migration"]
-
+    #[should_panic]
     fn test_demand_energy_flow_return_no_progress(
         heat_source: SpaceHeatingService,
         zone: Arc<dyn SimpleZone>,
@@ -4128,14 +4119,13 @@ mod tests {
                 Some(true),
                 Some(false),
                 None,
-                todo!("energy_output_min as part of 1.0.0a9 migration"),
+                0.,
             )
             .is_err());
     }
 
     /// Test that the demand_energy_flow_return results are correct for zero demand
     #[rstest]
-    #[ignore = "Part of 1.0.0a9 migration"]
     fn test_demand_energy_flow_return_no_demand(
         fancoil_test_data: Value,
         heat_source: SpaceHeatingService,
@@ -4717,5 +4707,90 @@ mod tests {
         } else {
             panic!("Expected detailed results to be recorded")
         }
+    }
+
+    #[rstest]
+    fn test_total_emitter_floor_area_no_emitter(
+        heat_source: SpaceHeatingService,
+        zone: Arc<dyn SimpleZone>,
+        external_conditions: ExternalConditions,
+        ecodesign_controller: EcoDesignController,
+        energy_supply_conn: EnergySupplyConnection,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let emitters: [WetEmitterInput; 0] = [];
+        let pipework: [WaterPipework; 0] = [];
+
+        let fancoil_system = Arc::new(
+            Emitters::new(
+                None,
+                &emitters,
+                &pipework,
+                10.,
+                true,
+                None,
+                Some(3.),
+                Some(18.),
+                Some(0.),
+                Arc::new(RwLock::new(heat_source)),
+                zone,
+                external_conditions.into(),
+                ecodesign_controller,
+                55.,
+                20.,
+                simulation_time_iterator.total_steps(),
+                Some(Arc::new(energy_supply_conn)),
+                Some(true),
+                None,
+            )
+            .unwrap(),
+        );
+
+        assert_eq!(fancoil_system.total_emitter_floor_area(), 0.);
+    }
+
+    #[rstest]
+    fn test_total_emitter_floor_area_ufh(
+        heat_source: SpaceHeatingService,
+        zone: Arc<dyn SimpleZone>,
+        external_conditions: ExternalConditions,
+        ecodesign_controller: EcoDesignController,
+        energy_supply_conn: EnergySupplyConnection,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let emitters = [WetEmitterInput::Ufh {
+            equivalent_specific_thermal_mass: 0.,
+            system_performance_factor: 1.,
+            emitter_floor_area: 2.5,
+            frac_convective: 0.4,
+        }];
+        let pipework: [WaterPipework; 0] = [];
+
+        let system = Arc::new(
+            Emitters::new(
+                None,
+                &emitters,
+                &pipework,
+                10.,
+                true,
+                None,
+                Some(3.),
+                Some(18.),
+                Some(0.),
+                Arc::new(RwLock::new(heat_source)),
+                zone,
+                external_conditions.into(),
+                ecodesign_controller,
+                55.,
+                20.,
+                simulation_time_iterator.total_steps(),
+                Some(Arc::new(energy_supply_conn)),
+                Some(true),
+                None,
+            )
+            .unwrap(),
+        );
+
+        assert_eq!(system.total_emitter_floor_area(), 2.5);
     }
 }
