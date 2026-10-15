@@ -157,7 +157,7 @@ pub(crate) fn expand_events_from_json_values(
         name,
         event_type,
         schedule,
-        None,
+        0,
     )
 }
 
@@ -179,9 +179,8 @@ pub fn expand_events(
     name: &str,
     event_type: WaterScheduleEventType,
     mut schedule: Vec<Option<Vec<TypedScheduleEvent>>>,
-    offset: Option<usize>,
+    offset: usize,
 ) -> anyhow::Result<Vec<Option<Vec<TypedScheduleEvent>>>> {
-    let offset = offset.unwrap_or(0);
     for event in events {
         let starting_timestep = (event.start / simulation_timestep).floor() as usize - offset;
 

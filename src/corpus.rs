@@ -1028,9 +1028,12 @@ impl Corpus {
             &obscure_error_reporter,
         )?;
 
+        let event_schedules_start_day = input.water_heating_events.start_day;
+
         let event_schedules = event_schedules_from_input(
             &input.water_heating_events,
             simulation_time_iterator.as_ref(),
+            event_schedules_start_day,
         )?;
 
         let total_volume = FSum::with_all(input.zone.values().map(|zone| zone.volume)).value();
@@ -3988,6 +3991,7 @@ pub(crate) type EventSchedule = Vec<Option<Vec<TypedScheduleEvent>>>;
 fn event_schedules_from_input(
     events: &WaterHeatingEvents,
     simulation_time_iterator: &SimulationTimeIterator,
+    event_schedules_start_day: Option<u32>,
 ) -> anyhow::Result<EventSchedule> {
     let mut schedule: EventSchedule = vec![None; simulation_time_iterator.total_steps()];
     for (name, events) in &events.shower {
@@ -3997,6 +4001,7 @@ fn event_schedules_from_input(
             WaterScheduleEventType::Shower,
             schedule,
             simulation_time_iterator,
+            event_schedules_start_day,
         )?;
     }
 
@@ -4007,6 +4012,7 @@ fn event_schedules_from_input(
             WaterScheduleEventType::Bath,
             schedule,
             simulation_time_iterator,
+            event_schedules_start_day,
         )?;
     }
 
@@ -4017,6 +4023,7 @@ fn event_schedules_from_input(
             WaterScheduleEventType::Other,
             schedule,
             simulation_time_iterator,
+            event_schedules_start_day,
         )?;
     }
 
@@ -4029,9 +4036,19 @@ fn schedule_event_from_input(
     event_type: WaterScheduleEventType,
     existing_schedule: EventSchedule,
     simulation_time_iterator: &SimulationTimeIterator,
+    event_schedules_start_day: Option<u32>,
 ) -> anyhow::Result<EventSchedule> {
     let sim_timestep = simulation_time_iterator.step_in_hours();
     let total_timesteps = simulation_time_iterator.total_steps();
+
+    let offset = if let Some(event_schedules_start_day) = event_schedules_start_day {
+        simulation_time_iterator.time_series_idx(
+            event_schedules_start_day,
+            simulation_time_iterator.step_in_hours(),
+        )?
+    } else {
+        0
+    };
 
     expand_events(
         events_input
@@ -4043,7 +4060,7 @@ fn schedule_event_from_input(
         name,
         event_type,
         existing_schedule,
-        None, // Set to allow compilation during 1.0.0a9 migrations,
+        offset,
     )
 }
 
