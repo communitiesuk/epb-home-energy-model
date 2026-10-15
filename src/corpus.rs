@@ -1040,7 +1040,35 @@ impl Corpus {
         let mut heat_system_name_for_zone: IndexMap<ArcStr, Vec<ArcStr>> = Default::default();
         let mut cool_system_name_for_zone: IndexMap<ArcStr, Vec<ArcStr>> = Default::default();
 
-        extract_smart_air_brick_data(&input.zone)?;
+        let SmartAirBrickData {
+            control_name: smart_air_brick_control_name,
+            vents_open_during_airtightness_test,
+            total_smart_air_brick_floor_area,
+            total_external_floor_area,
+        } = extract_smart_air_brick_data(&input.zone)?;
+
+        // Resolve control object for smart air brick and calculate floor area function
+        let smart_air_brick_control = smart_air_brick_control_name
+            .map(|name| {
+                let control = controls
+                    .get_with_string(name.as_str())
+                    .ok_or_else(|| anyhow!("Smart air brick control not found: {name}"));
+
+                if let Ok(Control::SetpointTime(control)) = control {
+                    Ok(control)
+                } else {
+                    Err(anyhow!(
+                        "Smart air brick control must be a setpoint time control"
+                    ))
+                }
+            })
+            .transpose()?;
+        let smart_air_brick_floor_area_fraction =
+            if smart_air_brick_control.is_some() && total_external_floor_area > 0. {
+                total_smart_air_brick_floor_area / total_external_floor_area
+            } else {
+                1.0
+            };
 
         // infiltration ventilation
         let (infiltration_ventilation, window_adjust_control, vent_adjust_control) =
@@ -1050,6 +1078,9 @@ impl Corpus {
                 &controls,
                 &mut energy_supplies,
                 output_options.detailed_output_heating_cooling,
+                smart_air_brick_control,
+                vents_open_during_airtightness_test,
+                smart_air_brick_floor_area_fraction,
             )?;
 
         let infiltration_ventilation = Arc::from(infiltration_ventilation);
@@ -4194,6 +4225,9 @@ fn infiltration_ventilation_from_input(
     controls: &Controls,
     energy_supplies: &mut IndexMap<ArcStr, Arc<RwLock<EnergySupply>>>,
     detailed_output_heating_cooling: bool,
+    smart_air_brick_control: Option<Arc<SetpointTimeControl>>,
+    vents_open_during_airtightness_test: Option<bool>,
+    smart_air_brick_floor_area_fraction: f64,
 ) -> anyhow::Result<(
     InfiltrationVentilation,
     Option<ControlSetPoint>,
@@ -4239,9 +4273,9 @@ fn infiltration_ventilation_from_input(
         detailed_output_heating_cooling,
         energy_supplies,
         controls,
-        None,
-        None,
-        None,
+        smart_air_brick_control,
+        vents_open_during_airtightness_test,
+        smart_air_brick_floor_area_fraction.into(),
     )?;
 
     Ok((ventilation, window_adjust_control, vent_adjust_control))
@@ -6763,17 +6797,15 @@ fn extract_smart_air_brick_data(zone_input: &ZoneDictionary) -> anyhow::Result<S
         vents_open_during_airtightness_test,
         total_smart_air_brick_floor_area,
         total_external_floor_area,
-        ..Default::default()
     })
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct SmartAirBrickData {
     control_name: Option<ArcStr>,
     vents_open_during_airtightness_test: Option<bool>,
     total_smart_air_brick_floor_area: f64,
     total_external_floor_area: f64,
-    smart_air_brick_floor_area_fraction: f64,
 }
 
 /// A reporter that can be passed into individual models and used to report up obscure/ unlikely errors.
