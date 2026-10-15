@@ -1872,7 +1872,7 @@ impl Corpus {
                 required_vent_data.time_series_step,
             )];
 
-            ach_windows_shut.max(ach_target.unwrap_or(ach_windows_open).min(ach_windows_open))
+            ach_windows_shut.max(ach_target.min(ach_windows_open))
         } else {
             ach_windows_shut
         };
@@ -6718,10 +6718,10 @@ fn total_volume_heated_by_system(
 fn required_vent_data_from_input(input: &ControlInput) -> anyhow::Result<Option<RequiredVentData>> {
     input
         .extra
-        .get("required_vent")
+        .get("_required_vent") // NB. this is a special value denoting the dwelling's required ventilation rate (in air changes per hour), not as an ordinary control. Upstream Python anticipates making this much more explicit.
         .map(|ctrl| {
             anyhow::Ok(RequiredVentData {
-                schedule: expand_numeric_schedule(ctrl.numeric_schedule()?),
+                schedule: reject_nulls(expand_numeric_schedule(ctrl.numeric_schedule()?))?,
                 start_day: ctrl.start_day()?,
                 time_series_step: ctrl.time_series_step()?,
             })
@@ -6731,7 +6731,7 @@ fn required_vent_data_from_input(input: &ControlInput) -> anyhow::Result<Option<
 
 #[derive(Clone, Debug)]
 struct RequiredVentData {
-    schedule: Vec<Option<f64>>,
+    schedule: Vec<f64>,
     start_day: u32,
     time_series_step: f64,
 }
