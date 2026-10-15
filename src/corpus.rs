@@ -30,7 +30,7 @@ use crate::core::heating_systems::heat_battery_drycore::{
     HeatBatteryDryCore, HeatBatteryDryCoreServiceWaterDirect,
 };
 use crate::core::heating_systems::heat_battery_pcm::{
-    HeatBatteryPcm, HeatBatteryPcmServiceWaterDirect,
+    HeatBatteryChargingSource, HeatBatteryPcm, HeatBatteryPcmServiceWaterDirect,
 };
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
 use crate::core::heating_systems::heat_pump::{
@@ -84,12 +84,12 @@ use crate::input::{
     ChargeTargetScheduleOrControlReference, ColdWaterSourceDetails, ColdWaterSourceInput,
     Control as ControlInput, ControlCombinations, ControlDetails, ControlLogicType,
     ControlReferences, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FloorData, FlowData,
-    FuelType, HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
-    HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
-    InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
-    InternalGains as InternalGainsInput, InternalGainsDetails, NumericScheduleOrControlReference,
-    OnSiteGeneration as OnSiteGenerationInput, PartyWallCavityType,
-    PcmBatteryChargingConfiguration, PhotovoltaicInputs,
+    FuelType, HeatBattery as HeatBatteryInput, HeatBatteryPcmChargingSource, HeatPumpSourceType,
+    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
+    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
+    InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails,
+    NumericScheduleOrControlReference, OnSiteGeneration as OnSiteGenerationInput,
+    PartyWallCavityType, PcmBatteryChargingConfiguration, PhotovoltaicInputs,
     PhotovoltaicSystem as PhotovoltaicSystemInput,
     PhotovoltaicSystemWithPanels as PhotovoltaicSystemWithPanelsInput, PreHeatedWaterSourceDetails,
     SingleOrMap, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
@@ -1183,7 +1183,18 @@ impl Corpus {
             timestep_end_calcs
                 .write()
                 .push(HeatSystem::WwhrsSystem(wwhrs.clone()));
-        } // TODO review along with HeatSystem enum
+        }
+
+        // Accumulator for PCM heat batteries that need hydronic charging services
+        // connected after all heat_sources_wet are created. Each entry is:
+        // (battery_name, charging_source_obj, source_input_data)
+        // The charging_source_obj is the mutable HeatBatteryChargingSource dataclass
+        // that needs its heat_source_service field set.
+        let _pcm_hydronic_charging_pending: Vec<(
+            ArcStr,
+            HeatBatteryChargingSource,
+            HeatBatteryPcmChargingSource,
+        )> = Default::default();
 
         let mut heat_sources_wet_with_buffer_tank: Vec<ArcStr> = vec![];
         let mechanical_ventilations = infiltration_ventilation.mech_vents();
@@ -1237,6 +1248,13 @@ impl Corpus {
                 anyhow::Ok((name.into(), heat_source))
             })
             .collect::<anyhow::Result<IndexMap<_, WetHeatSource>>>()?;
+
+        // Connect hydronic charging services for PCM batteries. This must happen
+        // after all heat_sources_wet are created because a PCM battery may
+        // reference a heat pump that appears later in the input dict.
+        // Sort by dependency order so that if battery B charges battery A,
+        // B is connected first. Also detects circular charging dependencies.
+        // TODO: code to hook up goes here
 
         let mut energy_supply_conn_names_for_hot_water_source: IndexMap<ArcStr, Vec<ArcStr>> =
             Default::default();
