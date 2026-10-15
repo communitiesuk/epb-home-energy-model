@@ -1272,6 +1272,67 @@ mod tests {
 
     #[ignore = "Ignore until HeatBattery DryCore has been migrated to alpha 9"]
     #[rstest]
+    /// A demand equal to the coasting minimum stays on the passive discharge path.
+    ///
+    /// The space-heating dispatch requests each system not required this timestep
+    /// its own minimum output, so the boundary energy_demand == q_released_min must
+    /// stay on the passive minimum-discharge path: the math.isclose guard keeps the
+    /// exact equality on the q_released_min side of the comparison rather than
+    /// letting the strict test drop it into the active "deliver exactly" solver.
+    ///
+    /// A partial charge target (0.5) and a low initial state of charge (0.1) give the
+    /// heater charging headroom this timestep, so the passive and active paths leave
+    /// different states of charge, which is what lets this test tell them apart.
+    fn test_demand_energy_at_coasting_minimum_stays_passive(
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        control: Arc<SetpointTimeControl>,
+        charge_control_schedule: Vec<bool>,
+    ) {
+        //Charge control with a partial target and charging headroom (low initial
+        //state of charge) so the passive and active paths reach different states of
+        //charge, letting the test distinguish them.
+        let simtime_iterator = &simulation_time.iter();
+        let charge_control: Arc<ChargeControl> = ChargeControl::new(
+            ControlLogicType::Automatic,
+            charge_control_schedule,
+            simtime_iterator,
+            0,
+            1.,
+            [0.5, 0.5].into_iter().map(Into::into).collect(),
+            Some(22.),
+            None,
+            None,
+            None,
+            None,
+            Default::default(),
+        )
+        .unwrap()
+        .into();
+
+        let heater = create_elec_storage_heater(
+            simulation_time,
+            charge_control,
+            control,
+            external_conditions,
+            DRY_CORE_MIN_OUTPUT.to_vec(),
+            DRY_CORE_MAX_OUTPUT.to_vec(),
+            None,
+        );
+        heater.storage.write().set_state_of_charge(0.1);
+
+        // Coasting minimum output at the first timestep with SOC = 0.1, in kWh.
+        let iteration = &simtime_iterator.current_iteration();
+        let coasting_minimum = heater.energy_output_min(iteration).unwrap();
+        assert_relative_eq!(coasting_minimum, 0.00871206656152925);
+        let energy_released = heater.demand_energy(coasting_minimum, iteration).unwrap();
+
+        assert_relative_eq!(energy_released, coasting_minimum);
+        assert_relative_eq!(heater.storage.read().state_of_charge(), 0.2508187234724622);
+    }
+
+    #[ignore = "Ignore until HeatBattery DryCore has been migrated to alpha 9"]
+    #[rstest]
     /// Charging accumulates to pwr_in × timestep regardless of how much discharge is requested.
     ///
     /// With pwr_in = 3.5 kW, storage_capacity = 10 kWh, charge target SOC = 0.5,
