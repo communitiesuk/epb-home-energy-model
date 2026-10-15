@@ -4840,7 +4840,6 @@ pub enum FloorData {
         #[validate(exclusive_minimum = 0.)]
         area_per_perimeter_vent: f64,
 
-        // Needs attention: Shows as optional in python as part of 1.0.0a9 migration
         /// Wind shielding factor. If omitted, inferred from InfiltrationVentilation.shield_class.
         shield_fact_location: Option<WindShieldLocation>,
 

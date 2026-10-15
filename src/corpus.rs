@@ -83,8 +83,8 @@ use crate::input::{
     BuildingElement as BuildingElementInput, BuildingElementHeightWidthInput, ChargeLevel,
     ChargeTargetScheduleOrControlReference, ColdWaterSourceDetails, ColdWaterSourceInput,
     Control as ControlInput, ControlCombinations, ControlDetails, ControlLogicType,
-    ControlReferences, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FlowData, FuelType,
-    HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    ControlReferences, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, FloorData, FlowData,
+    FuelType, HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
     HeatSourceControlType, HeatSourceWetDetails, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
     InternalGains as InternalGainsInput, InternalGainsDetails, NumericScheduleOrControlReference,
@@ -3994,6 +3994,7 @@ fn event_schedules_from_input(
     event_schedules_start_day: Option<u32>,
 ) -> anyhow::Result<EventSchedule> {
     let mut schedule: EventSchedule = vec![None; simulation_time_iterator.total_steps()];
+
     for (name, events) in &events.shower {
         schedule = schedule_event_from_input(
             events.iter().collect(),
@@ -4399,29 +4400,43 @@ fn building_element_from_input(
             thickness_walls,
             perimeter,
             psi_wall_floor_junc,
-            ..
-        } => BuildingElement::Ground(BuildingElementGround::new(
-            *total_area,
-            *area,
-            *pitch,
-            *u_value,
-            *thermal_resistance_floor_construction,
-            *areal_heat_capacity,
-            *mass_distribution_class,
-            floor_data,
-            *thickness_walls,
-            *perimeter,
-            *psi_wall_floor_junc,
-            external_conditions,
-            match ventilation_shield_class {
-                VentilationShieldClass::Open => WindShieldLocation::Exposed,
-                VentilationShieldClass::Normal => WindShieldLocation::Average,
-                VentilationShieldClass::Shielded => WindShieldLocation::Sheltered,
-            },
-            // Temporarily none as part of migration to 1.0.0a9
-            None,
-            simulation_time_iterator,
-        )?),
+        } => {
+            let smart_air_brick_control = if let FloorData::SuspendedFloor {
+                control_smart_air_brick: Some(control_smart_air_brick),
+                ..
+            } = floor_data
+            {
+                if let Control::SetpointTime(setpoint_control) = controls.get_with_string(control_smart_air_brick).ok_or_else(|| anyhow!("Smart air brick control referenced with name '{control_smart_air_brick}' not provided"))? {
+                    Some(setpoint_control)
+                } else {
+                    bail!("Referenced smart brick control '{control_smart_air_brick}' was expected to refer to a setpoint time control");
+                }
+            } else {
+                None
+            };
+
+            BuildingElement::Ground(BuildingElementGround::new(
+                *total_area,
+                *area,
+                *pitch,
+                *u_value,
+                *thermal_resistance_floor_construction,
+                *areal_heat_capacity,
+                *mass_distribution_class,
+                floor_data,
+                *thickness_walls,
+                *perimeter,
+                *psi_wall_floor_junc,
+                external_conditions,
+                match ventilation_shield_class {
+                    VentilationShieldClass::Open => WindShieldLocation::Exposed,
+                    VentilationShieldClass::Normal => WindShieldLocation::Average,
+                    VentilationShieldClass::Shielded => WindShieldLocation::Sheltered,
+                },
+                smart_air_brick_control,
+                simulation_time_iterator,
+            )?)
+        }
         BuildingElementInput::AdjacentConditionedSpace {
             area,
             pitch,
