@@ -119,7 +119,7 @@ impl HeatSourceWetService {
                 service.energy_output_max(temp_flow, temp_return, *simtime, false)
             }
             Self::HeatBatteryDryCoreServiceWaterRegular(service) => {
-                service.energy_output_max(temp_flow, temp_return, *simtime)
+                service.energy_output_max(temp_flow, temp_return, *simtime, None)
             }
             Self::HeatNetworkServiceWaterStorage(service) => {
                 Ok(service.energy_output_max(temp_flow, temp_return, None, simtime))
@@ -168,6 +168,7 @@ impl HeatSourceWetService {
                 temp_return,
                 Some(true),
                 *simtime,
+                None,
             ),
             Self::HeatNetworkServiceWaterStorage(service) => {
                 service.demand_energy(energy_demand, temp_flow, Some(temp_return), None, simtime)

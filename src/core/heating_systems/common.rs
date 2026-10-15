@@ -78,15 +78,13 @@ impl HeatSourceWet {
             HeatSourceWet::WaterCombi(combi) => Ok(combi.energy_output_max()),
             HeatSourceWet::WaterRegular(regular) => {
                 // passing default for _temp_flow and _temp_return as they are unused
-                Ok(
-                    regular.energy_output_max(
-                        Default::default(),
-                        Default::default(),
-                        None,
-                        Some(ignore_standard_ctrl),
-                        simtime,
-                    ),
-                )
+                Ok(regular.energy_output_max(
+                    Default::default(),
+                    Default::default(),
+                    None,
+                    Some(ignore_standard_ctrl),
+                    simtime,
+                ))
             }
             HeatSourceWet::Space(space) => {
                 // passing default for _temp_output and _temp_return_feed as they are unused
@@ -100,7 +98,12 @@ impl HeatSourceWet {
             }
             HeatSourceWet::HeatNetworkWaterStorage(storage) => {
                 // passing default for _temp_flow and _temp_return as they are unused
-                Ok(storage.energy_output_max(Default::default(), Default::default(), Some(ignore_standard_ctrl), &simtime))
+                Ok(storage.energy_output_max(
+                    Default::default(),
+                    Default::default(),
+                    Some(ignore_standard_ctrl),
+                    &simtime,
+                ))
             }
             HeatSourceWet::HeatBatteryHotWater(battery) => {
                 // passing default for _temp_return as it is unused
@@ -236,6 +239,7 @@ impl HeatBatteryWaterService {
                 temp_return.ok_or_else(|| anyhow!("Water service for drycore heat battery expected a temp_return value to be provided"))?,
                 update_heat_source_state,
                 simtime,
+                None, // place holder as part of 1.0.0a9 migration
             ),
         }
     }
@@ -251,7 +255,8 @@ impl HeatBatteryWaterService {
                 service.energy_output_max(temp_flow, temp_return, simtime, false)
             }
             HeatBatteryWaterService::DryCore(service) => {
-                service.energy_output_max(temp_flow, temp_return, simtime)
+                service.energy_output_max(temp_flow, temp_return, simtime, None)
+                // place holder as part of 1.0.0a9 migration
             }
         }
     }
