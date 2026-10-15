@@ -560,13 +560,13 @@ fn single_control_from_details(
 
             let charge_time_control: ScheduleOrOnOffControl = match schedule_or_control {
                 ChargeTargetScheduleOrControlReference::ChargeTimeControl(control_reference) => OnOffControl::from(single_control_from_details(
-                        name,
-                        control_input.get(control_reference.as_str()).ok_or_else(|| anyhow!("Control '{name}' references control '{control_reference}' which is not defined"))?,
-                        external_conditions.clone(),
-                        simulation_time_iterator,
-                        control_input,
-                        obscure_error_reporter,
-                    )?.ok_or_else(|| anyhow!("Control '{name}' references control '{control_reference}' which could not be built"))?).into(),
+                    name,
+                    control_input.get(control_reference.as_str()).ok_or_else(|| anyhow!("Control '{name}' references control '{control_reference}' which is not defined"))?,
+                    external_conditions.clone(),
+                    simulation_time_iterator,
+                    control_input,
+                    obscure_error_reporter,
+                )?.ok_or_else(|| anyhow!("Control '{name}' references control '{control_reference}' which could not be built"))?).into(),
                 ChargeTargetScheduleOrControlReference::Schedule(schedule) => reject_nulls(expand_boolean_schedule(schedule))?.into(),
             };
 
@@ -992,7 +992,17 @@ impl Corpus {
             .energy_supply
             .iter()
             .flat_map(|(name, supply)| {
-                diverter_from_energy_supply(supply).map(|diverter| (name.into(), diverter))
+                diverter_from_energy_supply(supply).map(|diverter| {
+                    (
+                        name.into(),
+                        match diverter {
+                            SingleOrMap::Single(diverter) => {
+                                indexmap! { arcstr::literal!("diverter") => diverter }
+                            }
+                            SingleOrMap::Map(diverters) => diverters,
+                        },
+                    )
+                })
             })
             .collect();
         let mut diverters: Vec<Arc<RwLock<PVDiverter>>> = Default::default();
@@ -3617,39 +3627,7 @@ fn energy_supply_from_input(
     })))
 }
 
-type DiverterTypes = IndexMap<ArcStr, SingleOrMap<EnergyDiverter>>;
-
-// struct DiverterTypes {
-//     pub mains_electricity: Option<EnergyDiverter>,
-//     pub mains_gas: Option<EnergyDiverter>,
-//     pub bulk_lpg: Option<EnergyDiverter>,
-// }
-
-// impl From<&EnergySupplyInput> for DiverterTypes {
-//     fn from(input: &EnergySupplyInput) -> Self {
-//         Self {
-//             mains_electricity: diverter_from_energy_supply(
-//                 input.get(&EnergySupplyKey::MainsElectricity),
-//             ),
-//             mains_gas: diverter_from_energy_supply(input.get(&EnergySupplyKey::MainsGas)),
-//             bulk_lpg: diverter_from_energy_supply(input.get(&EnergySupplyKey::BulkLpg)),
-//         }
-//     }
-// }
-//
-// impl DiverterTypes {
-//     pub fn get_for_supply_type(
-//         &self,
-//         energy_supply_type: EnergySupplyType,
-//     ) -> Option<&EnergyDiverter> {
-//         match energy_supply_type {
-//             EnergySupplyType::Electricity => self.mains_electricity.as_ref(),
-//             EnergySupplyType::MainsGas => self.mains_gas.as_ref(),
-//             EnergySupplyType::LpgBulk => self.bulk_lpg.as_ref(),
-//             _ => None,
-//         }
-//     }
-// }
+type DiverterTypes = IndexMap<ArcStr, IndexMap<ArcStr, EnergyDiverter>>;
 
 fn diverter_from_energy_supply(
     supply: &EnergySupplyDetails,
@@ -5393,7 +5371,7 @@ fn heat_source_from_input(
                 controls
                     .get_with_string(control_max)
                     .ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a SolarThermalSystem object."))?
-                )
+            )
                 .ok_or_else(|| anyhow!("The control '{control_max}' was expected to be a setpoint time control or a combination control"))?;
 
             let energy_supply_from_environment = energy_supplies
@@ -5915,33 +5893,35 @@ fn hot_water_source_from_input(
                 continue;
             };
             // Just handling the single diverter as a stop gap in the 1.0.0a9 migration
-            if let Some(SingleOrMap::Single(diverter)) = diverter_types.get(energy_supply_name) {
-                if &diverter.heat_source == heat_source_name {
-                    let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();
+            if let Some(diverter_inputs) = diverter_types.get(energy_supply_name) {
+                for (diverter_name, diverter) in diverter_inputs {
+                    if &diverter.heat_source == heat_source_name {
+                        let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();
 
-                    let positioned_heat_source = &heat_sources.get(heat_source_name);
-                    let immersion_heater = positioned_heat_source
-                        .unwrap()
-                        .heat_source
-                        .lock()
-                        .as_immersion_heater();
+                        let positioned_heat_source = &heat_sources.get(heat_source_name);
+                        let immersion_heater = positioned_heat_source
+                            .unwrap()
+                            .heat_source
+                            .lock()
+                            .as_immersion_heater();
 
-                    if let Some(im) = immersion_heater {
-                        let control_max = controls
-                            .get_with_string(&diverter.control_max)
-                            .and_then(control_max_diverter_from_control)
-                            .ok_or_else(|| anyhow!("PV diverter control '{}' was expected to be a setpoint time control or a combination control", diverter.control_max))?;
-                        let pv_diverter = PVDiverter::new(
-                            &pre_heated_tank,
-                            im,
-                            heat_source_name.clone(),
-                            control_max,
-                        );
-                        energy_supply
-                            .write()
-                            .connect_diverter(pv_diverter.clone(), None) // TODO 1.0.0a9 migration - pass diverter name
-                            .unwrap();
-                        diverters.push(pv_diverter);
+                        if let Some(im) = immersion_heater {
+                            let control_max = controls
+                                .get_with_string(&diverter.control_max)
+                                .and_then(control_max_diverter_from_control)
+                                .ok_or_else(|| anyhow!("PV diverter control '{}' was expected to be a setpoint time control or a combination control", diverter.control_max))?;
+                            let pv_diverter = PVDiverter::new(
+                                &pre_heated_tank,
+                                im,
+                                heat_source_name.clone(),
+                                control_max,
+                            );
+                            energy_supply
+                                .write()
+                                .connect_diverter(pv_diverter.clone(), diverter_name.clone().into())
+                                .unwrap();
+                            diverters.push(pv_diverter);
+                        }
                     }
                 }
             }
@@ -6409,7 +6389,7 @@ fn space_heat_systems_from_input(
                                                 HeatBatteryDryCore::create_service_space_heating(
                                                     dry_core.clone(),
                                                     &energy_supply_conn_name,
-                                                    control.into()
+                                                    control.into(),
                                                 )?
                                             }
                                         ),
