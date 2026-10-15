@@ -1040,6 +1040,8 @@ impl Corpus {
         let mut heat_system_name_for_zone: IndexMap<ArcStr, Vec<ArcStr>> = Default::default();
         let mut cool_system_name_for_zone: IndexMap<ArcStr, Vec<ArcStr>> = Default::default();
 
+        extract_smart_air_brick_data(&input.zone)?;
+
         // infiltration ventilation
         let (infiltration_ventilation, window_adjust_control, vent_adjust_control) =
             infiltration_ventilation_from_input(
@@ -6698,6 +6700,80 @@ struct RequiredVentData {
     schedule: Vec<Option<f64>>,
     start_day: u32,
     time_series_step: f64,
+}
+
+fn extract_smart_air_brick_data(zone_input: &ZoneDictionary) -> anyhow::Result<SmartAirBrickData> {
+    let (
+        mut smart_air_brick_control_name,
+        mut vents_open_during_airtightness_test,
+        mut total_smart_air_brick_floor_area,
+        mut total_external_floor_area,
+    ): (Option<ArcStr>, Option<bool>, f64, f64) = Default::default();
+
+    for (zone_name, zone_data) in zone_input {
+        let mut smart_air_brick_count_in_zone = 0usize;
+        for building_element in zone_data.building_elements.values() {
+            if let BuildingElementInput::Ground {
+                area, floor_data, ..
+            } = building_element
+            {
+                total_external_floor_area += *area;
+
+                if let FloorData::SuspendedFloor {
+                    control_smart_air_brick: Some(control_smart_air_brick),
+                    vents_open_during_airtightness_test: vents_open_during_airtightness_test_input,
+                    ..
+                } = floor_data
+                {
+                    let this_ctrl_name = control_smart_air_brick;
+
+                    smart_air_brick_count_in_zone += 1;
+
+                    if smart_air_brick_count_in_zone > 1 {
+                        bail!("Only one smart air brick system is supported per zone, but multiple were specified in zone '{zone_name}'.");
+                    }
+
+                    let this_test_condition =
+                        vents_open_during_airtightness_test_input.as_ref().copied();
+
+                    // check consistency with any previously found smart air brick system
+                    if let Some(smart_air_brick_control_name) =
+                        smart_air_brick_control_name.as_ref()
+                    {
+                        if this_ctrl_name != smart_air_brick_control_name {
+                            bail!("All smart air brick systems must reference the same control, but zone '{zone_name}' references '{this_ctrl_name}' instead of '{smart_air_brick_control_name}'");
+                        }
+                        if this_test_condition != vents_open_during_airtightness_test {
+                            bail!("All smart air brick systems must have the same setting for whether vents are open during airtightness testing, but zone '{zone_name}' has a different value");
+                        }
+                    } else {
+                        smart_air_brick_control_name.replace(this_ctrl_name.clone());
+                        vents_open_during_airtightness_test = this_test_condition;
+                    }
+
+                    // ccumulate floor area with smart air bricks
+                    total_smart_air_brick_floor_area += *area;
+                }
+            }
+        }
+    }
+
+    Ok(SmartAirBrickData {
+        control_name: smart_air_brick_control_name,
+        vents_open_during_airtightness_test,
+        total_smart_air_brick_floor_area,
+        total_external_floor_area,
+        ..Default::default()
+    })
+}
+
+#[derive(Clone, Debug, Default)]
+struct SmartAirBrickData {
+    control_name: Option<ArcStr>,
+    vents_open_during_airtightness_test: Option<bool>,
+    total_smart_air_brick_floor_area: f64,
+    total_external_floor_area: f64,
+    smart_air_brick_floor_area_fraction: f64,
 }
 
 /// A reporter that can be passed into individual models and used to report up obscure/ unlikely errors.
