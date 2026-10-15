@@ -1087,14 +1087,26 @@ impl Corpus {
 
         let required_vent_data = required_vent_data_from_input(&input.control)?;
 
-        let zones: IndexMap<ArcStr, Arc<Zone>> = input
-            .zone
-            .iter()
-            .map(|(zone_name, zone)| -> anyhow::Result<(ArcStr, Arc<Zone>)> {
-                Ok((zone_name.into(), {
+        // Build the zones in their declared processing order, so that order is applied
+        // consistently everywhere they are iterated. When a source is shared between zones and
+        // cannot meet their combined demand, the zone stored first is served first and takes
+        // priority on the limited output, so the order is an explicit declared input. Where it
+        // is omitted at most one zone is heated and at most one cooled (enforced on input), so
+        // input order is used and cannot affect results.
+        let zone_processing_order: Vec<ArcStr> = input
+            .zone_processing_order
+            .as_ref()
+            .map(|zones| zones.iter().cloned().collect_vec())
+            .unwrap_or_else(|| input.zone.keys().cloned().collect_vec());
+
+        let zones: IndexMap<ArcStr, Arc<Zone>> = zone_processing_order
+            .into_iter()
+            .map(|zone_name| -> anyhow::Result<(ArcStr, Arc<Zone>)> {
+                let zone = &input.zone[&zone_name];
+                Ok((zone_name.clone(), {
                     let zone_for_corpus = zone_from_input(
                         zone,
-                        zone_name,
+                        zone_name.as_str(),
                         &mut heat_system_name_for_zone,
                         &mut cool_system_name_for_zone,
                         external_conditions.clone(),
