@@ -94,7 +94,7 @@ use crate::input::{
     PhotovoltaicSystemWithPanels as PhotovoltaicSystemWithPanelsInput, PreHeatedWaterSourceDetails,
     SingleOrMap, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput,
+    TariffDataInput, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput,
     VentAdjustControlReferences, VentilationLeaks, VentilationShieldClass, WasteWaterHeatRecovery,
     WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents, WaterPipework,
     WetEmitter, WindShieldLocation, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
@@ -968,6 +968,24 @@ impl Corpus {
             )?,
         });
 
+        let tariff_data: Option<TariffData> = input
+            .tariff_data
+            .as_ref()
+            .map(|tariff_data_input| {
+                let TariffDataInput {
+                    start_day,
+                    time_series_step,
+                    prices,
+                } = tariff_data_input;
+                anyhow::Ok(TariffData::new(
+                    &simulation_time_iterator,
+                    start_day.map(|s| s as u32),
+                    *time_series_step,
+                    TariffData::expand_prices_schedule(prices)?,
+                )?)
+            })
+            .transpose()?;
+
         let obscure_error_reporter = ObscureErrorReporter::default();
 
         let diverter_types: DiverterTypes = input
@@ -989,6 +1007,7 @@ impl Corpus {
             &input.energy_supply,
             simulation_time_iterator.clone().as_ref(),
             tariff_file_path,
+            tariff_data.map(Into::into),
             external_conditions.clone(),
         )?;
 
@@ -3462,6 +3481,7 @@ fn energy_supplies_from_input(
     input: &EnergySupplyInput,
     simulation_time_iterator: &SimulationTimeIterator,
     tariff_data_file: Option<&str>,
+    tariff_data: Option<Arc<TariffData>>,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<IndexMap<ArcStr, Arc<RwLock<EnergySupply>>>> {
     let mut supplies: IndexMap<ArcStr, Arc<RwLock<EnergySupply>>> = IndexMap::new();
@@ -3492,7 +3512,7 @@ fn energy_supplies_from_input(
             supply,
             simulation_time_iterator,
             tariff_data_file,
-            None, // TODO 1.0.0a9 migration - pass tariff data
+            tariff_data.as_ref().map(Arc::clone),
             external_conditions.clone(),
         )?;
         supplies.insert(name.into(), energy_supply);
@@ -3505,7 +3525,7 @@ fn energy_supply_from_input(
     input: &EnergySupplyDetails,
     simulation_time_iterator: &SimulationTimeIterator,
     tariff_file_path: Option<&str>,
-    tariff_data: Option<TariffData>,
+    tariff_data: Option<Arc<TariffData>>,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<Arc<RwLock<EnergySupply>>> {
     Ok(Arc::new(RwLock::new({
@@ -3555,7 +3575,7 @@ fn energy_supply_from_input(
         }) {
             // Import electricity tariff data for grid import options
             let tariff_data = match tariff_data {
-                Some(tariff_data) => tariff_data,
+                Some(tariff_data) => Arc::unwrap_or_clone(tariff_data),
                 None => {
                     let tariff_path = tariff_file_path.ok_or_else(|| anyhow!("A battery that can be charged from the grid is present but no tariff data source was provided"))?;
                     let tariff_file = Box::new(BufReader::new(
@@ -3568,7 +3588,7 @@ fn energy_supply_from_input(
                         simulation_time_iterator,
                         Some(0),
                         simulation_time_iterator.step_in_hours(),
-                        TariffData::expand_prices_schedule(prices)?,
+                        TariffData::expand_prices_schedule(&prices)?,
                     )?
                 }
             };

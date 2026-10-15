@@ -42,7 +42,7 @@ impl TariffData {
     }
 
     pub(crate) fn expand_prices_schedule(
-        prices: IndexMap<ArcStr, NumericSchedule>,
+        prices: &IndexMap<ArcStr, NumericSchedule>,
     ) -> anyhow::Result<IndexMap<ArcStr, Vec<f64>>> {
         prices
             .iter()
@@ -154,7 +154,7 @@ mod tests {
         loaded_prices: IndexMap<ArcStr, NumericSchedule>,
         simulation_time: SimulationTimeIterator,
     ) -> TariffData {
-        let prices = TariffData::expand_prices_schedule(loaded_prices).unwrap();
+        let prices = TariffData::expand_prices_schedule(&loaded_prices).unwrap();
 
         TariffData::new(&simulation_time, Some(0), 1., prices).unwrap()
     }
@@ -164,7 +164,7 @@ mod tests {
         loaded_prices: IndexMap<ArcStr, NumericSchedule>,
         simulation_time: SimulationTimeIterator,
     ) -> TariffData {
-        let prices = TariffData::expand_prices_schedule(loaded_prices).unwrap();
+        let prices = TariffData::expand_prices_schedule(&loaded_prices).unwrap();
 
         TariffData::new(&simulation_time, None, 1., prices).unwrap()
     }

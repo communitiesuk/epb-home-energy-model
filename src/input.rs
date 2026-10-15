@@ -6744,13 +6744,13 @@ pub(crate) struct TariffDataInput {
     /// If None, it defaults to the simulation start.
     #[validate(minimum = 0)]
     #[validate(maximum = 365)]
-    start_day: Option<i32>,
+    pub(crate) start_day: Option<i32>,
 
     #[validate(minimum = 0.)]
     #[validate(maximum = 24.)]
-    time_series_step: f64,
+    pub(crate) time_series_step: f64,
 
-    prices: IndexMap<ArcStr, NumericSchedule>,
+    pub(crate) prices: IndexMap<ArcStr, NumericSchedule>,
 }
 
 // class TariffDataInput(StrictBaseModel):

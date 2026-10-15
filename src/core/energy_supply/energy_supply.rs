@@ -1319,7 +1319,7 @@ mod tests {
             &simulation_time.iter(),
             Some(0),
             1.,
-            TariffData::expand_prices_schedule(prices).unwrap(),
+            TariffData::expand_prices_schedule(&prices).unwrap(),
         )
         .unwrap()
     }
