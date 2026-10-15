@@ -1312,47 +1312,28 @@ mod tests {
         .into();
 
         let make_heater = || {
-            let energy_supply = Arc::new(RwLock::new(
-                EnergySupplyBuilder::new(FuelType::Electricity, simtime_iterator.total_steps())
-                    .build(),
-            ));
-            let energy_supply_conn =
-                EnergySupply::connection(energy_supply, "storage_heater").unwrap();
-
-            let heater = ElecStorageHeater::new(
-                3.5,
-                2.5,
-                10.0,
-                ElectricStorageHeaterAirFlowType::FanAssisted,
-                0.7,
-                11.,
-                1,
-                21.,
-                Arc::new(|| 20.),
-                energy_supply_conn,
-                simtime_iterator,
-                control.clone(),
+            let heater = create_elec_storage_heater(
+                simulation_time,
                 charge_control.clone(),
+                control.clone(),
+                external_conditions.clone(),
                 DRY_CORE_MIN_OUTPUT.to_vec(),
                 DRY_CORE_MAX_OUTPUT.to_vec(),
-                external_conditions.clone(),
-                0.0,
                 None,
-            )
-            .unwrap();
+            );
             heater.storage.write().set_state_of_charge(0.1);
             heater
         };
 
         // (demand_kWh, expected_energy_charged_kWh)
         let test_cases = [
-            // (0.0, 3.50), // passive path
+            (0.0, 3.50),   // passive path
             (0.011, 3.50), // ≈ q_min, active target path
-                           // (0.022, 3.50), // active target path
-                           // (0.055, 3.50), // active target path
-                           // (0.220, 3.50), // active target path
-                           // (0.549, 3.50), // active target path
-                           // (0.80, 3.50),  // full-max path (0.80 > q_max ≈ 0.736)
+            (0.022, 3.50), // active target path
+            (0.055, 3.50), // active target path
+            (0.220, 3.50), // active target path
+            (0.549, 3.50), // active target path
+            (0.80, 3.50),  // full-max path (0.80 > q_max ≈ 0.736)
         ];
 
         let simtime = simtime_iterator.current_iteration();
