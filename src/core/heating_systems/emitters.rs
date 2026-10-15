@@ -2690,6 +2690,289 @@ mod tests {
         .is_ok());
     }
 
+    #[fixture]
+    fn cold_emitter(
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+        ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
+    ) -> Emitters {
+        struct MockZone;
+
+        impl SimpleZone for MockZone {
+            fn temp_internal_air(&self) -> f64 {
+                25.0
+            }
+
+            fn area(&self) -> f64 {
+                80.0
+            }
+        }
+
+        #[fixture]
+        fn zone() -> Arc<dyn SimpleZone> {
+            Arc::new(MockZone)
+        }
+        let mock_zone = Arc::new(MockZone);
+
+        return Emitters::new(
+            Some(0.14),
+            &[WetEmitterInput::Radiator {
+                exponent: 1.2,
+                frac_convective: 0.4,
+                thermal_mass: None,
+                thermal_mass_per_m: None,
+                constant_per_m: None,
+                length: None,
+                constant: Some(0.08),
+            }],
+            &[],
+            10.0,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.0),
+            Arc::new(RwLock::new(heat_source.clone())),
+            mock_zone.clone(),
+            Arc::new(external_conditions.clone()),
+            ecodesign_controller,
+            55.0,
+            10.0,
+            simulation_time.total_steps(),
+            None,
+            Some(true),
+            None,
+        )
+        .unwrap();
+    }
+
+    /// Coasting minimum output is negative when the emitter is below the room.
+    ///
+    /// An emitter colder than the room absorbs heat as it warms towards the room
+    /// temperature, so its minimum (coasting) output is negative.
+    #[rstest]
+    fn test_energy_output_min_below_room_temperature(
+        cold_emitter: Emitters,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        // 0.14 kWh/K thermal mass * (10 - 25) K = -2.1 kWh absorbed warming to room
+        assert_relative_eq!(
+            cold_emitter
+                .energy_output_min(simulation_time_iterator.current_iteration())
+                .unwrap(),
+            -2.1,
+            epsilon = 1e-7
+        );
+    }
+
+    /// Heat source engages for a target above the negative coasting minimum.
+    ///
+    /// When the emitter is below the room temperature its coasting minimum output
+    /// is negative. A target net output above that minimum but still at or below
+    /// zero must be met by running the heat source to warm the emitter towards
+    /// the room temperature, supplying the increment required, rather than
+    /// coasting and absorbing the full minimum output.
+    #[rstest]
+    fn test_demand_energy_flow_return_engages_heat_source_below_room_temp(
+        cold_emitter: Emitters,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let energy_output_min = cold_emitter
+            .energy_output_min(simulation_time_iterator.current_iteration())
+            .unwrap();
+        assert_relative_eq!(energy_output_min, -2.1, epsilon = 1e-7);
+
+        // Target net output of -1.05 kWh lies between the coasting minimum
+        // (-2.1 kWh) and zero. Warming the emitter from 10 °C to the 25 °C room
+        // requires 0.14 * (25 - 10) = 2.1 kWh; the heat source supplies 1.05 kWh
+        // of this and the remaining 1.05 kWh is drawn from the room, giving a net
+        // released output of -1.05 kWh.
+
+        let (released, req_from_source) = cold_emitter
+            .demand_energy_flow_return(
+                -1.05,
+                50.,
+                40.,
+                simulation_time_iterator.current_iteration(),
+                Some(false),
+                Some(false),
+                None,
+                energy_output_min,
+            )
+            .unwrap();
+        assert_relative_eq!(released, -1.05, epsilon = 1e-7);
+        assert_relative_eq!(req_from_source, 1.05, epsilon = 1e-7);
+
+        // A target at the coasting minimum coasts: no heat source input and the
+        // full minimum output is absorbed.
+        let (released, req_from_source) = cold_emitter
+            .demand_energy_flow_return(
+                -2.1,
+                50.,
+                40.,
+                simulation_time_iterator.current_iteration(),
+                Some(false),
+                Some(false),
+                None,
+                energy_output_min,
+            )
+            .unwrap();
+        assert_relative_eq!(released, -2.1, epsilon = 1e-7);
+        assert_relative_eq!(req_from_source, 0., epsilon = 1e-7);
+
+        // With a zero threshold the same negative target coasts: any target at or
+        // below zero is treated as coasting, so the full minimum output is absorbed
+        // and no heat source input is required.
+        let (released, req_from_source) = cold_emitter
+            .demand_energy_flow_return(
+                -1.5,
+                50.,
+                40.,
+                simulation_time_iterator.current_iteration(),
+                Some(false),
+                Some(false),
+                None,
+                0.,
+            )
+            .unwrap();
+        assert_relative_eq!(released, -2.1, epsilon = 1e-7);
+        assert_relative_eq!(req_from_source, 0., epsilon = 1e-7);
+    }
+
+    #[fixture]
+    /// Create a radiator emitter initialised above the room temperature.
+    ///
+    /// The room is held at 10 °C and the emitter is initialised at 20 °C, so the
+    /// emitter sheds its stored heat as it cools towards the room temperature,
+    /// giving a positive coasting minimum output.
+    fn warm_emitter(
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+        ecodesign_controller: EcoDesignController,
+        simulation_time: SimulationTime,
+    ) -> Emitters {
+        struct MockZone;
+
+        impl SimpleZone for MockZone {
+            fn temp_internal_air(&self) -> f64 {
+                10.
+            }
+
+            fn area(&self) -> f64 {
+                80.0
+            }
+        }
+
+        #[fixture]
+        fn zone() -> Arc<dyn SimpleZone> {
+            Arc::new(MockZone)
+        }
+        let mock_zone = Arc::new(MockZone);
+
+        return Emitters::new(
+            Some(0.14),
+            &[WetEmitterInput::Radiator {
+                exponent: 1.2,
+                frac_convective: 0.4,
+                thermal_mass: None,
+                thermal_mass_per_m: None,
+                constant_per_m: None,
+                length: None,
+                constant: Some(0.08),
+            }],
+            &[],
+            10.0,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.0),
+            Arc::new(RwLock::new(heat_source.clone())),
+            mock_zone.clone(),
+            Arc::new(external_conditions.clone()),
+            ecodesign_controller,
+            55.0,
+            20.,
+            simulation_time.total_steps(),
+            None,
+            Some(true),
+            None,
+        )
+        .unwrap();
+    }
+
+    /// An emitter warmer than the room coasts when asked for at most its minimum.
+    ///
+    /// When the emitter is above the room temperature its coasting minimum output
+    /// is positive: it sheds stored heat to the zone with the heat source off. A
+    /// requested output at or below this minimum is already met by coasting, so
+    /// the heat source stays off and the full minimum output is released - the
+    /// emitter cannot shed less than its passive cooldown. Only a request above
+    /// the minimum engages the heat source to supply the increment.
+    #[rstest]
+    fn test_demand_energy_flow_return_coasts_below_positive_minimum(
+        simulation_time_iterator: SimulationTimeIterator,
+        warm_emitter: Emitters,
+    ) {
+        let energy_output_min = warm_emitter
+            .energy_output_min(simulation_time_iterator.current_iteration())
+            .unwrap();
+        // Emitter at 20 °C cooling towards the 10 °C room over the timestep.
+        assert_relative_eq!(energy_output_min, 0.2780866841016483, epsilon = 1e-7);
+
+        // A request equal to the coasting minimum coasts: no heat source input and
+        // the full minimum output is released.
+        let (released_floor, req_floor) = warm_emitter
+            .demand_energy_flow_return(
+                energy_output_min,
+                50.,
+                40.,
+                simulation_time_iterator.current_iteration(),
+                Some(false),
+                Some(false),
+                None,
+                energy_output_min,
+            )
+            .unwrap();
+        assert_relative_eq!(released_floor, 0.2780866841016483, epsilon = 1e-7);
+        assert_relative_eq!(req_floor, 0.0, epsilon = 1e-7);
+
+        // A positive request below the coasting minimum also coasts: the emitter
+        // cannot shed less than its passive cooldown, so the heat source stays off
+        // and the full minimum output is still released.
+        let (released_below, req_below) = warm_emitter
+            .demand_energy_flow_return(
+                0.1,
+                50.,
+                40.,
+                simulation_time_iterator.current_iteration(),
+                Some(false),
+                Some(false),
+                None,
+                energy_output_min,
+            )
+            .unwrap();
+        assert_relative_eq!(released_below, 0.2780866841016483, epsilon = 1e-7);
+        assert_relative_eq!(req_below, 0.0, epsilon = 1e-7);
+
+        // A request above the coasting minimum engages the heat source to supply
+        // the increment above the passive cooldown.
+        let (_, req_above) = warm_emitter
+            .demand_energy_flow_return(
+                1.0,
+                50.,
+                40.,
+                simulation_time_iterator.current_iteration(),
+                Some(false),
+                Some(false),
+                None,
+                energy_output_min,
+            )
+            .unwrap();
+        assert!(req_above > 0.0);
+    }
+
     #[rstest]
     fn test_temp_setpnt(simulation_time_iterator: SimulationTimeIterator, fancoil: Emitters) {
         for step in simulation_time_iterator {
