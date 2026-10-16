@@ -470,9 +470,7 @@ impl HeatStorageDryCore {
 
                     let OdeResult { y, .. } = sol_2;
                     let y_final = y.last().ok_or_else(|| {
-                        anyhow!(
-                            "ODE solving result was unexpectedly empty for soc passive"
-                        )
+                        anyhow!("ODE solving result was unexpectedly empty for soc passive")
                     })?;
                     total_energy_charged += y_final[1];
                     final_soc = y_final[0];
@@ -2141,7 +2139,7 @@ mod tests {
     use super::*;
     use crate::core::common::{MockWaterSupply, VaryingTempWaterSupply};
     use crate::core::controls::time_control::{
-        ChargeControl, Control, MockControl, SetpointTimeControl,
+        ChargeControl, Control, MockControl, RangeTimeControl, SetpointTimeControl,
     };
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::misc::WaterEventResultType;
@@ -2295,7 +2293,7 @@ mod tests {
     }
 
     #[fixture]
-    fn heat_battery_input1() -> HeatBattery {
+    fn heat_battery_input_without_instant_backup() -> HeatBattery {
         HeatBattery::DryCore {
             control_charge: Default::default(),
             energy_supply: "heat_battery".into(),
@@ -2343,14 +2341,14 @@ mod tests {
     }
 
     #[fixture]
-    fn heat_battery1(
-        heat_battery_input: HeatBattery,
+    fn heat_battery_without_instant_backup(
+        heat_battery_input_without_instant_backup: HeatBattery,
         charge_control: Arc<ChargeControl>,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: SimulationTime,
     ) -> Arc<HeatBatteryDryCore> {
-        let n_units: u32 = match heat_battery_input {
+        let n_units: u32 = match heat_battery_input_without_instant_backup {
             HeatBattery::DryCore {
                 number_of_units, ..
             } => number_of_units as u32,
@@ -2358,7 +2356,7 @@ mod tests {
         };
 
         HeatBatteryDryCore::new(
-            &heat_battery_input,
+            &heat_battery_input_without_instant_backup,
             charge_control,
             energy_supply,
             energy_supply_connection,
@@ -2495,6 +2493,139 @@ mod tests {
                 .unwrap(),
             0.0
         );
+    }
+
+    #[rstest]
+    /// energy_output_max is the net deliverable ceiling demand_energy reaches.
+    ///
+    /// Both report energy delivered to the store net of the standing (case) loss,
+    /// so for an identical battery state they must agree when demand_energy is given
+    /// effectively unlimited demand. energy_output_max leaves the state of charge
+    /// unchanged, so calling it first does not disturb the demand_energy comparison.
+    /// A battery with no instant backup isolates the heat-store discharge.
+    fn test_energy_output_max_matches_demand_energy_ceiling(
+        heat_battery_without_instant_backup: Arc<HeatBatteryDryCore>,
+        simulation_time: SimulationTime,
+    ) {
+        heat_battery_without_instant_backup.set_state_of_charge(0.7);
+        let control_min = Arc::new(SetpointTimeControl::new(
+            vec![Some(45.), Some(46.), Some(46.), Some(46.), Some(46.)],
+            0,
+            1.,
+            None,
+            None,
+            simulation_time.step,
+        ));
+        let control_max = Arc::new(SetpointTimeControl::new(
+            vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
+            0,
+            1.,
+            None,
+            None,
+            simulation_time.step,
+        ));
+        let service = HeatBatteryDryCore::create_service_hot_water_regular(
+            heat_battery_without_instant_backup,
+            "dhw_ceiling",
+            mock_cold_feed(Some(70.)),
+            CompositeRangeTimeControl::MinMax {
+                control_min: control_min.into(),
+                control_max: control_max.into(),
+            },
+        )
+        .unwrap();
+        let simtime = simulation_time.iter().current_iteration();
+
+        let energy_max = service.energy_output_max(55., 34., simtime, None).unwrap();
+        let energy_delivered = service
+            .demand_energy(1.0e6, Some(55.), 34., Some(false), simtime, None)
+            .unwrap();
+
+        assert_relative_eq!(energy_max, 2.787470041454905);
+        assert_relative_eq!(energy_max, energy_delivered);
+    }
+
+    #[rstest]
+    /// Test that an off control is bypassed when ignore_standard_ctrl is True.
+    ///
+    /// The storage tank's charging deadband authorises heating, so output must
+    /// continue even though the minimum-setpoint control is off. The result matches
+    /// the control-on case (net heat-store discharge 4.787470041454905 on the same
+    /// fresh battery state), not the zero of the control-off case.
+    fn test_dhw_control_off_bypassed_by_ignore_standard_ctrl(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        mock_control_dhw_off: Arc<SetpointTimeControl>,
+        simulation_time: SimulationTime,
+    ) {
+        let control_max = Arc::new(SetpointTimeControl::new(
+            vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
+            0,
+            1.,
+            None,
+            None,
+            simulation_time.step,
+        ));
+        let service = HeatBatteryDryCore::create_service_hot_water_regular(
+            heat_battery,
+            "dhw_bypass",
+            mock_cold_feed(Some(70.)),
+            CompositeRangeTimeControl::MinMax {
+                control_min: mock_control_dhw_off.into(),
+                control_max: control_max.into(),
+            },
+        )
+        .unwrap();
+        let simtime = simulation_time.iter().current_iteration();
+
+        assert_relative_eq!(
+            service
+                .energy_output_max(55., 34., simtime, Some(true))
+                .unwrap(),
+            4.787470041454905
+        );
+        assert_relative_eq!(
+            service
+                .demand_energy(
+                    4.787470041454905,
+                    Some(55.),
+                    34.,
+                    Some(false),
+                    simtime,
+                    Some(true),
+                )
+                .unwrap(),
+            4.787470041454905
+        );
+    }
+
+    // skipping test_create_service_hot_water_regular_with_invalid_values as rust requires control to be passed
+
+    #[rstest]
+    /// Test creating DHW service
+    fn test_create_service_hot_water_regular_with_range_time_control(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        simulation_time: SimulationTime,
+    ) {
+        let range_time_control = RangeTimeControl::new(
+            vec![Some(45.), Some(46.), Some(46.), Some(46.), Some(46.)],
+            vec![Some(65.), Some(66.), Some(66.), Some(66.), Some(66.)],
+            simulation_time.step,
+            0,
+            1.,
+            None,
+        )
+        .unwrap();
+        let service = HeatBatteryDryCore::create_service_hot_water_regular(
+            heat_battery,
+            "dhw_range",
+            mock_cold_feed(None),
+            range_time_control.into(),
+        )
+        .unwrap();
+
+        let (setpntmin, setpntmax) = service.setpnt(simulation_time.iter().current_iteration());
+        assert_eq!(setpntmin, Some(45.));
+        assert_eq!(setpntmax, Some(65.));
     }
 
     #[rstest]
