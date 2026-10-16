@@ -937,6 +937,7 @@ pub struct Corpus {
     pub(crate) heat_sources_wet_with_buffer_tank: Vec<ArcStr>,
     heat_source_wet_boilers: Vec<Arc<RwLock<Boiler>>>,
     charging_connection_names_for_heat_battery: IndexMap<ArcStr, Vec<ArcStr>>,
+    heat_battery_names_for_hot_water_source: IndexMap<ArcStr, Vec<ArcStr>>,
     pub(crate) space_heat_systems: IndexMap<ArcStr, Arc<Mutex<SpaceHeatSystem>>>,
     pub(crate) space_cool_systems: IndexMap<ArcStr, AirConditioning>,
     pub(crate) on_site_generation: IndexMap<ArcStr, PhotovoltaicSystem>,
@@ -1394,6 +1395,9 @@ impl Corpus {
         let mut pre_heated_water_sources: IndexMap<ArcStr, HotWaterStorageTank> =
             Default::default();
 
+        let mut heat_battery_names_for_hot_water_source: IndexMap<ArcStr, Vec<ArcStr>> =
+            Default::default();
+
         let init_order = {
             let preheated_water_source_dependency_graph =
                 build_preheated_water_source_dependency_graph(&input.pre_heated_water_source);
@@ -1405,25 +1409,30 @@ impl Corpus {
                     &input.pre_heated_water_source[source_name],
                 )
                 .into();
-            let (heat_source, energy_conn_names, preheated_source_names_for_service) =
-                hot_water_source_from_input(
-                    source_name,
-                    &source_details,
-                    &cold_water_sources,
-                    &pre_heated_water_sources,
-                    &mut heat_sources_wet,
-                    &wwhrs,
-                    &controls,
-                    &mut energy_supplies,
-                    &diverter_types,
-                    &mut diverters,
-                    shareable_fn(&temp_internal_air_prev),
-                    simulation_time_iterator.clone().as_ref(),
-                    external_conditions.clone(),
-                    output_options.detailed_output_heating_cooling,
-                    &mut used_heat_source_names,
-                    &mut cold_water_sources_already_allocated,
-                )?;
+            let HotWaterSourceFromInputData {
+                heat_source,
+                energy_conn_names,
+                preheated_source_names_for_service,
+                heat_battery_names_for_hot_water_source:
+                    heat_battery_names_found_for_hot_water_source,
+            } = hot_water_source_from_input(
+                source_name,
+                &source_details,
+                &cold_water_sources,
+                &pre_heated_water_sources,
+                &mut heat_sources_wet,
+                &wwhrs,
+                &controls,
+                &mut energy_supplies,
+                &diverter_types,
+                &mut diverters,
+                shareable_fn(&temp_internal_air_prev),
+                simulation_time_iterator.clone().as_ref(),
+                external_conditions.clone(),
+                output_options.detailed_output_heating_cooling,
+                &mut used_heat_source_names,
+                &mut cold_water_sources_already_allocated,
+            )?;
             energy_supply_conn_names_for_hot_water_source
                 .insert(source_name.to_string().into(), energy_conn_names);
             if let HotWaterSource::PreHeated(source) = heat_source {
@@ -1436,29 +1445,39 @@ impl Corpus {
                     .into_iter()
                     .map(|(x, y)| (x.as_str().into(), y.as_str().into())),
             );
+
+            heat_battery_names_for_hot_water_source
+                .entry(source_name.clone())
+                .or_default()
+                .extend(heat_battery_names_found_for_hot_water_source);
         }
 
         let mut hot_water_sources: IndexMap<ArcStr, HotWaterSource> = Default::default();
         for (name, data) in input.hot_water_source.iter() {
-            let (hot_water_source, hw_cylinder_conn_names, source_names_for_service) =
-                hot_water_source_from_input(
-                    name,
-                    data,
-                    &cold_water_sources,
-                    &pre_heated_water_sources,
-                    &mut heat_sources_wet,
-                    &wwhrs,
-                    &controls,
-                    &mut energy_supplies,
-                    &diverter_types,
-                    &mut diverters,
-                    shareable_fn(&temp_internal_air_prev),
-                    simulation_time_iterator.clone().as_ref(),
-                    external_conditions.clone(),
-                    output_options.detailed_output_heating_cooling,
-                    &mut used_heat_source_names,
-                    &mut cold_water_sources_already_allocated,
-                )?;
+            let HotWaterSourceFromInputData {
+                heat_source: hot_water_source,
+                energy_conn_names: hw_cylinder_conn_names,
+                preheated_source_names_for_service: source_names_for_service,
+                heat_battery_names_for_hot_water_source:
+                    heat_battery_names_found_for_hot_water_source,
+            } = hot_water_source_from_input(
+                name,
+                data,
+                &cold_water_sources,
+                &pre_heated_water_sources,
+                &mut heat_sources_wet,
+                &wwhrs,
+                &controls,
+                &mut energy_supplies,
+                &diverter_types,
+                &mut diverters,
+                shareable_fn(&temp_internal_air_prev),
+                simulation_time_iterator.clone().as_ref(),
+                external_conditions.clone(),
+                output_options.detailed_output_heating_cooling,
+                &mut used_heat_source_names,
+                &mut cold_water_sources_already_allocated,
+            )?;
             hot_water_sources.insert(name.to_string().into(), hot_water_source);
             energy_supply_conn_names_for_hot_water_source
                 .insert(name.to_string().into(), hw_cylinder_conn_names);
@@ -1467,6 +1486,11 @@ impl Corpus {
                     .into_iter()
                     .map(|(x, y)| (x.as_str().into(), y.as_str().into())),
             );
+
+            heat_battery_names_for_hot_water_source
+                .entry(name.clone())
+                .or_default()
+                .extend(heat_battery_names_found_for_hot_water_source);
         }
 
         let domestic_hot_water_demand = DomesticHotWaterDemand::new(
@@ -1568,6 +1592,7 @@ impl Corpus {
             heat_sources_wet_with_buffer_tank,
             heat_source_wet_boilers,
             charging_connection_names_for_heat_battery,
+            heat_battery_names_for_hot_water_source,
             space_heat_systems,
             space_cool_systems,
             on_site_generation,
@@ -5695,6 +5720,7 @@ struct HeatSourceFromInput {
     heat_source: HeatSource,
     energy_supply_conn_name: ArcStr,
     heat_source_name_pair: Option<(ArcStr, ArcStr)>,
+    heat_battery_name_for_hot_water_source: Option<ArcStr>,
 }
 
 fn heat_source_from_input(
@@ -5739,6 +5765,7 @@ fn heat_source_from_input(
                 ))),
                 energy_supply_conn_name: name.into(),
                 heat_source_name_pair: None,
+                heat_battery_name_for_hot_water_source: None,
             })
         }
         HeatSourceInput::SolarThermalSystem {
@@ -5802,6 +5829,7 @@ fn heat_source_from_input(
                 ))),
                 energy_supply_conn_name: name.into(),
                 heat_source_name_pair: None,
+                heat_battery_name_for_hot_water_source: None,
             })
         }
         HeatSourceInput::ServiceWaterRegular {
@@ -5825,6 +5853,13 @@ fn heat_source_from_input(
             let range_time_control = controls.get_range_time_control(&control_refs)?;
 
             let mut heat_source_wet_clone = heat_source_wet.clone();
+
+            let heat_battery_name_for_hot_water_source: Option<ArcStr> =
+                if let WetHeatSource::HeatBattery(_) = heat_source_wet {
+                    Some(name.into())
+                } else {
+                    None
+                };
 
             Ok(HeatSourceFromInput {
                 heat_source: match heat_source_wet_clone {
@@ -5865,16 +5900,8 @@ fn heat_source_from_input(
                     }
                     WetHeatSource::HeatBattery(battery) => HeatSource::Wet(Box::new(
                         HeatSourceWet::HeatBatteryHotWater(match battery {
-                            HeatBattery::DryCore(_dry_core) => HeatBatteryWaterService::DryCore(
-                                {
-                                    let control = todo!();
-
-                                    HeatBatteryDryCore::create_service_hot_water_regular(
-                                        _dry_core,
-                                        &energy_supply_conn_name,
-                                        control, // TODO: update as part of 1.0.0a9 migration
-                                    )?
-                                }
+                            HeatBattery::DryCore(dry_core) => HeatBatteryWaterService::DryCore(
+                                HeatBatteryDryCore::create_service_hot_water_regular(dry_core, &energy_supply_conn_name, range_time_control)?
                             ),
                             HeatBattery::Pcm(pcm) => HeatBatteryWaterService::Pcm(
                                 HeatBatteryPcm::create_service_hot_water_regular(
@@ -5889,6 +5916,7 @@ fn heat_source_from_input(
                 energy_supply_conn_name: energy_supply_conn_name.clone(),
                 heat_source_name_pair: (energy_supply_conn_name, hot_water_source_name.into())
                     .into(),
+                heat_battery_name_for_hot_water_source,
             })
         }
         HeatSourceInput::HeatPumpHotWaterOnly {
@@ -5934,6 +5962,7 @@ fn heat_source_from_input(
                 ))),
                 energy_supply_conn_name: energy_supply_conn_name.into(),
                 heat_source_name_pair: None,
+                heat_battery_name_for_hot_water_source: None,
             })
         }
     }
@@ -6139,6 +6168,13 @@ impl HotWaterSourceBehaviour for HeatBatteryHotWaterSource {
     }
 }
 
+struct HotWaterSourceFromInputData {
+    heat_source: HotWaterSource,
+    energy_conn_names: Vec<ArcStr>,
+    preheated_source_names_for_service: IndexMap<ArcStr, ArcStr>,
+    heat_battery_names_for_hot_water_source: Vec<ArcStr>,
+}
+
 fn hot_water_source_from_input(
     name: &str,
     input: &HotWaterSourceDetails,
@@ -6156,9 +6192,10 @@ fn hot_water_source_from_input(
     detailed_output_heating_cooling: bool,
     used_heat_source_names: &mut IndexSet<ArcStr>,
     cold_water_sources_already_allocated: &mut IndexSet<ArcStr>,
-) -> anyhow::Result<(HotWaterSource, Vec<ArcStr>, IndexMap<ArcStr, ArcStr>)> {
+) -> anyhow::Result<HotWaterSourceFromInputData> {
     let mut energy_supply_conn_names = vec![];
     let mut hot_water_source_name_for_service: IndexMap<ArcStr, ArcStr> = Default::default();
+    let mut heat_battery_names_for_hot_water_source: Vec<ArcStr> = Default::default();
     let cloned_input = input.clone();
 
     let cold_water_source_for_hot_water_tank =
@@ -6224,6 +6261,7 @@ fn hot_water_source_from_input(
                 heat_source,
                 energy_supply_conn_name,
                 heat_source_name_pair,
+                heat_battery_name_for_hot_water_source,
             } = heat_source_from_input(
                 heat_source_name.as_str(),
                 name,
@@ -6253,6 +6291,13 @@ fn hot_water_source_from_input(
             if let Some((energy_supply_conn_name, hot_water_source_name)) = heat_source_name_pair {
                 hot_water_source_name_for_service
                     .insert(energy_supply_conn_name, hot_water_source_name);
+            }
+
+            if let Some(heat_battery_name_for_hot_water_source) =
+                heat_battery_name_for_hot_water_source
+            {
+                heat_battery_names_for_hot_water_source
+                    .push(heat_battery_name_for_hot_water_source);
             }
         }
 
@@ -6601,11 +6646,12 @@ fn hot_water_source_from_input(
         }
     };
 
-    Ok((
-        hot_water_source,
-        energy_supply_conn_names,
-        hot_water_source_name_for_service,
-    ))
+    Ok(HotWaterSourceFromInputData {
+        heat_source: hot_water_source,
+        energy_conn_names: energy_supply_conn_names,
+        preheated_source_names_for_service: hot_water_source_name_for_service,
+        heat_battery_names_for_hot_water_source,
+    })
 }
 
 fn cold_water_source_for_type(
