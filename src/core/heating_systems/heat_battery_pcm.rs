@@ -53,12 +53,6 @@ pub(crate) enum HeatBatteryPcmOperationMode {
     Losses,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum ChargingSourceType {
-    DirectElectric,
-    HeatSourceWet,
-}
-
 /// Configuration for a single charging source in the HeatSource input format.
 ///
 /// Each source has its own RangeTimeControl for hysteresis scheduling
@@ -179,17 +173,25 @@ impl HeatSourceWetService {
 
 #[derive(Debug, Clone)]
 pub(crate) struct HeatBatteryChargingSource {
-    source_type: ChargingSourceType,
     control: Arc<RangeTimeControl>,
-    rated_charge_power: Option<f64>,
     heat_source_service: Option<HeatSourceWetService>,
-    temp_flow_max: f64,
-    flow_rate_charging_l_per_min: Option<f64>,
-    hex_a: Option<f64>,
-    hex_b: Option<f64>,
-    hex_velocity_at_1_l_per_min: Option<f64>,
-    hex_capillary_diameter_m: Option<f64>,
     schedule_unit: ScheduleUnit,
+    type_data: ChargingSourceTypeSpecificData,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ChargingSourceTypeSpecificData {
+    DirectElectric {
+        rated_charge_power: f64,
+    },
+    HeatSourceWet {
+        temp_flow_max: f64,
+        flow_rate_charging_l_per_min: f64,
+        hex_a: f64,
+        hex_b: f64,
+        hex_velocity_at_1_l_per_min: f64,
+        hex_capillary_diameter_m: f64,
+    },
 }
 
 ///    Check that no two charging sources have overlapping active periods.
@@ -841,13 +843,20 @@ impl HeatBatteryPcm {
         // temperature limit — the battery cannot reach those targets, so
         // charging will cycle inefficiently and may degrade performance.
         for (source_name, src) in &heat_source_data.clone().unwrap_or_default() {
-            if src.schedule_unit == ScheduleUnit::Temperature {
+            if let HeatBatteryChargingSource {
+                type_data: ChargingSourceTypeSpecificData::HeatSourceWet { temp_flow_max, .. },
+                schedule_unit: ScheduleUnit::Temperature,
+                ..
+            } = src
+            {
                 HeatBatteryPcm::warn_if_schedule_exceeds_flow_temp(
                     &source_name.to_string(),
                     src,
+                    *temp_flow_max,
                     &simulation_time,
                 )?;
             }
+            if src.schedule_unit == ScheduleUnit::Temperature {}
         }
 
         let (
@@ -1026,6 +1035,7 @@ impl HeatBatteryPcm {
     fn warn_if_schedule_exceeds_flow_temp(
         _source_name: &str,
         source: &HeatBatteryChargingSource,
+        temp_flow_max: f64,
         simtime_iterator: &SimulationTimeIterator,
     ) -> anyhow::Result<()> {
         if simtime_iterator.current_index() != 0 {
@@ -1033,7 +1043,7 @@ impl HeatBatteryPcm {
                 "warn_if_schedule_exceeds_flow_temp must not be called after the simulation has started, as it resets simulation_time."
             )
         }
-        let mut temp_observed_max = source.temp_flow_max;
+        let mut temp_observed_max = temp_flow_max;
         for _ in simtime_iterator.clone() {
             let (lower, upper) = source.control.setpnt(&simtime_iterator.current_iteration());
             if let Some(lower) = lower {
@@ -1043,7 +1053,7 @@ impl HeatBatteryPcm {
                 temp_observed_max = upper.max(temp_observed_max);
             }
         }
-        if temp_observed_max > source.temp_flow_max {
+        if temp_observed_max > temp_flow_max {
             // todo: Warning! as part of 1.0.0a9
         }
         Ok(())
@@ -2197,17 +2207,14 @@ impl HeatBatteryPcm {
                     } else {
                         bail!("Upper setpoint should be guaranteed by switch_off logic");
                     };
-                    match source.source_type {
-                        ChargingSourceType::DirectElectric => {
-                            if let Some(rated_charge_power) = source.rated_charge_power {
-                                return self
-                                    .charge_battery_electric(rated_charge_power, target_soc);
-                            } else {
-                                // maybe this is already enforced elsewhere
-                                bail!("Rated charge power must not be None for DirectElectric charging source");
-                            }
+                    match source.type_data {
+                        ChargingSourceTypeSpecificData::DirectElectric {
+                            rated_charge_power,
+                            ..
+                        } => {
+                            return self.charge_battery_electric(rated_charge_power, target_soc);
                         }
-                        ChargingSourceType::HeatSourceWet => {
+                        ChargingSourceTypeSpecificData::HeatSourceWet { .. } => {
                             if source.heat_source_service.is_some() {
                                 return self.charge_from_heat_source(
                                     source,
@@ -2221,46 +2228,47 @@ impl HeatBatteryPcm {
                         }
                     }
                 } else {
-                    if source.source_type == ChargingSourceType::HeatSourceWet {
+                    if let HeatBatteryChargingSource {
+                        type_data:
+                            ChargingSourceTypeSpecificData::HeatSourceWet {
+                                temp_flow_max,
+                                flow_rate_charging_l_per_min,
+                                hex_a,
+                                hex_b,
+                                hex_velocity_at_1_l_per_min,
+                                hex_capillary_diameter_m,
+                            },
+                        heat_source_service: Some(heat_source_service), // we're assuming here that heat source service is set - better for this to be enforced elsewhere
+                        ..
+                    } = source
+                    {
                         // Hydronic source not active — call demand_energy(0) so
                         // the heat source records a zero-demand service call
                         // every timestep (ensures consistent detailed results
                         // without placeholders)
-                        if let HeatBatteryChargingSource {
-                            heat_source_service: Some(heat_source_service),
-                            temp_flow_max,
-                            flow_rate_charging_l_per_min: Some(flow_rate_charging_l_per_min),
-                            hex_a: Some(hex_a),
-                            hex_b: Some(hex_b),
-                            hex_velocity_at_1_l_per_min: Some(hex_velocity_at_1_l_per_min),
-                            hex_capillary_diameter_m: Some(hex_capillary_diameter_m),
-                            ..
-                        } = source
-                        {
-                            let temp_return = self.estimate_return_temp(
-                                *temp_flow_max,
-                                *flow_rate_charging_l_per_min,
-                                *hex_a,
-                                *hex_b,
-                                *hex_velocity_at_1_l_per_min,
-                                *hex_capillary_diameter_m,
-                            )?;
+                        let temp_return = self.estimate_return_temp(
+                            *temp_flow_max,
+                            *flow_rate_charging_l_per_min,
+                            *hex_a,
+                            *hex_b,
+                            *hex_velocity_at_1_l_per_min,
+                            *hex_capillary_diameter_m,
+                        )?;
 
-                            heat_source_service.demand_energy(
-                                0.0,
-                                *temp_flow_max,
-                                temp_return,
-                                simtime,
-                            )?;
-                            // Report zero input to pipework loss tracker for event
-                            // boundary detection
-                            self.pipework.calculate_primary_pipework_losses(
-                                0.0,
-                                Some(source.temp_flow_max),
-                                Some(true),
-                                simtime,
-                            )?;
-                        }
+                        heat_source_service.demand_energy(
+                            0.0,
+                            *temp_flow_max,
+                            temp_return,
+                            simtime,
+                        )?;
+                        // Report zero input to pipework loss tracker for event
+                        // boundary detection
+                        self.pipework.calculate_primary_pipework_losses(
+                            0.0,
+                            Some(*temp_flow_max),
+                            Some(true),
+                            simtime,
+                        )?;
                     }
                 }
             }
@@ -2307,11 +2315,15 @@ impl HeatBatteryPcm {
     ) -> anyhow::Result<(f64, Vec<f64>)> {
         if let HeatBatteryChargingSource {
             heat_source_service: Some(heat_source_service),
-            flow_rate_charging_l_per_min: Some(flow_rate_charging_l_per_min),
-            hex_a: Some(hex_a),
-            hex_b: Some(hex_b),
-            hex_velocity_at_1_l_per_min: Some(hex_velocity_at_1_l_per_min),
-            hex_capillary_diameter_m: Some(hex_capillary_diameter_m),
+            type_data:
+                ChargingSourceTypeSpecificData::HeatSourceWet {
+                    temp_flow_max,
+                    flow_rate_charging_l_per_min,
+                    hex_a,
+                    hex_b,
+                    hex_velocity_at_1_l_per_min,
+                    hex_capillary_diameter_m,
+                },
             ..
         } = source
         {
@@ -2330,7 +2342,7 @@ impl HeatBatteryPcm {
             // +        )
             let temp_flow = (self.soc_to_temp(target_charge_fraction)
                 + CHARGE_APPROACH_TEMP_DIFF_C)
-                .min(source.temp_flow_max);
+                .min(*temp_flow_max);
             let temp_return = self.estimate_return_temp(
                 temp_flow,
                 *flow_rate_charging_l_per_min,
@@ -2342,10 +2354,8 @@ impl HeatBatteryPcm {
             // Calculate how much energy one unit needs, capped to what the
             // heat source can deliver at its max flow temperature and limited
             // to the SOC target from the source's RangeTimeControl.
-            let energy_demand_per_unit = self.calculate_charge_energy_demand(
-                Some(source.temp_flow_max),
-                target_charge_fraction,
-            )?;
+            let energy_demand_per_unit =
+                self.calculate_charge_energy_demand(Some(*temp_flow_max), target_charge_fraction)?;
 
             if energy_demand_per_unit <= 0.
                 || relative_eq!(energy_demand_per_unit, 0., epsilon = 1e-10)
@@ -2353,15 +2363,10 @@ impl HeatBatteryPcm {
                 // No charging needed — still call demand_energy(0) so the heat
                 // source records a zero-demand service call, and run pipework loss
                 // calc to detect end-of-event transition.
-                heat_source_service.demand_energy(
-                    0.,
-                    source.temp_flow_max,
-                    temp_return,
-                    simtime,
-                )?;
+                heat_source_service.demand_energy(0., *temp_flow_max, temp_return, simtime)?;
                 self.pipework.calculate_primary_pipework_losses(
                     0.0,
-                    Some(source.temp_flow_max),
+                    Some(*temp_flow_max),
                     Some(true),
                     simtime,
                 )?;
@@ -2451,7 +2456,7 @@ impl HeatBatteryPcm {
                 Ok((energy_charged, zone_temps))
             }
         } else {
-            bail!("Incomplete heat source configuration, missing required fields. heat_source_service, temp_flow_max, flow_rate_charging_l_per_min, hex_a, hex_b, hex_velocity_at_1_l_per_min, hex_capillary_diameter_m are required.")
+            unreachable!("Method should have been called with a HeatSourceWet charging config, with a heat source service present.")
         }
     }
     /// Activate charging for a source when SOC falls to/below the lower setpoint.
@@ -6723,16 +6728,11 @@ mod tests {
             range_time_control: Arc<RangeTimeControl>,
         ) -> HeatBatteryChargingSource {
             HeatBatteryChargingSource {
-                source_type: ChargingSourceType::DirectElectric,
+                type_data: ChargingSourceTypeSpecificData::DirectElectric {
+                    rated_charge_power: 3.5,
+                },
                 control: range_time_control,
-                rated_charge_power: Some(3.5),
                 heat_source_service: None,
-                temp_flow_max: 0.0,
-                flow_rate_charging_l_per_min: None,
-                hex_a: None,
-                hex_b: None,
-                hex_velocity_at_1_l_per_min: None,
-                hex_capillary_diameter_m: None,
                 schedule_unit: ScheduleUnit::StateOfCharge,
             }
         }
@@ -6740,16 +6740,16 @@ mod tests {
         #[fixture]
         fn hydronic_source(range_time_control: Arc<RangeTimeControl>) -> HeatBatteryChargingSource {
             HeatBatteryChargingSource {
-                source_type: ChargingSourceType::HeatSourceWet,
+                type_data: ChargingSourceTypeSpecificData::HeatSourceWet {
+                    temp_flow_max: 65.0,
+                    flow_rate_charging_l_per_min: 10.0,
+                    hex_a: 174.33952,
+                    hex_b: -931.565,
+                    hex_velocity_at_1_l_per_min: 0.035,
+                    hex_capillary_diameter_m: 6.5 / 1000.0,
+                },
                 control: range_time_control,
-                rated_charge_power: None,
                 heat_source_service: None,
-                temp_flow_max: 65.0,
-                flow_rate_charging_l_per_min: Some(10.0),
-                hex_a: Some(174.33952),
-                hex_b: Some(-931.565),
-                hex_velocity_at_1_l_per_min: Some(0.035),
-                hex_capillary_diameter_m: Some(6.5 / 1000.0),
                 schedule_unit: ScheduleUnit::StateOfCharge,
             }
         }
@@ -6831,18 +6831,24 @@ mod tests {
             assert_eq!(sources.len(), 2);
 
             let electric_source = &sources["electric_element"];
-            assert_eq!(
-                electric_source.source_type,
-                ChargingSourceType::DirectElectric
-            );
-            assert_relative_eq!(electric_source.rated_charge_power.unwrap(), 3.5);
+
+            if let ChargingSourceTypeSpecificData::DirectElectric { rated_charge_power } =
+                electric_source.type_data
+            {
+                assert_eq!(rated_charge_power, 3.5);
+            } else {
+                panic!("Unexpected charging source type - needed DirectElectric");
+            }
 
             let hydronic_source = &sources["heat_pump"];
-            assert_eq!(
-                hydronic_source.source_type,
-                ChargingSourceType::HeatSourceWet
-            );
-            assert_relative_eq!(hydronic_source.temp_flow_max, 65.0);
+
+            if let ChargingSourceTypeSpecificData::HeatSourceWet { temp_flow_max, .. } =
+                hydronic_source.type_data
+            {
+                assert_eq!(temp_flow_max, 65.0);
+            } else {
+                panic!("Unexpected charging source type - needed HeatSourceWet");
+            }
         }
 
         #[rstest]
@@ -6939,16 +6945,11 @@ mod tests {
             control: Arc<RangeTimeControl>,
         ) -> HeatBatteryChargingSource {
             HeatBatteryChargingSource {
-                source_type: ChargingSourceType::DirectElectric,
+                type_data: ChargingSourceTypeSpecificData::DirectElectric {
+                    rated_charge_power: 5.0,
+                },
                 control,
-                rated_charge_power: Some(5.0),
                 heat_source_service: None,
-                temp_flow_max: 0.0,
-                flow_rate_charging_l_per_min: None,
-                hex_a: None,
-                hex_b: None,
-                hex_velocity_at_1_l_per_min: None,
-                hex_capillary_diameter_m: None,
                 schedule_unit: ScheduleUnit::StateOfCharge,
             }
         }
@@ -7035,18 +7036,19 @@ mod tests {
             .unwrap();
 
             let source = HeatBatteryChargingSource {
-                source_type: ChargingSourceType::HeatSourceWet,
+                type_data: ChargingSourceTypeSpecificData::HeatSourceWet {
+                    temp_flow_max: 65.0,
+                    flow_rate_charging_l_per_min: 10.0,
+                    hex_a: 174.33952,
+                    hex_b: -931.565,
+                    hex_velocity_at_1_l_per_min: 0.035,
+                    hex_capillary_diameter_m: 6.5 / 1000.0,
+                },
                 control,
-                rated_charge_power: None,
                 heat_source_service: Some(HeatSourceWetService::HeatBatteryPCMServiceWaterRegular(
                     heat_source_service,
                 )),
-                temp_flow_max: 65.0,
-                flow_rate_charging_l_per_min: Some(10.0),
-                hex_a: Some(174.33952),
-                hex_b: Some(-931.565),
-                hex_velocity_at_1_l_per_min: Some(0.035),
-                hex_capillary_diameter_m: Some(6.5 / 1000.0),
+
                 schedule_unit: ScheduleUnit::StateOfCharge,
             };
             let mut sources = IndexMap::new();
@@ -7543,18 +7545,18 @@ mod tests {
             .unwrap();
 
             let source = HeatBatteryChargingSource {
-                source_type: ChargingSourceType::HeatSourceWet,
+                type_data: ChargingSourceTypeSpecificData::HeatSourceWet {
+                    temp_flow_max: 65.0,
+                    flow_rate_charging_l_per_min: 10.0,
+                    hex_a: 174.33952,
+                    hex_b: -931.565,
+                    hex_velocity_at_1_l_per_min: 0.035,
+                    hex_capillary_diameter_m: 6.5 / 1000.0,
+                },
                 control: range_control,
-                rated_charge_power: None,
                 heat_source_service: Some(HeatSourceWetService::HeatBatteryPCMServiceWaterRegular(
                     heat_source_service,
                 )),
-                temp_flow_max: 65.0,
-                flow_rate_charging_l_per_min: Some(10.0),
-                hex_a: Some(174.33952),
-                hex_b: Some(-931.565),
-                hex_velocity_at_1_l_per_min: Some(0.035),
-                hex_capillary_diameter_m: Some(6.5 / 1000.0),
                 schedule_unit: ScheduleUnit::StateOfCharge,
             };
             let mut sources = IndexMap::new();
@@ -7589,37 +7591,39 @@ mod tests {
             }
         }
 
+        /// Tests for temperature-based schedule support (Option A).
+        ///
+        /// When schedule_unit=ScheduleUnit.TEMPERATURE, RangeTimeControl setpoints are
+        /// temperatures (°C) that get converted to SOC for comparison against
+        /// the battery's current state. A warning is emitted when any schedule
+        /// temperature exceeds temp_flow_max.
+        ///
+        /// Uses a battery with 8 layers, temp_min_useful=10°C, max_temp=80°C.
         mod temperature_schedule {
-            // Tests for temperature-based schedule support (Option A).
-            //
-            // When schedule_unit=ScheduleUnit.TEMPERATURE, RangeTimeControl setpoints are
-            // temperatures (°C) that get converted to SOC for comparison against
-            // the battery's current state. A warning is emitted when any schedule
-            // temperature exceeds temp_flow_max.
-            //
-            // Uses a battery with 8 layers, temp_min_useful=10°C, max_temp=80°C.
             use super::*;
+
             fn make_direct_electric_source(
                 simulation_time: SimulationTime,
                 lower: Option<f64>,
                 upper: Option<f64>,
-                schedule_unit: ScheduleUnit,
+                rated_charge_power: f64,
+                schedule_unit: Option<ScheduleUnit>,
             ) -> HeatBatteryChargingSource {
-                let control = make_range_time_control(simulation_time, lower, upper);
+                let control = make_range_time_control(
+                    simulation_time,
+                    lower.or(Some(0.2)),
+                    upper.or(Some(0.8)),
+                );
                 HeatBatteryChargingSource {
-                    source_type: ChargingSourceType::DirectElectric,
+                    type_data: ChargingSourceTypeSpecificData::DirectElectric {
+                        rated_charge_power,
+                    },
                     control,
-                    rated_charge_power: None,
                     heat_source_service: None,
-                    temp_flow_max: 80.,
-                    flow_rate_charging_l_per_min: None,
-                    hex_a: None,
-                    hex_b: None,
-                    hex_velocity_at_1_l_per_min: None,
-                    hex_capillary_diameter_m: None,
-                    schedule_unit,
+                    schedule_unit: schedule_unit.unwrap_or_default(),
                 }
             }
+
             fn make_heat_source_wet_source(
                 simulation_time: SimulationTime,
                 lower: Option<f64>,
@@ -7627,16 +7631,16 @@ mod tests {
                 schedule_unit: ScheduleUnit,
             ) -> HeatBatteryChargingSource {
                 HeatBatteryChargingSource {
-                    source_type: ChargingSourceType::HeatSourceWet,
+                    type_data: ChargingSourceTypeSpecificData::HeatSourceWet {
+                        temp_flow_max: 65.0,
+                        flow_rate_charging_l_per_min: 10.0,
+                        hex_a: 174.33952,
+                        hex_b: -931.565,
+                        hex_velocity_at_1_l_per_min: 0.035,
+                        hex_capillary_diameter_m: 6.5 / 1000.0,
+                    },
                     control: make_range_time_control(simulation_time, lower, upper),
-                    rated_charge_power: None,
                     heat_source_service: None,
-                    temp_flow_max: 65.0,
-                    flow_rate_charging_l_per_min: Some(10.0),
-                    hex_a: Some(174.33952),
-                    hex_b: Some(-931.565),
-                    hex_velocity_at_1_l_per_min: Some(0.035),
-                    hex_capillary_diameter_m: Some(6.5 / 1000.0),
                     schedule_unit,
                 }
             }
@@ -7685,15 +7689,11 @@ mod tests {
                     try_make_battery(simulation_time, sources, temp_init).unwrap(),
                 ))
             }
+
             #[rstest]
             fn test_temp_to_soc_at_boundaries(simulation_time: SimulationTime) {
                 // temp_to_soc returns 0.0 at temp_min_useful and 1.0 at max_temperature.
-                let source = make_direct_electric_source(
-                    simulation_time,
-                    Some(0.2),
-                    Some(0.8),
-                    ScheduleUnit::StateOfCharge,
-                );
+                let source = make_direct_electric_source(simulation_time, None, None, 5.0, None);
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source);
                 let battery = make_battery(simulation_time, sources, 10.0);
@@ -7713,12 +7713,7 @@ mod tests {
             #[rstest]
             fn test_temp_to_soc_intermediate(simulation_time: SimulationTime) {
                 // temp_to_soc returns intermediate SOC for temperatures between boundaries.
-                let source = make_direct_electric_source(
-                    simulation_time,
-                    Some(0.2),
-                    Some(0.8),
-                    ScheduleUnit::StateOfCharge,
-                );
+                let source = make_direct_electric_source(simulation_time, None, None, 5.0, None);
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source);
                 let battery = make_battery(simulation_time, sources, 10.0);
@@ -7738,12 +7733,7 @@ mod tests {
             #[rstest]
             fn test_soc_to_temp_at_boundaries(simulation_time: SimulationTime) {
                 // soc_to_temp returns temp_ref at SOC 0 and temp_charge_max at SOC 1.
-                let source = make_direct_electric_source(
-                    simulation_time,
-                    Some(0.2),
-                    Some(0.8),
-                    ScheduleUnit::StateOfCharge,
-                );
+                let source = make_direct_electric_source(simulation_time, None, None, 5.0, None);
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source);
                 let battery = make_battery(simulation_time, sources, 10.0);
@@ -7762,12 +7752,7 @@ mod tests {
                 //
                 // Tests below phase transition (20, 40, 56°C), during phase transition
                 // (57.5, 58°C), and above phase transition (60, 70, 80°C).
-                let source = make_direct_electric_source(
-                    simulation_time,
-                    Some(0.2),
-                    Some(0.8),
-                    ScheduleUnit::StateOfCharge,
-                );
+                let source = make_direct_electric_source(simulation_time, None, None, 5.0, None);
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source);
                 let battery = make_battery(simulation_time, sources, 10.0);
@@ -7784,12 +7769,7 @@ mod tests {
             #[rstest]
             fn test_temp_to_soc_roundtrip_from_soc(simulation_time: SimulationTime) {
                 // temp_to_soc(soc_to_temp(S)) == S for various SOC values.
-                let source = make_direct_electric_source(
-                    simulation_time,
-                    Some(0.2),
-                    Some(0.8),
-                    ScheduleUnit::StateOfCharge,
-                );
+                let source = make_direct_electric_source(simulation_time, None, None, 5.0, None);
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source);
                 let battery = make_battery(simulation_time, sources, 10.0);
@@ -7811,7 +7791,8 @@ mod tests {
                     simulation_time,
                     Some(50.0),
                     Some(65.0),
-                    ScheduleUnit::Temperature,
+                    5.0,
+                    ScheduleUnit::Temperature.into(),
                 );
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source.clone());
@@ -7838,7 +7819,8 @@ mod tests {
                     simulation_time,
                     Some(0.3),
                     Some(0.8),
-                    ScheduleUnit::StateOfCharge,
+                    5.0,
+                    ScheduleUnit::StateOfCharge.into(),
                 );
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source.clone());
@@ -7865,7 +7847,8 @@ mod tests {
                     simulation_time,
                     Some(50.0),
                     Some(65.0),
-                    ScheduleUnit::Temperature,
+                    5.0,
+                    ScheduleUnit::Temperature.into(),
                 );
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source.clone());
@@ -7888,7 +7871,8 @@ mod tests {
                     simulation_time,
                     Some(50.0),
                     Some(65.0),
-                    ScheduleUnit::Temperature,
+                    5.0,
+                    ScheduleUnit::Temperature.into(),
                 );
                 let mut sources = IndexMap::new();
                 sources.insert("el".into(), source.clone());
@@ -7984,6 +7968,7 @@ mod tests {
                 let error = HeatBatteryPcm::warn_if_schedule_exceeds_flow_temp(
                     "hp",
                     &source,
+                    50., // just send any temp flow max
                     &simulation_time_iterator,
                 )
                 .unwrap_err();
@@ -8026,16 +8011,11 @@ mod tests {
             control: Arc<RangeTimeControl>,
         ) -> HeatBatteryChargingSource {
             HeatBatteryChargingSource {
-                source_type: ChargingSourceType::DirectElectric,
+                type_data: ChargingSourceTypeSpecificData::DirectElectric {
+                    rated_charge_power: 5.0,
+                },
                 control,
-                rated_charge_power: Some(5.0),
                 heat_source_service: None,
-                temp_flow_max: 0.0,
-                flow_rate_charging_l_per_min: None,
-                hex_a: None,
-                hex_b: None,
-                hex_velocity_at_1_l_per_min: None,
-                hex_capillary_diameter_m: None,
                 schedule_unit: ScheduleUnit::StateOfCharge,
             }
         }
@@ -8457,33 +8437,28 @@ mod tests {
                 m.insert(
                     "electric".into(),
                     HeatBatteryChargingSource {
-                        source_type: ChargingSourceType::DirectElectric,
+                        type_data: ChargingSourceTypeSpecificData::DirectElectric {
+                            rated_charge_power: 5.0,
+                        },
                         control: ctrl_a,
-                        rated_charge_power: Some(5.0),
-                        flow_rate_charging_l_per_min: None,
-                        temp_flow_max: 0.,
-                        hex_a: None,
-                        hex_b: None,
                         schedule_unit: ScheduleUnit::StateOfCharge,
-                        hex_velocity_at_1_l_per_min: None,
-                        hex_capillary_diameter_m: None,
                         heat_source_service: Option::<HeatSourceWetService>::None,
                     },
                 );
                 m.insert(
                     "hydronic".into(),
                     HeatBatteryChargingSource {
-                        source_type: ChargingSourceType::HeatSourceWet,
+                        type_data: ChargingSourceTypeSpecificData::HeatSourceWet {
+                            temp_flow_max: 65.0,
+                            flow_rate_charging_l_per_min: 10.0,
+                            hex_a: 174.33952,
+                            hex_b: -931.565,
+                            hex_velocity_at_1_l_per_min: 0.035,
+                            hex_capillary_diameter_m: 6.5 / 1000.0,
+                        },
+                        heat_source_service: None,
                         control: ctrl_b,
-                        temp_flow_max: 65.0,
-                        flow_rate_charging_l_per_min: Some(10.0),
-                        hex_a: Some(174.33952),
-                        hex_b: Some(-931.565),
-                        hex_velocity_at_1_l_per_min: Some(0.035),
-                        hex_capillary_diameter_m: Some(6.5 / 1000.0),
-                        heat_source_service: Option::<HeatSourceWetService>::None,
                         schedule_unit: Default::default(),
-                        rated_charge_power: None,
                     },
                 );
                 m
@@ -8510,32 +8485,27 @@ mod tests {
                 m.insert(
                     "electric".into(),
                     HeatBatteryChargingSource {
-                        source_type: ChargingSourceType::DirectElectric,
+                        type_data: ChargingSourceTypeSpecificData::DirectElectric {
+                            rated_charge_power: 5.0,
+                        },
                         control: ctrl_a,
-                        rated_charge_power: Some(5.0),
-                        flow_rate_charging_l_per_min: None,
-                        heat_source_service: Option::<HeatSourceWetService>::None,
-                        hex_a: None,
-                        temp_flow_max: 0.,
-                        hex_b: None,
-                        hex_velocity_at_1_l_per_min: None,
-                        hex_capillary_diameter_m: None,
+                        heat_source_service: None,
                         schedule_unit: Default::default(),
                     },
                 );
                 m.insert(
                     "hydronic".into(),
                     HeatBatteryChargingSource {
-                        source_type: ChargingSourceType::HeatSourceWet,
+                        type_data: ChargingSourceTypeSpecificData::HeatSourceWet {
+                            flow_rate_charging_l_per_min: 10.0,
+                            hex_a: 174.33952,
+                            temp_flow_max: 0.,
+                            hex_b: -931.565,
+                            hex_velocity_at_1_l_per_min: 0.035,
+                            hex_capillary_diameter_m: 6.5 / 1000.0,
+                        },
                         control: ctrl_b,
-                        rated_charge_power: Some(3.0),
-                        flow_rate_charging_l_per_min: None,
-                        hex_a: Some(174.33952),
-                        temp_flow_max: 0.,
-                        hex_b: Some(-931.565),
-                        hex_velocity_at_1_l_per_min: Some(0.035),
-                        hex_capillary_diameter_m: Some(6.5 / 1000.0),
-                        heat_source_service: Option::<HeatSourceWetService>::None,
+                        heat_source_service: None,
                         schedule_unit: Default::default(),
                     },
                 );
@@ -8556,15 +8526,10 @@ mod tests {
                 m.insert(
                     "a".into(),
                     HeatBatteryChargingSource {
-                        source_type: ChargingSourceType::DirectElectric,
+                        type_data: ChargingSourceTypeSpecificData::DirectElectric {
+                            rated_charge_power: 5.0,
+                        },
                         control: ctrl_a,
-                        rated_charge_power: Some(5.0),
-                        flow_rate_charging_l_per_min: None,
-                        hex_a: None,
-                        temp_flow_max: 0.,
-                        hex_b: None,
-                        hex_velocity_at_1_l_per_min: None,
-                        hex_capillary_diameter_m: None,
                         heat_source_service: Option::<HeatSourceWetService>::None,
                         schedule_unit: Default::default(),
                     },
@@ -8599,31 +8564,21 @@ mod tests {
                 m.insert(
                     "a".into(),
                     HeatBatteryChargingSource {
-                        source_type: ChargingSourceType::DirectElectric,
+                        type_data: ChargingSourceTypeSpecificData::DirectElectric {
+                            rated_charge_power: 5.0,
+                        },
                         control: ctrl_a,
-                        rated_charge_power: Some(5.0),
-                        flow_rate_charging_l_per_min: None,
-                        hex_a: None,
-                        temp_flow_max: 0.,
-                        hex_b: None,
-                        hex_velocity_at_1_l_per_min: None,
-                        hex_capillary_diameter_m: None,
-                        heat_source_service: Option::<HeatSourceWetService>::None,
+                        heat_source_service: None,
                         schedule_unit: Default::default(),
                     },
                 );
                 m.insert(
                     "b".into(),
                     HeatBatteryChargingSource {
-                        source_type: ChargingSourceType::DirectElectric,
+                        type_data: ChargingSourceTypeSpecificData::DirectElectric {
+                            rated_charge_power: 3.0,
+                        },
                         control: ctrl_b,
-                        rated_charge_power: Some(3.0),
-                        flow_rate_charging_l_per_min: None,
-                        hex_a: None,
-                        temp_flow_max: 0.,
-                        hex_b: None,
-                        hex_velocity_at_1_l_per_min: None,
-                        hex_capillary_diameter_m: None,
                         heat_source_service: Option::<HeatSourceWetService>::None,
                         schedule_unit: Default::default(),
                     },
