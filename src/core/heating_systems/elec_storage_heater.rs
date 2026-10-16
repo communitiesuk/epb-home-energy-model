@@ -1270,7 +1270,6 @@ mod tests {
         }
     }
 
-    #[ignore = "Ignore until HeatBattery DryCore has been migrated to alpha 9"]
     #[rstest]
     /// A demand equal to the coasting minimum stays on the passive discharge path.
     ///
@@ -1286,6 +1285,7 @@ mod tests {
     fn test_demand_energy_at_coasting_minimum_stays_passive(
         simulation_time: SimulationTime,
         external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
         control: Arc<SetpointTimeControl>,
         charge_control_schedule: Vec<bool>,
     ) {
@@ -1302,8 +1302,8 @@ mod tests {
             [0.5, 0.5].into_iter().map(Into::into).collect(),
             Some(22.),
             None,
-            None,
-            None,
+            Some(external_conditions.clone()),
+            Some(external_sensor),
             None,
             Default::default(),
         )
