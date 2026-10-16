@@ -2956,6 +2956,55 @@ mod tests {
     // Skipping Python's test_heat_battery_direct_demand_energy_error as not relevant in the Rust
 
     #[rstest]
+    /// The running per-service delivered total accumulates across timesteps and survives reset.
+    ///
+    /// energy_delivered_by_service() underpins the post-simulation charging-energy
+    /// apportionment, so it must keep totalling per service even though `service_results` is
+    /// cleared at the end of each timestep.
+    fn test_energy_delivered_by_service(
+        heat_battery: Arc<HeatBatteryDryCore>,
+        simulation_time: SimulationTime,
+    ) {
+        let control = SetpointTimeControl::new(
+            vec![Some(21.); 5],
+            0,
+            1.0,
+            None,
+            None,
+            1.0,
+        )
+        .into();
+        let service = HeatBatteryDryCore::create_service_space_heating(
+            heat_battery.clone(),
+            "space_service",
+            Some(control),
+        )
+        .unwrap();
+
+        // No timestep has ended yet, so nothing has been accumulated.
+        assert!(heat_battery.energy_delivered_by_service().is_empty());
+
+        // Demand 1.0 kWh each timestep across the whole simulation, ending each timestep so the
+        // running total must survive the per-timestep reset of service_results.
+        for simtime in simulation_time.iter() {
+            service
+                .demand_energy(1.0, 60.0, 40.0, None, None, simtime)
+                .unwrap();
+            heat_battery.timestep_end(simtime).unwrap();
+        }
+
+        let delivered_by_service = heat_battery.energy_delivered_by_service();
+        assert_eq!(delivered_by_service.len(), 1);
+        assert_relative_eq!(
+            *delivered_by_service
+                .get("space_service")
+                .expect("space service should have delivered energy"),
+            5.0,
+            epsilon = 1e-9
+        );
+    }
+
+    #[rstest]
     fn test_timestep_end(
         heat_battery: Arc<HeatBatteryDryCore>,
         mock_control_space: Arc<SetpointTimeControl>,
@@ -3397,7 +3446,9 @@ mod tests {
             panic!("Failed to create service2")
         };
 
-        // energy_output_max from space service
+        // energy_output_max from space service, net of the standing (case) loss
+        // across both units (the equality with demand_energy is verified separately in
+        // test_energy_output_max_matches_demand_energy_ceiling)
         let result1 = service1.energy_output_max(35., 10., None, simtime).unwrap();
         assert_relative_eq!(result1, 4.88410038485411, epsilon = 1e-7);
 
@@ -3565,6 +3616,7 @@ mod tests {
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
     ) {
+        // Test that get_battery_losses returns the recoverable fraction of standing losses.
         let heat_battery = HeatBatteryDryCore::new(
             &heat_battery_input,
             charge_control,
@@ -3576,7 +3628,16 @@ mod tests {
         )
         .unwrap();
 
-        // Battery losses
+        //  With no accumulated losses, nothing is creditable to internal gains
+        assert_eq!(heat_battery.get_battery_losses(), 0.0);
+     
+        // Only the recoverable fraction (f_sto_m = 0.75, BS EN 15316-5:2017
+        // Table B.3) of accumulated standing losses is returned for crediting
+        // to internal gains; the remainder escapes the dwelling.
+        heat_battery.battery_losses.store(1.0, Ordering::SeqCst);
+        // 1.0 kWh raw loss * 1 unit * 0.75 recovery factor = 0.75 kWh
+        assert_eq!(heat_battery.get_battery_losses(), 0.75);
+        // The accumulator is reset once read
         assert_eq!(heat_battery.get_battery_losses(), 0.0);
     }
 
@@ -3625,6 +3686,17 @@ mod tests {
                 .energy_output_with_losses(OutputMode::Max, None, None, &simtime)
                 .unwrap(),
             (0.0, 0.0, 0.0, 0.0, 0.0)
+        );
+
+        // Base discharge integration terminates immediately when the core is empty,
+        // taking the state-of-charge-reaches-zero branch
+        assert_eq!(
+            heat_battery
+                .storage
+                .read()
+                .energy_output(OutputMode::Max, None, None, &simtime)
+                .unwrap(),
+            (0.0, 0.0, 0.0, 0.0)
         );
     }
 
