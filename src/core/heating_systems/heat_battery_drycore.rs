@@ -394,12 +394,7 @@ impl HeatStorageDryCore {
             events.push(target_energy_event);
         }
 
-        let passive_power_interp = interp1d(
-            self.soc_min_array.to_vec(),
-            self.power_min_array.to_vec(),
-            Interp1dFillValue::Extrapolate,
-        );
-
+        let power_min_func = Arc::clone(&self.power_min_func);
         // Passive continuation after discharge target is met. Runs as a
         // separate solve from soc_after_discharge for the remaining time, so charging
         // is not coupled to when the discharge demand happens to be satisfied.
@@ -411,7 +406,7 @@ impl HeatStorageDryCore {
                     soc = soc_max;
                 }
 
-                let dlost_dt = passive_power_interp(&[soc])[0];
+                let dlost_dt = power_min_func(&[soc])[0];
 
                 let dcharged_dt = if soc < soc_max {
                     charge_rate
@@ -463,7 +458,7 @@ impl HeatStorageDryCore {
                 if target_energy.is_some() && t_events.len() > 1 && !t_events[1].is_empty() =>
             {
                 let time_after = time_remaining - t_events[1][0];
-                if time_after > 0. {
+                if charge_rate > 0. && time_after > 0. {
                     let sol_2 = solve_ivp(
                         &soc_ode_passive,
                         (0., time_after),
@@ -474,14 +469,13 @@ impl HeatStorageDryCore {
                     )?;
 
                     let OdeResult { y, .. } = sol_2;
-                    total_energy_charged += *y[1].last().ok_or_else(|| {
+                    let y_final = y.last().ok_or_else(|| {
                         anyhow!(
-                            "ODE solving result was unexpectedly empty for total_energy_charged"
+                            "ODE solving result was unexpectedly empty for soc passive"
                         )
                     })?;
-                    final_soc = *y[0].last().ok_or_else(|| {
-                        anyhow!("ODE solving result was unexpectedly empty for final_soc")
-                    })?;
+                    total_energy_charged += y_final[1];
+                    final_soc = y_final[0];
                 }
                 t_events[1][0]
             }

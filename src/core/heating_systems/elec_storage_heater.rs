@@ -1331,7 +1331,6 @@ mod tests {
         assert_relative_eq!(heater.storage.read().state_of_charge(), 0.2508187234724622);
     }
 
-    #[ignore = "Ignore until HeatBattery DryCore has been migrated to alpha 9"]
     #[rstest]
     /// Charging accumulates to pwr_in × timestep regardless of how much discharge is requested.
     ///
@@ -1765,7 +1764,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "1.0.0a9 heat battery migration"]
     fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: Arc<ElecStorageHeater>,
