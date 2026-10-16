@@ -1776,7 +1776,7 @@ impl HeatBatteryDryCore {
         // delivery calculation as __demand_energy. The MAX power curve includes the
         // case loss that leaves the core regardless, so integrating it gross would
         // overstate the deliverable ceiling that __demand_energy can ever reach.
-        let (q_released_max, _, _, _) = self.storage.read().energy_output(
+        let (q_released_max, _, _, _, _) = self.storage.read().energy_output_with_losses(
             OutputMode::Max,
             time_remaining.into(),
             None,
@@ -2421,7 +2421,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "ignore_standard_ctrl migration 1.0.0a9"]
     fn test_create_service_hot_water_regular(
         heat_battery: Arc<HeatBatteryDryCore>,
         mock_control_dhw_off: Arc<SetpointTimeControl>,
@@ -2461,28 +2460,16 @@ mod tests {
         let (setpntmin, setpntmax): (Option<f64>, Option<f64>) = service.setpnt(simtime);
         assert_eq!(setpntmin.unwrap(), 45.);
         assert_eq!(setpntmax.unwrap(), 65.);
-        // Demand energy
+        // energy_output_max reports the net deliverable ceiling (after the standing
+        // loss that leaves the core regardless), matching what demand_energy delivers
+        // when given that demand.
         assert_relative_eq!(
-            service
-                .energy_output_max(
-                    55.,
-                    34.,
-                    simtime,
-                    todo!("ignore_standard_ctrl migration 1.0.0a9")
-                )
-                .unwrap(),
-            4.829918824420231
+            service.energy_output_max(55., 34., simtime, None).unwrap(),
+            4.787470041454905
         );
         assert_relative_eq!(
             service
-                .demand_energy(
-                    4.829918824420231,
-                    Some(55.),
-                    34.,
-                    None,
-                    simtime,
-                    todo!("ignore_standard_ctrl migration 1.0.0a9")
-                )
+                .demand_energy(4.787470041454905, Some(55.), 34., None, simtime, None)
                 .unwrap(),
             4.787470041454905
         );
@@ -2499,26 +2486,12 @@ mod tests {
         .unwrap();
         // Demand energy
         assert_eq!(
-            service1
-                .energy_output_max(
-                    55.,
-                    34.,
-                    simtime,
-                    todo!("ignore_standard_ctrl migration 1.0.0a9")
-                )
-                .unwrap(),
+            service1.energy_output_max(55., 34., simtime, None).unwrap(),
             0.0
         );
         assert_eq!(
             service1
-                .demand_energy(
-                    100.,
-                    Some(55.),
-                    34.,
-                    None,
-                    simtime,
-                    todo!("ignore_standard_ctrl migration 1.0.0a9")
-                )
+                .demand_energy(100., Some(55.), 34., None, simtime, None)
                 .unwrap(),
             0.0
         );
@@ -3295,7 +3268,7 @@ mod tests {
 
         // energy_output_max from space service
         let result1 = service1.energy_output_max(35., 10., None, simtime).unwrap();
-        assert_relative_eq!(result1, 4.897563801409152, epsilon = 1e-7);
+        assert_relative_eq!(result1, 4.88410038485411, epsilon = 1e-7);
 
         // demand energy from services
         let result1 = service1
