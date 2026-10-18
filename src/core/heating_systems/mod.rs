@@ -7,7 +7,7 @@ pub mod point_of_use;
 pub mod common;
 mod constants;
 pub mod direct_electric_boiler;
-mod dry_electric_underfloor_heater;
+pub mod dry_electric_underfloor_heater;
 pub mod elec_storage_heater;
 pub mod emitters;
 pub mod heat_battery_drycore;

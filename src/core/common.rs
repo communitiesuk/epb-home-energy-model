@@ -38,6 +38,24 @@ pub enum WaterSupply {
     VaryingTemp(VaryingTempWaterSupply),
 }
 
+impl From<&Arc<ColdWaterSource>> for WaterSupply {
+    fn from(cold_water_source: &Arc<ColdWaterSource>) -> Self {
+        WaterSupply::ColdWaterSource(cold_water_source.clone())
+    }
+}
+
+impl From<&Arc<Mutex<WwhrsInstantaneous>>> for WaterSupply {
+    fn from(wwhrs: &Arc<Mutex<WwhrsInstantaneous>>) -> Self {
+        WaterSupply::Wwhrs(wwhrs.clone())
+    }
+}
+
+impl From<&HotWaterStorageTank> for WaterSupply {
+    fn from(storage_tank: &HotWaterStorageTank) -> Self {
+        WaterSupply::Preheated(storage_tank.clone())
+    }
+}
+
 impl WaterSupplyBehaviour for WaterSupply {
     fn get_temp_cold_water(
         &self,

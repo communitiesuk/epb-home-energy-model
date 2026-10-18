@@ -2172,7 +2172,7 @@ pub struct StorageTankDetails {
 }
 
 impl StorageTankDetails {
-    pub(crate) fn cold_water_source(&self) -> &str {
+    pub(crate) fn cold_water_source(&self) -> &ArcStr {
         &self.cold_water_source
     }
 }

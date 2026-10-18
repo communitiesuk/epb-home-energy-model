@@ -9,13 +9,14 @@ use delegate::delegate;
 // BS EN 1264 limits temperature to 15C above room temperature in peripheral areas. This is 36C assuming a room temperature of 21C
 const MAX_TEMPERATURE: f64 = 36.;
 
-struct DryElectricUnderfloorHeating {
+#[derive(Debug)]
+pub(crate) struct DryElectricUnderfloorHeating {
     electric_heater: InstantElecHeater,
     total_emitter_floor_area: f64,
 }
 
 impl DryElectricUnderfloorHeating {
-    pub fn new(
+    pub(crate) fn new(
         rated_power: f64,
         emitter_floor_area: f64,
         frac_convective: f64,

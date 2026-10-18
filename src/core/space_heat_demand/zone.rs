@@ -14,6 +14,7 @@ use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
 use approx::relative_eq;
 use arcstr::ArcStr;
+use atomic_float::AtomicF64;
 use fsum::FSum;
 use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
@@ -23,6 +24,7 @@ use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_fields::SerdeField;
 use std::hash::{Hash, Hasher};
 use std::mem;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -81,7 +83,7 @@ pub struct Zone {
     ///                      previous timestep. Positions in list defined in
     ///                      element_positions and zone_idx
     temp_setpnt_init: f64,
-    underfloor_emitter_area: f64,
+    underfloor_emitter_area: AtomicF64,
 }
 
 impl Zone {
@@ -161,7 +163,7 @@ impl Zone {
             control,
             temp_setpnt_basis: temp_setpnt_basis.unwrap_or(ZoneTemperatureControlBasis::Air),
             temp_setpnt_init,
-            underfloor_emitter_area: 0.,
+            underfloor_emitter_area: 0.0.into(),
         };
 
         zone.init_node_temps(
@@ -183,11 +185,9 @@ impl Zone {
     }
 
     /// Add the floor area used by underfloor heating and check against available floor area.
-    pub(crate) fn add_ufh_floor_area(
-        &mut self,
-        underfloor_emitter_area: f64,
-    ) -> anyhow::Result<()> {
-        self.underfloor_emitter_area += underfloor_emitter_area;
+    pub(crate) fn add_ufh_floor_area(&self, underfloor_emitter_area: f64) -> anyhow::Result<()> {
+        self.underfloor_emitter_area
+            .fetch_add(underfloor_emitter_area, Ordering::SeqCst);
 
         let mut floor_area = 0.0;
         for eli in &self.building_elements {
@@ -196,12 +196,10 @@ impl Zone {
             }
         }
 
-        if !isclose(
-            &[self.underfloor_emitter_area],
-            &[floor_area],
-            Some(1e-10),
-            None,
-        ) && self.underfloor_emitter_area > floor_area
+        let underfloor_emitter_area = self.underfloor_emitter_area.load(Ordering::SeqCst);
+
+        if !isclose(&[underfloor_emitter_area], &[floor_area], Some(1e-10), None)
+            && underfloor_emitter_area > floor_area
         {
             bail!("UFH area is greater than the zone floor area");
         }
@@ -3278,15 +3276,15 @@ mod tests {
 
     #[rstest]
     fn test_add_ufh_floor_area(thermal_bridging_objects: ThermalBridging) {
-        let mut zone = zone(thermal_bridging_objects, None).unwrap();
+        let zone = zone(thermal_bridging_objects, None).unwrap();
         zone.add_ufh_floor_area(10.).unwrap();
         zone.add_ufh_floor_area(5.).unwrap();
-        assert_eq!(zone.underfloor_emitter_area, 15.0);
+        assert_eq!(zone.underfloor_emitter_area.load(Ordering::SeqCst), 15.0);
     }
 
     #[rstest]
     fn test_add_ufh_floor_area_over_floor_area(thermal_bridging_objects: ThermalBridging) {
-        let mut zone = zone(thermal_bridging_objects, None).unwrap();
+        let zone = zone(thermal_bridging_objects, None).unwrap();
         let result = zone.add_ufh_floor_area(100.);
         assert!(result.is_err());
     }

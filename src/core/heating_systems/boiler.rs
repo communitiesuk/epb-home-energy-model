@@ -1,7 +1,7 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    CompositeRangeTimeControl, OnOffTimeControl, SetpointOrCombinationControl,
+    CompositeRangeTimeControl, ControlSetPoint, OnOffTimeControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
@@ -679,14 +679,14 @@ impl BoilerServiceWaterRegular {
 pub struct BoilerServiceSpace {
     boiler: BoilerForBoilerService,
     service_name: ArcStr,
-    control: SetpointOrCombinationControl,
+    control: ControlSetPoint,
 }
 
 impl BoilerServiceSpace {
     pub(crate) fn new(
         boiler: BoilerForBoilerService,
         service_name: ArcStr,
-        control: SetpointOrCombinationControl,
+        control: ControlSetPoint,
     ) -> Self {
         Self {
             boiler,
@@ -1168,7 +1168,7 @@ impl Boiler {
     pub(crate) fn create_service_space_heating(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control: SetpointOrCombinationControl,
+        control: ControlSetPoint,
     ) -> BoilerServiceSpace {
         boiler
             .write()
@@ -3222,9 +3222,7 @@ mod tests {
     }
 
     mod test_boiler_service_space {
-        use crate::core::controls::time_control::{
-            SetpointOrCombinationControl, SetpointTimeControl,
-        };
+        use crate::core::controls::time_control::{ControlSetPoint, SetpointTimeControl};
         use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
         use crate::core::heating_systems::boiler::tests::external_conditions;
         use crate::core::heating_systems::boiler::{
@@ -3295,8 +3293,8 @@ mod tests {
         }
 
         #[fixture]
-        fn control() -> SetpointOrCombinationControl {
-            SetpointOrCombinationControl::SetpointTime(
+        fn control() -> ControlSetPoint {
+            ControlSetPoint::SetpointTime(
                 SetpointTimeControl::new(
                     vec![Some(21.0), Some(21.0), None],
                     0,
@@ -3310,10 +3308,7 @@ mod tests {
         }
 
         #[fixture]
-        fn boiler_service(
-            boiler: Boiler,
-            control: SetpointOrCombinationControl,
-        ) -> BoilerServiceSpace {
+        fn boiler_service(boiler: Boiler, control: ControlSetPoint) -> BoilerServiceSpace {
             BoilerServiceSpace::new(
                 BoilerForBoilerService::Boiler(Arc::new(RwLock::new(boiler))),
                 "boiler_test".into(),
@@ -3416,8 +3411,7 @@ mod tests {
     mod test_boiler {
         use crate::core::common::WaterSupply;
         use crate::core::controls::time_control::{
-            RangeTimeControl, ScheduleOrSetpointControl, SetpointOrCombinationControl,
-            SetpointTimeControl,
+            ControlSetPoint, RangeTimeControl, ScheduleOrSetpointControl, SetpointTimeControl,
         };
         use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
         use crate::core::heating_systems::boiler::tests::{external_conditions, simulation_time};
@@ -3687,7 +3681,7 @@ mod tests {
             let boiler_service_space_heating = Boiler::create_service_space_heating(
                 boiler,
                 "BoilerServiceSpace",
-                SetpointOrCombinationControl::SetpointTime(
+                ControlSetPoint::SetpointTime(
                     SetpointTimeControl::new(
                         vec![None, None],
                         0,

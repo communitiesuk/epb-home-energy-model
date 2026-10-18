@@ -3,6 +3,7 @@ use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult}
 use crate::core::heating_systems::boiler::{
     BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
 };
+use crate::core::heating_systems::dry_electric_underfloor_heater::DryElectricUnderfloorHeating;
 use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
@@ -270,6 +271,7 @@ pub(crate) enum SpaceHeatSystem {
     Instant(InstantElecHeater),
     WarmAir(HeatPumpWarmAir),
     WetDistribution(Arc<Emitters>),
+    Ufh(Arc<DryElectricUnderfloorHeating>),
 }
 
 impl SpaceHeatSystem {
@@ -283,6 +285,7 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
                 wet_distribution.temp_setpnt(&simulation_time_iteration)
             }
+            SpaceHeatSystem::Ufh(ufh) => ufh.temp_setpnt(&simulation_time_iteration),
         }
     }
 
@@ -294,6 +297,7 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
                 wet_distribution.frac_convective(simtime)
             }
+            SpaceHeatSystem::Ufh(ufh) => ufh.frac_convective(),
         }
     }
 
@@ -317,6 +321,9 @@ impl SpaceHeatSystem {
                 energy_demand,
                 simulation_time_iteration,
             ),
+            SpaceHeatSystem::Ufh(ufh) => {
+                ufh.demand_energy(energy_demand, simulation_time_iteration)
+            }
         }
     }
 
@@ -337,6 +344,7 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::WetDistribution(emitters) => {
                 emitters.in_required_period(&simulation_time_iteration)
             }
+            SpaceHeatSystem::Ufh(ufh) => ufh.in_required_period(&simulation_time_iteration),
         }
     }
 
@@ -369,6 +377,7 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
                 wet_distribution.energy_output_min(simulation_time_iteration)
             }
+            SpaceHeatSystem::Ufh(ufh) => ufh.energy_output_min(),
         }
     }
 }

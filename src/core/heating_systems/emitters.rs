@@ -482,8 +482,9 @@ impl Emitters {
             total_emitter_floor_area,
         })
     }
+
     /// Returns the total floor area used by the emitters, or 0 if there is no floor area used.
-    fn total_emitter_floor_area(&self) -> f64 {
+    pub(crate) fn total_emitter_floor_area(&self) -> f64 {
         self.total_emitter_floor_area
     }
 

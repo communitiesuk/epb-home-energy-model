@@ -164,6 +164,20 @@ impl SetpointOrCombinationControl {
     }
 }
 
+impl From<Control> for Option<SetpointOrCombinationControl> {
+    fn from(control: Control) -> Self {
+        match control {
+            Control::SetpointTime(control) => {
+                Some(SetpointOrCombinationControl::SetpointTime(control))
+            }
+            Control::CombinationTime(control) => {
+                Some(SetpointOrCombinationControl::CombinationTime(control))
+            }
+            _ => None,
+        }
+    }
+}
+
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::energy_supply::energy_supply::EnergySupply;
 use crate::corpus::ObscureErrorReporter;
@@ -211,6 +225,19 @@ impl From<Control> for Option<ControlSetPoint> {
 impl From<Arc<SetpointTimeControl>> for ControlSetPoint {
     fn from(control: Arc<SetpointTimeControl>) -> Self {
         ControlSetPoint::SetpointTime(control)
+    }
+}
+
+impl From<SetpointOrCombinationControl> for ControlSetPoint {
+    fn from(control: SetpointOrCombinationControl) -> Self {
+        match control {
+            SetpointOrCombinationControl::SetpointTime(control) => {
+                ControlSetPoint::SetpointTime(control)
+            }
+            SetpointOrCombinationControl::CombinationTime(control) => {
+                ControlSetPoint::CombinationTime(control)
+            }
+        }
     }
 }
 

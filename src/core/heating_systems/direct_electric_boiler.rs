@@ -1,7 +1,7 @@
 use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSupply;
 use crate::core::controls::time_control::{
-    CompositeRangeTimeControl, OnOffTimeControl, SetpointOrCombinationControl,
+    CompositeRangeTimeControl, ControlSetPoint, OnOffTimeControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{
@@ -143,12 +143,10 @@ impl DirectElectricBoiler {
     /// Arguments:
     /// * `service_name` - name of the service demanding energy from the boiler
     /// * `control` - reference to a control object which must implement is_on() and setpnt() funcs
-    fn create_service_space_heating(
+    pub(crate) fn create_service_space_heating(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        // TODO (1.0.0a9) review control type. ControlSetPoint in Python is implemented by:
-        // SetpointTimeControl, CombinationTimeControl, ChargeControlSetPointAdapter
-        control: SetpointOrCombinationControl,
+        control: ControlSetPoint,
     ) -> anyhow::Result<BoilerServiceSpace> {
         boiler.write().create_service_connection(service_name)?;
         Ok(BoilerServiceSpace::new(
@@ -560,7 +558,7 @@ mod tests {
         let boiler_service_result = DirectElectricBoiler::create_service_space_heating(
             Arc::new(RwLock::new(boiler)),
             service_name,
-            SetpointOrCombinationControl::SetpointTime(control.into()),
+            ControlSetPoint::SetpointTime(control.into()),
         );
         assert!(boiler_service_result.is_ok());
     }

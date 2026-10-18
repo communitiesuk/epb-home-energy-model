@@ -22,6 +22,7 @@ use crate::core::heating_systems::common::{
     SpaceHeatingService,
 };
 use crate::core::heating_systems::direct_electric_boiler::DirectElectricBoiler;
+use crate::core::heating_systems::dry_electric_underfloor_heater::DryElectricUnderfloorHeating;
 use crate::core::heating_systems::elec_storage_heater::{
     ElecStorageHeater, StorageHeaterDetailedResult,
 };
@@ -37,6 +38,7 @@ use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkService
 use crate::core::heating_systems::heat_pump::{
     HeatPump, HeatPumpEmitterType, HeatPumpHotWaterOnly,
 };
+use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
     control_max_diverter_from_control, HeatSourceWithStorageTank, HotWaterStorageTank,
@@ -97,7 +99,8 @@ use crate::input::{
     SingleOrMap, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
     TariffDataInput, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput,
-    VentAdjustControlReferences, VentilationLeaks, VentilationShieldClass, WasteWaterHeatRecovery,
+    UnderfloorHeaterConstantFields, UnderfloorHeaterThermalMassFields, VentAdjustControlReferences,
+    VentilationLeaks, VentilationShieldClass, WasteWaterHeatRecovery,
     WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents, WaterPipework,
     WetEmitter, WindShieldLocation, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
     MAIN_REFERENCE, PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR,
@@ -138,7 +141,7 @@ use std::fs::File;
 use std::hash::Hash;
 use std::io::BufReader;
 use std::iter::Sum;
-use std::ops::{Add, AddAssign, Div};
+use std::ops::{Add, AddAssign, Deref, Div};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -938,6 +941,7 @@ pub struct Corpus {
     heat_source_wet_boilers: Vec<Arc<RwLock<Boiler>>>,
     charging_connection_names_for_heat_battery: IndexMap<ArcStr, Vec<ArcStr>>,
     heat_battery_names_for_hot_water_source: IndexMap<ArcStr, Vec<ArcStr>>,
+    heat_battery_names_for_space_heat_systems: IndexMap<ArcStr, Vec<ArcStr>>,
     pub(crate) space_heat_systems: IndexMap<ArcStr, Arc<Mutex<SpaceHeatSystem>>>,
     pub(crate) space_cool_systems: IndexMap<ArcStr, AirConditioning>,
     pub(crate) on_site_generation: IndexMap<ArcStr, PhotovoltaicSystem>,
@@ -1395,6 +1399,8 @@ impl Corpus {
         let mut pre_heated_water_sources: IndexMap<ArcStr, HotWaterStorageTank> =
             Default::default();
 
+        // Hot water source name -> names of heat batteries that supply it. Used to apportion each
+        // battery's charging energy into the HW CoP denominator.
         let mut heat_battery_names_for_hot_water_source: IndexMap<ArcStr, Vec<ArcStr>> =
             Default::default();
 
@@ -1511,7 +1517,11 @@ impl Corpus {
 
         let mut heat_system_names_requiring_overvent: Vec<ArcStr> = Default::default();
 
-        let (space_heat_systems, energy_supply_conn_names_for_heat_systems) = input
+        let SpaceHeatSystemsData {
+            space_heat_systems,
+            energy_conn_names_for_systems: energy_supply_conn_names_for_heat_systems,
+            heat_battery_names_for_space_heat_systems,
+        } = input
             .space_heat_system
             .as_ref()
             .map(|system| {
@@ -1524,6 +1534,7 @@ impl Corpus {
                     &mut heat_system_names_requiring_overvent,
                     &heat_system_name_for_zone,
                     &zones,
+                    shareable_fn(&temp_internal_air_prev),
                     &heat_sources_wet_with_buffer_tank,
                     external_conditions.clone(),
                     output_options.detailed_output_heating_cooling,
@@ -1593,6 +1604,7 @@ impl Corpus {
             heat_source_wet_boilers,
             charging_connection_names_for_heat_battery,
             heat_battery_names_for_hot_water_source,
+            heat_battery_names_for_space_heat_systems,
             space_heat_systems,
             space_cool_systems,
             on_site_generation,
@@ -5483,66 +5495,66 @@ fn heat_source_wet_from_input(
                                 heat_source, ..
                             } => {
                                 let heat_source_data: IndexMap<ArcStr, Arc<HeatBatteryChargingSource>> =
-                                heat_source
-                                    .iter()
-                                    .map(|(source_name, source)| {
-                                        let (control_reference, schedule_unit) = match source {
-                                            HeatBatteryPcmChargingSource::Electric {
-                                                control,
-                                                schedule_unit,
-                                                ..
-                                            } => (control, schedule_unit),
-                                            HeatBatteryPcmChargingSource::Hydronic {
-                                                control,
-                                                schedule_unit,
-                                                ..
-                                            } => (control, schedule_unit),
-                                        };
+                                    heat_source
+                                        .iter()
+                                        .map(|(source_name, source)| {
+                                            let (control_reference, schedule_unit) = match source {
+                                                HeatBatteryPcmChargingSource::Electric {
+                                                    control,
+                                                    schedule_unit,
+                                                    ..
+                                                } => (control, schedule_unit),
+                                                HeatBatteryPcmChargingSource::Hydronic {
+                                                    control,
+                                                    schedule_unit,
+                                                    ..
+                                                } => (control, schedule_unit),
+                                            };
 
-                                        let range_time_control = if let Control::RangeTime(
-                                            range_time_control,
-                                        ) =
-                                            controls.get_with_string(control_reference).ok_or_else(
-                                                || anyhow!("Control not found for PCM heat source"),
-                                            )? {
-                                            range_time_control.clone()
-                                        } else {
-                                            return Err(anyhow!(
+                                            let range_time_control = if let Control::RangeTime(
+                                                range_time_control,
+                                            ) =
+                                                controls.get_with_string(control_reference).ok_or_else(
+                                                    || anyhow!("Control not found for PCM heat source"),
+                                                )? {
+                                                range_time_control.clone()
+                                            } else {
+                                                return Err(anyhow!(
                                                 "Expected RangeTime control for PCM heat source"
                                             ));
-                                        };
+                                            };
 
-                                        let heat_source = (
-                                            source_name.clone(),
-                                            Arc::new(HeatBatteryChargingSource {
-                                                type_data: match source {
-                                                    HeatBatteryPcmChargingSource::Electric { rated_charge_power, .. } => {
-                                                        ChargingSourceTypeSpecificData::DirectElectric { rated_charge_power: *rated_charge_power }
-                                                    },
-                                                    HeatBatteryPcmChargingSource::Hydronic {  temp_flow_limit_upper,  flow_rate_charging_l_per_min, a, b, velocity_in_hex_tube_at_1_l_per_min_m_per_s, inlet_diameter_mm, .. } => {
-                                                        ChargingSourceTypeSpecificData::HeatSourceWet {
-                                                            temp_flow_max: *temp_flow_limit_upper,
-                                                            flow_rate_charging_l_per_min: *flow_rate_charging_l_per_min,
-                                                            hex_a: *a,
-                                                            hex_b: *b,
-                                                            hex_velocity_at_1_l_per_min: *velocity_in_hex_tube_at_1_l_per_min_m_per_s,
-                                                            hex_capillary_diameter_m: *inlet_diameter_mm / MILLIMETRES_IN_METRE as f64,
+                                            let heat_source = (
+                                                source_name.clone(),
+                                                Arc::new(HeatBatteryChargingSource {
+                                                    type_data: match source {
+                                                        HeatBatteryPcmChargingSource::Electric { rated_charge_power, .. } => {
+                                                            ChargingSourceTypeSpecificData::DirectElectric { rated_charge_power: *rated_charge_power }
                                                         }
-                                                    }
-                                                },
-                                                control: range_time_control,
-                                                heat_source_service: Default::default(),
-                                                schedule_unit: *schedule_unit,
-                                            }),
-                                        );
+                                                        HeatBatteryPcmChargingSource::Hydronic { temp_flow_limit_upper, flow_rate_charging_l_per_min, a, b, velocity_in_hex_tube_at_1_l_per_min_m_per_s, inlet_diameter_mm, .. } => {
+                                                            ChargingSourceTypeSpecificData::HeatSourceWet {
+                                                                temp_flow_max: *temp_flow_limit_upper,
+                                                                flow_rate_charging_l_per_min: *flow_rate_charging_l_per_min,
+                                                                hex_a: *a,
+                                                                hex_b: *b,
+                                                                hex_velocity_at_1_l_per_min: *velocity_in_hex_tube_at_1_l_per_min_m_per_s,
+                                                                hex_capillary_diameter_m: *inlet_diameter_mm / MILLIMETRES_IN_METRE as f64,
+                                                            }
+                                                        }
+                                                    },
+                                                    control: range_time_control,
+                                                    heat_source_service: Default::default(),
+                                                    schedule_unit: *schedule_unit,
+                                                }),
+                                            );
 
-                                        if matches!(source, HeatBatteryPcmChargingSource::Hydronic { .. }) {
-                                            pcm_hydronic_sources.push((source_name.clone(), source.clone()));
-                                        }
+                                            if matches!(source, HeatBatteryPcmChargingSource::Hydronic { .. }) {
+                                                pcm_hydronic_sources.push((source_name.clone(), source.clone()));
+                                            }
 
-                                        Ok(heat_source)
-                                    })
-                                    .collect::<Result<_, _>>()?;
+                                            Ok(heat_source)
+                                        })
+                                        .collect::<Result<_, _>>()?;
 
                                 let pcm_charge_control = None;
 
@@ -6199,26 +6211,16 @@ fn hot_water_source_from_input(
     let cloned_input = input.clone();
 
     let cold_water_source_for_hot_water_tank =
-        |cold_water_source_type: &str,
+        |cold_water_source_type: &ArcStr,
          cold_water_sources_already_allocated: &mut IndexSet<ArcStr>|
          -> anyhow::Result<WaterSupply> {
-            cold_water_sources.get(cold_water_source_type).map(|source| Ok(WaterSupply::ColdWaterSource(source.clone()))).or_else(|| {
-                let source = pre_heated_water_sources
-                    .get(cold_water_source_type)
-                    .map(|source| WaterSupply::Preheated(source.clone()))
-                    .or(wwhrs.get(cold_water_source_type).map(|source| WaterSupply::Wwhrs(source.clone())));
-                if source.is_some() {
-                    if cold_water_sources_already_allocated.contains(cold_water_source_type) {
-                        return Some(Err(anyhow!("Cannot allocate PreHeatedWaterSource or WWHRS to more than one HotWaterSource: {cold_water_source_type}")));
-                    } else {
-                        cold_water_sources_already_allocated.insert(cold_water_source_type.into());
-                    }
-                }
-
-                Ok(source).transpose()
-            })
-                .transpose()?
-                .ok_or_else(|| anyhow!("Could not find pre-heated or WWHRS water source for name '{cold_water_source_type}'"))
+            resolve_cold_water_source(
+                cold_water_source_type,
+                cold_water_sources,
+                wwhrs,
+                pre_heated_water_sources,
+                cold_water_sources_already_allocated,
+            )
         };
 
     let mut heat_sources_for_hot_water_tank = |cold_water_source: WaterSupply,
@@ -6329,7 +6331,6 @@ fn hot_water_source_from_input(
                 // it was a HeatSourceWet type - anything else would have returned its energy supply name
                 continue;
             };
-            // Just handling the single diverter as a stop gap in the 1.0.0a9 migration
             if let Some(diverter_inputs) = diverter_types.get(energy_supply_name) {
                 for (diverter_name, diverter) in diverter_inputs {
                     if &diverter.heat_source == heat_source_name {
@@ -6496,8 +6497,13 @@ fn hot_water_source_from_input(
             combi_type_specific_details,
             ..
         } => {
-            let cold_water_source =
-                cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
+            let cold_water_source = resolve_cold_water_source(
+                cold_water_source_type,
+                cold_water_sources,
+                wwhrs,
+                pre_heated_water_sources,
+                cold_water_sources_already_allocated,
+            )?;
             let energy_supply_conn_name: ArcStr =
                 [heat_source_wet_type, "_water_heating"].concat().into();
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
@@ -6534,17 +6540,15 @@ fn hot_water_source_from_input(
             };
 
             HotWaterSource::CombiBoiler(Arc::from(RwLock::from(
-                heat_source_wet
-                    .create_service_hot_water_combi(
-                        cloned_input,
-                        energy_supply_conn_name.as_str(),
-                        setpoint_temp.ok_or_else(|| {
-                            anyhow!("A setpoint temp was expected on a combi boiler input.")
-                        })?,
-                        cold_water_source,
-                        keep_hot_control,
-                    )
-                    .expect("expected to be able to instantiate a combi boiler object"),
+                heat_source_wet.create_service_hot_water_combi(
+                    cloned_input,
+                    energy_supply_conn_name.as_str(),
+                    setpoint_temp.ok_or_else(|| {
+                        anyhow!("A setpoint temp was expected on a combi boiler input.")
+                    })?,
+                    cold_water_source,
+                    keep_hot_control,
+                )?,
             )))
         }
         HotWaterSourceDetails::PointOfUse {
@@ -6559,8 +6563,13 @@ fn hot_water_source_from_input(
             energy_supply_conn_names.push(energy_supply_conn_name.to_string().into());
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name)?;
-            let cold_water_source =
-                cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
+            let cold_water_source = resolve_cold_water_source(
+                cold_water_source_type,
+                cold_water_sources,
+                wwhrs,
+                pre_heated_water_sources,
+                cold_water_sources_already_allocated,
+            )?;
             HotWaterSource::PointOfUse(
                 PointOfUse::new(
                     *efficiency,
@@ -6580,8 +6589,13 @@ fn hot_water_source_from_input(
             let energy_supply_conn_name: ArcStr =
                 [heat_source_wet_name, "_water_heating"].concat().into();
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
-            let cold_water_source =
-                cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
+            let cold_water_source = resolve_cold_water_source(
+                cold_water_source_type,
+                cold_water_sources,
+                wwhrs,
+                pre_heated_water_sources,
+                cold_water_sources_already_allocated,
+            )?;
             let heat_source_wet = wet_heat_sources.get_mut(heat_source_wet_name).ok_or_else(|| {
                 anyhow!("Expected '{heat_source_wet_name}' to have been defined as a wet heat source")
             })?;
@@ -6613,8 +6627,16 @@ fn hot_water_source_from_input(
             let energy_supply_conn_name: ArcStr =
                 format!("{}_water_heating", heat_source_wet_name).into();
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
-            let cold_water_source =
-                cold_water_source_for_type(cold_water_source, cold_water_sources)?;
+            // Record the battery supplying this hot water service, so the battery's charging
+            // energy can be apportioned into the HW CoP denominator.
+            heat_battery_names_for_hot_water_source.push(heat_source_wet_name.clone());
+            let cold_water_source = resolve_cold_water_source(
+                cold_water_source,
+                cold_water_sources,
+                wwhrs,
+                pre_heated_water_sources,
+                cold_water_sources_already_allocated,
+            )?;
             let heat_source_wet = wet_heat_sources.get(heat_source_wet_name).ok_or_else(|| {
                 anyhow!(
                     "Expected a wet heat source registered with the name '{heat_source_wet_name}'."
@@ -6654,6 +6676,46 @@ fn hot_water_source_from_input(
     })
 }
 
+/// Resolve a ColdWaterSource reference to its mains, pre-heated, or WWHRS feed.
+///
+/// A hot water source's cold feed may be a plain mains supply, a
+/// PreHeatedWaterSource, or a WWHRS — all of which expose the same cold
+/// water source interface (get_temp_cold_water, draw_off_water). Pre-heated
+/// and WWHRS feeds may each supply only one hot water source, to avoid
+/// double-counting their recovered heat; this is enforced via
+/// cold_water_sources_already_allocated.
+fn resolve_cold_water_source(
+    cold_water_source_name: &ArcStr,
+    cold_water_sources: &ColdWaterSources,
+    wwhrs: &IndexMap<ArcStr, Arc<Mutex<WwhrsInstantaneous>>>,
+    pre_heated_water_sources: &IndexMap<ArcStr, HotWaterStorageTank>,
+    cold_water_sources_already_allocated: &mut IndexSet<ArcStr>,
+) -> anyhow::Result<WaterSupply> {
+    if let Some(cold_water_source) = cold_water_sources.get(cold_water_source_name) {
+        return Ok(cold_water_source.into());
+    }
+
+    let cold_water_source: Option<WaterSupply> = pre_heated_water_sources
+        .get(cold_water_source_name)
+        .map(Into::into)
+        .or(wwhrs.get(cold_water_source_name).map(Into::into));
+
+    let cold_water_source = if let Some(cold_water_source) = cold_water_source {
+        cold_water_source
+    } else {
+        bail!("Cold water source {cold_water_source_name} not found");
+    };
+
+    if cold_water_sources_already_allocated.contains(cold_water_source_name) {
+        bail!(
+            "Cannot allocate PreHeatedWaterSource or WWHRS to more than one HotWaterSource: {cold_water_source_name}"
+        );
+    }
+    cold_water_sources_already_allocated.insert(cold_water_source_name.clone());
+
+    Ok(cold_water_source)
+}
+
 fn cold_water_source_for_type(
     cold_water_source_type: &str,
     cold_water_sources: &ColdWaterSources,
@@ -6675,256 +6737,352 @@ fn space_heat_systems_from_input(
     heat_system_names_requiring_overvent: &mut Vec<ArcStr>,
     heat_system_name_for_zone: &IndexMap<ArcStr, Vec<ArcStr>>,
     zones: &IndexMap<ArcStr, Arc<Zone>>,
+    temp_internal_air_fn: TempInternalAirFn,
     heat_sources_wet_with_buffer_tank: &[ArcStr],
     external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
     initial_temp: f64,
-) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {
+) -> anyhow::Result<SpaceHeatSystemsData> {
     let mut energy_conn_names_for_systems: IndexMap<ArcStr, ArcStr> = Default::default();
+    let mut heat_battery_names_for_space_heat_systems: IndexMap<ArcStr, Vec<ArcStr>> =
+        Default::default();
+    let zone_heated_by_system = |heat_system_name: &ArcStr| -> anyhow::Result<Arc<Zone>> {
+        for (zone_name, zone) in zones.iter() {
+            if heat_system_name_for_zone
+                .get(zone_name)
+                .is_some_and(|x| x.contains(heat_system_name))
+            {
+                return Ok(zone.clone());
+            }
+        }
+        Err(anyhow!(
+            "Zone for heat system not found: {heat_system_name}"
+        ))
+    };
     let space_heat_systems = input
         .iter()
         .filter(|(system_name, _)| heat_system_name_for_zone.values().flatten().any(|heat_system_name| heat_system_name == system_name.as_str()))
         .map(|(system_name, space_heat_system_details)| {
             let system_name: ArcStr = system_name.to_string().into();
+            let zone = zone_heated_by_system(&system_name)?;
+
             Ok((
                 system_name.clone(),
-                Arc::new(Mutex::new(match space_heat_system_details {
-                    SpaceHeatSystemDetails::InstantElectricHeater {
-                        energy_supply,
-                        ..
-                    } => {
-                        let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
-                        let energy_supply_conn_name = system_name.clone();
-                        energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
-                        let _energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_ref()).unwrap();
-                        // SpaceHeatSystem::Instant(InstantElecHeater::new(
-                        //     *rated_power,
-                        //     *frac_convective,
-                        //     energy_supply_conn,
-                        //     simulation_time.step_in_hours(),
-                        //     controls.get_with_string(control),
-                        // ))
-                        todo!()
-                    }
-                    SpaceHeatSystemDetails::ElectricStorageHeater { pwr_in, rated_power_instant, storage_capacity, air_flow_type, frac_convective, fan_pwr, n_units, energy_supply, zone, control, control_charger, dry_core_min_output, dry_core_max_output, state_of_charge_init, .. } => {
-                        let zone: ArcStr = zone.into();
-                        let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
-                        let energy_supply_conn_name = system_name.clone();
-                        energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
-                        let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_ref()).unwrap();
-
-                        let zone = zones.get(&zone).ok_or_else(|| anyhow!("Space heat system references an undeclared zone '{zone}'."))?.clone();
-                        let zone_setpoint_init = zone.setpnt_init();
-                        let control_name = control.clone();
-                        let control = controls.get_with_string(control).ok_or_else(|| anyhow!("A control object was expected for an electric storage heater"))?;
-                        let control = if let Control::SetpointTime(control) = control {
-                            control
-                        } else {
-                            bail!("The control '{control_name}' referenced by an electric storage heater was expected to be a setpoint time control");
-                        };
-                        let charge_control = controls.get_with_string(control_charger).ok_or_else(|| anyhow!("Space heat system references an invalid charge control name '{control_charger}'"))?;
-                        let charge_control = if let Control::Charge(control) = charge_control {
-                            control
-                        } else {
-                            bail!("The control '{control_name}' referenced by an electric storage heater was expected to be a charge control");
-                        };
-                        SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(
-                            *pwr_in,
-                            *rated_power_instant,
-                            *storage_capacity,
-                            *air_flow_type,
-                            *frac_convective,
-                            *fan_pwr,
-                            *n_units,
-                            zone_setpoint_init,
-                            ZoneTempInternalAir(zone).as_fn(),
-                            energy_supply_conn,
-                            simulation_time,
+                {
+                    let space_heat_system = Arc::new(Mutex::new(match space_heat_system_details {
+                        SpaceHeatSystemDetails::InstantElectricHeater {
+                            energy_supply,
                             control,
-                            charge_control,
-                            dry_core_min_output.clone(),
-                            dry_core_max_output.clone(),
-                            external_conditions.clone(),
-                            *state_of_charge_init,
-                            Some(detailed_output_heating_cooling))?,
-                        )
-                    }
-                    SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, flow_data, bypass_fraction_recirculated, heat_source, temp_diff_emit_dsgn, control: control_name, thermal_mass, ecodesign_controller, design_flow_temp, zone, pipework, .. } => {
-                        let zone: ArcStr = zone.as_str().into();
-                        let heat_source_name = &heat_source.name;
-                        let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;
+                            frac_convective,
+                            rated_power,
+                            constant,
+                            constant_per_kw,
+                            exponent,
+                            thermal_mass,
+                            thermal_mass_per_kw
+                        } => {
+                            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
+                            let energy_supply_conn_name = system_name.clone();
+                            energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
+                            let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_ref()).unwrap();
 
-                        let energy_supply_conn_name: ArcStr = [heat_source_name, "_space_heating: ", &system_name].concat().into();
-                        energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
+                            let control = controls.get_with_string(control).ok_or_else(|| anyhow!("Space heat system references an undeclared control '{control}'."))?.into();
 
-                        let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
-                        let mut with_buffer_tank = false;
+                            SpaceHeatSystem::Instant(InstantElecHeater::new(
+                                *rated_power,
+                                *frac_convective,
+                                energy_supply_conn,
+                                ZoneTempInternalAir(zone).as_fn(),
+                                simulation_time.step_in_hours(),
+                                control,
+                                *constant,
+                                *constant_per_kw,
+                                *exponent,
+                                *thermal_mass,
+                                *thermal_mass_per_kw,
+                                temp_internal_air_fn(),
+                                None,
+                            )?)
+                        }
+                        SpaceHeatSystemDetails::ElectricStorageHeater { pwr_in, rated_power_instant, storage_capacity, air_flow_type, frac_convective, fan_pwr, n_units, energy_supply, zone, control, control_charger, dry_core_min_output, dry_core_max_output, state_of_charge_init, .. } => {
+                            let zone: ArcStr = zone.into();
+                            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
+                            let energy_supply_conn_name = system_name.clone();
+                            energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
+                            let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_ref()).unwrap();
 
-                        let control = controls.get_with_string(control_name).ok_or_else(|| anyhow!("A control object was expected for wet heat source: '{heat_source_name}'"))?;
-                        let setpoint_or_combination_control = controls.get_setpoint_or_combination_control(control_name)?;
+                            let zone = zones.get(&zone).ok_or_else(|| anyhow!("Space heat system references an undeclared zone '{zone}'."))?.clone();
+                            let zone_setpoint_init = zone.setpnt_init();
+                            let control_name = control.clone();
+                            let control = controls.get_with_string(control).ok_or_else(|| anyhow!("A control object was expected for an electric storage heater"))?;
+                            let control = if let Control::SetpointTime(control) = control {
+                                control
+                            } else {
+                                bail!("The control '{control_name}' referenced by an electric storage heater was expected to be a setpoint time control");
+                            };
+                            let charge_control = controls.get_with_string(control_charger).ok_or_else(|| anyhow!("Space heat system references an invalid charge control name '{control_charger}'"))?;
+                            let charge_control = if let Control::Charge(control) = charge_control {
+                                control
+                            } else {
+                                bail!("The control '{control_name}' referenced by an electric storage heater was expected to be a charge control");
+                            };
+                            SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(
+                                *pwr_in,
+                                *rated_power_instant,
+                                *storage_capacity,
+                                *air_flow_type,
+                                *frac_convective,
+                                *fan_pwr,
+                                *n_units,
+                                zone_setpoint_init,
+                                ZoneTempInternalAir(zone).as_fn(),
+                                energy_supply_conn,
+                                simulation_time,
+                                control,
+                                charge_control,
+                                dry_core_min_output.clone(),
+                                dry_core_max_output.clone(),
+                                external_conditions.clone(),
+                                *state_of_charge_init,
+                                Some(detailed_output_heating_cooling))?,
+                            )
+                        }
+                        SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, flow_data, bypass_fraction_recirculated, heat_source, temp_diff_emit_dsgn, control: control_name, thermal_mass, ecodesign_controller, design_flow_temp, zone, pipework, .. } => {
+                            let zone: ArcStr = zone.as_str().into();
+                            let heat_source_name = &heat_source.name;
+                            let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;
 
-                        let heat_source_service: SpaceHeatingService =
-                            match heat_source {
-                                WetHeatSource::HeatPump(heat_pump) => {
-                                    // For HPs, need to know emitter type for inertia calculations
-                                    let emitter_type = if emitters.iter().any(|e| matches!(e, WetEmitter::Fancoil { .. })) {
-                                        HeatPumpEmitterType::FanCoils
-                                    } else {
-                                        HeatPumpEmitterType::RadiatorsUfh
-                                    };
-                                    // For HPs, checking if there's a buffer tank to inform both the service space heating
-                                    // and the emitters of its presence.
-                                    if heat_sources_wet_with_buffer_tank.contains(heat_source_name) {
-                                        with_buffer_tank = true;
+                            let energy_supply_conn_name: ArcStr = [heat_source_name, "_space_heating: ", &system_name].concat().into();
+                            energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
+
+                            let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
+                            let mut with_buffer_tank = false;
+
+                            let control = controls.get_with_string(control_name).ok_or_else(|| anyhow!("A control object was expected for wet heat source: '{heat_source_name}'"))?;
+                            let setpoint_or_combination_control = controls.get_setpoint_or_combination_control(control_name)?;
+
+                            let heat_source_service: SpaceHeatingService =
+                                match heat_source {
+                                    WetHeatSource::HeatPump(heat_pump) => {
+                                        // For HPs, need to know emitter type for inertia calculations
+                                        let emitter_type = if emitters.iter().any(|e| matches!(e, WetEmitter::Fancoil { .. })) {
+                                            HeatPumpEmitterType::FanCoils
+                                        } else {
+                                            HeatPumpEmitterType::RadiatorsUfh
+                                        };
+                                        // For HPs, checking if there's a buffer tank to inform both the service space heating
+                                        // and the emitters of its presence.
+                                        if heat_sources_wet_with_buffer_tank.contains(heat_source_name) {
+                                            with_buffer_tank = true;
+                                        }
+
+                                        let volume_heated = total_volume_heated_by_system(zones, heat_system_name_for_zone, &system_name);
+
+                                        let heat_source_service = HeatPump::create_service_space_heating(
+                                            heat_pump.clone(),
+                                            &energy_supply_conn_name,
+                                            emitter_type,
+                                            temp_flow_limit_upper.ok_or_else(|| anyhow!("Expected a temp_flow_limit_upper to be present for a heat pump"))?,
+                                            *temp_diff_emit_dsgn,
+                                            *design_flow_temp,
+                                            setpoint_or_combination_control.into(),
+                                            volume_heated,
+                                        );
+
+                                        if heat_pump.lock().source_is_exhaust_air() {
+                                            // Record heating system as potentially requiring overventilation
+                                            heat_system_names_requiring_overvent.push((system_name).clone());
+                                        }
+                                        SpaceHeatingService::HeatPump(heat_source_service?)
                                     }
-
-                                    let volume_heated = total_volume_heated_by_system(zones, heat_system_name_for_zone, &system_name);
-
-                                    let heat_source_service = HeatPump::create_service_space_heating(
-                                        heat_pump.clone(),
-                                        &energy_supply_conn_name,
-                                        emitter_type,
-                                        temp_flow_limit_upper.expect("Expected a temp_flow_limit_upper to be present for a heat pump"),
-                                        *temp_diff_emit_dsgn,
-                                        *design_flow_temp,
-                                        setpoint_or_combination_control,
-                                        volume_heated,
-                                    );
-
-                                    if heat_pump.lock().source_is_exhaust_air() {
-                                        // Record heating system as potentially requiring overventilation
-                                        heat_system_names_requiring_overvent.push((system_name).clone());
+                                    WetHeatSource::DirectElectricBoiler(boiler) => {
+                                        let heat_source_service = DirectElectricBoiler::create_service_space_heating(boiler.clone(), &energy_supply_conn_name, setpoint_or_combination_control.into())?;
+                                        SpaceHeatingService::Boiler(heat_source_service)
                                     }
-                                    SpaceHeatingService::HeatPump(heat_source_service?)
-                                }
-                                WetHeatSource::DirectElectricBoiler(_boiler) => {
-                                    todo!("migration to 1.0.0a9")
-                                }
-                                WetHeatSource::Boiler(boiler) => {
-                                    let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), &energy_supply_conn_name, setpoint_or_combination_control);
-                                    SpaceHeatingService::Boiler(heat_source_service)
-                                }
-                                WetHeatSource::Hiu(heat_network) => {
-                                    let control: Option<ControlSetPoint> = control.into();
+                                    WetHeatSource::Boiler(boiler) => {
+                                        let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), &energy_supply_conn_name, setpoint_or_combination_control.into());
+                                        SpaceHeatingService::Boiler(heat_source_service)
+                                    }
+                                    WetHeatSource::Hiu(heat_network) => {
+                                        let control: Option<ControlSetPoint> = control.into();
 
-                                    let heat_source_service = HeatNetwork::create_service_space_heating(
-                                        heat_network.clone(),
-                                        &energy_supply_conn_name,
-                                        control.ok_or_else(|| anyhow!("An HIU expected to be passed a control that can be used as a setpoint control"))?,
-                                    );
-                                    SpaceHeatingService::HeatNetwork(heat_source_service)
-                                }
-                                WetHeatSource::HeatBattery(heat_battery) => {
-                                    SpaceHeatingService::HeatBattery(match heat_battery {
-                                        HeatBattery::DryCore(dry_core) => HeatBatteryServiceSpace::DryCore(
-                                            {
-                                                let control = if let Control::SetpointTime(control) = control {
-                                                    control
-                                                } else {
-                                                    bail!("A dry core heat battery expected to be passed a control that can be used as a setpoint control")
-                                                };
+                                        let heat_source_service = HeatNetwork::create_service_space_heating(
+                                            heat_network.clone(),
+                                            &energy_supply_conn_name,
+                                            control.ok_or_else(|| anyhow!("An HIU expected to be passed a control that can be used as a setpoint control"))?,
+                                        );
+                                        SpaceHeatingService::HeatNetwork(heat_source_service)
+                                    }
+                                    WetHeatSource::HeatBattery(heat_battery) => {
+                                        SpaceHeatingService::HeatBattery(match heat_battery {
+                                            HeatBattery::DryCore(dry_core) => HeatBatteryServiceSpace::DryCore(
+                                                {
+                                                    let control = if let Control::SetpointTime(control) = control {
+                                                        control
+                                                    } else {
+                                                        bail!("A dry core heat battery expected to be passed a control that can be used as a setpoint control")
+                                                    };
 
-                                                HeatBatteryDryCore::create_service_space_heating(
-                                                    dry_core.clone(),
-                                                    &energy_supply_conn_name,
-                                                    control.into(),
-                                                )?
-                                            }
-                                        ),
-                                        HeatBattery::Pcm(pcm) =>
-                                            HeatBatteryServiceSpace::Pcm(
-                                                HeatBatteryPcm::create_service_space_heating(
-                                                    pcm.clone(),
-                                                    &energy_supply_conn_name,
-                                                    control_max_diverter_from_control(control)
-                                                        .ok_or_else(|| anyhow!("A PCM heat battery expected to be passed a control that was either a setpoint time control or a combination control"))?,
-                                                )?
-                                            )
-                                    })
-                                }
+                                                    HeatBatteryDryCore::create_service_space_heating(
+                                                        dry_core.clone(),
+                                                        &energy_supply_conn_name,
+                                                        control.into(),
+                                                    )?
+                                                }
+                                            ),
+                                            HeatBattery::Pcm(pcm) =>
+                                                HeatBatteryServiceSpace::Pcm(
+                                                    HeatBatteryPcm::create_service_space_heating(
+                                                        pcm.clone(),
+                                                        &energy_supply_conn_name,
+                                                        control_max_diverter_from_control(control)
+                                                            .ok_or_else(|| anyhow!("A PCM heat battery expected to be passed a control that was either a setpoint time control or a combination control"))?,
+                                                    )?
+                                                )
+                                        })
+                                    }
+                                };
+
+                            if matches!(heat_source, WetHeatSource::HeatBattery(_)) {
+                                // Record that this space heating system is supplied by the battery, so the
+                                // battery's charging energy can be apportioned into the space heat CoP denominator.
+                                heat_battery_names_for_space_heat_systems.entry(system_name.clone()).or_default().push(heat_source_name.clone());
+                            }
+
+                            let energy_supply_fc_conn = if energy_supply.is_none() {
+                                None
+                            } else {
+                                let energy_supply_name = energy_supply.clone().unwrap();
+                                let energy_supply = energy_supplies.get(&energy_supply_name).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply_name}'."))?.clone();
+                                let energy_supply_fc_conn_name: ArcStr = format!("FC_fan {system_name}").into();
+                                Some(Arc::new(EnergySupply::connection(energy_supply, energy_supply_fc_conn_name.as_ref()).unwrap()))
                             };
 
-                        let energy_supply_fc_conn = if energy_supply.is_none() {
-                            None
-                        } else {
-                            let energy_supply_name = energy_supply.clone().unwrap();
-                            let energy_supply = energy_supplies.get(&energy_supply_name).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply_name}'."))?.clone();
-                            let energy_supply_fc_conn_name: ArcStr = format!("FC_fan {system_name}").into();
-                            Some(Arc::new(EnergySupply::connection(energy_supply, energy_supply_fc_conn_name.as_ref()).unwrap()))
-                        };
-
-                        let space_heater = Emitters::new(
-                            *thermal_mass,
-                            emitters,
-                            pipework,
-                            *temp_diff_emit_dsgn,
-                            matches!(flow_data, FlowData::Variable {..}),
-                            if let FlowData::Design { design_flow_rate, .. } = flow_data {
-                                Some(*design_flow_rate)
-                            } else {
-                                None
-                            },
-                            if let FlowData::Variable { min_flow_rate, .. } = flow_data {
-                                Some(*min_flow_rate)
-                            } else {
-                                None
-                            },
-                            if let FlowData::Variable { max_flow_rate, .. } = flow_data {
-                                Some(*max_flow_rate)
-                            } else {
-                                None
-                            },
-                            *bypass_fraction_recirculated,
-                            Arc::new(RwLock::new(heat_source_service)),
-                            zones.get(&zone).ok_or_else(|| anyhow!("Space heat system wet distribution had reference to undeclared zone with name '{zone}'"))?.clone(),
-                            // zone area
-                            external_conditions.clone(),
-                            *ecodesign_controller,
-                            *design_flow_temp,
-                            initial_temp,
-                            simulation_time.total_steps(),
-                            energy_supply_fc_conn,
-                            detailed_output_heating_cooling.into(),
-                            with_buffer_tank.into(),
-                        )?;
-                        SpaceHeatSystem::WetDistribution(space_heater.into())
-                    }
-                    SpaceHeatSystemDetails::WarmAir {
-                        frac_convective,
-                        heat_source,
-                        control: control_name,
-                        ..
-                    } => {
-                        let heat_source_name = &heat_source.name;
-                        let energy_supply_conn_name: ArcStr = [heat_source_name, "_space_heating: ", &system_name].concat().into();
-                        energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
-                        let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
-
-                        let setpoint_or_combination_control = controls.get_setpoint_or_combination_control(control_name)?;
-
-                        match heat_source {
-                            WetHeatSource::HeatPump(heat_pump) => {
-                                if heat_pump.lock().source_is_exhaust_air() {
-                                    heat_system_names_requiring_overvent.push(system_name.clone());
-                                }
-                                let volume_heated = total_volume_heated_by_system(zones, heat_system_name_for_zone, &system_name);
-                                SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), &energy_supply_conn_name, setpoint_or_combination_control, *frac_convective, volume_heated)?)
-                            }
-                            _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
+                            let space_heater = Emitters::new(
+                                *thermal_mass,
+                                emitters,
+                                pipework,
+                                *temp_diff_emit_dsgn,
+                                matches!(flow_data, FlowData::Variable {..}),
+                                if let FlowData::Design { design_flow_rate, .. } = flow_data {
+                                    Some(*design_flow_rate)
+                                } else {
+                                    None
+                                },
+                                if let FlowData::Variable { min_flow_rate, .. } = flow_data {
+                                    Some(*min_flow_rate)
+                                } else {
+                                    None
+                                },
+                                if let FlowData::Variable { max_flow_rate, .. } = flow_data {
+                                    Some(*max_flow_rate)
+                                } else {
+                                    None
+                                },
+                                *bypass_fraction_recirculated,
+                                Arc::new(RwLock::new(heat_source_service)),
+                                zones.get(&zone).ok_or_else(|| anyhow!("Space heat system wet distribution had reference to undeclared zone with name '{zone}'"))?.clone(),
+                                // zone area
+                                external_conditions.clone(),
+                                *ecodesign_controller,
+                                *design_flow_temp,
+                                initial_temp,
+                                simulation_time.total_steps(),
+                                energy_supply_fc_conn,
+                                detailed_output_heating_cooling.into(),
+                                with_buffer_tank.into(),
+                            )?;
+                            SpaceHeatSystem::WetDistribution(space_heater.into())
                         }
+                        SpaceHeatSystemDetails::WarmAir {
+                            frac_convective,
+                            heat_source,
+                            control: control_name,
+                            ..
+                        } => {
+                            let heat_source_name = &heat_source.name;
+                            let energy_supply_conn_name: ArcStr = [heat_source_name, "_space_heating: ", &system_name].concat().into();
+                            energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
+                            let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
+
+                            let setpoint_or_combination_control = controls.get_setpoint_or_combination_control(control_name)?;
+
+                            match heat_source {
+                                WetHeatSource::HeatPump(heat_pump) => {
+                                    if heat_pump.lock().source_is_exhaust_air() {
+                                        heat_system_names_requiring_overvent.push(system_name.clone());
+                                    }
+                                    let volume_heated = total_volume_heated_by_system(zones, heat_system_name_for_zone, &system_name);
+                                    SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), &energy_supply_conn_name, setpoint_or_combination_control.into(), *frac_convective, volume_heated)?)
+                                }
+                                _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
+                            }
+                        }
+                        SpaceHeatSystemDetails::DryElectricUnderfloorHeater { energy_supply, control, frac_convective, rated_power, emitter_floor_area, exponent, constant_fields, thermal_mass_fields } => {
+                            let energy_supply_conn_name = system_name.as_str();
+                            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
+                            let zone_area = zone.area();
+
+                            let control = controls.get_with_string(control).ok_or_else(|| anyhow!("Space heat system references an undeclared control '{control}'."))?;
+                            let control = Option::<SetpointOrCombinationControl>::from(control).ok_or_else(|| anyhow!("UFH '{system_name}' references a control that should be a setpoint or combination control."))?;
+
+                            let (c, c_per_m2) = match constant_fields {
+                                UnderfloorHeaterConstantFields::Absolute { constant } => (Some(*constant), None),
+                                UnderfloorHeaterConstantFields::PerArea { constant_per_m2 } => (None, Some(*constant_per_m2)),
+                            };
+                            let (thermal_mass, thermal_mass_per_m2) = match thermal_mass_fields {
+                                UnderfloorHeaterThermalMassFields::Absolute { thermal_mass } => (Some(*thermal_mass), None),
+                                UnderfloorHeaterThermalMassFields::PerArea { thermal_mass_per_m2 } => (None, Some(*thermal_mass_per_m2)),
+                            };
+
+                            SpaceHeatSystem::Ufh(Arc::new(DryElectricUnderfloorHeating::new(
+                                *rated_power,
+                                *emitter_floor_area,
+                                *frac_convective,
+                                EnergySupply::connection(energy_supply, energy_supply_conn_name)?,
+                                ZoneTempInternalAir(zone).as_fn(),
+                                zone_area,
+                                simulation_time.step_in_hours(),
+                                control,
+                                c,
+                                c_per_m2,
+                                *exponent,
+                                thermal_mass,
+                                thermal_mass_per_m2,
+                                temp_internal_air_fn().into(),
+                            )?))
+                        }
+                    }));
+
+                    let total_emitter_floor_area: Option<f64> = match space_heat_system.lock().deref() {
+                        SpaceHeatSystem::WetDistribution(emitters) => emitters.total_emitter_floor_area().into(),
+                        SpaceHeatSystem::Ufh(ufh) => ufh.total_emitter_floor_area().into(),
+                        _ => None,
+                    };
+
+                    if let Some(total_emitter_floor_area) = total_emitter_floor_area {
+                        let zone = zone_heated_by_system(&system_name)?;
+                        zone.add_ufh_floor_area(total_emitter_floor_area)?;
                     }
-                    SpaceHeatSystemDetails::DryElectricUnderfloorHeater { .. } => todo!("complete as part of 1.0.0a9 migration")
-                })),
+
+                    space_heat_system
+                },
             ))
         })
         .collect::<anyhow::Result<IndexMap<_, _>>>()?;
-    Ok((space_heat_systems, energy_conn_names_for_systems))
+    Ok(SpaceHeatSystemsData {
+        space_heat_systems,
+        energy_conn_names_for_systems,
+        heat_battery_names_for_space_heat_systems,
+    })
 }
 
-type SpaceHeatSystemsWithEnergyConnections = (
-    IndexMap<ArcStr, Arc<Mutex<SpaceHeatSystem>>>,
-    IndexMap<ArcStr, ArcStr>,
-);
+#[derive(Default)]
+struct SpaceHeatSystemsData {
+    space_heat_systems: IndexMap<ArcStr, Arc<Mutex<SpaceHeatSystem>>>,
+    energy_conn_names_for_systems: IndexMap<ArcStr, ArcStr>,
+    heat_battery_names_for_space_heat_systems: IndexMap<ArcStr, Vec<ArcStr>>,
+}
 
 fn space_cool_systems_from_input(
     input: &SpaceCoolSystemInput,

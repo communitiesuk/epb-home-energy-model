@@ -5,7 +5,7 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    CompositeRangeTimeControl, OnOffTimeControl, SetpointOrCombinationControl,
+    CompositeRangeTimeControl, ControlSetPoint, OnOffTimeControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -1538,7 +1538,7 @@ pub struct HeatPumpServiceSpace {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: ArcStr,
     emitter_type: HeatPumpEmitterType,
-    control: SetpointOrCombinationControl,
+    control: ControlSetPoint,
     temp_limit_upper_in_k: f64,
     temp_diff_emit_design: f64,
     design_flow_temp_op_cond: f64,
@@ -1570,7 +1570,7 @@ impl HeatPumpServiceSpace {
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: SetpointOrCombinationControl,
+        control: ControlSetPoint,
         volume_heated: f64,
         boiler_service_space: Option<Arc<Mutex<BoilerServiceSpace>>>,
     ) -> anyhow::Result<Self> {
@@ -1813,7 +1813,7 @@ impl HeatPumpWarmAir {
         service_name: &str,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: SetpointOrCombinationControl,
+        control: ControlSetPoint,
         temp_flow: f64,
         frac_convective: f64,
         volume_heated: f64,
@@ -2416,7 +2416,7 @@ impl HeatPump {
         temp_limit_upper_in_c: f64,
         temp_diff_emit_design: f64,
         design_flow_temp_op_cond: f64,
-        control: SetpointOrCombinationControl,
+        control: ControlSetPoint,
         volume_heated: f64,
     ) -> anyhow::Result<HeatPumpServiceSpace> {
         let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
@@ -2450,7 +2450,7 @@ impl HeatPump {
     pub(crate) fn create_service_space_heating_warm_air(
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
-        control: SetpointOrCombinationControl,
+        control: ControlSetPoint,
         frac_convective: f64,
         volume_heated: f64,
     ) -> anyhow::Result<HeatPumpWarmAir> {
@@ -6449,7 +6449,8 @@ mod tests {
             simulation_time_for_heat_pump,
             None,
         );
-        let control = create_setpoint_time_control_setpoint_or_combination(vec![Some(20.), None]);
+        let control =
+            create_setpoint_time_control_setpoint_or_combination(vec![Some(20.), None]).into();
 
         HeatPumpServiceSpace::new(
             Arc::new(Mutex::new(heat_pump)),
@@ -6498,7 +6499,7 @@ mod tests {
         mut heat_pump_service_space: HeatPumpServiceSpace,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
-        let control = create_setpoint_time_control_setpoint_or_combination(vec![None, None]);
+        let control = create_setpoint_time_control_setpoint_or_combination(vec![None, None]).into();
         heat_pump_service_space.control = control;
 
         assert_eq!(
@@ -6537,7 +6538,7 @@ mod tests {
             simulation_time_for_heat_pump,
             None,
         );
-        let control = create_setpoint_time_control_setpoint_or_combination(vec![None]);
+        let control = create_setpoint_time_control_setpoint_or_combination(vec![None]).into();
 
         HeatPumpWarmAir::new(
             Arc::new(Mutex::new(heat_pump)),
@@ -7838,7 +7839,8 @@ mod tests {
         let service_name = "service_space";
         let temp_limit_upper = 50.0;
         let temp_diff_emit_design = 50.0;
-        let control = create_setpoint_time_control_setpoint_or_combination(vec![Some(20.), None]);
+        let control: ControlSetPoint =
+            create_setpoint_time_control_setpoint_or_combination(vec![Some(20.), None]).into();
         let volume_heated = 250.0;
 
         let heat_pump = create_default_heat_pump(
@@ -7943,7 +7945,8 @@ mod tests {
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
         let service_name = "service_space_warmair";
-        let control = create_setpoint_time_control_setpoint_or_combination(vec![]);
+        let control =
+            ControlSetPoint::from(create_setpoint_time_control_setpoint_or_combination(vec![]));
         let volume_heated = 250.;
         let frac_convective = 0.9;
 
@@ -8100,7 +8103,7 @@ mod tests {
         heat_pump.sink_type = HeatPumpSinkType::Air;
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
-        let control = create_setpoint_time_control_setpoint_or_combination(vec![]);
+        let control = create_setpoint_time_control_setpoint_or_combination(vec![]).into();
         // in Python None is passed in for the control but this is not optional in Rust
         HeatPump::create_service_space_heating_warm_air(
             heat_pump.clone(),
@@ -8392,7 +8395,7 @@ mod tests {
         )));
 
         let control_schedule = vec![Some(21.), Some(22.)];
-        let control = SetpointOrCombinationControl::SetpointTime(
+        let control = ControlSetPoint::SetpointTime(
             SetpointTimeControl::new(
                 control_schedule.clone(),
                 0,
@@ -8494,7 +8497,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = SetpointOrCombinationControl::SetpointTime(
+        let control = ControlSetPoint::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(0.), Some(0.)],
                 0,
@@ -8649,7 +8652,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = SetpointOrCombinationControl::SetpointTime(
+        let control = ControlSetPoint::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(0.), Some(0.)],
                 0,
@@ -8727,7 +8730,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = SetpointOrCombinationControl::SetpointTime(
+        let control = ControlSetPoint::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(0.), Some(0.)],
                 0,
@@ -9694,7 +9697,7 @@ mod tests {
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace",
-            SetpointOrCombinationControl::SetpointTime(control.into()),
+            ControlSetPoint::SetpointTime(control.into()),
         )));
 
         let heat_pump_input = create_heat_pump_input_from_json(None, None);
@@ -10175,7 +10178,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let ctrl = SetpointOrCombinationControl::SetpointTime(
+        let ctrl = ControlSetPoint::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.0), Some(22.0)],
                 0,
@@ -10507,7 +10510,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
         let control =
-            create_setpoint_time_control_setpoint_or_combination(vec![Some(21.), Some(22.)]);
+            create_setpoint_time_control_setpoint_or_combination(vec![Some(21.), Some(22.)]).into();
 
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
@@ -10898,7 +10901,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let ctrl = SetpointOrCombinationControl::SetpointTime(
+        let ctrl = ControlSetPoint::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.0), Some(22.0)],
                 0,
@@ -11200,7 +11203,7 @@ mod tests {
         let heat_pummp_sink_air = Arc::from(Mutex::from(heat_pummp_sink_air));
 
         let service_name = "service_space_warmair";
-        let control = create_setpoint_time_control_setpoint_or_combination(vec![Some(20.)]);
+        let control = create_setpoint_time_control_setpoint_or_combination(vec![Some(20.)]).into();
         let volume_heated = 250.;
         let frac_convective = 0.9;
 
@@ -11243,7 +11246,7 @@ mod tests {
         let service_name = "service_space";
         let temp_limit_upper = 50.0;
         let temp_diff_emit_design = 50.0;
-        let control = create_setpoint_time_control_setpoint_or_combination(vec![Some(20.)]);
+        let control = create_setpoint_time_control_setpoint_or_combination(vec![Some(20.)]).into();
         let volume_heated = 250.0;
 
         let heat_pump_service_space = HeatPump::create_service_space_heating(
@@ -12352,7 +12355,10 @@ mod tests {
     ) {
         let temp_limit_upper = 65.;
         let control =
-            create_setpoint_time_control_setpoint_or_combination(vec![Some(20.), Some(20.)]);
+            ControlSetPoint::from(create_setpoint_time_control_setpoint_or_combination(vec![
+                Some(20.),
+                Some(20.),
+            ]));
         external_conditions.air_temps = vec![-10., 2.5];
         let heat_pump_input = create_heat_pump_input_from_json(Some("Substitute"), None);
         let heat_pump = Arc::new(Mutex::new(create_heat_pump(
