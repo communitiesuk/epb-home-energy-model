@@ -110,7 +110,7 @@ impl HeatSourceWet {
                 battery.energy_output_max(temp_flow, Default::default(), simtime)
             }
             HeatSourceWet::HeatPumpWater(hp_water) => hp_water
-                .energy_output_max(temp_flow, temperature, simtime)
+                .energy_output_max(temp_flow, temperature, false, simtime)
                 .map(|x| x.0),
             HeatSourceWet::HeatPumpWaterOnly(hp_water_only) => Ok(hp_water_only.energy_output_max(
                 temperature,
