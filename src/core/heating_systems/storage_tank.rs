@@ -7273,6 +7273,123 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
+    /// With no maximum state of charge the source delivers no charge.
+    /// A controlmax with no setpoint gives the source no target to charge towards,
+    /// so the adjusted energy input is zero and the storage only coasts through
+    /// pumping and losses.
+    #[rstest]
+    fn test_calc_final_temps_no_charge_when_no_maximum(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
+    ) {
+        let simtime = simulation_time_iteration_for_smart_hot_water_tank;
+        // Diverter control returning no setpoint - leaves the maximum unset
+        let control_max = SetpointTimeControl::new(vec![], 0, 1., None, None, simtime.timestep);
+        let heat_source_name = "imheater";
+        let positioned_heat_source =
+            smart_hot_water_tank.storage_tank.heat_source_data[heat_source_name].clone();
+        let heat_source = &positioned_heat_source.heat_source.lock();
+        let result = smart_hot_water_tank
+            .calc_final_temps(
+                &[50.; 4],
+                heat_source,
+                heat_source_name.into(),
+                vec![0., 0., 5., 0.],
+                2,
+                &[0.; 4],
+                Some(&either::Left(control_max.with_setpnt(None).into())),
+                simtime,
+            )
+            .unwrap();
+
+        // Adjusted energy input (sixth element) is zero - no charge was delivered
+        assert_eq!(result.q_in_h_w, 0.);
+    }
+
+    /// A reachable target state of charge is met by the realised charge.
+    /// The charge is sized so the realised state of charge - after the top-up
+    /// pump and thermal losses - meets the target, rather than the energy
+    /// estimate's model state of charge, which can over- or under-shoot.
+    #[rstest]
+    fn test_calc_final_temps_meets_target_state_of_charge(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
+    ) {
+        let simtime = simulation_time_iteration_for_smart_hot_water_tank;
+        // 20 kWh available at the heater layer of a cold tank with a 0.7 target:
+        // the target is reachable, so the realised state of charge meets it.
+        let control_max = either::Left(
+            SetpointTimeControl::new(vec![Some(0.7); 8], 0, 1., None, None, simtime.timestep)
+                .into(),
+        );
+        let heat_source_name = "imheater";
+        let positioned_heat_source =
+            smart_hot_water_tank.storage_tank.heat_source_data[heat_source_name].clone();
+        let heat_source = &positioned_heat_source.heat_source.lock();
+        let temp_s8_n = smart_hot_water_tank
+            .calc_final_temps(
+                &[10.; 4],
+                heat_source,
+                heat_source_name.into(),
+                vec![0., 0., 20., 0.],
+                2,
+                &[0.; 4],
+                Some(&control_max),
+                simtime,
+            )
+            .unwrap()
+            .temp_s8_n;
+
+        assert_relative_eq!(
+            smart_hot_water_tank
+                .calc_state_of_charge(&temp_s8_n, simtime)
+                .unwrap(),
+            0.7
+        );
+    }
+
+    /// No charge is delivered when the target is already met without input.
+    #[rstest]
+    fn test_solve_charge_energy_returns_zero_when_target_already_met(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
+    ) {
+        let energy = smart_hot_water_tank
+            .solve_charge_energy_for_state_of_charge(
+                &[50.; 4],
+                0.1,
+                5.,
+                2,
+                &[0.; 4],
+                Some(50.),
+                simulation_time_iteration_for_smart_hot_water_tank,
+            )
+            .unwrap();
+
+        assert_eq!(energy, 0.);
+    }
+
+    /// All available energy is used when the target cannot be reached.
+    #[rstest]
+    fn test_solve_charge_energy_returns_available_when_target_unreachable(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
+    ) {
+        let energy = smart_hot_water_tank
+            .solve_charge_energy_for_state_of_charge(
+                &[10.; 4],
+                1.,
+                0.001,
+                2,
+                &[0.; 4],
+                Some(50.),
+                simulation_time_iteration_for_smart_hot_water_tank,
+            )
+            .unwrap();
+
+        assert_eq!(energy, 0.001);
+    }
+
     /// A target lying in a step of the discrete model is reached by overshooting.
     /// The state of charge steps up as a layer crosses the usable temperature, so
     /// a target that falls in a step (here 0.5) is not exactly reachable. The
@@ -7281,14 +7398,12 @@ mod tests {
     #[rstest]
     fn test_solve_charge_energy_overshoots_unreachable_interior_target(
         smart_hot_water_tank: SmartHotWaterTank,
-        simulation_time_for_smart_hot_water_tank: SimulationTime,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
     ) {
-        let simtime = simulation_time_for_smart_hot_water_tank
-            .iter()
-            .current_iteration();
+        let simtime = simulation_time_iteration_for_smart_hot_water_tank;
         let energy = smart_hot_water_tank
             .solve_charge_energy_for_state_of_charge(
-                &[10.0, 10.0, 10.0, 10.0],
+                &[10.; 4],
                 0.5,
                 10.,
                 2,
@@ -7298,14 +7413,7 @@ mod tests {
             )
             .unwrap();
         let temp_s8_n = smart_hot_water_tank
-            .charge_to_temps(
-                &[10.0, 10.0, 10.0, 10.0],
-                energy,
-                2,
-                &[0.; 4],
-                Some(50.),
-                simtime,
-            )
+            .charge_to_temps(&[10.; 4], energy, 2, &[0.; 4], Some(50.), simtime)
             .unwrap()
             .temp_s8_n;
 
