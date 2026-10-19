@@ -948,7 +948,7 @@ pub struct Corpus {
     pub(crate) diverters: Vec<Arc<RwLock<PVDiverter>>>,
     required_vent_data: Option<RequiredVentData>,
     energy_supply_conn_names_for_hot_water_source: IndexMap<ArcStr, Vec<ArcStr>>,
-    energy_supply_conn_names_for_heat_systems: IndexMap<ArcStr, ArcStr>,
+    energy_supply_conn_names_for_space_heat_systems: IndexMap<ArcStr, ArcStr>,
     hotwatersource_name_for_heatsourcewet_service: IndexMap<ArcStr, ArcStr>,
     timestep_end_calcs: Arc<RwLock<Vec<HeatSystem>>>,
     initial_loop: AtomicBool,
@@ -1388,8 +1388,10 @@ impl Corpus {
                 .push(service_name.into());
         }
 
+        // Connection for pre-heated and hot water sources
         let mut energy_supply_conn_names_for_hot_water_source: IndexMap<ArcStr, Vec<ArcStr>> =
             Default::default();
+
         let mut hot_water_source_name_for_service: IndexMap<ArcStr, ArcStr> = Default::default();
         let mut used_heat_source_names: IndexSet<ArcStr> = Default::default();
 
@@ -1523,7 +1525,7 @@ impl Corpus {
 
         let SpaceHeatSystemsData {
             space_heat_systems,
-            energy_conn_names_for_systems: energy_supply_conn_names_for_heat_systems,
+            energy_conn_names_for_systems: energy_supply_conn_names_for_space_heat_systems,
             heat_battery_names_for_space_heat_systems,
         } = input
             .space_heat_system
@@ -1615,7 +1617,7 @@ impl Corpus {
             diverters,
             required_vent_data,
             energy_supply_conn_names_for_hot_water_source,
-            energy_supply_conn_names_for_heat_systems,
+            energy_supply_conn_names_for_space_heat_systems,
             hotwatersource_name_for_heatsourcewet_service: hot_water_source_name_for_service,
             timestep_end_calcs,
             initial_loop: AtomicBool::new(false),
@@ -3067,11 +3069,11 @@ impl Corpus {
             ductwork_gains_list.push(ductwork_gains);
 
             for supply in self.energy_supplies.values() {
-                supply.read().calc_energy_import_export_betafactor(t_it)?;
-                supply
-                    .read()
-                    .calc_energy_import_from_grid_to_battery(t_it)?;
-                supply.read().timestep_end()?;
+                let supply = supply.read();
+                supply.calc_energy_import_export_betafactor(t_it)?;
+                supply.calc_energy_import_from_grid_to_battery(t_it)?;
+                supply.calc_energy_export_from_battery_to_grid(t_it)?;
+                supply.timestep_end()?;
             }
 
             for diverter in &self.diverters {
@@ -3160,6 +3162,7 @@ impl Corpus {
         let mut energy_export: IndexMap<ArcStr, Vec<f64>> = Default::default();
         let mut grid_to_consumption: IndexMap<ArcStr, Vec<f64>> = Default::default();
         let mut generation_to_grid: IndexMap<ArcStr, Vec<f64>> = Default::default();
+        let mut energy_export_from_generation: IndexMap<ArcStr, Vec<f64>> = Default::default();
         let mut energy_generated_consumed: IndexMap<ArcStr, Vec<f64>> = Default::default();
         let mut energy_to_storage: IndexMap<ArcStr, Vec<f64>> = Default::default();
         let mut energy_from_storage: IndexMap<ArcStr, Vec<f64>> = Default::default();
@@ -3177,29 +3180,30 @@ impl Corpus {
             let name: ArcStr = name.to_string().into();
             let supply = supply.read();
             results_totals.insert(name.clone(), supply.results_total());
-            results_end_user.insert(name.clone(), supply.results_by_end_user().to_owned());
-            energy_import.insert(name.clone(), supply.get_energy_import().to_owned());
-            energy_export.insert(name.clone(), supply.get_energy_export().to_owned());
-            grid_to_consumption.insert(name.clone(), supply.get_grid_to_consumption().to_owned());
-            generation_to_grid.insert(name.clone(), supply.get_energy_export().to_owned());
-            energy_generated_consumed.insert(
-                name.clone(),
-                supply.get_energy_generated_consumed().to_owned(),
-            );
+            results_end_user.insert(name.clone(), supply.results_by_end_user());
+            energy_import.insert(name.clone(), supply.get_energy_import());
+            energy_export.insert(name.clone(), supply.get_energy_export());
+            grid_to_consumption.insert(name.clone(), supply.get_grid_to_consumption());
+            generation_to_grid.insert(name.clone(), supply.get_energy_export());
+            energy_export_from_generation
+                .insert(name.clone(), supply.get_energy_export_from_generation());
+            energy_generated_consumed.insert(name.clone(), supply.get_energy_generated_consumed());
             let (energy_to, energy_from, storage_from, storage_to, state_of_charge) =
                 supply.get_battery_energy_flows();
-            energy_to_storage.insert(name.clone(), energy_to.to_owned());
-            energy_from_storage.insert(name.clone(), energy_from.to_owned());
-            storage_from_grid.insert(name.clone(), storage_from.to_owned());
-            storage_to_grid.insert(name.clone(), storage_to.to_owned());
-            battery_state_of_charge.insert(name.clone(), state_of_charge.to_owned());
-            energy_diverted.insert(name.clone(), supply.get_energy_diverted().to_owned());
-            generation_curtailed.insert(
-                name.clone(),
-                supply.get_energy_generation_curtailed().to_owned(),
-            );
-            beta_factor.insert(name, supply.get_beta_factor().to_owned());
+            energy_to_storage.insert(name.clone(), energy_to);
+            energy_from_storage.insert(name.clone(), energy_from);
+            storage_from_grid.insert(name.clone(), storage_from);
+            storage_to_grid.insert(name.clone(), storage_to);
+            battery_state_of_charge.insert(name.clone(), state_of_charge);
+            energy_diverted.insert(name.clone(), supply.get_energy_diverted());
+            generation_curtailed.insert(name.clone(), supply.get_energy_generation_curtailed());
+            beta_factor.insert(name, supply.get_beta_factor());
         }
+
+        // Heat batteries record charging and auxiliary energy on their own connection rather than
+        // the per-service connections, so it must be apportioned into each service's CoP denominator.
+        let (hot_water_charging_input, space_heat_charging_input) =
+            self.charging_energy_for_indirect_sources(&results_end_user);
 
         let dhw_cop_dict = self.heat_cool_cop(
             &hot_water_energy_output
@@ -3216,14 +3220,16 @@ impl Corpus {
                     )
                 })
                 .collect(),
+            Some(&hot_water_charging_input),
         );
         let heat_cop_dict = self.heat_cool_cop(
             &space_heat_provided_dict,
             &results_end_user,
-            self.energy_supply_conn_names_for_heat_systems
+            self.energy_supply_conn_names_for_space_heat_systems
                 .iter()
                 .map(|(k, v)| (k.clone(), vec![v.clone()]))
                 .collect(),
+            Some(&space_heat_charging_input),
         );
         let cool_cop_dict = self.heat_cool_cop(
             &space_cool_provided_dict,
@@ -3232,6 +3238,7 @@ impl Corpus {
                 .keys()
                 .map(|system_name| (system_name.clone(), vec![system_name.clone()]))
                 .collect(),
+            None,
         );
 
         let output_zone_data = OutputZoneData {
@@ -3333,12 +3340,159 @@ impl Corpus {
         })
     }
 
+    /// Sum energy consumption over the calculation period for the given connection names.
+    fn energy_consumed_for_conn_names(
+        results_end_user: &IndexMap<ArcStr, IndexMap<ArcStr, Vec<f64>>>,
+        energy_supply_conn_names: &[ArcStr],
+    ) -> f64 {
+        results_end_user
+            .iter()
+            .filter(|(fuel_name, _)| {
+                ![
+                    UNMET_DEMAND_SUPPLY_NAME,
+                    ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME,
+                ]
+                .contains(&(*fuel_name).clone().as_str())
+            })
+            .map(|(_, fuel_summary)| {
+                fuel_summary
+                    .iter()
+                    .filter_map(|(conn_name, energy_cons)| {
+                        energy_supply_conn_names
+                            .contains(conn_name)
+                            .then_some(FSum::with_all(energy_cons).value())
+                    })
+                    .sum::<f64>()
+            })
+            .sum()
+    }
+
+    /// Sum the energy a heat battery delivers to the given per-service connections
+    fn energy_delivered_by_heat_battery(
+        &self,
+        battery_name: &ArcStr,
+        energy_supply_conn_names: &[ArcStr],
+    ) -> f64 {
+        let delivered_by_service =
+            self.heat_sources_wet[battery_name].battery_energy_delivered_by_service();
+
+        FSum::with_all(energy_supply_conn_names.iter().map(|conn_name| {
+            delivered_by_service
+                .as_ref()
+                .map(|delivered_by_service| {
+                    delivered_by_service
+                        .get(conn_name)
+                        .copied()
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default()
+        }))
+        .value()
+    }
+
+    /// Apportion each heat battery's charging energy across the services it supplies.
+    ///
+    /// A heat battery records its charging and standby/pump energy on a single connection named
+    /// after the battery, rather than on the per-service connections that build the CoP
+    /// denominators. That energy must therefore be added back into the denominator of every
+    /// service the battery feeds, otherwise the CoP is physically impossible (the input only
+    /// reflects the near-zero per-service connection). Where a battery serves both hot water and
+    /// space heating, its charging energy is split between the services in proportion to the
+    /// energy the battery delivers to each over the calculation period, as recorded by the
+    /// battery itself.
+    fn charging_energy_for_indirect_sources(
+        &self,
+        results_end_user: &IndexMap<ArcStr, IndexMap<ArcStr, Vec<f64>>>,
+    ) -> (IndexMap<ArcStr, f64>, IndexMap<ArcStr, f64>) {
+        // Arc<RwLock<_>> because we need to pass them as mutable references
+        let hot_water_additional_input: Arc<RwLock<IndexMap<ArcStr, f64>>> = Default::default();
+        let space_heating_additional_input: Arc<RwLock<IndexMap<ArcStr, f64>>> = Default::default();
+
+        // Group the services supplied by each battery so its charging energy can be split across
+        // the hot water and space heating sides together. Each service carries the energy the
+        // battery delivers to it (the proportioning weight) and the accumulator it contributes to,
+        // so no per-service type discrimination is needed.
+        #[allow(clippy::type_complexity)]
+        let mut services_for_battery: IndexMap<
+            ArcStr,
+            Vec<(f64, Arc<RwLock<IndexMap<ArcStr, f64>>>, ArcStr)>,
+        > = Default::default();
+        for (hw_name, battery_names) in self.heat_battery_names_for_hot_water_source.iter() {
+            let conn_names = &self.energy_supply_conn_names_for_hot_water_source[hw_name];
+            for battery_name in battery_names {
+                let delivered = self.energy_delivered_by_heat_battery(battery_name, conn_names);
+                services_for_battery
+                    .entry(battery_name.clone())
+                    .or_default()
+                    .push((
+                        delivered,
+                        hot_water_additional_input.clone(),
+                        hw_name.clone(),
+                    ));
+            }
+        }
+        for (sh_name, battery_names) in self.heat_battery_names_for_space_heat_systems.iter() {
+            let conn_names =
+                &[self.energy_supply_conn_names_for_space_heat_systems[sh_name].clone()];
+            for battery_name in battery_names {
+                let delivered = self.energy_delivered_by_heat_battery(battery_name, conn_names);
+                services_for_battery
+                    .entry(battery_name.clone())
+                    .or_default()
+                    .push((
+                        delivered,
+                        space_heating_additional_input.clone(),
+                        sh_name.clone(),
+                    ));
+            }
+        }
+
+        for (battery_name, services) in services_for_battery {
+            let charging_energy = Self::energy_consumed_for_conn_names(
+                results_end_user,
+                &self.charging_connection_names_for_heat_battery[&battery_name],
+            );
+            let delivered_total =
+                FSum::with_all(services.iter().map(|(delivered, _, _)| delivered)).value();
+            let service_count = services.len();
+            for (delivered, accumulator, service_name) in services {
+                let share = if relative_eq!(delivered_total, 0.0, epsilon = 1e-10) {
+                    // The battery delivered no energy to any service over the whole calculation
+                    // period; split evenly so the charging energy still appears in each
+                    // (zero-output) CoP denominator.
+                    1.0 / service_count as f64
+                } else {
+                    delivered / delivered_total
+                };
+                {
+                    let mut accumulator = accumulator.write();
+                    let prev_service_value =
+                        accumulator.get(&service_name).copied().unwrap_or_default();
+                    accumulator.insert(
+                        service_name.clone(),
+                        prev_service_value + share * charging_energy,
+                    );
+                }
+            }
+        }
+
+        (
+            Arc::try_unwrap(hot_water_additional_input)
+                .unwrap()
+                .into_inner(),
+            Arc::try_unwrap(space_heating_additional_input)
+                .unwrap()
+                .into_inner(),
+        )
+    }
+
     /// Calculate overall CoP over calculation period for each heating and cooling system
     fn heat_cool_cop(
         &self,
         energy_provided: &IndexMap<Option<ArcStr>, Vec<f64>>,
         results_end_user: &IndexMap<ArcStr, IndexMap<ArcStr, Vec<f64>>>,
         energy_supply_conn_name_for_space_hc_system: IndexMap<ArcStr, Vec<ArcStr>>,
+        additional_input_per_system: Option<&IndexMap<ArcStr, f64>>,
     ) -> IndexMap<ArcStr, NumberOrDivisionByZero> {
         let mut hc_output_overall: IndexMap<ArcStr, f64> = Default::default();
         let mut hc_input_overall: IndexMap<ArcStr, f64> = Default::default();
@@ -3350,24 +3504,18 @@ impl Corpus {
                 _ => continue,
             };
             hc_output_overall.insert(hc_name.clone(), FSum::with_all(hc_output).value().abs());
-            hc_input_overall.insert(hc_name.clone(), 0.);
-            let energy_supply_conn_names =
-                energy_supply_conn_name_for_space_hc_system[hc_name].clone();
-            for (fuel_name, fuel_summary) in results_end_user {
-                if [
-                    UNMET_DEMAND_SUPPLY_NAME,
-                    ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME,
-                ]
-                .contains(&fuel_name.as_str())
-                {
-                    continue;
-                }
-                for (conn_name, energy_cons) in fuel_summary {
-                    if energy_supply_conn_names.contains(conn_name) {
-                        *hc_input_overall.get_mut(hc_name).unwrap() +=
-                            FSum::with_all(energy_cons).value();
-                    }
-                }
+            hc_input_overall.insert(
+                hc_name.clone(),
+                Self::energy_consumed_for_conn_names(
+                    results_end_user,
+                    &energy_supply_conn_name_for_space_hc_system[hc_name],
+                ),
+            );
+            if let Some(additional_input_per_system) = additional_input_per_system {
+                hc_input_overall[hc_name] += additional_input_per_system
+                    .get(hc_name)
+                    .copied()
+                    .unwrap_or_default();
             }
 
             cop_dict.insert(
@@ -3439,7 +3587,7 @@ impl Corpus {
             let total_energy_into_battery =
                 gen_to_storage + FSum::with_all(&output_core.storage_from_grid[key]).value();
             let storage_eff = if total_energy_into_battery > 0. {
-                storage_to_consumption / total_energy_into_battery
+                (storage_to_consumption + storage_to_grid) / total_energy_into_battery
             } else {
                 f64::NAN
             };
@@ -4966,6 +5114,13 @@ impl HeatBattery {
                 .into(),
         }
     }
+
+    pub(crate) fn energy_delivered_by_service(&self) -> IndexMap<ArcStr, f64> {
+        match self {
+            HeatBattery::DryCore(drycore) => drycore.energy_delivered_by_service(),
+            HeatBattery::Pcm(pcm) => pcm.read().energy_delivered_by_service(),
+        }
+    }
 }
 
 impl WetHeatSource {
@@ -5042,6 +5197,14 @@ impl WetHeatSource {
                 hot_water_source_name_for_heat_battery_service,
             ),
             _ => None,
+        }
+    }
+
+    pub(crate) fn battery_energy_delivered_by_service(&self) -> Option<IndexMap<ArcStr, f64>> {
+        if let Self::HeatBattery(battery) = self {
+            battery.energy_delivered_by_service().into()
+        } else {
+            None
         }
     }
 }

@@ -1427,7 +1427,7 @@ impl HeatBatteryDryCore {
     /// Returns:
     ///     Mapping of service connection name to cumulative delivered energy (kWh), across all
     ///     units.
-    fn energy_delivered_by_service(&self) -> IndexMap<ArcStr, f64> {
+    pub(crate) fn energy_delivered_by_service(&self) -> IndexMap<ArcStr, f64> {
         self.energy_delivered_by_service.read().clone()
     }
 
