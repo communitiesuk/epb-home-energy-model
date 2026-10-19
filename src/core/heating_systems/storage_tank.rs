@@ -7273,6 +7273,51 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
+    /// A target lying in a step of the discrete model is reached by overshooting.
+    /// The state of charge steps up as a layer crosses the usable temperature, so
+    /// a target that falls in a step (here 0.5) is not exactly reachable. The
+    /// solver charges through to the next step, settling on the reachable state of
+    /// charge just above the target rather than stopping short of it.
+    #[rstest]
+    fn test_solve_charge_energy_overshoots_unreachable_interior_target(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+    ) {
+        let simtime = simulation_time_for_smart_hot_water_tank
+            .iter()
+            .current_iteration();
+        let energy = smart_hot_water_tank
+            .solve_charge_energy_for_state_of_charge(
+                &[10.0, 10.0, 10.0, 10.0],
+                0.5,
+                10.,
+                2,
+                &[0.; 4],
+                Some(50.),
+                simtime,
+            )
+            .unwrap();
+        let temp_s8_n = smart_hot_water_tank
+            .charge_to_temps(
+                &[10.0, 10.0, 10.0, 10.0],
+                energy,
+                2,
+                &[0.; 4],
+                Some(50.),
+                simtime,
+            )
+            .unwrap()
+            .temp_s8_n;
+
+        // Reachable state of charge just above the 0.5 target (see docstring)
+        assert_relative_eq!(
+            smart_hot_water_tank
+                .calc_state_of_charge(&temp_s8_n, simtime)
+                .unwrap(),
+            0.6453233704525152
+        );
+    }
+
     #[rstest]
     fn test_temps_after_pumping(smart_hot_water_tank: SmartHotWaterTank) {
         let mut volumes = vec![120.0, 37.5, 37.5, 37.5];
