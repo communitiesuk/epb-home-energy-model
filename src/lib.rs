@@ -18,6 +18,7 @@ pub mod output_writer;
 pub mod read_weather_file;
 pub mod statistics;
 
+use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 use crate::corpus::{
     Corpus, NumberOrDivisionByZero, OutputOptions, ResultsAnnual, ResultsPerTimestep,
@@ -36,7 +37,7 @@ use anyhow::{anyhow, bail};
 use approx::relative_eq;
 use arcstr::ArcStr;
 use convert_case::{Case, Casing};
-use csv::WriterBuilder;
+use csv::{Terminator, WriterBuilder};
 use erased_serde::Serialize as ErasedSerialize;
 use hem_core::external_conditions;
 use hem_core::simulation_time;
@@ -44,9 +45,10 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use jsonschema::{validator, Validator};
 use serde::{Deserialize, Serialize, Serializer};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
+use std::fs::File;
 use std::io::Read;
 use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -182,12 +184,14 @@ pub fn run_project_from_input_file(
 
 #[instrument(skip_all)]
 pub fn run_project(
-    input: Input,
+    mut input: Input,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
 ) -> Result<CalculationResult, HemError> {
+    read_tariff_file(&mut input, tariff_data_file)?;
+
     catch_unwind(AssertUnwindSafe(|| {
         #[instrument(skip_all)]
         fn merge_external_conditions_data(
@@ -280,6 +284,27 @@ pub fn run_project(
                     .to_owned(),
             )
         })?
+}
+
+fn read_tariff_file(input: &mut Input, tariff_data_file: Option<&str>) -> anyhow::Result<()> {
+    let tariff_data_file = if let Some(tariff_data_file) = tariff_data_file {
+        tariff_data_file
+    } else {
+        return Ok(());
+    };
+
+    let prices = TariffData::load_data_from_file(File::open(tariff_data_file)?)?;
+    if let Some(tariff_data) = input.tariff_data.as_mut() {
+        tariff_data.prices = TariffData::merge_prices_from_files(prices, &tariff_data.prices);
+    } else {
+        input.tariff_data.replace(serde_json::from_value(json!({
+            "start_day": null,
+            "time_series_step": input.simulation_time.step,
+            "prices": prices,
+        }))?);
+    }
+
+    Ok(())
 }
 
 #[instrument(skip_all)]
@@ -483,7 +508,10 @@ fn write_core_output_file(
     output_writer: &impl OutputWriter,
 ) -> anyhow::Result<()> {
     let writer = output_writer.writer_for_location_key(output_key, "csv")?;
-    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+    let mut writer = WriterBuilder::new()
+        .terminator(Terminator::Any(b'\n'))
+        .flexible(true)
+        .from_writer(writer);
 
     let mut headings: Vec<Cow<'static, str>> = vec!["Timestep".into()];
     let mut units_row = vec!["[count]"];
@@ -599,9 +627,13 @@ fn write_core_output_file(
         units_row.push("[kWh]");
         headings.push(format!("{totals_key}: grid to storage").into());
         units_row.push("[kWh]");
+        headings.push(format!("{totals_key}: storage to grid").into());
+        units_row.push("[kWh]");
         headings.push(format!("{totals_key}: battery charge level").into());
         units_row.push("[ratio]");
         headings.push(format!("{totals_key}: diverted").into());
+        units_row.push("[kWh]");
+        headings.push(format!("{totals_key}: generation curtailed").into());
         units_row.push("[kWh]");
     }
 
@@ -629,8 +661,10 @@ fn write_core_output_file(
             energy_use_row.push(output.core.energy_to_storage[totals_key][t_idx]);
             energy_use_row.push(output.core.energy_from_storage[totals_key][t_idx]);
             energy_use_row.push(output.core.storage_from_grid[totals_key][t_idx]);
+            energy_use_row.push(output.core.storage_to_grid[totals_key][t_idx]);
             energy_use_row.push(output.core.battery_state_of_charge[totals_key][t_idx]);
             energy_use_row.push(output.core.energy_diverted[totals_key][t_idx]);
+            energy_use_row.push(output.core.generation_curtailed[totals_key][t_idx]);
         }
 
         // Loop over results separated by zone
@@ -830,6 +864,12 @@ fn write_core_output_file_summary(
             EnergySupplyStatKey::GenerationToGrid,
         ),
         (
+            "Generation curtailed (export limited)",
+            "kWh",
+            EnergySupplyStatKey::GenerationCurtailed,
+        ),
+        ("Storage to grid", "kWh", EnergySupplyStatKey::StorageToGrid),
+        (
             "Storage to consumption",
             "kWh",
             EnergySupplyStatKey::StorageToConsumption,
@@ -991,7 +1031,9 @@ struct EnergySupplyStat {
     gen_to_storage: f64,
     storage_to_consumption: f64,
     storage_from_grid: f64,
+    storage_to_grid: f64,
     gen_to_diverter: f64,
+    gen_curtailed: f64,
     storage_eff: NumberOrDivisionByZero,
 }
 
@@ -1011,6 +1053,8 @@ impl EnergySupplyStat {
             EnergySupplyStatKey::StorageFromGrid => self.storage_from_grid.to_string(),
             EnergySupplyStatKey::GenerationToDiverter => self.gen_to_diverter.to_string(),
             EnergySupplyStatKey::StorageEfficiency => self.storage_eff.to_string(),
+            EnergySupplyStatKey::GenerationCurtailed => self.gen_curtailed.to_string(),
+            EnergySupplyStatKey::StorageToGrid => self.storage_to_grid.to_string(),
         }
     }
 }
@@ -1029,6 +1073,8 @@ enum EnergySupplyStatKey {
     StorageToConsumption,
     StorageFromGrid,
     GenerationToDiverter,
+    GenerationCurtailed,
+    StorageToGrid,
     StorageEfficiency,
 }
 
@@ -1230,7 +1276,7 @@ fn write_core_output_file_heat_source_wet_summary(
     let writer = output_writer.writer_for_location_key(output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
-    for (service_name, service_results) in heat_source_wet_results_annual {
+    for (i, (service_name, service_results)) in heat_source_wet_results_annual.iter().enumerate() {
         writer.write_record([service_name.to_string()])?;
         for (name, value) in service_results.iter() {
             writer.write_record([
@@ -1239,7 +1285,10 @@ fn write_core_output_file_heat_source_wet_summary(
                 format_value(&StringOrNumber::from(value))?.as_bytes(),
             ])?;
         }
-        writer.write_record([""])?;
+        if i < heat_source_wet_results_annual.len() - 1 {
+            // blank separator between services, not after last
+            writer.write_record([""])?;
+        }
     }
 
     Ok(())
@@ -1271,7 +1320,7 @@ fn write_core_output_file_emitters_detailed(
             "temp_return_target",
             "temp_emitter_max_is_final_temp",
             "energy_req_from_heat_source",
-            "fan_energy_kWh",
+            "fan_energy",
         ])?;
         writer.write_record([
             "[count]",

@@ -89,11 +89,11 @@ impl TariffData {
 
     /// Merge the prices from the CSV and the JSON files.
     /// If the same tariff name is found, prices from the CSV will take precedence.
-    pub(super) fn merge_prices_from_files(
+    pub(crate) fn merge_prices_from_files(
         prices_from_csv: IndexMap<ArcStr, NumericSchedule>,
-        prices_from_json: IndexMap<ArcStr, NumericSchedule>,
+        prices_from_json: &IndexMap<ArcStr, NumericSchedule>,
     ) -> IndexMap<ArcStr, NumericSchedule> {
-        let mut merged_prices = prices_from_json;
+        let mut merged_prices = prices_from_json.clone();
         merged_prices.extend(
             prices_from_csv
                 .into_iter()
@@ -296,7 +296,7 @@ mod tests {
         let prices_from_csv = loaded_prices;
         let prices_from_json: IndexMap<ArcStr, NumericSchedule> = serde_json::from_value(json!({"Standard Tariff": {"main": [1.0, 2.0, 3.0]},"Other Tariff": {"main": [1.0, 2.0, 3.0]}})).unwrap();
 
-        let results = TariffData::merge_prices_from_files(prices_from_csv, prices_from_json);
+        let results = TariffData::merge_prices_from_files(prices_from_csv, &prices_from_json);
 
         assert!(results.contains_key("Other Tariff"));
         assert!(results.contains_key("Standard Tariff"));

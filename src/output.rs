@@ -359,6 +359,8 @@ impl OutputSummaryEnergySupply {
             EnergySupplyStatKey::StorageFromGrid => self.grid_to_storage.into(),
             EnergySupplyStatKey::GenerationToDiverter => self.generation_to_diverter.into(),
             EnergySupplyStatKey::StorageEfficiency => self.storage_efficiency,
+            EnergySupplyStatKey::GenerationCurtailed => self.generation_curtailed.into(),
+            EnergySupplyStatKey::StorageToGrid => self.storage_to_grid.into(),
         }
     }
 }
