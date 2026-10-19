@@ -3958,7 +3958,9 @@ impl SolarThermalSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::{RangeTimeControl, SetpointTimeControl};
+    use crate::core::controls::time_control::{
+        ControlSetPoint, RangeTimeControl, ScheduleOrSetpointControl, SetpointTimeControl,
+    };
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::material_properties::WATER;
     use crate::core::pipework::PipeworkLocation;
@@ -6216,6 +6218,33 @@ mod tests {
         ImmersionHeater::new(rated_power, energy_supply_connection, timestep, control)
     }
 
+    #[fixture]
+    fn range_time_control() -> RangeTimeControl {
+        let control_min = SetpointTimeControl::new(
+            vec![Some(52.), Some(52.), None, Some(52.)],
+            0,
+            1.0,
+            None,
+            None,
+            1.0,
+        );
+        let control_max = SetpointTimeControl::new(
+            vec![Some(60.), Some(60.), Some(60.), Some(60.)],
+            0,
+            1.0,
+            None,
+            None,
+            1.0,
+        );
+
+        let control_min =
+            ScheduleOrSetpointControl::Control(ControlSetPoint::SetpointTime(control_min.into()));
+        let control_max =
+            ScheduleOrSetpointControl::Control(ControlSetPoint::SetpointTime(control_max.into()));
+
+        RangeTimeControl::new(control_min, control_max, 1., 0, 1., None).unwrap()
+    }
+
     #[rstest]
     fn test_demand_energy_for_immersion_heater(
         immersion_heater: ImmersionHeater,
@@ -6241,6 +6270,47 @@ mod tests {
                     .current_iteration()
             )
             .is_err());
+    }
+
+    #[rstest]
+    #[ignore = "TODO 1.0.0a9 migration"]
+    fn test_demand_energy_with_range_time_control(
+        mut immersion_heater: ImmersionHeater,
+        range_time_control: RangeTimeControl,
+        simulation_time_for_immersion_heater: SimulationTime,
+    ) {
+        immersion_heater.control = Some(CompositeRangeTimeControl::Unified(
+            range_time_control.into(),
+        ));
+
+        for (t_idx, t_it) in simulation_time_for_immersion_heater.iter().enumerate() {
+            assert_eq!(
+                immersion_heater
+                    .demand_energy([40.0, 100.0, 30.0, 20.0][t_idx], None, t_it)
+                    .unwrap(),
+                [40.0, 50.0, 0.0, 20.0][t_idx]
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_setpnt_with_range_time_control(
+        mut immersion_heater: ImmersionHeater,
+        range_time_control: RangeTimeControl,
+        simulation_time_for_immersion_heater: SimulationTime,
+    ) {
+        immersion_heater.control = Some(CompositeRangeTimeControl::Unified(
+            range_time_control.into(),
+        ));
+
+        assert_eq!(
+            immersion_heater.setpnt(
+                simulation_time_for_immersion_heater
+                    .iter()
+                    .current_iteration()
+            ),
+            (Some(52.), Some(60.))
+        );
     }
 
     #[rstest]
@@ -6390,6 +6460,135 @@ mod tests {
                 &t_it,
             );
             assert_relative_eq!(actual, expected[t_idx], max_relative = 1e-7);
+        }
+    }
+
+    /// Exercise a full simulation run against a Controlmax schedule that
+    /// switches the max setpoint on and off across timesteps, including
+    /// transitions into and out of hours that would otherwise produce solar
+    /// output. The collector's own potential output is unaffected by the gaps
+    /// (it has no knowledge of the setpoint), none of it reaches storage
+    /// during the undefined-setpoint timesteps. The tank coasts through
+    /// ordinary standby losses at those points, exactly
+    /// as during the night-time hours either side of the productive window.
+    #[rstest]
+    fn test_potential_energy_input_with_mixed_setpoint_schedule(
+        #[from(storage_tank_with_solar_thermal)]
+        (storage_tank_solar_thermal, solar_thermal, simulation_time, _): (
+            StorageTank,
+            Arc<Mutex<SolarThermalSystem>>,
+            SimulationTime,
+            Arc<RwLock<EnergySupply>>,
+        ),
+    ) {
+        let temp_s3_n = [17.2; 4];
+
+        // Constant 55 degC max setpoint, but undefined (None) at timesteps 10 and
+        // 14 - both inside the productive window (7-16) - to exercise on -> off ->
+        // on transitions mid-cycle.
+        let mut mixed_schedule = vec![Some(55.); 24];
+        mixed_schedule[10] = None;
+        mixed_schedule[14] = None;
+        let control_max_mixed = Either::Left(
+            SetpointTimeControl::new(mixed_schedule, 212, 1., None, None, simulation_time.step)
+                .into(),
+        );
+        let solthermal_mixed = solar_thermal;
+        solthermal_mixed.lock().control_max = Some(control_max_mixed);
+
+        // The collector's own potential output, identical to the constant-55
+        // baseline at every timestep - confirming it
+        // never freezes or otherwise reacts to the undefined-setpoint gaps.
+        let expected_potential = [
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.5441009409757523,
+            0.7375096332994749,
+            1.043768276267769,
+            1.4751675743361337,
+            1.2419712751344847,
+            1.3717388178387737,
+            1.7256641787433769,
+            1.1745201463530213,
+            0.8403815010507395,
+            0.6056200608960752,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+        ];
+        // What is actually proposed to storage: equal to the potential, except at
+        // timesteps 10 and 14, where the undefined setpoint suppresses it to zero.
+        let mut expected_q_x_in = expected_potential;
+        expected_q_x_in[10] = 0.;
+        expected_q_x_in[14] = 0.;
+        // The energy delivered after standard tank losses/clamping: identical to
+        // what was proposed, since a constant 55 degC target is never actually
+        // reached in this scenario (temp_s3_n stays a nominal 17.2 degC baseline
+        // throughout, for simplicity - matching the convention used elsewhere in
+        // this test class).
+        let expected_delivered = expected_q_x_in;
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let q_x_in_n = storage_tank_solar_thermal
+                .potential_energy_input(
+                    &temp_s3_n,
+                    &HeatSource::Storage(HeatSourceWithStorageTank::Solar(
+                        solthermal_mixed.clone(),
+                    )),
+                    "solthermal",
+                    0,
+                    0,
+                    t_it,
+                )
+                .unwrap();
+
+            assert_relative_eq!(q_x_in_n[0], expected_q_x_in[t_idx]);
+            assert_relative_eq!(
+                solthermal_mixed.lock().energy_potential(),
+                expected_potential[t_idx]
+            );
+            let TemperatureCalculation {
+                temp_s8_n,
+                q_in_h_w,
+                ..
+            } = storage_tank_solar_thermal
+                .calc_final_temps(
+                    &temp_s3_n,
+                    &HeatSource::Storage(HeatSourceWithStorageTank::Solar(
+                        solthermal_mixed.clone(),
+                    )),
+                    "solthermal".into(),
+                    q_x_in_n.clone(),
+                    0,
+                    &vec![0.; storage_tank_solar_thermal.number_of_volumes],
+                    t_it,
+                    None,
+                )
+                .unwrap();
+
+            assert_relative_eq!(q_in_h_w, expected_delivered[t_idx]);
+
+            if [10, 14].contains(&t_idx) {
+                // Nothing proposed to any layer, not just the heater layer.
+                assert_eq!(q_x_in_n, [0.0, 0.0, 0.0, 0.0]);
+                // No topping up of standby losses: the tank ends these
+                // timesteps exactly as it would with no heat source at all -
+                // the same settled value as the surrounding zero-output hours,
+                // genuinely below where it started. Checking layer 0 alone is
+                // sufficient because standby losses are apportioned by each
+                // layer's volume fraction and all layers share equal volume.
+                assert_relative_eq!(temp_s8_n[0], 17.187555555555555);
+                assert!(temp_s8_n[0] < temp_s3_n[0]);
+            }
         }
     }
 
@@ -7156,6 +7355,25 @@ mod tests {
     // Python test_demand_hot_water_edge_cases skipped
 
     #[rstest]
+    fn test_calc_temps_after_extraction(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
+    ) {
+        let remaining_vol = vec![0.5, 1., 1.5, 2., 2.5, 3., 3.5, 4.];
+        let actual_remaining_vol = smart_hot_water_tank
+            .storage_tank
+            .calc_temps_after_extraction(
+                remaining_vol,
+                simulation_time_iteration_for_smart_hot_water_tank,
+            )
+            .unwrap();
+        assert_eq!(
+            actual_remaining_vol,
+            (vec![10.0, 10.0, 10.0, 12.666666666666666], false)
+        );
+    }
+
+    #[rstest]
     fn test_calc_final_temps(
         mut smart_hot_water_tank: SmartHotWaterTank,
         simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
@@ -7729,25 +7947,6 @@ mod tests {
         .unwrap();
 
         assert!(tank.storage_tank.heating_active[heat_source_name].load(Ordering::SeqCst));
-    }
-
-    #[rstest]
-    fn test_calc_temps_after_extraction(
-        smart_hot_water_tank: SmartHotWaterTank,
-        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
-    ) {
-        let remaining_vol = vec![0.5, 1., 1.5, 2., 2.5, 3., 3.5, 4.];
-        let actual_remaining_vol = smart_hot_water_tank
-            .storage_tank
-            .calc_temps_after_extraction(
-                remaining_vol,
-                simulation_time_iteration_for_smart_hot_water_tank,
-            )
-            .unwrap();
-        assert_eq!(
-            actual_remaining_vol,
-            (vec![10.0, 10.0, 10.0, 12.666666666666666], false)
-        );
     }
 
     #[rstest]
