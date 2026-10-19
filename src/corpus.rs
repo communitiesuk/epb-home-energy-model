@@ -928,6 +928,8 @@ pub struct Corpus {
     pub(crate) internal_gains: InternalGainsCollection,
     pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand,
     r_v_arg: AtomicF64,
+    #[cfg(test)]
+    wwhrs: IndexMap<ArcStr, Arc<Mutex<WwhrsInstantaneous>>>,
     pub(crate) ventilation: Arc<InfiltrationVentilation>,
     pub(crate) zones: IndexMap<ArcStr, Arc<Zone>>,
     pub(crate) energy_supply_conn_unmet_demand_zone: IndexMap<ArcStr, Arc<EnergySupplyConnection>>,
@@ -1597,6 +1599,8 @@ impl Corpus {
                     .vent_opening_ratio_init
                     .unwrap_or(1.), // default to 1 if unspecified
             ),
+            #[cfg(test)]
+            wwhrs,
             ventilation: infiltration_ventilation,
             zones,
             energy_supply_conn_unmet_demand_zone,
@@ -7559,11 +7563,13 @@ impl AndReturn {
 
 #[cfg(test)]
 mod tests {
-    use crate::corpus::{Corpus, OutputOptions};
-    use crate::input::{HotWaterSourceDetails, Input};
+    use super::*;
+    use crate::core::common::WaterSupply;
+    use crate::input::{HotWaterSourceDetails, Input, WasteWaterHeatRecoveryDetails};
     use crate::input_dependency_resolvers::CircularDependencyError;
     use rstest::{fixture, rstest};
     use serde_json::json;
+    use serde_valid::Validate;
     use std::sync::Arc;
 
     #[fixture]
@@ -7672,6 +7678,32 @@ mod tests {
                         ]
                     },
                 },
+                "min_soc": {
+                    "type": "SetpointTimeControl",
+                    "start_day": 0,
+                    "time_series_step": 1,
+                    "schedule": {
+                        "main": [
+                            {
+                                "value": 0.3,
+                                "repeat": NUM_TIMESTEPS,
+                            }
+                        ]
+                    },
+                },
+                "max_soc": {
+                    "type": "SetpointTimeControl",
+                    "start_day": 0,
+                    "time_series_step": 1,
+                    "schedule": {
+                        "main": [
+                            {
+                                "value": 1.0,
+                                "repeat": NUM_TIMESTEPS,
+                            }
+                        ]
+                    },
+                },
             },
             "Events": {
                 "Shower": {},
@@ -7726,6 +7758,98 @@ mod tests {
             }}
             }))
         .unwrap()
+    }
+
+    fn create_preheated_water_source_smart_hot_water_tank(
+        name: &str,
+        cold_water_source_name: &str,
+    ) -> HotWaterSourceDetails {
+        serde_json::from_value(json!(
+            {
+            "type": "SmartHotWaterTank",
+            "volume": 24.0,
+            "daily_losses": 1.68,
+            "init_temp": 48.0,
+            "ColdWaterSource": cold_water_source_name,
+            "EnergySupply_pump": "mains elec",
+            "power_pump_kW": 5.0,
+            "max_flow_rate_pump_l_per_min": 1000.0,
+            "temp_usable": 40.0,
+            "temp_setpnt_max": "setpoint_temp_max",
+            "HeatSource": {
+                format!("{name}_immersion"): {
+                    "type": "ImmersionHeater",
+                    "power": 3.0,
+                    "EnergySupply": "mains elec",
+                    "Controlmin": "min_soc",
+                    "Controlmax": "max_soc",
+                    "heater_position": 0.3,
+                }
+            },
+        }))
+        .unwrap()
+    }
+
+    fn create_wwhrs_instantaneous(cold_water_source_name: &str) -> WasteWaterHeatRecoveryDetails {
+        serde_json::from_value(json!({
+            "type": "WWHRS_Instantaneous",
+            "ColdWaterSource": cold_water_source_name,
+            "flow_rates": [5, 7, 9, 11, 13],
+            "system_a_efficiencies": [44.8, 39.1, 34.8, 31.4, 28.6],
+            "system_a_utilisation_factor": 0.7,
+        }))
+        .unwrap()
+    }
+
+    fn create_point_of_use(cold_water_source_name: &str) -> HotWaterSourceDetails {
+        serde_json::from_value(json!({
+            "type": "PointOfUse",
+            "efficiency": 1.0,
+            "EnergySupply": "mains elec",
+            "ColdWaterSource": cold_water_source_name,
+            "setpoint_temp": 52.0,
+        }))
+        .unwrap()
+    }
+
+    fn build_project(input: Input) -> anyhow::Result<Corpus> {
+        input.validate()?;
+
+        Corpus::from_inputs(Arc::new(input), None, None, &OutputOptions::default())
+    }
+
+    #[rstest]
+    /// A non-tank hot water source (PointOfUse) accepts a WWHRS as its cold feed.
+    ///
+    /// Cold-feed resolution applies to every hot water source type, so a PointOfUse
+    /// may reference a WWHRS in the same way a storage tank can.
+    fn test_point_of_use_cold_feed_from_wwhrs() {
+        let mut input = minimal_input();
+        input.waste_water_heat_recovery.replace(
+            [(
+                arcstr::literal!("wwhrs1"),
+                create_wwhrs_instantaneous("mains water"),
+            )]
+            .into(),
+        );
+        input.hot_water_source =
+            [(arcstr::literal!("hw_pou"), create_point_of_use("wwhrs1"))].into();
+
+        let corpus = build_project(input).unwrap();
+
+        let Corpus {
+            hot_water_sources,
+            wwhrs,
+            ..
+        } = corpus;
+
+        let WaterSupply::Wwhrs(wwhrs_source) = hot_water_sources["hw_pou"].get_cold_water_source()
+        else {
+            panic!()
+        };
+
+        // comparing memory addresses to check the referenced items are the same as getting locks should create a deadlock in the matching case
+        assert!(Arc::ptr_eq(&wwhrs_source, &wwhrs["wwhrs1"]));
     }
 
     /// Test that PreHeatedWaterSource objects can be initialized in any order

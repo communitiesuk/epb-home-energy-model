@@ -43,6 +43,7 @@ impl From<WwhrsConfigurationInput> for WwhrsConfiguration {
 /// unit is defined once and can be connected to multiple showers with different
 /// configurations.
 #[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct WwhrsInstantaneous {
     cold_water_source: Arc<ColdWaterSource>,
     flow_rates: Vec<f64>,
