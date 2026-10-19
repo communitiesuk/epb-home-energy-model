@@ -1208,6 +1208,10 @@ impl Corpus {
 
         let mut heat_source_wet_boilers: Vec<Arc<RwLock<Boiler>>> = Default::default();
 
+        // Heat batteries record their charging and standby/pump energy on a single energy supply
+        // connection rather than the per-service connections used to build CoP denominators.
+        // Maps each heat battery name to the connection name(s) carrying that energy, so it can be
+        // apportioned across the services the battery supplies in __charging_energy_for_indirect_sources().
         let mut charging_connection_names_for_heat_battery: IndexMap<ArcStr, Vec<ArcStr>> =
             Default::default();
 
@@ -1689,6 +1693,14 @@ impl Corpus {
             .sum::<f64>()
     }
 
+    /// Return the internal gains from boilers from pilot light demand
+    fn calc_internal_gains_boilers(&self) -> f64 {
+        self.heat_source_wet_boilers
+            .iter()
+            .map(|boiler| boiler.read().internal_gains())
+            .sum()
+    }
+
     /// Calculate the losses/gains in the MVHR ductwork, in Watts
     fn calc_internal_gains_ductwork(&self, simulation_time: SimulationTimeIteration) -> f64 {
         let temp_outdoor_air = self.external_conditions.air_temp(&simulation_time);
@@ -1705,12 +1717,14 @@ impl Corpus {
         gains_internal_hb: f64,
         internal_gains_ductwork_per_m3: f64,
         gains_internal_buffer_tank: f64,
+        gains_internal_boilers: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         // Initialise to dhw internal gains split proportionally to zone floor area
         let mut gains_internal_zone = (gains_internal_buffer_tank
             + gains_internal_dhw_on_site_generation
-            + gains_internal_hb)
+            + gains_internal_hb
+            + gains_internal_boilers)
             * zone.area()
             / self.total_floor_area;
 
@@ -2009,6 +2023,8 @@ impl Corpus {
 
         let internal_gains_buffer_tank = self.calc_internal_gains_buffer_tank();
 
+        let internal_gains_boilers = self.calc_internal_gains_boilers();
+
         // Adjust vent position if required to attempt to meet min or max ach
         self.r_v_arg.store(
             self.ventilation.find_r_v_arg_within_bounds(
@@ -2104,6 +2120,7 @@ impl Corpus {
                     gains_internal_hb,
                     internal_gains_ductwork_per_m3,
                     internal_gains_buffer_tank,
+                    internal_gains_boilers,
                     simtime,
                 )?,
             );
@@ -2233,7 +2250,10 @@ impl Corpus {
             ach_cooling.max(ach_target)
         };
 
-        // Calculate heating/cooling system response and temperature achieved in each zone
+        // Calculate heating/cooling system response and temperature achieved in each zone.
+        // self.zones is held in the declared processing order, so when a heat source is
+        // shared between zones and cannot meet their combined demand, the zone taking priority
+        // on the limited output is an explicit choice rather than a consequence of input order.
         for (z_name, zone) in self.zones.iter() {
             let z_name = z_name.as_ref();
             {
@@ -2286,18 +2306,13 @@ impl Corpus {
             let mut h_idx: usize = 0;
             let mut c_idx: usize = 0;
 
-            // these following variables need to be referenced outside the while loop with their last value retained
-
-            let mut frac_convective_heat = 1.0;
-            let mut frac_convective_cool = 1.0;
-
             while h_idx < h_name_list_sorted_zone[z_name].len()
                 && c_idx < c_name_list_sorted_zone[z_name].len()
             {
                 let h_name = &h_name_list_sorted_zone[z_name][h_idx].clone();
                 let c_name = &c_name_list_sorted_zone[z_name][c_idx].clone();
-                frac_convective_heat = frac_convective_heat_zone_system[z_name][h_name];
-                frac_convective_cool = frac_convective_cool_zone_system[z_name][c_name];
+                let frac_convective_heat = frac_convective_heat_zone_system[z_name][h_name];
+                let frac_convective_cool = frac_convective_cool_zone_system[z_name][c_name];
                 let temp_setpnt_heat = temp_setpnt_heat_zone_system[z_name][h_name];
                 let temp_setpnt_cool = temp_setpnt_cool_zone_system[z_name][c_name];
 
@@ -2307,7 +2322,7 @@ impl Corpus {
                 // lower-priority systems).
                 let (gains_heat_cool_convective, gains_heat_cool_radiative) =
                     self.gains_heat_cool(delta_t_h, &hc_output_convective, &hc_output_radiative);
-                if relative_eq!(
+                let (space_heating_required, space_cooling_required): (bool, bool) = if relative_eq!(
                     gains_heat_cool_convective,
                     0.0,
                     epsilon = 1e-10,
@@ -2324,6 +2339,11 @@ impl Corpus {
                         .insert(h_name.into(), space_heat_demand_zone[z_name]);
                     space_cool_demand_zone_system
                         .insert(c_name.into(), space_cool_demand_zone[z_name]);
+
+                    (
+                        space_heat_demand_zone_system[h_name] > 0.0,
+                        space_cool_demand_zone_system[c_name] < 0.0,
+                    )
                 } else {
                     let (
                         space_heat_demand_zone_system_current,
@@ -2351,6 +2371,15 @@ impl Corpus {
                         .insert(c_name.into(), space_cool_demand_zone_system_current);
                     ach_cooling_zone.insert(z_name.into(), ach_cooling_zone_current);
 
+                    // Record whether heating or cooling is genuinely required
+                    // from the residual demand calculated above, before adding
+                    // the minimum output back on. The residual demand is the
+                    // reliable indicator: when the minimum (coasting) output is
+                    // negative, the total below can be at or below zero while
+                    // heating is still required.
+                    let space_heating_required = space_heat_demand_zone_system_current > 0.0;
+                    let space_cooling_required = space_cool_demand_zone_system_current < 0.0;
+
                     // Space heating/cooling demand calculated above already assumes
                     // minimum output from all systems, so we need to add this on
                     // for the current system. If minimum output is enough to meet
@@ -2363,7 +2392,9 @@ impl Corpus {
                     } else if space_cool_demand_zone_system[c_name] < 0. {
                         space_cool_demand_zone_system[c_name] += hc_output_min[c_name]
                     }
-                }
+
+                    (space_heating_required, space_cooling_required)
+                };
 
                 // If any heating systems potentially require overventilation,
                 // calculate running time and throughput factor for current service
@@ -2372,8 +2403,13 @@ impl Corpus {
 
                 // NB. there is a large chunk of Python in the upstream code here that is commented out there currently, so not brought over
 
-                // Calculate heating/cooling provided
-                if space_heat_demand_zone_system[h_name] > 0.0 {
+                // Calculate heating/cooling provided. The decision to run the
+                // system is driven by whether heating/cooling is required (the
+                // residual demand), not by the total output passed in, which can
+                // oppose the demand sign when the minimum (coasting) output does:
+                // at or below zero for heating, or at or above zero for cooling
+                // (where demand is negative by convention).
+                if space_heating_required {
                     space_heat_provided_zone_system.insert(
                         h_name.into(),
                         self.space_heat_systems[h_name]
@@ -2392,7 +2428,7 @@ impl Corpus {
                     // should use next-priority heating system
                     h_idx += 1;
                 }
-                if space_cool_demand_zone_system[c_name] < 0.0 {
+                if space_cooling_required {
                     space_cool_provided_zone_system.insert(
                         c_name.into(),
                         self.space_cool_systems[c_name]
@@ -2412,21 +2448,27 @@ impl Corpus {
                 }
 
                 // Terminate loop if there is no more demand
-                if space_heat_demand_zone_system[h_name] <= 0.0
-                    && space_cool_demand_zone_system[c_name] >= 0.0
-                {
+                if !space_heating_required && !space_cooling_required {
                     break;
                 }
             }
 
-            // Call any remaining heating and cooling systems with zero demand
+            // Call any remaining heating and cooling systems requesting their
+            // minimum output, so a system not required this timestep coasts
+            // rather than actively delivering output the zone did not ask for.
+            // A negative minimum (an emitter below room temperature) is heat the
+            // emitter genuinely draws from the zone; a positive minimum is the
+            // passive output a coasting emitter sheds or a storage heater
+            // discharges. Each system meets a request equal to its own minimum
+            // by coasting, so none runs its active solver.
             for h_name in h_name_list_sorted_zone[z_name][h_idx..].iter() {
+                let frac_convective_heat = frac_convective_heat_zone_system[z_name][h_name];
                 space_heat_provided_zone_system.insert(
                     h_name.into(),
                     if !h_name.is_empty() {
                         self.space_heat_systems[h_name]
                             .lock()
-                            .demand_energy(0.0, simtime)?
+                            .demand_energy(hc_output_min[h_name], simtime)?
                     } else {
                         0.0
                     },
@@ -2441,10 +2483,12 @@ impl Corpus {
                 );
             }
             for c_name in c_name_list_sorted_zone[z_name][c_idx..].iter() {
+                let frac_convective_cool = frac_convective_cool_zone_system[z_name][c_name];
                 space_cool_provided_zone_system.insert(
                     c_name.into(),
                     if !c_name.is_empty() {
-                        self.space_cool_systems[c_name].demand_energy(0.0, simtime)
+                        self.space_cool_systems[c_name]
+                            .demand_energy(hc_output_min[c_name], simtime)
                     } else {
                         0.0
                     },
@@ -2472,8 +2516,6 @@ impl Corpus {
                 &frac_convective_cool_zone_system[z_name],
                 &h_name_list_sorted_zone[z_name],
                 &c_name_list_sorted_zone[z_name],
-                space_heat_demand_zone[z_name],
-                space_cool_demand_zone[z_name],
                 &hc_output_convective,
                 &hc_output_radiative,
                 ach_windows_open,
@@ -2489,6 +2531,18 @@ impl Corpus {
             let gains_heat_cool = (hc_output_convective_total + hc_output_radiative_total)
                 * WATTS_PER_KILOWATT as f64
                 / delta_t_h;
+
+            // Clamp FP cancellation noise to exactly zero. Near-zero gains from
+            // fsum() on near-equal convective/radiative values can fall either side
+            // of zero across platforms, producing platform-specific heat balance
+            // output. 1e-6 W is ~7 orders of magnitude below any meaningful
+            // per-timestep gain.
+            let gains_heat_cool = if relative_eq!(gains_heat_cool, 0.0, epsilon = 1e-6) {
+                0.0
+            } else {
+                gains_heat_cool
+            };
+
             let frac_convective =
                 if !relative_eq!(gains_heat_cool, 0.0, epsilon = 1e-10, max_relative = 1e-9) {
                     hc_output_convective_total
@@ -2571,6 +2625,26 @@ impl Corpus {
     }
 
     /// Calculate how much space heating / cooling demand is unmet
+    ///
+    /// The unmet demand is the heating/cooling still required to reach
+    /// setpoint after the actual output of all heating and cooling systems
+    /// has been applied to the zone. It is obtained by recomputing the zone
+    /// demand (BS EN ISO 52016-1) with the combined convective and radiative
+    /// output of every system fed back in as gains, rather than by subtracting
+    /// that output from the originally calculated demand. This accounts for
+    /// output delivered at the differing convective/radiative splits of the
+    /// active systems, and means a heating system absorbing heat from a warm
+    /// zone (negative output) contributes to cooling - and a cooling system
+    /// releasing heat to a cool zone contributes to heating - instead of being
+    /// misreported as unmet demand.
+    ///
+    /// Demand is only considered unmet within the required heating/cooling
+    /// period, which excludes times when a system is on only due to setback or
+    /// advanced start. The recomputed demand uses the setpoint and convective
+    /// fraction of the highest-priority system that is in its required period;
+    /// where systems have different required periods, lower-priority systems in
+    /// their required period are ignored in favour of that highest-priority
+    /// one.
     fn unmet_demand(
         &self,
         delta_t_h: f64,
@@ -2585,8 +2659,6 @@ impl Corpus {
         frac_convective_cool_system: &IndexMap<ArcStr, f64>,
         h_name_list_sorted: &[ArcStr],
         c_name_list_sorted: &[ArcStr],
-        space_heat_demand: f64,
-        space_cool_demand: f64,
         hc_output_convective: &IndexMap<ArcStr, f64>,
         hc_output_radiative: &IndexMap<ArcStr, f64>,
         ach_max: f64,
@@ -2594,21 +2666,6 @@ impl Corpus {
         avg_air_supply_temp: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
-        // Note: Use demand calculated based on highest-priority systems
-        // Note: Demand is not considered unmet if it is outside the
-        //       required heating/cooling period (which does not include
-        //       times when the system is on due to setback or advanced
-        //       start). If different systems have different required
-        //       heating/cooling periods, unmet demand will be based on the
-        //       system with the highest setpoint, ignoring any systems that
-        //       are not in required periods (e.g. systems that are in
-        //       setback or advanced start periods).
-        // Note: Need to check that demand is non-zero, to avoid
-        //       reporting unmet demand when heating system is absorbing
-        //       energy from zone or cooling system is releasing energy
-        //       to zone, which may be the case in some timesteps for
-        //       systems with significant thermal mass.
-
         // Determine highest-priority system that is in its required heating
         // or cooling period (and not just the setback period)
         let h_name_highest_req = self.highest_priority_required_system(
@@ -2622,94 +2679,64 @@ impl Corpus {
             simtime,
         )?;
 
-        let gains_heat = FSum::with_all(
-            h_name_list_sorted
-                .iter()
-                .map(|h_name| hc_output_convective[h_name] + hc_output_radiative[h_name]),
-        )
-        .value();
-        let gains_cool = FSum::with_all(
-            c_name_list_sorted
-                .iter()
-                .map(|c_name| hc_output_convective[c_name] + hc_output_radiative[c_name]),
-        )
-        .value();
-        let energy_shortfall_heat = 0.0f64.max(space_heat_demand - gains_heat);
-        let energy_shortfall_cool = 0.0f64.max(-(space_cool_demand - gains_cool));
+        // If no heating or cooling system is in its required period, no demand
+        // can be unmet
+        if h_name_highest_req.is_none() && c_name_highest_req.is_none() {
+            return Ok(());
+        }
 
-        if (h_name_highest_req.is_some() && space_heat_demand > 0.0 && energy_shortfall_heat > 0.0)
-            || (c_name_highest_req.is_some()
-                && space_cool_demand < 0.0
-                && energy_shortfall_cool > 0.0)
-        {
-            let (unmet_demand_heat, unmet_demand_cool) = if (energy_shortfall_heat > 0.0
-                && h_name_highest_req
-                    .as_ref()
-                    .is_some_and(|h_name| h_name != &h_name_list_sorted[0]))
-                || (energy_shortfall_cool > 0.0
-                    && c_name_highest_req
-                        .as_ref()
-                        .is_some_and(|c_name| c_name != &c_name_list_sorted[0]))
-            {
-                // If the highest-priority system is not in required heating
-                // period, but a lower-priority system is, calculate demand
-                // based on the highest-priority system that is in required
-                // heating period
-                //
-                // Handle case where no heating/cooling system is in required
-                // period. In this case, there will be no heat output anyway so
-                // the convective fraction doesn't matter
-                let (frac_convective_heat, temp_setpnt_heat) =
-                    if let Some(h_name) = h_name_highest_req.as_ref() {
-                        (
-                            frac_convective_heat_system[h_name],
-                            temp_setpnt_heat_system[h_name],
-                        )
-                    } else {
-                        (1.0, temp_setpnt_heat_none())
-                    };
-                let (frac_convective_cool, temp_setpnt_cool) =
-                    if let Some(c_name) = c_name_highest_req.as_ref() {
-                        (
-                            frac_convective_cool_system[c_name],
-                            temp_setpnt_cool_system[c_name],
-                        )
-                    } else {
-                        (1.0, temp_setpnt_cool_none())
-                    };
-
-                let (space_heat_demand_req, space_cool_demand_req, _, _) = zone
-                    .space_heat_cool_demand(
-                        delta_t_h,
-                        temp_ext_air,
-                        gains_internal,
-                        gains_solar,
-                        frac_convective_heat,
-                        frac_convective_cool,
-                        temp_setpnt_heat,
-                        temp_setpnt_cool,
-                        avg_air_supply_temp,
-                        None,
-                        None,
-                        AirChangesPerHourArgument::TargetAndWindowsOpen {
-                            ach_target,
-                            ach_windows_open: ach_max,
-                        },
-                        simtime,
-                    )?;
-
+        // Use the setpoint and convective fraction of the highest-priority
+        // system that is in its required period. Where there is no such system
+        // on the heating (or cooling) side, use a setpoint that produces no
+        // demand on that side, so its convective fraction is immaterial.
+        let (frac_convective_heat, temp_setpnt_heat) =
+            if let Some(h_name_highest_req) = &h_name_highest_req {
                 (
-                    0.0f64.max(space_heat_demand_req - gains_heat),
-                    0.0f64.max(-(space_cool_demand_req - gains_cool)),
+                    frac_convective_heat_system[h_name_highest_req],
+                    temp_setpnt_heat_system[h_name_highest_req],
                 )
             } else {
-                // If highest-priority system is in required heating period,
-                // use the demand already calculated for the zone
-                (energy_shortfall_heat, energy_shortfall_cool)
+                (1.0, temp_setpnt_heat_none())
+            };
+        let (frac_convective_cool, temp_setpnt_cool) =
+            if let Some(c_name_highest_req) = &c_name_highest_req {
+                (
+                    frac_convective_cool_system[c_name_highest_req],
+                    temp_setpnt_cool_system[c_name_highest_req],
+                )
+            } else {
+                (1.0, temp_setpnt_cool_none())
             };
 
+        // Combined convective and radiative output of all heating and cooling
+        // systems, fed back in as gains so the recomputed demand is the residual
+        // still required to reach setpoint
+        let (gains_heat_cool_convective, gains_heat_cool_radiative) =
+            self.gains_heat_cool(delta_t_h, hc_output_convective, hc_output_radiative);
+
+        let (unmet_demand_heat, unmet_demand_cool, _, _) = zone.space_heat_cool_demand(
+            delta_t_h,
+            temp_ext_air,
+            gains_internal,
+            gains_solar,
+            frac_convective_heat,
+            frac_convective_cool,
+            temp_setpnt_heat,
+            temp_setpnt_cool,
+            avg_air_supply_temp,
+            gains_heat_cool_convective.into(),
+            gains_heat_cool_radiative.into(),
+            AirChangesPerHourArgument::from_ach_target_windows_open(ach_target, ach_max),
+            simtime,
+        )?;
+
+        // space_heat_cool_demand returns cooling demand as a negative value, so
+        // subtracting it adds the unmet cooling magnitude. Only one of the two
+        // is ever non-zero for a given timestep.
+        let unmet_demand = unmet_demand_heat - unmet_demand_cool;
+        if unmet_demand > 0.0 {
             self.energy_supply_conn_unmet_demand_zone[z_name]
-                .demand_energy(unmet_demand_heat + unmet_demand_cool, simtime.index)?;
+                .demand_energy(unmet_demand, simtime.index)?;
         }
 
         Ok(())
