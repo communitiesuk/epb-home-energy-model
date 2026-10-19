@@ -1468,7 +1468,11 @@ impl HeatPumpServiceWater {
         let ignore_standard_ctrl = ignore_standard_ctrl.unwrap_or(false);
 
         let service_on = self.is_on(simulation_time_iteration) || ignore_standard_ctrl;
-        let energy_demand = if !service_on { 0.0 } else { energy_demand };
+        let energy_demand = if !service_on || temp_return.is_none() {
+            0.0
+        } else {
+            energy_demand
+        };
 
         if (temp_flow.is_none() || temp_return.is_none())
             && !relative_eq!(energy_demand, 0., epsilon = 1e-10, max_relative = 1e-9)
@@ -1481,11 +1485,11 @@ impl HeatPumpServiceWater {
 
         let design_flow_temp_op_cond = temp_flow_k;
 
-        if temp_flow.is_some()
-            && !relative_eq!(energy_demand, 0., epsilon = 1e-10, max_relative = 1e-10)
-        {
-            // note we check temp flow in c here
-            self.check_temp_flow_within_operating_limit(temp_flow.unwrap())?;
+        if !relative_eq!(energy_demand, 0., epsilon = 1e-10, max_relative = 1e-10) {
+            if let Some(temp_flow) = temp_flow {
+                // note we check temp flow in c here
+                self.check_temp_flow_within_operating_limit(temp_flow)?;
+            }
         }
 
         // Reference cold water temperature for HP performance scaling.
@@ -1496,10 +1500,9 @@ impl HeatPumpServiceWater {
             let list_temp_vol = cold_feed.get_temp_cold_water(1., simulation_time_iteration)?;
             let sum_t_by_v = FSum::with_all(list_temp_vol.iter().map(|(t, v)| t * v)).value();
             let sum_v = FSum::with_all(list_temp_vol.iter().map(|(_, v)| v)).value();
-            celsius_to_kelvin(sum_t_by_v / sum_v)?
+            Some(celsius_to_kelvin(sum_t_by_v / sum_v)?)
         } else {
-            // TODO can we guarantee this is Some?
-            temp_return_k.unwrap()
+            temp_return_k
         };
 
         self.heat_pump.lock().demand_energy(
@@ -1514,7 +1517,7 @@ impl HeatPumpServiceWater {
             service_on,
             simulation_time_iteration,
             None,
-            Some(temp_cold_water),
+            temp_cold_water,
             None,
             self.hybrid_boiler_service
                 .as_ref()
