@@ -63,6 +63,7 @@
                 "CombinationTimeControl": "#/$defs/ControlCombinationTime",
                 "OnOffCostMinimisingTimeControl": "#/$defs/ControlOnOffCostMinimising",
                 "OnOffTimeControl": "#/$defs/ControlOnOffTimer",
+                "RangeTimeControl": "#/$defs/ControlRangeTimer",
                 "SetpointTimeControl": "#/$defs/ControlSetpointTimer"
               },
               "propertyName": "type"
@@ -82,6 +83,9 @@
               },
               {
                 "$ref": "#/$defs/ControlCombinationTime"
+              },
+              {
+                "$ref": "#/$defs/ControlRangeTimer"
               }
             ]
           },
@@ -113,6 +117,7 @@
             "discriminator": {
               "mapping": {
                 "Boiler": "#/$defs/HeatSourceWetBoiler",
+                "DirectElectricBoiler": "#/$defs/HeatSourceDirectElectricBoiler",
                 "HIU": "#/$defs/HeatSourceWetHIU",
                 "HeatBattery": {
                   "discriminator": {
@@ -161,6 +166,9 @@
               },
               {
                 "$ref": "#/$defs/HeatSourceWetHIU"
+              },
+              {
+                "$ref": "#/$defs/HeatSourceDirectElectricBoiler"
               }
             ]
           },
@@ -246,7 +254,21 @@
       "anyOf": [
         {
           "additionalProperties": {
-            "$ref": "#/$defs/StorageTank"
+            "discriminator": {
+              "mapping": {
+                "SmartHotWaterTank": "#/$defs/HotWaterSourceSmartHotWaterTank",
+                "StorageTank": "#/$defs/StorageTank"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/StorageTank"
+              },
+              {
+                "$ref": "#/$defs/HotWaterSourceSmartHotWaterTank"
+              }
+            ]
           },
           "type": "object"
         },
@@ -306,6 +328,7 @@
           "additionalProperties": {
             "discriminator": {
               "mapping": {
+                "DryElectricUnderfloorHeating": "#/$defs/SpaceHeatDryElectricUnderfloorHeater",
                 "ElecStorageHeater": "#/$defs/SpaceHeatSystemElectricStorageHeater",
                 "InstantElecHeater": "#/$defs/SpaceHeatSystemInstantElectricHeater",
                 "WarmAir": "#/$defs/SpaceHeatSystemWarmAir",
@@ -325,6 +348,9 @@
               },
               {
                 "$ref": "#/$defs/SpaceHeatSystemWarmAir"
+              },
+              {
+                "$ref": "#/$defs/SpaceHeatDryElectricUnderfloorHeater"
               }
             ]
           },
@@ -336,6 +362,17 @@
       ],
       "default": null,
       "title": "Spaceheatsystem"
+    },
+    "TariffData": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TariffDataInput"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "WWHRS": {
       "anyOf": [
@@ -358,6 +395,22 @@
       },
       "title": "Zone",
       "type": "object"
+    },
+    "ZoneProcessingOrder": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Order in which zones are served by their heating and cooling systems. Required when more than one zone is heated or cooled, so that the order in which zones draw on a shared source is an explicit choice rather than a consequence of the order zones appear in the input. Lists every zone name exactly once.",
+      "title": "Zoneprocessingorder"
     },
     "temp_internal_air_static_calcs": {
       "title": "Temp Internal Air Static Calcs",
@@ -516,11 +569,8 @@
         "Control": {
           "anyOf": [
             {
-              "description": "References a key in $.Control",
-              "reference_to": [
-                "$.control",
-                "$.smart_appliance_controls"
-              ],
+              "description": "References a key in $.SmartApplianceControls",
+              "reference_to": "$.smart_appliance_controls",
               "type": "string"
             },
             {
@@ -670,6 +720,45 @@
         "No_additional_tests"
       ],
       "title": "BoilerHotWaterTest",
+      "type": "string"
+    },
+    "BoilerPilotLight": {
+      "additionalProperties": false,
+      "properties": {
+        "power": {
+          "description": "Power consumption of the pilot light (unit: kW)",
+          "minimum": 0,
+          "title": "Power",
+          "type": "number"
+        },
+        "gains_fraction": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Proportion of pilot light demand turned into heat gains (dimensionless, 0-1)",
+          "title": "Gains Fraction"
+        }
+      },
+      "required": [
+        "power"
+      ],
+      "title": "BoilerPilotLight",
+      "type": "object"
+    },
+    "BoilerType": {
+      "enum": [
+        "condensing",
+        "non-condensing"
+      ],
+      "title": "BoilerType",
       "type": "string"
     },
     "BuildingElementAdjacentConditionedSpace": {
@@ -1207,8 +1296,8 @@
           "type": "number"
         },
         "thermal_resist_insul": {
-          "description": "Thermal resistance of insulation on base of underfloor space, excluding surface resistances (unit: m\u00b2.K/W)",
-          "exclusiveMinimum": 0,
+          "description": "Thermal resistance of insulation on base of underfloor space, excluding surface resistances (unit: m\u00b2.K/W). Zero when no insulation is present.",
+          "minimum": 0,
           "title": "Thermal Resist Insul",
           "type": "number"
         },
@@ -1225,8 +1314,42 @@
           "type": "number"
         },
         "shield_fact_location": {
-          "$ref": "#/$defs/WindShieldLocation",
-          "description": "Wind shielding factor"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindShieldLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Wind shielding factor. If omitted, inferred from InfiltrationVentilation.shield_class."
+        },
+        "Control_smart_air_brick": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Name of a SetpointTimeControl defining smart air brick opening ratios (0 = fully closed, 1 = fully open)",
+          "title": "Control Smart Air Brick"
+        },
+        "vents_open_during_airtightness_test": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether underfloor vents were open (true) or closed (false) during the dwelling airtightness pressurisation test. Required when Control_smart_air_brick is specified.",
+          "title": "Vents Open During Airtightness Test"
         }
       },
       "required": [
@@ -1245,8 +1368,7 @@
         "area_per_perimeter_vent",
         "thermal_resist_insul",
         "thermal_transm_walls",
-        "height_upper_surface",
-        "shield_fact_location"
+        "height_upper_surface"
       ],
       "title": "BuildingElementGroundSuspendedFloor",
       "type": "object"
@@ -1668,10 +1790,7 @@
           "anyOf": [
             {
               "description": "References a key in $.Control",
-              "reference_to": [
-                "$.control",
-                "$.smart_appliance_controls"
-              ],
+              "reference_to": "$.control",
               "type": "string"
             },
             {
@@ -1688,29 +1807,11 @@
           "title": "Frame Area Fraction",
           "type": "number"
         },
-        "free_area_height": {
-          "description": "Height of the openable area, corrected for obstruction due to the window frame of the openable section (unit: m)",
-          "minimum": 0,
-          "title": "Free Area Height",
-          "type": "number"
-        },
         "g_value": {
           "description": "Total solar energy transmittance of the transparent part of the window",
           "maximum": 1,
           "minimum": 0,
           "title": "G-Value",
-          "type": "number"
-        },
-        "max_window_open_area": {
-          "description": "Openable area of the window ignoring the obstructing effect of the frame of the openable part",
-          "minimum": 0,
-          "title": "Max Window Open Area",
-          "type": "number"
-        },
-        "mid_height": {
-          "description": "Height of the mid-point of the window, relative to the base of the ventilation zone (unit: m)",
-          "exclusiveMinimum": 0,
-          "title": "Mid Height",
           "type": "number"
         },
         "shading": {
@@ -1743,6 +1844,8 @@
           "title": "Treatment"
         },
         "window_part_list": {
+          "default": [],
+          "description": "Real openable sections of the window unit, each carrying its own openable area, free area height and mid-height. A window with no openable sections (a fixed pane) has an empty list.",
           "items": {
             "$ref": "#/$defs/WindowPart"
           },
@@ -1758,12 +1861,8 @@
         "pitch",
         "type",
         "frame_area_fraction",
-        "free_area_height",
         "g_value",
-        "max_window_open_area",
-        "mid_height",
-        "shading",
-        "window_part_list"
+        "shading"
       ],
       "title": "BuildingElementTransparent",
       "type": "object"
@@ -1822,6 +1921,24 @@
       "title": "ColdWaterSource",
       "type": "object"
     },
+    "CombiBoilerType": {
+      "enum": [
+        "Instantaneous",
+        "KeepHot",
+        "Storage"
+      ],
+      "title": "CombiBoilerType",
+      "type": "string"
+    },
+    "CombiKeepHotFuel": {
+      "enum": [
+        "MainBoilerFuel",
+        "Electricity",
+        "Mixed"
+      ],
+      "title": "CombiKeepHotFuel",
+      "type": "string"
+    },
     "ControlChargeTarget": {
       "additionalProperties": false,
       "properties": {
@@ -1879,7 +1996,16 @@
           "default": null
         },
         "schedule": {
-          "$ref": "#/$defs/ScheduleForBoolean",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScheduleForBoolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "deprecated": true,
           "description": "List of boolean values where true means 'on' (one entry per hour)"
         },
         "temp_charge_cut": {
@@ -1916,13 +2042,25 @@
           "minimum": 0,
           "title": "Charge Calc Time",
           "type": "number"
+        },
+        "charge_time_control": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The name of the control specifying when the charge control is active",
+          "title": "Charge Time Control"
         }
       },
       "required": [
         "start_day",
         "time_series_step",
-        "type",
-        "schedule"
+        "type"
       ],
       "title": "ControlChargeTarget",
       "type": "object"
@@ -2090,6 +2228,81 @@
         "schedule"
       ],
       "title": "ControlOnOffTimer",
+      "type": "object"
+    },
+    "ControlRangeTimer": {
+      "additionalProperties": false,
+      "properties": {
+        "start_day": {
+          "description": "First day of the time series, day of the year, 0 to 365",
+          "maximum": 365,
+          "minimum": 0,
+          "title": "Start Day",
+          "type": "integer"
+        },
+        "time_series_step": {
+          "description": "Duration in hours (must be within 24-hour period)",
+          "exclusiveMinimum": 0,
+          "maximum": 24,
+          "title": "Time Series Step",
+          "type": "number"
+        },
+        "type": {
+          "const": "RangeTimeControl",
+          "title": "Type",
+          "type": "string"
+        },
+        "advanced_start": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How long before heating period the system should switch on (unit: hours)",
+          "title": "Advanced Start"
+        },
+        "schedule_lower": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScheduleForDouble"
+            },
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            }
+          ],
+          "description": "Setpoint schedule for lower values with one entry per timestep",
+          "title": "Schedule Lower"
+        },
+        "schedule_upper": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScheduleForDouble"
+            },
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            }
+          ],
+          "description": "Setpoint schedule for upper values with one entry per timestep",
+          "title": "Schedule Upper"
+        }
+      },
+      "required": [
+        "start_day",
+        "time_series_step",
+        "type",
+        "schedule_lower",
+        "schedule_upper"
+      ],
+      "title": "ControlRangeTimer",
       "type": "object"
     },
     "ControlSetpointTimer": {
@@ -2359,6 +2572,12 @@
           "title": "Grid Charging Possible",
           "type": "boolean"
         },
+        "grid_exporting_possible": {
+          "default": false,
+          "description": "Is exporting to the grid possible?",
+          "title": "Grid Exporting Possible",
+          "type": "boolean"
+        },
         "maximum_charge_rate_one_way_trip": {
           "description": "The maximum charge rate one way trip the battery allows (unit: kW)",
           "exclusiveMinimum": 0,
@@ -2396,10 +2615,7 @@
       "properties": {
         "Controlmax": {
           "description": "Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
+          "reference_to": "$.control",
           "title": "Controlmax",
           "type": "string"
         },
@@ -2425,11 +2641,18 @@
               "$ref": "#/$defs/ElectricBattery"
             },
             {
+              "additionalProperties": {
+                "$ref": "#/$defs/ElectricBattery"
+              },
+              "type": "object"
+            },
+            {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "Indicates that an electric battery is present"
+          "description": "Indicates that an electric battery is present",
+          "title": "Electricbattery"
         },
         "diverter": {
           "anyOf": [
@@ -2437,11 +2660,18 @@
               "$ref": "#/$defs/EnergyDiverter"
             },
             {
+              "additionalProperties": {
+                "$ref": "#/$defs/EnergyDiverter"
+              },
+              "type": "object"
+            },
+            {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "Indicates that the supply has a diverter"
+          "description": "Indicates that the supply has a diverter",
+          "title": "Diverter"
         },
         "fuel": {
           "$ref": "#/$defs/FuelType",
@@ -2452,11 +2682,25 @@
           "title": "Is Export Capable",
           "type": "boolean"
         },
+        "power_limit_export": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum AC power that can be exported to the grid, e.g. a Distribution Network Operator (DNO) export limit. Applies to the whole supply: generation surplus and battery discharge share this limit. Generation surplus above the limit is curtailed; battery discharge is throttled so unexported energy is retained as charge. Omit for no limit (unit: kW)",
+          "title": "Power Limit Export"
+        },
         "priority": {
           "anyOf": [
             {
               "items": {
-                "$ref": "#/$defs/EnergySupplyPriorityEntry"
+                "type": "string"
               },
               "type": "array"
             },
@@ -2480,6 +2724,18 @@
           "default": null,
           "title": "Tariff"
         },
+        "tariff_export": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tariff Export"
+        },
         "threshold_charges": {
           "anyOf": [
             {
@@ -2500,6 +2756,26 @@
           "default": null,
           "title": "Threshold Charges"
         },
+        "threshold_charges_export": {
+          "anyOf": [
+            {
+              "description": "Level of battery charge below which battery prohibited from exporting to grid (monthly values) (0 - 1)",
+              "items": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 12,
+              "minItems": 12,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold Charges Export"
+        },
         "threshold_prices": {
           "anyOf": [
             {
@@ -2517,6 +2793,38 @@
           ],
           "default": null,
           "title": "Threshold Prices"
+        },
+        "threshold_prices_export": {
+          "anyOf": [
+            {
+              "description": "Grid price above which battery is permitted to export to grid (monthly values) (unit: p/kWh)",
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 12,
+              "minItems": 12,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold Prices Export"
+        },
+        "power_limit_battery_import": {
+          "anyOf": [
+            {
+              "description": "Maximum power limit for importing from the grid to charge batteries, shared across all batteries on this energy supply connection (unit: kW). Caps the rate at which batteries draw from the grid during scheduled charging. When not specified, each battery is limited only by its own maximum_charge_rate_one_way_trip.",
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Limit Battery Import"
         }
       },
       "required": [
@@ -2525,14 +2833,6 @@
       ],
       "title": "EnergySupply",
       "type": "object"
-    },
-    "EnergySupplyPriorityEntry": {
-      "enum": [
-        "ElectricBattery",
-        "diverter"
-      ],
-      "title": "EnergySupplyPriorityEntry",
-      "type": "string"
     },
     "ExternalConditionsInput": {
       "additionalProperties": false,
@@ -2803,17 +3103,125 @@
     },
     "FuelType": {
       "enum": [
+        "mains_gas",
         "LPG_bottled",
         "LPG_bulk",
         "LPG_condition_11F",
-        "custom",
+        "heating_oil",
         "electricity",
+        "custom",
         "energy_from_environment",
-        "mains_gas",
         "unmet_demand"
       ],
       "title": "FuelType",
       "type": "string"
+    },
+    "HeatBatteryPCMElectricSource": {
+      "additionalProperties": false,
+      "description": "Electric charging source for a PCM heat battery.\n\nRepresents a direct electric element that charges the battery at a fixed\nrated power, controlled by a RangeTimeControl with hysteresis thresholds.",
+      "properties": {
+        "type": {
+          "const": "DirectElectric",
+          "title": "Type",
+          "type": "string"
+        },
+        "rated_charge_power": {
+          "description": "Rated charging power (kW)",
+          "exclusiveMinimum": 0,
+          "title": "Rated Charge Power",
+          "type": "number"
+        },
+        "Control": {
+          "description": "Reference to RangeTimeControl for hysteresis and time scheduling. The lower setpoint triggers charging start, the upper setpoint triggers stop. Setpoint units are determined by the schedule_unit field.",
+          "title": "Control",
+          "type": "string"
+        },
+        "schedule_unit": {
+          "$ref": "#/$defs/ScheduleUnit",
+          "default": "soc",
+          "description": "Unit for the control schedule setpoints. 'soc': values are state-of-charge fractions (0\u20131). 'temperature': values are temperatures in \u00b0C, converted to SOC internally using the battery's energy calculation."
+        }
+      },
+      "required": [
+        "type",
+        "rated_charge_power",
+        "Control"
+      ],
+      "title": "HeatBatteryPCMElectricSource",
+      "type": "object"
+    },
+    "HeatBatteryPCMHydronicSource": {
+      "additionalProperties": false,
+      "description": "Hydronic (wet heat source) charging source for a PCM heat battery.\n\nRepresents a wet heat source (e.g. heat pump, solar thermal) that charges the\nbattery via a heat exchanger, controlled by a RangeTimeControl with hysteresis.",
+      "properties": {
+        "type": {
+          "const": "HeatSourceWet",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "description": "Reference to a HeatSourceWet object (e.g. heat pump) in $.HeatSourceWet that provides heat for charging",
+          "title": "Name",
+          "type": "string"
+        },
+        "temp_flow_limit_upper": {
+          "description": "Maximum flow temperature the heat source should provide when charging (\u00b0C). This limits the request temperature to the heat source, reflecting the operating constraints of the charging circuit (pipe ratings, heat exchanger design limits).",
+          "minimum": -273.15,
+          "title": "Temp Flow Limit Upper",
+          "type": "number"
+        },
+        "Control": {
+          "description": "Reference to RangeTimeControl for hysteresis and time scheduling. The lower setpoint triggers charging start, the upper setpoint triggers stop. Setpoint units are determined by the schedule_unit field.",
+          "title": "Control",
+          "type": "string"
+        },
+        "flow_rate_charging_l_per_min": {
+          "description": "Flow rate through the heat battery heat exchanger during hydronic charging (unit: litre/minute). May differ from the battery's main flow_rate_l_per_min if the charging and discharging circuits have different pipework or pump characteristics.",
+          "exclusiveMinimum": 0,
+          "title": "Flow Rate Charging L Per Min",
+          "type": "number"
+        },
+        "A": {
+          "description": "Heat exchanger coefficient A for the hydronic charging circuit. May differ from the battery's main A if charging and discharging use different heat exchangers.",
+          "title": "A",
+          "type": "number"
+        },
+        "B": {
+          "description": "Heat exchanger coefficient B for the hydronic charging circuit. May differ from the battery's main B if charging and discharging use different heat exchangers.",
+          "title": "B",
+          "type": "number"
+        },
+        "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": {
+          "description": "Velocity in heat exchanger tube at 1 litre/minute for the hydronic charging circuit (unit: m/s).",
+          "exclusiveMinimum": 0,
+          "title": "Velocity In Hex Tube At 1 L Per Min M Per S",
+          "type": "number"
+        },
+        "inlet_diameter_mm": {
+          "description": "Inlet diameter of the heat exchanger tubes for the hydronic charging circuit (unit: mm).",
+          "exclusiveMinimum": 0,
+          "title": "Inlet Diameter Mm",
+          "type": "number"
+        },
+        "schedule_unit": {
+          "$ref": "#/$defs/ScheduleUnit",
+          "default": "soc",
+          "description": "Unit for the control schedule setpoints. 'soc': values are state-of-charge fractions (0\u20131). 'temperature': values are temperatures in \u00b0C, converted to SOC internally using the battery's energy calculation. When 'temperature' is used, setpoints generally should not exceed the flow temperature of the hydronic system."
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "temp_flow_limit_upper",
+        "Control",
+        "flow_rate_charging_l_per_min",
+        "A",
+        "B",
+        "velocity_in_HEX_tube_at_1_l_per_min_m_per_s",
+        "inlet_diameter_mm"
+      ],
+      "title": "HeatBatteryPCMHydronicSource",
+      "type": "object"
     },
     "HeatPumpBackupControlType": {
       "enum": [
@@ -2858,6 +3266,11 @@
           "title": "Efficiency Part Load",
           "type": "number"
         },
+        "boiler_type": {
+          "$ref": "#/$defs/BoilerType",
+          "default": "condensing",
+          "description": "The boiler type, either condensing or non-condensing"
+        },
         "electricity_circ_pump": {
           "description": "Electrical power consumption of circulation pump (unit: kW)",
           "minimum": 0,
@@ -2894,6 +3307,18 @@
           "exclusiveMinimum": 0,
           "title": "Rated Power",
           "type": "number"
+        },
+        "pilot_light": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoilerPilotLight"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The pilot light properties of the boiler, if any is modelled"
         },
         "cost_schedule_hybrid": {
           "anyOf": [
@@ -2962,28 +3387,89 @@
     },
     "HeatPumpHotWaterOnly": {
       "additionalProperties": false,
+      "dependencies": {
+        "Control": {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "Controlmax"
+                ]
+              },
+              {
+                "required": [
+                  "Controlmin"
+                ]
+              }
+            ]
+          }
+        },
+        "Controlmax": {
+          "not": {
+            "required": [
+              "Control"
+            ]
+          }
+        },
+        "Controlmin": {
+          "not": {
+            "required": [
+              "Control"
+            ]
+          }
+        }
+      },
       "properties": {
+        "Controlmax": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "deprecated": true,
+          "description": "Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.",
+          "title": "Controlmax"
+        },
+        "Controlmin": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "deprecated": true,
+          "description": "Reference to a control schedule of minimum temperature setpoints. References a key in $.Control.",
+          "title": "Controlmin"
+        },
+        "Control": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reference to a control schedule with lower and upper temperature setpoints. References a key in $.Control.",
+          "title": "Control"
+        },
         "type": {
           "const": "HeatPump_HWOnly",
           "title": "Type",
-          "type": "string"
-        },
-        "Controlmax": {
-          "description": "Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
-          "title": "Controlmax",
-          "type": "string"
-        },
-        "Controlmin": {
-          "description": "Reference to a control schedule of minimum temperature setpoints. References a key in $.Control.",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
-          "title": "Controlmin",
           "type": "string"
         },
         "EnergySupply": {
@@ -3011,9 +3497,15 @@
           "description": "Surface area of heat exchanger stored in the database (unit: m2)",
           "title": "Heat Exchanger Surface Area Declared"
         },
+        "tank_is_integral": {
+          "default": false,
+          "description": "Whether the heat pump and tank form a single unit that is always installed together (True), rather than the heat pump being installable with a separately-supplied store (False). When True no heat-exchanger de-rating is applied and the tank must omit heat_exchanger_surface_area; when False the tank must declare heat_exchanger_surface_area so the installed exchanger can be compared against the database value.",
+          "title": "Tank Is Integral",
+          "type": "boolean"
+        },
         "heater_position": {
           "description": "Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.",
-          "maximum": 1,
+          "exclusiveMaximum": 1,
           "minimum": 0,
           "title": "Heater Position",
           "type": "number"
@@ -3064,8 +3556,6 @@
       },
       "required": [
         "type",
-        "Controlmax",
-        "Controlmin",
         "EnergySupply",
         "daily_losses_declared",
         "heat_exchanger_surface_area_declared",
@@ -3254,6 +3744,50 @@
       "title": "HeatPumpTestDatum",
       "type": "object"
     },
+    "HeatSourceDirectElectricBoiler": {
+      "additionalProperties": false,
+      "description": "Direct electric boiler",
+      "properties": {
+        "type": {
+          "const": "DirectElectricBoiler",
+          "title": "Type",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "description": "References a key (e.g., 'mains elec') in $.EnergySupply",
+          "reference_to": "$.energy_supply",
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "electricity_circ_pump": {
+          "description": "Electrical power consumption of circulation pump (unit: kW)",
+          "minimum": 0,
+          "title": "Electricity Circ Pump",
+          "type": "number"
+        },
+        "electricity_standby": {
+          "description": "Electrical power consumption in standby mode (unit: kW)",
+          "minimum": 0,
+          "title": "Electricity Standby",
+          "type": "number"
+        },
+        "rated_power": {
+          "description": "Rated power output of the boiler (unit: kW)",
+          "exclusiveMinimum": 0,
+          "title": "Rated Power",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "EnergySupply",
+        "electricity_circ_pump",
+        "electricity_standby",
+        "rated_power"
+      ],
+      "title": "HeatSourceDirectElectricBoiler",
+      "type": "object"
+    },
     "HeatSourceLocation": {
       "enum": [
         "internal",
@@ -3296,6 +3830,11 @@
           "title": "Efficiency Part Load",
           "type": "number"
         },
+        "boiler_type": {
+          "$ref": "#/$defs/BoilerType",
+          "default": "condensing",
+          "description": "The boiler type, either condensing or non-condensing"
+        },
         "electricity_circ_pump": {
           "description": "Electrical power consumption of circulation pump (unit: kW)",
           "minimum": 0,
@@ -3332,6 +3871,18 @@
           "exclusiveMinimum": 0,
           "title": "Rated Power",
           "type": "number"
+        },
+        "pilot_light": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoilerPilotLight"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The pilot light properties of the boiler, if any is modelled"
         },
         "type": {
           "const": "Boiler",
@@ -3537,7 +4088,7 @@
     },
     "HeatSourceWetHeatBatteryPCM": {
       "additionalProperties": false,
-      "description": "PCM (Phase Change Material) Heat Battery",
+      "description": "PCM (Phase Change Material) Heat Battery.\n\nCharging can be configured in two mutually exclusive ways:\n- ControlCharge + rated_charge_power: temperature-based charge control\n- HeatSource dict: per-source charging with individual RangeTimeControl hysteresis",
       "properties": {
         "type": {
           "const": "HeatBattery",
@@ -3558,15 +4109,6 @@
           "description": "Heat battery parameter B (dimensionless)",
           "title": "B",
           "type": "number"
-        },
-        "ControlCharge": {
-          "description": "References a key in $.Control",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
-          "title": "Controlcharge",
-          "type": "string"
         },
         "EnergySupply": {
           "description": "References a key (e.g., 'mains elec', 'mains gas') in $.EnergySupply",
@@ -3646,12 +4188,6 @@
           "title": "Phase Transition Temperature Lower",
           "type": "number"
         },
-        "rated_charge_power": {
-          "description": "Rated charging power (unit: kW)",
-          "exclusiveMinimum": 0,
-          "title": "Rated Charge Power",
-          "type": "number"
-        },
         "simultaneous_charging_and_discharging": {
           "description": "Whether the heat battery can charge and discharge simultaneously",
           "title": "Simultaneous Charging And Discharging",
@@ -3668,6 +4204,94 @@
           "minimum": -273.15,
           "title": "Temp Init",
           "type": "number"
+        },
+        "ControlCharge": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reference to a ControlCharge target in $.Control for temperature-based charge control. Required when HeatSource is absent.",
+          "title": "Controlcharge"
+        },
+        "rated_charge_power": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rated charging power (unit: kW). Required when HeatSource is absent.",
+          "title": "Rated Charge Power"
+        },
+        "HeatSource": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "discriminator": {
+                  "mapping": {
+                    "DirectElectric": "#/$defs/HeatBatteryPCMElectricSource",
+                    "HeatSourceWet": "#/$defs/HeatBatteryPCMHydronicSource"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/HeatBatteryPCMElectricSource"
+                  },
+                  {
+                    "$ref": "#/$defs/HeatBatteryPCMHydronicSource"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Dict of named charging sources (electric and/or hydronic). Each source has its own RangeTimeControl for hysteresis, with setpoint units determined by the source's schedule_unit field. Mutually exclusive with ControlCharge/rated_charge_power.",
+          "title": "Heatsource"
+        },
+        "temp_min_useful": {
+          "anyOf": [
+            {
+              "description": "Temperature measurement in degrees Celsius (unit: \u02daC)",
+              "minimum": -273.15,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Minimum useful temperature (\u00b0C) used as the SOC=0 reference. This is the temperature at which the battery is considered fully discharged for SOC calculation purposes. Required when using the HeatSource dict configuration.",
+          "title": "Temp Min Useful"
+        },
+        "primary_pipework": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WaterPipework"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Primary pipework between hydronic heat source and the heat battery. Used to calculate pipework heat losses during hydronic charging.",
+          "title": "Primary Pipework"
         }
       },
       "required": [
@@ -3675,7 +4299,6 @@
         "battery_type",
         "A",
         "B",
-        "ControlCharge",
         "EnergySupply",
         "inlet_diameter_mm",
         "electricity_circ_pump",
@@ -3689,7 +4312,6 @@
         "number_of_units",
         "phase_transition_temperature_upper",
         "phase_transition_temperature_lower",
-        "rated_charge_power",
         "simultaneous_charging_and_discharging",
         "velocity_in_HEX_tube_at_1_l_per_min_m_per_s",
         "temp_init"
@@ -4011,33 +4633,94 @@
     },
     "HeatSourceWetServiceWaterRegular": {
       "additionalProperties": false,
+      "dependencies": {
+        "Control": {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "Controlmax"
+                ]
+              },
+              {
+                "required": [
+                  "Controlmin"
+                ]
+              }
+            ]
+          }
+        },
+        "Controlmax": {
+          "not": {
+            "required": [
+              "Control"
+            ]
+          }
+        },
+        "Controlmin": {
+          "not": {
+            "required": [
+              "Control"
+            ]
+          }
+        }
+      },
       "properties": {
+        "Controlmax": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "deprecated": true,
+          "description": "Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.",
+          "title": "Controlmax"
+        },
+        "Controlmin": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "deprecated": true,
+          "description": "Reference to a control schedule of minimum temperature setpoints. References a key in $.Control.",
+          "title": "Controlmin"
+        },
+        "Control": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reference to a control schedule with lower and upper temperature setpoints. References a key in $.Control.",
+          "title": "Control"
+        },
         "type": {
           "const": "HeatSourceWet",
           "title": "Type",
           "type": "string"
         },
-        "Controlmax": {
-          "description": "Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
-          "title": "Controlmax",
-          "type": "string"
-        },
-        "Controlmin": {
-          "description": "Reference to a control schedule of minimum temperature setpoints. References a key in $.Control.",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
-          "title": "Controlmin",
-          "type": "string"
-        },
         "heater_position": {
           "description": "Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.",
-          "maximum": 1,
+          "exclusiveMaximum": 1,
           "minimum": 0,
           "title": "Heater Position",
           "type": "number"
@@ -4079,8 +4762,6 @@
       },
       "required": [
         "type",
-        "Controlmax",
-        "Controlmin",
         "heater_position",
         "name"
       ],
@@ -4272,6 +4953,81 @@
           "default": null,
           "description": "Storage loss factor 1 for combi boiler efficiency calculations (unit: kWh/day)",
           "title": "Storage Loss Factor 1"
+        },
+        "combi_boiler_type": {
+          "$ref": "#/$defs/CombiBoilerType",
+          "default": "Instantaneous",
+          "description": "Type of combi boiler (instantaneous, with keep-hot facility, or a storage combi)"
+        },
+        "combi_keep_hot_fuel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CombiKeepHotFuel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For combi boilers with keep hot facility, the fuel that maintains the keep hot temperature (same as boiler fuel, electricity, or a mixture of electricty and boiler fuel)"
+        },
+        "combi_storage_loss_in_test": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For storage combis, whether losses from the store are inlcuded in test data",
+          "title": "Combi Storage Loss In Test"
+        },
+        "keep_hot_test_hours": {
+          "anyOf": [
+            {
+              "description": "Duration in hours (must be within 24-hour period)",
+              "exclusiveMinimum": 0,
+              "maximum": 24,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Number of hours the timed keep-hot facility was active during testing (unit: hours)",
+          "title": "Keep Hot Test Hours"
+        },
+        "store_volume": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "If storage combi, volume of the internal hot water store (unit: litres)",
+          "title": "Store Volume"
+        },
+        "Control_keep_hot": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reference to a time control object containing a schedule of booleans describing when a combi boiler keep-hot facility is on. References a key in $.Control.",
+          "title": "Control Keep Hot"
         }
       },
       "required": [
@@ -4400,18 +5156,11 @@
           "type": "string"
         },
         "efficiency": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "maximum": 1,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Thermal efficiency of the point-of-use water heater (dimensionless, 0-1)",
-          "title": "Efficiency"
+          "const": 1,
+          "default": 1,
+          "description": "Thermal efficiency of the point-of-use water heater (dimensionless, fixed at 1)",
+          "title": "Efficiency",
+          "type": "integer"
         },
         "setpoint_temp": {
           "description": "Temperature setpoint for the point-of-use water heater output (unit: \u02daC)",
@@ -4425,7 +5174,6 @@
         "type",
         "ColdWaterSource",
         "EnergySupply",
-        "efficiency",
         "setpoint_temp"
       ],
       "title": "HotWaterSourcePointOfUse",
@@ -4490,6 +5238,20 @@
           "exclusiveMinimum": 0,
           "title": "Daily Losses",
           "type": "number"
+        },
+        "heat_exchanger_surface_area": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Surface area of the heat exchanger within the smart hot water tank (unit: m\u00b2)",
+          "title": "Heat Exchanger Surface Area"
         },
         "init_temp": {
           "description": "Initial temperature of the smart hot water tank at the start of simulation (unit: \u02daC)",
@@ -4563,28 +5325,89 @@
     },
     "ImmersionHeater": {
       "additionalProperties": false,
+      "dependencies": {
+        "Control": {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "Controlmax"
+                ]
+              },
+              {
+                "required": [
+                  "Controlmin"
+                ]
+              }
+            ]
+          }
+        },
+        "Controlmax": {
+          "not": {
+            "required": [
+              "Control"
+            ]
+          }
+        },
+        "Controlmin": {
+          "not": {
+            "required": [
+              "Control"
+            ]
+          }
+        }
+      },
       "properties": {
+        "Controlmax": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "deprecated": true,
+          "description": "Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.",
+          "title": "Controlmax"
+        },
+        "Controlmin": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "deprecated": true,
+          "description": "Reference to a control schedule of minimum temperature setpoints. References a key in $.Control.",
+          "title": "Controlmin"
+        },
+        "Control": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reference to a control schedule with lower and upper temperature setpoints. References a key in $.Control.",
+          "title": "Control"
+        },
         "type": {
           "const": "ImmersionHeater",
           "title": "Type",
-          "type": "string"
-        },
-        "Controlmax": {
-          "description": "Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
-          "title": "Controlmax",
-          "type": "string"
-        },
-        "Controlmin": {
-          "description": "Reference to a control schedule of minimum temperature setpoints. References a key in $.Control.",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
-          "title": "Controlmin",
           "type": "string"
         },
         "EnergySupply": {
@@ -4595,7 +5418,7 @@
         },
         "heater_position": {
           "description": "Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.",
-          "maximum": 1,
+          "exclusiveMaximum": 1,
           "minimum": 0,
           "title": "Heater Position",
           "type": "number"
@@ -4624,8 +5447,6 @@
       },
       "required": [
         "type",
-        "Controlmax",
-        "Controlmin",
         "EnergySupply",
         "heater_position",
         "power"
@@ -4635,15 +5456,44 @@
     },
     "InfiltrationVentilation": {
       "additionalProperties": false,
+      "dependencies": {
+        "Control_VentAdjust": {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "Control_VentAdjustMax"
+                ]
+              },
+              {
+                "required": [
+                  "Control_VentAdjustMin"
+                ]
+              }
+            ]
+          }
+        },
+        "Control_VentAdjustMax": {
+          "not": {
+            "required": [
+              "Control_VentAdjust"
+            ]
+          }
+        },
+        "Control_VentAdjustMin": {
+          "not": {
+            "required": [
+              "Control_VentAdjust"
+            ]
+          }
+        }
+      },
       "properties": {
         "Control_VentAdjustMax": {
           "anyOf": [
             {
               "description": "References a key in $.Control",
-              "reference_to": [
-                "$.control",
-                "$.smart_appliance_controls"
-              ],
+              "reference_to": "$.control",
               "type": "string"
             },
             {
@@ -4651,16 +5501,14 @@
             }
           ],
           "default": null,
+          "deprecated": true,
           "title": "Control Ventadjustmax"
         },
         "Control_VentAdjustMin": {
           "anyOf": [
             {
               "description": "References a key in $.Control",
-              "reference_to": [
-                "$.control",
-                "$.smart_appliance_controls"
-              ],
+              "reference_to": "$.control",
               "type": "string"
             },
             {
@@ -4668,16 +5516,29 @@
             }
           ],
           "default": null,
+          "deprecated": true,
           "title": "Control Ventadjustmin"
+        },
+        "Control_VentAdjust": {
+          "anyOf": [
+            {
+              "description": "References a key in $.Control",
+              "reference_to": "$.control",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reference to a control schedule with lower and upper temperature setpoints. References a key in $.Control.",
+          "title": "Control Ventadjust"
         },
         "Control_WindowAdjust": {
           "anyOf": [
             {
               "description": "References a key in $.Control",
-              "reference_to": [
-                "$.control",
-                "$.smart_appliance_controls"
-              ],
+              "reference_to": "$.control",
               "type": "string"
             },
             {
@@ -4874,10 +5735,7 @@
           "anyOf": [
             {
               "description": "References a key in $.Control",
-              "reference_to": [
-                "$.control",
-                "$.smart_appliance_controls"
-              ],
+              "reference_to": "$.control",
               "type": "string"
             },
             {
@@ -5721,6 +6579,15 @@
       ],
       "title": "ScheduleRepeaterValueForDouble"
     },
+    "ScheduleUnit": {
+      "description": "Unit for interpreting control schedule setpoints on a heat battery.",
+      "enum": [
+        "soc",
+        "temperature"
+      ],
+      "title": "ScheduleUnit",
+      "type": "string"
+    },
     "ShadingObject": {
       "additionalProperties": false,
       "properties": {
@@ -6108,10 +6975,7 @@
         },
         "Controlmax": {
           "description": "Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
+          "reference_to": "$.control",
           "title": "Controlmax",
           "type": "string"
         },
@@ -6141,7 +7005,7 @@
         },
         "heater_position": {
           "description": "Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.",
-          "maximum": 1,
+          "exclusiveMaximum": 1,
           "minimum": 0,
           "title": "Heater Position",
           "type": "number"
@@ -6255,10 +7119,7 @@
         },
         "Control": {
           "description": "References a key in $.Control",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
+          "reference_to": "$.control",
           "title": "Control",
           "type": "string"
         },
@@ -6299,6 +7160,120 @@
       "title": "SpaceCoolSystemAirConditioning",
       "type": "object"
     },
+    "SpaceHeatDryElectricUnderfloorHeater": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "DryElectricUnderfloorHeating",
+          "title": "Type",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "description": "References a key (e.g., 'mains elec', 'mains gas') in $.EnergySupply",
+          "reference_to": "$.energy_supply",
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "Control": {
+          "description": "References a key in $.Control",
+          "reference_to": "$.control",
+          "title": "Control",
+          "type": "string"
+        },
+        "frac_convective": {
+          "description": "Convective fraction for heating",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Frac Convective",
+          "type": "number"
+        },
+        "rated_power": {
+          "description": "Rated power of the underfloor heater. (Unit: kW)",
+          "minimum": 0,
+          "title": "Rated Power",
+          "type": "number"
+        },
+        "emitter_floor_area": {
+          "description": "The floor area of the emitter. (Unit: m2)",
+          "minimum": 0,
+          "title": "Emitter Floor Area",
+          "type": "number"
+        },
+        "c": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Constant from characteristic equation of emitters (e.g. derived from BS EN 442 style tests)",
+          "title": "C"
+        },
+        "c_per_m2": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Constant from characteristic equation of emitters (e.g. derived from BS EN 442 style tests) per square metre of floor area",
+          "title": "C Per M2"
+        },
+        "n": {
+          "description": "Exponent from characteristic equation of emitters (e.g. derived from BS EN 442 style tests)",
+          "exclusiveMinimum": 0,
+          "title": "N",
+          "type": "number"
+        },
+        "thermal_mass": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal mass of the heater. (Unit: kWh/K)",
+          "title": "Thermal Mass"
+        },
+        "thermal_mass_per_m2": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal mass of the heater. (Unit: kWh/K) per square metre of floor area",
+          "title": "Thermal Mass Per M2"
+        }
+      },
+      "required": [
+        "type",
+        "EnergySupply",
+        "Control",
+        "frac_convective",
+        "rated_power",
+        "emitter_floor_area",
+        "n"
+      ],
+      "title": "SpaceHeatDryElectricUnderfloorHeater",
+      "type": "object"
+    },
     "SpaceHeatSystemElectricStorageHeater": {
       "additionalProperties": false,
       "properties": {
@@ -6309,10 +7284,7 @@
         },
         "ControlCharger": {
           "description": "References a key in $.Control",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
+          "reference_to": "$.control",
           "title": "Controlcharger",
           "type": "string"
         },
@@ -6355,10 +7327,7 @@
         },
         "Control": {
           "description": "References a key in $.Control",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
+          "reference_to": "$.control",
           "title": "Control",
           "type": "string"
         },
@@ -6477,10 +7446,7 @@
         },
         "Control": {
           "description": "References a key in $.Control",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
+          "reference_to": "$.control",
           "title": "Control",
           "type": "string"
         },
@@ -6496,6 +7462,76 @@
           "exclusiveMinimum": 0,
           "title": "Rated Power",
           "type": "number"
+        },
+        "c": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Constant from characteristic equation of emitters (e.g. derived from BS EN 442 style tests)",
+          "title": "C"
+        },
+        "c_per_kW": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Constant from characteristic equation of emitters (e.g. derived from BS EN 442 style tests) per kW of rated power",
+          "title": "C per kW"
+        },
+        "n": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Exponent from characteristic equation of emitters (e.g. derived from BS EN 442 style tests)",
+          "title": "N"
+        },
+        "thermal_mass": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal mass of the heater. (Unit: kWh/K)",
+          "title": "Thermal Mass"
+        },
+        "thermal_mass_per_kw": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal mass of the heater. (Unit: kWh/K) per kW of rated power",
+          "title": "Thermal mass per kW"
         }
       },
       "required": [
@@ -6521,10 +7557,7 @@
         },
         "Control": {
           "description": "References a key in $.Control",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
+          "reference_to": "$.control",
           "title": "Control",
           "type": "string"
         },
@@ -6681,7 +7714,7 @@
             }
           ],
           "default": null,
-          "description": "Thermal mass of the emitters, excluding any thermal mass entered under individual radiator/UFH entries and always excluding thermal mass of pipework. (Unit: kWh/K)",
+          "description": "Thermal mass of the emitter system not already captured by individual emitter entries (e.g. thermal mass of a 2-port buffer tank), and always excluding pipework thermal mass.This value is summed with the total thermal mass from all individual emitter entries. Required for radiator systems unless all radiators specify their own thermal_mass or thermal_mass_per_m. Optional for UFH-only systems and must not be set when emitters are fancoils. (Unit: kWh/K)",
           "title": "Thermal Mass"
         },
         "variable_flow": {
@@ -6691,10 +7724,7 @@
         },
         "Control": {
           "description": "References a key in $.Control",
-          "reference_to": [
-            "$.control",
-            "$.smart_appliance_controls"
-          ],
+          "reference_to": "$.control",
           "title": "Control",
           "type": "string"
         },
@@ -6855,6 +7885,47 @@
       ],
       "title": "SupplyAirTemperatureControlType",
       "type": "string"
+    },
+    "TariffDataInput": {
+      "additionalProperties": false,
+      "properties": {
+        "start_day": {
+          "anyOf": [
+            {
+              "maximum": 365,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "First day of the time series, day of the year, 0 to 365. If None, it defaults to the simulation start.",
+          "title": "Start Day"
+        },
+        "time_series_step": {
+          "description": "Duration in hours (must be within 24-hour period)",
+          "exclusiveMinimum": 0,
+          "maximum": 24,
+          "title": "Time Series Step",
+          "type": "number"
+        },
+        "prices": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ScheduleForDouble"
+          },
+          "description": "List of energy prices",
+          "title": "Prices",
+          "type": "object"
+        }
+      },
+      "required": [
+        "start_day",
+        "time_series_step",
+        "prices"
+      ],
+      "title": "TariffDataInput",
+      "type": "object"
     },
     "TerrainClass": {
       "enum": [
@@ -7234,6 +8305,21 @@
     "WaterHeatingEvents": {
       "additionalProperties": false,
       "properties": {
+        "start_day": {
+          "anyOf": [
+            {
+              "maximum": 365,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "First day of the events list, day of the year, 0 to 365. If set, event start times will be interpreted as relative to the start of the start day indicated. If not set, event start times will be interpreted as relative to the start of the simulation",
+          "title": "Start Day"
+        },
         "Shower": {
           "anyOf": [
             {
@@ -7586,16 +8672,31 @@
     },
     "WindowPart": {
       "additionalProperties": false,
+      "description": "A real openable section of a window unit (e.g. an opening sash, a casement,\nor a top-light), described by its openable area, free area height and mid-height.",
       "properties": {
-        "mid_height_air_flow_path": {
-          "description": "(unit: m)",
+        "free_area_height": {
+          "description": "Vertical extent of this openable section's free area (unit: m)",
+          "minimum": 0,
+          "title": "Free Area Height",
+          "type": "number"
+        },
+        "max_window_open_area": {
+          "description": "Openable area of this section ignoring the obstructing effect of the frame of the openable part (unit: m\u00b2)",
+          "minimum": 0,
+          "title": "Max Window Open Area",
+          "type": "number"
+        },
+        "mid_height": {
+          "description": "Height of the mid-point of this openable section, relative to the base of the ventilation zone (unit: m)",
           "exclusiveMinimum": 0,
-          "title": "Mid Height Air Flow Path",
+          "title": "Mid Height",
           "type": "number"
         }
       },
       "required": [
-        "mid_height_air_flow_path"
+        "free_area_height",
+        "max_window_open_area",
+        "mid_height"
       ],
       "title": "WindowPart",
       "type": "object"
@@ -7680,10 +8781,7 @@
           "anyOf": [
             {
               "description": "References a key in $.Control",
-              "reference_to": [
-                "$.control",
-                "$.smart_appliance_controls"
-              ],
+              "reference_to": "$.control",
               "type": "string"
             },
             {
@@ -7698,10 +8796,7 @@
           "anyOf": [
             {
               "description": "References a key in $.Control",
-              "reference_to": [
-                "$.control",
-                "$.smart_appliance_controls"
-              ],
+              "reference_to": "$.control",
               "type": "string"
             },
             {
@@ -7716,10 +8811,7 @@
           "anyOf": [
             {
               "description": "References a key in $.Control",
-              "reference_to": [
-                "$.control",
-                "$.smart_appliance_controls"
-              ],
+              "reference_to": "$.control",
               "type": "string"
             },
             {
