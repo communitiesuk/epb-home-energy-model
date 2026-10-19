@@ -2954,13 +2954,13 @@ impl WindowTreatment {
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl))
                 .map(Option::<ControlSetPoint>::from)
-                .ok_or_else(|| anyhow!("Control '{}' was expected to be a control with a setpoint for a window treatment", input.control_closing_irrad.as_ref().unwrap()))?,
+                .ok_or_else(|| anyhow!("Control used as a closing irradiance control was expected to be a control with a setpoint for a window treatment"))?,
             opening_irradiance_control: input
                 .control_opening_irrad
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl))
                 .map(Option::<ControlSetPoint>::from)
-                .ok_or_else(|| anyhow!("Control '{}' was expected to be a control with a setpoint for a window treatment", input.control_opening_irrad.as_ref().unwrap()))?,
+                .ok_or_else(|| anyhow!("Control used as an opening irradiance control was expected to be a control with a setpoint for a window treatment"))?,
             open_control: input
                 .control_open
                 .as_ref()
