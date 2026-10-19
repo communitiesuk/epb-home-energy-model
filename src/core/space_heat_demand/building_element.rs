@@ -2949,22 +2949,27 @@ impl WindowTreatment {
             controls: input.controls.into(),
             delta_r: input.delta_r,
             trans_red: input.trans_red,
-            closing_irradiance_control: input
-                .control_closing_irrad
-                .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl))
-                .map(Option::<ControlSetPoint>::from)
-                .ok_or_else(|| anyhow!("Control used as a closing irradiance control was expected to be a control with a setpoint for a window treatment"))?,
-            opening_irradiance_control: input
-                .control_opening_irrad
-                .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl))
-                .map(Option::<ControlSetPoint>::from)
-                .ok_or_else(|| anyhow!("Control used as an opening irradiance control was expected to be a control with a setpoint for a window treatment"))?,
+            closing_irradiance_control: if let Some(control) = input.control_closing_irrad.as_ref()
+            {
+                controls.get_with_string(control)
+                    .map(Option::<ControlSetPoint>::from)
+                    .ok_or_else(|| anyhow!("Control used as a closing irradiance control was expected to be a control with a setpoint for a window treatment"))?
+            } else {
+                None
+            },
+            opening_irradiance_control: if let Some(control) = input.control_opening_irrad.as_ref()
+            {
+                controls.get_with_string(control)
+                    .map(Option::<ControlSetPoint>::from)
+                    .ok_or_else(|| anyhow!("Control used as an opening irradiance control was expected to be a control with a setpoint for a window treatment"))?
+            } else {
+                None
+            },
             open_control: input
                 .control_open
                 .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl)).map(OnOffControl::from),
+                .and_then(|ctrl| controls.get_with_string(ctrl))
+                .map(OnOffControl::from),
             is_open: input.is_open.unwrap_or_default().into(),
             opening_delay_hrs: input.opening_delay_hrs,
             time_last_adjusted: (current_hour as f64).into(),
