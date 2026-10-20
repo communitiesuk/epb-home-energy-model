@@ -668,7 +668,7 @@ pub struct HeatBatteryPcm {
     heat_source_data: Option<IndexMap<ArcStr, Arc<HeatBatteryChargingSource>>>,
     charging_active: Arc<RwLock<IndexMap<ArcStr, bool>>>,
     charge_control: Option<Arc<ChargeControl>>,
-    pwr_in: f64,
+    pwr_in: Option<f64>,
     max_rated_losses: f64,
     power_circ_pump: f64,
     power_standby: f64,
@@ -824,17 +824,15 @@ impl HeatBatteryPcm {
                 },
         } = heat_battery_details
         {
-            let pwr_in = match charging_config {
+            let pwr_in: Option<f64> = match charging_config {
                 PcmBatteryChargingConfiguration::ChargeControl {
                     rated_charge_power, ..
-                } => rated_charge_power,
-                PcmBatteryChargingConfiguration::RangeControl { .. } => {
-                    todo!("as part of migration to alpha9")
-                }
+                } => Some(*rated_charge_power),
+                PcmBatteryChargingConfiguration::RangeControl { .. } => None,
             };
 
             (
-                *pwr_in,
+                pwr_in,
                 *max_rated_losses,
                 *power_circ_pump,
                 *power_standby,
@@ -1310,16 +1308,20 @@ impl HeatBatteryPcm {
     /// returns 0 because charging dispatch is handled per-source in timestep_end().
     ///   Returns:
     ///      Charging power in kW.
-    fn electric_charge(&self, simtime: SimulationTimeIteration) -> f64 {
-        if let Some(control) = &self.charge_control {
+    fn electric_charge(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+        Ok(if let Some(control) = &self.charge_control {
             if control.is_on(&simtime) {
-                self.pwr_in
+                self.pwr_in.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "pwr_in was expected to be set when a charge_control is present"
+                    )
+                })?
             } else {
                 0.0
             }
         } else {
             0.0
-        }
+        })
     }
 
     /// Calculate time available for the current service
@@ -2199,7 +2201,7 @@ impl HeatBatteryPcm {
         } else if let Some(charge_control) = &self.charge_control {
             if charge_control.is_on(simtime) {
                 // ChargeControl: single electric element with temperature-based proxy
-                let pwr_in = self.electric_charge(*simtime);
+                let pwr_in = self.electric_charge(*simtime)?;
                 let target = charge_control.target_charge(*simtime, None);
                 return self.charge_battery_electric(pwr_in, target);
             }
@@ -2569,7 +2571,7 @@ impl HeatBatteryPcm {
 
         let time_step_s = self.hb_time_step;
 
-        let pwr_in = self.electric_charge(simtime);
+        let pwr_in = self.electric_charge(simtime)?;
 
         // Initial Reynold number
         let mut water_kinematic_viscosity_m2_per_s =
@@ -2663,7 +2665,7 @@ impl HeatBatteryPcm {
         // demand_energy can reach.
 
         let pwr_in = if self.simultaneous_charging_and_discharging {
-            self.electric_charge(simtime)
+            self.electric_charge(simtime)?
         } else {
             0.
         };
@@ -2771,7 +2773,7 @@ impl HeatBatteryPcm {
         }
 
         let pwr_in = if self.simultaneous_charging_and_discharging {
-            self.electric_charge(simtime)
+            self.electric_charge(simtime)?
         } else {
             0.
         };
@@ -4202,7 +4204,8 @@ mod tests {
         assert_relative_eq!(
             heat_battery
                 .read()
-                .electric_charge(simulation_time_iteration),
+                .electric_charge(simulation_time_iteration)
+                .unwrap(),
             0.0
         );
 
@@ -4211,7 +4214,8 @@ mod tests {
         assert_relative_eq!(
             heat_battery
                 .read()
-                .electric_charge(simulation_time_iteration),
+                .electric_charge(simulation_time_iteration)
+                .unwrap(),
             20.0
         );
     }
@@ -6744,7 +6748,7 @@ mod tests {
         fn test_legacy_mode_reads_rated_charge_power(
             legacy_heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         ) {
-            assert_relative_eq!(legacy_heat_battery.read().pwr_in, 20.0);
+            assert_relative_eq!(legacy_heat_battery.read().pwr_in.unwrap(), 20.0);
         }
 
         #[rstest]
@@ -6812,7 +6816,8 @@ mod tests {
             assert_relative_eq!(
                 new_format_heat_battery
                     .read()
-                    .electric_charge(simulation_time_iteration),
+                    .electric_charge(simulation_time_iteration)
+                    .unwrap(),
                 0.0
             );
         }
