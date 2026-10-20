@@ -219,6 +219,11 @@ fn test_run_all_files(files: Vec<DirEntry>) {
                     .unwrap()
                     .contains(EXCEPTIONAL_DEMO_FILE)
                 || file.file_name().to_str().unwrap().contains("demo_168hrs")
+                || file
+                    .file_name()
+                    .to_str()
+                    .unwrap()
+                    .contains("demo_combiBoiler_DHW_tapping_M")
             {
                 "./examples/tariff_data/tariff_data_25-06-2024.csv"
             } else {
