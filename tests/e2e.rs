@@ -175,6 +175,7 @@ fn test_run_all_files(files: Vec<DirEntry>) {
             && !file.path().to_str().unwrap().contains("long/")
     }
 
+    #[derive(Clone, Copy, PartialEq)]
     enum FileKind {
         Short,
         Long,
@@ -206,6 +207,10 @@ fn test_run_all_files(files: Vec<DirEntry>) {
     }
 
     fn tariff_file(file: &DirEntry) -> Option<&str> {
+        if FileKind::from(file) == FileKind::Long {
+            return None;
+        }
+
         Path::new(
             if file.file_name().to_str().unwrap().contains("demo_FHS")
                 || file
