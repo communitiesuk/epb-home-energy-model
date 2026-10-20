@@ -2,8 +2,7 @@ use crate::compare_floats::min_of_2;
 /// This module provides object(s) to model the behaviour of heat batteries.
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    ChargeControl, CombinationTimeControl, CompositeRangeTimeControl, RangeTimeControl,
-    SetpointTimeControl,
+    ChargeControl, CompositeRangeTimeControl, RangeTimeControl, SetpointOrCombinationControl,
 };
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::BoilerServiceWaterRegular;
@@ -36,7 +35,6 @@ use anyhow::{anyhow, bail, Ok};
 use approx::relative_eq;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
-use either::Either;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -406,7 +404,7 @@ impl HeatBatteryPcmServiceWaterDirect {
 pub struct HeatBatteryPcmServiceSpace {
     heat_battery: Arc<RwLock<HeatBatteryPcm>>,
     service_name: ArcStr,
-    control: Either<Arc<SetpointTimeControl>, Arc<CombinationTimeControl>>,
+    control: SetpointOrCombinationControl,
 }
 
 /// An object to represent a space heating service provided by a heat_battery to e.g. radiators.
@@ -417,7 +415,7 @@ impl HeatBatteryPcmServiceSpace {
     pub(crate) fn new(
         heat_battery: Arc<RwLock<HeatBatteryPcm>>,
         service_name: ArcStr,
-        control: Either<Arc<SetpointTimeControl>, Arc<CombinationTimeControl>>,
+        control: SetpointOrCombinationControl,
     ) -> Self {
         Self {
             heat_battery,
@@ -427,20 +425,14 @@ impl HeatBatteryPcmServiceSpace {
     }
 
     pub fn temp_setpnt(&self, simulation_time_iteration: SimulationTimeIteration) -> Option<f64> {
-        match &self.control {
-            Either::Left(ctrl) => ctrl.setpnt(&simulation_time_iteration),
-            Either::Right(ctrl) => ctrl.setpnt(&simulation_time_iteration),
-        }
+        self.control.setpnt(&simulation_time_iteration)
     }
 
     pub fn in_required_period(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> Option<bool> {
-        match &self.control {
-            Either::Left(ctrl) => ctrl.in_required_period(&simulation_time_iteration),
-            Either::Right(ctrl) => ctrl.in_required_period(&simulation_time_iteration),
-        }
+        self.control.in_required_period(&simulation_time_iteration)
     }
 
     /// Demand energy (in kWh) from the heat battery
@@ -472,10 +464,7 @@ impl HeatBatteryPcmServiceSpace {
     }
 
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
-        match &self.control {
-            Either::Left(c) => c.is_on(&simulation_time_iteration),
-            Either::Right(c) => c.is_on(&simulation_time_iteration),
-        }
+        self.control.is_on(&simulation_time_iteration)
     }
 
     pub(crate) fn energy_output_max(
@@ -1248,7 +1237,7 @@ impl HeatBatteryPcm {
     pub(crate) fn create_service_space_heating(
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
-        control: Either<Arc<SetpointTimeControl>, Arc<CombinationTimeControl>>,
+        control: SetpointOrCombinationControl,
     ) -> anyhow::Result<HeatBatteryPcmServiceSpace> {
         Self::create_service_connection(heat_battery.clone(), service_name)?;
         Ok(HeatBatteryPcmServiceSpace::new(
@@ -3814,7 +3803,7 @@ mod tests {
         let heat_battery_service = HeatBatteryPcmServiceSpace::new(
             heat_battery.clone(),
             SERVICE_NAME.into(),
-            Either::Left(service_control_on),
+            SetpointOrCombinationControl::SetpointTime(service_control_on),
         );
 
         assert!(heat_battery_service.is_on(simulation_time_iteration));
@@ -3824,7 +3813,7 @@ mod tests {
         let heat_battery_service: HeatBatteryPcmServiceSpace = HeatBatteryPcmServiceSpace::new(
             heat_battery,
             SERVICE_NAME.into(),
-            Either::Left(service_control_off),
+            SetpointOrCombinationControl::SetpointTime(service_control_off),
         );
 
         assert!(!heat_battery_service.is_on(simulation_time_iteration));
@@ -4052,8 +4041,11 @@ mod tests {
         let first_scheduled_temp = Some(21.);
         let ctrl = create_setpoint_time_control(vec![first_scheduled_temp]);
         let heat_battery = create_heat_battery(battery_control_off, None);
-        let heat_battery_space =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), either::Left(ctrl));
+        let heat_battery_space = HeatBatteryPcmServiceSpace::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            SetpointOrCombinationControl::SetpointTime(ctrl),
+        );
 
         assert_eq!(
             heat_battery_space.temp_setpnt(simulation_time_iteration),
@@ -4068,8 +4060,11 @@ mod tests {
     ) {
         let ctrl = create_setpoint_time_control(vec![Some(21.)]);
         let heat_battery = create_heat_battery(battery_control_off, None);
-        let heat_battery_space =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), either::Left(ctrl));
+        let heat_battery_space = HeatBatteryPcmServiceSpace::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            SetpointOrCombinationControl::SetpointTime(ctrl),
+        );
 
         assert_eq!(
             heat_battery_space.in_required_period(simulation_time_iteration),
@@ -4089,8 +4084,11 @@ mod tests {
         let time_start = 0.2;
         let ctrl = create_setpoint_time_control(vec![None]);
         let heat_battery = create_heat_battery(battery_control_off, None);
-        let heat_battery_space =
-            HeatBatteryPcmServiceSpace::new(heat_battery, SERVICE_NAME.into(), either::Left(ctrl));
+        let heat_battery_space = HeatBatteryPcmServiceSpace::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            SetpointOrCombinationControl::SetpointTime(ctrl),
+        );
         let result = heat_battery_space
             .demand_energy(
                 energy_demand,
@@ -4120,7 +4118,7 @@ mod tests {
         let heat_battery_service: HeatBatteryPcmServiceSpace = HeatBatteryPcmServiceSpace::new(
             heat_battery,
             SERVICE_NAME.into(),
-            either::Left(service_control_off),
+            SetpointOrCombinationControl::SetpointTime(service_control_off),
         );
 
         let result = heat_battery_service
@@ -4181,7 +4179,7 @@ mod tests {
         let service = HeatBatteryPcm::create_service_space_heating(
             heat_battery.clone(),
             "new_service",
-            either::Left(control),
+            SetpointOrCombinationControl::SetpointTime(control),
         )
         .unwrap();
 
@@ -5422,7 +5420,7 @@ mod tests {
         HeatBatteryPcm::create_service_space_heating(
             heat_battery.clone(),
             service_name,
-            either::Left(control),
+            SetpointOrCombinationControl::SetpointTime(control),
         )
         .unwrap();
 

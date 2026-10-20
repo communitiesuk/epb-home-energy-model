@@ -3,7 +3,7 @@ use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::MockWaterSupply;
 use crate::core::common::{WaterSupply, WaterSupplyBehaviour};
 use crate::core::controls::time_control::{
-    CombinationTimeControl, CompositeRangeTimeControl, Control, SetpointTimeControl,
+    CompositeRangeTimeControl, Control, SetpointOrCombinationControl, SetpointTimeControl,
 };
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::primary_pipework_losses_mixin::PrimaryPipeworkLossesMixin;
@@ -24,7 +24,6 @@ use arc_swap::ArcSwapOption;
 use arcstr::ArcStr;
 use atomic_float::AtomicF64;
 use educe::Educe;
-use either::Either;
 use fsum::FSum;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -35,14 +34,10 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-type ControlMaxDiverter = Either<Arc<SetpointTimeControl>, Arc<CombinationTimeControl>>;
+type ControlMaxDiverter = SetpointOrCombinationControl;
 
 pub(crate) fn control_max_diverter_from_control(control: Control) -> Option<ControlMaxDiverter> {
-    match control {
-        Control::SetpointTime(control) => Some(Either::Left(control)),
-        Control::CombinationTime(control) => Some(Either::Right(control)),
-        _ => None,
-    }
+    control.into()
 }
 
 // BS EN 15316-5:2017 Appendix B default input data
@@ -897,10 +892,7 @@ impl StorageTank {
         control_max_diverter: Option<&ControlMaxDiverter>,
     ) -> anyhow::Result<TemperatureCalculation> {
         let setpntmax = if let Some(control_max_diverter) = control_max_diverter {
-            match control_max_diverter {
-                Either::Left(c) => c.setpnt(&simtime),
-                Either::Right(c) => c.setpnt(&simtime),
-            }
+            control_max_diverter.setpnt(&simtime)
         } else {
             let (_, setpntmax) = self.retrieve_setpnt(heat_source, simtime)?;
             setpntmax
@@ -2566,10 +2558,7 @@ impl SmartHotWaterTank {
 
         // Target state of charge for the heat source being considered
         let soc_max = if let Some(control_max_diverter) = control_max_diverter {
-            match control_max_diverter {
-                Either::Left(control) => control.setpnt(&simtime),
-                Either::Right(control) => control.setpnt(&simtime),
-            }
+            control_max_diverter.setpnt(&simtime)
         } else {
             let (_, soc_max) = self.retrieve_setpnt(heat_source, simtime)?;
 
@@ -3788,13 +3777,10 @@ impl SolarThermalSystem {
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
-        let control_max_setpnt =
-            self.control_max
-                .as_ref()
-                .and_then(|control_max| match control_max {
-                    Either::Left(c) => c.setpnt(simulation_time_iteration),
-                    Either::Right(c) => c.setpnt(simulation_time_iteration),
-                });
+        let control_max_setpnt = self
+            .control_max
+            .as_ref()
+            .and_then(|control_max| control_max.setpnt(simulation_time_iteration));
 
         (control_max_setpnt, control_max_setpnt)
     }
@@ -4402,7 +4388,7 @@ mod tests {
 
     #[fixture]
     fn diverter_control() -> ControlMaxDiverter {
-        either::Left(
+        ControlMaxDiverter::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(60.), Some(60.), Some(60.), Some(60.)],
                 0,
@@ -4602,7 +4588,9 @@ mod tests {
             external_conditions_for_solar_thermal.clone(),
             temp_internal_air_fn.clone(),
             simulation_time_for_solar_thermal.step,
-            Some(either::Left(control_max.into())),
+            Some(SetpointOrCombinationControl::SetpointTime(
+                control_max.into(),
+            )),
             *WATER,
             None,
         )));
@@ -5529,7 +5517,7 @@ mod tests {
             .clone()
             .heat_source;
         let energy_input = 5.0;
-        let setpnt_diverter = either::Left(Arc::new(SetpointTimeControl::new(
+        let setpnt_diverter = ControlMaxDiverter::SetpointTime(Arc::new(SetpointTimeControl::new(
             vec![Some(60.); 8],
             0,
             1.0,
@@ -6489,7 +6477,7 @@ mod tests {
         let mut mixed_schedule = vec![Some(55.); 24];
         mixed_schedule[10] = None;
         mixed_schedule[14] = None;
-        let control_max_mixed = Either::Left(
+        let control_max_mixed = ControlMaxDiverter::SetpointTime(
             SetpointTimeControl::new(mixed_schedule, 212, 1., None, None, simulation_time.step)
                 .into(),
         );
@@ -7388,23 +7376,24 @@ mod tests {
             smart_hot_water_tank.storage_tank.heat_source_data[heat_source_name].clone();
         let heat_source = &*positioned_heat_source.heat_source.lock();
 
-        let control_max_diverter = either::Left(Arc::new(SetpointTimeControl::new(
-            vec![
-                Some(1.0),
-                Some(1.0),
-                Some(0.9),
-                Some(0.8),
-                Some(0.7),
-                Some(1.0),
-                Some(0.9),
-                Some(0.8),
-            ],
-            0,
-            1.,
-            None,
-            None,
-            0.,
-        )));
+        let control_max_diverter =
+            ControlMaxDiverter::SetpointTime(Arc::new(SetpointTimeControl::new(
+                vec![
+                    Some(1.0),
+                    Some(1.0),
+                    Some(0.9),
+                    Some(0.8),
+                    Some(0.7),
+                    Some(1.0),
+                    Some(0.9),
+                    Some(0.8),
+                ],
+                0,
+                1.,
+                None,
+                None,
+                0.,
+            )));
 
         let expected = TemperatureCalculation {
             temp_s8_n: vec![50.0, 50.0, 50.0, 50.0],
@@ -7443,7 +7432,7 @@ mod tests {
         assert_eq!(actual, expected);
 
         smart_hot_water_tank.temp_usable = 100.0;
-        let control_max_diverter = either::Left(
+        let control_max_diverter = ControlMaxDiverter::SetpointTime(
             SetpointTimeControl::new(
                 vec![
                     Some(0.0),
@@ -7515,7 +7504,9 @@ mod tests {
                 vec![0., 0., 5., 0.],
                 2,
                 &[0.; 4],
-                Some(&either::Left(control_max.with_setpnt(None).into())),
+                Some(&ControlMaxDiverter::SetpointTime(
+                    control_max.with_setpnt(None).into(),
+                )),
                 simtime,
             )
             .unwrap();
@@ -7536,7 +7527,7 @@ mod tests {
         let simtime = simulation_time_iteration_for_smart_hot_water_tank;
         // 20 kWh available at the heater layer of a cold tank with a 0.7 target:
         // the target is reachable, so the realised state of charge meets it.
-        let control_max = either::Left(
+        let control_max = SetpointOrCombinationControl::SetpointTime(
             SetpointTimeControl::new(vec![Some(0.7); 8], 0, 1., None, None, simtime.timestep)
                 .into(),
         );
