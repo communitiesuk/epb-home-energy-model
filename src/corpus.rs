@@ -1238,6 +1238,7 @@ impl Corpus {
                     timestep_end_calcs_from_heat_sources,
                     heat_source_wet_boilers: heat_source_wet_boilers_from_heat_source,
                     pcm_hydronic_charging_pending: pcm_hydronic_charging_pending_from_heat_source,
+                    add_to_battery_charging_connection_names,
                 } = heat_source_wet_from_input(
                     name,
                     (*heat_source_wet_details).clone(),
@@ -1278,6 +1279,11 @@ impl Corpus {
                 {
                     pcm_hydronic_charging_pending
                         .extend(pcm_hydronic_charging_pending_from_heat_source);
+                }
+
+                if add_to_battery_charging_connection_names {
+                    charging_connection_names_for_heat_battery
+                        .insert(name.clone(), vec![name.clone()]);
                 }
 
                 anyhow::Ok((name.into(), heat_source))
@@ -5422,6 +5428,7 @@ struct HeatSourceWetDataFromInput {
             HeatBatteryPcmChargingSource,
         )>,
     >,
+    add_to_battery_charging_connection_names: bool,
 }
 
 fn heat_source_wet_from_input(
@@ -5442,6 +5449,7 @@ fn heat_source_wet_from_input(
     let mut timestep_end_calcs = vec![];
     let mut heat_source_wet_boilers = vec![];
     let mut pcm_hydronic_charging_pending = None;
+    let mut add_to_battery_charging_connection_names = false;
     let wet_heat_source = match &input {
         HeatSourceWetDetails::HeatPump {
             source_type,
@@ -5907,6 +5915,9 @@ fn heat_source_wet_from_input(
                 }
             };
 
+            // The battery's charging and auxiliary energy is recorded on the connection named
+            // after the battery itself, separate from any per-service connection.
+            add_to_battery_charging_connection_names = true;
             timestep_end_calcs.push(heat_source.clone());
 
             heat_source
@@ -5919,6 +5930,7 @@ fn heat_source_wet_from_input(
         timestep_end_calcs_from_heat_sources: timestep_end_calcs,
         heat_source_wet_boilers,
         pcm_hydronic_charging_pending,
+        add_to_battery_charging_connection_names,
     })
 }
 
