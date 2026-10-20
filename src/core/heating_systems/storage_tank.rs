@@ -3948,6 +3948,8 @@ mod tests {
         ControlSetPoint, RangeTimeControl, ScheduleOrSetpointControl, SetpointTimeControl,
     };
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+    use crate::core::heating_systems::common::HeatSourceWet;
+    use crate::core::heating_systems::heat_pump::HeatPumpHotWaterOnly;
     use crate::core::material_properties::WATER;
     use crate::core::pipework::PipeworkLocation;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -3956,7 +3958,10 @@ mod tests {
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::{FuelType, PipeworkContents, WaterPipeworkLocation};
+    use crate::input::{
+        FuelType, HeatPumpHotWaterOnlyTestDatum, HeatPumpHotWaterTestData, PipeworkContents,
+        WaterPipeworkLocation,
+    };
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
@@ -4537,32 +4542,7 @@ mod tests {
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "solarthermal").unwrap();
         let control_max = SetpointTimeControl::new(
-            vec![
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-            ],
+            vec![Some(55.); 24],
             212,
             1.,
             None,
@@ -4629,6 +4609,190 @@ mod tests {
             simulation_time_for_solar_thermal,
             energy_supply,
         )
+    }
+
+    #[fixture]
+    fn heat_pump(
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        simulation_time_for_storage_tank: SimulationTime,
+    ) -> HeatPumpHotWaterOnly {
+        let test_data = HeatPumpHotWaterTestData {
+            m: HeatPumpHotWaterOnlyTestDatum {
+                cop_dhw: 2.7,
+                hw_tapping_prof_daily_total: 5.845,
+                energy_input_measured: 2.15,
+                power_standby: 0.02,
+                hw_vessel_loss_daily: 1.18,
+            },
+            l: Some(HeatPumpHotWaterOnlyTestDatum {
+                cop_dhw: 2.5,
+                hw_tapping_prof_daily_total: 11.655,
+                energy_input_measured: 4.6,
+                power_standby: 0.03,
+                hw_vessel_loss_daily: 1.6,
+            }),
+        };
+
+        let power_max = 3.0;
+        let vol_daily_average = 150.;
+        let tank_volume = 200.0;
+        let daily_losses = 1.5;
+        let heat_exchanger_surface_area = Some(1.2);
+        let in_use_factor_mismatch = 0.6;
+        let tank_volume_declared = 180.0;
+        let heat_exchanger_surface_area_declared = Some(1.);
+        let daily_losses_declared = 1.2;
+
+        energy_supply
+            .write()
+            .register_end_user_name("end_user_name".into());
+        let energy_supply_connection =
+            EnergySupplyConnection::new(energy_supply, "end_user_name".into());
+
+        let range_time_control = Arc::new(
+            RangeTimeControl::new(
+                vec![
+                    Some(52.),
+                    None,
+                    None,
+                    None,
+                    Some(52.),
+                    Some(52.),
+                    Some(52.),
+                    Some(52.),
+                ],
+                vec![Some(55.); 8],
+                simulation_time_for_storage_tank.step,
+                0,
+                1.,
+                None,
+            )
+            .unwrap(),
+        );
+
+        HeatPumpHotWaterOnly::new(
+            power_max,
+            energy_supply_connection,
+            &test_data,
+            vol_daily_average,
+            tank_volume,
+            daily_losses,
+            heat_exchanger_surface_area,
+            in_use_factor_mismatch,
+            tank_volume_declared,
+            heat_exchanger_surface_area_declared,
+            daily_losses_declared,
+            1.,
+            range_time_control.into(),
+            false,
+        )
+    }
+
+    /// Should allow multiple immersion heaters
+    #[rstest]
+    fn test_init_multiple_heatsources(
+        cold_water_source: Arc<ColdWaterSource>,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions_for_solar_thermal: Arc<ExternalConditions>,
+        simulation_time_for_solar_thermal: SimulationTime,
+        simulation_time_for_immersion_heater: SimulationTime,
+    ) {
+        let storage_tank = StorageTank::new(
+            150.0,
+            1.68,
+            55.0,
+            WaterSupply::ColdWaterSource(cold_water_source.clone()),
+            &simulation_time_for_solar_thermal.iter().current_iteration(),
+            IndexMap::from([
+                (
+                    "imheater".into(),
+                    PositionedHeatSource {
+                        heat_source: Arc::new(Mutex::new(HeatSource::Storage(
+                            HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
+                                immersion_heater(simulation_time_for_immersion_heater),
+                            ))),
+                        ))),
+                        heater_position: 0.1,
+                        thermostat_position: Some(0.33),
+                    },
+                ),
+                (
+                    "imheater2".into(),
+                    PositionedHeatSource {
+                        heat_source: Arc::new(Mutex::new(HeatSource::Storage(
+                            HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
+                                immersion_heater(simulation_time_for_immersion_heater),
+                            ))),
+                        ))),
+                        heater_position: 0.6,
+                        thermostat_position: Some(0.6),
+                    },
+                ),
+            ]),
+            temp_internal_air_fn,
+            external_conditions_for_solar_thermal,
+            false,
+            None,
+            None,
+            *WATER,
+            None,
+            None,
+            None,
+        );
+
+        assert!(storage_tank.is_ok())
+    }
+
+    /// Should error if there are multiple wet heat-sources
+    #[rstest]
+    fn test_init_multiple_wet_heatsources(
+        heat_pump: HeatPumpHotWaterOnly,
+        cold_water_source: Arc<ColdWaterSource>,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions_for_solar_thermal: Arc<ExternalConditions>,
+        simulation_time_for_solar_thermal: SimulationTime,
+    ) {
+        let storage_tank = StorageTank::new(
+            150.0,
+            1.68,
+            55.0,
+            WaterSupply::ColdWaterSource(cold_water_source.clone()),
+            &simulation_time_for_solar_thermal.iter().current_iteration(),
+            IndexMap::from([
+                (
+                    "heat_pump".into(),
+                    PositionedHeatSource {
+                        heat_source: Arc::new(Mutex::new(HeatSource::Wet(Box::new(
+                            HeatSourceWet::HeatPumpWaterOnly(heat_pump.clone()),
+                        )))),
+                        heater_position: 0.1,
+                        thermostat_position: Some(0.33),
+                    },
+                ),
+                (
+                    // TODO 1.0.0a9 migration - python uses different wet heat source here
+                    "heat_pump2".into(),
+                    PositionedHeatSource {
+                        heat_source: Arc::new(Mutex::new(HeatSource::Wet(Box::new(
+                            HeatSourceWet::HeatPumpWaterOnly(heat_pump),
+                        )))),
+                        heater_position: 0.6,
+                        thermostat_position: Some(0.6),
+                    },
+                ),
+            ]),
+            temp_internal_air_fn,
+            external_conditions_for_solar_thermal,
+            false,
+            None,
+            None,
+            *WATER,
+            None,
+            None,
+            None,
+        );
+
+        assert!(storage_tank.is_err())
     }
 
     #[rstest]
@@ -5876,6 +6040,7 @@ mod tests {
             SimulationTime,
             Arc<RwLock<EnergySupply>>,
         ),
+        heat_pump: HeatPumpHotWaterOnly,
         simulation_time_for_storage_tank: SimulationTime,
     ) {
         let (storage_tank1, _) = storage_tank1;
@@ -5920,7 +6085,20 @@ mod tests {
             0.
         );
 
-        // TODO 1.0.0a9 migration can assertion with heat pump heat source now be replicated?
+        assert_eq!(
+            storage_tank1
+                .heat_source_output(
+                    &HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(heat_pump))),
+                    "heat_pump".into(),
+                    43.2,
+                    0,
+                    iteration,
+                    None,
+                    None
+                )
+                .unwrap(),
+            3.
+        );
     }
 
     /// Test that when hot water demand exceeds tank capacity, remaining volume is drawn from cold feed (e.g. pre-heat tank).
