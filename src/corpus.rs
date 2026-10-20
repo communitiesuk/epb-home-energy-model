@@ -7226,6 +7226,7 @@ fn space_heat_systems_from_input(
                         }
                         SpaceHeatSystemDetails::DryElectricUnderfloorHeater { energy_supply, control, frac_convective, rated_power, emitter_floor_area, exponent, constant_fields, thermal_mass_fields } => {
                             let energy_supply_conn_name = system_name.as_str();
+                            energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.into());
                             let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
                             let zone_area = zone.area();
 
