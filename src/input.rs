@@ -677,16 +677,6 @@ impl From<FuelType> for String {
     }
 }
 
-impl From<FuelType> for ArcStr {
-    fn from(value: FuelType) -> Self {
-        serde_json::to_value(value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .into()
-    }
-}
-
 impl TryFrom<EnergySupplyType> for FuelType {
     type Error = anyhow::Error;
 
