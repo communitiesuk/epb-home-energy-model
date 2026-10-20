@@ -770,6 +770,11 @@ impl ChargeControl {
     pub fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
         self.charge_time_control.is_on(simulation_time_iteration)
     }
+
+    #[cfg(test)]
+    pub(crate) fn charge_level(&self) -> Vec<Option<f64>> {
+        self.charge_level.clone()
+    }
 }
 
 /// Adapter that exposes a ChargeControl as a ControlSetPoint.

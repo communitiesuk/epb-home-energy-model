@@ -286,7 +286,7 @@ fn single_control_from_details(
             // user can specify a vector with all days (plus 1), or as a single float value to be used for each day
             let charge_level_vec = if let Some(charge) = charge_level {
                 let required_length = vec_size;
-                let mut charge_level_vec = match charge {
+                let charge_level_vec = match charge {
                     ChargeLevel::List(charge_vec) => charge_vec.iter().map(|x| Some(*x)).collect(),
                     ChargeLevel::Single(charge) => {
                         vec![Some(*charge); vec_size]
@@ -295,13 +295,7 @@ fn single_control_from_details(
                 };
                 // Ensure charge_level has the required length by appending the last value as many times as necessary
                 if charge_level_vec.len() < required_length {
-                    let extension = vec![
-                        charge_level_vec.iter().copied().last().ok_or_else(
-                            || anyhow!("Provided charge level data was empty.")
-                        )?;
-                        required_length - charge_level_vec.len()
-                    ];
-                    charge_level_vec.extend(extension);
+                    bail!("charge_level for control '{name}' has {} value(s) but the simulation requires {required_length} (one per day, plus one). Provide a value for each day, or a single value to apply to all days.", charge_level_vec.len());
                 }
 
                 charge_level_vec
@@ -7578,10 +7572,13 @@ impl AndReturn {
 mod tests {
     use super::*;
     use crate::core::common::WaterSupply;
-    use crate::input::{HotWaterSourceDetails, Input, WasteWaterHeatRecoveryDetails};
+    use crate::input::{
+        HeatSourceWet as HeatSourceWetInput, HotWaterSourceDetails, Input,
+        WasteWaterHeatRecoveryDetails,
+    };
     use crate::input_dependency_resolvers::CircularDependencyError;
     use rstest::{fixture, rstest};
-    use serde_json::json;
+    use serde_json::{json, Value};
     use serde_valid::Validate;
     use std::sync::Arc;
 
@@ -7752,7 +7749,7 @@ mod tests {
     fn create_preheated_water_source_storage_tank(
         name: &str,
         cold_water_source_name: &str,
-    ) -> HotWaterSourceDetails {
+    ) -> PreHeatedWaterSourceDetails {
         serde_json::from_value(json!(
         {"type": "StorageTank",
         "volume": 24.0,
@@ -7776,7 +7773,7 @@ mod tests {
     fn create_preheated_water_source_smart_hot_water_tank(
         name: &str,
         cold_water_source_name: &str,
-    ) -> HotWaterSourceDetails {
+    ) -> PreHeatedWaterSourceDetails {
         serde_json::from_value(json!(
             {
             "type": "SmartHotWaterTank",
@@ -7865,28 +7862,132 @@ mod tests {
         assert!(Arc::ptr_eq(&wwhrs_source, &wwhrs["wwhrs1"]));
     }
 
-    /// Test that PreHeatedWaterSource objects can be initialized in any order
-    #[ignore = "Ignoring until we update ImmersionHeater to 1.0.0alpha9"]
     #[rstest]
-    fn test_preheated_water_source_initialization_order_independent(mut minimal_input: Input) {
-        let tank1 = create_preheated_water_source_storage_tank("tank1", "tank2");
-        let tank2 = create_preheated_water_source_storage_tank("tank2", "mains water");
+    /// A non-tank hot water source accepts a PreHeatedWaterSource as its cold feed.
+    fn test_point_of_use_cold_feed_from_pre_heated_water_source() {
+        let mut input = minimal_input();
+        input.pre_heated_water_source = [(
+            arcstr::literal!("preheat1"),
+            create_preheated_water_source_storage_tank("preheat1", "mains water"),
+        )]
+        .into();
+        input.hot_water_source =
+            [(arcstr::literal!("hw_pou"), create_point_of_use("preheat1"))].into();
 
-        minimal_input.pre_heated_water_source =
-            serde_json::from_value(json!({"tank1": tank1, "tank2": tank2})).unwrap();
+        let corpus = build_project(input).unwrap();
 
-        let corpus = Corpus::from_inputs(
-            Arc::new(minimal_input),
-            None,
-            None,
-            &OutputOptions::default(),
-        )
-        .unwrap();
+        let hot_water_sources = &corpus.hot_water_sources;
+        let HotWaterStorageTank::StorageTank(pre_heated) =
+            &corpus.pre_heated_water_sources["preheat1"]
+        else {
+            panic!()
+        };
 
-        let pre_heated_sources = corpus.pre_heated_water_sources;
+        let WaterSupply::Preheated(HotWaterStorageTank::StorageTank(hot_water_source)) =
+            hot_water_sources["hw_pou"].get_cold_water_source()
+        else {
+            panic!()
+        };
 
-        assert!(pre_heated_sources.contains_key("tank1"));
-        assert!(pre_heated_sources.contains_key("tank2"));
+        assert!(Arc::ptr_eq(&hot_water_source, pre_heated));
+    }
+
+    #[rstest]
+    /// A SmartHotWaterTank is accepted as a PreHeatedWaterSource and built as a tank.
+    ///
+    /// The pre-heated source path shares the tank handling used for HotWaterSource, so a
+    /// smart tank builds identically to a storage tank and can act as another source's
+    /// cold feed.
+    fn test_smart_hot_water_tank_as_pre_heated_water_source() {
+        let mut input = minimal_input();
+        input.pre_heated_water_source = [(
+            arcstr::literal!("preheat1"),
+            create_preheated_water_source_smart_hot_water_tank("preheat1", "mains water"),
+        )]
+        .into();
+        input.hot_water_source =
+            [(arcstr::literal!("hw_pou"), create_point_of_use("preheat1"))].into();
+
+        let corpus = build_project(input).unwrap();
+
+        let hot_water_sources = &corpus.hot_water_sources;
+        let HotWaterStorageTank::SmartHotWaterTank(pre_heated) =
+            &corpus.pre_heated_water_sources["preheat1"]
+        else {
+            panic!()
+        };
+
+        let WaterSupply::Preheated(HotWaterStorageTank::SmartHotWaterTank(hot_water_source)) =
+            hot_water_sources["hw_pou"].get_cold_water_source()
+        else {
+            panic!()
+        };
+
+        assert!(Arc::ptr_eq(&hot_water_source, pre_heated));
+    }
+
+    #[rstest]
+    /// A WWHRS cold feed may supply only one hot water source.
+    ///
+    /// Allocating it to two hot water sources would double-count its recovered heat.
+    fn test_wwhrs_cold_feed_allocated_to_single_hot_water_source() {
+        let mut input = minimal_input();
+        input.waste_water_heat_recovery.replace(
+            [(
+                arcstr::literal!("wwhrs1"),
+                create_wwhrs_instantaneous("mains water"),
+            )]
+            .into(),
+        );
+        input.hot_water_source = [
+            (arcstr::literal!("hw_pou_1"), create_point_of_use("wwhrs1")),
+            (arcstr::literal!("hw_pou_2"), create_point_of_use("wwhrs1")),
+        ]
+        .into();
+
+        assert!(build_project(input).is_err());
+    }
+
+    #[rstest]
+    /// An unrecognised cold water source reference for a PointOfUse is rejected.
+    ///
+    /// The reference validator covers cold water, pre-heated, and WWHRS sources, so a
+    /// name matching none of them fails validation before the project is built.
+    fn test_point_of_use_invalid_cold_water_source_rejected() {
+        let mut input = minimal_input();
+        input.hot_water_source = [(
+            arcstr::literal!("hw_pou"),
+            create_point_of_use("does not exist"),
+        )]
+        .into();
+
+        assert!(build_project(input).is_err());
+    }
+
+    #[rstest]
+    /// Test that PreHeatedWaterSource objects can be initialized in any order.
+    fn test_preheated_water_source_initialization_order_independent() {
+        let mut input = minimal_input();
+
+        input.pre_heated_water_source = [
+            (
+                arcstr::literal!("tank1"),
+                create_preheated_water_source_storage_tank("tank1", "tank2"),
+            ),
+            (
+                arcstr::literal!("tank2"),
+                create_preheated_water_source_storage_tank("tank2", "mains water"),
+            ),
+        ]
+        .into();
+
+        let corpus = build_project(input).unwrap();
+
+        let pre_heated_sources: Vec<ArcStr> =
+            corpus.pre_heated_water_sources.keys().cloned().collect();
+
+        assert!(pre_heated_sources.contains(&arcstr::literal!("tank1")));
+        assert!(pre_heated_sources.contains(&arcstr::literal!("tank2")));
     }
 
     ///  Test that circular references between `PreHeatedWaterSource` objects are detected and raise an appropriate error.
@@ -7909,7 +8010,6 @@ mod tests {
     }
 
     /// Test that chains of dependencies work regardless of initialization order
-    #[ignore = "Ignoring until we update ImmersionHeater to 1.0.0alpha9"]
     #[rstest]
     fn test_preheated_water_source_chain_of_dependencies(mut minimal_input: Input) {
         let tank1 = create_preheated_water_source_storage_tank("tank1", "tank2");
@@ -7933,5 +8033,319 @@ mod tests {
         assert!(pre_heated_sources.contains_key("tank1"));
         assert!(pre_heated_sources.contains_key("tank2"));
         assert!(pre_heated_sources.contains_key("tank3"));
+    }
+
+    /// Build a minimal manual ChargeControl input dict with the given charge_level.
+    fn charge_control_input(charge_level: Value) -> ControlInput {
+        serde_json::from_value(json!({"ctrl": {
+            "type": "ChargeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            // 72-hour on schedule; the charge_level length, not the schedule, is under test
+            "schedule": {"main": [{"value": true, "repeat": 72}]},
+            "charge_level": charge_level,
+        }}))
+        .unwrap()
+    }
+
+    #[rstest]
+    /// A charge_level list shorter than the simulation period is rejected.
+    ///
+    /// A 72-hour simulation needs one value per day plus one (4 values); supplying
+    /// fewer is most likely an input error.
+    fn test_charge_level_shorter_than_required_raises() {
+        // 72 hours -> ceil(72 / 24 + 1) = 4 required values; provide only 2
+        let simtime = SimulationTime::new(0., 72., 1.);
+        let data = charge_control_input(json!([1.0, 0.5]));
+
+        let result = control_from_input(
+            &data,
+            Arc::new(external_conditions(simtime.iter())),
+            &simtime.iter(),
+            &Default::default(),
+        );
+
+        assert!(result.is_err());
+    }
+
+    // create dummy external conditions
+    fn external_conditions(simulation_time_iterator: SimulationTimeIterator) -> ExternalConditions {
+        ExternalConditions::new(
+            &simulation_time_iterator,
+            vec![0.0; 72],
+            vec![3.7; 72],
+            vec![200.; 72].into_iter().map(|x| x.into()).collect(),
+            vec![333.; 72],
+            vec![0.; 72],
+            vec![0.2; 8760],
+            51.42,
+            -0.75,
+            0,
+            0,
+            None,
+            1.,
+            None,
+            None,
+            false,
+            false,
+            None,
+        )
+    }
+
+    #[rstest]
+    /// A single charge_level value is broadcast to every day of the simulation period.
+    fn test_charge_level_single_value_broadcasts_to_required_length() {
+        // 72 hours -> 4 required values; a single value must broadcast to all of them
+        let simtime = SimulationTime::new(0., 72., 1.);
+        let data = charge_control_input(json!(0.7));
+
+        let control = control_from_input(
+            &data,
+            Arc::new(external_conditions(simtime.iter())),
+            &simtime.iter(),
+            &Default::default(),
+        )
+        .unwrap();
+
+        let Some(Control::Charge(charge_control)) = control.get_with_string("ctrl") else {
+            panic!()
+        };
+
+        assert_eq!(charge_control.as_ref().charge_level(), vec![Some(0.7); 4]);
+    }
+
+    // Setpoint and convective fraction the highest-priority required heating /
+    // cooling system would supply; chosen distinct so the test can confirm which
+    // system's values reach space_heat_cool_demand.
+
+    // skipping tests for unmet_demand as they use mocks and spies and a disproportionate amount of setup
+
+    fn heat_pump_input() -> HeatSourceWetDetails {
+        serde_json::from_value(json!({
+            "type": "HeatPump",
+            "EnergySupply": "mains elec",
+            "source_type": "OutsideAir",
+            "sink_type": "Water",
+            "backup_ctrl_type": "TopUp",
+            "time_delay_backup": 2.0,
+            "modulating_control": true,
+            "min_modulation_rate_35": 0.35,
+            "min_modulation_rate_55": 0.4,
+            "time_constant_onoff_operation": 140,
+            "temp_return_feed_max": 70.0,
+            "temp_lower_operating_limit": -5.0,
+            "min_temp_diff_flow_return_for_hp_to_operate": 0.0,
+            "var_flow_temp_ctrl_during_test": true,
+            "power_heating_circ_pump": 0.015,
+            "power_source_circ_pump": 0.01,
+            "power_standby": 0.015,
+            "power_crankcase_heater": 0.01,
+            "power_off": 0.015,
+            "power_max_backup": 3.0,
+            // Test data at 35 °C and 55 °C design flow, letters A–D plus F, as required
+            // by the EN 14825 capacity/CoP interpolation.
+            "test_data_EN14825": [
+                {
+                    "test_letter": "A",
+                    "capacity": 8.4,
+                    "cop": 4.6,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 34,
+                    "temp_source": 0,
+                    "temp_test": -7,
+                },
+                {
+                    "test_letter": "B",
+                    "capacity": 8.3,
+                    "cop": 4.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 30,
+                    "temp_source": 0,
+                    "temp_test": 2,
+                },
+                {
+                    "test_letter": "C",
+                    "capacity": 8.3,
+                    "cop": 5.1,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 27,
+                    "temp_source": 0,
+                    "temp_test": 7,
+                },
+                {
+                    "test_letter": "D",
+                    "capacity": 8.2,
+                    "cop": 5.4,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 24,
+                    "temp_source": 0,
+                    "temp_test": 12,
+                },
+                {
+                    "test_letter": "F",
+                    "capacity": 8.4,
+                    "cop": 4.6,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 34,
+                    "temp_source": 0,
+                    "temp_test": -7,
+                },
+                {
+                    "test_letter": "A",
+                    "capacity": 8.8,
+                    "cop": 3.2,
+                    "design_flow_temp": 55,
+                    "temp_outlet": 52,
+                    "temp_source": 0,
+                    "temp_test": -7,
+                },
+                {
+                    "test_letter": "B",
+                    "capacity": 8.6,
+                    "cop": 3.6,
+                    "design_flow_temp": 55,
+                    "temp_outlet": 42,
+                    "temp_source": 0,
+                    "temp_test": 2,
+                },
+                {
+                    "test_letter": "C",
+                    "capacity": 8.5,
+                    "cop": 3.9,
+                    "design_flow_temp": 55,
+                    "temp_outlet": 36,
+                    "temp_source": 0,
+                    "temp_test": 7,
+                },
+                {
+                    "test_letter": "D",
+                    "capacity": 8.5,
+                    "cop": 4.3,
+                    "design_flow_temp": 55,
+                    "temp_outlet": 30,
+                    "temp_source": 0,
+                    "temp_test": 12,
+                },
+                {
+                    "test_letter": "F",
+                    "capacity": 8.8,
+                    "cop": 3.2,
+                    "design_flow_temp": 55,
+                    "temp_outlet": 52,
+                    "temp_source": 0,
+                    "temp_test": -7,
+                },
+            ],
+        }))
+        .unwrap()
+    }
+
+    /// PCM heat battery charged by heat pump "hp" plus a direct electric backup.
+    ///
+    /// The two charging sources are given non-overlapping RangeTimeControl schedules
+    /// (the heat pump for the first half of the run, the electric backup for the
+    /// second) as the battery requires; only the wet source creates a hydronic
+    /// charging connection.
+    fn pcm_battery_hydronic_charging_dict() -> HeatSourceWetInput {
+        let heat_battery = serde_json::from_value(json!({
+            "type": "HeatBattery",
+            "battery_type": "pcm",
+            "EnergySupply": "mains elec",
+            "electricity_circ_pump": 0.06,
+            "electricity_standby": 0.0244,
+            "max_rated_losses": 0.1,
+            "number_of_units": 1,
+            "temp_init": 20,
+            "simultaneous_charging_and_discharging": false,
+            "heat_storage_kJ_per_K_above_Phase_transition": 381.5,
+            "heat_storage_kJ_per_K_below_Phase_transition": 305.2,
+            "heat_storage_kJ_per_K_during_Phase_transition": 12317,
+            "phase_transition_temperature_upper": 59,
+            "phase_transition_temperature_lower": 57,
+            "max_temperature": 80,
+            "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": 0.035,
+            "inlet_diameter_mm": 6.5,
+            "A": 174.33952,
+            "B": -931.565,
+            "flow_rate_l_per_min": 10,
+            "temp_min_useful": 10.0,
+            "HeatSource": {
+                "hp_source": {
+                    "type": "HeatSourceWet",
+                    "name": "hp",
+                    "temp_flow_limit_upper": 65.0,
+                    "flow_rate_charging_l_per_min": 10.0,
+                    "A": 174.33952,
+                    "B": -931.565,
+                    "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": 0.035,
+                    "inlet_diameter_mm": 6.5,
+                    "Control": "hp_charge_control",
+                },
+                "electric_backup": {
+                    "type": "DirectElectric",
+                    "rated_charge_power": 20.0,
+                    "Control": "elec_charge_control",
+                },
+            },
+        }))
+        .unwrap();
+
+        [
+            (arcstr::literal!("hb1"), heat_battery),
+            (arcstr::literal!("hp"), heat_pump_input()),
+        ]
+        .into()
+    }
+
+    fn range_time_control(lower_schedule: Value, upper_schedule: Value) -> ControlDetails {
+        serde_json::from_value(json!({
+            "type": "RangeTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule_lower": {"main": lower_schedule},
+            "schedule_upper": {"main": upper_schedule},
+        }))
+        .unwrap()
+    }
+
+    #[rstest]
+    /// A wet charging source's energy connection is folded into the battery's CoP input.
+    ///
+    /// A heat battery charged by a wet heat source records the energy that source consumes
+    /// on a dedicated charging connection ("<source>_pcm_charging: <battery>"), separate
+    /// from the battery's own connection. That connection must be registered against the
+    /// battery so its energy is apportioned into the CoP denominator of every service the
+    /// battery supplies; otherwise the denominator omits the charging energy and the CoP is
+    /// implausibly high. The direct electric backup, being on the battery's own
+    /// connection, adds no separate charging connection.
+    fn test_hydronic_charging_connection_registered_against_battery() {
+        let mut input = minimal_input();
+
+        // Non-overlapping charging windows: heat pump first half, electric backup second.
+        input.control.extra.insert(
+            arcstr::literal!("hp_charge_control"),
+            range_time_control(
+                json!([{"value": 0.3, "repeat": 4}, {"value": null, "repeat": 4}]),
+                json!([{"value": 0.9, "repeat": 4}, {"value": null, "repeat": 4}]),
+            ),
+        );
+        input.control.extra.insert(
+            arcstr::literal!("elec_charge_control"),
+            range_time_control(
+                json!([{"value": null, "repeat": 4}, {"value": 0.2, "repeat": 4}]),
+                json!([{"value": null, "repeat": 4}, {"value": 0.95, "repeat": 4}]),
+            ),
+        );
+        input
+            .heat_source_wet
+            .replace(pcm_battery_hydronic_charging_dict());
+
+        let corpus = build_project(input).unwrap();
+
+        let charging_conns = &corpus.charging_connection_names_for_heat_battery["hb1"];
+        assert_eq!(
+            charging_conns.iter().map(|x| x.as_str()).collect_vec(),
+            vec!["hb1", "hp_pcm_charging: hb1"]
+        );
     }
 }
