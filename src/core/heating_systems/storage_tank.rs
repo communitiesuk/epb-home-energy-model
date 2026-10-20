@@ -6164,6 +6164,94 @@ mod tests {
         assert!(!tank.heating_active[heat_source_name].load(Ordering::SeqCst));
     }
 
+    /// Charging continues when the minimum-setpoint schedule deactivates.
+    /// With the charging deadband active (_heating_active True) and the
+    /// minimum-setpoint control off while the maximum-setpoint control stays on,
+    /// the heat source must still deliver its maximum output: the deadband, not
+    /// the minimum-setpoint schedule, governs charging, so the immersion heater
+    /// delivers its full rated output rather than being gated off by its own
+    /// controlmin.is_on() check.
+    #[rstest]
+    fn test_potential_energy_input_continues_when_min_schedule_off(
+        cold_water_source: Arc<ColdWaterSource>,
+        simulation_time_for_storage_tank: SimulationTime,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions: Arc<ExternalConditions>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+    ) {
+        let cold_feed = WaterSupply::ColdWaterSource(cold_water_source.clone());
+        let simtime = simulation_time_for_storage_tank.iter().current_iteration();
+        let heat_source_name = "immersion_min_off";
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), heat_source_name).unwrap();
+
+        let heater = heat_source(
+            simulation_time_for_storage_tank,
+            energy_supply_connection.clone(),
+            50.0,
+            0.1,
+            Some(0.33),
+            &[None; 8],
+            &[Some(55.); 8],
+        );
+
+        let heat_sources = IndexMap::from([(heat_source_name.into(), heater.clone())]);
+
+        let tank = StorageTank::new(
+            150.0,
+            1.68,
+            55.0,
+            cold_feed,
+            &simtime,
+            heat_sources,
+            temp_internal_air_fn.clone(),
+            external_conditions.clone(),
+            false,
+            Some(4),
+            None,
+            *WATER,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let heater_layer = (0.1 * tank.number_of_volumes as f64) as usize;
+        let thermostat_layer = (0.33 * tank.number_of_volumes as f64) as usize;
+
+        // Charging was active entering this timestep and the tank (40 °C) is below
+        // the maximum-setpoint temperature (55 °C), so charging must continue.
+        tank.heating_active[heat_source_name].store(true, Ordering::SeqCst);
+        let q_x_in_n = tank
+            .potential_energy_input(
+                &vec![40.; tank.number_of_volumes],
+                &heater.heat_source.lock(),
+                heat_source_name,
+                heater_layer,
+                thermostat_layer,
+                simtime,
+            )
+            .unwrap();
+
+        // Immersion heater delivers its full rated output (50 kW over the 1 h timestep)
+        assert_relative_eq!(q_x_in_n.iter().sum::<f64>(), 50.);
+
+        // With the deadband inactive the source stays off (no charging)
+        tank.heating_active[heat_source_name].store(false, Ordering::SeqCst);
+        let q_x_in_n_off = tank
+            .potential_energy_input(
+                &vec![40.; tank.number_of_volumes],
+                &heater.heat_source.lock(),
+                heat_source_name,
+                heater_layer,
+                thermostat_layer,
+                simtime,
+            )
+            .unwrap();
+
+        assert_relative_eq!(q_x_in_n_off.iter().sum::<f64>(), 0.);
+    }
+
     #[fixture]
     fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
@@ -6232,6 +6320,8 @@ mod tests {
 
         RangeTimeControl::new(control_min, control_max, 1., 0, 1., None).unwrap()
     }
+
+    // skipping python's test_init_with_invalid_values as it's not possible to have these invalid cases in the rust
 
     #[rstest]
     fn test_demand_energy_for_immersion_heater(
